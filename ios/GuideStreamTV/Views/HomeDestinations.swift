@@ -302,6 +302,12 @@ struct EpisodeDetailSheet: View {
     private var watchButton: some View {
         Button {
             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            StreamingDeepLinker.open(
+                platform: whereToWatchLabel,
+                title: title,
+                tmdbId: tmdbId,
+                isTV: { if case .show = subject { return true } else { return true } }()
+            )
             dismiss()
         } label: {
             Text("Watch on \(whereToWatchLabel)")

@@ -371,6 +371,10 @@ struct PlayOnBottomSheet: View {
                 titleId: WatchIntentLogger.titleSlug(showTitle),
                 metadata: ["device_id": "watch-on-platform", "platform": whereToWatchLabel]
             )
+            StreamingDeepLinker.open(
+                platform: whereToWatchLabel,
+                title: showTitle
+            )
             onDeviceSelected("watch-on-platform")
         } label: {
             Text("Watch on \(whereToWatchLabel)")
