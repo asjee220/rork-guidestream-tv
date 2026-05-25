@@ -1,0 +1,250 @@
+//
+//  SupabaseSchemaProbe.swift
+//  GuideStreamTV
+//
+//  Tests every Supabase table the app writes to and classifies the result:
+//
+//  - `.ok`              — table exists, read works, and (for write-probed tables)
+//                         an insert was accepted.
+//  - `.tableMissing`    — Postgres reports `PGRST205` / "does not exist".
+//  - `.rlsBlocked`      — Postgres reports `42501` row-level security violation.
+//  - `.columnMissing`   — Postgres reports `PGRST204` for a column we use.
+//  - `.error(message)`  — anything else (network, auth, etc).
+//
+//  Probe rows that *do* land in Supabase are cleaned up after the write
+//  succeeds so we don't pollute the user's analytics or watch list.
+//
+//  Used by `SupabaseDiagnosticsView` to give the user a precise picture of
+//  what's wrong with their schema/policies and a one-tap copy of the SQL
+//  that fixes it.
+//
+
+import Foundation
+import Supabase
+
+@MainActor
+@Observable
+final class SupabaseSchemaProbe {
+    static let shared = SupabaseSchemaProbe()
+
+    enum CheckState: Equatable {
+        case unknown
+        case checking
+        case ok
+        case tableMissing
+        case rlsBlocked
+        case columnMissing(String)
+        case error(String)
+
+        var isFailure: Bool {
+            switch self {
+            case .ok, .unknown, .checking: return false
+            default: return true
+            }
+        }
+    }
+
+    struct TableCheck: Identifiable, Equatable {
+        var id: String { name }
+        let name: String
+        let purpose: String
+        let writeProbe: Bool
+        var read: CheckState = .unknown
+        var write: CheckState = .unknown
+    }
+
+    /// Catalog of tables the app touches. `writeProbe` controls whether we
+    /// attempt a real insert (cleaned up after) — we skip insert probes for
+    /// tables whose RLS rightly requires authentication (`users`,
+    /// `new_episodes`) so the probe doesn't generate false failures.
+    static let tableCatalog: [(name: String, purpose: String, writeProbe: Bool)] = [
+        ("watch_intent_events", "Analytics events for every tap, watch, and open", true),
+        ("device_sessions", "One row per device install (the guest profile)", true),
+        ("user_streams", "Your saved watch list", true),
+        ("users", "Your profile (name, email, services)", false),
+        ("new_episodes", "Server-managed episode releases", false)
+    ]
+
+    private(set) var checks: [TableCheck]
+    private(set) var isProbing: Bool = false
+    private(set) var lastProbedAt: Date?
+
+    /// True when any table currently reports a failure or is still unknown
+    /// after the most recent probe run.
+    var hasIssues: Bool {
+        checks.contains { $0.read.isFailure || $0.write.isFailure }
+    }
+
+    var passingCount: Int {
+        checks.filter { !$0.read.isFailure && !$0.write.isFailure && $0.read != .unknown }.count
+    }
+
+    var totalCount: Int { checks.count }
+
+    private init() {
+        self.checks = Self.tableCatalog.map {
+            TableCheck(name: $0.name, purpose: $0.purpose, writeProbe: $0.writeProbe)
+        }
+    }
+
+    /// Run all probes sequentially. Updates `checks` as each one completes so
+    /// the UI animates progress in.
+    func probeAll() async {
+        isProbing = true
+        // Reset all to .checking for animation.
+        for i in checks.indices {
+            checks[i].read = .checking
+            checks[i].write = checks[i].writeProbe ? .checking : .unknown
+        }
+        for i in checks.indices {
+            await probe(index: i)
+        }
+        lastProbedAt = Date()
+        isProbing = false
+    }
+
+    // MARK: - Per-table probe
+
+    private func probe(index: Int) async {
+        let table = checks[index].name
+        // 1. Read probe — confirms table exists and read is allowed.
+        do {
+            _ = try await SupabaseManager.shared.client
+                .from(table)
+                .select("*", head: true)
+                .limit(1)
+                .execute()
+            checks[index].read = .ok
+        } catch {
+            let (state, _) = classify(error)
+            checks[index].read = state
+            // If the table is missing we don't need to bother with a write probe.
+            if case .tableMissing = state {
+                checks[index].write = .tableMissing
+                return
+            }
+        }
+
+        // 2. Write probe — only for tables where we expect the anon/auth user
+        // to be allowed to write.
+        guard checks[index].writeProbe else {
+            checks[index].write = .unknown
+            return
+        }
+        await writeProbe(index: index)
+    }
+
+    private func writeProbe(index: Int) async {
+        let table = checks[index].name
+        let deviceId = DeviceIdentity.shared.deviceId
+        let probeTitleId = "probe-\(deviceId.prefix(8))"
+
+        var payload: [String: AnyJSON] = [:]
+        switch table {
+        case "watch_intent_events":
+            payload = [
+                "event_type": .string("schema_probe"),
+                "device_id": .string(deviceId)
+            ]
+        case "device_sessions":
+            payload = [
+                "device_id": .string(deviceId),
+                "is_guest": .bool(true),
+                "is_authenticated": .bool(false)
+            ]
+        case "user_streams":
+            payload = [
+                "title_id": .string(probeTitleId),
+                "title": .string("Schema Probe")
+            ]
+            if let uid = AuthViewModel.shared.currentUser?.id.uuidString {
+                payload["user_id"] = .string(uid)
+            }
+        default:
+            checks[index].write = .unknown
+            return
+        }
+
+        do {
+            if table == "device_sessions" {
+                try await SupabaseManager.shared.client
+                    .from(table)
+                    .upsert(payload, onConflict: "device_id")
+                    .execute()
+            } else {
+                try await SupabaseManager.shared.client
+                    .from(table)
+                    .insert(payload)
+                    .execute()
+            }
+            checks[index].write = .ok
+            await cleanupProbe(table: table, probeTitleId: String(probeTitleId))
+        } catch {
+            let (state, _) = classify(error)
+            checks[index].write = state
+        }
+    }
+
+    /// Best-effort cleanup. Removes the synthetic row inserted during the
+    /// write probe so the user's real data isn't polluted with probe rows.
+    private func cleanupProbe(table: String, probeTitleId: String) async {
+        do {
+            switch table {
+            case "watch_intent_events":
+                try await SupabaseManager.shared.client
+                    .from(table)
+                    .delete()
+                    .eq("event_type", value: "schema_probe")
+                    .execute()
+            case "user_streams":
+                let query = SupabaseManager.shared.client
+                    .from(table)
+                    .delete()
+                    .eq("title_id", value: probeTitleId)
+                try await query.execute()
+            default:
+                break
+            }
+        } catch {
+            // Ignore — leftover probe rows are harmless.
+            print("[SchemaProbe] cleanup of \(table) failed: \(error.localizedDescription)")
+        }
+    }
+
+    // MARK: - Error classification
+
+    private func classify(_ error: Error) -> (CheckState, String) {
+        let ns = error as NSError
+        var message = ns.localizedDescription
+        // Pull richer Postgres details out of the userInfo dict when present.
+        for key in ["message", "details", "hint", "code"] {
+            if let value = ns.userInfo[key] as? String, !value.isEmpty {
+                message += " | \(key)=\(value)"
+            }
+        }
+        let lowered = message.lowercased()
+
+        if lowered.contains("pgrst205")
+            || lowered.contains("could not find the table")
+            || lowered.contains("does not exist") {
+            return (.tableMissing, message)
+        }
+        if lowered.contains("42501") || lowered.contains("row-level security") {
+            return (.rlsBlocked, message)
+        }
+        if lowered.contains("pgrst204") || lowered.contains("could not find the") && lowered.contains("column") {
+            // Extract the column name out of "Could not find the 'foo' column of ..."
+            let column = Self.extractColumnName(from: message) ?? "unknown"
+            return (.columnMissing(column), message)
+        }
+        return (.error(message), message)
+    }
+
+    private static func extractColumnName(from message: String) -> String? {
+        // Match `'columnName'` after "Could not find the".
+        guard let range = message.range(of: "Could not find the '", options: .caseInsensitive) else { return nil }
+        let after = message[range.upperBound...]
+        guard let end = after.firstIndex(of: "'") else { return nil }
+        return String(after[..<end])
+    }
+}

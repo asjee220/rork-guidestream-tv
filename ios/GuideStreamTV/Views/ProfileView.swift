@@ -25,15 +25,23 @@ enum ProfileRoute: Hashable {
     case help
 }
 
+/// Sheets the Profile root can present without pushing a destination.
+enum ProfileSheet: String, Identifiable {
+    case diagnostics
+    var id: String { rawValue }
+}
+
 // MARK: - ProfileView
 
 struct ProfileView: View {
     @State private var auth = AuthViewModel.shared
     @State private var stats = ProfileStatsService.shared
     @State private var streams = StreamsViewModel.shared
+    @State private var probe = SupabaseSchemaProbe.shared
     @State private var path: [ProfileRoute] = []
     @State private var showSignOutConfirm: Bool = false
     @State private var isSigningOut: Bool = false
+    @State private var activeSheet: ProfileSheet?
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -59,6 +67,10 @@ struct ProfileView: View {
                 ScrollView(showsIndicators: false) {
                     VStack(spacing: 22) {
                         title
+
+                        if probe.hasIssues, probe.lastProbedAt != nil {
+                            supabaseSetupBanner
+                        }
 
                         avatarSection
                             .padding(.top, 4)
@@ -99,16 +111,26 @@ struct ProfileView: View {
             }
         }
         .tint(Color.orange)
+        .sheet(item: $activeSheet) { sheet in
+            switch sheet {
+            case .diagnostics:
+                SupabaseDiagnosticsView()
+            }
+        }
         .task {
             await stats.refresh()
             await streams.fetchUserStreams()
             if auth.isAuthenticated {
                 await auth.loadDisplayName()
             }
+            if probe.lastProbedAt == nil {
+                await probe.probeAll()
+            }
         }
         .refreshable {
             await stats.refresh()
             await streams.fetchUserStreams()
+            await probe.probeAll()
         }
         .confirmationDialog(
             signOutTitle,
@@ -133,6 +155,67 @@ struct ProfileView: View {
                 .foregroundStyle(.white)
             Spacer()
         }
+    }
+
+    // MARK: - Supabase setup banner
+
+    /// Loud, tappable banner shown when schema probes have detected missing
+    /// tables, missing columns, or row-level-security policies blocking
+    /// writes. Tapping opens the diagnostics sheet which contains the
+    /// one-tap SQL fix.
+    private var supabaseSetupBanner: some View {
+        Button(action: openDiagnostics) {
+            HStack(spacing: 12) {
+                ZStack {
+                    Circle()
+                        .fill(Color.orange.opacity(0.18))
+                        .frame(width: 38, height: 38)
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .scaledFont(size: 16, weight: .bold)
+                        .foregroundStyle(Color.orange)
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Supabase setup needed")
+                        .scaledFont(size: 14, weight: .heavy)
+                        .foregroundStyle(.white)
+                        .lineLimit(1)
+                    Text(bannerSubtitle)
+                        .scaledFont(size: 11)
+                        .foregroundStyle(Color.white.opacity(0.75))
+                        .lineLimit(2)
+                }
+                Spacer(minLength: 4)
+                Image(systemName: "chevron.right")
+                    .scaledFont(size: 12, weight: .bold)
+                    .foregroundStyle(Color.orange)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            .frame(maxWidth: .infinity)
+            .background(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(Color.orange.opacity(0.10))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(Color.orange.opacity(0.40), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Supabase setup needed. Open diagnostics.")
+    }
+
+    private var bannerSubtitle: String {
+        let failing = probe.checks.filter { $0.read.isFailure || $0.write.isFailure }.count
+        if failing == 0 {
+            return "Tap to open Diagnostics and run the schema setup SQL."
+        }
+        return "\(failing) of \(probe.totalCount) tables aren't ready. Tap to fix in one step."
+    }
+
+    private func openDiagnostics() {
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        activeSheet = .diagnostics
     }
 
     private var avatarSection: some View {

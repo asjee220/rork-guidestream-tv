@@ -156,25 +156,74 @@ final class StreamsViewModel {
 
         // 2. Push to Supabase if we have a session; tolerate failure.
         guard let uid = currentUserId else { return }
-        let payload = UserStreamInsert(
-            user_id: uid.uuidString,
-            title_id: trimmedId,
+        let didInsert = await insertUserStream(
+            userId: uid.uuidString,
+            titleId: trimmedId,
             title: title,
-            poster_url: posterUrl,
+            posterUrl: posterUrl,
             platform: platform
         )
-        do {
-            try await SupabaseManager.shared.client
-                .from("user_streams")
-                .insert(payload)
-                .execute()
+        if didInsert {
             // Refresh to pick up the canonical id/timestamp from the server.
             await fetchUserStreams()
-        } catch {
-            self.lastError = error.localizedDescription
-            print("[Streams] add failed: \(error.localizedDescription)")
-            // Local optimistic row stays — user still has it on this device.
         }
+        // Local optimistic row stays even on failure — user still has it on
+        // this device.
+    }
+
+    /// Inserts a row into `user_streams` using a dictionary payload so we can
+    /// drop optional columns (`title`, `poster_url`, `platform`) if the live
+    /// schema is missing them. Returns `true` on success.
+    ///
+    /// We surface RLS errors with a friendly message so the user knows to
+    /// open the diagnostics screen and run the schema setup SQL.
+    @discardableResult
+    private func insertUserStream(
+        userId: String,
+        titleId: String,
+        title: String?,
+        posterUrl: String?,
+        platform: String?
+    ) async -> Bool {
+        var payload: [String: AnyJSON] = [
+            "user_id": .string(userId),
+            "title_id": .string(titleId)
+        ]
+        if let title { payload["title"] = .string(title) }
+        if let posterUrl { payload["poster_url"] = .string(posterUrl) }
+        if let platform { payload["platform"] = .string(platform) }
+
+        // Up to two retries: drop any missing column reported by Postgres.
+        for attempt in 0..<3 {
+            do {
+                try await SupabaseManager.shared.client
+                    .from("user_streams")
+                    .insert(payload)
+                    .execute()
+                self.lastError = nil
+                return true
+            } catch {
+                let message = error.localizedDescription
+                let lowered = message.lowercased()
+                // Duplicate row → not really an error (saved on another device).
+                if lowered.contains("duplicate") || lowered.contains("23505") {
+                    return true
+                }
+                // Missing-column → drop that column and retry.
+                if attempt < 2, let dropped = Self.dropMissingColumn(from: payload, error: message) {
+                    payload = dropped
+                    continue
+                }
+                if lowered.contains("42501") || lowered.contains("row-level security") {
+                    self.lastError = "Supabase blocked the write. Open Profile → Help & Feedback → App Diagnostics and run the schema setup SQL."
+                } else {
+                    self.lastError = message
+                }
+                print("[Streams] add failed: \(message)")
+                return false
+            }
+        }
+        return false
     }
 
     /// Remove a title from the watch list. Mirrors `addToMyStreams`:
@@ -247,27 +296,13 @@ final class StreamsViewModel {
         }
 
         for row in pending {
-            let payload = UserStreamInsert(
-                user_id: uid.uuidString,
-                title_id: row.titleId,
+            _ = await insertUserStream(
+                userId: uid.uuidString,
+                titleId: row.titleId,
                 title: row.title,
-                poster_url: row.posterUrl,
+                posterUrl: row.posterUrl,
                 platform: row.platform
             )
-            do {
-                try await SupabaseManager.shared.client
-                    .from("user_streams")
-                    .insert(payload)
-                    .execute()
-            } catch {
-                let msg = error.localizedDescription
-                // Duplicate-key violations are fine — the row already exists
-                // on the server (e.g. same title saved on another device).
-                if !msg.localizedCaseInsensitiveContains("duplicate")
-                    && !msg.localizedCaseInsensitiveContains("23505") {
-                    print("[Streams] sync local→remote failed for \(row.titleId): \(msg)")
-                }
-            }
         }
 
         // Strip the now-synced guest rows from the local cache; the next
@@ -311,5 +346,27 @@ final class StreamsViewModel {
         let remoteTitleIds = Set(remote.map { $0.titleId })
         let pendingLocal = loadLocalCache().filter { !remoteTitleIds.contains($0.titleId) }
         return remote + pendingLocal
+    }
+
+    /// Inspect a Postgres error message for `PGRST204 / could not find ... column`
+    /// and return the payload with that column removed. `user_id` and `title_id`
+    /// are required and never dropped.
+    private static func dropMissingColumn(
+        from payload: [String: AnyJSON],
+        error: String
+    ) -> [String: AnyJSON]? {
+        let lowered = error.lowercased()
+        guard lowered.contains("could not find") && lowered.contains("column") else {
+            return nil
+        }
+        var trimmed = payload
+        var didDrop = false
+        for key in Array(payload.keys) where key != "user_id" && key != "title_id" {
+            if lowered.contains("'\(key.lowercased())'") {
+                trimmed.removeValue(forKey: key)
+                didDrop = true
+            }
+        }
+        return didDrop ? trimmed : nil
     }
 }
