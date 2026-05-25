@@ -486,7 +486,7 @@ struct ReelsScreen: View {
                         }
                         .buttonStyle(.plain)
                         .padding(.leading, 14)
-                        .padding(.top, topInset + 8)
+                        .padding(.top, max(topInset - 10, 6))
                         Spacer()
                     }
                     Spacer()
@@ -582,6 +582,10 @@ struct ReelsScreen: View {
             currentIndex: vm.currentIndex,
             totalCount: vm.allTrailers.count,
             onTogglePlay: { isPlaying.toggle() },
+            onToggleMute: {
+                UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+                isMuted.toggle()
+            },
             onLike: {
                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
                 vm.toggleLike(trailer)
@@ -686,6 +690,7 @@ private struct ReelView: View {
     let totalCount: Int
 
     let onTogglePlay: () -> Void
+    let onToggleMute: () -> Void
     let onLike: () -> Void
     let onComments: () -> Void
     let onSave: () -> Void
@@ -699,7 +704,7 @@ private struct ReelView: View {
     @State private var embedFailed: Bool = false
     @State private var playbackProgress: Double = 0
     @State private var showTapIndicator: Bool = false
-    @State private var tapIndicatorIcon: String = "pause.fill"
+    @State private var tapIndicatorIcon: String = "speaker.slash.fill"
     @State private var tapIndicatorTask: Task<Void, Never>?
 
     var body: some View {
@@ -963,7 +968,6 @@ private struct ReelView: View {
                     Image(systemName: tapIndicatorIcon)
                         .scaledFont(size: 32, weight: .black)
                         .foregroundStyle(.white)
-                        .offset(x: tapIndicatorIcon == "play.fill" ? 2 : 0)
                 }
                 .frame(width: 88, height: 88)
                 .shadow(color: .black.opacity(0.35), radius: 18)
@@ -973,21 +977,26 @@ private struct ReelView: View {
         }
         .contentShape(Rectangle())
         .onTapGesture {
-            let willBePlaying = !isPlaying
-            onTogglePlay()
-            triggerTapIndicator(playing: willBePlaying)
+            // Tap anywhere on the reel toggles mute/unmute. We deliberately do
+            // NOT navigate the user out of the app — every tap is a soft,
+            // in-app interaction with a transient indicator that fades on its
+            // own. (Play/pause still happens automatically when scrolling away
+            // from a reel; tapping no longer pauses.)
+            let willBeMuted = !isMuted
+            onToggleMute()
+            triggerTapIndicator(muted: willBeMuted)
         }
-        .animation(.easeOut(duration: 0.15), value: isPlaying)
+        .animation(.easeOut(duration: 0.15), value: isMuted)
     }
 
-    private func triggerTapIndicator(playing: Bool) {
+    private func triggerTapIndicator(muted: Bool) {
         tapIndicatorTask?.cancel()
-        tapIndicatorIcon = playing ? "play.fill" : "pause.fill"
+        tapIndicatorIcon = muted ? "speaker.slash.fill" : "speaker.wave.2.fill"
         withAnimation(.spring(response: 0.32, dampingFraction: 0.72)) {
             showTapIndicator = true
         }
         tapIndicatorTask = Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(500))
+            try? await Task.sleep(for: .milliseconds(550))
             guard !Task.isCancelled else { return }
             withAnimation(.easeOut(duration: 0.28)) {
                 showTapIndicator = false
@@ -1154,26 +1163,22 @@ private struct SimulatorTrailerPoster: View {
                         fallbackColors: [trailer.platformColor.opacity(0.7), Color(hex: "04090F")])
             LinearGradient(colors: [.black.opacity(0.15), .black.opacity(0.55)],
                            startPoint: .top, endPoint: .bottom)
+            #if targetEnvironment(simulator)
             VStack(spacing: 10) {
                 Image(systemName: "play.circle.fill")
                     .scaledFont(size: 56, weight: .bold)
                     .foregroundStyle(.white)
                     .shadow(color: .black.opacity(0.4), radius: 8)
-                Text("Tap to watch on YouTube")
-                    .scaledFont(size: 12, weight: .semibold)
-                    .foregroundStyle(Color.white.opacity(0.85))
                 Text("Video playback unavailable in simulator")
                     .scaledFont(size: 10, weight: .medium)
                     .foregroundStyle(Color.white.opacity(0.55))
             }
+            #endif
         }
         .clipped()
-        .contentShape(Rectangle())
-        .onTapGesture {
-            if let url = URL(string: "https://www.youtube.com/watch?v=\(trailer.trailerKey)") {
-                UIApplication.shared.open(url)
-            }
-        }
+        // Poster is purely decorative — taps must fall through to the reel's
+        // mute-toggle gesture rather than opening YouTube in the browser.
+        .allowsHitTesting(false)
     }
 }
 
