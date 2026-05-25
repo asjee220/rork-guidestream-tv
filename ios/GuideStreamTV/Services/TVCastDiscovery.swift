@@ -2,8 +2,10 @@
 //  TVCastDiscovery.swift
 //  GuideStreamTV
 //
-//  Scans the local network for Apple TV (AirPlay) and Roku (ECP) devices using
-//  Bonjour via the Network framework.
+//  Scans the local network for Apple TV (AirPlay via Bonjour/mDNS) and Roku
+//  (SSDP/UPnP on UDP 1900) devices. Roku does NOT advertise via Bonjour, so
+//  it requires a real SSDP M-SEARCH exchange — that's the part most apps get
+//  wrong.
 //
 
 import Foundation
@@ -37,66 +39,54 @@ final class TVCastDiscovery {
     private(set) var isScanning: Bool = false
 
     @ObservationIgnored private var browsers: [NWBrowser] = []
-    @ObservationIgnored private var permissionPokeConnection: NWConnection?
+    @ObservationIgnored private var ssdpConnection: NWConnection?
     @ObservationIgnored private var permissionPokeListener: NWListener?
 
     func start() {
         guard !isScanning else { return }
         isScanning = true
         devices = []
-        // Forcibly trigger the iOS Local Network permission prompt. NWBrowser
-        // alone is not always enough — sending a UDP packet to an mDNS/SSDP
-        // multicast address reliably surfaces the system alert, which is also
-        // what registers the app in Settings → Privacy → Local Network.
-        triggerLocalNetworkPrompt()
-        browse(type: "_airplay._tcp", kind: .appleTV)
-        browse(type: "_roku-ecp._tcp", kind: .roku)
+        // Advertise a throwaway Bonjour service so iOS registers us as a
+        // local-network participant (also helps surface the permission prompt).
+        startPermissionPokeListener()
+        // Apple TV: real Bonjour browse.
+        browseBonjour(type: "_airplay._tcp", kind: .appleTV)
+        // Roku: SSDP M-SEARCH over UDP multicast. Roku does NOT use Bonjour.
+        startSSDPDiscovery()
     }
 
     func stop() {
         isScanning = false
         for b in browsers { b.cancel() }
         browsers = []
-        permissionPokeConnection?.cancel()
-        permissionPokeConnection = nil
-        try? permissionPokeListener?.cancel()
+        ssdpConnection?.cancel()
+        ssdpConnection = nil
+        permissionPokeListener?.cancel()
         permissionPokeListener = nil
     }
 
-    /// Apple's recommended trick for surfacing the Local Network prompt on
-    /// demand: advertise a tiny Bonjour service AND fire an outbound UDP
-    /// packet to the SSDP multicast group. Either alone is unreliable; the
-    /// combination consistently causes iOS to show the alert and register
-    /// the app under Settings → Privacy → Local Network.
-    private func triggerLocalNetworkPrompt() {
-        // 1) Advertise a throwaway Bonjour service so iOS sees us as a
-        // legitimate local-network participant.
-        if permissionPokeListener == nil {
-            let listener = try? NWListener(using: .udp)
-            listener?.service = NWListener.Service(name: "GuideStreamTVDiscovery", type: "_guidestreamtv._udp")
-            listener?.newConnectionHandler = { c in c.cancel() }
-            listener?.start(queue: .main)
-            permissionPokeListener = listener
-        }
-
-        // 2) Send a single UDP datagram to the SSDP multicast address.
-        // This is the action that actually triggers the alert.
-        let host = NWEndpoint.Host("239.255.255.250")
-        let port = NWEndpoint.Port(rawValue: 1900)!
-        let conn = NWConnection(host: host, port: port, using: .udp)
-        permissionPokeConnection = conn
-        conn.start(queue: .main)
-        let probe = Data("M-SEARCH * HTTP/1.1\r\n\r\n".utf8)
-        conn.send(content: probe, completion: .contentProcessed { _ in })
+    private func startPermissionPokeListener() {
+        guard permissionPokeListener == nil else { return }
+        let listener = try? NWListener(using: .udp)
+        listener?.service = NWListener.Service(name: "GuideStreamTVDiscovery", type: "_guidestreamtv._udp")
+        listener?.newConnectionHandler = { c in c.cancel() }
+        listener?.start(queue: .main)
+        permissionPokeListener = listener
     }
 
-    private func browse(type: String, kind: TVDeviceKind) {
+    // MARK: - Bonjour (Apple TV)
+
+    private func browseBonjour(type: String, kind: TVDeviceKind) {
         let params = NWParameters()
         params.includePeerToPeer = false
         let browser = NWBrowser(for: .bonjour(type: type, domain: nil), using: params)
         let kindString = kind.rawValue
+        browser.stateUpdateHandler = { state in
+            #if DEBUG
+            print("[TVCastDiscovery] \(type) browser state: \(state)")
+            #endif
+        }
         browser.browseResultsChangedHandler = { results, _ in
-            // Snapshot the Sendable bits we need so we can hop to the main actor.
             var found: [(id: String, name: String, host: String?, port: UInt16?)] = []
             for result in results {
                 if case let .service(name, _, _, _) = result.endpoint {
@@ -113,9 +103,109 @@ final class TVCastDiscovery {
         TVCastDiscoveryStore.register(self)
     }
 
+    // MARK: - SSDP (Roku)
+
+    private func startSSDPDiscovery() {
+        let host = NWEndpoint.Host("239.255.255.250")
+        guard let port = NWEndpoint.Port(rawValue: 1900) else { return }
+        let params = NWParameters.udp
+        params.allowLocalEndpointReuse = true
+        let conn = NWConnection(host: host, port: port, using: params)
+        ssdpConnection = conn
+
+        conn.stateUpdateHandler = { [weak self] state in
+            #if DEBUG
+            print("[TVCastDiscovery] SSDP state: \(state)")
+            #endif
+            if case .ready = state {
+                Task { @MainActor in
+                    guard let self else { return }
+                    self.sendSSDPSearch(conn)
+                    self.receiveSSDP(conn)
+                }
+            }
+        }
+        conn.start(queue: .main)
+
+        // Re-send the M-SEARCH a couple of times — UDP can drop and Roku's
+        // MX random delay means a single probe sometimes misses devices.
+        Task { @MainActor [weak self] in
+            for _ in 0..<3 {
+                try? await Task.sleep(for: .milliseconds(700))
+                guard let self, let c = self.ssdpConnection, c.state == .ready else { return }
+                self.sendSSDPSearch(c)
+            }
+        }
+    }
+
+    private func sendSSDPSearch(_ conn: NWConnection) {
+        let msearch =
+            "M-SEARCH * HTTP/1.1\r\n" +
+            "HOST: 239.255.255.250:1900\r\n" +
+            "MAN: \"ssdp:discover\"\r\n" +
+            "ST: roku:ecp\r\n" +
+            "MX: 3\r\n" +
+            "\r\n"
+        conn.send(content: Data(msearch.utf8), completion: .contentProcessed { _ in })
+    }
+
+    private func receiveSSDP(_ conn: NWConnection) {
+        conn.receiveMessage { [weak self] data, _, _, _ in
+            let text = data.flatMap { String(data: $0, encoding: .utf8) }
+            Task { @MainActor in
+                guard let self else { return }
+                if let text { self.handleSSDPResponse(text) }
+                if conn.state != .cancelled {
+                    self.receiveSSDP(conn)
+                }
+            }
+        }
+    }
+
+    private func handleSSDPResponse(_ text: String) {
+        // We only care about Roku responses. They include a LOCATION header
+        // pointing at the ECP endpoint, e.g. "http://192.168.1.50:8060/".
+        let lowered = text.lowercased()
+        guard lowered.contains("roku") || lowered.contains("ecp") else { return }
+
+        var location: String?
+        var usn: String?
+        for rawLine in text.split(whereSeparator: { $0 == "\r" || $0 == "\n" }) {
+            let line = String(rawLine)
+            if let range = line.range(of: "LOCATION:", options: .caseInsensitive) {
+                location = String(line[range.upperBound...]).trimmingCharacters(in: .whitespaces)
+            } else if let range = line.range(of: "USN:", options: .caseInsensitive) {
+                usn = String(line[range.upperBound...]).trimmingCharacters(in: .whitespaces)
+            }
+        }
+
+        guard let loc = location, let url = URL(string: loc),
+              let host = url.host else { return }
+        let port = UInt16(url.port ?? 8060)
+        let id = "roku-\(usn ?? "\(host):\(port)")"
+        let name = "Roku (\(host))"
+
+        let snapshot: [(id: String, name: String, host: String?, port: UInt16?)] =
+            [(id: id, name: name, host: host, port: port)]
+        Task { @MainActor in
+            TVCastDiscoveryStore.merge(snapshot: snapshot, kind: .roku)
+            // Fetch the friendly name asynchronously from the device-info endpoint.
+            await TVCastDiscoveryStore.refineRokuName(deviceId: id, host: host, port: port)
+        }
+    }
+
     fileprivate func mergeFound(_ items: [(id: String, name: String, host: String?, port: UInt16?)], kind: TVDeviceKind) {
         for item in items {
-            guard !devices.contains(where: { $0.id == item.id }) else { continue }
+            if let idx = devices.firstIndex(where: { $0.id == item.id }) {
+                // Update host/port if we just learned them.
+                if devices[idx].host == nil, item.host != nil {
+                    devices[idx] = DiscoveredTVDevice(
+                        id: item.id, name: devices[idx].name,
+                        kind: kind, host: item.host, port: item.port
+                    )
+                }
+                continue
+            }
             devices.append(DiscoveredTVDevice(
                 id: item.id,
                 name: item.name,
@@ -125,10 +215,16 @@ final class TVCastDiscovery {
             ))
         }
     }
+
+    fileprivate func renameDevice(id: String, to newName: String) {
+        guard let idx = devices.firstIndex(where: { $0.id == id }) else { return }
+        let d = devices[idx]
+        devices[idx] = DiscoveredTVDevice(id: d.id, name: newName, kind: d.kind, host: d.host, port: d.port)
+    }
 }
 
-/// Lightweight bridge so the @Sendable Bonjour callback can hand work back
-/// to the latest active discovery instance without capturing it directly.
+/// Lightweight bridge so @Sendable Network callbacks can hand work back
+/// to the latest active discovery instance.
 @MainActor
 enum TVCastDiscoveryStore {
     private static weak var current: TVCastDiscovery?
@@ -137,5 +233,32 @@ enum TVCastDiscoveryStore {
 
     static func merge(snapshot: [(id: String, name: String, host: String?, port: UInt16?)], kind: TVDeviceKind) {
         current?.mergeFound(snapshot, kind: kind)
+    }
+
+    /// Hits the Roku ECP `/query/device-info` endpoint to get the friendly
+    /// user-given name (e.g. "Living Room Roku") and updates the row.
+    static func refineRokuName(deviceId: String, host: String, port: UInt16) async {
+        guard let url = URL(string: "http://\(host):\(port)/query/device-info") else { return }
+        var req = URLRequest(url: url)
+        req.timeoutInterval = 2
+        do {
+            let (data, _) = try await URLSession.shared.data(for: req)
+            guard let xml = String(data: data, encoding: .utf8) else { return }
+            let name = extractTag("user-device-name", from: xml)
+                ?? extractTag("friendly-device-name", from: xml)
+                ?? extractTag("model-name", from: xml)
+            if let name, !name.isEmpty {
+                current?.renameDevice(id: deviceId, to: name)
+            }
+        } catch {
+            // Silent — we'll just keep the IP-based fallback name.
+        }
+    }
+
+    private static func extractTag(_ tag: String, from xml: String) -> String? {
+        let open = "<\(tag)>"
+        let close = "</\(tag)>"
+        guard let s = xml.range(of: open), let e = xml.range(of: close, range: s.upperBound..<xml.endIndex) else { return nil }
+        return String(xml[s.upperBound..<e.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
