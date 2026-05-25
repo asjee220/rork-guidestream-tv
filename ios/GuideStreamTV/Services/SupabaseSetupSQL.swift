@@ -65,7 +65,7 @@ enum SupabaseSetupSQL {
     -- Drop legacy NOT NULL constraints from older schema versions so the
     -- app's modern inserts (`title_id` + `title`) succeed. Wrapped in a DO
     -- block so it's a no-op when the legacy columns don't exist.
-    do $
+    do $do$
     begin
       if exists (
         select 1 from information_schema.columns
@@ -83,7 +83,7 @@ enum SupabaseSetupSQL {
       ) then
         execute 'alter table public.user_streams alter column show_id drop not null';
       end if;
-    end $;
+    end $do$;
 
     create index if not exists user_streams_user_idx on public.user_streams(user_id);
     create unique index if not exists user_streams_user_title_uidx
