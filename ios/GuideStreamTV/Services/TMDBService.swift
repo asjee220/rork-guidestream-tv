@@ -160,6 +160,34 @@ private nonisolated struct TMDBVideosEnvelope: Decodable, Sendable {
     let results: [TMDBVideo]
 }
 
+// MARK: - Watch Providers
+
+nonisolated struct TMDBWatchProvider: Decodable, Sendable, Hashable {
+    let providerId: Int
+    let providerName: String
+    let logoPath: String?
+    let displayPriority: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case providerId = "provider_id"
+        case providerName = "provider_name"
+        case logoPath = "logo_path"
+        case displayPriority = "display_priority"
+    }
+}
+
+private nonisolated struct TMDBProviderRegion: Decodable, Sendable {
+    let flatrate: [TMDBWatchProvider]?
+    let ads: [TMDBWatchProvider]?
+    let free: [TMDBWatchProvider]?
+    let buy: [TMDBWatchProvider]?
+    let rent: [TMDBWatchProvider]?
+}
+
+private nonisolated struct TMDBProvidersEnvelope: Decodable, Sendable {
+    let results: [String: TMDBProviderRegion]
+}
+
 // MARK: - Service
 
 nonisolated struct TMDBService {
@@ -220,6 +248,22 @@ nonisolated struct TMDBService {
         let data = try await get(urlString)
         let env = try JSONDecoder().decode(TMDBTrendingEnvelope.self, from: data)
         return env.results.map { stamp($0, mediaType: "tv") }
+    }
+
+    /// Returns the top US streaming provider for a title (prefers subscription/flatrate,
+    /// then ad-supported, then free). Returns `nil` if no real streaming service is
+    /// associated with the title — caller should hide the item rather than show a fake label.
+    func getTopWatchProvider(tmdbId: Int, isTV: Bool) async throws -> TMDBWatchProvider? {
+        let kind = isTV ? "tv" : "movie"
+        let urlString = "\(base)/\(kind)/\(tmdbId)/watch/providers?api_key=\(apiKey)"
+        let data = try await get(urlString)
+        let env = try JSONDecoder().decode(TMDBProvidersEnvelope.self, from: data)
+        guard let us = env.results["US"] else { return nil }
+        // Prefer subscription, then ad-supported, then free. Skip buy/rent — those
+        // aren't "available to stream" in the sense users expect.
+        let pool = (us.flatrate ?? []) + (us.ads ?? []) + (us.free ?? [])
+        guard !pool.isEmpty else { return nil }
+        return pool.min(by: { ($0.displayPriority ?? 999) < ($1.displayPriority ?? 999) })
     }
 
     /// Trailers / teasers attached to a TV show. Returns a YouTube key for the best match, or nil.

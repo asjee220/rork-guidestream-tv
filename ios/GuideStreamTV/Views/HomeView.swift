@@ -18,6 +18,32 @@ struct Platform {
     static let hulu = Platform(name: "HULU", color: Color(red: 0x1C/255, green: 0xE7/255, blue: 0x83/255))
     static let prime = Platform(name: "PRIME", color: Color(red: 0x00/255, green: 0xA8/255, blue: 0xE1/255))
     static let disney = Platform(name: "DISNEY+", color: Color(red: 0x11/255, green: 0x3C/255, blue: 0xCF/255))
+    static let paramount = Platform(name: "PARAMOUNT+", color: Color(red: 0x00/255, green: 0x64/255, blue: 0xFF/255))
+    static let peacock = Platform(name: "PEACOCK", color: Color(red: 0x00/255, green: 0x00/255, blue: 0x00/255))
+    static let starz = Platform(name: "STARZ", color: Color(red: 0x00/255, green: 0x00/255, blue: 0x00/255))
+    static let showtime = Platform(name: "SHOWTIME", color: Color(red: 0xD8/255, green: 0x00/255, blue: 0x00/255))
+    static let crunchyroll = Platform(name: "CRUNCHYROLL", color: Color(red: 0xF4/255, green: 0x7B/255, blue: 0x20/255))
+    static let youtube = Platform(name: "YOUTUBE", color: Color(red: 0xFF/255, green: 0x00/255, blue: 0x00/255))
+
+    /// Maps a TMDB watch-provider name to one of our branded Platforms. Returns nil if we don't
+    /// recognise the provider, so callers can hide items rather than label them generically.
+    static func from(providerName raw: String?) -> Platform? {
+        guard let raw, !raw.isEmpty else { return nil }
+        let key = raw.lowercased()
+        if key.contains("netflix") { return .netflix }
+        if key.contains("max") || key.contains("hbo") { return .hbo }
+        if key.contains("apple tv") { return .appleTV }
+        if key.contains("disney") { return .disney }
+        if key.contains("hulu") { return .hulu }
+        if key.contains("amazon") || key.contains("prime video") { return .prime }
+        if key.contains("paramount") { return .paramount }
+        if key.contains("peacock") { return .peacock }
+        if key.contains("starz") { return .starz }
+        if key.contains("showtime") { return .showtime }
+        if key.contains("crunchyroll") { return .crunchyroll }
+        if key.contains("youtube") { return .youtube }
+        return nil
+    }
 }
 
 struct Episode: Identifiable, Hashable {
@@ -81,6 +107,9 @@ struct HomeView: View {
     @State private var trending: [TMDBResult] = []
     @State private var onAir: [TMDBResult] = []
     @State private var bingeFallback: [TMDBResult] = []
+    /// Cached top US streaming provider per TMDB id. Items without an entry have no real
+    /// streaming service and are filtered out of the UI.
+    @State private var providerByTmdb: [Int: Platform] = [:]
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -231,13 +260,50 @@ struct HomeView: View {
         if let t { trending = t }
         if let a { onAir = a }
         if let e { bingeFallback = e }
+        await hydrateProviders()
+    }
+
+    /// Look up the top US streaming provider for every loaded TMDB result in parallel.
+    /// Items with no recognised streaming service are intentionally left out of the dictionary
+    /// so the rendering layer can hide them.
+    private func hydrateProviders() async {
+        let combined: [TMDBResult] = trending + onAir + bingeFallback
+        let unique = Array(Dictionary(grouping: combined, by: { $0.id }).compactMapValues { $0.first }.values)
+        let toFetch = unique.filter { providerByTmdb[$0.id] == nil }
+        guard !toFetch.isEmpty else { return }
+
+        let resolved: [(Int, Platform)] = await withTaskGroup(of: (Int, Platform)?.self) { group in
+            for r in toFetch {
+                group.addTask {
+                    let provider = try? await TMDBService.shared.getTopWatchProvider(tmdbId: r.id, isTV: r.isTV)
+                    guard let provider, let platform = Platform.from(providerName: provider.providerName) else {
+                        return nil
+                    }
+                    return (r.id, platform)
+                }
+            }
+            var out: [(Int, Platform)] = []
+            for await pair in group {
+                if let pair { out.append(pair) }
+            }
+            return out
+        }
+
+        var next = providerByTmdb
+        for (id, platform) in resolved { next[id] = platform }
+        providerByTmdb = next
     }
 
     // MARK: - Derived content
 
-    /// First trending result, used to render a real backdrop in the hero card.
+    /// First trending result with a real streaming provider, used to render a real backdrop in the hero card.
     private var heroResult: TMDBResult? {
-        trending.first ?? onAir.first ?? bingeFallback.first
+        // Prefer the first result we've confirmed has a real streaming service; fall back
+        // to the first available result only after provider lookups have settled.
+        if let match = (trending + onAir + bingeFallback).first(where: { providerByTmdb[$0.id] != nil }) {
+            return match
+        }
+        return trending.first ?? onAir.first ?? bingeFallback.first
     }
 
     private func heroAsPoster(_ r: TMDBResult) -> PosterShow {
@@ -266,26 +332,32 @@ struct HomeView: View {
     }
 
     private var bingeReadyShows: [PosterShow] {
-        bingeFallback.prefix(12).map { r in
-            PosterShow(
-                title: r.displayName,
-                meta: r.year.map { "\($0)" } ?? "Complete series",
-                posterColors: HomeFallback.posterColors,
-                symbol: "play.tv.fill",
-                posterUrl: r.posterUrl,
-                tmdbId: r.id
-            )
-        }
+        // Only surface shows that have a confirmed streaming provider.
+        bingeFallback
+            .filter { providerByTmdb[$0.id] != nil }
+            .prefix(12)
+            .map { r in
+                PosterShow(
+                    title: r.displayName,
+                    meta: r.year.map { "\($0)" } ?? "Complete series",
+                    posterColors: HomeFallback.posterColors,
+                    symbol: "play.tv.fill",
+                    posterUrl: r.posterUrl,
+                    tmdbId: r.id
+                )
+            }
     }
 
-    /// Maps TMDB results into Episode cards when no Supabase rows are available.
-    private func tmdbAsEpisodes(_ results: [TMDBResult], label: String) -> [Episode] {
-        results.prefix(12).map { r in
-            Episode(
+    /// Maps TMDB results into Episode cards when no Supabase rows are available. Items without
+    /// a known streaming provider are omitted entirely so the UI never claims "On Air" as a service.
+    private func tmdbAsEpisodes(_ results: [TMDBResult]) -> [Episode] {
+        results.compactMap { r -> Episode? in
+            guard let platform = providerByTmdb[r.id] else { return nil }
+            return Episode(
                 title: r.displayName,
-                season: label,
-                duration: r.year.map { "\($0)" } ?? "",
-                platform: Platform(name: label.uppercased(), color: Color.orange),
+                season: r.year.map { "\($0)" } ?? "New",
+                duration: "",
+                platform: platform,
                 isNew: true,
                 posterColors: HomeFallback.posterColors,
                 symbol: "flame.fill",
@@ -293,13 +365,18 @@ struct HomeView: View {
                 tmdbId: r.id
             )
         }
+        .prefix(12)
+        .map { $0 }
     }
 
-    /// Prefer live Supabase rows; otherwise fall back to TMDB on-air, then trending. Never returns mock data.
+    /// Prefer live Supabase rows; otherwise fall back to TMDB on-air, then trending. Never returns mock data,
+    /// and never returns titles that don't have a verified streaming provider.
     var liveNewEpisodes: [Episode] {
         if streams.newEpisodes.isEmpty {
-            if !onAir.isEmpty { return tmdbAsEpisodes(onAir, label: "On Air") }
-            if !trending.isEmpty { return tmdbAsEpisodes(trending, label: "Trending") }
+            let onAirEpisodes = tmdbAsEpisodes(onAir)
+            if !onAirEpisodes.isEmpty { return onAirEpisodes }
+            let trendingEpisodes = tmdbAsEpisodes(trending)
+            if !trendingEpisodes.isEmpty { return trendingEpisodes }
             return []
         }
         return streams.newEpisodes.map { row in

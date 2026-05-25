@@ -70,14 +70,34 @@ struct TrailerItem: Identifiable, Hashable {
 // MARK: - Platform mapping
 
 private enum ReelPlatform {
+    /// Returns the canonical platform id when the raw provider name maps to one of the
+    /// streaming services we can deep-link into. Returns `nil` for unrecognised providers
+    /// so reels can be filtered out entirely.
+    static func recognizedKey(for raw: String?) -> String? {
+        let key = (raw ?? "").lowercased()
+        if key.contains("netflix") { return "netflix" }
+        if key.contains("max") || key.contains("hbo") { return "hbo" }
+        if key.contains("apple tv") { return "apple" }
+        if key.contains("disney") { return "disney" }
+        if key.contains("hulu") { return "hulu" }
+        if key.contains("peacock") { return "peacock" }
+        if key.contains("paramount") { return "paramount" }
+        if key.contains("amazon") || key.contains("prime video") { return "prime" }
+        if key.contains("starz") { return "starz" }
+        if key.contains("showtime") { return "showtime" }
+        if key.contains("crunchyroll") { return "crunchyroll" }
+        if key.contains("youtube") { return "youtube" }
+        return nil
+    }
+
     static func info(for raw: String?) -> (id: String, name: String, color: Color, grade: Color) {
         let key = (raw ?? "").lowercased()
         switch key {
         case let s where s.contains("netflix"):
             return ("netflix", "NETFLIX", Color(hex: "E50914"), Color.red.opacity(0.15))
-        case let s where s.contains("hbo") || s.contains("max"):
+        case let s where s.contains("max") || s.contains("hbo"):
             return ("hbo", "HBO MAX", Color(hex: "5A1FCB"), Color.purple.opacity(0.15))
-        case let s where s.contains("apple"):
+        case let s where s.contains("apple tv"):
             return ("apple", "APPLE TV+", Color(hex: "101010"), Color.gray.opacity(0.15))
         case let s where s.contains("disney"):
             return ("disney", "DISNEY+", Color(hex: "113CCF"), Color.blue.opacity(0.15))
@@ -87,8 +107,16 @@ private enum ReelPlatform {
             return ("peacock", "PEACOCK", Color(hex: "000000"), Color.indigo.opacity(0.15))
         case let s where s.contains("paramount"):
             return ("paramount", "PARAMOUNT+", Color(hex: "0064FF"), Color.blue.opacity(0.15))
-        case let s where s.contains("prime") || s.contains("amazon"):
+        case let s where s.contains("amazon") || s.contains("prime video"):
             return ("prime", "PRIME VIDEO", Color(hex: "00A8E1"), Color.cyan.opacity(0.15))
+        case let s where s.contains("starz"):
+            return ("starz", "STARZ", Color(hex: "000000"), Color.gray.opacity(0.15))
+        case let s where s.contains("showtime"):
+            return ("showtime", "SHOWTIME", Color(hex: "D80000"), Color.red.opacity(0.15))
+        case let s where s.contains("crunchyroll"):
+            return ("crunchyroll", "CRUNCHYROLL", Color(hex: "F47B20"), Color.orange.opacity(0.15))
+        case let s where s.contains("youtube"):
+            return ("youtube", "YOUTUBE", Color(hex: "FF0000"), Color.red.opacity(0.15))
         default:
             return ("tmdb", "STREAMING", Color(hex: "F5821F"), Color.orange.opacity(0.12))
         }
@@ -186,15 +214,20 @@ final class ReelsViewModel {
                 group.addTask { [tmdb] in
                     async let detailTask: TMDBTVDetail? = try? tmdb.getTVDetail(tmdbId: r.id)
                     async let keyTask: String? = try? tmdb.getTrailerKey(tmdbId: r.id)
-                    let (detail, key) = await (detailTask, keyTask)
+                    async let providerTask: TMDBWatchProvider? = try? tmdb.getTopWatchProvider(tmdbId: r.id, isTV: r.isTV)
+                    let (detail, key, provider) = await (detailTask, keyTask, providerTask)
                     guard let key, !key.isEmpty else { return nil }
+                    // Reels must point at an app users can actually open — skip titles
+                    // with no verified US streaming provider.
+                    guard let provider, let _ = ReelPlatform.recognizedKey(for: provider.providerName) else {
+                        return nil
+                    }
 
                     let name = detail?.name ?? r.displayName
                     let overview = (detail?.overview?.isEmpty == false ? detail?.overview : r.overview) ?? ""
                     let year = detail?.year ?? r.year
                     let genreName = detail?.genreNames.first ?? "DRAMA"
-                    let rawPlatform = detail?.networks?.first?.name
-                    let plat = ReelPlatform.info(for: rawPlatform)
+                    let plat = ReelPlatform.info(for: provider.providerName)
 
                     let runtimeText: String = {
                         if let m = detail?.runtimeMinutes, let seasons = detail?.numberOfSeasons {
