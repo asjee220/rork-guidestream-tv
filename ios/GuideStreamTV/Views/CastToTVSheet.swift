@@ -80,27 +80,50 @@ struct CastToTVSheet: View {
         }
     }
 
+    /// `true` when the app is running in any iOS Simulator (including Rork's
+    /// cloud preview). LAN discovery is impossible from a simulator because
+    /// it isn't on the user's home Wi-Fi, so we surface a dedicated message
+    /// rather than spinning forever.
+    private var isRunningInSimulator: Bool {
+        #if targetEnvironment(simulator)
+        return true
+        #else
+        return false
+        #endif
+    }
+
     private var emptyState: some View {
         VStack(spacing: 16) {
             ZStack {
                 Circle()
-                    .fill(showPermissionPrompt
+                    .fill((showPermissionPrompt || isRunningInSimulator)
                           ? Color.orange.opacity(0.15)
                           : Color.white.opacity(0.06))
                     .frame(width: 80, height: 80)
-                Image(systemName: showPermissionPrompt ? "wifi.exclamationmark" : "wifi")
+                Image(systemName: isRunningInSimulator
+                                  ? "iphone.gen3.radiowaves.left.and.right.slash"
+                                  : (showPermissionPrompt ? "wifi.exclamationmark" : "wifi"))
                     .font(.system(size: 30, weight: .regular))
-                    .foregroundStyle(showPermissionPrompt
+                    .foregroundStyle((showPermissionPrompt || isRunningInSimulator)
                                      ? Color.orange
                                      : Color.white.opacity(0.6))
                     .symbolEffect(.variableColor.iterative.reversing, options: .repeating)
             }
 
-            if showPermissionPrompt {
+            if isRunningInSimulator {
+                Text("Install on your iPhone to cast")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(.white)
+                Text("This preview runs in a cloud simulator that isn't on your home Wi-Fi, so it can't see your Apple TV or Roku. Install GuideStreamTV on your iPhone via the Rork app and open Play on TV there.")
+                    .font(.system(size: 13))
+                    .foregroundStyle(Color.white.opacity(0.6))
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 28)
+            } else if showPermissionPrompt {
                 Text("Local Network access needed")
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(.white)
-Text("Open Settings → Privacy & Security → Local Network, then enable GuideStreamTV so it can discover your Apple TV or Roku on Wi-Fi.")
+                Text("Open Settings → Privacy & Security → Local Network, then enable GuideStreamTV so it can discover your Apple TV or Roku on Wi-Fi.")
                     .font(.system(size: 13))
                     .foregroundStyle(Color.white.opacity(0.6))
                     .multilineTextAlignment(.center)
@@ -251,6 +274,11 @@ Button {
         showPermissionPrompt = false
         permissionCheckTask?.cancel()
         discovery.stop()
+
+        // Skip scanning entirely in the cloud simulator — it can't reach the
+        // user's home Wi-Fi, so the empty state explains what to do instead.
+        guard !isRunningInSimulator else { return }
+
         discovery.start()
 
         permissionCheckTask = Task { @MainActor in
