@@ -415,6 +415,23 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				INFOPLIST_KEY_LSApplicationQueriesSchemes = (
+					roku,
+					nflx,
+					hbomax,
+					hulu,
+					disneyplus,
+					videos,
+					aiv,
+					paramountplus,
+					peacock,
+					youtube,
+					showtimeanytime,
+					starz,
+					crunchyroll,
+					"com.apple.tvremote",
+					"App-Prefs",
+				);
 				INFOPLIST_KEY_NSBonjourServices = (
 					"_airplay._tcp",
 					"_raop._tcp",
@@ -458,6 +475,23 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				INFOPLIST_KEY_LSApplicationQueriesSchemes = (
+					roku,
+					nflx,
+					hbomax,
+					hulu,
+					disneyplus,
+					videos,
+					aiv,
+					paramountplus,
+					peacock,
+					youtube,
+					showtimeanytime,
+					starz,
+					crunchyroll,
+					"com.apple.tvremote",
+					"App-Prefs",
+				);
 				INFOPLIST_KEY_NSBonjourServices = (
 					"_airplay._tcp",
 					"_raop._tcp",

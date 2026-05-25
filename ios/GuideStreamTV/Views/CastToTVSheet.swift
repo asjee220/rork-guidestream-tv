@@ -26,6 +26,7 @@ struct CastToTVSheet: View {
     @State private var discovery: TVCastDiscovery = TVCastDiscovery()
     @State private var sendingDeviceId: String? = nil
     @State private var toast: ToastState? = nil
+    @State private var playingOn: PlayingOnState? = nil
     @State private var showPermissionPrompt: Bool = false
     @State private var permissionCheckTask: Task<Void, Never>? = nil
     @State private var isManualEntryExpanded: Bool = false
@@ -40,7 +41,13 @@ struct CastToTVSheet: View {
         }
         .background(Color(red: 0x0A/255, green: 0x10/255, blue: 0x1E/255))
         .overlay(alignment: .top) {
-            if let toast { toastView(toast).padding(.top, 12) }
+            if let playingOn {
+                playingOnBanner(playingOn)
+                    .padding(.horizontal, 14)
+                    .padding(.top, 10)
+            } else if let toast {
+                toastView(toast).padding(.top, 12)
+            }
         }
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
@@ -659,6 +666,20 @@ struct CastToTVSheet: View {
     }
 
     // MARK: Actions
+
+    /// Coordinates the full cast-to-TV flow for a selected device:
+    ///   1. Dispatch a launch command (Roku ECP for Roku; deferred for Apple TV).
+    ///   2. Show a prominent "Playing on [Device]" banner.
+    ///   3. After a beat, open the matching remote-control app (Roku) or open
+    ///      the streaming app on iPhone for AirPlay (Apple TV).
+    ///   4. Dismiss the sheet.
+    ///
+    /// Apple TV doesn't expose any public API to push a third-party show from
+    /// iPhone, so we treat the Apple TV branch as an iPhone-side deeplink:
+    /// open the streaming app with the title page, then the user AirPlays from
+    /// there to the Apple TV they picked. We show the banner before triggering
+    /// the iPhone deeplink so the user sees "Playing on Living Room" *before*
+    /// iOS context-switches us into Netflix/Max/etc.
     private func handleSelect(_ device: DiscoveredTVDevice) {
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
         sendingDeviceId = device.id
@@ -678,20 +699,36 @@ struct CastToTVSheet: View {
             let ok = await dispatchLaunch(for: device)
             await MainActor.run {
                 sendingDeviceId = nil
-                showToast(ok
-                          ? ToastState(message: "Sent to \(device.name)", icon: "checkmark.circle.fill")
-                          : ToastState(message: "Couldn't reach \(device.name)", icon: "exclamationmark.triangle.fill"))
-                // Brief delay so the user sees the confirmation, then open the
-                // matching remote-control app and dismiss the sheet.
+                guard ok else {
+                    UINotificationFeedbackGenerator().notificationOccurred(.error)
+                    showToast(ToastState(
+                        message: "Couldn't reach \(device.name)",
+                        icon: "exclamationmark.triangle.fill"
+                    ))
+                    return
+                }
+
+                UINotificationFeedbackGenerator().notificationOccurred(.success)
+                showPlayingOnBanner(PlayingOnState(
+                    deviceName: device.name,
+                    deviceKind: device.kind,
+                    hint: handoffHint(for: device.kind)
+                ))
+
+                // Give the user a moment to see the banner, then perform the
+                // follow-up (open remote app or open streaming app for AirPlay)
+                // and dismiss the sheet.
                 Task { @MainActor in
-                    try? await Task.sleep(for: .milliseconds(900))
-                    openRemoteApp(for: device.kind)
-                    isPresented = false
+                    try? await Task.sleep(for: .milliseconds(1400))
+                    completeHandoff(for: device)
                 }
             }
         }
     }
 
+    /// Performs the network-side launch — fires the Roku ECP command, or
+    /// returns true for Apple TV (the actual iPhone deeplink runs later, after
+    /// the user has seen the banner, in `completeHandoff`).
     private func dispatchLaunch(for device: DiscoveredTVDevice) async -> Bool {
         switch device.kind {
         case .roku:
@@ -700,39 +737,91 @@ struct CastToTVSheet: View {
                   let channelId = RokuChannel.id(for: platform) else {
                 return false
             }
+            // Roku ECP is best-effort on the contentId: only channels that
+            // explicitly accept arbitrary catalog IDs (sideloaded apps,
+            // Jellyfin, Plex) will deep-link straight to playback. For
+            // first-party catalogs the TMDB id won't resolve and the channel
+            // simply opens to its landing screen — which is the correct
+            // graceful fallback.
+            let movieLike = platform.lowercased().contains("movie")
             return await RokuECPClient.launch(
                 host: host,
                 port: port,
                 channelId: channelId,
-                contentId: tmdbId.map { String($0) }
+                contentId: tmdbId.map { String($0) },
+                mediaType: movieLike ? "movie" : "series"
             )
         case .appleTV:
-            // No first-party API to push a third-party show to Apple TV from
-            // an arbitrary app; opening the platform app on iPhone with
-            // AirPlay set to this Apple TV is the supported path.
-            await MainActor.run {
-                StreamingDeepLinker.open(platform: platform, title: showTitle, tmdbId: tmdbId)
-            }
+            // No first-party API exists to push a third-party show to Apple
+            // TV from an arbitrary iOS app. The supported path is to open the
+            // streaming app on iPhone and let the user AirPlay to the chosen
+            // Apple TV. We defer that to `completeHandoff` so the banner has
+            // time to render before iOS context-switches us out.
             return true
         }
     }
 
-    private func openRemoteApp(for kind: TVDeviceKind) {
-        let url: URL?
-        switch kind {
-        case .appleTV:
-            // The Apple TV Remote lives in Control Center on modern iOS; the
-            // legacy standalone Remote app uses the `com.apple.tvremote` scheme.
-            url = URL(string: "com.apple.tvremote://")
+    /// Final step in the cast flow — runs after the "Playing on" banner has
+    /// been visible long enough for the user to read it.
+    private func completeHandoff(for device: DiscoveredTVDevice) {
+        switch device.kind {
         case .roku:
-            url = URL(string: "roku://")
-        }
-        guard let url else { return }
-        UIApplication.shared.open(url, options: [:]) { success in
-            if !success, kind == .roku,
-               let store = URL(string: "https://apps.apple.com/app/the-roku-app-official/id482066631") {
-                UIApplication.shared.open(store)
+            openRemoteApp(for: .roku)
+            // Brief pause so the system app-switch animation can begin
+            // before we tear down the sheet.
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(300))
+                isPresented = false
             }
+        case .appleTV:
+            // Open the streaming app on iPhone with a title-specific deep link.
+            // LSApplicationQueriesSchemes must include the platform's scheme
+            // (nflx, hbomax, hulu, etc.) or iOS will silently refuse the open;
+            // those are declared in project.pbxproj.
+            StreamingDeepLinker.open(
+                platform: platform,
+                title: showTitle,
+                tmdbId: tmdbId
+            )
+            // Don't try to open the legacy Apple TV Remote — it was removed
+            // from the App Store in October 2020. The modern remote lives in
+            // Control Center; the hint subtitle on the banner explains that.
+            isPresented = false
+        }
+    }
+
+    /// Contextual one-liner shown under the device name on the banner. Tells
+    /// the user what's about to happen so they don't get confused by the
+    /// upcoming app switch.
+    private func handoffHint(for kind: TVDeviceKind) -> String {
+        switch kind {
+        case .roku:    return "Opening Roku Remote…"
+        case .appleTV: return "Tap AirPlay in the streaming app"
+        }
+    }
+
+    /// Opens the iOS remote-control app matching the chosen TV. Today only
+    /// Roku has a maintained iPhone remote (`roku://`); the Apple TV Remote
+    /// app was discontinued in Oct 2020 and lives only in Control Center, so
+    /// we don't call this for Apple TV (see `completeHandoff`).
+    private func openRemoteApp(for kind: TVDeviceKind) {
+        switch kind {
+        case .roku:
+            guard let url = URL(string: "roku://") else { return }
+            UIApplication.shared.open(url, options: [:]) { success in
+                if !success,
+                   let store = URL(string: "https://apps.apple.com/app/the-roku-app-official/id482066631") {
+                    UIApplication.shared.open(store)
+                }
+            }
+        case .appleTV:
+            // Best-effort attempt at the legacy standalone Remote app for
+            // users who still have it installed from older iOS versions.
+            // If iOS rejects the URL (the typical case in 2026), we silently
+            // fall through — the streaming app is already opening and the
+            // user can use Control Center for remote control.
+            guard let url = URL(string: "com.apple.tvremote://") else { return }
+            UIApplication.shared.open(url, options: [:], completionHandler: nil)
         }
     }
 
@@ -742,5 +831,82 @@ struct CastToTVSheet: View {
             try? await Task.sleep(for: .seconds(2))
             withAnimation(.easeOut(duration: 0.25)) { toast = nil }
         }
+    }
+
+    // MARK: Playing-on banner
+
+    /// Visible card shown when a launch succeeds. Lives at the top of the
+    /// sheet and supersedes the standard toast — the device handoff is the
+    /// most important moment in this flow, so it gets a richer, more
+    /// confident visual.
+    private struct PlayingOnState: Equatable {
+        let deviceName: String
+        let deviceKind: TVDeviceKind
+        let hint: String
+    }
+
+    private func showPlayingOnBanner(_ state: PlayingOnState) {
+        withAnimation(.spring(response: 0.42, dampingFraction: 0.78)) {
+            toast = nil
+            playingOn = state
+        }
+    }
+
+    @ViewBuilder
+    private func playingOnBanner(_ state: PlayingOnState) -> some View {
+        HStack(spacing: 14) {
+            ZStack {
+                Circle()
+                    .fill(state.deviceKind == .appleTV
+                          ? Color.white.opacity(0.18)
+                          : Color(red: 0x66/255, green: 0x2D/255, blue: 0x91/255).opacity(0.55))
+                    .frame(width: 46, height: 46)
+                Image(systemName: state.deviceKind == .appleTV ? "appletv" : "tv.inset.filled")
+                    .font(.system(size: 20, weight: .regular))
+                    .foregroundStyle(.white)
+                // Animated signal arc to communicate "actively casting".
+                Image(systemName: "wifi")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(Color.green)
+                    .padding(4)
+                    .background(Circle().fill(Color(red: 0x0A/255, green: 0x10/255, blue: 0x1E/255)))
+                    .offset(x: 16, y: -14)
+                    .symbolEffect(.variableColor.iterative.reversing, options: .repeating)
+            }
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Playing on")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Color.white.opacity(0.55))
+                    .textCase(.uppercase)
+                    .tracking(0.5)
+                Text(state.deviceName)
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+                Text(state.hint)
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(Color.white.opacity(0.55))
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: 0)
+
+            Image(systemName: "checkmark.circle.fill")
+                .font(.system(size: 24, weight: .regular))
+                .foregroundStyle(Color.green)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(Color.black.opacity(0.7))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(Color.white.opacity(0.12), lineWidth: 1)
+        )
+        .shadow(color: .black.opacity(0.4), radius: 18, y: 6)
+        .transition(.move(edge: .top).combined(with: .opacity))
     }
 }
