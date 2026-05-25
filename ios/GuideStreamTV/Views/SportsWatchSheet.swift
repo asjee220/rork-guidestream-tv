@@ -95,17 +95,17 @@ struct SportsWatchSheet: View {
                     .frame(height: 1)
                     .padding(.horizontal, 20)
 
-                aboutSection
-                    .padding(.horizontal, 20)
-                    .padding(.top, 20)
-
                 whereToWatchSection
                     .padding(.horizontal, 20)
-                    .padding(.top, 22)
+                    .padding(.top, 20)
 
                 watchButton
                     .padding(.horizontal, 20)
                     .padding(.top, 22)
+
+                aboutSection
+                    .padding(.horizontal, 20)
+                    .padding(.top, 28)
 
                 closeButton
                     .padding(.top, 16)

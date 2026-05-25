@@ -120,13 +120,9 @@ struct EpisodeDetailSheet: View {
                     .frame(height: 1)
                     .padding(.horizontal, 20)
 
-                aboutSection
-                    .padding(.horizontal, 20)
-                    .padding(.top, 20)
-
                 whereToWatchSection
                     .padding(.horizontal, 20)
-                    .padding(.top, 22)
+                    .padding(.top, 20)
 
                 watchButton
                     .padding(.horizontal, 20)
@@ -134,8 +130,12 @@ struct EpisodeDetailSheet: View {
 
                 viewFullDetailsButton
                     .padding(.top, 16)
-                    .padding(.bottom, 28)
                     .frame(maxWidth: .infinity)
+
+                aboutSection
+                    .padding(.horizontal, 20)
+                    .padding(.top, 28)
+                    .padding(.bottom, 28)
             }
         }
         .background(Color(red: 0x06/255, green: 0x0C/255, blue: 0x18/255).ignoresSafeArea())
