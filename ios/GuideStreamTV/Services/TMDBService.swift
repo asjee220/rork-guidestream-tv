@@ -291,24 +291,28 @@ nonisolated struct TMDBService {
     }
 
     func getTrending() async throws -> [TMDBResult] {
-        let urlString = "\(base)/trending/tv/week?api_key=\(apiKey)&language=en-US"
+        // Use the mixed `all/week` endpoint so the trending pool contains
+        // both popular shows AND movies — the hero carousel needs variety.
+        let urlString = "\(base)/trending/all/week?api_key=\(apiKey)&language=en-US"
         let data = try await get(urlString)
         let env = try JSONDecoder().decode(TMDBTrendingEnvelope.self, from: data)
-        // Trending endpoint doesn't always include media_type; default to tv.
-        return env.results.map { r in
-            TMDBResult(
-                id: r.id,
-                mediaType: r.mediaType ?? "tv",
-                name: r.name,
-                title: r.title,
-                posterPath: r.posterPath,
-                backdropPath: r.backdropPath,
-                overview: r.overview,
-                voteAverage: r.voteAverage,
-                firstAirDate: r.firstAirDate,
-                releaseDate: r.releaseDate
-            )
-        }
+        // Filter to tv + movie only (the `all` endpoint can also return people).
+        return env.results
+            .filter { ($0.mediaType ?? "") == "tv" || ($0.mediaType ?? "") == "movie" }
+            .map { r in
+                TMDBResult(
+                    id: r.id,
+                    mediaType: r.mediaType ?? "tv",
+                    name: r.name,
+                    title: r.title,
+                    posterPath: r.posterPath,
+                    backdropPath: r.backdropPath,
+                    overview: r.overview,
+                    voteAverage: r.voteAverage,
+                    firstAirDate: r.firstAirDate,
+                    releaseDate: r.releaseDate
+                )
+            }
     }
 
     private func get(_ urlString: String) async throws -> Data {

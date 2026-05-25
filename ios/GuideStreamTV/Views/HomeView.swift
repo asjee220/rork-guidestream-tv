@@ -314,10 +314,10 @@ struct HomeView: View {
     // MARK: - Derived content
 
     /// Builds the heterogeneous hero carousel. Leads with up to two live
-    /// sports broadcasts, then up to six trending titles that have a
+    /// sports broadcasts, then up to 15 trending titles that have a
     /// confirmed streaming provider, and finally one upcoming sports event
-    /// when there is room. Titles without provider info are skipped so the
-    /// rail never advertises a service we can't actually deeplink to.
+    /// when the rail is still thin. Titles without provider info are skipped
+    /// so the rail never advertises a service we can't actually deeplink to.
     private var heroItems: [HeroItem] {
         var items: [HeroItem] = []
 
@@ -332,7 +332,7 @@ struct HomeView: View {
             seen.insert(r.id)
             guard let platform = providerByTmdb[r.id] else { continue }
             media.append(.media(r, platform))
-            if media.count >= 6 { break }
+            if media.count >= 15 { break }
         }
         items.append(contentsOf: media)
 
