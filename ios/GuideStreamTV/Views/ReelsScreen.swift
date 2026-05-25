@@ -629,14 +629,6 @@ struct ReelsScreen: View {
                     scrolledID = idx
                 }
             },
-            onNotify: {
-                UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                WatchIntentLogger.shared.log(
-                    eventType: .notifyReleaseTapped,
-                    titleId: String(trailer.tmdbId),
-                    metadata: ["platform": trailer.platformId]
-                )
-            },
             onSponsorCTA: {
                 RakutenManager.shared.openAffiliateLink(
                     serviceId: trailer.platformId,
@@ -727,7 +719,6 @@ private struct ReelView: View {
     let onSave: () -> Void
     let onShare: () -> Void
     let onTabSelect: (ReelTab) -> Void
-    let onNotify: () -> Void
     let onSponsorCTA: () -> Void
     let onShowDetail: () -> Void
 
@@ -948,16 +939,6 @@ private struct ReelView: View {
                             }
                             .buttonStyle(.plain)
                         } else {
-                            Button(action: onNotify) {
-                                Text("Notify on Release")
-                                    .scaledFont(size: 15, weight: .bold)
-                                    .foregroundStyle(Color(hex: "F5821F"))
-                                    .frame(maxWidth: .infinity)
-                                    .frame(height: 52)
-                                    .overlay(Capsule().stroke(Color(hex: "F5821F"), lineWidth: 1.5))
-                            }
-                            .buttonStyle(.plain)
-
                             PlayOnPill(action: onShowDetail)
                         }
                     }
@@ -1128,10 +1109,10 @@ private struct WatchListButton: View {
     }
 }
 
-/// Compact orange CTA shown next to "Notify on Release" in each reel's
-/// bottom content stack. Tapping it opens the same `EpisodeDetailSheet`
-/// used everywhere else in the app — full where-to-watch resolution,
-/// Send-to-TV, like, notify, and deeplink-on-tap.
+/// Primary orange CTA in each reel's bottom content stack. Tapping it
+/// opens the same `EpisodeDetailSheet` used everywhere else in the app —
+/// full where-to-watch resolution, Send-to-TV, like, notify, and
+/// deeplink-on-tap.
 private struct PlayOnPill: View {
     let action: () -> Void
     @State private var isPressed: Bool = false
