@@ -402,6 +402,8 @@ struct ReelsScreen: View {
     @State private var isPlaying: Bool = true
     @State private var showComments: Bool = false
     @State private var showShare: Bool = false
+    @State private var showDetail: Bool = false
+    @State private var detailSubject: DetailSubject?
     @State private var scrolledID: Int? = 0
     @State private var pendingInterstitialAt: Int? = nil
     /// Live translation while the user drags down to dismiss. Used to slide
@@ -542,6 +544,24 @@ struct ReelsScreen: View {
                     .presentationBackground(Color(red: 10/255, green: 16/255, blue: 26/255).opacity(0.96))
             }
         }
+        .sheet(item: $detailSubject) { subject in
+            EpisodeDetailSheet(subject: subject)
+        }
+    }
+
+    /// Builds a `PosterShow` from a reel so the detail sheet — which is
+    /// designed around home-screen subjects — can resolve the title's
+    /// Watchmode source, overview, and deeplink the same way it does
+    /// everywhere else in the app.
+    private func posterShow(from trailer: TrailerItem) -> PosterShow {
+        PosterShow(
+            title: trailer.showName,
+            meta: trailer.genre.capitalized,
+            posterColors: [trailer.platformColor.opacity(0.85), Color(hex: "04090F")],
+            symbol: "play.rectangle",
+            posterUrl: trailer.posterURL?.absoluteString ?? trailer.backdropURL?.absoluteString,
+            tmdbId: trailer.tmdbId > 0 ? trailer.tmdbId : nil
+        )
     }
 
     private var currentTrailer: TrailerItem? {
@@ -627,6 +647,17 @@ struct ReelsScreen: View {
                     platformId: trailer.platformId,
                     metadata: ["position": vm.currentIndex]
                 )
+            },
+            onShowDetail: {
+                guard !trailer.isSponsored, trailer.tmdbId > 0 else { return }
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                detailSubject = .show(posterShow(from: trailer))
+                WatchIntentLogger.shared.log(
+                    eventType: .episodeDetailViewed,
+                    titleId: String(trailer.tmdbId),
+                    platformId: trailer.platformId,
+                    metadata: ["source": "reels_play_pill"]
+                )
             }
         )
     }
@@ -698,6 +729,7 @@ private struct ReelView: View {
     let onTabSelect: (ReelTab) -> Void
     let onNotify: () -> Void
     let onSponsorCTA: () -> Void
+    let onShowDetail: () -> Void
 
     @State private var contentOpacity: Double = 0.4
     @State private var likeBounce: CGFloat = 1.0
@@ -926,7 +958,7 @@ private struct ReelView: View {
                             }
                             .buttonStyle(.plain)
 
-                            PlayOnPill()
+                            PlayOnPill(action: onShowDetail)
                         }
                     }
                 }
@@ -1096,20 +1128,36 @@ private struct WatchListButton: View {
     }
 }
 
+/// Compact orange CTA shown next to "Notify on Release" in each reel's
+/// bottom content stack. Tapping it opens the same `EpisodeDetailSheet`
+/// used everywhere else in the app — full where-to-watch resolution,
+/// Send-to-TV, like, notify, and deeplink-on-tap.
 private struct PlayOnPill: View {
+    let action: () -> Void
+    @State private var isPressed: Bool = false
+
     var body: some View {
-        HStack(spacing: 6) {
-            Image(systemName: "tv")
-                .scaledFont(size: 11, weight: .semibold)
-            Text("Play on")
-                .scaledFont(size: 11, weight: .semibold)
+        Button(action: action) {
+            HStack(spacing: 8) {
+                Image(systemName: "play.fill")
+                    .scaledFont(size: 14, weight: .bold)
+                Text("Watch")
+                    .scaledFont(size: 15, weight: .bold)
+            }
+            .foregroundStyle(.white)
+            .padding(.horizontal, 22)
+            .frame(height: 52)
+            .background(Capsule().fill(Color(hex: "F5821F")))
+            .shadow(color: Color(hex: "F5821F").opacity(0.55), radius: 14, y: 6)
+            .scaleEffect(isPressed ? 0.96 : 1.0)
+            .animation(.spring(response: 0.28, dampingFraction: 0.7), value: isPressed)
         }
-        .foregroundStyle(.white)
-        .padding(.horizontal, 14)
-        .frame(height: 32)
-        .background(Color.white.opacity(0.10))
-        .overlay(Capsule().stroke(Color.white.opacity(0.20)))
-        .clipShape(Capsule())
+        .buttonStyle(.plain)
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 0)
+                .onChanged { _ in isPressed = true }
+                .onEnded { _ in isPressed = false }
+        )
     }
 }
 
