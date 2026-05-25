@@ -96,33 +96,38 @@ private struct WatchListContent: View {
 
     @ViewBuilder
     private var content: some View {
-        if !auth.isAuthenticated {
-            guestPrompt
-        } else if streams.userStreams.isEmpty {
+        if streams.userStreams.isEmpty {
             emptyState
         } else {
-            List {
-                ForEach(streams.userStreams) { item in
-                    Button {
-                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                        detailSubject = .show(posterShow(from: item))
-                    } label: {
-                        WatchListRow(item: item)
-                    }
-                    .buttonStyle(.plain)
-                    .listRowBackground(Color.clear)
-                    .listRowSeparatorTint(Color.white.opacity(0.06))
-                    .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                        Button(role: .destructive) {
-                            remove(item)
+            VStack(spacing: 0) {
+                if !auth.isAuthenticated {
+                    guestSyncBanner
+                        .padding(.horizontal, 16)
+                        .padding(.top, 8)
+                }
+                List {
+                    ForEach(streams.userStreams) { item in
+                        Button {
+                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                            detailSubject = .show(posterShow(from: item))
                         } label: {
-                            Label("Remove", systemImage: "trash")
+                            WatchListRow(item: item)
+                        }
+                        .buttonStyle(.plain)
+                        .listRowBackground(Color.clear)
+                        .listRowSeparatorTint(Color.white.opacity(0.06))
+                        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                            Button(role: .destructive) {
+                                remove(item)
+                            } label: {
+                                Label("Remove", systemImage: "trash")
+                            }
                         }
                     }
                 }
+                .listStyle(.plain)
+                .scrollContentBackground(.hidden)
             }
-            .listStyle(.plain)
-            .scrollContentBackground(.hidden)
         }
     }
 
@@ -148,26 +153,35 @@ private struct WatchListContent: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    private var guestPrompt: some View {
-        VStack(spacing: 14) {
-            ZStack {
-                Circle()
-                    .fill(Color.blue.opacity(0.14))
-                    .frame(width: 88, height: 88)
-                Image(systemName: "person.crop.circle.badge.plus")
-                    .scaledFont(size: 32, weight: .semibold)
-                    .foregroundStyle(Color.blue)
+    /// Small inline banner shown above a guest's watch list so they know the
+    /// list lives on this device until they sign in. We deliberately do NOT
+    /// gate the list behind a sign-in wall — guests can save and manage
+    /// items locally; signing in later syncs everything up to Supabase.
+    private var guestSyncBanner: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "icloud.slash")
+                .scaledFont(size: 14, weight: .semibold)
+                .foregroundStyle(Color.orange)
+                .padding(.top, 2)
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Saved on this device")
+                    .scaledFont(size: 13, weight: .semibold)
+                    .foregroundStyle(.white)
+                Text("Sign in to sync your watch list across devices.")
+                    .scaledFont(size: 12)
+                    .foregroundStyle(Color.textSecondary)
             }
-            Text("Sign in to save your watch list")
-                .scaledFont(size: 17, weight: .bold)
-                .foregroundStyle(.white)
-            Text("Create an account or sign in with Apple, Google, or email so your watch list follows you across devices.")
-                .scaledFont(size: 13)
-                .foregroundStyle(Color.textSecondary)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 36)
+            Spacer(minLength: 0)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color.orange.opacity(0.10))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .stroke(Color.orange.opacity(0.25), lineWidth: 1)
+                )
+        )
     }
 
     private func remove(_ item: UserStream) {

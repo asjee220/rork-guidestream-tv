@@ -137,7 +137,6 @@ final class ReelsViewModel {
     var isLoading: Bool = true
     var activeTab: ReelTab = .forYou
     var likedTrailers: Set<String> = []
-    var savedTrailers: Set<String> = []
     var likeCounts: [String: Int] = [:]
     var reelSwipeCount: Int = 0
 
@@ -180,8 +179,9 @@ final class ReelsViewModel {
         self.allTrailers = combined
         self.hasLoaded = !combined.isEmpty
 
-        // Hydrate Supabase-backed like/saved state for current user.
-        await hydrateUserState()
+        // Saved state now lives in the shared StreamsViewModel store, which
+        // hydrates itself from the local cache on init and refreshes from
+        // Supabase whenever the user signs in. Nothing else to do here.
 
         // Pre-resolve the first few trailer stream URLs so playback starts
         // instantly when the user lands on the feed.
@@ -332,22 +332,6 @@ final class ReelsViewModel {
         )
     }
 
-    private func hydrateUserState() async {
-        // Pull existing saves; like state is in-memory only for now.
-        guard let uid = AuthViewModel.shared.currentUser?.id.uuidString else { return }
-        do {
-            let rows: [UserStream] = try await SupabaseManager.shared.client
-                .from("user_streams")
-                .select("title_id")
-                .eq("user_id", value: uid)
-                .execute()
-                .value
-            self.savedTrailers = Set(rows.map { $0.titleId })
-        } catch {
-            // ignore
-        }
-    }
-
     // MARK: - Mutations
 
     func toggleLike(_ trailer: TrailerItem) {
@@ -367,11 +351,11 @@ final class ReelsViewModel {
 
     func toggleSave(_ trailer: TrailerItem) async {
         let titleId = String(trailer.tmdbId)
-        if savedTrailers.contains(titleId) {
-            savedTrailers.remove(titleId)
+        // Single source of truth — ask the shared streams store whether the
+        // title is already saved instead of duplicating state in Reels.
+        if StreamsViewModel.shared.userStreams.contains(where: { $0.titleId == titleId }) {
             await StreamsViewModel.shared.removeFromMyStreams(titleId: titleId)
         } else {
-            savedTrailers.insert(titleId)
             await StreamsViewModel.shared.addToMyStreams(
                 titleId: titleId,
                 title: trailer.showName,
@@ -386,7 +370,14 @@ final class ReelsViewModel {
     }
 
     func isLiked(_ trailer: TrailerItem) -> Bool { likedTrailers.contains(trailer.id) }
-    func isSaved(_ trailer: TrailerItem) -> Bool { savedTrailers.contains(String(trailer.tmdbId)) }
+    /// Mirrors `StreamsViewModel.userStreams` so the Reels rail button stays
+    /// in sync with every other save surface (Episode/Sports sheets, Home
+    /// panel, Profile). Reading the shared store also automatically subscribes
+    /// the surrounding view body to its updates via @Observable tracking.
+    func isSaved(_ trailer: TrailerItem) -> Bool {
+        let titleId = String(trailer.tmdbId)
+        return StreamsViewModel.shared.userStreams.contains { $0.titleId == titleId }
+    }
 
     func jumpToTab(_ tab: ReelTab) {
         guard let idx = allTrailers.firstIndex(where: { $0.tab == tab }) else { return }

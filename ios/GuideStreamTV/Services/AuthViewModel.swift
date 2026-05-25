@@ -50,6 +50,9 @@ final class AuthViewModel {
             let session = try await SupabaseManager.shared.client.auth.session
             self.currentUser = session.user
             await loadDisplayName()
+            // Pick up any guest-era watch list rows and refresh from Supabase
+            // so the list is in sync on cold launch.
+            Task { await StreamsViewModel.shared.syncLocalToSupabase() }
         } catch {
             self.currentUser = nil
         }
@@ -273,6 +276,8 @@ final class AuthViewModel {
                     ]
                 )
                 DeviceSessionService.shared.upsert(reason: "apple_signed_in")
+                // Promote any guest-era watch list rows to the new user.
+                Task { await StreamsViewModel.shared.syncLocalToSupabase() }
             } catch {
                 lastError = error.localizedDescription
                 print("[Auth ERROR] signInWithIdToken (apple) failed: \(error.localizedDescription)")
@@ -442,6 +447,7 @@ final class AuthViewModel {
                     ]
                 )
                 DeviceSessionService.shared.upsert(reason: "email_signed_up")
+                Task { await StreamsViewModel.shared.syncLocalToSupabase() }
                 return true
             }
             // Session is nil — Supabase requires email confirmation. The user
@@ -517,6 +523,7 @@ final class AuthViewModel {
                 ]
             )
             DeviceSessionService.shared.upsert(reason: "email_signed_in")
+            Task { await StreamsViewModel.shared.syncLocalToSupabase() }
             return true
         } catch {
             let message = error.localizedDescription
@@ -610,6 +617,7 @@ final class AuthViewModel {
                 ]
             )
             DeviceSessionService.shared.upsert(reason: "google_signed_in")
+            Task { await StreamsViewModel.shared.syncLocalToSupabase() }
         } catch {
             lastError = error.localizedDescription
             print("[Auth ERROR] Google sign-in failed: \(error.localizedDescription)")
