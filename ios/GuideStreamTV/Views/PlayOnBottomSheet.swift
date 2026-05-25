@@ -36,23 +36,66 @@ struct PlayOnBottomSheet: View {
     var initialSelectedDevice: String = "living-room"
     let onDeviceSelected: (String) -> Void
 
-    // Content shown in the redesigned sheet. Values are illustrative and match
-    // the reference design provided by the user.
+    // Illustrative metadata used until the live Watchmode lookup resolves
+    // (or as a fallback when the API is unavailable). Anything tied to the
+    // streaming service — platform name, color, deeplink — is replaced with
+    // the real source as soon as we have it.
     private let yearsLabel: String = "2018–2023 · 4 Seasons · TV-MA"
-    private let platformLabel: String = "HBO MAX"
-    private let platformColor: Color = Color(red: 0x6A/255, green: 0x3F/255, blue: 0xE0/255)
     private let genreLabel: String = "Drama"
     private let rating: Double = 9.6
     private let likeCount: String = "2.4K"
     private let commentCount: String = "183"
-    private let aboutText: String = "Four adult children of a media mogul compete for control of their father's empire as his health fails. One of the greatest dramas ever made."
-    private let whereToWatchLabel: String = "HBO Max"
+    private let fallbackAboutText: String = "Tap the watch button to open this title in the streaming app."
     private let availabilityLabel: String = "Available with subscription"
     private let watchCTAColor: Color = Color.orange
 
     @State private var isLiked: Bool = false
     @State private var isNotifying: Bool = true
     @State private var showCastSheet: Bool = false
+    /// Watchmode-resolved source for this title. When present, drives the
+    /// platform label, brand color, and the watch CTA deeplink.
+    @State private var resolvedSource: WatchmodeSource?
+    @State private var resolvedOverview: String?
+    @State private var isResolvingSource: Bool = false
+
+    private var resolvedPlatformName: String {
+        resolvedSource?.name ?? (isResolvingSource ? "…" : "Streaming")
+    }
+
+    private var platformLabel: String { resolvedPlatformName.uppercased() }
+
+    private var whereToWatchLabel: String { resolvedSource?.name ?? (isResolvingSource ? "Finding service…" : "Open streaming app") }
+
+    private var platformColor: Color { brandColor(for: resolvedPlatformName) }
+
+    private var aboutText: String { resolvedOverview ?? fallbackAboutText }
+
+    private func brandColor(for name: String) -> Color {
+        let key = name.lowercased()
+        if key.contains("netflix") { return Color(red: 0xE5/255, green: 0x09/255, blue: 0x14/255) }
+        if key.contains("hbo") || key.contains("max") { return Color(red: 0x5B/255, green: 0x2D/255, blue: 0x8E/255) }
+        if key.contains("hulu") { return Color(red: 0x1C/255, green: 0xE7/255, blue: 0x83/255) }
+        if key.contains("disney") { return Color(red: 0.05, green: 0.10, blue: 0.42) }
+        if key.contains("apple") { return Color(white: 0.12) }
+        if key.contains("prime") || key.contains("amazon") { return Color(red: 0.0, green: 0.66, blue: 0.93) }
+        if key.contains("paramount") { return Color(red: 0.0, green: 0.40, blue: 0.95) }
+        if key.contains("peacock") { return Color(red: 0.05, green: 0.05, blue: 0.10) }
+        if key.contains("youtube") { return Color(red: 0.90, green: 0.10, blue: 0.10) }
+        if key.contains("crunchyroll") { return Color(red: 0xF4/255, green: 0x7B/255, blue: 0x20/255) }
+        if key.contains("showtime") { return Color(red: 0xD8/255, green: 0x00/255, blue: 0x00/255) }
+        if key.contains("starz") { return Color(white: 0.08) }
+        return Color(red: 0x6A/255, green: 0x3F/255, blue: 0xE0/255)
+    }
+
+    /// `true` once Watchmode tells us the format is a movie. Used to forward
+    /// the correct `MediaType` to Roku ECP and to drive the right Watchmode
+    /// search field (`tmdb_movie_id` vs `tmdb_tv_id`).
+    private var resolvedIsTV: Bool {
+        if let fmt = resolvedSource?.format?.lowercased() {
+            return fmt.contains("tv") || fmt.contains("series")
+        }
+        return isTV
+    }
 
     var body: some View {
         GeometryReader { geo in
@@ -74,8 +117,46 @@ struct PlayOnBottomSheet: View {
                 isPresented: $showCastSheet,
                 showTitle: showTitle,
                 platform: whereToWatchLabel,
-                tmdbId: tmdbId
+                tmdbId: tmdbId,
+                isTV: resolvedIsTV
             )
+        }
+        .task(id: tmdbId ?? -1) {
+            await resolveStreamingSource()
+        }
+    }
+
+    /// Resolves the title's actual streaming service via Watchmode so the
+    /// sheet displays the correct platform and the watch CTA opens the right
+    /// app to the right title.
+    private func resolveStreamingSource() async {
+        guard let tmdbId, resolvedSource == nil, !isResolvingSource else { return }
+        isResolvingSource = true
+        defer { isResolvingSource = false }
+        do {
+            guard let watchmodeId = try await WatchmodeService.shared.watchmodeId(forTMDBId: tmdbId, isTV: isTV) else { return }
+            let detail = try await WatchmodeService.shared.titleDetail(titleId: watchmodeId)
+            await MainActor.run { self.resolvedOverview = detail.plotOverview }
+            guard let sources = detail.sources, !sources.isEmpty else { return }
+            let ranked = sources.sorted { a, b in sourceRank(a) < sourceRank(b) }
+            if let chosen = ranked.first {
+                await MainActor.run { self.resolvedSource = chosen }
+            }
+        } catch {
+            #if DEBUG
+            print("[PlayOnBottomSheet] Watchmode lookup failed: \(error.localizedDescription)")
+            #endif
+        }
+    }
+
+    private func sourceRank(_ s: WatchmodeSource) -> Int {
+        switch s.type.lowercased() {
+        case "sub": return 0
+        case "free": return 1
+        case "tve": return 2
+        case "rent": return 3
+        case "purchase", "buy": return 4
+        default: return 5
         }
     }
 
@@ -239,7 +320,7 @@ struct PlayOnBottomSheet: View {
             }
         }
         .overlay(alignment: .bottomLeading) {
-            Text("HBO")
+            Text(String(resolvedPlatformName.prefix(4)).uppercased())
                 .font(.system(size: 10, weight: .heavy))
                 .foregroundStyle(.white)
                 .padding(.horizontal, 8)
@@ -381,21 +462,31 @@ struct PlayOnBottomSheet: View {
                 platform: whereToWatchLabel,
                 title: showTitle,
                 tmdbId: tmdbId,
-                isTV: isTV
+                isTV: resolvedIsTV
             )
             onDeviceSelected("watch-on-platform")
         } label: {
-            Text("Watch on \(whereToWatchLabel)")
-                .font(.system(size: 17, weight: .semibold))
-                .foregroundStyle(.white)
-                .frame(maxWidth: .infinity)
-                .frame(height: 56)
-                .background(
-                    Capsule().fill(watchCTAColor)
-                )
-                .shadow(color: watchCTAColor.opacity(0.55), radius: 22, y: 0)
+            HStack(spacing: 8) {
+                if isResolvingSource && resolvedSource == nil {
+                    ProgressView()
+                        .controlSize(.small)
+                        .tint(.white)
+                }
+                Text(resolvedSource == nil && isResolvingSource
+                     ? "Finding service…"
+                     : "Watch on \(whereToWatchLabel)")
+                    .font(.system(size: 17, weight: .semibold))
+            }
+            .foregroundStyle(.white)
+            .frame(maxWidth: .infinity)
+            .frame(height: 56)
+            .background(
+                Capsule().fill(watchCTAColor)
+            )
+            .shadow(color: watchCTAColor.opacity(0.55), radius: 22, y: 0)
         }
         .buttonStyle(.plain)
+        .disabled(tmdbId == nil)
     }
 
     private var viewFullDetailsButton: some View {

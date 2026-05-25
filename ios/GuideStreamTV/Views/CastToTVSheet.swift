@@ -22,6 +22,11 @@ struct CastToTVSheet: View {
     let showTitle: String
     let platform: String
     let tmdbId: Int?
+    /// `true` for TV series, `false` for movies. Drives the `MediaType`
+    /// parameter passed to Roku ECP — channels that accept arbitrary content
+    /// IDs (Jellyfin, Plex, sideloaded apps) need the correct type to resolve
+    /// the TMDB id to playback.
+    var isTV: Bool = true
 
     @State private var discovery: TVCastDiscovery = TVCastDiscovery()
     @State private var sendingDeviceId: String? = nil
@@ -744,13 +749,12 @@ struct CastToTVSheet: View {
             // first-party catalogs the TMDB id won't resolve and the channel
             // simply opens to its landing screen — which is the correct
             // graceful fallback.
-            let movieLike = platform.lowercased().contains("movie")
             return await RokuECPClient.launch(
                 host: host,
                 port: port,
                 channelId: channelId,
                 contentId: tmdbId.map { String($0) },
-                mediaType: movieLike ? "movie" : "series"
+                mediaType: isTV ? "series" : "movie"
             )
         case .appleTV:
             // Apple TV doesn't expose a public deep-link endpoint. The only

@@ -161,6 +161,11 @@ struct ShowDetailScreen: View {
     var onBack: () -> Void = {}
     var onPlayOn: () -> Void = {}
 
+    /// TMDB id parsed from `titleId` when possible — lets PlayOnBottomSheet
+    /// resolve the real streaming source via Watchmode and deeplink to the
+    /// correct title page.
+    private var resolvedTmdbId: Int? { Int(titleId) }
+
     @State private var scrollOffset: CGFloat = 0
     @State private var synopsisExpanded: Bool = false
     @State private var liked: Bool = false
@@ -244,9 +249,11 @@ struct ShowDetailScreen: View {
             PlayOnBottomSheet(
                 isOpen: playOnOpen,
                 onClose: { playOnOpen = false },
-                showTitle: title,
+                showTitle: displayTitle,
                 showSubtitle: "Season 4 \u{00B7} Episode 7 \u{00B7} Tailgate Party",
-                thumbnailUrl: nil,
+                thumbnailUrl: posterUrl,
+                tmdbId: resolvedTmdbId,
+                isTV: isTV,
                 onDeviceSelected: { _ in
                     playOnOpen = false
                     onPlayOn()

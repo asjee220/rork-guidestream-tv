@@ -32,8 +32,15 @@ struct EpisodeDetailSheet: View {
     @State private var isLiked: Bool = false
     @State private var isNotifying: Bool = true
     @State private var showCastSheet: Bool = false
+    /// Watchmode-resolved source for the show (top US sub > free > tve > rent).
+    /// When set, drives the platform label, color, and the "Watch on" deeplink so
+    /// shows show their real streaming service instead of the placeholder "HBO Max".
+    @State private var resolvedSource: WatchmodeSource?
+    @State private var resolvedOverview: String?
+    @State private var isResolvingSource: Bool = false
 
     private var platformColor: Color {
+        if let name = resolvedSource?.name { return brandColor(for: name) }
         switch subject {
         case .episode(let e): return e.platformColor
         case .show(let s): return s.posterColors.first ?? Color(red: 0x6A/255, green: 0x3F/255, blue: 0xE0/255)
@@ -41,21 +48,54 @@ struct EpisodeDetailSheet: View {
     }
 
     private var platformName: String {
+        if let name = resolvedSource?.name { return name.uppercased() }
         switch subject {
         case .episode(let e): return e.platform
-        case .show: return "HBO MAX"
+        case .show: return isResolvingSource ? "…" : "STREAM"
         }
     }
 
     private var whereToWatchLabel: String {
+        if let name = resolvedSource?.name { return name }
         switch subject {
         case .episode(let e): return e.platform.capitalized
-        case .show: return "HBO Max"
+        case .show: return isResolvingSource ? "Finding service…" : "Streaming services"
         }
     }
 
     private var aboutText: String {
-        "Four adult children of a media mogul compete for control of their father's empire as his health fails. One of the greatest dramas ever made."
+        if let overview = resolvedOverview, !overview.isEmpty { return overview }
+        return "Tap Watch on \(whereToWatchLabel) to open this title in the streaming app."
+    }
+
+    /// `true` when we're a show (or anything without explicit episode info).
+    /// Drives both the Watchmode lookup (`tmdb_tv_id` vs `tmdb_movie_id`) and
+    /// the Roku ECP `MediaType` parameter ("series" vs "movie").
+    private var isTV: Bool {
+        if case .episode = subject { return true }
+        // For shows we default to TV; we refine this once Watchmode tells us
+        // the actual format. Most home-screen entries are series.
+        if let fmt = resolvedSource?.format?.lowercased() {
+            return fmt.contains("tv") || fmt.contains("series")
+        }
+        return true
+    }
+
+    private func brandColor(for name: String) -> Color {
+        let key = name.lowercased()
+        if key.contains("netflix") { return Color(red: 0xE5/255, green: 0x09/255, blue: 0x14/255) }
+        if key.contains("hbo") || key.contains("max") { return Color(red: 0x5B/255, green: 0x2D/255, blue: 0x8E/255) }
+        if key.contains("hulu") { return Color(red: 0x1C/255, green: 0xE7/255, blue: 0x83/255) }
+        if key.contains("disney") { return Color(red: 0.05, green: 0.10, blue: 0.42) }
+        if key.contains("apple") { return Color(white: 0.12) }
+        if key.contains("prime") || key.contains("amazon") { return Color(red: 0.0, green: 0.66, blue: 0.93) }
+        if key.contains("paramount") { return Color(red: 0.0, green: 0.40, blue: 0.95) }
+        if key.contains("peacock") { return Color(red: 0.05, green: 0.05, blue: 0.10) }
+        if key.contains("youtube") { return Color(red: 0.90, green: 0.10, blue: 0.10) }
+        if key.contains("crunchyroll") { return Color(red: 0xF4/255, green: 0x7B/255, blue: 0x20/255) }
+        if key.contains("showtime") { return Color(red: 0xD8/255, green: 0x00/255, blue: 0x00/255) }
+        if key.contains("starz") { return Color(white: 0.08) }
+        return Color(red: 0x6A/255, green: 0x3F/255, blue: 0xE0/255)
     }
 
     var body: some View {
@@ -107,9 +147,89 @@ struct EpisodeDetailSheet: View {
                 isPresented: $showCastSheet,
                 showTitle: title,
                 platform: whereToWatchLabel,
-                tmdbId: tmdbId
+                tmdbId: tmdbId,
+                isTV: isTV
             )
         }
+        .task(id: tmdbId ?? -1) {
+            await resolveStreamingSource()
+        }
+    }
+
+    // MARK: - Source resolution
+
+    /// Looks up the title's real top streaming source via Watchmode. We use
+    /// this both for displaying the correct platform name in the sheet and
+    /// for opening the right app on tap. Falls back silently if the lookup
+    /// fails — the existing fallback URL keeps the button working.
+    private func resolveStreamingSource() async {
+        guard let tmdbId, resolvedSource == nil, !isResolvingSource else { return }
+        // Skip the lookup for episode rows that already carry a platform we
+        // recognise — their `e.platform` string is more accurate than what
+        // Watchmode would return for the parent show.
+        if case .episode(let e) = subject, !e.platform.isEmpty {
+            // Still try to fetch sources so the watch button can use the
+            // canonical Watchmode URL, but tolerate failure.
+        }
+        isResolvingSource = true
+        defer { isResolvingSource = false }
+        do {
+            let inferTV = isTV
+            guard let watchmodeId = try await WatchmodeService.shared.watchmodeId(forTMDBId: tmdbId, isTV: inferTV) else { return }
+            let detail = try await WatchmodeService.shared.titleDetail(titleId: watchmodeId)
+            await MainActor.run {
+                self.resolvedOverview = detail.plotOverview
+            }
+            guard let sources = detail.sources else { return }
+            let ranked = sources.sorted { a, b in sourceRank(a) < sourceRank(b) }
+            // Prefer a source whose name matches the episode's platform when
+            // we have one; otherwise pick the top-ranked sub source.
+            let preferred: WatchmodeSource? = {
+                if case .episode(let e) = subject, !e.platform.isEmpty {
+                    let p = e.platform.lowercased()
+                    if let match = ranked.first(where: { matches(sourceName: $0.name, platform: p) }) {
+                        return match
+                    }
+                }
+                return ranked.first
+            }()
+            if let chosen = preferred {
+                await MainActor.run { self.resolvedSource = chosen }
+            }
+        } catch {
+            #if DEBUG
+            print("[EpisodeDetailSheet] Watchmode lookup failed: \(error.localizedDescription)")
+            #endif
+        }
+    }
+
+    private func sourceRank(_ s: WatchmodeSource) -> Int {
+        switch s.type.lowercased() {
+        case "sub": return 0
+        case "free": return 1
+        case "tve": return 2
+        case "rent": return 3
+        case "purchase", "buy": return 4
+        default: return 5
+        }
+    }
+
+    private func matches(sourceName: String, platform: String) -> Bool {
+        let s = sourceName.lowercased()
+        let p = platform.lowercased()
+        if p.contains("netflix") { return s.contains("netflix") }
+        if p.contains("hbo") || p.contains("max") { return s.contains("max") || s.contains("hbo") }
+        if p.contains("hulu") { return s.contains("hulu") }
+        if p.contains("disney") { return s.contains("disney") }
+        if p.contains("apple") { return s.contains("apple tv") }
+        if p.contains("prime") || p.contains("amazon") { return s.contains("amazon") || s.contains("prime") }
+        if p.contains("paramount") { return s.contains("paramount") }
+        if p.contains("peacock") { return s.contains("peacock") }
+        if p.contains("youtube") { return s.contains("youtube") }
+        if p.contains("showtime") { return s.contains("showtime") }
+        if p.contains("starz") { return s.contains("starz") }
+        if p.contains("crunchyroll") { return s.contains("crunchyroll") }
+        return s.contains(p) || p.contains(s)
     }
 
     // MARK: - Header row
@@ -316,19 +436,29 @@ struct EpisodeDetailSheet: View {
                 platform: whereToWatchLabel,
                 title: title,
                 tmdbId: tmdbId,
-                isTV: { if case .show = subject { return true } else { return true } }()
+                isTV: isTV
             )
             dismiss()
         } label: {
-            Text("Watch on \(whereToWatchLabel)")
-                .font(.system(size: 17, weight: .semibold))
-                .foregroundStyle(.white)
-                .frame(maxWidth: .infinity)
-                .frame(height: 56)
-                .background(Capsule().fill(Color.orange))
-                .shadow(color: Color.orange.opacity(0.55), radius: 22, y: 0)
+            HStack(spacing: 8) {
+                if isResolvingSource && resolvedSource == nil {
+                    ProgressView()
+                        .controlSize(.small)
+                        .tint(.white)
+                }
+                Text(resolvedSource == nil && isResolvingSource
+                     ? "Finding service…"
+                     : "Watch on \(whereToWatchLabel)")
+                    .font(.system(size: 17, weight: .semibold))
+            }
+            .foregroundStyle(.white)
+            .frame(maxWidth: .infinity)
+            .frame(height: 56)
+            .background(Capsule().fill(Color.orange))
+            .shadow(color: Color.orange.opacity(0.55), radius: 22, y: 0)
         }
         .buttonStyle(.plain)
+        .disabled(tmdbId == nil)
     }
 
     private var viewFullDetailsButton: some View {
