@@ -154,16 +154,16 @@ final class SupabaseSchemaProbe {
                 "is_authenticated": .bool(false)
             ]
         case "user_streams":
-            // Send both `title` and the legacy `title_name` so probes
-            // succeed against either modern or legacy schemas.
+            // Use the always-present device_id as the row owner so the probe
+            // never trips the legacy FK on `user_id -> auth.users`. We also
+            // send both `title` and the legacy `title_name` so probes succeed
+            // against either modern or legacy schemas.
             payload = [
                 "title_id": .string(probeTitleId),
                 "title": .string("Schema Probe"),
-                "title_name": .string("Schema Probe")
+                "title_name": .string("Schema Probe"),
+                "device_id": .string(deviceId)
             ]
-            if let uid = AuthViewModel.shared.currentUser?.id.uuidString {
-                payload["user_id"] = .string(uid)
-            }
         default:
             checks[index].write = .unknown
             return
@@ -219,7 +219,7 @@ final class SupabaseSchemaProbe {
         guard lowered.contains("could not find") && lowered.contains("column") else { return nil }
         var trimmed = payload
         var didDrop = false
-        for key in Array(payload.keys) where key != "user_id" && key != "title_id" && key != "device_id" && key != "event_type" {
+        for key in Array(payload.keys) where key != "title_id" && key != "event_type" {
             if lowered.contains("'\(key.lowercased())'") {
                 trimmed.removeValue(forKey: key)
                 didDrop = true
@@ -259,11 +259,13 @@ final class SupabaseSchemaProbe {
                     .eq("event_type", value: "schema_probe")
                     .execute()
             case "user_streams":
-                let query = SupabaseManager.shared.client
+                // Clean up by title_id only — covers both signed-in and
+                // device-id-owned probe rows.
+                try await SupabaseManager.shared.client
                     .from(table)
                     .delete()
                     .eq("title_id", value: probeTitleId)
-                try await query.execute()
+                    .execute()
             default:
                 break
             }

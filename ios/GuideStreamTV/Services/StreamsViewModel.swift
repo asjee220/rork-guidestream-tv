@@ -56,21 +56,26 @@ final class StreamsViewModel {
         _ = await (a, b)
     }
 
-    /// Loads the canonical list. For signed-in users we hit Supabase and
-    /// merge any unsynced local rows on top; for guests we just use the
-    /// local cache. On network failure we keep showing whatever was cached.
+    /// Loads the canonical list. Fetches by user_id (signed-in) OR
+    /// device_id (guests + cross-device sync) so the watch list works for
+    /// every user state. On failure we keep showing the local cache.
     func fetchUserStreams() async {
-        guard let uid = currentUserId else {
-            self.userStreams = loadLocalCache()
-            return
-        }
         isLoadingStreams = true
         defer { isLoadingStreams = false }
+        let deviceId = DeviceIdentity.shared.deviceId
         do {
-            let rows: [UserStream] = try await SupabaseManager.shared.client
+            // Use a PostgREST `or=(user_id.eq.<uid>,device_id.eq.<did>)` filter
+            // so signed-in users see rows tied to either their account or this
+            // install, and guests see their device-owned rows.
+            var query = SupabaseManager.shared.client
                 .from("user_streams")
                 .select()
-                .eq("user_id", value: uid)
+            if let uid = currentUserId?.uuidString {
+                query = query.or("user_id.eq.\(uid),device_id.eq.\(deviceId)")
+            } else {
+                query = query.eq("device_id", value: deviceId)
+            }
+            let rows: [UserStream] = try await query
                 .order("added_at", ascending: false)
                 .execute()
                 .value
@@ -87,20 +92,22 @@ final class StreamsViewModel {
     }
 
     func fetchNewEpisodes() async {
-        guard let uid = currentUserId else {
-            newEpisodes = []
-            return
-        }
         isLoadingEpisodes = true
         defer { isLoadingEpisodes = false }
+        let deviceId = DeviceIdentity.shared.deviceId
         do {
-            // First get the user's title_ids
-            let mine: [UserStream] = try await SupabaseManager.shared.client
+            // Get this user's title_ids by user_id (signed-in) OR device_id
+            // (guests + cross-device), so the New Episodes panel works for
+            // every session state.
+            var query = SupabaseManager.shared.client
                 .from("user_streams")
                 .select("title_id")
-                .eq("user_id", value: uid)
-                .execute()
-                .value
+            if let uid = currentUserId?.uuidString {
+                query = query.or("user_id.eq.\(uid),device_id.eq.\(deviceId)")
+            } else {
+                query = query.eq("device_id", value: deviceId)
+            }
+            let mine: [UserStream] = try await query.execute().value
             let titleIds = mine.map { $0.titleId }
             guard !titleIds.isEmpty else {
                 newEpisodes = []
@@ -127,7 +134,8 @@ final class StreamsViewModel {
     /// Add a title to the user's watch list. Optimistic — the local state
     /// (and persisted cache) updates immediately so every consumer sees the
     /// change on the next frame, regardless of whether Supabase eventually
-    /// succeeds.
+    /// succeeds. Writes through to Supabase for BOTH guests and signed-in
+    /// users so the row is recoverable across reinstalls/devices.
     func addToMyStreams(titleId: String, title: String?, posterUrl: String? = nil, platform: String? = nil) async {
         let trimmedId = titleId.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedId.isEmpty else { return }
@@ -154,10 +162,12 @@ final class StreamsViewModel {
             platformId: platform?.lowercased()
         )
 
-        // 2. Push to Supabase if we have a session; tolerate failure.
-        guard let uid = currentUserId else { return }
+        // 2. Push to Supabase for everyone — guests included. The row is
+        // owned by `device_id` (always set) and, for signed-in users, also
+        // by `user_id` so the list survives sign-in/out and reinstalls.
         let didInsert = await insertUserStream(
-            userId: uid.uuidString,
+            userId: currentUserId?.uuidString,
+            deviceId: DeviceIdentity.shared.deviceId,
             titleId: trimmedId,
             title: title,
             posterUrl: posterUrl,
@@ -179,7 +189,8 @@ final class StreamsViewModel {
     /// open the diagnostics screen and run the schema setup SQL.
     @discardableResult
     private func insertUserStream(
-        userId: String,
+        userId: String?,
+        deviceId: String,
         titleId: String,
         title: String?,
         posterUrl: String?,
@@ -191,10 +202,11 @@ final class StreamsViewModel {
         // any of these keys if the live schema doesn't have them.
         let safeTitle = title ?? titleId
         var payload: [String: AnyJSON] = [
-            "user_id": .string(userId),
+            "device_id": .string(deviceId),
             "title_id": .string(titleId),
             "title_name": .string(safeTitle)
         ]
+        if let userId { payload["user_id"] = .string(userId) }
         if let title { payload["title"] = .string(title) }
         if let posterUrl { payload["poster_url"] = .string(posterUrl) }
         if let platform { payload["platform"] = .string(platform) }
@@ -242,6 +254,8 @@ final class StreamsViewModel {
 
     /// Remove a title from the watch list. Mirrors `addToMyStreams`:
     /// local state is updated immediately, Supabase is best-effort.
+    /// Deletes by user_id (when signed in) OR device_id so guest rows are
+    /// also removed.
     func removeFromMyStreams(titleId: String) async {
         let trimmedId = titleId.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedId.isEmpty else { return }
@@ -254,14 +268,18 @@ final class StreamsViewModel {
             titleId: trimmedId
         )
 
-        guard let uid = currentUserId else { return }
+        let deviceId = DeviceIdentity.shared.deviceId
         do {
-            try await SupabaseManager.shared.client
+            var query = SupabaseManager.shared.client
                 .from("user_streams")
                 .delete()
-                .eq("user_id", value: uid)
                 .eq("title_id", value: trimmedId)
-                .execute()
+            if let uid = currentUserId?.uuidString {
+                query = query.or("user_id.eq.\(uid),device_id.eq.\(deviceId)")
+            } else {
+                query = query.eq("device_id", value: deviceId)
+            }
+            try await query.execute()
         } catch {
             self.lastError = error.localizedDescription
             print("[Streams] remove failed: \(error.localizedDescription)")
@@ -270,14 +288,17 @@ final class StreamsViewModel {
 
     /// Mark any `new_episodes` rows older than 24h as no longer new for the current user's titles.
     func markStaleEpisodesSeen() async {
-        guard let uid = currentUserId else { return }
+        let deviceId = DeviceIdentity.shared.deviceId
         do {
-            let mine: [UserStream] = try await SupabaseManager.shared.client
+            var query = SupabaseManager.shared.client
                 .from("user_streams")
                 .select("title_id")
-                .eq("user_id", value: uid)
-                .execute()
-                .value
+            if let uid = currentUserId?.uuidString {
+                query = query.or("user_id.eq.\(uid),device_id.eq.\(deviceId)")
+            } else {
+                query = query.eq("device_id", value: deviceId)
+            }
+            let mine: [UserStream] = try await query.execute().value
             let titleIds = mine.map { $0.titleId }
             guard !titleIds.isEmpty else { return }
             let cutoff = ISO8601DateFormatter().string(from: Date().addingTimeInterval(-24 * 60 * 60))
@@ -309,9 +330,11 @@ final class StreamsViewModel {
             return
         }
 
+        let deviceId = DeviceIdentity.shared.deviceId
         for row in pending {
             _ = await insertUserStream(
                 userId: uid.uuidString,
+                deviceId: deviceId,
                 titleId: row.titleId,
                 title: row.title,
                 posterUrl: row.posterUrl,
@@ -375,7 +398,7 @@ final class StreamsViewModel {
         }
         var trimmed = payload
         var didDrop = false
-        for key in Array(payload.keys) where key != "user_id" && key != "title_id" {
+        for key in Array(payload.keys) where key != "title_id" {
             if lowered.contains("'\(key.lowercased())'") {
                 trimmed.removeValue(forKey: key)
                 didDrop = true

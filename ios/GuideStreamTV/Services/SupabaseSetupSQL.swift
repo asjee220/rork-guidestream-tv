@@ -49,9 +49,16 @@ enum SupabaseSetupSQL {
     create policy "users_update_own" on public.users for update using (auth.uid() = id);
 
     -- USER STREAMS (Watch List)
+    --
+    -- Designed to work for BOTH signed-in users and guests:
+    --   * `user_id`   — set for signed-in users (nullable, no FK so guests
+    --                   and any non-Supabase-auth id won't be rejected).
+    --   * `device_id` — always set; this is the identifier guests use to
+    --                   own their list before they sign in.
     create table if not exists public.user_streams (
       id uuid primary key default gen_random_uuid(),
-      user_id uuid references auth.users on delete cascade,
+      user_id uuid,
+      device_id text,
       title_id text not null,
       title text,
       poster_url text,
@@ -61,6 +68,13 @@ enum SupabaseSetupSQL {
     alter table public.user_streams add column if not exists title text;
     alter table public.user_streams add column if not exists poster_url text;
     alter table public.user_streams add column if not exists platform text;
+    alter table public.user_streams add column if not exists device_id text;
+
+    -- Drop the FK to auth.users so guests (no auth row) and any other
+    -- non-Supabase-auth id can write. We intentionally leave `user_id`
+    -- nullable + un-referenced so the watch list works offline / pre-signin.
+    alter table public.user_streams drop constraint if exists user_streams_user_id_fkey;
+    alter table public.user_streams alter column user_id drop not null;
 
     -- Drop legacy NOT NULL constraints from older schema versions so the
     -- app's modern inserts (`title_id` + `title`) succeed. Wrapped in a DO
@@ -86,18 +100,29 @@ enum SupabaseSetupSQL {
     end $do$;
 
     create index if not exists user_streams_user_idx on public.user_streams(user_id);
-    create unique index if not exists user_streams_user_title_uidx
-      on public.user_streams(user_id, title_id);
+    create index if not exists user_streams_device_idx on public.user_streams(device_id);
 
+    -- Old unique index used (user_id, title_id), which fails for guests
+    -- whose user_id is NULL. Replace with a partial-unique index per id +
+    -- title_id so each ownership lane (user OR device) stays de-duplicated.
+    drop index if exists public.user_streams_user_title_uidx;
+    create unique index if not exists user_streams_user_title_uidx
+      on public.user_streams(user_id, title_id) where user_id is not null;
+    create unique index if not exists user_streams_device_title_uidx
+      on public.user_streams(device_id, title_id) where device_id is not null;
+
+    -- Permissive RLS — same model as watch_intent_events / device_sessions.
+    -- The app filters by user_id/device_id client-side; the watchlist is
+    -- non-sensitive and needs to work for unauthenticated devices too.
     alter table public.user_streams enable row level security;
     drop policy if exists "user_streams_read_own" on public.user_streams;
     drop policy if exists "user_streams_insert_own" on public.user_streams;
     drop policy if exists "user_streams_update_own" on public.user_streams;
     drop policy if exists "user_streams_delete_own" on public.user_streams;
-    create policy "user_streams_read_own" on public.user_streams for select using (auth.uid() = user_id);
-    create policy "user_streams_insert_own" on public.user_streams for insert with check (auth.uid() = user_id);
-    create policy "user_streams_update_own" on public.user_streams for update using (auth.uid() = user_id);
-    create policy "user_streams_delete_own" on public.user_streams for delete using (auth.uid() = user_id);
+    drop policy if exists "user_streams_open" on public.user_streams;
+    create policy "user_streams_open"
+      on public.user_streams for all
+      using (true) with check (true);
 
     -- WATCH INTENT EVENTS (analytics — guests included)
     create table if not exists public.watch_intent_events (
