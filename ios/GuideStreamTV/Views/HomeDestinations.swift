@@ -31,6 +31,7 @@ struct EpisodeDetailSheet: View {
     @State private var resolvedBackdrop: String?
     @State private var isLiked: Bool = false
     @State private var isNotifying: Bool = true
+    @State private var showCastSheet: Bool = false
 
     private var platformColor: Color {
         switch subject {
@@ -101,6 +102,14 @@ struct EpisodeDetailSheet: View {
         .presentationDetents([.fraction(0.8), .large])
         .presentationDragIndicator(.visible)
         .presentationContentInteraction(.scrolls)
+        .sheet(isPresented: $showCastSheet) {
+            CastToTVSheet(
+                isPresented: $showCastSheet,
+                showTitle: title,
+                platform: whereToWatchLabel,
+                tmdbId: tmdbId
+            )
+        }
     }
 
     // MARK: - Header row
@@ -224,6 +233,7 @@ struct EpisodeDetailSheet: View {
 
             circleAction(icon: "tv", label: "Send to TV", tint: .white, showDot: false) {
                 UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                showCastSheet = true
             }
             .frame(maxWidth: .infinity)
         }

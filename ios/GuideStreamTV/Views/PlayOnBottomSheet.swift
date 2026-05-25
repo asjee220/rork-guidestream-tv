@@ -50,6 +50,7 @@ struct PlayOnBottomSheet: View {
 
     @State private var isLiked: Bool = false
     @State private var isNotifying: Bool = true
+    @State private var showCastSheet: Bool = false
 
     var body: some View {
         GeometryReader { geo in
@@ -65,6 +66,14 @@ struct PlayOnBottomSheet: View {
                     .animation(.interpolatingSpring(stiffness: 280, damping: 26), value: isOpen)
             }
             .ignoresSafeArea()
+        }
+        .sheet(isPresented: $showCastSheet) {
+            CastToTVSheet(
+                isPresented: $showCastSheet,
+                showTitle: showTitle,
+                platform: whereToWatchLabel,
+                tmdbId: nil
+            )
         }
     }
 
@@ -282,12 +291,7 @@ struct PlayOnBottomSheet: View {
                 showDot: false
             ) {
                 UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                WatchIntentLogger.shared.log(
-                    eventType: .playOnDeviceChosen,
-                    titleId: WatchIntentLogger.titleSlug(showTitle),
-                    metadata: ["device_id": "send-to-tv"]
-                )
-                onDeviceSelected("send-to-tv")
+                showCastSheet = true
             }
             .frame(maxWidth: .infinity)
         }
