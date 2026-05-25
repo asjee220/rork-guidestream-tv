@@ -128,6 +128,10 @@ private enum ReelPlatform {
 @MainActor
 @Observable
 final class ReelsViewModel {
+    /// Shared instance so the feed can be preloaded at app launch and survive
+    /// tab switches without re-fetching trailers every time the user opens Reels.
+    static let shared = ReelsViewModel()
+
     var allTrailers: [TrailerItem] = []
     var currentIndex: Int = 0
     var isLoading: Bool = true
@@ -138,6 +142,15 @@ final class ReelsViewModel {
     var reelSwipeCount: Int = 0
 
     private let tmdb = TMDBService.shared
+    private var hasLoaded: Bool = false
+
+    /// Loads the feed once per app session. Subsequent calls are no-ops so the
+    /// data is shared across reentries into the Reels tab.
+    func loadIfNeeded() async {
+        guard !hasLoaded, !isLoading || allTrailers.isEmpty else { return }
+        if hasLoaded { return }
+        await loadTrailers()
+    }
 
     func loadTrailers() async {
         isLoading = true
@@ -165,9 +178,16 @@ final class ReelsViewModel {
         }
 
         self.allTrailers = combined
+        self.hasLoaded = !combined.isEmpty
 
         // Hydrate Supabase-backed like/saved state for current user.
         await hydrateUserState()
+
+        // Pre-resolve the first few trailer stream URLs so playback starts
+        // instantly when the user lands on the feed.
+        for trailer in combined.prefix(3) where !trailer.isSponsored && !trailer.trailerKey.isEmpty {
+            TrailerStreamCache.shared.prefetch(trailer.trailerKey)
+        }
     }
 
     private func mineResults(_ streams: [UserStream]) -> [TMDBResult] {
@@ -377,8 +397,8 @@ final class ReelsViewModel {
 // MARK: - Reels Screen
 
 struct ReelsScreen: View {
-    @State private var vm = ReelsViewModel()
-    @State private var isMuted: Bool = true
+    @State private var vm = ReelsViewModel.shared
+    @State private var isMuted: Bool = false
     @State private var isPlaying: Bool = true
     @State private var showComments: Bool = false
     @State private var showShare: Bool = false
@@ -441,12 +461,14 @@ struct ReelsScreen: View {
             }
         }
         .task {
-            await vm.loadTrailers()
-            tabBarVisibility.isVisible = true
+            // Hide the floating tab bar so the reel fills the entire screen.
+            tabBarVisibility.hide()
+            await vm.loadIfNeeded()
             if scrolledID == nil { scrolledID = 0 }
             prefetchNeighbors(around: vm.currentIndex)
         }
-        .onAppear { tabBarVisibility.isVisible = true }
+        .onAppear { tabBarVisibility.hide() }
+        .onDisappear { tabBarVisibility.show() }
         .sheet(isPresented: $showComments) {
             if let trailer = currentTrailer {
                 TrailerCommentsSheet(trailer: trailer)
@@ -488,13 +510,6 @@ struct ReelsScreen: View {
             currentIndex: vm.currentIndex,
             totalCount: vm.allTrailers.count,
             onTogglePlay: { isPlaying.toggle() },
-            onToggleMute: {
-                isMuted.toggle()
-                WatchIntentLogger.shared.log(
-                    eventType: .muteToggled,
-                    metadata: ["muted": isMuted]
-                )
-            },
             onLike: {
                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
                 vm.toggleLike(trailer)
@@ -599,7 +614,6 @@ private struct ReelView: View {
     let totalCount: Int
 
     let onTogglePlay: () -> Void
-    let onToggleMute: () -> Void
     let onLike: () -> Void
     let onComments: () -> Void
     let onSave: () -> Void
@@ -612,6 +626,9 @@ private struct ReelView: View {
     @State private var likeBounce: CGFloat = 1.0
     @State private var embedFailed: Bool = false
     @State private var playbackProgress: Double = 0
+    @State private var showTapIndicator: Bool = false
+    @State private var tapIndicatorIcon: String = "pause.fill"
+    @State private var tapIndicatorTask: Task<Void, Never>?
 
     var body: some View {
         ZStack {
@@ -707,36 +724,15 @@ private struct ReelView: View {
             }
             .allowsHitTesting(false)
 
-            // Layer 16 — bottom scrim
+            // Layer 16 — bottom scrim (extends to the very bottom now that the tab bar is hidden)
             VStack {
                 Spacer()
                 LinearGradient(
                     colors: [.clear, Color.navy.opacity(0.55), Color.navy.opacity(0.92), Color.navy],
                     startPoint: .top, endPoint: .bottom)
                     .frame(height: 440)
-                Spacer().frame(height: 88)
             }
             .allowsHitTesting(false)
-
-            // Layer 14 — mute toggle
-            VStack {
-                HStack {
-                    Button(action: onToggleMute) {
-                        ZStack {
-                            Circle().fill(Color.black.opacity(0.50)).background(.ultraThinMaterial, in: Circle())
-                            Image(systemName: isMuted ? "speaker.slash.fill" : "speaker.wave.3.fill")
-                                .scaledFont(size: 12, weight: .semibold)
-                                .foregroundStyle(.white)
-                        }
-                        .frame(width: 28, height: 28)
-                    }
-                    .buttonStyle(.plain)
-                    .padding(.leading, 14)
-                    .padding(.top, topInset + 50)
-                    Spacer()
-                }
-                Spacer()
-            }
 
             // Layer 15 — right rail
             VStack {
@@ -859,7 +855,7 @@ private struct ReelView: View {
                 }
                 .padding(.leading, 22)
                 .padding(.trailing, 90)
-                .padding(.bottom, 156)
+                .padding(.bottom, bottomInset + 38)
                 .opacity(contentOpacity)
                 .onAppear {
                     withAnimation(.easeOut(duration: 0.6)) { contentOpacity = 1.0 }
@@ -881,33 +877,50 @@ private struct ReelView: View {
                     .frame(height: 3)
                 }
                 .padding(.horizontal, 22)
-                .padding(.bottom, bottomInset + 90)
+                .padding(.bottom, bottomInset + 14)
             }
             .allowsHitTesting(false)
 
-            // Layer 21 — paused overlay
-            if !isPlaying {
+            // Layer 21 — transient tap indicator (fades in then out after each tap)
+            if showTapIndicator {
                 ZStack {
-                    Color.black.opacity(0.30).ignoresSafeArea()
-                    ZStack {
-                        Circle()
-                            .fill(Color.black.opacity(0.45))
-                            .background(.ultraThinMaterial, in: Circle())
-                            .overlay(Circle().stroke(Color.white.opacity(0.55), lineWidth: 1))
-                        Image(systemName: "play.fill")
-                            .scaledFont(size: 28)
-                            .foregroundStyle(.white)
-                            .offset(x: 3)
-                    }
-                    .frame(width: 72, height: 72)
-                    .shadow(color: Color.white.opacity(0.15), radius: 30)
+                    Circle()
+                        .fill(Color.black.opacity(0.45))
+                        .background(.ultraThinMaterial, in: Circle())
+                        .overlay(Circle().stroke(Color.white.opacity(0.30), lineWidth: 1))
+                    Image(systemName: tapIndicatorIcon)
+                        .scaledFont(size: 32, weight: .black)
+                        .foregroundStyle(.white)
+                        .offset(x: tapIndicatorIcon == "play.fill" ? 2 : 0)
                 }
-                .transition(.opacity)
+                .frame(width: 88, height: 88)
+                .shadow(color: .black.opacity(0.35), radius: 18)
+                .transition(.scale(scale: 0.7).combined(with: .opacity))
+                .allowsHitTesting(false)
             }
         }
         .contentShape(Rectangle())
-        .onTapGesture { onTogglePlay() }
+        .onTapGesture {
+            let willBePlaying = !isPlaying
+            onTogglePlay()
+            triggerTapIndicator(playing: willBePlaying)
+        }
         .animation(.easeOut(duration: 0.15), value: isPlaying)
+    }
+
+    private func triggerTapIndicator(playing: Bool) {
+        tapIndicatorTask?.cancel()
+        tapIndicatorIcon = playing ? "play.fill" : "pause.fill"
+        withAnimation(.spring(response: 0.32, dampingFraction: 0.72)) {
+            showTapIndicator = true
+        }
+        tapIndicatorTask = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(500))
+            guard !Task.isCancelled else { return }
+            withAnimation(.easeOut(duration: 0.28)) {
+                showTapIndicator = false
+            }
+        }
     }
 
     private func formatCount(_ n: Int) -> String {

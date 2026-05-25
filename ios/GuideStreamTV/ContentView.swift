@@ -40,6 +40,12 @@ struct ContentView: View {
         .task {
             await auth.restoreSession()
             didRestoreSession = true
+            // Warm up the reels feed in the background so the tab opens instantly
+            // when the user first taps it. Network calls and trailer-key lookups
+            // would otherwise add a 2–3s spinner on first reveal.
+            Task.detached(priority: .userInitiated) {
+                await ReelsViewModel.shared.loadIfNeeded()
+            }
         }
     }
 
@@ -86,7 +92,12 @@ struct ContentView: View {
                         openAskSheet()
                     } else {
                         previousTab = newValue
-                        tabBarVisibility.reset()
+                        if newValue == .reels {
+                            // Reels is a full-screen consumption surface — hide the floating tab bar.
+                            tabBarVisibility.hide()
+                        } else {
+                            tabBarVisibility.reset()
+                        }
                     }
                 }
 

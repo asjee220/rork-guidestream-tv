@@ -63,6 +63,20 @@ final class TabBarVisibility {
             }
         }
     }
+
+    /// Force-hide with animation — used for full-screen consumption surfaces (Reels).
+    func hide() {
+        lastOffset = 0
+        accumulatedDelta = 0
+        setVisible(false)
+    }
+
+    /// Force-show with animation.
+    func show() {
+        lastOffset = 0
+        accumulatedDelta = 0
+        setVisible(true)
+    }
 }
 
 // MARK: - Environment plumbing
