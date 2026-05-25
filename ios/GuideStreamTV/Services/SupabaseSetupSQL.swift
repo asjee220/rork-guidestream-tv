@@ -62,6 +62,29 @@ enum SupabaseSetupSQL {
     alter table public.user_streams add column if not exists poster_url text;
     alter table public.user_streams add column if not exists platform text;
 
+    -- Drop legacy NOT NULL constraints from older schema versions so the
+    -- app's modern inserts (`title_id` + `title`) succeed. Wrapped in a DO
+    -- block so it's a no-op when the legacy columns don't exist.
+    do $
+    begin
+      if exists (
+        select 1 from information_schema.columns
+        where table_schema = 'public'
+          and table_name = 'user_streams'
+          and column_name = 'title_name'
+      ) then
+        execute 'alter table public.user_streams alter column title_name drop not null';
+      end if;
+      if exists (
+        select 1 from information_schema.columns
+        where table_schema = 'public'
+          and table_name = 'user_streams'
+          and column_name = 'show_id'
+      ) then
+        execute 'alter table public.user_streams alter column show_id drop not null';
+      end if;
+    end $;
+
     create index if not exists user_streams_user_idx on public.user_streams(user_id);
     create unique index if not exists user_streams_user_title_uidx
       on public.user_streams(user_id, title_id);

@@ -750,6 +750,8 @@ struct SupabaseDiagnosticsView: View {
         if case .tableMissing = write { return .tableMissing }
         if case .columnMissing(let c) = write { return .columnMissing(c) }
         if case .columnMissing(let c) = read { return .columnMissing(c) }
+        if case .notNullViolation(let c) = write { return .notNullViolation(c) }
+        if case .notNullViolation(let c) = read { return .notNullViolation(c) }
         if case .rlsBlocked = write { return .rlsBlocked }
         if case .rlsBlocked = read { return .rlsBlocked }
         if case .error(let m) = write { return .error(m) }
@@ -779,6 +781,7 @@ struct SupabaseDiagnosticsView: View {
         case .tableMissing: return ("xmark", .red)
         case .rlsBlocked: return ("lock.fill", Theme.orange)
         case .columnMissing: return ("minus", Theme.orange)
+        case .notNullViolation: return ("exclamationmark", Theme.orange)
         case .error: return ("exclamationmark", .red)
         }
     }
@@ -791,6 +794,7 @@ struct SupabaseDiagnosticsView: View {
         case .tableMissing: return "Missing"
         case .rlsBlocked: return "Blocked"
         case .columnMissing: return "Columns"
+        case .notNullViolation: return "Legacy"
         case .error: return "Error"
         }
     }
@@ -816,6 +820,8 @@ struct SupabaseDiagnosticsView: View {
                 return "RLS is on but no policy allows this user to write. Run the SQL below."
             case .columnMissing(let column):
                 return "Missing column `\(column)`. Run the SQL below."
+            case .notNullViolation(let column):
+                return "Legacy column `\(column)` is NOT NULL. Run the SQL below to relax the constraint."
             case .error(let message):
                 return message
             default:

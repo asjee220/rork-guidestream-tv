@@ -185,16 +185,23 @@ final class StreamsViewModel {
         posterUrl: String?,
         platform: String?
     ) async -> Bool {
+        // Always populate `title_name` (legacy schemas declared it NOT NULL).
+        // Fall back to titleId if we don't have a display title so the
+        // constraint is satisfied. `dropMissingColumn` retries below drop
+        // any of these keys if the live schema doesn't have them.
+        let safeTitle = title ?? titleId
         var payload: [String: AnyJSON] = [
             "user_id": .string(userId),
-            "title_id": .string(titleId)
+            "title_id": .string(titleId),
+            "title_name": .string(safeTitle)
         ]
         if let title { payload["title"] = .string(title) }
         if let posterUrl { payload["poster_url"] = .string(posterUrl) }
         if let platform { payload["platform"] = .string(platform) }
 
-        // Up to two retries: drop any missing column reported by Postgres.
-        for attempt in 0..<3 {
+        // Up to four retries: legacy schemas may still have other NOT NULL
+        // columns or missing columns we have to work around.
+        for attempt in 0..<5 {
             do {
                 try await SupabaseManager.shared.client
                     .from("user_streams")
@@ -210,8 +217,15 @@ final class StreamsViewModel {
                     return true
                 }
                 // Missing-column → drop that column and retry.
-                if attempt < 2, let dropped = Self.dropMissingColumn(from: payload, error: message) {
+                if attempt < 4, let dropped = Self.dropMissingColumn(from: payload, error: message) {
                     payload = dropped
+                    continue
+                }
+                // NOT NULL violation on a column we don't yet send → backfill
+                // with the safe title and retry.
+                if attempt < 4,
+                   let filled = Self.fillNotNullViolation(in: payload, error: message, fallback: safeTitle) {
+                    payload = filled
                     continue
                 }
                 if lowered.contains("42501") || lowered.contains("row-level security") {
@@ -368,5 +382,29 @@ final class StreamsViewModel {
             }
         }
         return didDrop ? trimmed : nil
+    }
+
+    /// Inspect a Postgres `23502` (not-null violation) error and backfill
+    /// the referenced column with the provided fallback so the next retry
+    /// can succeed. Returns `nil` if the column can't be parsed or is
+    /// already present.
+    private static func fillNotNullViolation(
+        in payload: [String: AnyJSON],
+        error: String,
+        fallback: String
+    ) -> [String: AnyJSON]? {
+        let lowered = error.lowercased()
+        guard lowered.contains("23502") || lowered.contains("not-null constraint") else {
+            return nil
+        }
+        // Postgres formats as: `null value in column "colname" of relation ...`
+        guard let range = error.range(of: "column \"", options: .caseInsensitive) else { return nil }
+        let after = error[range.upperBound...]
+        guard let end = after.firstIndex(of: "\"") else { return nil }
+        let column = String(after[..<end])
+        guard !column.isEmpty, payload[column] == nil else { return nil }
+        var filled = payload
+        filled[column] = .string(fallback)
+        return filled
     }
 }

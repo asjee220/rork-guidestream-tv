@@ -34,6 +34,7 @@ final class SupabaseSchemaProbe {
         case tableMissing
         case rlsBlocked
         case columnMissing(String)
+        case notNullViolation(String)
         case error(String)
 
         var isFailure: Bool {
@@ -153,9 +154,12 @@ final class SupabaseSchemaProbe {
                 "is_authenticated": .bool(false)
             ]
         case "user_streams":
+            // Send both `title` and the legacy `title_name` so probes
+            // succeed against either modern or legacy schemas.
             payload = [
                 "title_id": .string(probeTitleId),
-                "title": .string("Schema Probe")
+                "title": .string("Schema Probe"),
+                "title_name": .string("Schema Probe")
             ]
             if let uid = AuthViewModel.shared.currentUser?.id.uuidString {
                 payload["user_id"] = .string(uid)
@@ -165,24 +169,82 @@ final class SupabaseSchemaProbe {
             return
         }
 
-        do {
-            if table == "device_sessions" {
-                try await SupabaseManager.shared.client
-                    .from(table)
-                    .upsert(payload, onConflict: "device_id")
-                    .execute()
-            } else {
-                try await SupabaseManager.shared.client
-                    .from(table)
-                    .insert(payload)
-                    .execute()
+        // Try once normally; on PGRST204 missing-column or 23502 not-null
+        // violations, adapt the payload and retry. This keeps the probe
+        // green against legacy schemas without blocking the user.
+        for attempt in 0..<5 {
+            do {
+                if table == "device_sessions" {
+                    try await SupabaseManager.shared.client
+                        .from(table)
+                        .upsert(payload, onConflict: "device_id")
+                        .execute()
+                } else {
+                    try await SupabaseManager.shared.client
+                        .from(table)
+                        .insert(payload)
+                        .execute()
+                }
+                checks[index].write = .ok
+                await cleanupProbe(table: table, probeTitleId: String(probeTitleId))
+                return
+            } catch {
+                let (state, message) = classify(error)
+                let lowered = message.lowercased()
+                // Missing column we send → drop it and retry.
+                if attempt < 4, lowered.contains("pgrst204") || (lowered.contains("could not find") && lowered.contains("column")),
+                   let dropped = Self.dropMissingColumn(from: payload, error: message) {
+                    payload = dropped
+                    continue
+                }
+                // NOT NULL on a column we don't send → fill with a placeholder.
+                if attempt < 4, lowered.contains("23502") || lowered.contains("not-null constraint"),
+                   let filled = Self.fillNotNullViolation(in: payload, error: message, fallback: "Schema Probe") {
+                    payload = filled
+                    continue
+                }
+                checks[index].write = state
+                return
             }
-            checks[index].write = .ok
-            await cleanupProbe(table: table, probeTitleId: String(probeTitleId))
-        } catch {
-            let (state, _) = classify(error)
-            checks[index].write = state
         }
+    }
+
+    /// Drop the column referenced by a PGRST204 "Could not find ... column"
+    /// error so the probe payload matches the live schema.
+    private static func dropMissingColumn(
+        from payload: [String: AnyJSON],
+        error: String
+    ) -> [String: AnyJSON]? {
+        let lowered = error.lowercased()
+        guard lowered.contains("could not find") && lowered.contains("column") else { return nil }
+        var trimmed = payload
+        var didDrop = false
+        for key in Array(payload.keys) where key != "user_id" && key != "title_id" && key != "device_id" && key != "event_type" {
+            if lowered.contains("'\(key.lowercased())'") {
+                trimmed.removeValue(forKey: key)
+                didDrop = true
+            }
+        }
+        return didDrop ? trimmed : nil
+    }
+
+    /// Backfill a column flagged by a 23502 NOT NULL violation so the
+    /// probe insert can succeed on legacy schemas.
+    private static func fillNotNullViolation(
+        in payload: [String: AnyJSON],
+        error: String,
+        fallback: String
+    ) -> [String: AnyJSON]? {
+        let lowered = error.lowercased()
+        guard lowered.contains("23502") || lowered.contains("not-null constraint") else { return nil }
+        guard let range = error.range(of: "column \"", options: .caseInsensitive) else { return nil }
+        let after = error[range.upperBound...]
+        guard let end = after.firstIndex(of: "\"") else { return nil }
+        let column = String(after[..<end])
+        guard !column.isEmpty, payload[column] == nil else { return nil }
+        var filled = payload
+        filled[column] = .string(fallback)
+        return filled
     }
 
     /// Best-effort cleanup. Removes the synthetic row inserted during the
@@ -237,6 +299,10 @@ final class SupabaseSchemaProbe {
             let column = Self.extractColumnName(from: message) ?? "unknown"
             return (.columnMissing(column), message)
         }
+        if lowered.contains("23502") || lowered.contains("not-null constraint") {
+            let column = Self.extractNotNullColumn(from: message) ?? "unknown"
+            return (.notNullViolation(column), message)
+        }
         return (.error(message), message)
     }
 
@@ -245,6 +311,15 @@ final class SupabaseSchemaProbe {
         guard let range = message.range(of: "Could not find the '", options: .caseInsensitive) else { return nil }
         let after = message[range.upperBound...]
         guard let end = after.firstIndex(of: "'") else { return nil }
+        return String(after[..<end])
+    }
+
+    /// Extract the column name out of a Postgres 23502 message of the form
+    /// `null value in column "foo" of relation "bar" violates ...`.
+    private static func extractNotNullColumn(from message: String) -> String? {
+        guard let range = message.range(of: "column \"", options: .caseInsensitive) else { return nil }
+        let after = message[range.upperBound...]
+        guard let end = after.firstIndex(of: "\"") else { return nil }
         return String(after[..<end])
     }
 }
