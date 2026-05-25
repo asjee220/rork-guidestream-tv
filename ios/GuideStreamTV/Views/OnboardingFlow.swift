@@ -295,9 +295,19 @@ private struct OnboardingHeader: View {
 
             Spacer()
 
-            Text("GuideStream Prototype")
-                .font(.custom("SF Pro Text", size: 16).weight(.semibold))
-                .foregroundStyle(.white)
+            HStack(alignment: .firstTextBaseline, spacing: 0) {
+                Text("Guide")
+                    .scaledFont(size: 18, weight: .semibold, design: .default)
+                    .foregroundStyle(Color.textPrimary)
+                Text("Stream")
+                    .scaledFont(size: 18, weight: .semibold, design: .default)
+                    .foregroundStyle(Color.orange)
+                Text(" TV")
+                    .scaledFont(size: 13, weight: .regular, design: .default)
+                    .foregroundStyle(Color.white.opacity(0.45))
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("GuideStream TV")
 
             Spacer()
 
@@ -392,7 +402,11 @@ private let services: [ServiceItem] = [
     .init(id: "espn", name: "ESPN",
           bg: Color(red: 0x00/255, green: 0x1A/255, blue: 0x70/255),
           glow: Color(red: 0xD0/255, green: 0x21/255, blue: 0x31/255),
-          display: .text("ESPN", Color.white, fontWeight: .black, design: .default))
+          display: .text("ESPN", Color.white, fontWeight: .black, design: .default)),
+    .init(id: "crunchyroll", name: "Crunchyroll",
+          bg: Color(red: 0xF4/255, green: 0x7B/255, blue: 0x20/255),
+          glow: Color(red: 0xF4/255, green: 0x7B/255, blue: 0x20/255),
+          display: .text("crunchyroll", Color.white, fontWeight: .black, design: .rounded))
 ]
 
 struct ConnectServicesView: View {
