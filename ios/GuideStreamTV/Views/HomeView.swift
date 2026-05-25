@@ -103,6 +103,8 @@ struct HomeView: View {
     @State private var path: [HomeRoute] = []
     @State private var detailSubject: DetailSubject?
     @State private var showNotifications: Bool = false
+    @State private var showServicesSheet: Bool = false
+    @State private var auth = AuthViewModel.shared
     @State private var streams = StreamsViewModel.shared
     @State private var trending: [TMDBResult] = []
     @State private var onAir: [TMDBResult] = []
@@ -222,7 +224,9 @@ struct HomeView: View {
 
                 PageBar(
                     notificationCount: notificationCount,
-                    onNotification: { showNotifications = true }
+                    selectedServiceIds: orderedSelectedServiceIds,
+                    onNotification: { showNotifications = true },
+                    onServicesPill: { showServicesSheet = true }
                 )
             }
             .background(Color.navy.ignoresSafeArea())
@@ -246,6 +250,9 @@ struct HomeView: View {
             .sheet(item: $selectedGame) { game in
                 SportsWatchSheet(game: game)
             }
+            .sheet(isPresented: $showServicesSheet) {
+                ServicesBottomSheet()
+            }
             .toolbar(.hidden, for: .navigationBar)
         }
         .tint(Color.orange)
@@ -264,6 +271,12 @@ struct HomeView: View {
     private func clearBadgeAndMarkSeen() async {
         try? await UNUserNotificationCenter.current().setBadgeCount(0)
         await streams.markStaleEpisodesSeen()
+    }
+
+    /// Selected service ids in catalogue order — keeps the pill's stacked icons
+    /// in the same priority as the onboarding grid (Netflix first, Prime next, etc.).
+    private var orderedSelectedServiceIds: [String] {
+        StreamingCatalog.ordered(from: auth.selectedServices).map { $0.id }
     }
 
     private func loadTrendingIfNeeded() async {
@@ -453,10 +466,12 @@ struct HomeView: View {
 
 private struct PageBar: View {
     let notificationCount: Int
+    let selectedServiceIds: [String]
     let onNotification: () -> Void
+    let onServicesPill: () -> Void
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 10) {
             HStack(alignment: .firstTextBaseline, spacing: 0) {
                 Text("Guide")
                     .scaledFont(size: 22, weight: .semibold, design: .default)
@@ -467,6 +482,10 @@ private struct PageBar: View {
                 Text(" TV")
                     .scaledFont(size: 16, weight: .regular, design: .default)
                     .foregroundStyle(Color.white.opacity(0.45))
+            }
+            if !selectedServiceIds.isEmpty {
+                ServicesPill(serviceIds: selectedServiceIds, onTap: onServicesPill)
+                    .padding(.leading, 6)
             }
             Spacer()
             Button(action: onNotification) {

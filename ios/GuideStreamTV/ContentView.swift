@@ -57,6 +57,12 @@ struct ContentView: View {
                 ]
             )
 
+            // Upsert the single device_sessions row for this install so we
+            // always have a guest "profile" in Supabase — even users who
+            // never sign in get one row that updates with last_seen_at and
+            // their current selections.
+            DeviceSessionService.shared.incrementSessionAndUpsert()
+
             // Warm up the reels feed in the background so the tab opens instantly
             // when the user first taps it. Network calls and trailer-key lookups
             // would otherwise add a 2–3s spinner on first reveal.

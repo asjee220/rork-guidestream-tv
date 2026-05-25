@@ -14,7 +14,9 @@ struct SupabaseDiagnosticsView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var auth = AuthViewModel.shared
     @State private var logger = WatchIntentLogger.shared
+    @State private var session = DeviceSessionService.shared
     @State private var testStatus: TestStatus = .idle
+    @State private var sessionStatus: TestStatus = .idle
     @State private var copyFlash: Bool = false
 
     private let deviceId: String = DeviceIdentity.shared.deviceId
@@ -32,6 +34,7 @@ struct SupabaseDiagnosticsView: View {
             ScrollView {
                 VStack(spacing: 16) {
                     summaryCard
+                    deviceSessionCard
                     actionsCard
                     errorsCard
                 }
@@ -96,6 +99,71 @@ struct SupabaseDiagnosticsView: View {
                 value: "\(logger.totalAttempts - logger.totalSuccesses)",
                 tint: (logger.totalAttempts - logger.totalSuccesses) > 0 ? Color.red.opacity(0.9) : Color.white.opacity(0.6)
             )
+        }
+        .padding(18)
+        .background(cardBackground)
+    }
+
+    // MARK: - Device session
+
+    private var deviceSessionCard: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            sectionTitle("Device session row")
+
+            Text("One row per install in `device_sessions`, keyed on `device_id`. Updated on launch, sign-in/out, onboarding, and any service or notification change — the guest \"profile\" equivalent.")
+                .font(.system(size: 13))
+                .foregroundStyle(Color.white.opacity(0.65))
+                .fixedSize(horizontal: false, vertical: true)
+
+            row(label: "Session #", value: "\(session.sessionCount)")
+            row(
+                label: "Upserts",
+                value: "\(session.totalSuccesses) / \(session.totalUpserts)",
+                tint: session.totalSuccesses > 0 ? Color.green : Color.white.opacity(0.6)
+            )
+            if let reason = session.lastReason {
+                row(label: "Last reason", value: reason)
+            }
+            if let lastSuccess = session.lastSuccessAt {
+                row(
+                    label: "Last ok",
+                    value: timeAgo(lastSuccess),
+                    tint: Color.green.opacity(0.9)
+                )
+            }
+            if let lastError = session.lastError {
+                Text(lastError)
+                    .font(.system(size: 12, design: .monospaced))
+                    .foregroundStyle(Color.red.opacity(0.9))
+                    .padding(12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.red.opacity(0.12))
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            }
+
+            Button {
+                runSessionSync()
+            } label: {
+                HStack(spacing: 8) {
+                    if sessionStatus == .running {
+                        ProgressView()
+                            .controlSize(.small)
+                            .tint(.white)
+                    } else {
+                        Image(systemName: sessionStatusIcon)
+                            .font(.system(size: 14, weight: .bold))
+                    }
+                    Text(sessionButtonLabel)
+                        .font(.system(size: 15, weight: .bold))
+                }
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity)
+                .frame(height: 48)
+                .background(sessionButtonBackground)
+                .clipShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            .disabled(sessionStatus == .running)
         }
         .padding(18)
         .background(cardBackground)
@@ -222,6 +290,20 @@ struct SupabaseDiagnosticsView: View {
         }
     }
 
+    private func runSessionSync() {
+        sessionStatus = .running
+        Task {
+            let error = await DeviceSessionService.shared.upsertNowReturningError(
+                reason: "diagnostic"
+            )
+            if let error {
+                sessionStatus = .failure(error)
+            } else {
+                sessionStatus = .success
+            }
+        }
+    }
+
     private var authStateLabel: String {
         if auth.isAuthenticated { return "Signed in" }
         if auth.isGuest { return "Guest" }
@@ -256,6 +338,40 @@ struct SupabaseDiagnosticsView: View {
             return AnyShapeStyle(
                 LinearGradient(
                     colors: [Theme.orange, Theme.orange.opacity(0.85)],
+                    startPoint: .top, endPoint: .bottom
+                )
+            )
+        }
+    }
+
+    private var sessionStatusIcon: String {
+        switch sessionStatus {
+        case .idle: return "arrow.triangle.2.circlepath"
+        case .running: return "hourglass"
+        case .success: return "checkmark.circle.fill"
+        case .failure: return "exclamationmark.triangle.fill"
+        }
+    }
+
+    private var sessionButtonLabel: String {
+        switch sessionStatus {
+        case .idle: return "Sync device row"
+        case .running: return "Syncing…"
+        case .success: return "Synced — sync again"
+        case .failure: return "Retry sync"
+        }
+    }
+
+    private var sessionButtonBackground: some ShapeStyle {
+        switch sessionStatus {
+        case .success:
+            return AnyShapeStyle(Color.green.opacity(0.85))
+        case .failure:
+            return AnyShapeStyle(Color.red.opacity(0.85))
+        default:
+            return AnyShapeStyle(
+                LinearGradient(
+                    colors: [Theme.blue, Theme.blue.opacity(0.85)],
                     startPoint: .top, endPoint: .bottom
                 )
             )

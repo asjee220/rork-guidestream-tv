@@ -19,6 +19,7 @@ struct OnboardingFlow: View {
     @State private var selectedServices: Set<String> = AuthViewModel.shared.selectedServices
     @State private var pushOn: Bool = AuthViewModel.shared.notifyPushEnabled
     @State private var smsOn: Bool = AuthViewModel.shared.notifySMSEnabled
+    @State private var showEmailAuth: Bool = false
 
     var body: some View {
         ZStack {
@@ -45,7 +46,7 @@ struct OnboardingFlow: View {
                 case 0:
                     WelcomeOnboardingView(
                         onContinue: { advance() },
-                        onSignIn: { advance() }
+                        onEmailAuth: { showEmailAuth = true }
                     )
                 case 1:
                     ConnectServicesView(
@@ -73,6 +74,18 @@ struct OnboardingFlow: View {
             ))
         }
         .preferredColorScheme(.dark)
+        .sheet(isPresented: $showEmailAuth) {
+            EmailAuthView(
+                onAuthenticated: {
+                    showEmailAuth = false
+                    // First time email user — proceed to services step.
+                    // Returning users (hasCompletedOnboarding already true)
+                    // are handled by ContentView and skip this flow entirely.
+                    advance()
+                },
+                onClose: { showEmailAuth = false }
+            )
+        }
         .onAppear {
             // Skip welcome if user is already authenticated
             if step == 0 && startStep > 0 {
@@ -92,7 +105,7 @@ struct OnboardingFlow: View {
 
 struct WelcomeOnboardingView: View {
     var onContinue: () -> Void
-    var onSignIn: () -> Void
+    var onEmailAuth: () -> Void
 
     @State private var auth = AuthViewModel.shared
 
@@ -119,7 +132,7 @@ struct WelcomeOnboardingView: View {
                     Text("Every show. Every service.")
                         .font(.custom("SF Pro Text", size: 15))
                         .foregroundStyle(Color.textSecondary)
-                    Text("One place to rule them all.")
+                    Text("What are you watching now?")
                         .font(.custom("SF Pro Display", size: 18).weight(.bold))
                         .foregroundStyle(.white)
                 }
@@ -163,7 +176,7 @@ struct WelcomeOnboardingView: View {
                     .disabled(auth.isAuthenticating)
                 }
 
-                // Primary CTA
+                // Primary CTA — start as a guest (no auth required).
                 Button {
                     let gen = UIImpactFeedbackGenerator(style: .medium)
                     gen.impactOccurred()
@@ -171,7 +184,7 @@ struct WelcomeOnboardingView: View {
                     onContinue()
                 } label: {
                     HStack(spacing: 8) {
-                        Text("Get Started Free")
+                        Text("Start without login")
                             .font(.custom("SF Pro Text", size: 16).weight(.bold))
                         Image(systemName: "arrow.right")
                             .scaledFont(size: 15, weight: .bold)
@@ -190,10 +203,14 @@ struct WelcomeOnboardingView: View {
                 }
                 .buttonStyle(.plain)
 
-                Button(action: onSignIn) {
-                    Text("Sign in to existing account")
-                        .font(.custom("SF Pro Text", size: 13))
-                        .foregroundStyle(Color.textSecondary)
+                Button(action: onEmailAuth) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "envelope.fill")
+                            .scaledFont(size: 12, weight: .semibold)
+                        Text("Sign in with email")
+                            .font(.custom("SF Pro Text", size: 13).weight(.medium))
+                    }
+                    .foregroundStyle(Color.textSecondary)
                 }
                 .buttonStyle(.plain)
                 .padding(.bottom, 4)
@@ -343,72 +360,10 @@ private struct OnboardingHeader: View {
 
 // MARK: - Connect Services
 
-private struct ServiceItem: Identifiable {
-    let id: String
-    let name: String
-    let bg: Color
-    let glow: Color
-    let display: ServiceDisplay
-}
-
-private enum ServiceDisplay {
-    case text(String, Color, fontWeight: Font.Weight, design: Font.Design)
-    case symbol(String, Color) // SF symbol
-    case symbolText(String, String, Color) // symbol + suffix
-    case star
-}
-
-private let services: [ServiceItem] = [
-    .init(id: "netflix", name: "Netflix",
-          bg: .black, glow: Color(red: 0xE5/255, green: 0x09/255, blue: 0x14/255),
-          display: .text("N", Color(red: 0xE5/255, green: 0x09/255, blue: 0x14/255), fontWeight: .black, design: .serif)),
-    .init(id: "prime", name: "Prime",
-          bg: Color(red: 0x1A/255, green: 0x20/255, blue: 0x2C/255),
-          glow: Color(red: 0x00/255, green: 0xA8/255, blue: 0xE1/255),
-          display: .text("prime\nvideo", Color.white, fontWeight: .bold, design: .default)),
-    .init(id: "hulu", name: "Hulu",
-          bg: Color(red: 0x1C/255, green: 0xE7/255, blue: 0x83/255),
-          glow: Color(red: 0x1C/255, green: 0xE7/255, blue: 0x83/255),
-          display: .text("hulu", Color.black, fontWeight: .black, design: .rounded)),
-    .init(id: "disney", name: "Disney+",
-          bg: Color(red: 0x0E/255, green: 0x29/255, blue: 0x3F/255),
-          glow: Color(red: 0x11/255, green: 0x3C/255, blue: 0xCF/255),
-          display: .text("Disney+", Color.white, fontWeight: .semibold, design: .serif)),
-    .init(id: "hbo", name: "HBO",
-          bg: Color(red: 0x00/255, green: 0x1E/255, blue: 0xE0/255),
-          glow: Color(red: 0x00/255, green: 0x55/255, blue: 0xFF/255),
-          display: .text("max", Color.white, fontWeight: .black, design: .default)),
-    .init(id: "peacock", name: "Peacock",
-          bg: .black, glow: Color(red: 0xFF/255, green: 0x66/255, blue: 0x00/255),
-          display: .text("PEACOCK", Color.white, fontWeight: .bold, design: .default)),
-    .init(id: "appletv", name: "Apple TV+",
-          bg: .black, glow: Color.white,
-          display: .symbolText("applelogo", "tv+", Color.white)),
-    .init(id: "paramount", name: "Paramount+",
-          bg: Color(red: 0x00/255, green: 0x64/255, blue: 0xFF/255),
-          glow: Color(red: 0x00/255, green: 0x64/255, blue: 0xFF/255),
-          display: .text("PARAMOUNT+", Color.white, fontWeight: .black, design: .default)),
-    .init(id: "amc", name: "AMC+",
-          bg: .black, glow: Color(red: 0xF5/255, green: 0x82/255, blue: 0x1F/255),
-          display: .text("amc+", Color.white, fontWeight: .black, design: .default)),
-    .init(id: "tubi", name: "Tubi",
-          bg: Color(red: 0xD3/255, green: 0x14/255, blue: 0x21/255),
-          glow: Color(red: 0xFF/255, green: 0x40/255, blue: 0x40/255),
-          display: .text("tubi", Color.white, fontWeight: .black, design: .rounded)),
-    .init(id: "starz", name: "Starz",
-          bg: Color(red: 0x14/255, green: 0x05/255, blue: 0x20/255),
-          glow: Color(red: 0xFF/255, green: 0xC8/255, blue: 0x1E/255),
-          display: .star),
-    .init(id: "espn", name: "ESPN",
-          bg: Color(red: 0x00/255, green: 0x1A/255, blue: 0x70/255),
-          glow: Color(red: 0xD0/255, green: 0x21/255, blue: 0x31/255),
-          display: .text("ESPN", Color.white, fontWeight: .black, design: .default)),
-    .init(id: "crunchyroll", name: "Crunchyroll",
-          bg: Color(red: 0xF4/255, green: 0x7B/255, blue: 0x20/255),
-          glow: Color(red: 0xF4/255, green: 0x7B/255, blue: 0x20/255),
-          display: .text("crunchyroll", Color.white, fontWeight: .black, design: .rounded))
-]
-
+/// Onboarding step where the user picks every streaming service they have so
+/// the home-screen feed is personalised. Uses the shared `StreamingCatalog`
+/// (top ~50 worldwide) and `ServiceTile` so the same brand artwork is reused
+/// by the `ServicesBottomSheet` accessed from the header pill.
 struct ConnectServicesView: View {
     @Binding var selected: Set<String>
     var onContinue: () -> Void
@@ -430,13 +385,13 @@ struct ConnectServicesView: View {
                         .foregroundStyle(.white)
                         .padding(.top, 24)
 
-                    Text("Select all that apply to personalise your feed")
+                    Text("Pick from the top 50 worldwide — every selection sharpens your feed")
                         .font(.custom("SF Pro Text", size: 15))
                         .foregroundStyle(Color.textSecondary)
                         .padding(.bottom, 18)
 
                     LazyVGrid(columns: columns, spacing: 22) {
-                        ForEach(services) { svc in
+                        ForEach(StreamingCatalog.all) { svc in
                             ServiceTile(
                                 service: svc,
                                 isSelected: selected.contains(svc.id),
@@ -490,89 +445,6 @@ struct ConnectServicesView: View {
         withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
             if selected.contains(id) { selected.remove(id) } else { selected.insert(id) }
         }
-    }
-}
-
-private struct ServiceTile: View {
-    let service: ServiceItem
-    let isSelected: Bool
-    let onTap: () -> Void
-
-    var body: some View {
-        Button(action: onTap) {
-            VStack(spacing: 8) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .fill(service.bg)
-
-                    content
-                        .padding(8)
-                }
-                .aspectRatio(1, contentMode: .fit)
-                .overlay {
-                    RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .stroke(isSelected ? service.glow : Color.white.opacity(0.06),
-                                lineWidth: isSelected ? 3 : 1)
-                }
-                .overlay(alignment: .topTrailing) {
-                    if isSelected {
-                        ZStack {
-                            Circle().fill(service.glow)
-                                .frame(width: 22, height: 22)
-                            Image(systemName: "checkmark")
-                                .scaledFont(size: 11, weight: .black)
-                                .foregroundStyle(service.bg == .black ? .white : .black)
-                        }
-                        .offset(x: 6, y: -6)
-                        .transition(.scale.combined(with: .opacity))
-                    }
-                }
-                .shadow(color: isSelected ? service.glow.opacity(0.55) : .clear,
-                        radius: 18, x: 0, y: 0)
-
-                Text(service.name)
-                    .font(.custom("SF Pro Text", size: 12).weight(.medium))
-                    .foregroundStyle(Color.textSecondary)
-                    .lineLimit(1)
-            }
-        }
-        .buttonStyle(.plain)
-    }
-
-    @ViewBuilder
-    private var content: some View {
-        switch service.display {
-        case .text(let str, let color, let weight, let design):
-            Text(str)
-                .scaledFont(size: textSize(for: str), weight: weight, design: design)
-                .foregroundStyle(color)
-                .multilineTextAlignment(.center)
-                .minimumScaleFactor(0.5)
-                .lineLimit(2)
-        case .symbol(let name, let color):
-            Image(systemName: name)
-                .scaledFont(size: 32, weight: .bold)
-                .foregroundStyle(color)
-        case .symbolText(let symbol, let suffix, let color):
-            HStack(spacing: 2) {
-                Image(systemName: symbol)
-                    .scaledFont(size: 22, weight: .bold)
-                Text(suffix)
-                    .scaledFont(size: 18, weight: .bold)
-            }
-            .foregroundStyle(color)
-        case .star:
-            Image(systemName: "star.fill")
-                .scaledFont(size: 36)
-                .foregroundStyle(Color(red: 0xFF/255, green: 0xC8/255, blue: 0x1E/255))
-        }
-    }
-
-    private func textSize(for str: String) -> CGFloat {
-        if str.count <= 1 { return 36 }
-        if str.count <= 4 { return 26 }
-        if str.contains("\n") { return 16 }
-        return 14
     }
 }
 

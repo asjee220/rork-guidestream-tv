@@ -50,6 +50,8 @@ struct SportsView: View {
     @State private var loadError: String?
     @State private var path: [SportsRoute] = []
     @State private var selectedGame: SportsGame?
+    @State private var showServicesSheet: Bool = false
+    @State private var auth = AuthViewModel.shared
 
     private let sports: [String] = ["All", "NBA", "NFL", "Soccer", "MLB", "UFC"]
 
@@ -165,8 +167,17 @@ struct SportsView: View {
             .sheet(item: $selectedGame) { game in
                 SportsWatchSheet(game: game)
             }
+            .sheet(isPresented: $showServicesSheet) {
+                ServicesBottomSheet()
+            }
         }
         .task { await load() }
+    }
+
+    /// Selected service ids in catalogue order — keeps the pill's stacked icons
+    /// in the same priority as the onboarding grid.
+    private var orderedSelectedServiceIds: [String] {
+        StreamingCatalog.ordered(from: auth.selectedServices).map { $0.id }
     }
 
     private func load() async {
@@ -182,16 +193,25 @@ struct SportsView: View {
     // MARK: - Header
 
     private var header: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 0) {
-            Text("Guide")
-                .scaledFont(size: 22, weight: .semibold)
-                .foregroundStyle(.white)
-            Text("Stream")
-                .scaledFont(size: 22, weight: .semibold)
-                .foregroundStyle(Color(hex: "F5821F"))
-            Text(" TV")
-                .scaledFont(size: 16, weight: .regular)
-                .foregroundStyle(Color.white.opacity(0.45))
+        HStack(spacing: 10) {
+            HStack(alignment: .firstTextBaseline, spacing: 0) {
+                Text("Guide")
+                    .scaledFont(size: 22, weight: .semibold)
+                    .foregroundStyle(.white)
+                Text("Stream")
+                    .scaledFont(size: 22, weight: .semibold)
+                    .foregroundStyle(Color(hex: "F5821F"))
+                Text(" TV")
+                    .scaledFont(size: 16, weight: .regular)
+                    .foregroundStyle(Color.white.opacity(0.45))
+            }
+            if !orderedSelectedServiceIds.isEmpty {
+                ServicesPill(
+                    serviceIds: orderedSelectedServiceIds,
+                    onTap: { showServicesSheet = true }
+                )
+                .padding(.leading, 4)
+            }
             Spacer()
             if isLoading && !games.isEmpty {
                 ProgressView()

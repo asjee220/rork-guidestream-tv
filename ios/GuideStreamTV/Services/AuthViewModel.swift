@@ -18,11 +18,16 @@ final class AuthViewModel {
     var currentUser: Supabase.User?
     var isAuthenticating: Bool = false
     var lastError: String?
+    var lastInfo: String?
     var isGuest: Bool = UserDefaults.standard.bool(forKey: "gs.isGuest")
     var hasCompletedOnboarding: Bool = UserDefaults.standard.bool(forKey: "gs.onboardingComplete")
     var selectedServices: Set<String> = Set(UserDefaults.standard.stringArray(forKey: "gs.selectedServices") ?? [])
     var notifyPushEnabled: Bool = UserDefaults.standard.bool(forKey: "gs.notifyPush")
     var notifySMSEnabled: Bool = UserDefaults.standard.bool(forKey: "gs.notifySMS")
+    /// True after the user has completed at least one successful email sign-up.
+    /// First-time visits to the email auth screen show the create-account flow;
+    /// every visit afterwards defaults to the sign-in flow.
+    var hasUsedEmailAuth: Bool = UserDefaults.standard.bool(forKey: "gs.hasUsedEmailAuth")
 
     /// True when there is a real Supabase user or the user chose "Get Started Free".
     var isSignedIn: Bool { currentUser != nil || isGuest }
@@ -90,6 +95,7 @@ final class AuthViewModel {
                         "has_email": (credential.email ?? session.user.email) != nil
                     ]
                 )
+                DeviceSessionService.shared.upsert(reason: "apple_signed_in")
             } catch {
                 lastError = error.localizedDescription
                 print("[Auth ERROR] signInWithIdToken (apple) failed: \(error.localizedDescription)")
@@ -102,6 +108,9 @@ final class AuthViewModel {
     func setSelectedServices(_ services: Set<String>) {
         self.selectedServices = services
         UserDefaults.standard.set(Array(services), forKey: "gs.selectedServices")
+        // Mirror the latest selection into device_sessions so the guest "profile"
+        // stays in sync as the user toggles services during onboarding.
+        DeviceSessionService.shared.upsert(reason: "services_changed")
     }
 
     func setNotificationPreferences(push: Bool, sms: Bool) {
@@ -109,6 +118,7 @@ final class AuthViewModel {
         self.notifySMSEnabled = sms
         UserDefaults.standard.set(push, forKey: "gs.notifyPush")
         UserDefaults.standard.set(sms, forKey: "gs.notifySMS")
+        DeviceSessionService.shared.upsert(reason: "notifications_changed")
     }
 
     func completeOnboarding() {
@@ -126,6 +136,9 @@ final class AuthViewModel {
                 "notify_sms": notifySMSEnabled
             ]
         )
+        // Sync the device row with the final selection — fires for guests
+        // too so a "signed-out" install still gets a complete row.
+        DeviceSessionService.shared.upsert(reason: "onboarding_completed")
 
         // Authenticated users get a richer row in `users` keyed by their
         // Supabase auth uuid. Guests skip this — most schemas FK `users.id`
@@ -162,9 +175,14 @@ final class AuthViewModel {
         }
         self.currentUser = nil
         self.isGuest = false
-        self.hasCompletedOnboarding = false
         UserDefaults.standard.set(false, forKey: "gs.isGuest")
-        UserDefaults.standard.set(false, forKey: "gs.onboardingComplete")
+        // NOTE: `hasCompletedOnboarding` is *not* reset on sign-out — a user
+        // who has already chosen their services on this device should not be
+        // forced through onboarding again when their session expires or they
+        // sign back in with a different method.
+        // Update the device row to reflect the signed-out state so the
+        // server stops attributing future events to the old user_id.
+        DeviceSessionService.shared.upsert(reason: "signed_out")
     }
 
     // MARK: - Guest mode
@@ -178,6 +196,149 @@ final class AuthViewModel {
                 "first_launch": DeviceIdentity.shared.isFirstLaunch
             ]
         )
+        DeviceSessionService.shared.upsert(reason: "guest_started")
+    }
+
+    // MARK: - Email auth (Supabase email + password)
+
+    /// Create a new account with email + password. Sends a confirmation email
+    /// when the project has "Confirm email" turned on; in that case `session`
+    /// is nil and the caller should surface a "check your inbox" message.
+    /// Returns `true` when a session was issued and the user is fully signed
+    /// in, `false` when email confirmation is pending.
+    @discardableResult
+    func signUpWithEmail(email: String, password: String) async -> Bool {
+        isAuthenticating = true
+        lastError = nil
+        lastInfo = nil
+        defer { isAuthenticating = false }
+        do {
+            let response = try await SupabaseManager.shared.client.auth.signUp(
+                email: email,
+                password: password
+            )
+            UserDefaults.standard.set(true, forKey: "gs.hasUsedEmailAuth")
+            self.hasUsedEmailAuth = true
+            if let session = response.session {
+                self.currentUser = session.user
+                self.isGuest = false
+                UserDefaults.standard.set(false, forKey: "gs.isGuest")
+                await upsertProfile(
+                    userId: session.user.id.uuidString,
+                    displayName: nil,
+                    email: session.user.email
+                )
+                WatchIntentLogger.shared.log(
+                    eventType: .authSignedIn,
+                    metadata: [
+                        "provider": "email",
+                        "flow": "sign_up",
+                        "user_id": session.user.id.uuidString
+                    ]
+                )
+                DeviceSessionService.shared.upsert(reason: "email_signed_up")
+                return true
+            }
+            // Session is nil — Supabase requires email confirmation. The user
+            // must tap the magic link before they can sign in. We treat this
+            // as a successful registration but *not* a successful sign-in.
+            self.lastInfo = "Check your inbox to confirm your email, then come back and sign in."
+            print("[Auth] email sign-up pending confirmation for \(email)")
+            return false
+        } catch {
+            let message = error.localizedDescription
+            // "User already registered" — fall back to sign in with the same
+            // password. Common when a returning user lands in the create flow
+            // because we haven't yet flipped `hasUsedEmailAuth` on this device.
+            if message.localizedCaseInsensitiveContains("already") {
+                print("[Auth] user already exists — attempting sign-in fallback")
+                let ok = await signInWithEmail(email: email, password: password)
+                if ok {
+                    UserDefaults.standard.set(true, forKey: "gs.hasUsedEmailAuth")
+                    self.hasUsedEmailAuth = true
+                }
+                return ok
+            }
+            lastError = message
+            print("[Auth ERROR] email sign-up failed: \(message)")
+            return false
+        }
+    }
+
+    /// Sign in an existing user with email + password. Returns `true` on
+    /// success. Surfaces a friendly error in `lastError` on failure.
+    @discardableResult
+    func signInWithEmail(email: String, password: String) async -> Bool {
+        isAuthenticating = true
+        lastError = nil
+        lastInfo = nil
+        defer { isAuthenticating = false }
+        do {
+            let session = try await SupabaseManager.shared.client.auth.signIn(
+                email: email,
+                password: password
+            )
+            self.currentUser = session.user
+            self.isGuest = false
+            UserDefaults.standard.set(false, forKey: "gs.isGuest")
+            UserDefaults.standard.set(true, forKey: "gs.hasUsedEmailAuth")
+            self.hasUsedEmailAuth = true
+            await upsertProfile(
+                userId: session.user.id.uuidString,
+                displayName: nil,
+                email: session.user.email
+            )
+            WatchIntentLogger.shared.log(
+                eventType: .authSignedIn,
+                metadata: [
+                    "provider": "email",
+                    "flow": "sign_in",
+                    "user_id": session.user.id.uuidString
+                ]
+            )
+            DeviceSessionService.shared.upsert(reason: "email_signed_in")
+            return true
+        } catch {
+            let message = error.localizedDescription
+            // Map Supabase's verbose messages to something a user understands.
+            if message.localizedCaseInsensitiveContains("invalid login credentials")
+                || message.localizedCaseInsensitiveContains("invalid_grant") {
+                lastError = "That email or password doesn't match. Try again or reset your password."
+            } else if message.localizedCaseInsensitiveContains("email not confirmed") {
+                lastError = "Check your inbox to confirm your email before signing in."
+            } else {
+                lastError = message
+            }
+            print("[Auth ERROR] email sign-in failed: \(message)")
+            return false
+        }
+    }
+
+    /// Send a password-reset email. Supabase generates a one-time recovery
+    /// link that lands back in the app via the `guidestream://` URL scheme.
+    /// Returns `true` if the email was dispatched, `false` if the call
+    /// failed (e.g. unknown address — Supabase intentionally returns 200 for
+    /// most cases to avoid leaking which emails are registered).
+    @discardableResult
+    func sendPasswordReset(email: String) async -> Bool {
+        isAuthenticating = true
+        lastError = nil
+        lastInfo = nil
+        defer { isAuthenticating = false }
+        do {
+            try await SupabaseManager.shared.client.auth.resetPasswordForEmail(
+                email,
+                redirectTo: URL(string: "guidestream://auth-callback")
+            )
+            self.lastInfo = "If that address is registered, we just sent a recovery link. Check your inbox."
+            print("[Auth] password reset dispatched for \(email)")
+            return true
+        } catch {
+            let message = error.localizedDescription
+            lastError = message
+            print("[Auth ERROR] password reset failed: \(message)")
+            return false
+        }
     }
 
     // MARK: - Google Sign-In (Supabase OAuth via ASWebAuthenticationSession)
@@ -206,6 +367,7 @@ final class AuthViewModel {
                     "has_email": session.user.email != nil
                 ]
             )
+            DeviceSessionService.shared.upsert(reason: "google_signed_in")
         } catch {
             lastError = error.localizedDescription
             print("[Auth ERROR] Google sign-in failed: \(error.localizedDescription)")
