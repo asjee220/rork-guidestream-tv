@@ -668,18 +668,19 @@ struct CastToTVSheet: View {
     // MARK: Actions
 
     /// Coordinates the full cast-to-TV flow for a selected device:
-    ///   1. Dispatch a launch command (Roku ECP for Roku; deferred for Apple TV).
+    ///   1. Dispatch a launch command (Roku ECP for Roku; pending pairing for
+    ///      Apple TV — see `dispatchLaunch`).
     ///   2. Show a prominent "Playing on [Device]" banner.
-    ///   3. After a beat, open the matching remote-control app (Roku) or open
-    ///      the streaming app on iPhone for AirPlay (Apple TV).
+    ///   3. After a beat, open the Roku Remote app (Roku) or dismiss with an
+    ///      instructional banner (Apple TV).
     ///   4. Dismiss the sheet.
     ///
-    /// Apple TV doesn't expose any public API to push a third-party show from
-    /// iPhone, so we treat the Apple TV branch as an iPhone-side deeplink:
-    /// open the streaming app with the title page, then the user AirPlays from
-    /// there to the Apple TV they picked. We show the banner before triggering
-    /// the iPhone deeplink so the user sees "Playing on Living Room" *before*
-    /// iOS context-switches us into Netflix/Max/etc.
+    /// Apple TV NEVER triggers an iPhone-side streaming-app deeplink — the
+    /// user explicitly flagged that as the wrong behavior. Direct app launch
+    /// on Apple TV requires Apple's Companion Link / MediaRemote pairing
+    /// (PIN-based handshake, encrypted channel) which is a separate feature.
+    /// Until that ships, the banner tells the user to grab their Apple TV
+    /// remote and open the app on the TV itself.
     private func handleSelect(_ device: DiscoveredTVDevice) {
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
         sendingDeviceId = device.id
@@ -727,8 +728,8 @@ struct CastToTVSheet: View {
     }
 
     /// Performs the network-side launch — fires the Roku ECP command, or
-    /// returns true for Apple TV (the actual iPhone deeplink runs later, after
-    /// the user has seen the banner, in `completeHandoff`).
+    /// returns true for Apple TV (no network call yet; the user has to open
+    /// the app on the TV manually until Companion Link pairing is built).
     private func dispatchLaunch(for device: DiscoveredTVDevice) async -> Bool {
         switch device.kind {
         case .roku:
@@ -752,11 +753,14 @@ struct CastToTVSheet: View {
                 mediaType: movieLike ? "movie" : "series"
             )
         case .appleTV:
-            // No first-party API exists to push a third-party show to Apple
-            // TV from an arbitrary iOS app. The supported path is to open the
-            // streaming app on iPhone and let the user AirPlay to the chosen
-            // Apple TV. We defer that to `completeHandoff` so the banner has
-            // time to render before iOS context-switches us out.
+            // Apple TV doesn't expose a public deep-link endpoint. The only
+            // protocol that can remote-launch a tvOS app is Apple's Companion
+            // Link / MediaRemote, which requires a one-time PIN pairing
+            // handshake (SRP-6a → Curve25519 → ChaCha20-Poly1305 channel).
+            // That's not built yet, so we report success here and let the
+            // banner instruct the user. Crucially we DO NOT fall back to
+            // opening the streaming app on iPhone — the user explicitly
+            // flagged that as incorrect behavior.
             return true
         }
     }
@@ -774,19 +778,15 @@ struct CastToTVSheet: View {
                 isPresented = false
             }
         case .appleTV:
-            // Open the streaming app on iPhone with a title-specific deep link.
-            // LSApplicationQueriesSchemes must include the platform's scheme
-            // (nflx, hbomax, hulu, etc.) or iOS will silently refuse the open;
-            // those are declared in project.pbxproj.
-            StreamingDeepLinker.open(
-                platform: platform,
-                title: showTitle,
-                tmdbId: tmdbId
-            )
-            // Don't try to open the legacy Apple TV Remote — it was removed
-            // from the App Store in October 2020. The modern remote lives in
-            // Control Center; the hint subtitle on the banner explains that.
-            isPresented = false
+            // No iPhone deeplink. No StreamingDeepLinker. No app switch.
+            // The banner stays on screen a beat longer so the user can read
+            // the "Open [Platform] on your Apple TV" instruction, then the
+            // sheet dismisses cleanly. Once Companion Link pairing ships,
+            // this branch will fire the actual remote launch command.
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(2400))
+                isPresented = false
+            }
         }
     }
 
@@ -795,15 +795,42 @@ struct CastToTVSheet: View {
     /// upcoming app switch.
     private func handoffHint(for kind: TVDeviceKind) -> String {
         switch kind {
-        case .roku:    return "Opening Roku Remote…"
-        case .appleTV: return "Tap AirPlay in the streaming app"
+        case .roku:
+            return "Opening Roku Remote…"
+        case .appleTV:
+            // Apple TV remote-launch needs Companion Link pairing — not
+            // built yet. Until then, tell the user exactly what to do.
+            return "Open \(platformShortName) on your Apple TV"
         }
     }
 
-    /// Opens the iOS remote-control app matching the chosen TV. Today only
-    /// Roku has a maintained iPhone remote (`roku://`); the Apple TV Remote
-    /// app was discontinued in Oct 2020 and lives only in Control Center, so
-    /// we don't call this for Apple TV (see `completeHandoff`).
+    /// Human-friendly platform label for the Apple TV instruction. Keeps the
+    /// hint readable when the upstream `platform` string is something verbose
+    /// like "HBO Max (subscription)".
+    private var platformShortName: String {
+        let key = platform.lowercased()
+        if key.contains("netflix")              { return "Netflix" }
+        if key.contains("hbo") || key.contains("max") { return "Max" }
+        if key.contains("hulu")                 { return "Hulu" }
+        if key.contains("disney")               { return "Disney+" }
+        if key.contains("prime") || key.contains("amazon") { return "Prime Video" }
+        if key.contains("apple")                { return "Apple TV+" }
+        if key.contains("paramount")            { return "Paramount+" }
+        if key.contains("peacock")              { return "Peacock" }
+        if key.contains("youtube tv")           { return "YouTube TV" }
+        if key.contains("youtube")              { return "YouTube" }
+        if key.contains("showtime")             { return "Showtime" }
+        if key.contains("starz")                { return "Starz" }
+        if key.contains("crunchyroll")          { return "Crunchyroll" }
+        return platform
+    }
+
+    /// Opens the iOS remote-control app matching the chosen TV. Only Roku
+    /// has a maintained iPhone remote (`roku://`); the Apple TV branch in
+    /// `completeHandoff` deliberately doesn't call this because the legacy
+    /// standalone Apple TV Remote was removed from the App Store in Oct
+    /// 2020 and the modern remote lives only in Control Center (no public
+    /// URL scheme).
     private func openRemoteApp(for kind: TVDeviceKind) {
         switch kind {
         case .roku:
@@ -815,13 +842,7 @@ struct CastToTVSheet: View {
                 }
             }
         case .appleTV:
-            // Best-effort attempt at the legacy standalone Remote app for
-            // users who still have it installed from older iOS versions.
-            // If iOS rejects the URL (the typical case in 2026), we silently
-            // fall through — the streaming app is already opening and the
-            // user can use Control Center for remote control.
-            guard let url = URL(string: "com.apple.tvremote://") else { return }
-            UIApplication.shared.open(url, options: [:], completionHandler: nil)
+            break
         }
     }
 
