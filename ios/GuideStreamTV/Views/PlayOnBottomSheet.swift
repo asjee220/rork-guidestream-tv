@@ -31,6 +31,8 @@ struct PlayOnBottomSheet: View {
     let showTitle: String
     let showSubtitle: String
     let thumbnailUrl: String?
+    var tmdbId: Int? = nil
+    var isTV: Bool = true
     var initialSelectedDevice: String = "living-room"
     let onDeviceSelected: (String) -> Void
 
@@ -72,7 +74,7 @@ struct PlayOnBottomSheet: View {
                 isPresented: $showCastSheet,
                 showTitle: showTitle,
                 platform: whereToWatchLabel,
-                tmdbId: nil
+                tmdbId: tmdbId
             )
         }
     }
@@ -377,7 +379,9 @@ struct PlayOnBottomSheet: View {
             )
             StreamingDeepLinker.open(
                 platform: whereToWatchLabel,
-                title: showTitle
+                title: showTitle,
+                tmdbId: tmdbId,
+                isTV: isTV
             )
             onDeviceSelected("watch-on-platform")
         } label: {
