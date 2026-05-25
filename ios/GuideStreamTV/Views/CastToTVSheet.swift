@@ -7,6 +7,12 @@
 //  chosen device (Roku ECP) or AirPlay-style routing for Apple TV, shows a
 //  quick confirmation toast, then opens the appropriate remote-control app.
 //
+//  When auto-discovery turns up nothing, the sheet falls back to a manual IP
+//  entry so users on AP-isolated, VPN-routed, or multi-VLAN networks can still
+//  cast. The diagnostic strip above the action buttons exposes the local IP,
+//  scan progress, and Bonjour endpoints seen — making "nothing found" failures
+//  actionable instead of opaque.
+//
 
 import SwiftUI
 import UIKit
@@ -22,6 +28,10 @@ struct CastToTVSheet: View {
     @State private var toast: ToastState? = nil
     @State private var showPermissionPrompt: Bool = false
     @State private var permissionCheckTask: Task<Void, Never>? = nil
+    @State private var isManualEntryExpanded: Bool = false
+    @State private var manualHost: String = ""
+    @State private var isProbingManual: Bool = false
+    @FocusState private var manualFieldFocused: Bool
 
     var body: some View {
         VStack(spacing: 0) {
@@ -71,8 +81,11 @@ struct CastToTVSheet: View {
                     ForEach(discovery.devices) { device in
                         deviceRow(device)
                     }
+                    diagnosticsStrip
+                        .padding(.top, 4)
+                    manualEntrySection
                     rescanButton
-                        .padding(.top, 6)
+                        .padding(.top, 2)
                 }
                 .padding(.horizontal, 18)
                 .padding(.bottom, 28)
@@ -93,62 +106,75 @@ struct CastToTVSheet: View {
     }
 
     private var emptyState: some View {
-        VStack(spacing: 16) {
-            ZStack {
-                Circle()
-                    .fill((showPermissionPrompt || isRunningInSimulator)
-                          ? Color.orange.opacity(0.15)
-                          : Color.white.opacity(0.06))
-                    .frame(width: 80, height: 80)
-                Image(systemName: isRunningInSimulator
-                                  ? "iphone.gen3.radiowaves.left.and.right.slash"
-                                  : (showPermissionPrompt ? "wifi.exclamationmark" : "wifi"))
-                    .font(.system(size: 30, weight: .regular))
-                    .foregroundStyle((showPermissionPrompt || isRunningInSimulator)
-                                     ? Color.orange
-                                     : Color.white.opacity(0.6))
-                    .symbolEffect(.variableColor.iterative.reversing, options: .repeating)
-            }
+        ScrollView {
+            VStack(spacing: 16) {
+                ZStack {
+                    Circle()
+                        .fill((showPermissionPrompt || isRunningInSimulator)
+                              ? Color.orange.opacity(0.15)
+                              : Color.white.opacity(0.06))
+                        .frame(width: 80, height: 80)
+                    Image(systemName: isRunningInSimulator
+                                      ? "iphone.gen3.radiowaves.left.and.right.slash"
+                                      : (showPermissionPrompt ? "wifi.exclamationmark" : "wifi"))
+                        .font(.system(size: 30, weight: .regular))
+                        .foregroundStyle((showPermissionPrompt || isRunningInSimulator)
+                                         ? Color.orange
+                                         : Color.white.opacity(0.6))
+                        .symbolEffect(.variableColor.iterative.reversing, options: .repeating)
+                }
 
-            if isRunningInSimulator {
-                Text("Install on your iPhone to cast")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(.white)
-                Text("This preview runs in a cloud simulator that isn't on your home Wi-Fi, so it can't see your Apple TV or Roku. Install GuideStreamTV on your iPhone via the Rork app and open Play on TV there.")
-                    .font(.system(size: 13))
-                    .foregroundStyle(Color.white.opacity(0.6))
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 28)
-            } else if showPermissionPrompt {
-                Text("Local Network access needed")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(.white)
-                Text("Open Settings → Privacy & Security → Local Network, then enable GuideStreamTV so it can discover your Apple TV or Roku on Wi-Fi.")
-                    .font(.system(size: 13))
-                    .foregroundStyle(Color.white.opacity(0.6))
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 28)
-                openSettingsButton
-                rescanButton
-            } else {
-                Text("Looking for Apple TV & Roku…")
-                    .font(.system(size: 15))
-                    .foregroundStyle(Color.white.opacity(0.7))
-                Text("Make sure your phone and TV are on the same Wi-Fi network.")
-                    .font(.system(size: 12))
-                    .foregroundStyle(Color.white.opacity(0.45))
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 40)
-                rescanButton
+                if isRunningInSimulator {
+                    Text("Install on your iPhone to cast")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(.white)
+                    Text("This preview runs in a cloud simulator that isn't on your home Wi-Fi, so it can't see your Apple TV or Roku. Install GuideStreamTV on your iPhone via the Rork app and open Play on TV there.")
+                        .font(.system(size: 13))
+                        .foregroundStyle(Color.white.opacity(0.6))
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 28)
+                } else if showPermissionPrompt {
+                    Text("Couldn't find any devices yet")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(.white)
+                    Text("If Local Network access is off, enable it in Settings. Some Wi-Fi networks block device-to-device traffic — you can add your TV by IP below to bypass that.")
+                        .font(.system(size: 13))
+                        .foregroundStyle(Color.white.opacity(0.6))
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 28)
+                    HStack(spacing: 10) {
+                        openSettingsButton
+                        rescanButton
+                    }
+                } else {
+                    Text("Looking for Apple TV & Roku…")
+                        .font(.system(size: 15))
+                        .foregroundStyle(Color.white.opacity(0.7))
+                    Text("Make sure your phone and TV are on the same Wi-Fi network.")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Color.white.opacity(0.45))
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 40)
+                    rescanButton
+                }
+
+                if !isRunningInSimulator {
+                    diagnosticsStrip
+                        .padding(.top, 6)
+                    manualEntrySection
+                        .padding(.top, 2)
+                }
             }
+            .frame(maxWidth: .infinity)
+            .padding(.top, 18)
+            .padding(.bottom, 36)
+            .padding(.horizontal, 18)
         }
-        .frame(maxWidth: .infinity)
-        .padding(.top, 18)
-        .padding(.bottom, 36)
+        .scrollDismissesKeyboard(.interactively)
     }
 
     private var openSettingsButton: some View {
-Button {
+        Button {
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
             // Try the private Privacy > Local Network deep link first so the
             // user lands on the exact toggle. Fall back to the app's own
@@ -164,7 +190,7 @@ Button {
         } label: {
             HStack(spacing: 6) {
                 Image(systemName: "gearshape.fill")
-                Text("Open Settings")
+                Text("Settings")
             }
             .font(.system(size: 14, weight: .semibold))
             .foregroundStyle(.black)
@@ -191,6 +217,194 @@ Button {
             .background(Capsule().fill(Color.white.opacity(0.10)))
         }
         .buttonStyle(.plain)
+    }
+
+    // MARK: Diagnostics strip
+
+    private var diagnosticsStrip: some View {
+        VStack(spacing: 6) {
+            diagnosticsRow(
+                icon: "wifi",
+                label: "Phone IP",
+                value: discovery.localIPv4 ?? "—",
+                ok: discovery.localIPv4 != nil
+            )
+            diagnosticsRow(
+                icon: "magnifyingglass",
+                label: "Scanned",
+                value: discovery.totalHosts > 0
+                    ? "\(discovery.scannedHosts)/\(discovery.totalHosts) hosts"
+                    : "starting…",
+                ok: discovery.scannedHosts > 0
+            )
+            diagnosticsRow(
+                icon: "antenna.radiowaves.left.and.right",
+                label: "Bonjour",
+                value: "\(discovery.bonjourEndpointsSeen) services seen",
+                ok: discovery.bonjourEndpointsSeen > 0
+            )
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color.white.opacity(0.04))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(Color.white.opacity(0.06), lineWidth: 1)
+        )
+    }
+
+    private func diagnosticsRow(icon: String, label: String, value: String, ok: Bool) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: icon)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(ok ? Color.green.opacity(0.85) : Color.white.opacity(0.4))
+                .frame(width: 16)
+            Text(label)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(Color.white.opacity(0.55))
+            Spacer(minLength: 0)
+            Text(value)
+                .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                .foregroundStyle(Color.white.opacity(0.85))
+        }
+    }
+
+    // MARK: Manual IP entry
+
+    private var manualEntrySection: some View {
+        VStack(spacing: 10) {
+            Button {
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                withAnimation(.spring(response: 0.32, dampingFraction: 0.85)) {
+                    isManualEntryExpanded.toggle()
+                }
+                if isManualEntryExpanded {
+                    // Defer focus so the animation has a beat to start.
+                    Task { @MainActor in
+                        try? await Task.sleep(for: .milliseconds(150))
+                        manualFieldFocused = true
+                    }
+                }
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: isManualEntryExpanded ? "chevron.up" : "plus.circle.fill")
+                        .font(.system(size: 13, weight: .semibold))
+                    Text(isManualEntryExpanded ? "Hide manual entry" : "Add device by IP")
+                        .font(.system(size: 14, weight: .semibold))
+                }
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 12)
+                .background(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(Color.white.opacity(0.08))
+                )
+            }
+            .buttonStyle(.plain)
+
+            if isManualEntryExpanded {
+                VStack(spacing: 10) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "network")
+                            .font(.system(size: 14))
+                            .foregroundStyle(Color.white.opacity(0.55))
+                        TextField("", text: $manualHost, prompt: Text("e.g. 192.168.1.42")
+                            .foregroundStyle(Color.white.opacity(0.35)))
+                            .font(.system(size: 15, design: .monospaced))
+                            .foregroundStyle(.white)
+                            .keyboardType(.numbersAndPunctuation)
+                            .textContentType(.URL)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            .focused($manualFieldFocused)
+                            .submitLabel(.go)
+                            .onSubmit { submitManualHost() }
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
+                    .background(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .fill(Color.black.opacity(0.35))
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                    )
+
+                    Text("Find your TV's IP under Settings → Network on Roku, or Settings → General → About on Apple TV.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color.white.opacity(0.45))
+                        .multilineTextAlignment(.leading)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+
+                    Button {
+                        submitManualHost()
+                    } label: {
+                        HStack(spacing: 8) {
+                            if isProbingManual {
+                                ProgressView()
+                                    .controlSize(.small)
+                                    .tint(.black)
+                            } else {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .font(.system(size: 14, weight: .semibold))
+                            }
+                            Text(isProbingManual ? "Connecting…" : "Connect")
+                                .font(.system(size: 14, weight: .semibold))
+                        }
+                        .foregroundStyle(.black)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .fill(isManualHostValid ? Color.white : Color.white.opacity(0.4))
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!isManualHostValid || isProbingManual)
+                }
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+    }
+
+    private var isManualHostValid: Bool {
+        let host = manualHost.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !host.isEmpty else { return false }
+        // Accept hostnames OR IPv4 dotted notation; minimal validation so we
+        // never block a probe attempt for a typo iOS could still resolve.
+        let parts = host.split(separator: ".")
+        if parts.count == 4 {
+            return parts.allSatisfy { Int($0).map { (0...255).contains($0) } ?? false }
+        }
+        return host.count >= 3
+    }
+
+    private func submitManualHost() {
+        guard isManualHostValid, !isProbingManual else { return }
+        let host = manualHost.trimmingCharacters(in: .whitespacesAndNewlines)
+        manualFieldFocused = false
+        isProbingManual = true
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+
+        Task { @MainActor in
+            let ok = await discovery.probeManualHost(host)
+            isProbingManual = false
+            if ok {
+                UINotificationFeedbackGenerator().notificationOccurred(.success)
+                showToast(ToastState(message: "Added \(host)", icon: "checkmark.circle.fill"))
+                withAnimation(.spring(response: 0.32, dampingFraction: 0.85)) {
+                    isManualEntryExpanded = false
+                }
+                manualHost = ""
+            } else {
+                UINotificationFeedbackGenerator().notificationOccurred(.error)
+                showToast(ToastState(message: "No TV responded at \(host)", icon: "exclamationmark.triangle.fill"))
+            }
+        }
     }
 
     // MARK: Device row
@@ -281,8 +495,11 @@ Button {
 
         discovery.start()
 
+        // Give the active subnet probe enough time to walk a full /24
+        // (~4-6s with 64-host batches) before nudging the user toward the
+        // manual entry / Settings fallback.
         permissionCheckTask = Task { @MainActor in
-            try? await Task.sleep(for: .seconds(2))
+            try? await Task.sleep(for: .seconds(6))
             guard !Task.isCancelled else { return }
             if discovery.devices.isEmpty {
                 withAnimation(.easeInOut(duration: 0.25)) {

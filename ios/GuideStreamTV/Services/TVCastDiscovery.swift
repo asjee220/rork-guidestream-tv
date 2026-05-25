@@ -4,16 +4,22 @@
 //
 //  Scans the local network for Apple TV (Bonjour/AirPlay) and Roku devices.
 //
-//  IMPORTANT: SSDP multicast on iOS requires the Apple-gated
-//  `com.apple.developer.networking.multicast` entitlement and silently fails
-//  without it. We instead actively probe every host on the local /24 subnet.
-//  Roku exposes ECP on port 8060 and AirPlay listens on 7000.
+//  Discovery uses three concurrent strategies:
+//    1. Bonjour browsers for AirPlay/RAOP/companion-link (Apple TV) and _rsp
+//       (some Rokus). Requires NSBonjourServices in Info.plist.
+//    2. Active subnet probe of every host on the local /24, hitting Roku ECP
+//       on :8060 and AirPlay /info on :7000. Uses raw NWConnection sockets
+//       because URLSession is blocked by App Transport Security for cleartext
+//       requests to LAN IP literals.
+//    3. Manual host probe (entered by the user) — same probe pipeline as the
+//       subnet scan but for a single explicit IP. Lets users get unblocked when
+//       AP isolation, VPN, or IGMP snooping prevent auto-discovery.
 //
-//  We use raw `NWConnection` TCP sockets (NOT `URLSession`) because App
-//  Transport Security blocks cleartext HTTP to IP literals — every URLSession
-//  request to 192.168.x.x silently fails. NWConnection isn't governed by ATS,
-//  so we can connect to the LAN device, write an HTTP/1.0 request by hand,
-//  and read the response. No entitlements required.
+//  The class publishes live diagnostic state so the UI can show what the scan
+//  actually saw — local IP, hosts scanned vs total, and how many Bonjour
+//  endpoints were observed. If those numbers stay at zero, the user can tell
+//  at a glance whether LAN access, network routing, or device responses are
+//  the problem.
 //
 
 import Foundation
@@ -47,6 +53,13 @@ final class TVCastDiscovery {
     private(set) var devices: [DiscoveredTVDevice] = []
     private(set) var isScanning: Bool = false
 
+    // Diagnostics surfaced to the UI so the user (and us) can see what the
+    // scan actually saw, instead of an opaque empty list.
+    private(set) var localIPv4: String? = nil
+    private(set) var scannedHosts: Int = 0
+    private(set) var totalHosts: Int = 0
+    private(set) var bonjourEndpointsSeen: Int = 0
+
     @ObservationIgnored private var browsers: [NWBrowser] = []
     @ObservationIgnored private var permissionPokeListener: NWListener?
     @ObservationIgnored private var subnetScanTask: Task<Void, Never>?
@@ -55,6 +68,10 @@ final class TVCastDiscovery {
         guard !isScanning else { return }
         isScanning = true
         devices = []
+        localIPv4 = nil
+        scannedHosts = 0
+        totalHosts = 0
+        bonjourEndpointsSeen = 0
         TVCastDiscoveryStore.register(self)
 
         // Force iOS to surface the Local Network permission prompt and
@@ -81,6 +98,39 @@ final class TVCastDiscovery {
         permissionPokeListener = nil
         subnetScanTask?.cancel()
         subnetScanTask = nil
+    }
+
+    /// Probes a user-entered IP for Roku ECP (:8060) or AirPlay (:7000) and
+    /// adds the device to the list if either responds. Returns `true` if a
+    /// device was added. Used as a fallback when auto-discovery fails (AP
+    /// isolation, VPN routing, weird subnet masks, etc.).
+    func probeManualHost(_ rawHost: String) async -> Bool {
+        let host = rawHost.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !host.isEmpty else { return false }
+
+        // Roku ECP on :8060.
+        if let rokuInfo = await Self.rawHTTPGet(host: host, port: 8060, path: "/query/device-info", timeout: 3.0),
+           rokuInfo.lowercased().contains("roku") {
+            let name = Self.extractTag("user-device-name", from: rokuInfo)
+                ?? Self.extractTag("friendly-device-name", from: rokuInfo)
+                ?? Self.extractTag("model-name", from: rokuInfo)
+                ?? "Roku (\(host))"
+            let udn = Self.extractTag("device-id", from: rokuInfo) ?? host
+            mergeFound([(id: "roku-\(udn)", name: name, host: host, port: 8060)], kind: .roku)
+            return true
+        }
+
+        // AirPlay/Apple TV on :7000.
+        if let airplayInfo = await Self.rawHTTPGet(host: host, port: 7000, path: "/info", timeout: 3.0),
+           Self.looksLikeAirPlay(airplayInfo) {
+            let name = Self.plistStringValue(key: "name", in: airplayInfo)
+                ?? Self.plistStringValue(key: "deviceName", in: airplayInfo)
+                ?? "Apple TV (\(host))"
+            mergeFound([(id: "appletv-\(host)", name: name, host: host, port: 7000)], kind: .appleTV)
+            return true
+        }
+
+        return false
     }
 
     // MARK: - Permission poke
@@ -114,7 +164,9 @@ final class TVCastDiscovery {
                 }
             }
             let snapshot = found
+            let endpointCount = results.count
             Task { @MainActor in
+                TVCastDiscoveryStore.recordBonjourEndpoints(endpointCount)
                 TVCastDiscoveryStore.merge(snapshot: snapshot, kind: kind)
             }
         }
@@ -133,6 +185,9 @@ final class TVCastDiscovery {
                 #endif
                 return
             }
+            await MainActor.run {
+                TVCastDiscoveryStore.setLocalIPv4(localIP)
+            }
             let parts = localIP.split(separator: ".")
             guard parts.count == 4 else { return }
             let prefix = "\(parts[0]).\(parts[1]).\(parts[2])."
@@ -140,16 +195,27 @@ final class TVCastDiscovery {
             print("[TVCastDiscovery] probing subnet \(prefix)0/24")
             #endif
 
-            // Probe in batches to avoid socket exhaustion.
             let allHosts = (1...254).map { "\(prefix)\($0)" }
-            let batchSize = 32
+            await MainActor.run {
+                TVCastDiscoveryStore.setTotalHosts(allHosts.count)
+            }
+
+            // Probe in larger batches for faster completion (~4s end-to-end
+            // versus ~12s with batches of 32). 64 parallel TCP connects is
+            // well within the iOS socket budget.
+            let batchSize = 64
             var index = 0
             while index < allHosts.count {
                 if Task.isCancelled { return }
                 let end = min(index + batchSize, allHosts.count)
                 await withTaskGroup(of: Void.self) { group in
                     for host in allHosts[index..<end] {
-                        group.addTask { await Self.probe(host: host) }
+                        group.addTask {
+                            await Self.probe(host: host)
+                            await MainActor.run {
+                                TVCastDiscoveryStore.incrementScannedHosts()
+                            }
+                        }
                     }
                 }
                 index = end
@@ -159,7 +225,7 @@ final class TVCastDiscovery {
 
     nonisolated private static func probe(host: String) async {
         // Roku ECP on :8060 — XML device-info; cheap and reliable.
-        if let rokuInfo = await rawHTTPGet(host: host, port: 8060, path: "/query/device-info", timeout: 1.5),
+        if let rokuInfo = await rawHTTPGet(host: host, port: 8060, path: "/query/device-info", timeout: 1.0),
            rokuInfo.lowercased().contains("roku") {
             let name = extractTag("user-device-name", from: rokuInfo)
                 ?? extractTag("friendly-device-name", from: rokuInfo)
@@ -178,8 +244,8 @@ final class TVCastDiscovery {
         }
 
         // AirPlay/Apple TV on :7000 — /info endpoint returns a plist.
-        if let airplayInfo = await rawHTTPGet(host: host, port: 7000, path: "/info", timeout: 1.5),
-           airplayInfo.lowercased().contains("airplay") || airplayInfo.lowercased().contains("appletv") || airplayInfo.lowercased().contains("apple tv") {
+        if let airplayInfo = await rawHTTPGet(host: host, port: 7000, path: "/info", timeout: 1.0),
+           looksLikeAirPlay(airplayInfo) {
             let name = plistStringValue(key: "name", in: airplayInfo)
                 ?? plistStringValue(key: "deviceName", in: airplayInfo)
                 ?? "Apple TV (\(host))"
@@ -192,6 +258,14 @@ final class TVCastDiscovery {
                 TVCastDiscoveryStore.merge(snapshot: snapshot, kind: .appleTV)
             }
         }
+    }
+
+    nonisolated private static func looksLikeAirPlay(_ body: String) -> Bool {
+        let lower = body.lowercased()
+        return lower.contains("airplay")
+            || lower.contains("appletv")
+            || lower.contains("apple tv")
+            || lower.contains("model")
     }
 
     /// Performs an HTTP/1.0 GET via raw NWConnection so ATS doesn't block
@@ -336,6 +410,13 @@ final class TVCastDiscovery {
             ))
         }
     }
+
+    fileprivate func setLocalIPv4(_ ip: String) { localIPv4 = ip }
+    fileprivate func setTotalHosts(_ total: Int) { totalHosts = total }
+    fileprivate func incrementScannedHosts() { scannedHosts += 1 }
+    fileprivate func recordBonjourEndpoints(_ count: Int) {
+        bonjourEndpointsSeen = max(bonjourEndpointsSeen, count)
+    }
 }
 
 /// Bridge so Network callbacks running on background queues can hand work
@@ -349,4 +430,9 @@ enum TVCastDiscoveryStore {
     static func merge(snapshot: [(id: String, name: String, host: String?, port: UInt16?)], kind: TVDeviceKind) {
         current?.mergeFound(snapshot, kind: kind)
     }
+
+    static func setLocalIPv4(_ ip: String) { current?.setLocalIPv4(ip) }
+    static func setTotalHosts(_ total: Int) { current?.setTotalHosts(total) }
+    static func incrementScannedHosts() { current?.incrementScannedHosts() }
+    static func recordBonjourEndpoints(_ count: Int) { current?.recordBonjourEndpoints(count) }
 }
