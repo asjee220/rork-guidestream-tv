@@ -352,34 +352,96 @@ final class TVCastDiscovery {
     // MARK: - Local IPv4 discovery
 
     /// Returns the device's primary Wi-Fi IPv4 address (e.g. "192.168.1.42").
+    ///
+    /// iOS routinely exposes more than one IPv4 address on `en0` — for
+    /// example a real DHCP-assigned address (192.168.x.x) alongside a
+    /// leftover link-local (169.254.x.x) that the OS keeps as a fallback.
+    /// The previous implementation took the first match it saw, which
+    /// sometimes was the link-local — making the subnet scan walk a dead
+    /// /24 even though the phone was actually on the LAN. Here we collect
+    /// every candidate and rank them, preferring en0 + RFC1918 private
+    /// space first.
     nonisolated private static func localIPv4Address() -> String? {
-        var address: String?
         var ifaddr: UnsafeMutablePointer<ifaddrs>?
         guard getifaddrs(&ifaddr) == 0, let first = ifaddr else { return nil }
         defer { freeifaddrs(ifaddr) }
 
+        struct Candidate { let name: String; let ip: String }
+        var candidates: [Candidate] = []
+
         var ptr: UnsafeMutablePointer<ifaddrs>? = first
         while let cur = ptr {
+            defer { ptr = cur.pointee.ifa_next }
+
             let flags = Int32(cur.pointee.ifa_flags)
-            let addr = cur.pointee.ifa_addr.pointee
-            // Up + running + not loopback, IPv4.
-            if (flags & (IFF_UP | IFF_RUNNING | IFF_LOOPBACK)) == (IFF_UP | IFF_RUNNING),
-               addr.sa_family == UInt8(AF_INET) {
-                let name = String(cString: cur.pointee.ifa_name)
-                // en0 = Wi-Fi on iPhone; en1/en2 sometimes.
-                if name.hasPrefix("en") {
-                    var hostname = [CChar](repeating: 0, count: Int(NI_MAXHOST))
-                    if getnameinfo(cur.pointee.ifa_addr, socklen_t(cur.pointee.ifa_addr.pointee.sa_len),
-                                   &hostname, socklen_t(hostname.count),
-                                   nil, 0, NI_NUMERICHOST) == 0 {
-                        address = String(cString: hostname)
-                        break
-                    }
-                }
-            }
-            ptr = cur.pointee.ifa_next
+            guard let addrPtr = cur.pointee.ifa_addr else { continue }
+            let addr = addrPtr.pointee
+            guard (flags & (IFF_UP | IFF_RUNNING | IFF_LOOPBACK)) == (IFF_UP | IFF_RUNNING),
+                  addr.sa_family == UInt8(AF_INET) else { continue }
+
+            let name = String(cString: cur.pointee.ifa_name)
+            // Skip non-LAN interfaces. The real Wi-Fi LAN is en0 (sometimes
+            // en1/en2 on iPad). Everything else here is a peer-to-peer or
+            // tunneled interface that can't see the home Wi-Fi.
+            //   awdl/llw   = Apple Wireless Direct Link / Low Latency Wi-Fi
+            //   utun/ipsec = VPN tunnels
+            //   pdp_ip/rmnet = cellular
+            //   lo / bridge = loopback / NAT64-CLAT translator
+            let blockedPrefixes = ["awdl", "llw", "utun", "ipsec", "pdp_ip", "rmnet", "lo", "bridge"]
+            if blockedPrefixes.contains(where: { name.hasPrefix($0) }) { continue }
+
+            var hostname = [CChar](repeating: 0, count: Int(NI_MAXHOST))
+            guard getnameinfo(addrPtr, socklen_t(addr.sa_len),
+                              &hostname, socklen_t(hostname.count),
+                              nil, 0, NI_NUMERICHOST) == 0 else { continue }
+            candidates.append(Candidate(name: name, ip: String(cString: hostname)))
         }
-        return address
+
+        #if DEBUG
+        print("[TVCastDiscovery] interface candidates: \(candidates.map { "\($0.name)=\($0.ip)" }.joined(separator: ", "))")
+        #endif
+
+        return candidates.min(by: { rankIPv4($0.ip, name: $0.name) < rankIPv4($1.ip, name: $1.name) })?.ip
+    }
+
+    /// Lower is better. Prefers `en0` with an RFC1918 private LAN address,
+    /// then any `en*` private address, then any `en*` non-link-local, with
+    /// link-locals (169.254.x.x) ranked last because they signal DHCP
+    /// hasn't completed.
+    nonisolated private static func rankIPv4(_ ip: String, name: String) -> Int {
+        let isEn0 = name == "en0"
+        let isEnAny = name.hasPrefix("en")
+        let isPriv = isPrivateLAN(ip)
+        let isLink = ip.hasPrefix("169.254.")
+
+        if isPriv {
+            if isEn0 { return 0 }
+            if isEnAny { return 1 }
+            return 4
+        }
+        if !isLink {
+            if isEn0 { return 2 }
+            if isEnAny { return 3 }
+            return 5
+        }
+        // Link-local — only useful as an absolute last resort.
+        if isEn0 { return 6 }
+        if isEnAny { return 7 }
+        return 8
+    }
+
+    /// `true` for RFC1918 private-network IPv4 addresses (10/8, 172.16/12,
+    /// 192.168/16) — the address ranges actual home/office LANs use.
+    nonisolated private static func isPrivateLAN(_ ip: String) -> Bool {
+        if ip.hasPrefix("192.168.") { return true }
+        if ip.hasPrefix("10.") { return true }
+        if ip.hasPrefix("172.") {
+            let parts = ip.split(separator: ".")
+            if parts.count >= 2, let second = Int(parts[1]), (16...31).contains(second) {
+                return true
+            }
+        }
+        return false
     }
 
     // MARK: - Mutation (called via TVCastDiscoveryStore)
