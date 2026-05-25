@@ -1,0 +1,1183 @@
+//
+//  ShowDetailScreen.swift
+//  GuideStreamTV
+//
+
+import SwiftUI
+
+// MARK: - Models
+
+struct ShowDetailEpisode: Identifiable, Hashable {
+    let id = UUID()
+    let code: String          // "S4 E7"
+    let title: String
+    let duration: String      // "64 min"
+    let status: EpStatus
+    let progress: Double      // 0..1
+}
+
+enum EpStatus: Hashable {
+    case continueWatching
+    case new
+    case none
+}
+
+struct WhereToWatchService: Identifiable, Hashable {
+    let id: String
+    let name: String
+    let color: Color
+    let iosUrl: String?
+    let androidUrl: String?
+    let webUrl: String?
+    let format: String?
+
+    init(id: String = UUID().uuidString, name: String, color: Color, iosUrl: String? = nil, androidUrl: String? = nil, webUrl: String? = nil, format: String? = nil) {
+        self.id = id
+        self.name = name
+        self.color = color
+        self.iosUrl = iosUrl
+        self.androidUrl = androidUrl
+        self.webUrl = webUrl
+        self.format = format
+    }
+}
+
+// MARK: - View Model (cached fetch)
+
+@Observable
+final class ShowDetailViewModel {
+    var detail: WatchmodeTitleDetail?
+    var tmdb: TMDBTVDetail?
+    var season: TMDBSeason?
+    var currentSeasonNumber: Int = 1
+    var isLoading: Bool = false
+    var errorMessage: String?
+    private var loadedTitleId: String?
+
+    /// Loads TMDB detail + Watchmode sources in parallel.
+    /// `titleId` may be a TMDB integer id (preferred) or a legacy Watchmode id.
+    func loadIfNeeded(titleId: String, isTV: Bool = true) async {
+        guard loadedTitleId != titleId else { return }
+        loadedTitleId = titleId
+        isLoading = true
+        errorMessage = nil
+
+        if let tmdbId = Int(titleId), isTV {
+            async let tmdbCall: TMDBTVDetail? = try? TMDBService.shared.getTVDetail(tmdbId: tmdbId)
+            async let wmIdCall: String? = try? WatchmodeService.shared.watchmodeId(forTMDBId: tmdbId, isTV: true)
+            let tmdbResult = await tmdbCall
+            self.tmdb = tmdbResult
+            let seasonNum = max(1, tmdbResult?.numberOfSeasons ?? 1)
+            self.currentSeasonNumber = seasonNum
+            async let seasonCall: TMDBSeason? = try? TMDBService.shared.getSeason(tmdbId: tmdbId, seasonNumber: seasonNum)
+            if let wmId = await wmIdCall {
+                self.detail = try? await WatchmodeService.shared.titleDetail(titleId: wmId)
+            }
+            self.season = await seasonCall
+        } else {
+            do {
+                let result = try await WatchmodeService.shared.titleDetail(titleId: titleId)
+                detail = result
+            } catch {
+                errorMessage = error.localizedDescription
+                loadedTitleId = nil
+            }
+        }
+        isLoading = false
+    }
+
+    func loadSeason(_ seasonNumber: Int) async {
+        guard let tmdbId = tmdb?.id else { return }
+        currentSeasonNumber = seasonNumber
+        season = try? await TMDBService.shared.getSeason(tmdbId: tmdbId, seasonNumber: seasonNumber)
+    }
+
+    var services: [WhereToWatchService] {
+        guard let sources = detail?.sources else { return [] }
+        // Prefer subscription (sub) sources, dedupe by name.
+        var seen = Set<String>()
+        var result: [WhereToWatchService] = []
+        let sorted = sources.sorted { a, b in
+            sourceRank(a) < sourceRank(b)
+        }
+        for s in sorted {
+            if seen.contains(s.name) { continue }
+            seen.insert(s.name)
+            result.append(WhereToWatchService(
+                id: s.id,
+                name: s.name,
+                color: brandColor(for: s.name),
+                iosUrl: s.iosUrl,
+                androidUrl: s.androidUrl,
+                webUrl: s.webUrl,
+                format: s.format
+            ))
+        }
+        return result
+    }
+
+    /// Best deep link URL (prefer iOS, then web) from the first subscription source.
+    var primaryDeeplink: URL? {
+        guard let s = services.first else { return nil }
+        if let ios = s.iosUrl, let u = URL(string: ios) { return u }
+        if let web = s.webUrl, let u = URL(string: web) { return u }
+        return nil
+    }
+
+    private func sourceRank(_ s: WatchmodeSource) -> Int {
+        switch s.type.lowercased() {
+        case "sub": return 0
+        case "free": return 1
+        case "tve": return 2
+        case "rent": return 3
+        case "buy": return 4
+        default: return 5
+        }
+    }
+
+    private func brandColor(for name: String) -> Color {
+        let key = name.lowercased()
+        if key.contains("netflix") { return Color(red: 0xE5/255, green: 0x09/255, blue: 0x14/255) }
+        if key.contains("hbo") || key.contains("max") { return Color(red: 0x5B/255, green: 0x2D/255, blue: 0x8E/255) }
+        if key.contains("hulu") { return Color(red: 0x1C/255, green: 0xE7/255, blue: 0x83/255) }
+        if key.contains("disney") { return Color(red: 0.05, green: 0.10, blue: 0.42) }
+        if key.contains("apple") { return Color(white: 0.12) }
+        if key.contains("prime") || key.contains("amazon") { return Color(red: 0.0, green: 0.66, blue: 0.93) }
+        if key.contains("paramount") { return Color(red: 0.0, green: 0.40, blue: 0.95) }
+        if key.contains("peacock") { return Color(red: 0.05, green: 0.05, blue: 0.10) }
+        if key.contains("youtube") { return Color(red: 0.90, green: 0.10, blue: 0.10) }
+        return Color(white: 0.18)
+    }
+}
+
+// MARK: - ShowDetailScreen
+
+struct ShowDetailScreen: View {
+    var titleId: String = "tt-succession"
+    var title: String = "Succession"
+    var posterUrl: String? = nil
+    var backdropUrl: String? = nil
+    var isTV: Bool = true
+    var onBack: () -> Void = {}
+    var onPlayOn: () -> Void = {}
+
+    @State private var scrollOffset: CGFloat = 0
+    @State private var synopsisExpanded: Bool = false
+    @State private var liked: Bool = false
+    @State private var notifyOn: Bool = true
+    @State private var saved: Bool = false
+    @State private var showComments: Bool = false
+    @State private var selectedSeason: String = "Season 4"
+    @State private var playOnOpen: Bool = false
+    @State private var vm = ShowDetailViewModel()
+
+    private let platformId = "hbo"
+    private let fallbackSynopsis = "The Roy family is known for controlling the biggest media and entertainment company in the world. However, their world changes when their father steps back from the company. As power shifts and alliances fracture, each sibling jockeys for control in a ruthless game of legacy, loyalty, and survival."
+
+    private let fallbackGenres = ["Drama", "Satire", "Family"]
+
+    private var synopsis: String { vm.tmdb?.overview ?? vm.detail?.plotOverview ?? fallbackSynopsis }
+    private var genres: [String] {
+        let names = vm.tmdb?.genreNames ?? vm.detail?.genreNames ?? []
+        return names.isEmpty ? fallbackGenres : names
+    }
+    private var displayTitle: String { vm.tmdb?.name ?? vm.detail?.title ?? title }
+    private var ratingText: String {
+        if let r = vm.tmdb?.voteAverage { return String(format: "%.1f", r) }
+        if let r = vm.detail?.userRating { return String(format: "%.1f", r) }
+        return "4.8"
+    }
+    private var yearText: String {
+        if let y = vm.tmdb?.year { return String(y) }
+        if let y = vm.detail?.year { return String(y) }
+        return "2024"
+    }
+    private var heroImageUrl: String? {
+        vm.tmdb?.backdropUrl ?? backdropUrl ?? posterUrl
+    }
+    private var tmdbEpisodes: [TMDBEpisode] { vm.season?.episodes ?? [] }
+
+    private let episodes: [ShowDetailEpisode] = [
+        .init(code: "S4 E7", title: "Tailgate Party", duration: "64 min", status: .continueWatching, progress: 0.45),
+        .init(code: "S4 E8", title: "America Decides", duration: "67 min", status: .new, progress: 0),
+        .init(code: "S4 E9", title: "Church and State", duration: "72 min", status: .none, progress: 0),
+        .init(code: "S4 E10", title: "With Open Eyes", duration: "88 min", status: .none, progress: 0)
+    ]
+
+    var body: some View {
+        ZStack(alignment: .top) {
+            Color.navy.ignoresSafeArea()
+
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 0) {
+                    hero
+                    genresRow
+                    socialCounter
+                    synopsisSection
+                    episodesSection
+                    whereToWatchSection
+                    fanActivitySection
+                    Color.clear.frame(height: 140)
+                }
+                .background(
+                    GeometryReader { geo in
+                        Color.clear.preference(
+                            key: ScrollOffsetKey.self,
+                            value: -geo.frame(in: .named("showDetailScroll")).minY
+                        )
+                    }
+                )
+            }
+            .coordinateSpace(name: "showDetailScroll")
+            .onPreferenceChange(ScrollOffsetKey.self) { scrollOffset = $0 }
+
+            compactHeader
+                .opacity(stickyOpacity)
+                .offset(y: stickyOffset)
+                .animation(.easeOut(duration: 0.18), value: scrollOffset > 220)
+                .allowsHitTesting(stickyOpacity > 0.5)
+
+            bottomActionBar
+                .frame(maxHeight: .infinity, alignment: .bottom)
+                .ignoresSafeArea(edges: .bottom)
+
+            PlayOnBottomSheet(
+                isOpen: playOnOpen,
+                onClose: { playOnOpen = false },
+                showTitle: title,
+                showSubtitle: "Season 4 \u{00B7} Episode 7 \u{00B7} Tailgate Party",
+                thumbnailUrl: nil,
+                onDeviceSelected: { _ in
+                    playOnOpen = false
+                    onPlayOn()
+                }
+            )
+            .allowsHitTesting(playOnOpen)
+        }
+        .preferredColorScheme(.dark)
+        .sheet(isPresented: $showComments) {
+            CommentsViewerSheet()
+        }
+        .onAppear {
+            WatchIntentLogger.shared.log(
+                eventType: .episodeDetailViewed,
+                titleId: titleId
+            )
+        }
+        .task(id: titleId) {
+            await vm.loadIfNeeded(titleId: titleId, isTV: isTV)
+            if let n = vm.tmdb?.numberOfSeasons {
+                selectedSeason = "Season \(n)"
+            }
+        }
+    }
+
+    private func openDeeplink(iosUrl: String?, webUrl: String?) {
+        let urlString = iosUrl ?? webUrl
+        guard let urlString, let url = URL(string: urlString) else { return }
+        WatchIntentLogger.shared.log(
+            eventType: .deeplinkFired,
+            titleId: titleId,
+            platformId: platformId,
+            metadata: ["url": urlString]
+        )
+        UIApplication.shared.open(url)
+    }
+
+    private func openPlayOn() {
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        playOnOpen = true
+    }
+
+    /// Parses "S4 E7" into the integer season number.
+    private func parseSeason(_ code: String) -> Int {
+        let parts = code.split(separator: " ")
+        guard let s = parts.first, s.hasPrefix("S") else { return 0 }
+        return Int(s.dropFirst()) ?? 0
+    }
+
+    /// Parses "S4 E7" into the integer episode number.
+    private func parseEpisode(_ code: String) -> Int {
+        let parts = code.split(separator: " ")
+        guard parts.count >= 2, parts[1].hasPrefix("E") else { return 0 }
+        return Int(parts[1].dropFirst()) ?? 0
+    }
+
+    private var stickyOpacity: Double { scrollOffset > 220 ? 1 : 0 }
+    private var stickyOffset: CGFloat { scrollOffset > 220 ? 0 : -8 }
+
+    // MARK: Compact Header
+
+    private var compactHeader: some View {
+        ZStack {
+            Color.navy.opacity(0.85)
+                .background(.ultraThinMaterial)
+                .overlay(alignment: .bottom) {
+                    Rectangle().fill(Color.white.opacity(0.08)).frame(height: 1)
+                }
+
+            HStack(spacing: 12) {
+                Button(action: onBack) {
+                    Image(systemName: "arrow.left")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .frame(width: 32, height: 32)
+                        .background(Circle().fill(Color.white.opacity(0.08)))
+                }
+                .buttonStyle(.plain)
+
+                Spacer(minLength: 0)
+                Text(displayTitle)
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+
+                PlayOnTriggerButton(compact: true, action: openPlayOn)
+            }
+            .padding(.horizontal, 16)
+        }
+        .frame(height: 56)
+        .frame(maxWidth: .infinity, alignment: .top)
+    }
+
+    // MARK: Hero
+
+    private var hero: some View {
+        GeometryReader { geo in
+            let h = min(geo.size.width * 0.56, 280)
+            ZStack(alignment: .bottomLeading) {
+                LinearGradient(
+                    colors: [
+                        Color(red: 0x1A/255, green: 0x05/255, blue: 0x33/255),
+                        Color(red: 0x0A/255, green: 0x1F/255, blue: 0x52/255),
+                        Color.navy
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+
+                GridTexture().opacity(0.4).allowsHitTesting(false)
+
+                if let heroUrl = heroImageUrl, let url = URL(string: heroUrl) {
+                    AsyncImage(url: url) { phase in
+                        switch phase {
+                        case .success(let image):
+                            image
+                                .resizable()
+                                .aspectRatio(contentMode: .fill)
+                                .allowsHitTesting(false)
+                        default:
+                            Color.clear
+                        }
+                    }
+                    .frame(width: geo.size.width, height: h)
+                    .clipped()
+                    .opacity(0.85)
+                    .allowsHitTesting(false)
+
+                    LinearGradient(
+                        colors: [Color.navy.opacity(0.25), .clear, Color.navy],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                    .allowsHitTesting(false)
+                }
+
+                LinearGradient(
+                    colors: [.clear, Color.navy],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .frame(height: h * 0.55)
+                .frame(maxHeight: .infinity, alignment: .bottom)
+                .allowsHitTesting(false)
+
+                // Top chrome
+                HStack {
+                    glassRoundButton(symbol: "arrow.left", action: onBack)
+                    Spacer()
+                    glassRoundButton(symbol: "square.and.arrow.up", action: {})
+                }
+                .padding(.horizontal, 16)
+                .frame(maxHeight: .infinity, alignment: .top)
+                .padding(.top, 8)
+
+                // Title block
+                VStack(alignment: .leading, spacing: 10) {
+                    Text(displayTitle)
+                        .font(.system(size: titleSize(for: geo.size.width), weight: .semibold, design: .default))
+                        .foregroundStyle(.white)
+                    HStack(spacing: 8) {
+                        Image(systemName: "star.fill")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundStyle(Color(red: 1, green: 0.78, blue: 0.2))
+                        Text(ratingText)
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(.white)
+                        dot
+                        Text(yearText)
+                            .font(.system(size: 13))
+                            .foregroundStyle(Color.textSecondary)
+                        dot
+                        Text("4 Seasons")
+                            .font(.system(size: 13))
+                            .foregroundStyle(Color.textSecondary)
+                        dot
+                        Text("TV-MA")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(Color.textSecondary)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 6)
+                                    .stroke(Color.white.opacity(0.25), lineWidth: 1)
+                            )
+                    }
+                }
+                .padding(.horizontal, 20)
+                .padding(.bottom, 16)
+            }
+            .frame(width: geo.size.width, height: h)
+            .clipped()
+        }
+        .frame(height: min(UIScreen.main.bounds.width * 0.56, 280))
+    }
+
+    private var dot: some View {
+        Text("·").font(.system(size: 13)).foregroundStyle(Color.textTertiary)
+    }
+
+    private func titleSize(for width: CGFloat) -> CGFloat {
+        min(max(width * 0.09, 28), 40)
+    }
+
+    private func glassRoundButton(symbol: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: 40, height: 40)
+                .background(
+                    Circle()
+                        .fill(Color.navy.opacity(0.55))
+                        .background(.ultraThinMaterial, in: Circle())
+                )
+                .overlay(Circle().stroke(Color.white.opacity(0.14), lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: Genres
+
+    private var genresRow: some View {
+        HStack(spacing: 8) {
+            ForEach(genres, id: \.self) { g in
+                Text(g)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Color.white.opacity(0.70))
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .background(Capsule().fill(Color.white.opacity(0.08)))
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 20)
+        .padding(.top, 16)
+    }
+
+    // MARK: Social counter row
+
+    private var socialCounter: some View {
+        HStack(spacing: 16) {
+            Button(action: { showComments = true }) {
+                HStack(spacing: 6) {
+                    Image(systemName: "heart.fill")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundStyle(Color.orange)
+                    Text("24.8K")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(.white)
+                }
+            }
+            .buttonStyle(.plain)
+
+            Button(action: { showComments = true }) {
+                HStack(spacing: 6) {
+                    Image(systemName: "bubble.left")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(Color.white.opacity(0.75))
+                    Text("3.1K")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(.white)
+                }
+            }
+            .buttonStyle(.plain)
+
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 20)
+        .padding(.top, 14)
+    }
+
+    // MARK: Synopsis
+
+    private var synopsisSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("About")
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(.white)
+
+            Text(synopsis)
+                .font(.system(size: 14))
+                .foregroundStyle(Color.textSecondary)
+                .lineSpacing(4)
+                .lineLimit(synopsisExpanded ? nil : 3)
+
+            Button(action: {
+                withAnimation(.easeInOut(duration: 0.2)) { synopsisExpanded.toggle() }
+            }) {
+                Text(synopsisExpanded ? "Less" : "More")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Color.orange)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 20)
+        .padding(.top, 18)
+    }
+
+    // MARK: Episodes
+
+    private var episodesSection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                Text(selectedSeason)
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(.white)
+                Spacer()
+                Menu {
+                    let total = max(1, vm.tmdb?.numberOfSeasons ?? 4)
+                    ForEach(1...total, id: \.self) { i in
+                        Button("Season \(i)") {
+                            selectedSeason = "Season \(i)"
+                            Task { await vm.loadSeason(i) }
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Text("Season")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(Color.white.opacity(0.75))
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundStyle(Color.white.opacity(0.75))
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 7)
+                    .background(Capsule().fill(Color.white.opacity(0.08)))
+                }
+            }
+            .padding(.horizontal, 20)
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 12) {
+                    if !tmdbEpisodes.isEmpty {
+                        ForEach(tmdbEpisodes) { ep in
+                            Button {
+                                WatchIntentLogger.shared.log(
+                                    eventType: .cardTapped,
+                                    titleId: titleId,
+                                    metadata: [
+                                        "season": ep.seasonNumber ?? vm.currentSeasonNumber,
+                                        "episode": ep.episodeNumber
+                                    ]
+                                )
+                            } label: {
+                                TMDBEpisodeCardSmall(
+                                    episode: ep,
+                                    seasonNumber: vm.currentSeasonNumber
+                                )
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    } else {
+                        ForEach(episodes) { ep in
+                            Button {
+                                WatchIntentLogger.shared.log(
+                                    eventType: .cardTapped,
+                                    titleId: titleId,
+                                    metadata: [
+                                        "season": parseSeason(ep.code),
+                                        "episode": parseEpisode(ep.code)
+                                    ]
+                                )
+                            } label: {
+                                EpisodeCardSmall(episode: ep)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+                .padding(.horizontal, 20)
+            }
+        }
+        .padding(.top, 22)
+    }
+
+    // MARK: Where to watch
+
+    private var whereToWatchSection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Where to Watch")
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 20)
+
+            let services = vm.services
+            if services.isEmpty {
+                Text(vm.isLoading ? "Finding services\u{2026}" : "No streaming sources found.")
+                    .font(.system(size: 13))
+                    .foregroundStyle(Color.textSecondary)
+                    .padding(.horizontal, 20)
+            } else {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 10) {
+                        ForEach(services) { s in
+                            Button {
+                                openDeeplink(iosUrl: s.iosUrl, webUrl: s.webUrl)
+                            } label: {
+                                ServiceBadge(service: s)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.horizontal, 20)
+                }
+            }
+        }
+        .padding(.top, 24)
+    }
+
+    // MARK: Fan activity
+
+    private var fanActivitySection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Fan Activity")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(.white)
+
+            HStack(spacing: 12) {
+                fanButton(label: "24.8K", filled: liked) {
+                    LikeIcon(liked: liked)
+                } action: {
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) { liked.toggle() }
+                }
+
+                fanButton(label: "3.1K") {
+                    Image(systemName: "bubble.left")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(.white)
+                } action: {
+                    showComments = true
+                }
+
+                fanButton(label: "Save") {
+                    Image(systemName: saved ? "bookmark.fill" : "bookmark")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(saved ? Color.orange : .white)
+                } action: {
+                    withAnimation { saved.toggle() }
+                }
+
+                fanButton(label: "Notify", showDot: notifyOn) {
+                    Image(systemName: notifyOn ? "bell.fill" : "bell")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(.white)
+                } action: {
+                    withAnimation { notifyOn.toggle() }
+                }
+            }
+        }
+        .padding(16)
+        .glassCard()
+        .padding(.horizontal, 20)
+        .padding(.top, 24)
+    }
+
+    @ViewBuilder
+    private func fanButton<Icon: View>(
+        label: String,
+        filled: Bool = false,
+        showDot: Bool = false,
+        @ViewBuilder icon: () -> Icon,
+        action: @escaping () -> Void
+    ) -> some View {
+        VStack(spacing: 8) {
+            Button(action: action) {
+                icon()
+                    .frame(width: 52, height: 52)
+                    .background(Circle().fill(Color.white.opacity(0.07)))
+                    .overlay(Circle().stroke(Color.white.opacity(0.10), lineWidth: 1))
+                    .overlay(alignment: .topTrailing) {
+                        if showDot {
+                            Circle()
+                                .fill(Color(red: 0.20, green: 0.78, blue: 0.35))
+                                .frame(width: 10, height: 10)
+                                .overlay(Circle().stroke(Color.navy, lineWidth: 2))
+                                .offset(x: 2, y: -2)
+                        }
+                    }
+            }
+            .buttonStyle(.plain)
+
+            Text(label)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(Color.white.opacity(0.65))
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    // MARK: Bottom action bar
+
+    private var bottomActionBar: some View {
+        VStack(spacing: 0) {
+            Rectangle().fill(Color.white.opacity(0.07)).frame(height: 1)
+            HStack(spacing: 12) {
+                Button(action: {
+                    if let deeplink = vm.primaryDeeplink {
+                        WatchIntentLogger.shared.log(
+                            eventType: .deeplinkFired,
+                            titleId: titleId,
+                            platformId: platformId,
+                            metadata: ["url": deeplink.absoluteString]
+                        )
+                        UIApplication.shared.open(deeplink)
+                    } else {
+                        WatchIntentLogger.shared.log(
+                            eventType: .deeplinkFired,
+                            titleId: titleId,
+                            platformId: platformId
+                        )
+                        openPlayOn()
+                    }
+                }) {
+                    HStack(spacing: 10) {
+                        Image(systemName: "play.fill")
+                            .font(.system(size: 16, weight: .bold))
+                        Text("Resume S4 E7")
+                            .font(.system(size: 15, weight: .bold))
+                    }
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 52)
+                    .background(Capsule().fill(Color.orange))
+                    .shadow(color: Color.orange.opacity(0.4), radius: 14, y: 6)
+                }
+                .buttonStyle(.plain)
+
+                Button(action: { withAnimation { saved.toggle() } }) {
+                    Image(systemName: saved ? "checkmark" : "plus")
+                        .font(.system(size: 20, weight: .bold))
+                        .foregroundStyle(.white)
+                        .frame(width: 52, height: 52)
+                        .background(Circle().fill(Color.white.opacity(0.08)))
+                        .overlay(Circle().stroke(Color.white.opacity(0.14), lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 14)
+            .padding(.bottom, 24)
+            .background(
+                Color.navy.opacity(0.90)
+                    .background(.ultraThinMaterial)
+                    .ignoresSafeArea(edges: .bottom)
+            )
+        }
+    }
+}
+
+// MARK: - Like Icon with bounce
+
+private struct LikeIcon: View {
+    let liked: Bool
+    var body: some View {
+        Image(systemName: liked ? "heart.fill" : "heart")
+            .font(.system(size: 18, weight: .semibold))
+            .foregroundStyle(liked ? Color.orange : .white)
+            .scaleEffect(liked ? 1.15 : 1.0)
+    }
+}
+
+// MARK: - Episode small card
+
+private struct EpisodeCardSmall: View {
+    let episode: ShowDetailEpisode
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Color.black
+                .frame(width: 148, height: 88)
+                .overlay {
+                    LinearGradient(
+                        colors: [
+                            Color(red: 0.20, green: 0.10, blue: 0.45),
+                            Color(red: 0.06, green: 0.08, blue: 0.22)
+                        ],
+                        startPoint: .topLeading, endPoint: .bottomTrailing
+                    )
+                    .allowsHitTesting(false)
+                }
+                .overlay {
+                    Image(systemName: "play.fill")
+                        .font(.system(size: 28, weight: .regular))
+                        .foregroundStyle(.white.opacity(0.6))
+                        .allowsHitTesting(false)
+                }
+                .overlay(alignment: .topLeading) {
+                    statusBadge
+                        .padding(8)
+                }
+                .overlay(alignment: .bottom) {
+                    if episode.progress > 0 {
+                        ZStack(alignment: .leading) {
+                            Rectangle().fill(Color.white.opacity(0.15))
+                                .frame(height: 4)
+                            Rectangle().fill(Color.orange)
+                                .frame(width: 148 * episode.progress, height: 4)
+                        }
+                    }
+                }
+                .clipShape(.rect(cornerRadius: 10))
+
+            HStack {
+                Text(episode.code)
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(Color.textTertiary)
+                Spacer()
+                Text(episode.duration)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.textTertiary)
+            }
+
+            Text(episode.title)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.white)
+                .lineLimit(1)
+        }
+        .frame(width: 148, alignment: .leading)
+    }
+
+    @ViewBuilder
+    private var statusBadge: some View {
+        switch episode.status {
+        case .continueWatching:
+            Text("CONTINUE")
+                .font(.system(size: 9, weight: .heavy))
+                .foregroundStyle(Color.orange)
+                .padding(.horizontal, 7)
+                .padding(.vertical, 3)
+                .background(Capsule().fill(Color.orange.opacity(0.20)))
+                .overlay(Capsule().stroke(Color.orange.opacity(0.45), lineWidth: 1))
+        case .new:
+            Text("NEW")
+                .font(.system(size: 9, weight: .heavy))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 7)
+                .padding(.vertical, 3)
+                .background(Capsule().fill(Color.orange))
+        case .none:
+            EmptyView()
+        }
+    }
+}
+
+// MARK: - TMDB Episode small card
+
+private struct TMDBEpisodeCardSmall: View {
+    let episode: TMDBEpisode
+    let seasonNumber: Int
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Color(red: 0x2D/255, green: 0x14/255, blue: 0x54/255)
+                .frame(width: 148, height: 88)
+                .overlay {
+                    LinearGradient(
+                        colors: [
+                            Color(red: 0x2D/255, green: 0x14/255, blue: 0x54/255),
+                            Color(red: 0x0D/255, green: 0x2D/255, blue: 0x6E/255)
+                        ],
+                        startPoint: .topLeading, endPoint: .bottomTrailing
+                    )
+                    .allowsHitTesting(false)
+                }
+                .overlay {
+                    if let stillUrl = episode.stillUrl, let url = URL(string: stillUrl) {
+                        AsyncImage(url: url) { phase in
+                            switch phase {
+                            case .success(let img):
+                                img.resizable().aspectRatio(contentMode: .fill)
+                            default:
+                                Image(systemName: "play.fill")
+                                    .font(.system(size: 28, weight: .regular))
+                                    .foregroundStyle(.white.opacity(0.6))
+                            }
+                        }
+                        .frame(width: 148, height: 88)
+                        .clipped()
+                        .allowsHitTesting(false)
+                    } else {
+                        Image(systemName: "play.fill")
+                            .font(.system(size: 28, weight: .regular))
+                            .foregroundStyle(.white.opacity(0.6))
+                            .allowsHitTesting(false)
+                    }
+                }
+                .clipShape(.rect(cornerRadius: 10))
+
+            HStack {
+                Text("S\(seasonNumber) E\(episode.episodeNumber)")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(Color.textTertiary)
+                Spacer()
+                if let r = episode.runtime, r > 0 {
+                    Text("\(r) min")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color.textTertiary)
+                }
+            }
+
+            Text(episode.name ?? "Episode \(episode.episodeNumber)")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.white)
+                .lineLimit(1)
+        }
+        .frame(width: 148, alignment: .leading)
+    }
+}
+
+// MARK: - Service badge
+
+private struct ServiceBadge: View {
+    let service: WhereToWatchService
+    var body: some View {
+        Text(service.name)
+            .font(.system(size: 13, weight: .bold))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(service.color))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(Color.white.opacity(0.12), lineWidth: 1)
+            )
+    }
+}
+
+// MARK: - PlayOn trigger
+
+struct PlayOnTriggerButton: View {
+    var compact: Bool = false
+    var action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                Image(systemName: "tv")
+                    .font(.system(size: 14, weight: .semibold))
+                Text("Play on")
+                    .font(.system(size: 12, weight: .semibold))
+            }
+            .foregroundStyle(.white)
+            .padding(.horizontal, compact ? 12 : 16)
+            .frame(width: compact ? 90 : 110, height: compact ? 32 : 40)
+            .background(Capsule().fill(Color.white.opacity(0.12)))
+            .overlay(Capsule().stroke(Color.white.opacity(0.20), lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+// MARK: - Grid texture
+
+private struct GridTexture: View {
+    var body: some View {
+        Canvas { ctx, size in
+            let spacing: CGFloat = 40
+            let color = Color.white.opacity(0.04)
+            var x: CGFloat = 0
+            while x <= size.width {
+                var path = Path()
+                path.move(to: CGPoint(x: x, y: 0))
+                path.addLine(to: CGPoint(x: x, y: size.height))
+                ctx.stroke(path, with: .color(color), lineWidth: 1)
+                x += spacing
+            }
+            var y: CGFloat = 0
+            while y <= size.height {
+                var path = Path()
+                path.move(to: CGPoint(x: 0, y: y))
+                path.addLine(to: CGPoint(x: size.width, y: y))
+                ctx.stroke(path, with: .color(color), lineWidth: 1)
+                y += spacing
+            }
+        }
+    }
+}
+
+// MARK: - Scroll offset key
+
+private struct ScrollOffsetKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
+
+// MARK: - Comments Viewer Sheet
+
+struct CommentsViewerSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var tab: Tab = .comments
+
+    enum Tab: Hashable { case likes, comments }
+
+    private let likes: [(name: String, color: Color)] = [
+        ("Alex Carter", Color(red: 0.95, green: 0.45, blue: 0.10)),
+        ("Sam Lin", Color(red: 0.18, green: 0.55, blue: 0.95)),
+        ("Priya Shah", Color(red: 0.60, green: 0.25, blue: 0.85)),
+        ("Jules Park", Color(red: 0.20, green: 0.78, blue: 0.55)),
+        ("Mara Vance", Color(red: 0.95, green: 0.30, blue: 0.45)),
+        ("Theo Ward", Color(red: 0.30, green: 0.70, blue: 0.90))
+    ]
+
+    private let comments: [(name: String, time: String, text: String, color: Color)] = [
+        ("Alex Carter", "2h", "Kendall's monologue this week was unreal. Best episode of the season.", Color(red: 0.95, green: 0.45, blue: 0.10)),
+        ("Sam Lin", "4h", "Shiv's storyline is what's keeping me hooked.", Color(red: 0.18, green: 0.55, blue: 0.95)),
+        ("Priya Shah", "8h", "Cinematography is on another level lately.", Color(red: 0.60, green: 0.25, blue: 0.85)),
+        ("Jules Park", "1d", "Roman fans where you at 😭", Color(red: 0.20, green: 0.78, blue: 0.55)),
+        ("Mara Vance", "1d", "The pacing in this season finale was perfect.", Color(red: 0.95, green: 0.30, blue: 0.45))
+    ]
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Capsule()
+                .fill(Color.white.opacity(0.25))
+                .frame(width: 40, height: 4)
+                .padding(.top, 10)
+                .padding(.bottom, 14)
+
+            HStack(spacing: 0) {
+                tabButton("Likes", .likes)
+                tabButton("Comments", .comments)
+            }
+            .padding(.horizontal, 20)
+            .padding(.bottom, 8)
+
+            ScrollView {
+                LazyVStack(spacing: 12) {
+                    if tab == .likes {
+                        ForEach(likes.indices, id: \.self) { i in
+                            likeRow(name: likes[i].name, color: likes[i].color)
+                        }
+                    } else {
+                        ForEach(comments.indices, id: \.self) { i in
+                            commentRow(comments[i])
+                        }
+                    }
+                }
+                .padding(.horizontal, 20)
+                .padding(.top, 4)
+                .padding(.bottom, 40)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .background(Color.navy.ignoresSafeArea())
+        .presentationDetents([.fraction(0.8), .large])
+        .presentationDragIndicator(.hidden)
+        .presentationContentInteraction(.scrolls)
+    }
+
+    private func tabButton(_ label: String, _ value: Tab) -> some View {
+        Button(action: { withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { tab = value } }) {
+            VStack(spacing: 8) {
+                Text(label)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(tab == value ? .white : Color.textSecondary)
+                Rectangle()
+                    .fill(tab == value ? Color.orange : Color.clear)
+                    .frame(height: 2)
+            }
+            .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func likeRow(name: String, color: Color) -> some View {
+        HStack(spacing: 12) {
+            avatar(name: name, color: color)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(name)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(.white)
+                Text("liked this")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Color.textSecondary)
+            }
+            Spacer(minLength: 0)
+            Image(systemName: "heart.fill")
+                .font(.system(size: 14, weight: .bold))
+                .foregroundStyle(Color.orange)
+        }
+        .padding(12)
+        .background(Color.white.opacity(0.04))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.white.opacity(0.08), lineWidth: 1))
+        .clipShape(.rect(cornerRadius: 12))
+    }
+
+    private func commentRow(_ c: (name: String, time: String, text: String, color: Color)) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            avatar(name: c.name, color: c.color)
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 8) {
+                    Text(c.name)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(.white)
+                    Text(c.time)
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color.textTertiary)
+                }
+                Text(c.text)
+                    .font(.system(size: 13))
+                    .foregroundStyle(Color.textPrimary.opacity(0.85))
+                    .lineSpacing(3)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(12)
+        .background(Color.white.opacity(0.04))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.white.opacity(0.08), lineWidth: 1))
+        .clipShape(.rect(cornerRadius: 12))
+    }
+
+    private func avatar(name: String, color: Color) -> some View {
+        Circle()
+            .fill(color)
+            .frame(width: 36, height: 36)
+            .overlay {
+                Text(initials(name))
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(.white)
+            }
+    }
+
+    private func initials(_ name: String) -> String {
+        name.split(separator: " ").prefix(2).compactMap { $0.first.map(String.init) }.joined()
+    }
+}
+
+#Preview {
+    ShowDetailScreen()
+}
