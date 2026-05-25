@@ -20,6 +20,10 @@ final class AuthViewModel {
     var lastError: String?
     var lastInfo: String?
     var isGuest: Bool = UserDefaults.standard.bool(forKey: "gs.isGuest")
+    /// Cached `users.display_name` for the signed-in user. Lazy-loaded by
+    /// `loadDisplayName()` and persisted to `UserDefaults` so the Profile
+    /// avatar/name renders instantly on cold launch.
+    var displayName: String? = UserDefaults.standard.string(forKey: "gs.displayName")
     var hasCompletedOnboarding: Bool = UserDefaults.standard.bool(forKey: "gs.onboardingComplete")
     var selectedServices: Set<String> = Set(UserDefaults.standard.stringArray(forKey: "gs.selectedServices") ?? [])
     var notifyPushEnabled: Bool = UserDefaults.standard.bool(forKey: "gs.notifyPush")
@@ -40,8 +44,60 @@ final class AuthViewModel {
         do {
             let session = try await SupabaseManager.shared.client.auth.session
             self.currentUser = session.user
+            await loadDisplayName()
         } catch {
             self.currentUser = nil
+        }
+    }
+
+    /// Fetches the `display_name` column from the `users` table for the
+    /// current Supabase user. Silently fails to the cached value when
+    /// offline or when the row hasn't been upserted yet.
+    func loadDisplayName() async {
+        guard let uid = currentUser?.id.uuidString else { return }
+        do {
+            let rows: [UserProfileNameRow] = try await SupabaseManager.shared.client
+                .from("users")
+                .select("display_name")
+                .eq("id", value: uid)
+                .limit(1)
+                .execute()
+                .value
+            if let name = rows.first?.display_name, !name.isEmpty {
+                self.displayName = name
+                UserDefaults.standard.set(name, forKey: "gs.displayName")
+            }
+        } catch {
+            print("[Auth] loadDisplayName failed: \(error.localizedDescription)")
+        }
+    }
+
+    /// Updates the user's display name in Supabase and caches it locally.
+    /// Returns `true` on success.
+    @discardableResult
+    func updateDisplayName(_ name: String) async -> Bool {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, let uid = currentUser?.id.uuidString else {
+            return false
+        }
+        let payload = UserProfileUpsert(
+            id: uid,
+            display_name: trimmed,
+            avatar_url: nil,
+            email: currentUser?.email
+        )
+        do {
+            try await SupabaseManager.shared.client
+                .from("users")
+                .upsert(payload, onConflict: "id")
+                .execute()
+            self.displayName = trimmed
+            UserDefaults.standard.set(trimmed, forKey: "gs.displayName")
+            return true
+        } catch {
+            self.lastError = error.localizedDescription
+            print("[Auth] updateDisplayName failed: \(error.localizedDescription)")
+            return false
         }
     }
 
@@ -81,12 +137,18 @@ final class AuthViewModel {
                 self.isGuest = false
                 UserDefaults.standard.set(false, forKey: "gs.isGuest")
 
-                let displayName = Self.composeName(credential.fullName)
+                let appleName = Self.composeName(credential.fullName)
                 await upsertProfile(
                     userId: session.user.id.uuidString,
-                    displayName: displayName,
+                    displayName: appleName,
                     email: credential.email ?? session.user.email
                 )
+                if let appleName, !appleName.isEmpty {
+                    self.displayName = appleName
+                    UserDefaults.standard.set(appleName, forKey: "gs.displayName")
+                } else {
+                    await loadDisplayName()
+                }
                 WatchIntentLogger.shared.log(
                     eventType: .authSignedIn,
                     metadata: [
@@ -175,7 +237,9 @@ final class AuthViewModel {
         }
         self.currentUser = nil
         self.isGuest = false
+        self.displayName = nil
         UserDefaults.standard.set(false, forKey: "gs.isGuest")
+        UserDefaults.standard.removeObject(forKey: "gs.displayName")
         // NOTE: `hasCompletedOnboarding` is *not* reset on sign-out — a user
         // who has already chosen their services on this device should not be
         // forced through onboarding again when their session expires or they
@@ -228,6 +292,7 @@ final class AuthViewModel {
                     displayName: nil,
                     email: session.user.email
                 )
+                await loadDisplayName()
                 WatchIntentLogger.shared.log(
                     eventType: .authSignedIn,
                     metadata: [
@@ -288,6 +353,7 @@ final class AuthViewModel {
                 displayName: nil,
                 email: session.user.email
             )
+            await loadDisplayName()
             WatchIntentLogger.shared.log(
                 eventType: .authSignedIn,
                 metadata: [
@@ -359,6 +425,7 @@ final class AuthViewModel {
                 displayName: nil,
                 email: session.user.email
             )
+            await loadDisplayName()
             WatchIntentLogger.shared.log(
                 eventType: .authSignedIn,
                 metadata: [

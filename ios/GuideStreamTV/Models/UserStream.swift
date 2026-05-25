@@ -72,3 +72,26 @@ nonisolated struct OnboardingPrefsUpsert: Encodable, Sendable {
     let notify_push: Bool
     let notify_sms: Bool
 }
+
+/// Lightweight decode helper for fetching just the `display_name` column
+/// from the `users` table without pulling everything else.
+nonisolated struct UserProfileNameRow: Decodable, Sendable {
+    let display_name: String?
+}
+
+/// Row shape used by the Devices screen when listing a user's installs.
+/// Mirrors the `device_sessions` schema documented in `DeviceSessionService`.
+nonisolated struct DeviceSessionRow: Decodable, Sendable, Identifiable, Hashable {
+    let device_id: String
+    let device_model: String?
+    let os_version: String?
+    let app_version: String?
+    let build_number: String?
+    let last_seen_at: String?
+    let first_seen_at: String?
+    let is_authenticated: Bool?
+    let is_guest: Bool?
+    let session_count: Int?
+
+    var id: String { device_id }
+}
