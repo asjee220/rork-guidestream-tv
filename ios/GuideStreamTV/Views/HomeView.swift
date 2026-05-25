@@ -107,6 +107,8 @@ struct HomeView: View {
     @State private var trending: [TMDBResult] = []
     @State private var onAir: [TMDBResult] = []
     @State private var bingeFallback: [TMDBResult] = []
+    @State private var sportsGames: [SportsGame] = []
+    @State private var selectedGame: SportsGame?
     /// Cached top US streaming provider per TMDB id. Items without an entry have no real
     /// streaming service and are filtered out of the UI.
     @State private var providerByTmdb: [Int: Platform] = [:]
@@ -117,22 +119,32 @@ struct HomeView: View {
                 ScrollView(showsIndicators: false) {
                     VStack(spacing: 20) {
                         Color.clear.frame(height: 56)
-                        if let hero = heroResult {
-                            HeroGlassCard(
-                                result: hero,
-                                onPlay: {
+                        if !heroItems.isEmpty {
+                            HomeHeroCarousel(
+                                items: heroItems,
+                                onSelectMedia: { result, platform in
                                     WatchIntentLogger.shared.log(
                                         eventType: .cardTapped,
-                                        titleId: String(hero.id),
-                                        platformId: "tmdb"
+                                        titleId: String(result.id),
+                                        platformId: platform?.name.lowercased() ?? "tmdb",
+                                        metadata: ["section": "hero_carousel"]
                                     )
-                                    detailSubject = .show(heroAsPoster(hero))
+                                    detailSubject = .show(mediaAsPoster(result, platform: platform))
                                 },
-                                onShare: {
-                                    detailSubject = .show(heroAsPoster(hero))
+                                onSelectGame: { game in
+                                    WatchIntentLogger.shared.log(
+                                        eventType: .cardTapped,
+                                        titleId: WatchIntentLogger.titleSlug("\(game.away.abbreviation)-\(game.home.abbreviation)-\(game.sport)"),
+                                        platformId: (game.broadcasts.first ?? "").lowercased(),
+                                        metadata: [
+                                            "section": "hero_carousel",
+                                            "kind": "sport",
+                                            "state": game.state.rawValue
+                                        ]
+                                    )
+                                    selectedGame = game
                                 }
                             )
-                            .padding(.horizontal, 20)
                         }
 
                         NewEpisodesSection(
@@ -231,6 +243,9 @@ struct HomeView: View {
             .sheet(isPresented: $showNotifications) {
                 NotificationsSheet()
             }
+            .sheet(item: $selectedGame) { game in
+                SportsWatchSheet(game: game)
+            }
             .toolbar(.hidden, for: .navigationBar)
         }
         .tint(Color.orange)
@@ -256,10 +271,12 @@ struct HomeView: View {
         async let trendingCall = try? TMDBService.shared.getTrending()
         async let onAirCall = try? TMDBService.shared.getOnTheAir()
         async let endedCall = try? TMDBService.shared.getDiscoverEnded()
-        let (t, a, e) = await (trendingCall, onAirCall, endedCall)
+        async let sportsCall = SportsService.shared.fetchAll()
+        let (t, a, e, s) = await (trendingCall, onAirCall, endedCall, sportsCall)
         if let t { trending = t }
         if let a { onAir = a }
         if let e { bingeFallback = e }
+        sportsGames = s
         await hydrateProviders()
     }
 
@@ -296,21 +313,41 @@ struct HomeView: View {
 
     // MARK: - Derived content
 
-    /// First trending result with a real streaming provider, used to render a real backdrop in the hero card.
-    private var heroResult: TMDBResult? {
-        // Prefer the first result we've confirmed has a real streaming service; fall back
-        // to the first available result only after provider lookups have settled.
-        if let match = (trending + onAir + bingeFallback).first(where: { providerByTmdb[$0.id] != nil }) {
-            return match
+    /// Builds the heterogeneous hero carousel. Leads with up to two live
+    /// sports broadcasts, then up to six trending titles that have a
+    /// confirmed streaming provider, and finally one upcoming sports event
+    /// when there is room. Titles without provider info are skipped so the
+    /// rail never advertises a service we can't actually deeplink to.
+    private var heroItems: [HeroItem] {
+        var items: [HeroItem] = []
+
+        let liveGames = sportsGames.filter { $0.state == .live }.prefix(2)
+        for g in liveGames { items.append(.game(g)) }
+
+        let mediaPool = trending + onAir + bingeFallback
+        var seen: Set<Int> = []
+        var media: [HeroItem] = []
+        for r in mediaPool {
+            if seen.contains(r.id) { continue }
+            seen.insert(r.id)
+            guard let platform = providerByTmdb[r.id] else { continue }
+            media.append(.media(r, platform))
+            if media.count >= 6 { break }
         }
-        return trending.first ?? onAir.first ?? bingeFallback.first
+        items.append(contentsOf: media)
+
+        if items.count < 8, let nextUp = sportsGames.first(where: { $0.state == .pre }) {
+            items.append(.game(nextUp))
+        }
+        return items
     }
 
-    private func heroAsPoster(_ r: TMDBResult) -> PosterShow {
-        PosterShow(
+    private func mediaAsPoster(_ r: TMDBResult, platform: Platform?) -> PosterShow {
+        let colors: [Color] = platform.map { [$0.color, $0.color.opacity(0.7)] } ?? HomeFallback.posterColors
+        return PosterShow(
             title: r.displayName,
-            meta: r.year.map { "\($0)" } ?? "Trending",
-            posterColors: HomeFallback.posterColors,
+            meta: r.year.map { "\($0)" } ?? (r.isTV ? "Series" : "Movie"),
+            posterColors: colors,
             symbol: "play.tv.fill",
             posterUrl: r.posterUrl,
             tmdbId: r.id
@@ -467,119 +504,6 @@ private struct PageBar: View {
                 .fill(Color.white.opacity(0.06))
                 .frame(height: 0.5)
         }
-    }
-}
-
-// MARK: - Hero Glass Card
-
-private struct HeroGlassCard: View {
-    let result: TMDBResult
-    let onPlay: () -> Void
-    let onShare: () -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 10) {
-                Text("TRENDING")
-                    .scaledFont(size: 8, weight: .bold)
-                    .tracking(0.6)
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 4)
-                    .background(
-                        RoundedRectangle(cornerRadius: 5, style: .continuous).fill(Color.orange)
-                    )
-                if let y = result.year {
-                    Text("\(y)")
-                        .scaledFont(size: 12, weight: .medium)
-                        .foregroundStyle(Color.textTertiary)
-                }
-                if let r = result.voteAverage, r > 0 {
-                    Text("★ \(String(format: "%.1f", r))")
-                        .scaledFont(size: 12, weight: .semibold)
-                        .foregroundStyle(Color.textTertiary)
-                }
-                Spacer(minLength: 0)
-            }
-
-            Text(result.displayName)
-                .scaledFont(size: 24, weight: .semibold, design: .default)
-                .foregroundStyle(Color.textPrimary)
-                .lineLimit(2)
-
-            Text(result.overview ?? "Trending on streaming this week.")
-                .scaledFont(size: 14, weight: .regular)
-                .foregroundStyle(Color.textSecondary)
-                .lineLimit(2)
-
-            HStack(spacing: 10) {
-                Button(action: onPlay) {
-                    HStack(spacing: 8) {
-                        Text("Play")
-                            .scaledFont(size: 15, weight: .bold)
-                        Image(systemName: "play.fill")
-                            .scaledFont(size: 13, weight: .bold)
-                    }
-                    .foregroundStyle(.white)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 40)
-                    .background(
-                        Capsule().fill(Color.orange)
-                    )
-                    .shadow(color: Color.orange.opacity(0.45), radius: 14, y: 6)
-                }
-                .buttonStyle(.plain)
-                .frame(maxWidth: .infinity)
-                .layoutPriority(1)
-
-                Button(action: onShare) {
-                    Image(systemName: "paperplane.fill")
-                        .scaledFont(size: 15, weight: .semibold)
-                        .foregroundStyle(.white)
-                        .frame(width: 56, height: 40)
-                        .background(
-                            Capsule().fill(Color.white.opacity(0.07))
-                                .background(.ultraThinMaterial, in: Capsule())
-                        )
-                        .overlay(Capsule().stroke(Color.white.opacity(0.10), lineWidth: 1))
-                }
-                .buttonStyle(.plain)
-            }
-            .padding(.top, 4)
-        }
-        .padding(18)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            ZStack {
-                // Real TMDB backdrop image behind the glass.
-                RemoteImage(
-                    urlString: result.backdropUrl ?? result.posterUrl,
-                    contentMode: .fill,
-                    fallbackColors: [
-                        Color(red: 0.20, green: 0.05, blue: 0.20),
-                        Color(red: 0.04, green: 0.04, blue: 0.10)
-                    ]
-                )
-                .allowsHitTesting(false)
-
-                // Dim + brand wash so foreground text stays legible.
-                LinearGradient(
-                    colors: [Color.black.opacity(0.55), Color.black.opacity(0.75)],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-                LinearGradient(
-                    colors: [Color.clear, Color.navy],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-            }
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .stroke(Color.white.opacity(0.10), lineWidth: 1)
-        )
-        .clipShape(.rect(cornerRadius: 14))
     }
 }
 
