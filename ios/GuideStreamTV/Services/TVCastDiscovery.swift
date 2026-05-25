@@ -120,13 +120,13 @@ final class TVCastDiscovery {
             return true
         }
 
-        // AirPlay/Apple TV on :7000.
-        if let airplayInfo = await Self.rawHTTPGet(host: host, port: 7000, path: "/info", timeout: 3.0),
-           Self.looksLikeAirPlay(airplayInfo) {
-            let name = Self.plistStringValue(key: "name", in: airplayInfo)
-                ?? Self.plistStringValue(key: "deviceName", in: airplayInfo)
-                ?? "Apple TV (\(host))"
-            mergeFound([(id: "appletv-\(host)", name: name, host: host, port: 7000)], kind: .appleTV)
+        // AirPlay/Apple TV on :7000. Use the Data path so we can handle the
+        // binary plist response from modern tvOS.
+        if let airplayData = await Self.rawHTTPGetData(host: host, port: 7000, path: "/info", timeout: 3.0),
+           Self.isAirPlayResponse(airplayData) {
+            let name = Self.extractAirPlayName(from: airplayData) ?? "Apple TV (\(host))"
+            let deviceID = Self.extractAirPlayDeviceID(from: airplayData) ?? host
+            mergeFound([(id: "appletv-\(deviceID)", name: name, host: host, port: 7000)], kind: .appleTV)
             return true
         }
 
@@ -243,14 +243,16 @@ final class TVCastDiscovery {
             return
         }
 
-        // AirPlay/Apple TV on :7000 — /info endpoint returns a plist.
-        if let airplayInfo = await rawHTTPGet(host: host, port: 7000, path: "/info", timeout: 1.0),
-           looksLikeAirPlay(airplayInfo) {
-            let name = plistStringValue(key: "name", in: airplayInfo)
-                ?? plistStringValue(key: "deviceName", in: airplayInfo)
-                ?? "Apple TV (\(host))"
+        // AirPlay/Apple TV on :7000 — /info returns a BINARY plist on modern
+        // tvOS (Apple TV HD / 4K). Using a String-based fetch fails because
+        // the binary bytes aren't valid UTF-8, so we have to read raw Data
+        // and parse with PropertyListSerialization.
+        if let airplayData = await rawHTTPGetData(host: host, port: 7000, path: "/info", timeout: 1.5),
+           isAirPlayResponse(airplayData) {
+            let name = extractAirPlayName(from: airplayData) ?? "Apple TV (\(host))"
+            let deviceID = extractAirPlayDeviceID(from: airplayData) ?? host
             let snapshot: [(id: String, name: String, host: String?, port: UInt16?)] =
-                [(id: "appletv-\(host)", name: name, host: host, port: 7000)]
+                [(id: "appletv-\(deviceID)", name: name, host: host, port: 7000)]
             #if DEBUG
             print("[TVCastDiscovery] found Apple TV \(name) @ \(host)")
             #endif
@@ -260,18 +262,127 @@ final class TVCastDiscovery {
         }
     }
 
-    nonisolated private static func looksLikeAirPlay(_ body: String) -> Bool {
-        let lower = body.lowercased()
-        return lower.contains("airplay")
-            || lower.contains("appletv")
-            || lower.contains("apple tv")
-            || lower.contains("model")
+    /// Returns `true` if the response body looks like an AirPlay `/info`
+    /// payload. Modern tvOS returns a binary plist (`bplist00` magic);
+    /// some older receivers return XML or text. Port 7000 is reserved for
+    /// AirPlay so any meaningful HTTP response on that port is treated as
+    /// a positive match.
+    nonisolated private static func isAirPlayResponse(_ data: Data) -> Bool {
+        guard !data.isEmpty else { return false }
+        // Binary plist magic — definitive AirPlay signature on modern Apple TV.
+        if data.count >= 8 {
+            let magic: [UInt8] = [0x62, 0x70, 0x6c, 0x69, 0x73, 0x74, 0x30, 0x30] // "bplist00"
+            var matchesMagic = true
+            for i in 0..<8 where data[i] != magic[i] { matchesMagic = false; break }
+            if matchesMagic { return true }
+        }
+        // XML / text response — legacy receivers.
+        if let body = String(data: data, encoding: .utf8) {
+            let lower = body.lowercased()
+            if lower.contains("airplay")
+                || lower.contains("appletv")
+                || lower.contains("apple tv")
+                || lower.contains("deviceid")
+                || lower.contains("model") {
+                return true
+            }
+        }
+        // Last-resort: port 7000 is reserved for AirPlay, so any substantive
+        // response (not a stray RST packet) is overwhelmingly likely to be
+        // an Apple TV. We require >= 50 bytes to avoid noise.
+        return data.count >= 50
+    }
+
+    /// Pulls the receiver's display name out of an AirPlay `/info` body.
+    /// Tries binary plist parsing first (modern tvOS), then XML/text, then
+    /// a byte-scan heuristic on the binary form as a final fallback.
+    nonisolated private static func extractAirPlayName(from data: Data) -> String? {
+        // Modern tvOS: binary plist.
+        if let plist = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil) as? [String: Any] {
+            if let n = plist["name"] as? String, !n.isEmpty { return n }
+            if let n = plist["deviceName"] as? String, !n.isEmpty { return n }
+            if let n = plist["model"] as? String, !n.isEmpty { return n }
+        }
+        // Legacy / XML.
+        if let body = String(data: data, encoding: .utf8) {
+            if let n = plistStringValue(key: "name", in: body) { return n }
+            if let n = plistStringValue(key: "deviceName", in: body) { return n }
+        }
+        // Heuristic byte-scan — binary plists store ASCII keys & values inline.
+        if let n = scanBinaryForStringAfter(key: "name", in: data) { return n }
+        if let n = scanBinaryForStringAfter(key: "deviceName", in: data) { return n }
+        return nil
+    }
+
+    /// Pulls a stable per-device identifier (MAC-style `deviceid` or `pi`
+    /// UUID) so the same Apple TV gets the same row across rescans.
+    nonisolated private static func extractAirPlayDeviceID(from data: Data) -> String? {
+        if let plist = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil) as? [String: Any] {
+            if let id = plist["deviceid"] as? String, !id.isEmpty { return id }
+            if let id = plist["pi"] as? String, !id.isEmpty { return id }
+        }
+        return nil
+    }
+
+    /// Best-effort scan for a string value immediately following an ASCII
+    /// key inside a binary plist. Binary plist stores short ASCII strings
+    /// inline with a one-byte type marker (`0x5X` where `X` is length 1-14),
+    /// so once we find the key bytes we can usually read the next value
+    /// without a full parser. Used only when `PropertyListSerialization`
+    /// fails (truncated or oddly-encoded responses).
+    nonisolated private static func scanBinaryForStringAfter(key: String, in data: Data) -> String? {
+        let keyBytes = Array(key.utf8)
+        guard data.count > keyBytes.count + 2 else { return nil }
+        let lastSearchIndex = data.count - keyBytes.count
+        var i = 0
+        while i < lastSearchIndex {
+            var match = true
+            for j in 0..<keyBytes.count where data[i + j] != keyBytes[j] { match = false; break }
+            if match {
+                // Scan forward up to 64 bytes for an inline ASCII string
+                // marker (0x51...0x5E = ASCII string of length 1-14).
+                let scanEnd = min(i + keyBytes.count + 64, data.count - 1)
+                var k = i + keyBytes.count
+                while k < scanEnd {
+                    let b = data[k]
+                    if b >= 0x51 && b <= 0x5E {
+                        let length = Int(b - 0x50)
+                        if k + 1 + length <= data.count {
+                            let slice = data.subdata(in: (k + 1)..<(k + 1 + length))
+                            if let s = String(data: slice, encoding: .utf8),
+                               !s.isEmpty,
+                               s.unicodeScalars.allSatisfy({ $0.value >= 0x20 && $0.value < 0x7F }) {
+                                return s.trimmingCharacters(in: .whitespacesAndNewlines)
+                            }
+                        }
+                    }
+                    k += 1
+                }
+            }
+            i += 1
+        }
+        return nil
     }
 
     /// Performs an HTTP/1.0 GET via raw NWConnection so ATS doesn't block
-    /// cleartext requests to LAN IP literals.
+    /// cleartext requests to LAN IP literals. Returns the body as a UTF-8
+    /// string — only suitable for endpoints that respond with text (e.g.
+    /// Roku ECP XML). For endpoints that may return binary data (AirPlay
+    /// `/info` on modern Apple TV returns a binary plist), use
+    /// `rawHTTPGetData` instead so the bytes aren't lost during string
+    /// conversion.
     nonisolated private static func rawHTTPGet(host: String, port: UInt16, path: String, timeout: TimeInterval) async -> String? {
-        await withCheckedContinuation { (continuation: CheckedContinuation<String?, Never>) in
+        guard let data = await rawHTTPGetData(host: host, port: port, path: path, timeout: timeout) else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+
+    /// Same wire protocol as `rawHTTPGet` but returns the raw response body
+    /// bytes (with HTTP headers stripped at the byte level). Necessary for
+    /// endpoints that return binary plists or other non-UTF8 payloads —
+    /// `String(data:encoding:.utf8)` returns nil on invalid sequences, so
+    /// converting to String first would silently discard the entire response.
+    nonisolated private static func rawHTTPGetData(host: String, port: UInt16, path: String, timeout: TimeInterval) async -> Data? {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Data?, Never>) in
             let nwHost = NWEndpoint.Host(host)
             guard let nwPort = NWEndpoint.Port(rawValue: port) else {
                 continuation.resume(returning: nil); return
@@ -282,7 +393,7 @@ final class TVCastDiscovery {
 
             let lock = NSLock()
             var didResume = false
-            let finish: (String?) -> Void = { value in
+            let finish: (Data?) -> Void = { value in
                 lock.lock()
                 let already = didResume
                 didResume = true
@@ -300,19 +411,20 @@ final class TVCastDiscovery {
             conn.stateUpdateHandler = { state in
                 switch state {
                 case .ready:
-                    let req = "GET \(path) HTTP/1.0\r\nHost: \(host)\r\nUser-Agent: GuideStreamTV/1.0\r\nConnection: close\r\nAccept: */*\r\n\r\n"
+                    // The User-Agent matters for some Apple TV firmware —
+                    // mimicking AirPlay's own client UA gets a richer
+                    // /info response than a generic one.
+                    let req = "GET \(path) HTTP/1.0\r\nHost: \(host)\r\nUser-Agent: AirPlay/540.31\r\nConnection: close\r\nAccept: */*\r\n\r\n"
                     conn.send(content: req.data(using: .utf8), completion: .contentProcessed { _ in })
                     var buffer = Data()
                     func readNext() {
                         conn.receive(minimumIncompleteLength: 1, maximumLength: 16 * 1024) { data, _, isComplete, error in
                             if let data = data, !data.isEmpty { buffer.append(data) }
                             if isComplete || error != nil || buffer.count > 64 * 1024 {
-                                let raw = String(data: buffer, encoding: .utf8) ?? ""
-                                // Strip HTTP headers.
-                                if let range = raw.range(of: "\r\n\r\n") {
-                                    finish(String(raw[range.upperBound...]))
+                                if let bodyStart = findHTTPBodyStart(in: buffer) {
+                                    finish(buffer.subdata(in: bodyStart..<buffer.count))
                                 } else {
-                                    finish(raw.isEmpty ? nil : raw)
+                                    finish(buffer.isEmpty ? nil : buffer)
                                 }
                                 return
                             }
@@ -328,6 +440,26 @@ final class TVCastDiscovery {
             }
             conn.start(queue: .global(qos: .userInitiated))
         }
+    }
+
+    /// Locates the start of the HTTP body (the byte immediately after the
+    /// first `\r\n\r\n` separator) without touching string encoding.
+    /// Returns `nil` if no separator is present in the buffer.
+    nonisolated private static func findHTTPBodyStart(in data: Data) -> Int? {
+        guard data.count >= 4 else { return nil }
+        let needle: [UInt8] = [0x0d, 0x0a, 0x0d, 0x0a] // \r\n\r\n
+        var i = 0
+        let upper = data.count - 4
+        while i <= upper {
+            if data[i] == needle[0]
+                && data[i + 1] == needle[1]
+                && data[i + 2] == needle[2]
+                && data[i + 3] == needle[3] {
+                return i + 4
+            }
+            i += 1
+        }
+        return nil
     }
 
     nonisolated private static func extractTag(_ tag: String, from xml: String) -> String? {
