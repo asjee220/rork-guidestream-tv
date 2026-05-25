@@ -98,7 +98,7 @@ struct EpisodeDetailSheet: View {
             }
         }
         .background(Color(red: 0x06/255, green: 0x0C/255, blue: 0x18/255).ignoresSafeArea())
-        .presentationDetents([.fraction(0.92), .large])
+        .presentationDetents([.fraction(0.8), .large])
         .presentationDragIndicator(.visible)
         .presentationContentInteraction(.scrolls)
     }
