@@ -404,7 +404,15 @@ struct ReelsScreen: View {
     @State private var showShare: Bool = false
     @State private var scrolledID: Int? = 0
     @State private var pendingInterstitialAt: Int? = nil
+    /// Live translation while the user drags down to dismiss. Used to slide
+    /// the whole feed down for visual feedback before commit.
+    @State private var dismissDragOffset: CGFloat = 0
     @Environment(\.tabBarVisibility) private var tabBarVisibility
+
+    /// Called when the user taps the dismiss chevron or completes a
+    /// downward swipe-to-dismiss gesture. ContentView routes the user back
+    /// to whichever tab they were on before opening Reels.
+    let onDismiss: () -> Void
 
     var body: some View {
         GeometryReader { geo in
@@ -458,7 +466,56 @@ struct ReelsScreen: View {
                         _ = prev
                     }
                 }
+
+                // Top-left dismiss chevron. Sits above all reel content with a
+                // glassy background so it stays legible over any backdrop.
+                VStack {
+                    HStack {
+                        Button(action: handleDismiss) {
+                            Image(systemName: "chevron.left")
+                                .scaledFont(size: 17, weight: .bold)
+                                .foregroundStyle(.white)
+                                .frame(width: 40, height: 40)
+                                .background(
+                                    Circle()
+                                        .fill(Color.black.opacity(0.45))
+                                )
+                                .background(.ultraThinMaterial, in: Circle())
+                                .overlay(Circle().stroke(Color.white.opacity(0.18), lineWidth: 1))
+                                .shadow(color: .black.opacity(0.35), radius: 10, y: 2)
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.leading, 14)
+                        .padding(.top, topInset + 8)
+                        Spacer()
+                    }
+                    Spacer()
+                }
             }
+            .offset(y: dismissDragOffset)
+            // Swipe-down-to-dismiss. Runs *simultaneously* with the inner
+            // paging ScrollView, but we only react to drags that begin at the
+            // first reel and pull downward — so neighbour reel paging is
+            // untouched.
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 24)
+                    .onChanged { value in
+                        guard canDismissSwipe, value.translation.height > 0 else { return }
+                        // Resist a little so the drag feels weighty.
+                        dismissDragOffset = value.translation.height * 0.55
+                    }
+                    .onEnded { value in
+                        let translation = value.translation.height
+                        let predicted = value.predictedEndTranslation.height
+                        if canDismissSwipe && translation > 110 && predicted > 180 {
+                            handleDismiss()
+                        } else {
+                            withAnimation(.spring(response: 0.34, dampingFraction: 0.86)) {
+                                dismissDragOffset = 0
+                            }
+                        }
+                    }
+            )
         }
         .task {
             // Hide the floating tab bar so the reel fills the entire screen.
@@ -490,6 +547,21 @@ struct ReelsScreen: View {
     private var currentTrailer: TrailerItem? {
         guard vm.allTrailers.indices.contains(vm.currentIndex) else { return nil }
         return vm.allTrailers[vm.currentIndex]
+    }
+
+    /// Only allow the swipe-down dismiss when the user is on the very first
+    /// reel — otherwise downward swipes mean "previous reel" and we mustn't
+    /// fight the paging ScrollView.
+    private var canDismissSwipe: Bool {
+        vm.currentIndex == 0 && !vm.allTrailers.isEmpty
+    }
+
+    private func handleDismiss() {
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        withAnimation(.easeOut(duration: 0.24)) {
+            dismissDragOffset = 0
+        }
+        onDismiss()
     }
 
     @ViewBuilder
