@@ -18,6 +18,8 @@ struct SportsWatchSheet: View {
     @State private var isReminderSet: Bool = false
     @State private var isNotifying: Bool = false
     @State private var showCastSheet: Bool = false
+    @State private var streams = StreamsViewModel.shared
+    @State private var isToggleSaving: Bool = false
 
     private var awayColor: Color { game.away.primaryHex.map { Color(hex: $0) } ?? Color(white: 0.18) }
     private var homeColor: Color { game.home.primaryHex.map { Color(hex: $0) } ?? Color(white: 0.18) }
@@ -99,7 +101,7 @@ struct SportsWatchSheet: View {
                     .padding(.horizontal, 20)
                     .padding(.top, 20)
 
-                watchButton
+                watchActions
                     .padding(.horizontal, 20)
                     .padding(.top, 22)
 
@@ -435,6 +437,13 @@ struct SportsWatchSheet: View {
 
     // MARK: - Watch CTA
 
+    private var watchActions: some View {
+        HStack(spacing: 12) {
+            watchButton
+            watchlistButton
+        }
+    }
+
     private var watchButton: some View {
         let platform = primaryBroadcast ?? ""
         let canWatch = !platform.isEmpty
@@ -472,6 +481,71 @@ struct SportsWatchSheet: View {
         }
         .buttonStyle(.plain)
         .disabled(!canWatch)
+    }
+
+    /// Stable id used to identify the game in the user's watch list.
+    private var gameSaveId: String {
+        WatchIntentLogger.titleSlug("\(game.away.abbreviation)-\(game.home.abbreviation)-\(game.sport)")
+    }
+
+    /// True when the user has already saved this game to their watch list.
+    private var isSaved: Bool {
+        streams.userStreams.contains { $0.titleId == gameSaveId }
+    }
+
+    /// Circular + button mirroring the Reels Watch List affordance. Lives
+    /// next to the main "Watch on \(broadcaster)" CTA so users can park a
+    /// game in their list with one tap without leaving the sheet.
+    @ViewBuilder
+    private var watchlistButton: some View {
+        Button {
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            toggleWatchList()
+        } label: {
+            ZStack {
+                if isSaved {
+                    Circle()
+                        .fill(Color.white.opacity(0.10))
+                        .overlay(Circle().stroke(Color.white.opacity(0.18), lineWidth: 1))
+                } else {
+                    Circle()
+                        .fill(Color.orange)
+                        .shadow(color: Color.orange.opacity(0.55), radius: 14, y: 0)
+                }
+                if isToggleSaving {
+                    ProgressView()
+                        .controlSize(.small)
+                        .tint(.white)
+                } else {
+                    Image(systemName: isSaved ? "checkmark" : "plus")
+                        .scaledFont(size: 22, weight: .bold)
+                        .foregroundStyle(.white)
+                }
+            }
+            .frame(width: 56, height: 56)
+        }
+        .buttonStyle(.plain)
+        .disabled(isToggleSaving)
+        .accessibilityLabel(isSaved ? "Remove game from watch list" : "Add game to watch list")
+    }
+
+    private func toggleWatchList() {
+        let key = gameSaveId
+        let snapshotSaved = isSaved
+        isToggleSaving = true
+        Task {
+            if snapshotSaved {
+                await streams.removeFromMyStreams(titleId: key)
+            } else {
+                await streams.addToMyStreams(
+                    titleId: key,
+                    title: gameTitle,
+                    posterUrl: nil,
+                    platform: primaryBroadcast
+                )
+            }
+            await MainActor.run { isToggleSaving = false }
+        }
     }
 
     private var closeButton: some View {

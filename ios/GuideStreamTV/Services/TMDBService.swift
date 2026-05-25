@@ -315,6 +315,31 @@ nonisolated struct TMDBService {
             }
     }
 
+    /// "What's New Today" — trending TV + movies for the current day, capturing
+    /// the daily zeitgeist of titles freshly hitting streaming services. Uses
+    /// TMDB's `trending/all/day` endpoint and filters out people results.
+    func getNewToday() async throws -> [TMDBResult] {
+        let urlString = "\(base)/trending/all/day?api_key=\(apiKey)&language=en-US"
+        let data = try await get(urlString)
+        let env = try JSONDecoder().decode(TMDBTrendingEnvelope.self, from: data)
+        return env.results
+            .filter { ($0.mediaType ?? "") == "tv" || ($0.mediaType ?? "") == "movie" }
+            .map { r in
+                TMDBResult(
+                    id: r.id,
+                    mediaType: r.mediaType ?? "tv",
+                    name: r.name,
+                    title: r.title,
+                    posterPath: r.posterPath,
+                    backdropPath: r.backdropPath,
+                    overview: r.overview,
+                    voteAverage: r.voteAverage,
+                    firstAirDate: r.firstAirDate,
+                    releaseDate: r.releaseDate
+                )
+            }
+    }
+
     private func get(_ urlString: String) async throws -> Data {
         guard let url = URL(string: urlString) else { throw URLError(.badURL) }
         var req = URLRequest(url: url)

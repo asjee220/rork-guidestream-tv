@@ -27,6 +27,8 @@ struct EmailAuthView: View {
 
     @State private var auth = AuthViewModel.shared
     @State private var mode: EmailAuthMode
+    @State private var firstName: String = ""
+    @State private var lastName: String = ""
     @State private var email: String = ""
     @State private var password: String = ""
     @State private var confirmPassword: String = ""
@@ -34,7 +36,7 @@ struct EmailAuthView: View {
     @State private var pendingConfirmation: Bool = false
     @FocusState private var focusedField: Field?
 
-    private enum Field { case email, password, confirm }
+    private enum Field { case firstName, lastName, email, password, confirm }
 
     init(onAuthenticated: @escaping () -> Void, onClose: @escaping () -> Void) {
         self.onAuthenticated = onAuthenticated
@@ -174,6 +176,33 @@ struct EmailAuthView: View {
 
     private var fieldsCard: some View {
         VStack(spacing: 0) {
+            if mode == .signUp {
+                field(
+                    title: "First name",
+                    text: $firstName,
+                    placeholder: "Jane",
+                    contentType: .givenName,
+                    keyboard: .default,
+                    isSecure: false,
+                    isFocused: focusedField == .firstName,
+                    fieldKey: .firstName,
+                    autocapitalize: .words
+                )
+                Divider().background(Color.white.opacity(0.06))
+                field(
+                    title: "Last name",
+                    text: $lastName,
+                    placeholder: "Smith",
+                    contentType: .familyName,
+                    keyboard: .default,
+                    isSecure: false,
+                    isFocused: focusedField == .lastName,
+                    fieldKey: .lastName,
+                    autocapitalize: .words
+                )
+                Divider().background(Color.white.opacity(0.06))
+            }
+
             field(
                 title: "Email",
                 text: $email,
@@ -230,7 +259,8 @@ struct EmailAuthView: View {
         keyboard: UIKeyboardType,
         isSecure: Bool,
         isFocused: Bool,
-        fieldKey: Field
+        fieldKey: Field,
+        autocapitalize: TextInputAutocapitalization = .never
     ) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title)
@@ -246,7 +276,7 @@ struct EmailAuthView: View {
                     TextField("", text: text, prompt: Text(placeholder)
                         .foregroundStyle(Color.white.opacity(0.25)))
                         .focused($focusedField, equals: fieldKey)
-                        .autocapitalization(.none)
+                        .textInputAutocapitalization(autocapitalize)
                         .keyboardType(keyboard)
                         .autocorrectionDisabled()
                 }
@@ -353,6 +383,10 @@ struct EmailAuthView: View {
         guard isEmailLikelyValid else { return false }
         guard password.count >= 8 else { return false }
         if mode == .signUp {
+            guard !firstName.trimmingCharacters(in: .whitespaces).isEmpty,
+                  !lastName.trimmingCharacters(in: .whitespaces).isEmpty else {
+                return false
+            }
             return password == confirmPassword
         }
         return true
@@ -369,12 +403,19 @@ struct EmailAuthView: View {
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
         focusedField = nil
         let trimmedEmail = email.trimmingCharacters(in: .whitespaces)
+        let trimmedFirst = firstName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedLast = lastName.trimmingCharacters(in: .whitespacesAndNewlines)
         let pass = password
         Task {
             let ok: Bool
             switch mode {
             case .signUp:
-                ok = await auth.signUpWithEmail(email: trimmedEmail, password: pass)
+                ok = await auth.signUpWithEmail(
+                    email: trimmedEmail,
+                    password: pass,
+                    firstName: trimmedFirst,
+                    lastName: trimmedLast
+                )
                 if !ok {
                     // Either email confirmation is pending, or a "user already
                     // exists" sign-in fallback succeeded inside the helper.
@@ -397,7 +438,7 @@ struct EmailAuthView: View {
 
     private func submitLabel(for field: Field) -> SubmitLabel {
         switch field {
-        case .email: return .next
+        case .firstName, .lastName, .email: return .next
         case .password: return mode == .signUp ? .next : .go
         case .confirm: return .go
         }
@@ -405,6 +446,10 @@ struct EmailAuthView: View {
 
     private func advanceFocus(from field: Field) {
         switch field {
+        case .firstName:
+            focusedField = .lastName
+        case .lastName:
+            focusedField = .email
         case .email:
             focusedField = .password
         case .password:

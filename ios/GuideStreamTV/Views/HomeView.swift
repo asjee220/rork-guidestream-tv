@@ -97,18 +97,18 @@ enum HomeFallback {
 
 struct HomeView: View {
     var onOpenAgent: () -> Void = {}
-    var notificationCount: Int = 2
 
     @State private var widgetBannerDismissed: Bool = false
     @State private var path: [HomeRoute] = []
     @State private var detailSubject: DetailSubject?
-    @State private var showNotifications: Bool = false
     @State private var showServicesSheet: Bool = false
+    @State private var showWatchListSheet: Bool = false
     @State private var auth = AuthViewModel.shared
     @State private var streams = StreamsViewModel.shared
     @State private var trending: [TMDBResult] = []
     @State private var onAir: [TMDBResult] = []
     @State private var bingeFallback: [TMDBResult] = []
+    @State private var newToday: [TMDBResult] = []
     @State private var sportsGames: [SportsGame] = []
     @State private var selectedGame: SportsGame?
     /// Cached top US streaming provider per TMDB id. Items without an entry have no real
@@ -149,6 +149,28 @@ struct HomeView: View {
                             )
                         }
 
+                        WatchListSection(
+                            items: watchListEpisodes,
+                            isAuthenticated: auth.isAuthenticated,
+                            onSeeAll: {
+                                WatchIntentLogger.shared.log(
+                                    eventType: .cardTapped,
+                                    metadata: ["section": "watch_list_see_all"]
+                                )
+                                showWatchListSheet = true
+                            },
+                            onOpen: { ep in
+                                WatchIntentLogger.shared.log(
+                                    eventType: .cardTapped,
+                                    titleId: WatchIntentLogger.titleSlug(ep.title),
+                                    platformId: ep.platform.lowercased(),
+                                    metadata: ["section": "watch_list"]
+                                )
+                                detailSubject = .episode(ep)
+                            }
+                        )
+                        .padding(.horizontal, 20)
+
                         NewEpisodesSection(
                             sectionTitle: (streams.userStreams.isEmpty && !trending.isEmpty) ? "Trending This Week" : "New Episodes",
                             episodes: liveNewEpisodes,
@@ -169,6 +191,28 @@ struct HomeView: View {
                             }
                         )
                         .padding(.horizontal, 20)
+
+                        if !whatsNewTodayShows.isEmpty {
+                            WhatsNewTodaySection(
+                                shows: whatsNewTodayShows,
+                                onSeeAll: {
+                                    WatchIntentLogger.shared.log(
+                                        eventType: .cardTapped,
+                                        metadata: ["section": "whats_new_today_see_all"]
+                                    )
+                                    path.append(.whatsNewToday)
+                                },
+                                onOpen: { show in
+                                    WatchIntentLogger.shared.log(
+                                        eventType: .cardTapped,
+                                        titleId: WatchIntentLogger.titleSlug(show.title),
+                                        metadata: ["section": "whats_new_today"]
+                                    )
+                                    detailSubject = .show(show)
+                                }
+                            )
+                            .padding(.horizontal, 20)
+                        }
 
                         if !widgetBannerDismissed {
                             WidgetPromoBanner(
@@ -204,6 +248,13 @@ struct HomeView: View {
                                 sectionTitle: bingeReadyTitle,
                                 tag: bingeReadyTag,
                                 shows: bingeReadyShows,
+                                onSeeAll: {
+                                    WatchIntentLogger.shared.log(
+                                        eventType: .cardTapped,
+                                        metadata: ["section": "binge_ready_see_all"]
+                                    )
+                                    path.append(.bingeWorthy)
+                                },
                                 onOpen: { show in
                                     WatchIntentLogger.shared.log(
                                         eventType: .cardTapped,
@@ -223,9 +274,7 @@ struct HomeView: View {
                 .tracksTabBarVisibility()
 
                 PageBar(
-                    notificationCount: notificationCount,
                     selectedServiceIds: orderedSelectedServiceIds,
-                    onNotification: { showNotifications = true },
                     onServicesPill: { showServicesSheet = true }
                 )
             }
@@ -237,6 +286,17 @@ struct HomeView: View {
                         episodes: liveNewEpisodes,
                         onSelect: { ep in detailSubject = .episode(ep) }
                     )
+                case .bingeWorthy:
+                    BingeWorthyListView(
+                        shows: allBingeReadyShows,
+                        sectionTitle: bingeReadyTitle,
+                        onSelect: { show in detailSubject = .show(show) }
+                    )
+                case .whatsNewToday:
+                    WhatsNewTodayListView(
+                        shows: allWhatsNewTodayShows,
+                        onSelect: { show in detailSubject = .show(show) }
+                    )
                 case .widgetSetup:
                     WidgetSetupView()
                 }
@@ -244,14 +304,14 @@ struct HomeView: View {
             .sheet(item: $detailSubject) { subject in
                 EpisodeDetailSheet(subject: subject)
             }
-            .sheet(isPresented: $showNotifications) {
-                NotificationsSheet()
-            }
             .sheet(item: $selectedGame) { game in
                 SportsWatchSheet(game: game)
             }
             .sheet(isPresented: $showServicesSheet) {
                 ServicesBottomSheet()
+            }
+            .sheet(isPresented: $showWatchListSheet) {
+                WatchListBottomSheet()
             }
             .toolbar(.hidden, for: .navigationBar)
         }
@@ -284,11 +344,13 @@ struct HomeView: View {
         async let trendingCall = try? TMDBService.shared.getTrending()
         async let onAirCall = try? TMDBService.shared.getOnTheAir()
         async let endedCall = try? TMDBService.shared.getDiscoverEnded()
+        async let newTodayCall = try? TMDBService.shared.getNewToday()
         async let sportsCall = SportsService.shared.fetchAll()
-        let (t, a, e, s) = await (trendingCall, onAirCall, endedCall, sportsCall)
+        let (t, a, e, n, s) = await (trendingCall, onAirCall, endedCall, newTodayCall, sportsCall)
         if let t { trending = t }
         if let a { onAir = a }
         if let e { bingeFallback = e }
+        if let n { newToday = n }
         sportsGames = s
         await hydrateProviders()
     }
@@ -297,7 +359,7 @@ struct HomeView: View {
     /// Items with no recognised streaming service are intentionally left out of the dictionary
     /// so the rendering layer can hide them.
     private func hydrateProviders() async {
-        let combined: [TMDBResult] = trending + onAir + bingeFallback
+        let combined: [TMDBResult] = trending + onAir + bingeFallback + newToday
         let unique = Array(Dictionary(grouping: combined, by: { $0.id }).compactMapValues { $0.first }.values)
         let toFetch = unique.filter { providerByTmdb[$0.id] == nil }
         guard !toFetch.isEmpty else { return }
@@ -382,10 +444,13 @@ struct HomeView: View {
     }
 
     private var bingeReadyShows: [PosterShow] {
-        // Only surface shows that have a confirmed streaming provider.
+        Array(allBingeReadyShows.prefix(12))
+    }
+
+    /// Full Binge Worthy list (no count limit) used by the "See all" list view.
+    private var allBingeReadyShows: [PosterShow] {
         bingeFallback
             .filter { providerByTmdb[$0.id] != nil }
-            .prefix(12)
             .map { r in
                 PosterShow(
                     title: r.displayName,
@@ -396,6 +461,61 @@ struct HomeView: View {
                     tmdbId: r.id
                 )
             }
+    }
+
+    /// What's New Today — trending TV/movies dropping today. Only includes
+    /// items with a confirmed streaming provider so each card has a real
+    /// "Watch on X" deeplink behind it.
+    private var whatsNewTodayShows: [PosterShow] {
+        Array(allWhatsNewTodayShows.prefix(12))
+    }
+
+    private var allWhatsNewTodayShows: [PosterShow] {
+        newToday
+            .filter { providerByTmdb[$0.id] != nil }
+            .map { r in
+                PosterShow(
+                    title: r.displayName,
+                    meta: r.year.map { "\($0)" } ?? (r.isTV ? "New series" : "New release"),
+                    posterColors: HomeFallback.posterColors,
+                    symbol: "flame.fill",
+                    posterUrl: r.posterUrl,
+                    tmdbId: r.id
+                )
+            }
+    }
+
+    /// Episode cards built from the user's saved watch list. Falls back to a
+    /// neutral platform when the saved row didn't capture one.
+    var watchListEpisodes: [Episode] {
+        streams.userStreams.map { row in
+            let platformName = (row.platform ?? "").uppercased()
+            let platform: Platform
+            switch platformName {
+            case "NETFLIX": platform = .netflix
+            case "HBO", "HBO MAX", "MAX": platform = .hbo
+            case "APPLE TV+", "APPLETV", "APPLE": platform = .appleTV
+            case "HULU": platform = .hulu
+            case "PRIME", "AMAZON", "AMAZON PRIME": platform = .prime
+            case "DISNEY+", "DISNEY": platform = .disney
+            case "PARAMOUNT+", "PARAMOUNT": platform = .paramount
+            case "PEACOCK": platform = .peacock
+            case "CRUNCHYROLL": platform = .crunchyroll
+            case "YOUTUBE": platform = .youtube
+            default: platform = Platform(name: platformName.isEmpty ? "STREAM" : platformName, color: Color.orange)
+            }
+            return Episode(
+                title: row.title ?? "Untitled",
+                season: "Watch List",
+                duration: "",
+                platform: platform,
+                isNew: false,
+                posterColors: HomeFallback.posterColors,
+                symbol: "bookmark.fill",
+                posterUrl: row.posterUrl,
+                tmdbId: Int(row.titleId)
+            )
+        }
     }
 
     /// Maps TMDB results into Episode cards when no Supabase rows are available. Items without
@@ -465,9 +585,7 @@ struct HomeView: View {
 // MARK: - PageBar
 
 private struct PageBar: View {
-    let notificationCount: Int
     let selectedServiceIds: [String]
-    let onNotification: () -> Void
     let onServicesPill: () -> Void
 
     var body: some View {
@@ -483,33 +601,10 @@ private struct PageBar: View {
                     .scaledFont(size: 16, weight: .regular, design: .default)
                     .foregroundStyle(Color.white.opacity(0.45))
             }
+            Spacer()
             if !selectedServiceIds.isEmpty {
                 ServicesPill(serviceIds: selectedServiceIds, onTap: onServicesPill)
-                    .padding(.leading, 6)
             }
-            Spacer()
-            Button(action: onNotification) {
-                ZStack(alignment: .topTrailing) {
-                    Image(systemName: "bell")
-                        .scaledFont(size: 17, weight: .semibold)
-                        .foregroundStyle(Color.textPrimary)
-                        .frame(width: 40, height: 40)
-                        .background(
-                            Circle().fill(Color.white.opacity(0.06))
-                        )
-                        .overlay(
-                            Circle().stroke(Color.white.opacity(0.08), lineWidth: 1)
-                        )
-                    if notificationCount > 0 {
-                        Circle()
-                            .fill(Color.orange)
-                            .frame(width: 8, height: 8)
-                            .overlay(Circle().stroke(Color.navy, lineWidth: 1.5))
-                            .offset(x: -4, y: 4)
-                    }
-                }
-            }
-            .buttonStyle(.plain)
         }
         .padding(.horizontal, 20)
         .frame(height: 56)
@@ -626,14 +721,94 @@ private struct BingeReadySection: View {
     let sectionTitle: String
     let tag: String
     let shows: [PosterShow]
+    let onSeeAll: () -> Void
     let onOpen: (PosterShow) -> Void
 
     var body: some View {
-        SectionGlassCard(title: sectionTitle, onSeeAll: {}) {
+        SectionGlassCard(title: sectionTitle, onSeeAll: onSeeAll) {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 10) {
                     ForEach(shows) { show in
                         PosterCard(show: show, tag: tag, onTap: { onOpen(show) })
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 6)
+            }
+        }
+    }
+}
+
+// MARK: - Watch List section
+
+private struct WatchListSection: View {
+    let items: [Episode]
+    let isAuthenticated: Bool
+    let onSeeAll: () -> Void
+    let onOpen: (Episode) -> Void
+
+    var body: some View {
+        SectionGlassCard(
+            title: "My Watch List",
+            onSeeAll: items.isEmpty ? nil : onSeeAll
+        ) {
+            if items.isEmpty {
+                emptyState
+            } else {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 10) {
+                        ForEach(items) { ep in
+                            EpisodeThumbCard(episode: ep, onTap: { onOpen(ep) })
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 6)
+                }
+            }
+        }
+    }
+
+    private var emptyState: some View {
+        HStack(alignment: .top, spacing: 12) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(Color.orange.opacity(0.14))
+                    .frame(width: 52, height: 52)
+                Image(systemName: "bookmark.fill")
+                    .scaledFont(size: 22, weight: .semibold)
+                    .foregroundStyle(Color.orange)
+            }
+            VStack(alignment: .leading, spacing: 4) {
+                Text(isAuthenticated ? "Nothing saved yet" : "Sign in to start your list")
+                    .scaledFont(size: 14, weight: .semibold)
+                    .foregroundStyle(.white)
+                Text(isAuthenticated
+                     ? "Tap the + on any show, movie, or game to save it here for tonight."
+                     : "Create an account to keep your shows, movies, and games in sync across devices.")
+                    .scaledFont(size: 12)
+                    .foregroundStyle(Color.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 16)
+        .padding(.bottom, 4)
+    }
+}
+
+// MARK: - What's New Today section
+
+private struct WhatsNewTodaySection: View {
+    let shows: [PosterShow]
+    let onSeeAll: () -> Void
+    let onOpen: (PosterShow) -> Void
+
+    var body: some View {
+        SectionGlassCard(title: "What's New Today", highlighted: true, onSeeAll: onSeeAll) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    ForEach(shows) { show in
+                        PosterCard(show: show, tag: "NEW TODAY", onTap: { onOpen(show) })
                     }
                 }
                 .padding(.horizontal, 16)

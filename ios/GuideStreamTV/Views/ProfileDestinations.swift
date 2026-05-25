@@ -232,7 +232,9 @@ struct AccountView: View {
 
     private var initials: String {
         ProfileView.initials(
-            from: currentDisplayName,
+            firstName: auth.firstName,
+            lastName: auth.lastName,
+            fallbackName: currentDisplayName,
             isGuest: auth.isGuest,
             isAuthenticated: auth.isAuthenticated
         )

@@ -62,6 +62,8 @@ nonisolated struct UserStreamInsert: Encodable, Sendable {
 nonisolated struct UserProfileUpsert: Encodable, Sendable {
     let id: String
     let display_name: String?
+    let first_name: String?
+    let last_name: String?
     let avatar_url: String?
     let email: String?
 }
@@ -73,10 +75,13 @@ nonisolated struct OnboardingPrefsUpsert: Encodable, Sendable {
     let notify_sms: Bool
 }
 
-/// Lightweight decode helper for fetching just the `display_name` column
-/// from the `users` table without pulling everything else.
+/// Lightweight decode helper for fetching display_name + first_name + last_name
+/// from the `users` table. Older installs may only have `display_name`; the
+/// extra fields are optional so decoding still succeeds.
 nonisolated struct UserProfileNameRow: Decodable, Sendable {
     let display_name: String?
+    let first_name: String?
+    let last_name: String?
 }
 
 /// Row shape used by the Devices screen when listing a user's installs.

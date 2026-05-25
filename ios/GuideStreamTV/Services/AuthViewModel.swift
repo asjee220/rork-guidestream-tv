@@ -24,6 +24,11 @@ final class AuthViewModel {
     /// `loadDisplayName()` and persisted to `UserDefaults` so the Profile
     /// avatar/name renders instantly on cold launch.
     var displayName: String? = UserDefaults.standard.string(forKey: "gs.displayName")
+    /// First name captured from Apple/Google/email signup. Persisted so the
+    /// Profile avatar can use first+last initials on cold launch.
+    var firstName: String? = UserDefaults.standard.string(forKey: "gs.firstName")
+    /// Last name captured from Apple/Google/email signup.
+    var lastName: String? = UserDefaults.standard.string(forKey: "gs.lastName")
     var hasCompletedOnboarding: Bool = UserDefaults.standard.bool(forKey: "gs.onboardingComplete")
     var selectedServices: Set<String> = Set(UserDefaults.standard.stringArray(forKey: "gs.selectedServices") ?? [])
     var notifyPushEnabled: Bool = UserDefaults.standard.bool(forKey: "gs.notifyPush")
@@ -50,53 +55,148 @@ final class AuthViewModel {
         }
     }
 
-    /// Fetches the `display_name` column from the `users` table for the
-    /// current Supabase user. Silently fails to the cached value when
-    /// offline or when the row hasn't been upserted yet.
+    /// Fetches the `display_name`, `first_name`, and `last_name` columns from
+    /// the `users` table for the current Supabase user. Silently falls back
+    /// to display_name only when the optional columns don't exist on older
+    /// installations.
     func loadDisplayName() async {
         guard let uid = currentUser?.id.uuidString else { return }
+        let select = "display_name, first_name, last_name"
+        let fallbackSelect = "display_name"
         do {
             let rows: [UserProfileNameRow] = try await SupabaseManager.shared.client
                 .from("users")
-                .select("display_name")
+                .select(select)
                 .eq("id", value: uid)
                 .limit(1)
                 .execute()
                 .value
-            if let name = rows.first?.display_name, !name.isEmpty {
-                self.displayName = name
-                UserDefaults.standard.set(name, forKey: "gs.displayName")
-            }
+            applyLoadedName(rows.first)
         } catch {
-            print("[Auth] loadDisplayName failed: \(error.localizedDescription)")
+            // Retry with just display_name in case the new columns aren't on
+            // this Supabase project yet.
+            do {
+                let rows: [UserProfileNameRow] = try await SupabaseManager.shared.client
+                    .from("users")
+                    .select(fallbackSelect)
+                    .eq("id", value: uid)
+                    .limit(1)
+                    .execute()
+                    .value
+                applyLoadedName(rows.first)
+            } catch {
+                print("[Auth] loadDisplayName failed: \(error.localizedDescription)")
+            }
         }
     }
 
+    /// Merges the loaded row into the cached name state and writes it back
+    /// to UserDefaults so the next cold launch renders instantly.
+    private func applyLoadedName(_ row: UserProfileNameRow?) {
+        if let first = row?.first_name, !first.isEmpty {
+            self.firstName = first
+            UserDefaults.standard.set(first, forKey: "gs.firstName")
+        }
+        if let last = row?.last_name, !last.isEmpty {
+            self.lastName = last
+            UserDefaults.standard.set(last, forKey: "gs.lastName")
+        }
+        if let name = row?.display_name, !name.isEmpty {
+            self.displayName = name
+            UserDefaults.standard.set(name, forKey: "gs.displayName")
+        } else if let composed = composedFullName() {
+            self.displayName = composed
+            UserDefaults.standard.set(composed, forKey: "gs.displayName")
+        }
+    }
+
+    /// Builds `"First Last"` from the cached first/last name when available.
+    private func composedFullName() -> String? {
+        let first = (firstName ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let last = (lastName ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let parts = [first, last].filter { !$0.isEmpty }
+        let joined = parts.joined(separator: " ")
+        return joined.isEmpty ? nil : joined
+    }
+
     /// Updates the user's display name in Supabase and caches it locally.
-    /// Returns `true` on success.
+    /// Also splits the value into first/last so the avatar initials stay
+    /// in sync without a separate edit step. Returns `true` on success.
     @discardableResult
     func updateDisplayName(_ name: String) async -> Bool {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, let uid = currentUser?.id.uuidString else {
             return false
         }
+        let split = Self.splitName(trimmed)
         let payload = UserProfileUpsert(
             id: uid,
             display_name: trimmed,
+            first_name: split.first,
+            last_name: split.last,
             avatar_url: nil,
             email: currentUser?.email
         )
+        let ok = await runUserUpsert(payload)
+        if ok {
+            self.displayName = trimmed
+            self.firstName = split.first
+            self.lastName = split.last
+            UserDefaults.standard.set(trimmed, forKey: "gs.displayName")
+            UserDefaults.standard.set(split.first ?? "", forKey: "gs.firstName")
+            UserDefaults.standard.set(split.last ?? "", forKey: "gs.lastName")
+        }
+        return ok
+    }
+
+    /// Splits a full name into first/last parts. "Mary Anne Smith" → first
+    /// "Mary", last "Smith". Single-word names keep `last` nil so the
+    /// initials helper can fall back gracefully.
+    static func splitName(_ name: String) -> (first: String?, last: String?) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return (nil, nil) }
+        let parts = trimmed.split(whereSeparator: { $0.isWhitespace }).map(String.init)
+        if parts.count == 1 { return (parts[0], nil) }
+        return (parts.first, parts.last)
+    }
+
+    /// Internal upsert helper used by all signup flows. Retries once with
+    /// the optional `first_name`/`last_name`/`email` columns dropped if the
+    /// table doesn't yet have them, so older Supabase projects still work.
+    @discardableResult
+    private func runUserUpsert(_ payload: UserProfileUpsert) async -> Bool {
         do {
             try await SupabaseManager.shared.client
                 .from("users")
                 .upsert(payload, onConflict: "id")
                 .execute()
-            self.displayName = trimmed
-            UserDefaults.standard.set(trimmed, forKey: "gs.displayName")
             return true
         } catch {
+            let msg = error.localizedDescription.lowercased()
+            // Strip optional fields one at a time and retry.
+            if msg.contains("first_name") || msg.contains("last_name") || msg.contains("email") {
+                let stripped = UserProfileUpsert(
+                    id: payload.id,
+                    display_name: payload.display_name,
+                    first_name: nil,
+                    last_name: nil,
+                    avatar_url: payload.avatar_url,
+                    email: nil
+                )
+                do {
+                    try await SupabaseManager.shared.client
+                        .from("users")
+                        .upsert(stripped, onConflict: "id")
+                        .execute()
+                    return true
+                } catch {
+                    self.lastError = error.localizedDescription
+                    print("[Auth ERROR] users upsert (minimal) failed: \(error.localizedDescription)")
+                    return false
+                }
+            }
             self.lastError = error.localizedDescription
-            print("[Auth] updateDisplayName failed: \(error.localizedDescription)")
+            print("[Auth ERROR] users upsert failed: \(error.localizedDescription)")
             return false
         }
     }
@@ -137,10 +237,24 @@ final class AuthViewModel {
                 self.isGuest = false
                 UserDefaults.standard.set(false, forKey: "gs.isGuest")
 
+                // Apple only returns fullName on the very first sign-in; cache
+                // it locally so it survives the next launch.
+                let firstApple = credential.fullName?.givenName
+                let lastApple = credential.fullName?.familyName
                 let appleName = Self.composeName(credential.fullName)
+                if let firstApple, !firstApple.isEmpty {
+                    self.firstName = firstApple
+                    UserDefaults.standard.set(firstApple, forKey: "gs.firstName")
+                }
+                if let lastApple, !lastApple.isEmpty {
+                    self.lastName = lastApple
+                    UserDefaults.standard.set(lastApple, forKey: "gs.lastName")
+                }
                 await upsertProfile(
                     userId: session.user.id.uuidString,
                     displayName: appleName,
+                    firstName: firstApple ?? self.firstName,
+                    lastName: lastApple ?? self.lastName,
                     email: credential.email ?? session.user.email
                 )
                 if let appleName, !appleName.isEmpty {
@@ -154,7 +268,8 @@ final class AuthViewModel {
                     metadata: [
                         "provider": "apple",
                         "user_id": session.user.id.uuidString,
-                        "has_email": (credential.email ?? session.user.email) != nil
+                        "has_email": (credential.email ?? session.user.email) != nil,
+                        "has_name": appleName != nil
                     ]
                 )
                 DeviceSessionService.shared.upsert(reason: "apple_signed_in")
@@ -265,17 +380,39 @@ final class AuthViewModel {
 
     // MARK: - Email auth (Supabase email + password)
 
-    /// Create a new account with email + password. Sends a confirmation email
-    /// when the project has "Confirm email" turned on; in that case `session`
-    /// is nil and the caller should surface a "check your inbox" message.
-    /// Returns `true` when a session was issued and the user is fully signed
-    /// in, `false` when email confirmation is pending.
+    /// Create a new account with email + password. Captures the user's
+    /// first and last name so the Profile avatar can show real initials
+    /// (matching what Apple/Google provide automatically). Sends a confirmation
+    /// email when the project has "Confirm email" turned on; in that case
+    /// `session` is nil and the caller should surface a "check your inbox"
+    /// message. Returns `true` when a session was issued and the user is
+    /// fully signed in, `false` when email confirmation is pending.
     @discardableResult
-    func signUpWithEmail(email: String, password: String) async -> Bool {
+    func signUpWithEmail(email: String, password: String, firstName: String, lastName: String) async -> Bool {
         isAuthenticating = true
         lastError = nil
         lastInfo = nil
         defer { isAuthenticating = false }
+        let trimmedFirst = firstName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedLast = lastName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let composedName: String? = {
+            let parts = [trimmedFirst, trimmedLast].filter { !$0.isEmpty }
+            return parts.isEmpty ? nil : parts.joined(separator: " ")
+        }()
+        // Persist locally so even before the Supabase round-trip, the
+        // initials line up — and so guests who land here get name caching.
+        if !trimmedFirst.isEmpty {
+            self.firstName = trimmedFirst
+            UserDefaults.standard.set(trimmedFirst, forKey: "gs.firstName")
+        }
+        if !trimmedLast.isEmpty {
+            self.lastName = trimmedLast
+            UserDefaults.standard.set(trimmedLast, forKey: "gs.lastName")
+        }
+        if let composedName {
+            self.displayName = composedName
+            UserDefaults.standard.set(composedName, forKey: "gs.displayName")
+        }
         do {
             let response = try await SupabaseManager.shared.client.auth.signUp(
                 email: email,
@@ -289,7 +426,9 @@ final class AuthViewModel {
                 UserDefaults.standard.set(false, forKey: "gs.isGuest")
                 await upsertProfile(
                     userId: session.user.id.uuidString,
-                    displayName: nil,
+                    displayName: composedName,
+                    firstName: trimmedFirst.isEmpty ? nil : trimmedFirst,
+                    lastName: trimmedLast.isEmpty ? nil : trimmedLast,
                     email: session.user.email
                 )
                 await loadDisplayName()
@@ -298,7 +437,8 @@ final class AuthViewModel {
                     metadata: [
                         "provider": "email",
                         "flow": "sign_up",
-                        "user_id": session.user.id.uuidString
+                        "user_id": session.user.id.uuidString,
+                        "has_name": composedName != nil
                     ]
                 )
                 DeviceSessionService.shared.upsert(reason: "email_signed_up")
@@ -319,6 +459,18 @@ final class AuthViewModel {
                 print("[Auth] user already exists — attempting sign-in fallback")
                 let ok = await signInWithEmail(email: email, password: password)
                 if ok {
+                    // Existing account — also push the freshly-captured name
+                    // up so users who created the row before this column
+                    // change still get their initials.
+                    if let uid = currentUser?.id.uuidString {
+                        await upsertProfile(
+                            userId: uid,
+                            displayName: composedName,
+                            firstName: trimmedFirst.isEmpty ? nil : trimmedFirst,
+                            lastName: trimmedLast.isEmpty ? nil : trimmedLast,
+                            email: currentUser?.email
+                        )
+                    }
                     UserDefaults.standard.set(true, forKey: "gs.hasUsedEmailAuth")
                     self.hasUsedEmailAuth = true
                 }
@@ -351,6 +503,8 @@ final class AuthViewModel {
             await upsertProfile(
                 userId: session.user.id.uuidString,
                 displayName: nil,
+                firstName: nil,
+                lastName: nil,
                 email: session.user.email
             )
             await loadDisplayName()
@@ -420,9 +574,29 @@ final class AuthViewModel {
             self.currentUser = session.user
             self.isGuest = false
             UserDefaults.standard.set(false, forKey: "gs.isGuest")
+
+            // Pull first/last name out of Google's `user_metadata` (Supabase
+            // forwards the OAuth profile fields). Google supplies
+            // `given_name` / `family_name`, with `name` as the joined form.
+            let (googleFirst, googleLast, googleFull) = Self.extractGoogleName(from: session.user)
+            if let googleFirst, !googleFirst.isEmpty {
+                self.firstName = googleFirst
+                UserDefaults.standard.set(googleFirst, forKey: "gs.firstName")
+            }
+            if let googleLast, !googleLast.isEmpty {
+                self.lastName = googleLast
+                UserDefaults.standard.set(googleLast, forKey: "gs.lastName")
+            }
+            if let googleFull, !googleFull.isEmpty {
+                self.displayName = googleFull
+                UserDefaults.standard.set(googleFull, forKey: "gs.displayName")
+            }
+
             await upsertProfile(
                 userId: session.user.id.uuidString,
-                displayName: nil,
+                displayName: googleFull,
+                firstName: googleFirst,
+                lastName: googleLast,
                 email: session.user.email
             )
             await loadDisplayName()
@@ -431,7 +605,8 @@ final class AuthViewModel {
                 metadata: [
                     "provider": "google",
                     "user_id": session.user.id.uuidString,
-                    "has_email": session.user.email != nil
+                    "has_email": session.user.email != nil,
+                    "has_name": googleFull != nil
                 ]
             )
             DeviceSessionService.shared.upsert(reason: "google_signed_in")
@@ -441,46 +616,50 @@ final class AuthViewModel {
         }
     }
 
-    private func upsertProfile(userId: String, displayName: String?, email: String?) async {
+    /// Best-effort extraction of given/family/full names from Supabase's
+    /// `User.userMetadata` dictionary. Google's OIDC payload typically
+    /// contains `given_name`, `family_name`, and `name`. Returns nil for
+    /// any field that isn't present.
+    private static func extractGoogleName(from user: Supabase.User) -> (first: String?, last: String?, full: String?) {
+        let meta = user.userMetadata
+        func lookup(_ key: String) -> String? {
+            guard let value = meta[key] else { return nil }
+            // user_metadata values come through as AnyJSON. Pull the string
+            // case out; ignore everything else.
+            if case .string(let s) = value {
+                let trimmed = s.trimmingCharacters(in: .whitespacesAndNewlines)
+                return trimmed.isEmpty ? nil : trimmed
+            }
+            return nil
+        }
+        let first = lookup("given_name") ?? lookup("first_name")
+        let last = lookup("family_name") ?? lookup("last_name")
+        let full: String? = {
+            if let direct = lookup("name") ?? lookup("full_name") { return direct }
+            let parts = [first, last].compactMap { $0 }
+            return parts.isEmpty ? nil : parts.joined(separator: " ")
+        }()
+        return (first, last, full)
+    }
+
+    private func upsertProfile(
+        userId: String,
+        displayName: String?,
+        firstName: String?,
+        lastName: String?,
+        email: String?
+    ) async {
         let payload = UserProfileUpsert(
             id: userId,
             display_name: displayName,
+            first_name: firstName,
+            last_name: lastName,
             avatar_url: nil,
             email: email
         )
-        do {
-            try await SupabaseManager.shared.client
-                .from("users")
-                .upsert(payload, onConflict: "id")
-                .execute()
+        let ok = await runUserUpsert(payload)
+        if ok {
             print("[Auth] users row upserted for \(userId)")
-        } catch {
-            // Retry without `email` in case the column doesn't exist yet —
-            // some installations only have id/display_name/avatar_url.
-            let msg = error.localizedDescription
-            if msg.localizedCaseInsensitiveContains("email")
-                && msg.localizedCaseInsensitiveContains("column") {
-                let minimal = UserProfileUpsert(
-                    id: userId,
-                    display_name: displayName,
-                    avatar_url: nil,
-                    email: nil
-                )
-                do {
-                    try await SupabaseManager.shared.client
-                        .from("users")
-                        .upsert(minimal, onConflict: "id")
-                        .execute()
-                    print("[Auth] users row upserted (no email) for \(userId)")
-                    return
-                } catch {
-                    self.lastError = error.localizedDescription
-                    print("[Auth ERROR] users upsert (minimal) failed: \(error.localizedDescription)")
-                    return
-                }
-            }
-            self.lastError = msg
-            print("[Auth ERROR] users upsert failed: \(msg)")
         }
     }
 

@@ -9,9 +9,7 @@
 //
 //  When auto-discovery turns up nothing, the sheet falls back to a manual IP
 //  entry so users on AP-isolated, VPN-routed, or multi-VLAN networks can still
-//  cast. The diagnostic strip above the action buttons exposes the local IP,
-//  scan progress, and Bonjour endpoints seen — making "nothing found" failures
-//  actionable instead of opaque.
+//  cast.
 //
 
 import SwiftUI
@@ -93,9 +91,8 @@ struct CastToTVSheet: View {
                     ForEach(discovery.devices) { device in
                         deviceRow(device)
                     }
-                    diagnosticsStrip
-                        .padding(.top, 4)
                     manualEntrySection
+                        .padding(.top, 4)
                     rescanButton
                         .padding(.top, 2)
                 }
@@ -220,10 +217,8 @@ struct CastToTVSheet: View {
                 }
 
                 if !isRunningInSimulator {
-                    diagnosticsStrip
-                        .padding(.top, 6)
                     manualEntrySection
-                        .padding(.top, 2)
+                        .padding(.top, 6)
                 }
             }
             .frame(maxWidth: .infinity)
@@ -341,96 +336,6 @@ struct CastToTVSheet: View {
             .background(Capsule().fill(Color.white.opacity(0.10)))
         }
         .buttonStyle(.plain)
-    }
-
-    // MARK: Diagnostics strip
-
-    private var diagnosticsStrip: some View {
-        VStack(spacing: 6) {
-            diagnosticsRow(
-                icon: phoneOnLinkLocal ? "wifi.exclamationmark" : "wifi",
-                label: "Phone IP",
-                value: discovery.localIPv4 ?? "—",
-                state: phoneOnLinkLocal
-                    ? .warning
-                    : (discovery.localIPv4 != nil ? .ok : .neutral),
-                valueNote: phoneOnLinkLocal ? "link-local" : nil
-            )
-            diagnosticsRow(
-                icon: "magnifyingglass",
-                label: "Scanned",
-                value: discovery.totalHosts > 0
-                    ? "\(discovery.scannedHosts)/\(discovery.totalHosts) hosts"
-                    : "starting…",
-                state: discovery.scannedHosts > 0 ? .ok : .neutral
-            )
-            diagnosticsRow(
-                icon: "antenna.radiowaves.left.and.right",
-                label: "Bonjour",
-                value: "\(discovery.bonjourEndpointsSeen) services seen",
-                state: discovery.bonjourEndpointsSeen > 0 ? .ok : .neutral
-            )
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
-        .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(Color.white.opacity(0.04))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .stroke(Color.white.opacity(0.06), lineWidth: 1)
-        )
-    }
-
-    private enum DiagnosticRowState {
-        case ok
-        case warning
-        case neutral
-
-        var iconColor: Color {
-            switch self {
-            case .ok:      return Color.green.opacity(0.85)
-            case .warning: return Color.orange
-            case .neutral: return Color.white.opacity(0.4)
-            }
-        }
-    }
-
-    private func diagnosticsRow(
-        icon: String,
-        label: String,
-        value: String,
-        state: DiagnosticRowState,
-        valueNote: String? = nil
-    ) -> some View {
-        HStack(spacing: 10) {
-            Image(systemName: icon)
-                .scaledFont(size: 12, weight: .semibold)
-                .foregroundStyle(state.iconColor)
-                .frame(width: 16)
-            Text(label)
-                .scaledFont(size: 12, weight: .medium)
-                .foregroundStyle(Color.white.opacity(0.55))
-            Spacer(minLength: 0)
-            HStack(spacing: 6) {
-                if let valueNote {
-                    Text(valueNote)
-                        .scaledFont(size: 10, weight: .bold)
-                        .foregroundStyle(Color.orange)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(
-                            Capsule().fill(Color.orange.opacity(0.15))
-                        )
-                }
-                Text(value)
-                    .scaledFont(size: 12, weight: .semibold, design: .monospaced)
-                    .foregroundStyle(state == .warning
-                                     ? Color.orange
-                                     : Color.white.opacity(0.85))
-            }
-        }
     }
 
     // MARK: Manual IP entry

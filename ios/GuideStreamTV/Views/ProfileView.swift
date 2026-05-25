@@ -265,7 +265,14 @@ struct ProfileView: View {
     // MARK: - Derived strings
 
     private var displayName: String {
+        // Prefer the explicit cached display name first (covers manual edits),
+        // then compose from first/last so users who only filled in those
+        // two fields during email sign-up still get a real name.
         if let cached = auth.displayName, !cached.isEmpty { return cached }
+        let parts = [auth.firstName ?? "", auth.lastName ?? ""]
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        if !parts.isEmpty { return parts.joined(separator: " ") }
         if let email = auth.currentUser?.email, let local = email.split(separator: "@").first {
             return Self.titleCase(String(local))
         }
@@ -284,7 +291,13 @@ struct ProfileView: View {
     }
 
     private var initials: String {
-        Self.initials(from: displayName, isGuest: auth.isGuest, isAuthenticated: auth.isAuthenticated)
+        Self.initials(
+            firstName: auth.firstName,
+            lastName: auth.lastName,
+            fallbackName: displayName,
+            isGuest: auth.isGuest,
+            isAuthenticated: auth.isAuthenticated
+        )
     }
 
     private var accountSubtitle: String {
@@ -349,6 +362,31 @@ struct ProfileView: View {
             .joined(separator: " ")
     }
 
+    /// First letter of first name + first letter of last name. Used as the
+    /// avatar monogram everywhere. Falls back to splitting `fallbackName`
+    /// when the structured first/last aren't available.
+    static func initials(
+        firstName: String?,
+        lastName: String?,
+        fallbackName: String,
+        isGuest: Bool,
+        isAuthenticated: Bool
+    ) -> String {
+        if !isAuthenticated && !isGuest { return "?" }
+        let first = (firstName ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let last = (lastName ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if !first.isEmpty || !last.isEmpty {
+            let f = first.first.map { String($0) } ?? ""
+            let l = last.first.map { String($0) } ?? ""
+            let combined = (f + l).uppercased()
+            if !combined.isEmpty { return combined }
+        }
+        // Legacy fallback — derive from the joined display name.
+        return initials(from: fallbackName, isGuest: isGuest, isAuthenticated: isAuthenticated)
+    }
+
+    /// Legacy entry point preserved so internal callers and tests don't
+    /// break. New callers should use the firstName/lastName variant.
     static func initials(from name: String, isGuest: Bool, isAuthenticated: Bool) -> String {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         if !isAuthenticated && !isGuest { return "?" }

@@ -7,6 +7,8 @@ import SwiftUI
 
 enum HomeRoute: Hashable {
     case newEpisodes
+    case bingeWorthy
+    case whatsNewToday
     case widgetSetup
 }
 
@@ -32,6 +34,8 @@ struct EpisodeDetailSheet: View {
     @State private var isLiked: Bool = false
     @State private var isNotifying: Bool = true
     @State private var showCastSheet: Bool = false
+    @State private var streams = StreamsViewModel.shared
+    @State private var isToggleSaving: Bool = false
     /// Watchmode-resolved source for the show (top US sub > free > tve > rent).
     /// When set, drives the platform label, color, and the "Watch on" deeplink so
     /// shows show their real streaming service instead of the placeholder "HBO Max".
@@ -124,7 +128,7 @@ struct EpisodeDetailSheet: View {
                     .padding(.horizontal, 20)
                     .padding(.top, 20)
 
-                watchButton
+                watchActions
                     .padding(.horizontal, 20)
                     .padding(.top, 22)
 
@@ -429,6 +433,13 @@ struct EpisodeDetailSheet: View {
 
     // MARK: - CTA
 
+    private var watchActions: some View {
+        HStack(spacing: 12) {
+            watchButton
+            watchlistButton
+        }
+    }
+
     private var watchButton: some View {
         Button {
             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
@@ -459,6 +470,71 @@ struct EpisodeDetailSheet: View {
         }
         .buttonStyle(.plain)
         .disabled(tmdbId == nil)
+    }
+
+    /// Circular orange + button shown next to the main Watch CTA. Mirrors the
+    /// presentation of the Watch List rail button on the Reels screen — same
+    /// 56pt circle, same +/checkmark glyph, same brand colors — so users get
+    /// a consistent "save to my list" affordance everywhere a title is shown.
+    @ViewBuilder
+    private var watchlistButton: some View {
+        Button {
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            toggleWatchList()
+        } label: {
+            ZStack {
+                if isSaved {
+                    Circle()
+                        .fill(Color.white.opacity(0.10))
+                        .overlay(Circle().stroke(Color.white.opacity(0.18), lineWidth: 1))
+                } else {
+                    Circle()
+                        .fill(Color.orange)
+                        .shadow(color: Color.orange.opacity(0.55), radius: 14, y: 0)
+                }
+                if isToggleSaving {
+                    ProgressView()
+                        .controlSize(.small)
+                        .tint(.white)
+                } else {
+                    Image(systemName: isSaved ? "checkmark" : "plus")
+                        .scaledFont(size: 22, weight: .bold)
+                        .foregroundStyle(.white)
+                }
+            }
+            .frame(width: 56, height: 56)
+        }
+        .buttonStyle(.plain)
+        .disabled(tmdbId == nil || isToggleSaving)
+        .accessibilityLabel(isSaved ? "Remove from watch list" : "Add to watch list")
+    }
+
+    /// True when this title's id is already present in the Supabase-backed
+    /// `user_streams` list.
+    private var isSaved: Bool {
+        guard let tmdbId else { return false }
+        let key = String(tmdbId)
+        return streams.userStreams.contains { $0.titleId == key }
+    }
+
+    private func toggleWatchList() {
+        guard let tmdbId else { return }
+        let key = String(tmdbId)
+        let snapshotSaved = isSaved
+        isToggleSaving = true
+        Task {
+            if snapshotSaved {
+                await streams.removeFromMyStreams(titleId: key)
+            } else {
+                await streams.addToMyStreams(
+                    titleId: key,
+                    title: title,
+                    posterUrl: posterUrl,
+                    platform: resolvedSource?.name ?? whereToWatchLabel
+                )
+            }
+            await MainActor.run { isToggleSaving = false }
+        }
     }
 
     private var viewFullDetailsButton: some View {
@@ -544,6 +620,126 @@ struct NewEpisodesListView: View {
         .navigationBarTitleDisplayMode(.large)
         .toolbarBackground(Color.navy, for: .navigationBar)
         .toolbarColorScheme(.dark, for: .navigationBar)
+    }
+}
+
+// MARK: - Binge Worthy List
+
+struct BingeWorthyListView: View {
+    let shows: [PosterShow]
+    let sectionTitle: String
+    var onSelect: (PosterShow) -> Void
+
+    private let columns = [
+        GridItem(.flexible(), spacing: 14),
+        GridItem(.flexible(), spacing: 14),
+        GridItem(.flexible(), spacing: 14)
+    ]
+
+    var body: some View {
+        ScrollView {
+            LazyVGrid(columns: columns, spacing: 16) {
+                ForEach(shows) { show in
+                    Button(action: { onSelect(show) }) {
+                        BingeGridCard(show: show, tag: "BINGE")
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 12)
+            .padding(.bottom, 120)
+        }
+        .background(Color.navy.ignoresSafeArea())
+        .navigationTitle(sectionTitle)
+        .navigationBarTitleDisplayMode(.large)
+        .toolbarBackground(Color.navy, for: .navigationBar)
+        .toolbarColorScheme(.dark, for: .navigationBar)
+    }
+}
+
+// MARK: - What's New Today List
+
+struct WhatsNewTodayListView: View {
+    let shows: [PosterShow]
+    var onSelect: (PosterShow) -> Void
+
+    private let columns = [
+        GridItem(.flexible(), spacing: 14),
+        GridItem(.flexible(), spacing: 14),
+        GridItem(.flexible(), spacing: 14)
+    ]
+
+    var body: some View {
+        ScrollView {
+            LazyVGrid(columns: columns, spacing: 16) {
+                ForEach(shows) { show in
+                    Button(action: { onSelect(show) }) {
+                        BingeGridCard(show: show, tag: "TODAY")
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 12)
+            .padding(.bottom, 120)
+        }
+        .background(Color.navy.ignoresSafeArea())
+        .navigationTitle("What's New Today")
+        .navigationBarTitleDisplayMode(.large)
+        .toolbarBackground(Color.navy, for: .navigationBar)
+        .toolbarColorScheme(.dark, for: .navigationBar)
+    }
+}
+
+private struct BingeGridCard: View {
+    let show: PosterShow
+    let tag: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Color.black
+                .aspectRatio(2.0/3.0, contentMode: .fit)
+                .overlay {
+                    LinearGradient(
+                        colors: show.posterColors,
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                    .allowsHitTesting(false)
+                }
+                .overlay {
+                    RemoteImage(
+                        urlString: show.posterUrl,
+                        contentMode: .fill,
+                        fallbackColors: show.posterColors
+                    )
+                    .allowsHitTesting(false)
+                }
+                .overlay(alignment: .bottom) {
+                    Text(tag)
+                        .scaledFont(size: 9, weight: .bold)
+                        .tracking(0.8)
+                        .foregroundStyle(Color.orange)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 5)
+                        .background(Color.orange.opacity(0.30))
+                        .allowsHitTesting(false)
+                }
+                .clipShape(.rect(cornerRadius: 10))
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(show.title)
+                    .scaledFont(size: 12, weight: .semibold)
+                    .foregroundStyle(Color.textPrimary)
+                    .lineLimit(1)
+                Text(show.meta)
+                    .scaledFont(size: 10)
+                    .foregroundStyle(Color.textTertiary)
+                    .lineLimit(1)
+            }
+            .padding(.horizontal, 2)
+        }
     }
 }
 
