@@ -97,13 +97,56 @@ enum StreamingDeepLinker {
                 return false
             }
             for src in ranked {
-                if let s = src.iosUrl, let url = URL(string: s) { return url }
-                if let s = src.webUrl, let url = URL(string: s) { return url }
+                // Watchmode's free plan returns a placeholder string for ios_url/android_url.
+                // We treat anything that isn't a real URL as missing and fall through to web_url.
+                if let s = src.iosUrl, isRealURL(s), let url = URL(string: s) { return url }
+                if let s = src.webUrl, isRealURL(s) {
+                    // Prefer a native-scheme deep link when we can derive one from the web URL,
+                    // otherwise hand iOS the universal link (which routes into the installed app).
+                    if let native = nativeDeepLink(fromWebURL: s, platform: platform) { return native }
+                    if let url = URL(string: s) { return url }
+                }
             }
             return nil
         } catch {
             return nil
         }
+    }
+
+    /// Filters out Watchmode's free-plan placeholder strings (e.g. "Deeplinks available for paid plans only.").
+    private static func isRealURL(_ s: String) -> Bool {
+        let lower = s.lowercased()
+        guard lower.hasPrefix("http://") || lower.hasPrefix("https://") || lower.contains("://") else { return false }
+        return URL(string: s) != nil
+    }
+
+    /// Converts a Watchmode web_url to the platform's native deep-link scheme when the
+    /// pattern is well-known. This guarantees the streaming app opens directly on the
+    /// title page, even if its universal-link entitlements aren't catching the HTTPS URL.
+    private static func nativeDeepLink(fromWebURL web: String, platform: String) -> URL? {
+        let p = platform.lowercased()
+        guard let comps = URLComponents(string: web) else { return nil }
+        let host = (comps.host ?? "").lowercased()
+        let path = comps.path
+
+        // Netflix: https://www.netflix.com/title/12345 → nflx://www.netflix.com/title/12345
+        if (p.contains("netflix") || host.contains("netflix")) && path.contains("/title/") {
+            return URL(string: "nflx://www.netflix.com\(path)")
+        }
+        // YouTube: convert to youtube://
+        if p.contains("youtube") || host.contains("youtube") {
+            if let v = comps.queryItems?.first(where: { $0.name == "v" })?.value {
+                return URL(string: "youtube://www.youtube.com/watch?v=\(v)")
+            }
+        }
+        // Apple TV: tv.apple.com URLs are universal links — also work as videos://
+        if (p.contains("apple") || host.contains("tv.apple.com")) {
+            return URL(string: "videos://tv.apple.com\(path)")
+        }
+        // Prime Video / Amazon: primevideo.com URLs universal-link into the Prime Video app.
+        // Disney+, Hulu, Max, Paramount+, Peacock: their HTTPS title URLs are universal links
+        // for the installed app; returning nil here lets the caller use the web_url directly.
+        return nil
     }
 
     private static func sourceRank(_ s: WatchmodeSource) -> Int {

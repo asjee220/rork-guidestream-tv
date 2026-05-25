@@ -328,7 +328,9 @@ nonisolated struct TMDBService {
 nonisolated extension WatchmodeService {
     /// Finds a Watchmode title id from a TMDB id. Watchmode supports `search_field=tmdb_id`.
     func watchmodeId(forTMDBId tmdbId: Int, isTV: Bool) async throws -> String? {
-        let urlString = "https://api.watchmode.com/v1/search/?apiKey=wqlepJq2xhEfyAVWpMOhVGmoUKBJFzHj3mlE3Lcw&search_field=tmdb_id&search_value=\(tmdbId)"
+        // Watchmode requires the typed search field — tmdb_tv_id for shows, tmdb_movie_id for movies.
+        let field = isTV ? "tmdb_tv_id" : "tmdb_movie_id"
+        let urlString = "https://api.watchmode.com/v1/search/?apiKey=wqlepJq2xhEfyAVWpMOhVGmoUKBJFzHj3mlE3Lcw&search_field=\(field)&search_value=\(tmdbId)"
         guard let url = URL(string: urlString) else { return nil }
         var req = URLRequest(url: url)
         req.timeoutInterval = 12
