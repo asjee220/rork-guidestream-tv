@@ -237,7 +237,7 @@ struct AskStreamSheet: View {
                     Circle()
                         .fill(Color.white.opacity(0.10))
                     Image(systemName: "xmark")
-                        .font(.system(size: 14, weight: .semibold))
+                        .scaledFont(size: 14, weight: .semibold)
                         .foregroundStyle(.white)
                 }
                 .frame(width: 28, height: 28)
@@ -251,7 +251,7 @@ struct AskStreamSheet: View {
     private var smartBar: some View {
         HStack(spacing: 10) {
             Image(systemName: barMode == .ai ? "sparkles" : "magnifyingglass")
-                .font(.system(size: 16, weight: .semibold))
+                .scaledFont(size: 16, weight: .semibold)
                 .foregroundStyle(smartBarIconColor)
                 .frame(width: 20)
 
@@ -271,7 +271,7 @@ struct AskStreamSheet: View {
                         Circle()
                             .fill(Color.orange)
                         Image(systemName: "mic.fill")
-                            .font(.system(size: 14, weight: .semibold))
+                            .scaledFont(size: 14, weight: .semibold)
                             .foregroundStyle(.white)
                     }
                     .frame(width: 36, height: 36)
@@ -283,7 +283,7 @@ struct AskStreamSheet: View {
                         Circle()
                             .fill(barMode == .ai ? Color.orange : Color.blue)
                         Image(systemName: "arrow.up")
-                            .font(.system(size: 15, weight: .bold))
+                            .scaledFont(size: 15, weight: .bold)
                             .foregroundStyle(.white)
                     }
                     .frame(width: 36, height: 36)
@@ -382,7 +382,7 @@ struct AskStreamSheet: View {
                             } label: {
                                 HStack(spacing: 10) {
                                     Image(systemName: "sparkles")
-                                        .font(.system(size: 16, weight: .semibold))
+                                        .scaledFont(size: 16, weight: .semibold)
                                         .foregroundStyle(Color.orange)
                                     Text(s)
                                         .font(.guideBody(size: 13, weight: .regular))
@@ -512,7 +512,7 @@ struct AskStreamSheet: View {
                                 }
                                 Spacer()
                                 Image(systemName: "chevron.right")
-                                    .font(.system(size: 13, weight: .semibold))
+                                    .scaledFont(size: 13, weight: .semibold)
                                     .foregroundStyle(Color.white.opacity(0.30))
                             }
                             .padding(.horizontal, 12)
@@ -550,14 +550,14 @@ struct AskStreamSheet: View {
                         img.resizable().scaledToFill()
                     default:
                         Image(systemName: "film")
-                            .font(.system(size: 18, weight: .regular))
+                            .scaledFont(size: 18, weight: .regular)
                             .foregroundStyle(Color.white.opacity(0.35))
                     }
                 }
                 .allowsHitTesting(false)
             } else {
                 Image(systemName: "film")
-                    .font(.system(size: 18, weight: .regular))
+                    .scaledFont(size: 18, weight: .regular)
                     .foregroundStyle(Color.white.opacity(0.35))
             }
         }
@@ -729,7 +729,7 @@ struct AskStreamSheet: View {
         } label: {
             HStack(spacing: 10) {
                 Image(systemName: "sparkles")
-                    .font(.system(size: 14, weight: .semibold))
+                    .scaledFont(size: 14, weight: .semibold)
                     .foregroundStyle(Color.blue)
                 Text(text)
                     .font(.guideBody(size: 13, weight: .regular))
@@ -782,7 +782,7 @@ struct AskStreamSheet: View {
                     ZStack {
                         Circle().fill(Color.orange)
                         Image(systemName: "mic.fill")
-                            .font(.system(size: 14, weight: .semibold))
+                            .scaledFont(size: 14, weight: .semibold)
                             .foregroundStyle(.white)
                     }
                     .frame(width: 36, height: 36)
@@ -793,7 +793,7 @@ struct AskStreamSheet: View {
                     ZStack {
                         Circle().fill(Color.white.opacity(0.08))
                         Image(systemName: "arrow.up")
-                            .font(.system(size: 14, weight: .bold))
+                            .scaledFont(size: 14, weight: .bold)
                             .foregroundStyle(.white)
                     }
                     .frame(width: 36, height: 36)

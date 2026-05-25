@@ -652,7 +652,7 @@ private struct ReelView: View {
 
             // Layer 7 — identity letterforms
             Text(trailer.identityCode)
-                .font(.system(size: 240, weight: .black))
+                .scaledFont(size: 240, weight: .black)
                 .foregroundStyle(Color.white.opacity(0.06))
                 .tracking(-9.6)
                 .offset(y: -80)
@@ -725,7 +725,7 @@ private struct ReelView: View {
                         ZStack {
                             Circle().fill(Color.black.opacity(0.50)).background(.ultraThinMaterial, in: Circle())
                             Image(systemName: isMuted ? "speaker.slash.fill" : "speaker.wave.3.fill")
-                                .font(.system(size: 12, weight: .semibold))
+                                .scaledFont(size: 12, weight: .semibold)
                                 .foregroundStyle(.white)
                         }
                         .frame(width: 28, height: 28)
@@ -776,7 +776,7 @@ private struct ReelView: View {
                 VStack {
                     HStack {
                         Text("Sponsored")
-                            .font(.system(size: 10, weight: .semibold))
+                            .scaledFont(size: 10, weight: .semibold)
                             .foregroundStyle(Color.white.opacity(0.60))
                             .padding(.horizontal, 8).padding(.vertical, 4)
                             .background(Color.white.opacity(0.30))
@@ -795,13 +795,13 @@ private struct ReelView: View {
                 VStack(alignment: .leading, spacing: 0) {
                     HStack(spacing: 8) {
                         Text(trailer.platformName)
-                            .font(.system(size: 11, weight: .bold))
+                            .scaledFont(size: 11, weight: .bold)
                             .foregroundStyle(trailer.platformTextColor)
                             .padding(.horizontal, 10).padding(.vertical, 5)
                             .background(trailer.platformColor)
                             .clipShape(.rect(cornerRadius: 6))
                         Text(trailer.genre)
-                            .font(.system(size: 11, weight: .bold))
+                            .scaledFont(size: 11, weight: .bold)
                             .foregroundStyle(.white)
                             .padding(.horizontal, 10).padding(.vertical, 5)
                             .background(Color.white.opacity(0.12))
@@ -811,7 +811,7 @@ private struct ReelView: View {
                     .padding(.bottom, 8)
 
                     Text(trailer.showName)
-                        .font(.system(size: 40, weight: .bold))
+                        .scaledFont(size: 40, weight: .bold)
                         .tracking(-0.8)
                         .foregroundStyle(.white)
                         .lineLimit(2)
@@ -819,14 +819,14 @@ private struct ReelView: View {
 
                     if !trailer.synopsis.isEmpty {
                         Text(trailer.synopsis)
-                            .font(.system(size: 14))
+                            .scaledFont(size: 14)
                             .foregroundStyle(Color.white.opacity(0.80))
                             .lineLimit(2)
                             .padding(.bottom, 8)
                     }
 
                     Text(trailer.runtime)
-                        .font(.system(size: 12, weight: .medium))
+                        .scaledFont(size: 12, weight: .medium)
                         .foregroundStyle(Color.white.opacity(0.55))
                         .padding(.bottom, 14)
 
@@ -834,7 +834,7 @@ private struct ReelView: View {
                         if trailer.isSponsored {
                             Button(action: onSponsorCTA) {
                                 Text("Try \(trailer.platformName.capitalized) Free")
-                                    .font(.system(size: 15, weight: .bold))
+                                    .scaledFont(size: 15, weight: .bold)
                                     .foregroundStyle(.white)
                                     .frame(maxWidth: .infinity)
                                     .frame(height: 52)
@@ -845,7 +845,7 @@ private struct ReelView: View {
                         } else {
                             Button(action: onNotify) {
                                 Text("Notify on Release")
-                                    .font(.system(size: 15, weight: .bold))
+                                    .scaledFont(size: 15, weight: .bold)
                                     .foregroundStyle(Color(hex: "F5821F"))
                                     .frame(maxWidth: .infinity)
                                     .frame(height: 52)
@@ -895,7 +895,7 @@ private struct ReelView: View {
                             .background(.ultraThinMaterial, in: Circle())
                             .overlay(Circle().stroke(Color.white.opacity(0.55), lineWidth: 1))
                         Image(systemName: "play.fill")
-                            .font(.system(size: 28))
+                            .scaledFont(size: 28)
                             .foregroundStyle(.white)
                             .offset(x: 3)
                     }
@@ -928,7 +928,7 @@ private struct TabPill: View {
         Button(action: action) {
             VStack(spacing: 6) {
                 Text(tab.label)
-                    .font(.system(size: 16, weight: active ? .bold : .medium))
+                    .scaledFont(size: 16, weight: active ? .bold : .medium)
                     .foregroundStyle(active ? .white : Color.white.opacity(0.40))
                 Rectangle()
                     .fill(active ? Color.white : .clear)
@@ -955,12 +955,12 @@ private struct RailButton: View {
                         .background(.ultraThinMaterial, in: Circle())
                         .overlay(Circle().stroke(Color.white.opacity(0.15), lineWidth: 1))
                     Image(systemName: icon)
-                        .font(.system(size: 22, weight: .semibold))
+                        .scaledFont(size: 22, weight: .semibold)
                         .foregroundStyle(tint)
                 }
                 .frame(width: 52, height: 52)
                 Text(label)
-                    .font(.system(size: 11, weight: .semibold))
+                    .scaledFont(size: 11, weight: .semibold)
                     .foregroundStyle(.white)
             }
         }
@@ -989,12 +989,12 @@ private struct WatchListButton: View {
                             .shadow(color: Color(hex: "F5821F").opacity(0.6), radius: 10)
                     }
                     Image(systemName: sponsored ? "info.circle" : (saved ? "checkmark" : "plus"))
-                        .font(.system(size: 22, weight: .bold))
+                        .scaledFont(size: 22, weight: .bold)
                         .foregroundStyle(.white)
                 }
                 .frame(width: 52, height: 52)
                 Text(sponsored ? "Learn" : (saved ? "Saved ✓" : "Watch List"))
-                    .font(.system(size: 11, weight: .semibold))
+                    .scaledFont(size: 11, weight: .semibold)
                     .foregroundStyle(.white)
             }
         }
@@ -1006,9 +1006,9 @@ private struct PlayOnPill: View {
     var body: some View {
         HStack(spacing: 6) {
             Image(systemName: "tv")
-                .font(.system(size: 11, weight: .semibold))
+                .scaledFont(size: 11, weight: .semibold)
             Text("Play on")
-                .font(.system(size: 11, weight: .semibold))
+                .scaledFont(size: 11, weight: .semibold)
         }
         .foregroundStyle(.white)
         .padding(.horizontal, 14)
@@ -1039,13 +1039,13 @@ private struct EmptyReelsState: View {
     var body: some View {
         VStack(spacing: 14) {
             Image(systemName: "play.rectangle.on.rectangle")
-                .font(.system(size: 44, weight: .light))
+                .scaledFont(size: 44, weight: .light)
                 .foregroundStyle(Color.orange)
             Text("Trailers loading…")
-                .font(.system(size: 16, weight: .bold))
+                .scaledFont(size: 16, weight: .bold)
                 .foregroundStyle(.white)
             Text("Add shows to My Streams to personalise this feed.")
-                .font(.system(size: 13))
+                .scaledFont(size: 13)
                 .foregroundStyle(Color.white.opacity(0.55))
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 40)
@@ -1071,14 +1071,14 @@ private struct SimulatorTrailerPoster: View {
                            startPoint: .top, endPoint: .bottom)
             VStack(spacing: 10) {
                 Image(systemName: "play.circle.fill")
-                    .font(.system(size: 56, weight: .bold))
+                    .scaledFont(size: 56, weight: .bold)
                     .foregroundStyle(.white)
                     .shadow(color: .black.opacity(0.4), radius: 8)
                 Text("Tap to watch on YouTube")
-                    .font(.system(size: 12, weight: .semibold))
+                    .scaledFont(size: 12, weight: .semibold)
                     .foregroundStyle(Color.white.opacity(0.85))
                 Text("Video playback unavailable in simulator")
-                    .font(.system(size: 10, weight: .medium))
+                    .scaledFont(size: 10, weight: .medium)
                     .foregroundStyle(Color.white.opacity(0.55))
             }
         }
@@ -1448,10 +1448,10 @@ struct TrailerCommentsSheet: View {
         VStack(spacing: 0) {
             HStack {
                 Text("Comments")
-                    .font(.system(size: 17, weight: .semibold))
+                    .scaledFont(size: 17, weight: .semibold)
                     .foregroundStyle(.white)
                 Text("\(comments.count)")
-                    .font(.system(size: 13))
+                    .scaledFont(size: 13)
                     .foregroundStyle(Color.white.opacity(0.55))
                 Spacer()
             }
@@ -1475,7 +1475,7 @@ struct TrailerCommentsSheet: View {
             HStack(spacing: 10) {
                 Circle()
                     .fill(Color(hex: "F5821F"))
-                    .overlay(Text("MA").font(.system(size: 11, weight: .bold)).foregroundStyle(.white))
+                    .overlay(Text("MA").scaledFont(size: 11, weight: .bold).foregroundStyle(.white))
                     .frame(width: 28, height: 28)
                 TextField("", text: $draft, prompt: Text("Add a comment…").foregroundColor(Color.white.opacity(0.40)))
                     .foregroundStyle(.white)
@@ -1521,34 +1521,34 @@ private struct CommentRow: View {
         HStack(alignment: .top, spacing: 12) {
             Circle()
                 .fill(item.color)
-                .overlay(Text(item.initials).font(.system(size: 12, weight: .bold)).foregroundStyle(.white))
+                .overlay(Text(item.initials).scaledFont(size: 12, weight: .bold).foregroundStyle(.white))
                 .frame(width: 36, height: 36)
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
                     Text(item.username)
-                        .font(.system(size: 14, weight: .semibold))
+                        .scaledFont(size: 14, weight: .semibold)
                         .foregroundStyle(.white)
                     if item.verified {
                         ZStack {
                             Circle().fill(Color(hex: "F5821F")).frame(width: 14, height: 14)
                             Image(systemName: "checkmark")
-                                .font(.system(size: 8, weight: .black))
+                                .scaledFont(size: 8, weight: .black)
                                 .foregroundStyle(.white)
                         }
                     }
                     Text(item.timestamp)
-                        .font(.system(size: 12))
+                        .scaledFont(size: 12)
                         .foregroundStyle(Color.white.opacity(0.40))
                 }
                 Text(item.text)
-                    .font(.system(size: 14))
+                    .scaledFont(size: 14)
                     .foregroundStyle(Color.white.opacity(0.85))
                 HStack(spacing: 14) {
                     Text("Like")
-                        .font(.system(size: 12))
+                        .scaledFont(size: 12)
                         .foregroundStyle(Color.white.opacity(0.45))
                     Text("Reply")
-                        .font(.system(size: 12))
+                        .scaledFont(size: 12)
                         .foregroundStyle(Color.white.opacity(0.45))
                 }
             }
@@ -1557,7 +1557,7 @@ private struct CommentRow: View {
                 Image(systemName: "hand.thumbsup")
                     .foregroundStyle(Color.white.opacity(0.45))
                 Text("\(item.likes)")
-                    .font(.system(size: 10))
+                    .scaledFont(size: 10)
                     .foregroundStyle(Color.white.opacity(0.45))
             }
         }
@@ -1579,22 +1579,22 @@ struct TrailerShareSheet: View {
                         .frame(width: 60, height: 80)
                         .clipShape(.rect(cornerRadius: 8))
                     Image(systemName: "play.fill")
-                        .font(.system(size: 20))
+                        .scaledFont(size: 20)
                         .foregroundStyle(.white)
                 }
                 VStack(alignment: .leading, spacing: 4) {
                     Text(trailer.showName)
-                        .font(.system(size: 15, weight: .semibold))
+                        .scaledFont(size: 15, weight: .semibold)
                         .foregroundStyle(.white)
                         .lineLimit(1)
                     Text(trailer.platformName)
-                        .font(.system(size: 10, weight: .bold))
+                        .scaledFont(size: 10, weight: .bold)
                         .foregroundStyle(.white)
                         .padding(.horizontal, 8).padding(.vertical, 3)
                         .background(trailer.platformColor)
                         .clipShape(.rect(cornerRadius: 4))
                     Text("Trailer")
-                        .font(.system(size: 12))
+                        .scaledFont(size: 12)
                         .foregroundStyle(Color.white.opacity(0.55))
                 }
                 Spacer()
@@ -1606,7 +1606,7 @@ struct TrailerShareSheet: View {
             Divider().background(Color.white.opacity(0.07))
 
             Text("SEND TO A FRIEND")
-                .font(.system(size: 11, weight: .semibold))
+                .scaledFont(size: 11, weight: .semibold)
                 .tracking(0.8)
                 .foregroundStyle(Color.white.opacity(0.55))
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -1660,12 +1660,12 @@ private struct ShareTile: View {
                     RoundedRectangle(cornerRadius: 14, style: .continuous)
                         .fill(Color.white.opacity(0.08))
                     Image(systemName: icon)
-                        .font(.system(size: 22, weight: .semibold))
+                        .scaledFont(size: 22, weight: .semibold)
                         .foregroundStyle(.white)
                 }
                 .frame(width: 56, height: 56)
                 Text(label)
-                    .font(.system(size: 11, weight: .medium))
+                    .scaledFont(size: 11, weight: .medium)
                     .foregroundStyle(Color.white.opacity(0.75))
             }
         }

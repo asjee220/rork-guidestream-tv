@@ -35,7 +35,7 @@ struct PosterView: View {
             }
 
             Image(systemName: show.symbol)
-                .font(.system(size: compact ? 44 : 78, weight: .light))
+                .scaledFont(size: compact ? 44 : 78, weight: .light)
                 .foregroundStyle(.white.opacity(0.92))
                 .shadow(color: show.accent.opacity(0.6), radius: 18)
         }

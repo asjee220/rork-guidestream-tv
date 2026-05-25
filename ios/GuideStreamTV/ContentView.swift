@@ -34,6 +34,9 @@ struct ContentView: View {
         .animation(.easeOut(duration: 0.3), value: auth.isSignedIn)
         .environment(\.tabBarVisibility, tabBarVisibility)
         .preferredColorScheme(.dark)
+        // Clamp Dynamic Type so extreme accessibility sizes don't break dense layouts.
+        // Users still get meaningful scaling from .xSmall through .accessibility2.
+        .dynamicTypeSize(.xSmall ... .accessibility2)
         .task {
             await auth.restoreSession()
             didRestoreSession = true

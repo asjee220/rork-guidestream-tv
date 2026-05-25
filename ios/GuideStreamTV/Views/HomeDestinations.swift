@@ -242,24 +242,24 @@ struct EpisodeDetailSheet: View {
 
             VStack(alignment: .leading, spacing: 8) {
                 Text(title)
-                    .font(.system(size: 26, weight: .bold))
+                    .scaledFont(size: 26, weight: .bold)
                     .foregroundStyle(.white)
                     .lineLimit(2)
 
                 Text(meta)
-                    .font(.system(size: 13))
+                    .scaledFont(size: 13)
                     .foregroundStyle(Color.white.opacity(0.55))
 
                 HStack(spacing: 8) {
                     Text(platformName.uppercased())
-                        .font(.system(size: 11, weight: .heavy))
+                        .scaledFont(size: 11, weight: .heavy)
                         .foregroundStyle(.white)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 6)
                         .background(Capsule().fill(platformColor))
 
                     Text("Drama")
-                        .font(.system(size: 12, weight: .semibold))
+                        .scaledFont(size: 12, weight: .semibold)
                         .foregroundStyle(.white)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 6)
@@ -270,11 +270,11 @@ struct EpisodeDetailSheet: View {
                 HStack(spacing: 6) {
                     ForEach(0..<5, id: \.self) { _ in
                         Image(systemName: "star.fill")
-                            .font(.system(size: 11))
+                            .scaledFont(size: 11)
                             .foregroundStyle(Color(red: 0xFF/255, green: 0xC4/255, blue: 0x3D/255))
                     }
                     Text("9.6")
-                        .font(.system(size: 13, weight: .semibold))
+                        .scaledFont(size: 13, weight: .semibold)
                         .foregroundStyle(.white)
                         .padding(.leading, 4)
                 }
@@ -283,27 +283,27 @@ struct EpisodeDetailSheet: View {
                 HStack(spacing: 10) {
                     HStack(spacing: 6) {
                         Image(systemName: "heart.fill")
-                            .font(.system(size: 12))
+                            .scaledFont(size: 12)
                             .foregroundStyle(Color.orange)
                         Text("2.4K")
-                            .font(.system(size: 13, weight: .semibold))
+                            .scaledFont(size: 13, weight: .semibold)
                             .foregroundStyle(.white)
                         Text("Likes")
-                            .font(.system(size: 13))
+                            .scaledFont(size: 13)
                             .foregroundStyle(Color.white.opacity(0.55))
                     }
                     Text("·")
-                        .font(.system(size: 13))
+                        .scaledFont(size: 13)
                         .foregroundStyle(Color.white.opacity(0.4))
                     HStack(spacing: 6) {
                         Image(systemName: "bubble.left")
-                            .font(.system(size: 12))
+                            .scaledFont(size: 12)
                             .foregroundStyle(Color.white.opacity(0.7))
                         Text("183")
-                            .font(.system(size: 13, weight: .semibold))
+                            .scaledFont(size: 13, weight: .semibold)
                             .foregroundStyle(.white)
                         Text("Comments")
-                            .font(.system(size: 13))
+                            .scaledFont(size: 13)
                             .foregroundStyle(Color.white.opacity(0.55))
                     }
                 }
@@ -326,7 +326,7 @@ struct EpisodeDetailSheet: View {
             }
             .overlay(alignment: .bottomLeading) {
                 Text(String(platformName.prefix(4)).uppercased())
-                    .font(.system(size: 10, weight: .heavy))
+                    .scaledFont(size: 10, weight: .heavy)
                     .foregroundStyle(.white)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
@@ -367,7 +367,7 @@ struct EpisodeDetailSheet: View {
                         .fill(Color.white.opacity(0.08))
                         .frame(width: 54, height: 54)
                     Image(systemName: icon)
-                        .font(.system(size: 22, weight: .regular))
+                        .scaledFont(size: 22, weight: .regular)
                         .foregroundStyle(tint)
                     if showDot {
                         Circle()
@@ -378,7 +378,7 @@ struct EpisodeDetailSheet: View {
                     }
                 }
                 Text(label)
-                    .font(.system(size: 13))
+                    .scaledFont(size: 13)
                     .foregroundStyle(Color.white.opacity(0.7))
             }
         }
@@ -390,11 +390,11 @@ struct EpisodeDetailSheet: View {
     private var aboutSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("ABOUT")
-                .font(.system(size: 12, weight: .heavy))
+                .scaledFont(size: 12, weight: .heavy)
                 .tracking(1.4)
                 .foregroundStyle(Color.white.opacity(0.45))
             Text(aboutText)
-                .font(.system(size: 15))
+                .scaledFont(size: 15)
                 .foregroundStyle(Color.white.opacity(0.85))
                 .lineSpacing(4)
         }
@@ -406,13 +406,13 @@ struct EpisodeDetailSheet: View {
     private var whereToWatchSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("WHERE TO WATCH")
-                .font(.system(size: 12, weight: .heavy))
+                .scaledFont(size: 12, weight: .heavy)
                 .tracking(1.4)
                 .foregroundStyle(Color.white.opacity(0.45))
 
             HStack(spacing: 10) {
                 Text(whereToWatchLabel)
-                    .font(.system(size: 13, weight: .heavy))
+                    .scaledFont(size: 13, weight: .heavy)
                     .foregroundStyle(.white)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 8)
@@ -420,7 +420,7 @@ struct EpisodeDetailSheet: View {
             }
 
             Text("Available with subscription")
-                .font(.system(size: 13))
+                .scaledFont(size: 13)
                 .foregroundStyle(Color.white.opacity(0.5))
                 .padding(.top, 2)
         }
@@ -449,7 +449,7 @@ struct EpisodeDetailSheet: View {
                 Text(resolvedSource == nil && isResolvingSource
                      ? "Finding service…"
                      : "Watch on \(whereToWatchLabel)")
-                    .font(.system(size: 17, weight: .semibold))
+                    .scaledFont(size: 17, weight: .semibold)
             }
             .foregroundStyle(.white)
             .frame(maxWidth: .infinity)
@@ -465,9 +465,9 @@ struct EpisodeDetailSheet: View {
         Button(action: { dismiss() }) {
             HStack(spacing: 6) {
                 Text("View Full Details")
-                    .font(.system(size: 15, weight: .semibold))
+                    .scaledFont(size: 15, weight: .semibold)
                 Image(systemName: "arrow.right")
-                    .font(.system(size: 13, weight: .semibold))
+                    .scaledFont(size: 13, weight: .semibold)
             }
             .foregroundStyle(Color.white.opacity(0.85))
         }
@@ -567,7 +567,7 @@ private struct EpisodeRow: View {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
                     Text(episode.platform)
-                        .font(.system(size: 9, weight: .bold))
+                        .scaledFont(size: 9, weight: .bold)
                         .tracking(0.5)
                         .foregroundStyle(.white)
                         .padding(.horizontal, 6)
@@ -575,7 +575,7 @@ private struct EpisodeRow: View {
                         .background(RoundedRectangle(cornerRadius: 4).fill(episode.platformColor))
                     if episode.isNew {
                         Text("NEW")
-                            .font(.system(size: 9, weight: .heavy))
+                            .scaledFont(size: 9, weight: .heavy)
                             .foregroundStyle(.white)
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
@@ -583,18 +583,18 @@ private struct EpisodeRow: View {
                     }
                 }
                 Text(episode.title)
-                    .font(.system(size: 15, weight: .semibold))
+                    .scaledFont(size: 15, weight: .semibold)
                     .foregroundStyle(Color.textPrimary)
                     .lineLimit(1)
                 Text("\(episode.season) · \(episode.duration)")
-                    .font(.system(size: 12))
+                    .scaledFont(size: 12)
                     .foregroundStyle(Color.textTertiary)
             }
 
             Spacer(minLength: 0)
 
             Image(systemName: "chevron.right")
-                .font(.system(size: 13, weight: .semibold))
+                .scaledFont(size: 13, weight: .semibold)
                 .foregroundStyle(Color.textTertiary)
         }
         .padding(10)
@@ -630,14 +630,14 @@ struct WidgetSetupView: View {
                     .overlay(alignment: .topLeading) {
                         VStack(alignment: .leading, spacing: 8) {
                             Text("UP NEXT")
-                                .font(.system(size: 10, weight: .heavy))
+                                .scaledFont(size: 10, weight: .heavy)
                                 .tracking(1)
                                 .foregroundStyle(.white.opacity(0.85))
                             Text("Stranger Things")
-                                .font(.system(size: 18, weight: .bold))
+                                .scaledFont(size: 18, weight: .bold)
                                 .foregroundStyle(.white)
                             Text("S5 E1 · 64min")
-                                .font(.system(size: 12))
+                                .scaledFont(size: 12)
                                 .foregroundStyle(.white.opacity(0.8))
                         }
                         .padding(16)
@@ -655,7 +655,7 @@ struct WidgetSetupView: View {
 
                 Button(action: { dismiss() }) {
                     Text("Got it")
-                        .font(.system(size: 16, weight: .bold))
+                        .scaledFont(size: 16, weight: .bold)
                         .foregroundStyle(.white)
                         .frame(maxWidth: .infinity)
                         .frame(height: 50)
@@ -687,17 +687,17 @@ private struct StepRow: View {
     var body: some View {
         HStack(alignment: .top, spacing: 14) {
             Text("\(number)")
-                .font(.system(size: 15, weight: .bold))
+                .scaledFont(size: 15, weight: .bold)
                 .foregroundStyle(Color.orange)
                 .frame(width: 32, height: 32)
                 .background(Circle().fill(Color.orange.opacity(0.14)))
                 .overlay(Circle().stroke(Color.orange.opacity(0.35), lineWidth: 1))
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)
-                    .font(.system(size: 15, weight: .semibold))
+                    .scaledFont(size: 15, weight: .semibold)
                     .foregroundStyle(Color.textPrimary)
                 Text(subtitle)
-                    .font(.system(size: 13))
+                    .scaledFont(size: 13)
                     .foregroundStyle(Color.textSecondary)
             }
             Spacer(minLength: 0)
@@ -762,12 +762,12 @@ struct NotificationsSheet: View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
                 Text("Notifications")
-                    .font(.system(size: 22, weight: .semibold))
+                    .scaledFont(size: 22, weight: .semibold)
                     .foregroundStyle(Color.textPrimary)
                 Spacer()
                 Button(action: { dismiss() }) {
                     Image(systemName: "xmark")
-                        .font(.system(size: 14, weight: .bold))
+                        .scaledFont(size: 14, weight: .bold)
                         .foregroundStyle(.white)
                         .frame(width: 32, height: 32)
                         .background(Circle().fill(Color.white.opacity(0.08)))
@@ -781,7 +781,7 @@ struct NotificationsSheet: View {
                 LazyVStack(spacing: 10) {
                     if liveItems.isEmpty {
                         Text("You're all caught up.")
-                            .font(.system(size: 13))
+                            .scaledFont(size: 13)
                             .foregroundStyle(Color.textSecondary)
                             .padding(.top, 40)
                     } else {
@@ -845,7 +845,7 @@ private struct NotificationRow: View {
                 }
                 .overlay(alignment: .topLeading) {
                     Text(item.badge)
-                        .font(.system(size: 8, weight: .heavy))
+                        .scaledFont(size: 8, weight: .heavy)
                         .tracking(0.5)
                         .foregroundStyle(.white)
                         .padding(.horizontal, 5)
@@ -860,17 +860,17 @@ private struct NotificationRow: View {
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(item.title)
-                    .font(.system(size: 15, weight: .semibold))
+                    .scaledFont(size: 15, weight: .semibold)
                     .foregroundStyle(Color.textPrimary)
                     .lineLimit(1)
                 Text(item.subtitle)
-                    .font(.system(size: 13))
+                    .scaledFont(size: 13)
                     .foregroundStyle(Color.textSecondary)
                     .lineLimit(2)
             }
             Spacer(minLength: 0)
             Text(item.time)
-                .font(.system(size: 11))
+                .scaledFont(size: 11)
                 .foregroundStyle(Color.textTertiary)
         }
         .padding(12)

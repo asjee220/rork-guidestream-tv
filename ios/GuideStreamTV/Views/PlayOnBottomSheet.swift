@@ -232,24 +232,24 @@ struct PlayOnBottomSheet: View {
 
             VStack(alignment: .leading, spacing: 8) {
                 Text(showTitle)
-                    .font(.system(size: 26, weight: .bold))
+                    .scaledFont(size: 26, weight: .bold)
                     .foregroundStyle(.white)
                     .lineLimit(2)
 
                 Text(yearsLabel)
-                    .font(.system(size: 13))
+                    .scaledFont(size: 13)
                     .foregroundStyle(Color.white.opacity(0.55))
 
                 HStack(spacing: 8) {
                     Text(platformLabel)
-                        .font(.system(size: 11, weight: .heavy))
+                        .scaledFont(size: 11, weight: .heavy)
                         .foregroundStyle(.white)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 6)
                         .background(Capsule().fill(platformColor))
 
                     Text(genreLabel)
-                        .font(.system(size: 12, weight: .semibold))
+                        .scaledFont(size: 12, weight: .semibold)
                         .foregroundStyle(.white)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 6)
@@ -260,11 +260,11 @@ struct PlayOnBottomSheet: View {
                 HStack(spacing: 6) {
                     ForEach(0..<5, id: \.self) { _ in
                         Image(systemName: "star.fill")
-                            .font(.system(size: 11))
+                            .scaledFont(size: 11)
                             .foregroundStyle(Color(red: 0xFF/255, green: 0xC4/255, blue: 0x3D/255))
                     }
                     Text(String(format: "%.1f", rating))
-                        .font(.system(size: 13, weight: .semibold))
+                        .scaledFont(size: 13, weight: .semibold)
                         .foregroundStyle(.white)
                         .padding(.leading, 4)
                 }
@@ -273,27 +273,27 @@ struct PlayOnBottomSheet: View {
                 HStack(spacing: 10) {
                     HStack(spacing: 6) {
                         Image(systemName: "heart.fill")
-                            .font(.system(size: 12))
+                            .scaledFont(size: 12)
                             .foregroundStyle(Color.orange)
                         Text(likeCount)
-                            .font(.system(size: 13, weight: .semibold))
+                            .scaledFont(size: 13, weight: .semibold)
                             .foregroundStyle(.white)
                         Text("Likes")
-                            .font(.system(size: 13))
+                            .scaledFont(size: 13)
                             .foregroundStyle(Color.white.opacity(0.55))
                     }
                     Text("·")
-                        .font(.system(size: 13))
+                        .scaledFont(size: 13)
                         .foregroundStyle(Color.white.opacity(0.4))
                     HStack(spacing: 6) {
                         Image(systemName: "bubble.left")
-                            .font(.system(size: 12))
+                            .scaledFont(size: 12)
                             .foregroundStyle(Color.white.opacity(0.7))
                         Text(commentCount)
-                            .font(.system(size: 13, weight: .semibold))
+                            .scaledFont(size: 13, weight: .semibold)
                             .foregroundStyle(.white)
                         Text("Comments")
-                            .font(.system(size: 13))
+                            .scaledFont(size: 13)
                             .foregroundStyle(Color.white.opacity(0.55))
                     }
                 }
@@ -321,7 +321,7 @@ struct PlayOnBottomSheet: View {
         }
         .overlay(alignment: .bottomLeading) {
             Text(String(resolvedPlatformName.prefix(4)).uppercased())
-                .font(.system(size: 10, weight: .heavy))
+                .scaledFont(size: 10, weight: .heavy)
                 .foregroundStyle(.white)
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)
@@ -388,7 +388,7 @@ struct PlayOnBottomSheet: View {
                         .fill(Color.white.opacity(0.08))
                         .frame(width: 54, height: 54)
                     Image(systemName: icon)
-                        .font(.system(size: 22, weight: .regular))
+                        .scaledFont(size: 22, weight: .regular)
                         .foregroundStyle(tint)
                     if showDot {
                         Circle()
@@ -399,7 +399,7 @@ struct PlayOnBottomSheet: View {
                     }
                 }
                 Text(label)
-                    .font(.system(size: 13))
+                    .scaledFont(size: 13)
                     .foregroundStyle(Color.white.opacity(0.7))
             }
         }
@@ -411,11 +411,11 @@ struct PlayOnBottomSheet: View {
     private var aboutSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("ABOUT")
-                .font(.system(size: 12, weight: .heavy))
+                .scaledFont(size: 12, weight: .heavy)
                 .tracking(1.4)
                 .foregroundStyle(Color.white.opacity(0.45))
             Text(aboutText)
-                .font(.system(size: 15))
+                .scaledFont(size: 15)
                 .foregroundStyle(Color.white.opacity(0.85))
                 .lineSpacing(4)
         }
@@ -427,13 +427,13 @@ struct PlayOnBottomSheet: View {
     private var whereToWatchSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("WHERE TO WATCH")
-                .font(.system(size: 12, weight: .heavy))
+                .scaledFont(size: 12, weight: .heavy)
                 .tracking(1.4)
                 .foregroundStyle(Color.white.opacity(0.45))
 
             HStack(spacing: 10) {
                 Text(whereToWatchLabel)
-                    .font(.system(size: 13, weight: .heavy))
+                    .scaledFont(size: 13, weight: .heavy)
                     .foregroundStyle(.white)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 8)
@@ -441,7 +441,7 @@ struct PlayOnBottomSheet: View {
             }
 
             Text(availabilityLabel)
-                .font(.system(size: 13))
+                .scaledFont(size: 13)
                 .foregroundStyle(Color.white.opacity(0.5))
                 .padding(.top, 2)
         }
@@ -475,7 +475,7 @@ struct PlayOnBottomSheet: View {
                 Text(resolvedSource == nil && isResolvingSource
                      ? "Finding service…"
                      : "Watch on \(whereToWatchLabel)")
-                    .font(.system(size: 17, weight: .semibold))
+                    .scaledFont(size: 17, weight: .semibold)
             }
             .foregroundStyle(.white)
             .frame(maxWidth: .infinity)
@@ -493,9 +493,9 @@ struct PlayOnBottomSheet: View {
         Button(action: close) {
             HStack(spacing: 6) {
                 Text("View Full Details")
-                    .font(.system(size: 15, weight: .semibold))
+                    .scaledFont(size: 15, weight: .semibold)
                 Image(systemName: "arrow.right")
-                    .font(.system(size: 13, weight: .semibold))
+                    .scaledFont(size: 13, weight: .semibold)
             }
             .foregroundStyle(Color.white.opacity(0.85))
         }

@@ -174,7 +174,7 @@ struct WelcomeOnboardingView: View {
                         Text("Get Started Free")
                             .font(.custom("SF Pro Text", size: 16).weight(.bold))
                         Image(systemName: "arrow.right")
-                            .font(.system(size: 15, weight: .bold))
+                            .scaledFont(size: 15, weight: .bold)
                     }
                     .foregroundStyle(.white)
                     .frame(maxWidth: .infinity)
@@ -284,7 +284,7 @@ private struct OnboardingHeader: View {
                 onClose?()
             } label: {
                 Image(systemName: "xmark")
-                    .font(.system(size: 14, weight: .semibold))
+                    .scaledFont(size: 14, weight: .semibold)
                     .foregroundStyle(.white)
                     .frame(width: 36, height: 36)
                     .background(Circle().fill(Color.white.opacity(0.10)))
@@ -302,7 +302,7 @@ private struct OnboardingHeader: View {
             Spacer()
 
             Image(systemName: "ellipsis")
-                .font(.system(size: 14, weight: .semibold))
+                .scaledFont(size: 14, weight: .semibold)
                 .foregroundStyle(.white)
                 .frame(width: 36, height: 36)
                 .background(Circle().fill(Color.white.opacity(0.10)))
@@ -445,7 +445,7 @@ struct ConnectServicesView: View {
                         Text("Build My Feed")
                             .font(.custom("SF Pro Text", size: 16).weight(.bold))
                         Image(systemName: "arrow.right")
-                            .font(.system(size: 14, weight: .bold))
+                            .scaledFont(size: 14, weight: .bold)
                     }
                     .foregroundStyle(.white)
                     .frame(maxWidth: .infinity)
@@ -506,7 +506,7 @@ private struct ServiceTile: View {
                             Circle().fill(service.glow)
                                 .frame(width: 22, height: 22)
                             Image(systemName: "checkmark")
-                                .font(.system(size: 11, weight: .black))
+                                .scaledFont(size: 11, weight: .black)
                                 .foregroundStyle(service.bg == .black ? .white : .black)
                         }
                         .offset(x: 6, y: -6)
@@ -530,26 +530,26 @@ private struct ServiceTile: View {
         switch service.display {
         case .text(let str, let color, let weight, let design):
             Text(str)
-                .font(.system(size: textSize(for: str), weight: weight, design: design))
+                .scaledFont(size: textSize(for: str), weight: weight, design: design)
                 .foregroundStyle(color)
                 .multilineTextAlignment(.center)
                 .minimumScaleFactor(0.5)
                 .lineLimit(2)
         case .symbol(let name, let color):
             Image(systemName: name)
-                .font(.system(size: 32, weight: .bold))
+                .scaledFont(size: 32, weight: .bold)
                 .foregroundStyle(color)
         case .symbolText(let symbol, let suffix, let color):
             HStack(spacing: 2) {
                 Image(systemName: symbol)
-                    .font(.system(size: 22, weight: .bold))
+                    .scaledFont(size: 22, weight: .bold)
                 Text(suffix)
-                    .font(.system(size: 18, weight: .bold))
+                    .scaledFont(size: 18, weight: .bold)
             }
             .foregroundStyle(color)
         case .star:
             Image(systemName: "star.fill")
-                .font(.system(size: 36))
+                .scaledFont(size: 36)
                 .foregroundStyle(Color(red: 0xFF/255, green: 0xC8/255, blue: 0x1E/255))
         }
     }
@@ -610,7 +610,7 @@ struct StayNotifiedView: View {
                     .shadow(color: Color(red: 0.45, green: 0.40, blue: 0.95).opacity(0.55),
                             radius: 30, x: 0, y: 0)
                 Image(systemName: "bell.fill")
-                    .font(.system(size: 38, weight: .semibold))
+                    .scaledFont(size: 38, weight: .semibold)
                     .foregroundStyle(.white)
             }
 
@@ -677,7 +677,7 @@ struct StayNotifiedView: View {
                     Text("I'm all set")
                         .font(.custom("SF Pro Text", size: 16).weight(.bold))
                     Image(systemName: "arrow.right")
-                        .font(.system(size: 14, weight: .bold))
+                        .scaledFont(size: 14, weight: .bold)
                 }
                 .foregroundStyle(.white)
                 .frame(maxWidth: .infinity)
@@ -717,7 +717,7 @@ private struct NotifyRow: View {
             ZStack {
                 Circle().fill(iconBg)
                 Image(systemName: icon)
-                    .font(.system(size: 16, weight: .semibold))
+                    .scaledFont(size: 16, weight: .semibold)
                     .foregroundStyle(iconTint)
             }
             .frame(width: 40, height: 40)
@@ -741,7 +741,7 @@ private struct NotifyRow: View {
             case .chevron(let action):
                 Button(action: action) {
                     Image(systemName: "chevron.right")
-                        .font(.system(size: 14, weight: .semibold))
+                        .scaledFont(size: 14, weight: .semibold)
                         .foregroundStyle(Color.textSecondary)
                 }
                 .buttonStyle(.plain)

@@ -17,11 +17,64 @@ extension Color {
 
 extension Font {
     static func guideHeading(size: CGFloat, weight: Weight = .bold) -> Font {
-        .custom("SF Pro Display", size: size).weight(weight)
+        .custom("SF Pro Display", size: size, relativeTo: .title3).weight(weight)
     }
 
     static func guideBody(size: CGFloat, weight: Weight = .regular) -> Font {
-        .custom("SF Pro Text", size: size).weight(weight)
+        .custom("SF Pro Text", size: size, relativeTo: .body).weight(weight)
+    }
+}
+
+/// Picks a sensible Dynamic Type text-style anchor for a given point size so that
+/// custom sizes still participate in proportional scaling.
+private func defaultTextStyle(for size: CGFloat) -> Font.TextStyle {
+    switch size {
+    case ..<11: return .caption2
+    case ..<13: return .caption
+    case ..<15: return .footnote
+    case ..<17: return .subheadline
+    case ..<20: return .body
+    case ..<22: return .title3
+    case ..<28: return .title2
+    case ..<34: return .title
+    default: return .largeTitle
+    }
+}
+
+/// View modifier that produces a system font that scales with Dynamic Type
+/// while still letting designers specify an explicit point size.
+struct ScaledFontModifier: ViewModifier {
+    @ScaledMetric private var scaledSize: CGFloat
+    let weight: Font.Weight
+    let design: Font.Design
+
+    init(
+        size: CGFloat,
+        weight: Font.Weight = .regular,
+        design: Font.Design = .default,
+        relativeTo textStyle: Font.TextStyle? = nil
+    ) {
+        let anchor = textStyle ?? defaultTextStyle(for: size)
+        self._scaledSize = ScaledMetric(wrappedValue: size, relativeTo: anchor)
+        self.weight = weight
+        self.design = design
+    }
+
+    func body(content: Content) -> some View {
+        content.font(.system(size: scaledSize, weight: weight, design: design))
+    }
+}
+
+extension View {
+    /// Applies a system font that scales with Dynamic Type. Drop-in replacement
+    /// for `.font(.system(size:weight:design:))`.
+    func scaledFont(
+        size: CGFloat,
+        weight: Font.Weight = .regular,
+        design: Font.Design = .default,
+        relativeTo textStyle: Font.TextStyle? = nil
+    ) -> some View {
+        modifier(ScaledFontModifier(size: size, weight: weight, design: design, relativeTo: textStyle))
     }
 }
 

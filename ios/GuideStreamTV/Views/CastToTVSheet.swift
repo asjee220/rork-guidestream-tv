@@ -68,12 +68,12 @@ struct CastToTVSheet: View {
     private var header: some View {
         VStack(spacing: 6) {
             Text("Play on TV")
-                .font(.system(size: 20, weight: .bold))
+                .scaledFont(size: 20, weight: .bold)
                 .foregroundStyle(.white)
             Text(discovery.isScanning && discovery.devices.isEmpty
                  ? "Scanning your network…"
                  : "Choose a device to send \"\(showTitle)\"")
-                .font(.system(size: 13))
+                .scaledFont(size: 13)
                 .foregroundStyle(Color.white.opacity(0.55))
                 .multilineTextAlignment(.center)
         }
@@ -147,7 +147,7 @@ struct CastToTVSheet: View {
                     Image(systemName: isRunningInSimulator
                                       ? "iphone.gen3.radiowaves.left.and.right.slash"
                                       : (showPermissionPrompt ? "wifi.exclamationmark" : "wifi"))
-                        .font(.system(size: 30, weight: .regular))
+                        .scaledFont(size: 30, weight: .regular)
                         .foregroundStyle((showPermissionPrompt || isRunningInSimulator)
                                          ? Color.orange
                                          : Color.white.opacity(0.6))
@@ -156,21 +156,21 @@ struct CastToTVSheet: View {
 
                 if isRunningInSimulator {
                     Text("Install on your iPhone to cast")
-                        .font(.system(size: 16, weight: .semibold))
+                        .scaledFont(size: 16, weight: .semibold)
                         .foregroundStyle(.white)
                     Text("This preview runs in a cloud simulator that isn't on your home Wi-Fi, so it can't see your Apple TV or Roku. Install GuideStreamTV on your iPhone via the Rork app and open Play on TV there.")
-                        .font(.system(size: 13))
+                        .scaledFont(size: 13)
                         .foregroundStyle(Color.white.opacity(0.6))
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, 28)
                 } else if phoneOnLinkLocal {
                     Text("Your phone isn't on the Wi-Fi network")
-                        .font(.system(size: 16, weight: .semibold))
+                        .scaledFont(size: 16, weight: .semibold)
                         .foregroundStyle(.white)
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, 18)
                     Text("iPhone has a self-assigned address (\(discovery.localIPv4 ?? "169.254.x.x")) because the router didn't give it a real one. Until that's fixed, no app can see your Apple TV or Roku.")
-                        .font(.system(size: 13))
+                        .scaledFont(size: 13)
                         .foregroundStyle(Color.white.opacity(0.6))
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, 24)
@@ -183,10 +183,10 @@ struct CastToTVSheet: View {
                     }
                 } else if phoneHasNoIPv4 {
                     Text("Wi-Fi appears to be off")
-                        .font(.system(size: 16, weight: .semibold))
+                        .scaledFont(size: 16, weight: .semibold)
                         .foregroundStyle(.white)
                     Text("Connect your iPhone to the same Wi-Fi network as your Apple TV or Roku, then come back and tap Rescan.")
-                        .font(.system(size: 13))
+                        .scaledFont(size: 13)
                         .foregroundStyle(Color.white.opacity(0.6))
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, 28)
@@ -196,10 +196,10 @@ struct CastToTVSheet: View {
                     }
                 } else if showPermissionPrompt {
                     Text("Couldn't find any devices yet")
-                        .font(.system(size: 16, weight: .semibold))
+                        .scaledFont(size: 16, weight: .semibold)
                         .foregroundStyle(.white)
                     Text("If Local Network access is off, enable it in Settings. Some Wi-Fi networks block device-to-device traffic — you can add your TV by IP below to bypass that.")
-                        .font(.system(size: 13))
+                        .scaledFont(size: 13)
                         .foregroundStyle(Color.white.opacity(0.6))
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, 28)
@@ -209,10 +209,10 @@ struct CastToTVSheet: View {
                     }
                 } else {
                     Text("Looking for Apple TV & Roku…")
-                        .font(.system(size: 15))
+                        .scaledFont(size: 15)
                         .foregroundStyle(Color.white.opacity(0.7))
                     Text("Make sure your phone and TV are on the same Wi-Fi network.")
-                        .font(.system(size: 12))
+                        .scaledFont(size: 12)
                         .foregroundStyle(Color.white.opacity(0.45))
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, 40)
@@ -253,7 +253,7 @@ struct CastToTVSheet: View {
                 Image(systemName: "gearshape.fill")
                 Text("Settings")
             }
-            .font(.system(size: 14, weight: .semibold))
+            .scaledFont(size: 14, weight: .semibold)
             .foregroundStyle(.black)
             .padding(.horizontal, 18)
             .padding(.vertical, 10)
@@ -280,7 +280,7 @@ struct CastToTVSheet: View {
                 Image(systemName: "wifi")
                 Text("Wi-Fi Settings")
             }
-            .font(.system(size: 14, weight: .semibold))
+            .scaledFont(size: 14, weight: .semibold)
             .foregroundStyle(.black)
             .padding(.horizontal, 18)
             .padding(.vertical, 10)
@@ -313,12 +313,12 @@ struct CastToTVSheet: View {
     private func fixStep(number: Int, text: String) -> some View {
         HStack(alignment: .top, spacing: 10) {
             Text("\(number)")
-                .font(.system(size: 11, weight: .bold, design: .rounded))
+                .scaledFont(size: 11, weight: .bold, design: .rounded)
                 .foregroundStyle(.white)
                 .frame(width: 18, height: 18)
                 .background(Circle().fill(Color.orange.opacity(0.85)))
             Text(text)
-                .font(.system(size: 12.5))
+                .scaledFont(size: 12.5)
                 .foregroundStyle(Color.white.opacity(0.78))
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
@@ -334,7 +334,7 @@ struct CastToTVSheet: View {
                 Image(systemName: "arrow.clockwise")
                 Text("Rescan")
             }
-            .font(.system(size: 14, weight: .semibold))
+            .scaledFont(size: 14, weight: .semibold)
             .foregroundStyle(.white)
             .padding(.horizontal, 18)
             .padding(.vertical, 10)
@@ -406,17 +406,17 @@ struct CastToTVSheet: View {
     ) -> some View {
         HStack(spacing: 10) {
             Image(systemName: icon)
-                .font(.system(size: 12, weight: .semibold))
+                .scaledFont(size: 12, weight: .semibold)
                 .foregroundStyle(state.iconColor)
                 .frame(width: 16)
             Text(label)
-                .font(.system(size: 12, weight: .medium))
+                .scaledFont(size: 12, weight: .medium)
                 .foregroundStyle(Color.white.opacity(0.55))
             Spacer(minLength: 0)
             HStack(spacing: 6) {
                 if let valueNote {
                     Text(valueNote)
-                        .font(.system(size: 10, weight: .bold))
+                        .scaledFont(size: 10, weight: .bold)
                         .foregroundStyle(Color.orange)
                         .padding(.horizontal, 6)
                         .padding(.vertical, 2)
@@ -425,7 +425,7 @@ struct CastToTVSheet: View {
                         )
                 }
                 Text(value)
-                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                    .scaledFont(size: 12, weight: .semibold, design: .monospaced)
                     .foregroundStyle(state == .warning
                                      ? Color.orange
                                      : Color.white.opacity(0.85))
@@ -452,9 +452,9 @@ struct CastToTVSheet: View {
             } label: {
                 HStack(spacing: 8) {
                     Image(systemName: isManualEntryExpanded ? "chevron.up" : "plus.circle.fill")
-                        .font(.system(size: 13, weight: .semibold))
+                        .scaledFont(size: 13, weight: .semibold)
                     Text(isManualEntryExpanded ? "Hide manual entry" : "Add device by IP")
-                        .font(.system(size: 14, weight: .semibold))
+                        .scaledFont(size: 14, weight: .semibold)
                 }
                 .foregroundStyle(.white)
                 .frame(maxWidth: .infinity)
@@ -470,11 +470,11 @@ struct CastToTVSheet: View {
                 VStack(spacing: 10) {
                     HStack(spacing: 8) {
                         Image(systemName: "network")
-                            .font(.system(size: 14))
+                            .scaledFont(size: 14)
                             .foregroundStyle(Color.white.opacity(0.55))
                         TextField("", text: $manualHost, prompt: Text("e.g. 192.168.1.42")
                             .foregroundStyle(Color.white.opacity(0.35)))
-                            .font(.system(size: 15, design: .monospaced))
+                            .scaledFont(size: 15, design: .monospaced)
                             .foregroundStyle(.white)
                             .keyboardType(.numbersAndPunctuation)
                             .textContentType(.URL)
@@ -496,7 +496,7 @@ struct CastToTVSheet: View {
                     )
 
                     Text("Find your TV's IP under Settings → Network on Roku, or Settings → General → About on Apple TV.")
-                        .font(.system(size: 11))
+                        .scaledFont(size: 11)
                         .foregroundStyle(Color.white.opacity(0.45))
                         .multilineTextAlignment(.leading)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -511,10 +511,10 @@ struct CastToTVSheet: View {
                                     .tint(.black)
                             } else {
                                 Image(systemName: "checkmark.circle.fill")
-                                    .font(.system(size: 14, weight: .semibold))
+                                    .scaledFont(size: 14, weight: .semibold)
                             }
                             Text(isProbingManual ? "Connecting…" : "Connect")
-                                .font(.system(size: 14, weight: .semibold))
+                                .scaledFont(size: 14, weight: .semibold)
                         }
                         .foregroundStyle(.black)
                         .frame(maxWidth: .infinity)
@@ -581,17 +581,17 @@ struct CastToTVSheet: View {
                               : Color(red: 0x66/255, green: 0x2D/255, blue: 0x91/255).opacity(0.35))
                         .frame(width: 46, height: 46)
                     Image(systemName: device.kind == .appleTV ? "appletv" : "tv.inset.filled")
-                        .font(.system(size: 20, weight: .regular))
+                        .scaledFont(size: 20, weight: .regular)
                         .foregroundStyle(.white)
                 }
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(device.name)
-                        .font(.system(size: 16, weight: .semibold))
+                        .scaledFont(size: 16, weight: .semibold)
                         .foregroundStyle(.white)
                         .lineLimit(1)
                     Text(device.subtitle)
-                        .font(.system(size: 12))
+                        .scaledFont(size: 12)
                         .foregroundStyle(Color.white.opacity(0.55))
                 }
 
@@ -602,7 +602,7 @@ struct CastToTVSheet: View {
                         .tint(.white)
                 } else {
                     Image(systemName: "chevron.right")
-                        .font(.system(size: 13, weight: .semibold))
+                        .scaledFont(size: 13, weight: .semibold)
                         .foregroundStyle(Color.white.opacity(0.35))
                 }
             }
@@ -626,9 +626,9 @@ struct CastToTVSheet: View {
     private func toastView(_ state: ToastState) -> some View {
         HStack(spacing: 10) {
             Image(systemName: state.icon)
-                .font(.system(size: 14, weight: .semibold))
+                .scaledFont(size: 14, weight: .semibold)
             Text(state.message)
-                .font(.system(size: 14, weight: .semibold))
+                .scaledFont(size: 14, weight: .semibold)
         }
         .foregroundStyle(.white)
         .padding(.horizontal, 16)
@@ -887,11 +887,11 @@ struct CastToTVSheet: View {
                           : Color(red: 0x66/255, green: 0x2D/255, blue: 0x91/255).opacity(0.55))
                     .frame(width: 46, height: 46)
                 Image(systemName: state.deviceKind == .appleTV ? "appletv" : "tv.inset.filled")
-                    .font(.system(size: 20, weight: .regular))
+                    .scaledFont(size: 20, weight: .regular)
                     .foregroundStyle(.white)
                 // Animated signal arc to communicate "actively casting".
                 Image(systemName: "wifi")
-                    .font(.system(size: 11, weight: .bold))
+                    .scaledFont(size: 11, weight: .bold)
                     .foregroundStyle(Color.green)
                     .padding(4)
                     .background(Circle().fill(Color(red: 0x0A/255, green: 0x10/255, blue: 0x1E/255)))
@@ -901,16 +901,16 @@ struct CastToTVSheet: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text("Playing on")
-                    .font(.system(size: 11, weight: .semibold))
+                    .scaledFont(size: 11, weight: .semibold)
                     .foregroundStyle(Color.white.opacity(0.55))
                     .textCase(.uppercase)
                     .tracking(0.5)
                 Text(state.deviceName)
-                    .font(.system(size: 16, weight: .bold))
+                    .scaledFont(size: 16, weight: .bold)
                     .foregroundStyle(.white)
                     .lineLimit(1)
                 Text(state.hint)
-                    .font(.system(size: 11.5))
+                    .scaledFont(size: 11.5)
                     .foregroundStyle(Color.white.opacity(0.55))
                     .lineLimit(1)
             }
@@ -918,7 +918,7 @@ struct CastToTVSheet: View {
             Spacer(minLength: 0)
 
             Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 24, weight: .regular))
+                .scaledFont(size: 24, weight: .regular)
                 .foregroundStyle(Color.green)
         }
         .padding(.horizontal, 14)

@@ -19,7 +19,7 @@ struct EpisodeCardView: View {
                 .overlay(alignment: .topLeading) {
                     if let badge = show.badge {
                         Text(badge)
-                            .font(.system(size: 9, weight: .heavy))
+                            .scaledFont(size: 9, weight: .heavy)
                             .tracking(1)
                             .foregroundStyle(.white)
                             .padding(.horizontal, 8)
@@ -38,15 +38,15 @@ struct EpisodeCardView: View {
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(show.network)
-                    .font(.system(size: 9, weight: .bold))
+                    .scaledFont(size: 9, weight: .bold)
                     .tracking(1.4)
                     .foregroundStyle(Theme.blue)
                 Text(show.title)
-                    .font(.system(size: 15, weight: .semibold))
+                    .scaledFont(size: 15, weight: .semibold)
                     .foregroundStyle(.white)
                     .lineLimit(1)
                 Text("\(show.episode) · \(show.duration)")
-                    .font(.system(size: 12))
+                    .scaledFont(size: 12)
                     .foregroundStyle(Theme.textSecondary)
                     .lineLimit(1)
             }
@@ -76,7 +76,7 @@ struct ContinueCardView: View {
                             .stroke(Color.white.opacity(0.3), lineWidth: 1)
                             .frame(width: 52, height: 52)
                         Image(systemName: "play.fill")
-                            .font(.system(size: 18, weight: .bold))
+                            .scaledFont(size: 18, weight: .bold)
                             .foregroundStyle(.white)
                             .offset(x: 2)
                     }
@@ -103,11 +103,11 @@ struct ContinueCardView: View {
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(show.title)
-                    .font(.system(size: 15, weight: .semibold))
+                    .scaledFont(size: 15, weight: .semibold)
                     .foregroundStyle(.white)
                     .lineLimit(1)
                 Text("\(show.episode) · \(show.duration)")
-                    .font(.system(size: 12))
+                    .scaledFont(size: 12)
                     .foregroundStyle(Theme.textSecondary)
                     .lineLimit(1)
             }

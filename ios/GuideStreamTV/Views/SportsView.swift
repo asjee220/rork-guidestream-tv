@@ -120,13 +120,13 @@ struct SportsView: View {
     private var header: some View {
         HStack(alignment: .firstTextBaseline, spacing: 0) {
             Text("Guide")
-                .font(.system(size: 22, weight: .semibold))
+                .scaledFont(size: 22, weight: .semibold)
                 .foregroundStyle(.white)
             Text("Stream")
-                .font(.system(size: 22, weight: .semibold))
+                .scaledFont(size: 22, weight: .semibold)
                 .foregroundStyle(Color(hex: "F5821F"))
             Text(" TV")
-                .font(.system(size: 16, weight: .regular))
+                .scaledFont(size: 16, weight: .regular)
                 .foregroundStyle(Color.white.opacity(0.45))
             Spacer()
             if isLoading && !games.isEmpty {
@@ -149,7 +149,7 @@ struct SportsView: View {
                         selectedSport = sport
                     } label: {
                         Text(sport)
-                            .font(.system(size: 12, weight: .bold))
+                            .scaledFont(size: 12, weight: .bold)
                             .foregroundStyle(isActive ? Color.white : Color.white.opacity(0.5))
                             .padding(.horizontal, 14)
                             .padding(.vertical, 7)
@@ -180,11 +180,11 @@ struct SportsView: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Text("My Teams")
-                    .font(.system(size: 16, weight: .bold))
+                    .scaledFont(size: 16, weight: .bold)
                     .foregroundStyle(.white)
                 Spacer()
                 Text("Edit")
-                    .font(.system(size: 13, weight: .medium))
+                    .scaledFont(size: 13, weight: .medium)
                     .foregroundStyle(Color(hex: "1A6FE8"))
             }
 
@@ -206,14 +206,14 @@ struct SportsView: View {
                 .frame(width: 26, height: 26)
                 .overlay(
                     Text(team.abbrev)
-                        .font(.system(size: 7, weight: .black))
+                        .scaledFont(size: 7, weight: .black)
                         .foregroundStyle(.white)
                 )
             Text(team.name)
-                .font(.system(size: 9, weight: .semibold))
+                .scaledFont(size: 9, weight: .semibold)
                 .foregroundStyle(Color.white.opacity(0.6))
             Text(team.next)
-                .font(.system(size: 8, weight: .bold))
+                .scaledFont(size: 8, weight: .bold)
                 .foregroundStyle(Color(hex: "F5821F"))
         }
         .padding(8)
@@ -233,14 +233,14 @@ struct SportsView: View {
         } label: {
             VStack(spacing: 3) {
                 Text("+")
-                    .font(.system(size: 18, weight: .bold))
+                    .scaledFont(size: 18, weight: .bold)
                     .foregroundStyle(Color.white.opacity(0.2))
                     .frame(width: 26, height: 26)
                 Text("Add")
-                    .font(.system(size: 9, weight: .semibold))
+                    .scaledFont(size: 9, weight: .semibold)
                     .foregroundStyle(Color.white.opacity(0.4))
                 Text(" ")
-                    .font(.system(size: 8, weight: .bold))
+                    .scaledFont(size: 8, weight: .bold)
             }
             .padding(8)
             .frame(minWidth: 58)
@@ -272,17 +272,17 @@ struct SportsView: View {
                         .fill(Color(hex: "E50914"))
                         .frame(width: 6, height: 6)
                     Text("LIVE")
-                        .font(.system(size: 9, weight: .black))
+                        .scaledFont(size: 9, weight: .black)
                         .foregroundStyle(Color(hex: "E50914"))
                     Text("\(game.sport) · \(game.statusDetail)")
-                        .font(.system(size: 9, weight: .semibold))
+                        .scaledFont(size: 9, weight: .semibold)
                         .foregroundStyle(Color.white.opacity(0.5))
                         .lineLimit(1)
                 }
                 Spacer()
                 NavigationLink(destination: GameDetailView()) {
                     Text("Watch ▶")
-                        .font(.system(size: 11, weight: .bold))
+                        .scaledFont(size: 11, weight: .bold)
                         .foregroundStyle(.white)
                         .padding(.horizontal, 16)
                         .padding(.vertical, 8)
@@ -297,7 +297,7 @@ struct SportsView: View {
                 liveTeamBlock(team: game.away, leading: true)
                 Spacer()
                 Text("VS")
-                    .font(.system(size: 11, weight: .bold))
+                    .scaledFont(size: 11, weight: .bold)
                     .foregroundStyle(Color.white.opacity(0.2))
                 Spacer()
                 liveTeamBlock(team: game.home, leading: false)
@@ -324,15 +324,15 @@ struct SportsView: View {
                 .frame(width: 38, height: 38)
                 .overlay(
                     Text(team.abbreviation)
-                        .font(.system(size: 9, weight: .black))
+                        .scaledFont(size: 9, weight: .black)
                         .foregroundStyle(.white)
                 )
             Text(team.shortName)
-                .font(.system(size: 10, weight: .semibold))
+                .scaledFont(size: 10, weight: .semibold)
                 .foregroundStyle(Color.white.opacity(0.6))
                 .lineLimit(1)
             Text(team.score)
-                .font(.system(size: 24, weight: .black))
+                .scaledFont(size: 24, weight: .black)
                 .foregroundStyle(scoreColor)
         }
         .frame(maxWidth: .infinity, alignment: leading ? .leading : .trailing)
@@ -368,34 +368,34 @@ struct SportsView: View {
                     .frame(width: 30, height: 30)
                     .overlay(
                         Text(game.away.abbreviation)
-                            .font(.system(size: 7, weight: .black))
+                            .scaledFont(size: 7, weight: .black)
                             .foregroundStyle(.white)
                     )
                 Text("vs")
-                    .font(.system(size: 11, weight: .bold))
+                    .scaledFont(size: 11, weight: .bold)
                     .foregroundStyle(Color.white.opacity(0.3))
                 RoundedRectangle(cornerRadius: 8)
                     .fill(homeColor)
                     .frame(width: 30, height: 30)
                     .overlay(
                         Text(game.home.abbreviation)
-                            .font(.system(size: 7, weight: .black))
+                            .scaledFont(size: 7, weight: .black)
                             .foregroundStyle(.white)
                     )
                 VStack(alignment: .leading, spacing: 2) {
                     Text("\(game.away.shortName) vs \(game.home.shortName)")
-                        .font(.system(size: 13, weight: .bold))
+                        .scaledFont(size: 13, weight: .bold)
                         .foregroundStyle(.white)
                         .lineLimit(1)
                     Text("\(game.sport) · \(game.statusDetail)")
-                        .font(.system(size: 10))
+                        .scaledFont(size: 10)
                         .foregroundStyle(Color.white.opacity(0.4))
                         .lineLimit(1)
                 }
                 Spacer()
                 Button { } label: {
                     Text("+ Alert")
-                        .font(.system(size: 11, weight: .semibold))
+                        .scaledFont(size: 11, weight: .semibold)
                         .foregroundStyle(Color.white.opacity(0.6))
                         .padding(.horizontal, 14)
                         .padding(.vertical, 8)
@@ -438,20 +438,20 @@ struct SportsView: View {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
                     Text(game.away.abbreviation)
-                        .font(.system(size: 11, weight: .bold))
+                        .scaledFont(size: 11, weight: .bold)
                         .foregroundStyle(game.away.isWinner ? .white : Color.white.opacity(0.5))
                     Spacer()
                     Text(game.away.score)
-                        .font(.system(size: 14, weight: .black))
+                        .scaledFont(size: 14, weight: .black)
                         .foregroundStyle(game.away.isWinner ? .white : Color.white.opacity(0.5))
                 }
                 HStack(spacing: 6) {
                     Text(game.home.abbreviation)
-                        .font(.system(size: 11, weight: .bold))
+                        .scaledFont(size: 11, weight: .bold)
                         .foregroundStyle(game.home.isWinner ? .white : Color.white.opacity(0.5))
                     Spacer()
                     Text(game.home.score)
-                        .font(.system(size: 14, weight: .black))
+                        .scaledFont(size: 14, weight: .black)
                         .foregroundStyle(game.home.isWinner ? .white : Color.white.opacity(0.5))
                 }
             }
@@ -461,10 +461,10 @@ struct SportsView: View {
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(game.statusDetail)
-                    .font(.system(size: 10, weight: .bold))
+                    .scaledFont(size: 10, weight: .bold)
                     .foregroundStyle(Color.white.opacity(0.55))
                 Text(game.sport)
-                    .font(.system(size: 9, weight: .semibold))
+                    .scaledFont(size: 9, weight: .semibold)
                     .foregroundStyle(Color.white.opacity(0.35))
             }
             Spacer()
@@ -486,11 +486,11 @@ struct SportsView: View {
         if !broadcasts.isEmpty {
             HStack(spacing: 6) {
                 Text("ON:")
-                    .font(.system(size: 9, weight: .bold))
+                    .scaledFont(size: 9, weight: .bold)
                     .foregroundStyle(Color.white.opacity(0.35))
                 ForEach(broadcasts.prefix(4), id: \.self) { name in
                     Text(name)
-                        .font(.system(size: 9, weight: .black))
+                        .scaledFont(size: 9, weight: .black)
                         .foregroundStyle(.white)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 3)
@@ -540,10 +540,10 @@ struct SportsView: View {
     private var emptyState: some View {
         VStack(spacing: 8) {
             Image(systemName: "sportscourt")
-                .font(.system(size: 28))
+                .scaledFont(size: 28)
                 .foregroundStyle(Color.white.opacity(0.3))
             Text(loadError ?? "No \(selectedSport) games today.")
-                .font(.system(size: 13, weight: .medium))
+                .scaledFont(size: 13, weight: .medium)
                 .foregroundStyle(Color.white.opacity(0.5))
         }
         .frame(maxWidth: .infinity)
@@ -555,10 +555,10 @@ struct SportsView: View {
     private func sectionHeader(title: String, count: Int) -> some View {
         HStack(spacing: 8) {
             Text(title)
-                .font(.system(size: 16, weight: .bold))
+                .scaledFont(size: 16, weight: .bold)
                 .foregroundStyle(.white)
             Text("\(count)")
-                .font(.system(size: 11, weight: .bold))
+                .scaledFont(size: 11, weight: .bold)
                 .foregroundStyle(Color.white.opacity(0.5))
                 .padding(.horizontal, 7)
                 .padding(.vertical, 2)
@@ -567,7 +567,7 @@ struct SportsView: View {
                 )
             Spacer()
             Text("See all")
-                .font(.system(size: 13, weight: .medium))
+                .scaledFont(size: 13, weight: .medium)
                 .foregroundStyle(Color(hex: "1A6FE8"))
         }
     }

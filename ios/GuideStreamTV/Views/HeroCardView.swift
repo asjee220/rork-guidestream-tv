@@ -43,7 +43,7 @@ struct HeroCardView: View {
                             .frame(width: 6, height: 6)
                             .shadow(color: Theme.orange, radius: 4)
                         Text(badge)
-                            .font(.system(size: 11, weight: .heavy))
+                            .scaledFont(size: 11, weight: .heavy)
                             .tracking(1.4)
                             .foregroundStyle(Theme.orange)
                     }
@@ -58,18 +58,18 @@ struct HeroCardView: View {
                 }
 
                 Text(show.network)
-                    .font(.system(size: 11, weight: .semibold))
+                    .scaledFont(size: 11, weight: .semibold)
                     .tracking(2)
                     .foregroundStyle(Theme.blue)
 
                 Text(show.title)
-                    .font(.system(size: 38, weight: .heavy, design: .default))
+                    .scaledFont(size: 38, weight: .heavy, design: .default)
                     .foregroundStyle(.white)
                     .lineLimit(2)
                     .shadow(color: .black.opacity(0.4), radius: 8, y: 2)
 
                 Text(show.subtitle)
-                    .font(.system(size: 14, weight: .regular))
+                    .scaledFont(size: 14, weight: .regular)
                     .foregroundStyle(Theme.textSecondary)
                     .lineLimit(2)
                     .padding(.trailing, 40)
@@ -78,9 +78,9 @@ struct HeroCardView: View {
                     Button(action: onPlay) {
                         HStack(spacing: 8) {
                             Image(systemName: "play.fill")
-                                .font(.system(size: 14, weight: .bold))
+                                .scaledFont(size: 14, weight: .bold)
                             Text("Play")
-                                .font(.system(size: 15, weight: .bold))
+                                .scaledFont(size: 15, weight: .bold)
                         }
                         .foregroundStyle(.black)
                         .padding(.horizontal, 22)
@@ -91,9 +91,9 @@ struct HeroCardView: View {
                     Button(action: {}) {
                         HStack(spacing: 8) {
                             Image(systemName: "plus")
-                                .font(.system(size: 13, weight: .bold))
+                                .scaledFont(size: 13, weight: .bold)
                             Text("My List")
-                                .font(.system(size: 14, weight: .semibold))
+                                .scaledFont(size: 14, weight: .semibold)
                         }
                         .foregroundStyle(.white)
                         .padding(.horizontal, 18)

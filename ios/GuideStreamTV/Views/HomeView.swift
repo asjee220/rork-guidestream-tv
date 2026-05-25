@@ -422,20 +422,20 @@ private struct PageBar: View {
         HStack(spacing: 12) {
             HStack(alignment: .firstTextBaseline, spacing: 0) {
                 Text("Guide")
-                    .font(.system(size: 22, weight: .semibold, design: .default))
+                    .scaledFont(size: 22, weight: .semibold, design: .default)
                     .foregroundStyle(Color.textPrimary)
                 Text("Stream")
-                    .font(.system(size: 22, weight: .semibold, design: .default))
+                    .scaledFont(size: 22, weight: .semibold, design: .default)
                     .foregroundStyle(Color.orange)
                 Text(" TV")
-                    .font(.system(size: 16, weight: .regular, design: .default))
+                    .scaledFont(size: 16, weight: .regular, design: .default)
                     .foregroundStyle(Color.white.opacity(0.45))
             }
             Spacer()
             Button(action: onNotification) {
                 ZStack(alignment: .topTrailing) {
                     Image(systemName: "bell")
-                        .font(.system(size: 17, weight: .semibold))
+                        .scaledFont(size: 17, weight: .semibold)
                         .foregroundStyle(Color.textPrimary)
                         .frame(width: 40, height: 40)
                         .background(
@@ -481,7 +481,7 @@ private struct HeroGlassCard: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 10) {
                 Text("TRENDING")
-                    .font(.system(size: 8, weight: .bold))
+                    .scaledFont(size: 8, weight: .bold)
                     .tracking(0.6)
                     .foregroundStyle(.white)
                     .padding(.horizontal, 7)
@@ -491,24 +491,24 @@ private struct HeroGlassCard: View {
                     )
                 if let y = result.year {
                     Text("\(y)")
-                        .font(.system(size: 12, weight: .medium))
+                        .scaledFont(size: 12, weight: .medium)
                         .foregroundStyle(Color.textTertiary)
                 }
                 if let r = result.voteAverage, r > 0 {
                     Text("★ \(String(format: "%.1f", r))")
-                        .font(.system(size: 12, weight: .semibold))
+                        .scaledFont(size: 12, weight: .semibold)
                         .foregroundStyle(Color.textTertiary)
                 }
                 Spacer(minLength: 0)
             }
 
             Text(result.displayName)
-                .font(.system(size: 24, weight: .semibold, design: .default))
+                .scaledFont(size: 24, weight: .semibold, design: .default)
                 .foregroundStyle(Color.textPrimary)
                 .lineLimit(2)
 
             Text(result.overview ?? "Trending on streaming this week.")
-                .font(.system(size: 14, weight: .regular))
+                .scaledFont(size: 14, weight: .regular)
                 .foregroundStyle(Color.textSecondary)
                 .lineLimit(2)
 
@@ -516,9 +516,9 @@ private struct HeroGlassCard: View {
                 Button(action: onPlay) {
                     HStack(spacing: 8) {
                         Text("Play")
-                            .font(.system(size: 15, weight: .bold))
+                            .scaledFont(size: 15, weight: .bold)
                         Image(systemName: "play.fill")
-                            .font(.system(size: 13, weight: .bold))
+                            .scaledFont(size: 13, weight: .bold)
                     }
                     .foregroundStyle(.white)
                     .frame(maxWidth: .infinity)
@@ -534,7 +534,7 @@ private struct HeroGlassCard: View {
 
                 Button(action: onShare) {
                     Image(systemName: "paperplane.fill")
-                        .font(.system(size: 15, weight: .semibold))
+                        .scaledFont(size: 15, weight: .semibold)
                         .foregroundStyle(.white)
                         .frame(width: 56, height: 40)
                         .background(
@@ -602,16 +602,16 @@ private struct SectionGlassCard<Content: View>: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
                 Text(title)
-                    .font(.system(size: 15, weight: .semibold))
+                    .scaledFont(size: 15, weight: .semibold)
                     .foregroundStyle(Color.textPrimary)
                 Spacer()
                 if let onSeeAll {
                     Button(action: onSeeAll) {
                         HStack(spacing: 2) {
                             Text("See all")
-                                .font(.system(size: 13, weight: .semibold))
+                                .scaledFont(size: 13, weight: .semibold)
                             Image(systemName: "arrow.right")
-                                .font(.system(size: 11, weight: .bold))
+                                .scaledFont(size: 11, weight: .bold)
                         }
                         .foregroundStyle(Color.orange)
                     }
@@ -735,7 +735,7 @@ private struct EpisodeThumbCard: View {
                             .frame(width: 30, height: 30)
                             .overlay(
                                 Image(systemName: "play.fill")
-                                    .font(.system(size: 11, weight: .bold))
+                                    .scaledFont(size: 11, weight: .bold)
                                     .foregroundStyle(.white)
                                     .offset(x: 1)
                             )
@@ -743,7 +743,7 @@ private struct EpisodeThumbCard: View {
                     }
                     .overlay(alignment: .bottomLeading) {
                         Text(episode.platform)
-                            .font(.system(size: 8, weight: .bold))
+                            .scaledFont(size: 8, weight: .bold)
                             .tracking(0.4)
                             .foregroundStyle(.white)
                             .padding(.horizontal, 6)
@@ -758,7 +758,7 @@ private struct EpisodeThumbCard: View {
                     .overlay(alignment: .topTrailing) {
                         if episode.isNew {
                             Text("NEW")
-                                .font(.system(size: 8, weight: .heavy))
+                                .scaledFont(size: 8, weight: .heavy)
                                 .tracking(0.6)
                                 .foregroundStyle(.white)
                                 .padding(.horizontal, 5)
@@ -791,11 +791,11 @@ private struct EpisodeThumbCard: View {
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text(episode.title)
-                        .font(.system(size: 13, weight: .semibold))
+                        .scaledFont(size: 13, weight: .semibold)
                         .foregroundStyle(Color.textPrimary)
                         .lineLimit(1)
                     Text("\(episode.season) · \(episode.duration)")
-                        .font(.system(size: 11))
+                        .scaledFont(size: 11)
                         .foregroundStyle(Color.textTertiary)
                         .lineLimit(1)
                 }
@@ -836,7 +836,7 @@ private struct PosterCard: View {
                     }
                     .overlay(alignment: .bottom) {
                         Text(tag)
-                            .font(.system(size: 8, weight: .bold))
+                            .scaledFont(size: 8, weight: .bold)
                             .tracking(0.8)
                             .foregroundStyle(Color.orange)
                             .frame(maxWidth: .infinity)
@@ -848,11 +848,11 @@ private struct PosterCard: View {
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(show.title)
-                        .font(.system(size: 12, weight: .semibold))
+                        .scaledFont(size: 12, weight: .semibold)
                         .foregroundStyle(Color.textPrimary)
                         .lineLimit(1)
                     Text(show.meta)
-                        .font(.system(size: 10))
+                        .scaledFont(size: 10)
                         .foregroundStyle(Color.textTertiary)
                         .lineLimit(1)
                 }
@@ -877,7 +877,7 @@ private struct WidgetPromoBanner: View {
 
             VStack(alignment: .leading, spacing: 8) {
                 Text("NEW")
-                    .font(.system(size: 9, weight: .heavy))
+                    .scaledFont(size: 9, weight: .heavy)
                     .tracking(0.6)
                     .foregroundStyle(.white)
                     .padding(.horizontal, 7)
@@ -885,19 +885,19 @@ private struct WidgetPromoBanner: View {
                     .background(Capsule().fill(Color.orange))
 
                 Text("GuideStream on Your Home Screen")
-                    .font(.system(size: 14, weight: .semibold))
+                    .scaledFont(size: 14, weight: .semibold)
                     .foregroundStyle(Color.textPrimary)
                     .fixedSize(horizontal: false, vertical: true)
 
                 Text("See what's up next without opening the app")
-                    .font(.system(size: 12))
+                    .scaledFont(size: 12)
                     .foregroundStyle(Color.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
 
                 HStack(spacing: 14) {
                     Button(action: onSetUp) {
                         Text("Set Up")
-                            .font(.system(size: 12, weight: .bold))
+                            .scaledFont(size: 12, weight: .bold)
                             .foregroundStyle(.white)
                             .padding(.horizontal, 14)
                             .padding(.vertical, 8)
@@ -910,7 +910,7 @@ private struct WidgetPromoBanner: View {
 
                     Button(action: onDismiss) {
                         Text("Dismiss")
-                            .font(.system(size: 12, weight: .medium))
+                            .scaledFont(size: 12, weight: .medium)
                             .foregroundStyle(Color.textSecondary)
                     }
                     .buttonStyle(.plain)
@@ -974,7 +974,7 @@ private struct NetworkBadge: View {
     let platform: Platform
     var body: some View {
         Text(platform.name)
-            .font(.system(size: 8, weight: .bold))
+            .scaledFont(size: 8, weight: .bold)
             .tracking(0.6)
             .foregroundStyle(.white)
             .padding(.horizontal, 7)
@@ -989,7 +989,7 @@ private struct NetworkBadge: View {
 private struct NewChip: View {
     var body: some View {
         Text("NEW")
-            .font(.system(size: 8.5, weight: .heavy))
+            .scaledFont(size: 8.5, weight: .heavy)
             .tracking(0.6)
             .foregroundStyle(.white)
             .padding(.horizontal, 7)

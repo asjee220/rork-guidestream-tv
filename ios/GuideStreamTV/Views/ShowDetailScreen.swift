@@ -347,7 +347,7 @@ struct ShowDetailScreen: View {
             HStack(spacing: 12) {
                 Button(action: onBack) {
                     Image(systemName: "arrow.left")
-                        .font(.system(size: 14, weight: .semibold))
+                        .scaledFont(size: 14, weight: .semibold)
                         .foregroundStyle(.white)
                         .frame(width: 32, height: 32)
                         .background(Circle().fill(Color.white.opacity(0.08)))
@@ -356,7 +356,7 @@ struct ShowDetailScreen: View {
 
                 Spacer(minLength: 0)
                 Text(displayTitle)
-                    .font(.system(size: 16, weight: .semibold))
+                    .scaledFont(size: 16, weight: .semibold)
                     .foregroundStyle(.white)
                     .lineLimit(1)
                 Spacer(minLength: 0)
@@ -434,26 +434,26 @@ struct ShowDetailScreen: View {
                 // Title block
                 VStack(alignment: .leading, spacing: 10) {
                     Text(displayTitle)
-                        .font(.system(size: titleSize(for: geo.size.width), weight: .semibold, design: .default))
+                        .scaledFont(size: titleSize(for: geo.size.width), weight: .semibold, design: .default)
                         .foregroundStyle(.white)
                     HStack(spacing: 8) {
                         Image(systemName: "star.fill")
-                            .font(.system(size: 12, weight: .bold))
+                            .scaledFont(size: 12, weight: .bold)
                             .foregroundStyle(Color(red: 1, green: 0.78, blue: 0.2))
                         Text(ratingText)
-                            .font(.system(size: 13, weight: .semibold))
+                            .scaledFont(size: 13, weight: .semibold)
                             .foregroundStyle(.white)
                         dot
                         Text(yearText)
-                            .font(.system(size: 13))
+                            .scaledFont(size: 13)
                             .foregroundStyle(Color.textSecondary)
                         dot
                         Text("4 Seasons")
-                            .font(.system(size: 13))
+                            .scaledFont(size: 13)
                             .foregroundStyle(Color.textSecondary)
                         dot
                         Text("TV-MA")
-                            .font(.system(size: 11, weight: .semibold))
+                            .scaledFont(size: 11, weight: .semibold)
                             .foregroundStyle(Color.textSecondary)
                             .padding(.horizontal, 8)
                             .padding(.vertical, 3)
@@ -473,7 +473,7 @@ struct ShowDetailScreen: View {
     }
 
     private var dot: some View {
-        Text("·").font(.system(size: 13)).foregroundStyle(Color.textTertiary)
+        Text("·").scaledFont(size: 13).foregroundStyle(Color.textTertiary)
     }
 
     private func titleSize(for width: CGFloat) -> CGFloat {
@@ -483,7 +483,7 @@ struct ShowDetailScreen: View {
     private func glassRoundButton(symbol: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: symbol)
-                .font(.system(size: 15, weight: .semibold))
+                .scaledFont(size: 15, weight: .semibold)
                 .foregroundStyle(.white)
                 .frame(width: 40, height: 40)
                 .background(
@@ -502,7 +502,7 @@ struct ShowDetailScreen: View {
         HStack(spacing: 8) {
             ForEach(genres, id: \.self) { g in
                 Text(g)
-                    .font(.system(size: 12, weight: .semibold))
+                    .scaledFont(size: 12, weight: .semibold)
                     .foregroundStyle(Color.white.opacity(0.70))
                     .padding(.horizontal, 14)
                     .padding(.vertical, 8)
@@ -521,10 +521,10 @@ struct ShowDetailScreen: View {
             Button(action: { showComments = true }) {
                 HStack(spacing: 6) {
                     Image(systemName: "heart.fill")
-                        .font(.system(size: 14, weight: .bold))
+                        .scaledFont(size: 14, weight: .bold)
                         .foregroundStyle(Color.orange)
                     Text("24.8K")
-                        .font(.system(size: 13, weight: .semibold))
+                        .scaledFont(size: 13, weight: .semibold)
                         .foregroundStyle(.white)
                 }
             }
@@ -533,10 +533,10 @@ struct ShowDetailScreen: View {
             Button(action: { showComments = true }) {
                 HStack(spacing: 6) {
                     Image(systemName: "bubble.left")
-                        .font(.system(size: 14, weight: .semibold))
+                        .scaledFont(size: 14, weight: .semibold)
                         .foregroundStyle(Color.white.opacity(0.75))
                     Text("3.1K")
-                        .font(.system(size: 13, weight: .semibold))
+                        .scaledFont(size: 13, weight: .semibold)
                         .foregroundStyle(.white)
                 }
             }
@@ -553,11 +553,11 @@ struct ShowDetailScreen: View {
     private var synopsisSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("About")
-                .font(.system(size: 17, weight: .semibold))
+                .scaledFont(size: 17, weight: .semibold)
                 .foregroundStyle(.white)
 
             Text(synopsis)
-                .font(.system(size: 14))
+                .scaledFont(size: 14)
                 .foregroundStyle(Color.textSecondary)
                 .lineSpacing(4)
                 .lineLimit(synopsisExpanded ? nil : 3)
@@ -566,7 +566,7 @@ struct ShowDetailScreen: View {
                 withAnimation(.easeInOut(duration: 0.2)) { synopsisExpanded.toggle() }
             }) {
                 Text(synopsisExpanded ? "Less" : "More")
-                    .font(.system(size: 13, weight: .semibold))
+                    .scaledFont(size: 13, weight: .semibold)
                     .foregroundStyle(Color.orange)
             }
             .buttonStyle(.plain)
@@ -581,7 +581,7 @@ struct ShowDetailScreen: View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
                 Text(selectedSeason)
-                    .font(.system(size: 17, weight: .semibold))
+                    .scaledFont(size: 17, weight: .semibold)
                     .foregroundStyle(.white)
                 Spacer()
                 Menu {
@@ -595,10 +595,10 @@ struct ShowDetailScreen: View {
                 } label: {
                     HStack(spacing: 4) {
                         Text("Season")
-                            .font(.system(size: 12, weight: .semibold))
+                            .scaledFont(size: 12, weight: .semibold)
                             .foregroundStyle(Color.white.opacity(0.75))
                         Image(systemName: "chevron.down")
-                            .font(.system(size: 10, weight: .bold))
+                            .scaledFont(size: 10, weight: .bold)
                             .foregroundStyle(Color.white.opacity(0.75))
                     }
                     .padding(.horizontal, 12)
@@ -658,14 +658,14 @@ struct ShowDetailScreen: View {
     private var whereToWatchSection: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Where to Watch")
-                .font(.system(size: 17, weight: .semibold))
+                .scaledFont(size: 17, weight: .semibold)
                 .foregroundStyle(.white)
                 .padding(.horizontal, 20)
 
             let services = vm.services
             if services.isEmpty {
                 Text(vm.isLoading ? "Finding services\u{2026}" : "No streaming sources found.")
-                    .font(.system(size: 13))
+                    .scaledFont(size: 13)
                     .foregroundStyle(Color.textSecondary)
                     .padding(.horizontal, 20)
             } else {
@@ -692,7 +692,7 @@ struct ShowDetailScreen: View {
     private var fanActivitySection: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Fan Activity")
-                .font(.system(size: 15, weight: .semibold))
+                .scaledFont(size: 15, weight: .semibold)
                 .foregroundStyle(.white)
 
             HStack(spacing: 12) {
@@ -704,7 +704,7 @@ struct ShowDetailScreen: View {
 
                 fanButton(label: "3.1K") {
                     Image(systemName: "bubble.left")
-                        .font(.system(size: 18, weight: .semibold))
+                        .scaledFont(size: 18, weight: .semibold)
                         .foregroundStyle(.white)
                 } action: {
                     showComments = true
@@ -712,7 +712,7 @@ struct ShowDetailScreen: View {
 
                 fanButton(label: "Save") {
                     Image(systemName: saved ? "bookmark.fill" : "bookmark")
-                        .font(.system(size: 18, weight: .semibold))
+                        .scaledFont(size: 18, weight: .semibold)
                         .foregroundStyle(saved ? Color.orange : .white)
                 } action: {
                     withAnimation { saved.toggle() }
@@ -720,7 +720,7 @@ struct ShowDetailScreen: View {
 
                 fanButton(label: "Notify", showDot: notifyOn) {
                     Image(systemName: notifyOn ? "bell.fill" : "bell")
-                        .font(.system(size: 18, weight: .semibold))
+                        .scaledFont(size: 18, weight: .semibold)
                         .foregroundStyle(.white)
                 } action: {
                     withAnimation { notifyOn.toggle() }
@@ -760,7 +760,7 @@ struct ShowDetailScreen: View {
             .buttonStyle(.plain)
 
             Text(label)
-                .font(.system(size: 11, weight: .semibold))
+                .scaledFont(size: 11, weight: .semibold)
                 .foregroundStyle(Color.white.opacity(0.65))
         }
         .frame(maxWidth: .infinity)
@@ -790,9 +790,9 @@ struct ShowDetailScreen: View {
                 }) {
                     HStack(spacing: 10) {
                         Image(systemName: "play.fill")
-                            .font(.system(size: 16, weight: .bold))
+                            .scaledFont(size: 16, weight: .bold)
                         Text("Resume S4 E7")
-                            .font(.system(size: 15, weight: .bold))
+                            .scaledFont(size: 15, weight: .bold)
                     }
                     .foregroundStyle(.white)
                     .frame(maxWidth: .infinity)
@@ -804,7 +804,7 @@ struct ShowDetailScreen: View {
 
                 Button(action: { withAnimation { saved.toggle() } }) {
                     Image(systemName: saved ? "checkmark" : "plus")
-                        .font(.system(size: 20, weight: .bold))
+                        .scaledFont(size: 20, weight: .bold)
                         .foregroundStyle(.white)
                         .frame(width: 52, height: 52)
                         .background(Circle().fill(Color.white.opacity(0.08)))
@@ -830,7 +830,7 @@ private struct LikeIcon: View {
     let liked: Bool
     var body: some View {
         Image(systemName: liked ? "heart.fill" : "heart")
-            .font(.system(size: 18, weight: .semibold))
+            .scaledFont(size: 18, weight: .semibold)
             .foregroundStyle(liked ? Color.orange : .white)
             .scaleEffect(liked ? 1.15 : 1.0)
     }
@@ -857,7 +857,7 @@ private struct EpisodeCardSmall: View {
                 }
                 .overlay {
                     Image(systemName: "play.fill")
-                        .font(.system(size: 28, weight: .regular))
+                        .scaledFont(size: 28, weight: .regular)
                         .foregroundStyle(.white.opacity(0.6))
                         .allowsHitTesting(false)
                 }
@@ -879,16 +879,16 @@ private struct EpisodeCardSmall: View {
 
             HStack {
                 Text(episode.code)
-                    .font(.system(size: 11, weight: .bold))
+                    .scaledFont(size: 11, weight: .bold)
                     .foregroundStyle(Color.textTertiary)
                 Spacer()
                 Text(episode.duration)
-                    .font(.system(size: 11))
+                    .scaledFont(size: 11)
                     .foregroundStyle(Color.textTertiary)
             }
 
             Text(episode.title)
-                .font(.system(size: 13, weight: .semibold))
+                .scaledFont(size: 13, weight: .semibold)
                 .foregroundStyle(.white)
                 .lineLimit(1)
         }
@@ -900,7 +900,7 @@ private struct EpisodeCardSmall: View {
         switch episode.status {
         case .continueWatching:
             Text("CONTINUE")
-                .font(.system(size: 9, weight: .heavy))
+                .scaledFont(size: 9, weight: .heavy)
                 .foregroundStyle(Color.orange)
                 .padding(.horizontal, 7)
                 .padding(.vertical, 3)
@@ -908,7 +908,7 @@ private struct EpisodeCardSmall: View {
                 .overlay(Capsule().stroke(Color.orange.opacity(0.45), lineWidth: 1))
         case .new:
             Text("NEW")
-                .font(.system(size: 9, weight: .heavy))
+                .scaledFont(size: 9, weight: .heavy)
                 .foregroundStyle(.white)
                 .padding(.horizontal, 7)
                 .padding(.vertical, 3)
@@ -947,7 +947,7 @@ private struct TMDBEpisodeCardSmall: View {
                                 img.resizable().aspectRatio(contentMode: .fill)
                             default:
                                 Image(systemName: "play.fill")
-                                    .font(.system(size: 28, weight: .regular))
+                                    .scaledFont(size: 28, weight: .regular)
                                     .foregroundStyle(.white.opacity(0.6))
                             }
                         }
@@ -956,7 +956,7 @@ private struct TMDBEpisodeCardSmall: View {
                         .allowsHitTesting(false)
                     } else {
                         Image(systemName: "play.fill")
-                            .font(.system(size: 28, weight: .regular))
+                            .scaledFont(size: 28, weight: .regular)
                             .foregroundStyle(.white.opacity(0.6))
                             .allowsHitTesting(false)
                     }
@@ -965,18 +965,18 @@ private struct TMDBEpisodeCardSmall: View {
 
             HStack {
                 Text("S\(seasonNumber) E\(episode.episodeNumber)")
-                    .font(.system(size: 11, weight: .bold))
+                    .scaledFont(size: 11, weight: .bold)
                     .foregroundStyle(Color.textTertiary)
                 Spacer()
                 if let r = episode.runtime, r > 0 {
                     Text("\(r) min")
-                        .font(.system(size: 11))
+                        .scaledFont(size: 11)
                         .foregroundStyle(Color.textTertiary)
                 }
             }
 
             Text(episode.name ?? "Episode \(episode.episodeNumber)")
-                .font(.system(size: 13, weight: .semibold))
+                .scaledFont(size: 13, weight: .semibold)
                 .foregroundStyle(.white)
                 .lineLimit(1)
         }
@@ -990,7 +990,7 @@ private struct ServiceBadge: View {
     let service: WhereToWatchService
     var body: some View {
         Text(service.name)
-            .font(.system(size: 13, weight: .bold))
+            .scaledFont(size: 13, weight: .bold)
             .foregroundStyle(.white)
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
@@ -1012,9 +1012,9 @@ struct PlayOnTriggerButton: View {
         Button(action: action) {
             HStack(spacing: 6) {
                 Image(systemName: "tv")
-                    .font(.system(size: 14, weight: .semibold))
+                    .scaledFont(size: 14, weight: .semibold)
                 Text("Play on")
-                    .font(.system(size: 12, weight: .semibold))
+                    .scaledFont(size: 12, weight: .semibold)
             }
             .foregroundStyle(.white)
             .padding(.horizontal, compact ? 12 : 16)
@@ -1130,7 +1130,7 @@ struct CommentsViewerSheet: View {
         Button(action: { withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { tab = value } }) {
             VStack(spacing: 8) {
                 Text(label)
-                    .font(.system(size: 14, weight: .semibold))
+                    .scaledFont(size: 14, weight: .semibold)
                     .foregroundStyle(tab == value ? .white : Color.textSecondary)
                 Rectangle()
                     .fill(tab == value ? Color.orange : Color.clear)
@@ -1146,15 +1146,15 @@ struct CommentsViewerSheet: View {
             avatar(name: name, color: color)
             VStack(alignment: .leading, spacing: 2) {
                 Text(name)
-                    .font(.system(size: 14, weight: .semibold))
+                    .scaledFont(size: 14, weight: .semibold)
                     .foregroundStyle(.white)
                 Text("liked this")
-                    .font(.system(size: 12))
+                    .scaledFont(size: 12)
                     .foregroundStyle(Color.textSecondary)
             }
             Spacer(minLength: 0)
             Image(systemName: "heart.fill")
-                .font(.system(size: 14, weight: .bold))
+                .scaledFont(size: 14, weight: .bold)
                 .foregroundStyle(Color.orange)
         }
         .padding(12)
@@ -1169,14 +1169,14 @@ struct CommentsViewerSheet: View {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 8) {
                     Text(c.name)
-                        .font(.system(size: 14, weight: .semibold))
+                        .scaledFont(size: 14, weight: .semibold)
                         .foregroundStyle(.white)
                     Text(c.time)
-                        .font(.system(size: 11))
+                        .scaledFont(size: 11)
                         .foregroundStyle(Color.textTertiary)
                 }
                 Text(c.text)
-                    .font(.system(size: 13))
+                    .scaledFont(size: 13)
                     .foregroundStyle(Color.textPrimary.opacity(0.85))
                     .lineSpacing(3)
             }
@@ -1194,7 +1194,7 @@ struct CommentsViewerSheet: View {
             .frame(width: 36, height: 36)
             .overlay {
                 Text(initials(name))
-                    .font(.system(size: 13, weight: .bold))
+                    .scaledFont(size: 13, weight: .bold)
                     .foregroundStyle(.white)
             }
     }

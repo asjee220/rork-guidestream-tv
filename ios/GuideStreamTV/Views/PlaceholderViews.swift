@@ -32,17 +32,17 @@ struct ProfileView: View {
                         .stroke(Theme.blue.opacity(0.4), lineWidth: 1)
                         .frame(width: 100, height: 100)
                     Image(systemName: "person.crop.circle.fill")
-                        .font(.system(size: 40, weight: .light))
+                        .scaledFont(size: 40, weight: .light)
                         .foregroundStyle(Theme.blue)
                 }
 
                 Text(displayName)
-                    .font(.system(size: 24, weight: .heavy))
+                    .scaledFont(size: 24, weight: .heavy)
                     .foregroundStyle(.white)
 
                 if let email = auth.currentUser?.email, !email.isEmpty {
                     Text(email)
-                        .font(.system(size: 13))
+                        .scaledFont(size: 13)
                         .foregroundStyle(Theme.textSecondary)
                 }
 
@@ -52,7 +52,7 @@ struct ProfileView: View {
                     Task { await auth.signOut() }
                 } label: {
                     Text("Sign Out")
-                        .font(.system(size: 15, weight: .bold))
+                        .scaledFont(size: 15, weight: .bold)
                         .foregroundStyle(.white)
                         .frame(maxWidth: 280)
                         .frame(height: 52)
@@ -101,14 +101,14 @@ struct PlaceholderShell: View {
                     .stroke(accent.opacity(0.4), lineWidth: 1)
                     .frame(width: 100, height: 100)
                 Image(systemName: symbol)
-                    .font(.system(size: 40, weight: .light))
+                    .scaledFont(size: 40, weight: .light)
                     .foregroundStyle(accent)
             }
             Text(title)
-                .font(.system(size: 28, weight: .heavy))
+                .scaledFont(size: 28, weight: .heavy)
                 .foregroundStyle(.white)
             Text(subtitle)
-                .font(.system(size: 14))
+                .scaledFont(size: 14)
                 .foregroundStyle(Theme.textSecondary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 40)
