@@ -30,13 +30,55 @@ enum IntentEventType: String {
     case notifyReleaseTapped = "notify_release_tapped"
     case commentsOpened = "comments_opened"
     case muteToggled = "mute_toggled"
+
+    // Lifecycle events — fire whether signed in or not so we capture every device.
+    case sessionStarted = "session_started"
+    case authSignedIn = "auth_signed_in"
+    case guestStarted = "guest_started"
+    case onboardingCompleted = "onboarding_completed"
+    case serviceSelected = "service_selected"
+    case appOpened = "app_opened"
+}
+
+/// Captured error entry — surfaced in the in-app diagnostics screen so the
+/// user can see *exactly* why a Supabase write failed (RLS, missing table,
+/// network, etc.) instead of guessing.
+nonisolated struct LoggerError: Identifiable, Sendable {
+    let id: UUID = UUID()
+    let timestamp: Date
+    let eventType: String
+    let message: String
 }
 
 /// Fire-and-forget logger that writes a row to `watch_intent_events` for every
-/// meaningful user action. Never throws and never blocks the UI — silent fail only.
+/// meaningful user action — **whether the user is signed in or a guest**.
+///
+/// Every payload includes:
+/// - `event_type` — the action being recorded.
+/// - `user_id` — the Supabase auth user id when signed in (omitted for guests).
+/// - `device_id` — stable per-device UUID, populated for every user. Lets us
+///    attribute guest activity to a real device install.
+/// - `metadata.device_id` / `metadata.is_guest` — also mirrored into the JSON
+///    metadata blob in case the table doesn't yet have a top-level `device_id`
+///    column. Mirroring guarantees the data is captured either way.
+///
+/// Errors are logged to the console *verbosely* and kept in a ring buffer so
+/// the `SupabaseDiagnosticsView` can show the last few failures.
+@MainActor
 final class WatchIntentLogger {
     static let shared = WatchIntentLogger()
     private init() {}
+
+    /// Last N error messages. Kept on the main actor so SwiftUI views can
+    /// observe it directly via `@State`/`@Observable` patterns.
+    private(set) var recentErrors: [LoggerError] = []
+
+    /// Total number of insert attempts (success or failure) since launch.
+    private(set) var totalAttempts: Int = 0
+    /// Total number of successful inserts since launch.
+    private(set) var totalSuccesses: Int = 0
+
+    private let maxErrors: Int = 20
 
     func log(
         eventType: IntentEventType,
@@ -44,16 +86,29 @@ final class WatchIntentLogger {
         platformId: String? = nil,
         metadata: [String: Any]? = nil
     ) {
-        // Snapshot user id and a Sendable metadata representation synchronously.
+        // Snapshot state synchronously on the main actor before hopping to a
+        // background Task — keeps everything Sendable.
         let userId = AuthViewModel.shared.currentUser?.id.uuidString
-        let metadataJSON: AnyJSON? = metadata.flatMap { Self.toAnyJSON($0) }
+        let isGuest = AuthViewModel.shared.isGuest && userId == nil
+        let deviceId = DeviceIdentity.shared.deviceId
         let event = eventType.rawValue
         let titleIdCopy = titleId
         let platformIdCopy = platformId
 
-        Task {
+        // Build merged metadata up front (still on MainActor — no Sendable
+        // captures of [String: Any] across the Task boundary).
+        var mergedMeta: [String: Any] = metadata ?? [:]
+        mergedMeta["device_id"] = deviceId
+        mergedMeta["is_guest"] = isGuest
+        mergedMeta["is_authenticated"] = userId != nil
+        let metadataJSON: AnyJSON? = Self.toAnyJSON(mergedMeta)
+
+        totalAttempts += 1
+
+        Task { [weak self] in
             var payload: [String: AnyJSON] = [
-                "event_type": .string(event)
+                "event_type": .string(event),
+                "device_id": .string(deviceId)
             ]
             if let userId { payload["user_id"] = .string(userId) }
             if let titleIdCopy { payload["title_id"] = .string(titleIdCopy) }
@@ -65,9 +120,82 @@ final class WatchIntentLogger {
                     .from("watch_intent_events")
                     .insert(payload)
                     .execute()
+                await self?.recordSuccess()
             } catch {
-                // Silent fail — analytics must never affect UX.
+                // If the table is missing a top-level `device_id` column,
+                // Postgres will reject the insert with a 400/column error.
+                // Retry once with `device_id` dropped — the metadata still
+                // carries it so the data isn't lost.
+                let message = Self.describe(error)
+                let columnIssue = message.localizedCaseInsensitiveContains("device_id")
+                    && (message.localizedCaseInsensitiveContains("column")
+                        || message.localizedCaseInsensitiveContains("schema")
+                        || message.localizedCaseInsensitiveContains("could not find"))
+                if columnIssue {
+                    var fallback = payload
+                    fallback.removeValue(forKey: "device_id")
+                    do {
+                        try await SupabaseManager.shared.client
+                            .from("watch_intent_events")
+                            .insert(fallback)
+                            .execute()
+                        await self?.recordSuccess()
+                        return
+                    } catch {
+                        await self?.recordError(event: event, error: error)
+                        return
+                    }
+                }
+                await self?.recordError(event: event, error: error)
             }
+        }
+    }
+
+    private func recordSuccess() {
+        totalSuccesses += 1
+    }
+
+    private func recordError(event: String, error: Error) {
+        let message = Self.describe(error)
+        print("[WatchIntent ERROR] \(event): \(message)")
+        let entry = LoggerError(timestamp: Date(), eventType: event, message: message)
+        recentErrors.insert(entry, at: 0)
+        if recentErrors.count > maxErrors {
+            recentErrors.removeLast(recentErrors.count - maxErrors)
+        }
+    }
+
+    /// Manually fire a test event from the diagnostics screen — returns the
+    /// resulting error message (if any) so the UI can render it inline.
+    func logTestEvent() async -> String? {
+        let deviceId = DeviceIdentity.shared.deviceId
+        let userId = AuthViewModel.shared.currentUser?.id.uuidString
+        let isGuest = AuthViewModel.shared.isGuest && userId == nil
+        var payload: [String: AnyJSON] = [
+            "event_type": .string("diagnostic_ping"),
+            "device_id": .string(deviceId)
+        ]
+        if let userId { payload["user_id"] = .string(userId) }
+        let meta: [String: Any] = [
+            "device_id": deviceId,
+            "is_guest": isGuest,
+            "is_authenticated": userId != nil,
+            "source": "diagnostics"
+        ]
+        if let metaJSON = Self.toAnyJSON(meta) { payload["metadata"] = metaJSON }
+
+        totalAttempts += 1
+        do {
+            try await SupabaseManager.shared.client
+                .from("watch_intent_events")
+                .insert(payload)
+                .execute()
+            totalSuccesses += 1
+            return nil
+        } catch {
+            let message = Self.describe(error)
+            recordError(event: "diagnostic_ping", error: error)
+            return message
         }
     }
 
@@ -87,7 +215,7 @@ final class WatchIntentLogger {
 
     // MARK: - AnyJSON conversion
 
-    private static func toAnyJSON(_ value: Any) -> AnyJSON? {
+    nonisolated private static func toAnyJSON(_ value: Any) -> AnyJSON? {
         switch value {
         case let s as String: return .string(s)
         case let b as Bool: return .bool(b)
@@ -105,5 +233,21 @@ final class WatchIntentLogger {
         default:
             return .string(String(describing: value))
         }
+    }
+
+    /// Produce a verbose human-readable description for an error, including
+    /// Postgres response details when present.
+    nonisolated private static func describe(_ error: Error) -> String {
+        let ns = error as NSError
+        var parts: [String] = [ns.localizedDescription]
+        if let underlying = ns.userInfo[NSUnderlyingErrorKey] as? Error {
+            parts.append("underlying: \((underlying as NSError).localizedDescription)")
+        }
+        for key in ["message", "hint", "details", "code"] {
+            if let value = ns.userInfo[key] as? String, !value.isEmpty {
+                parts.append("\(key)=\(value)")
+            }
+        }
+        return parts.joined(separator: " | ")
     }
 }

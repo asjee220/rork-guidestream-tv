@@ -19,6 +19,7 @@ struct LiveTVView: View {
 
 struct ProfileView: View {
     @State private var auth = AuthViewModel.shared
+    @State private var showDiagnostics: Bool = false
 
     var body: some View {
         ZStack {
@@ -48,27 +49,58 @@ struct ProfileView: View {
 
                 Spacer().frame(height: 8)
 
+                if auth.isAuthenticated {
+                    Button {
+                        Task { await auth.signOut() }
+                    } label: {
+                        Text("Sign Out")
+                            .scaledFont(size: 15, weight: .bold)
+                            .foregroundStyle(.white)
+                            .frame(maxWidth: 280)
+                            .frame(height: 52)
+                            .background(Color.orange)
+                            .clipShape(Capsule())
+                            .shadow(color: Color.orange.opacity(0.35), radius: 14, y: 6)
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.horizontal, 32)
+                    .padding(.top, 12)
+                }
+
                 Button {
-                    Task { await auth.signOut() }
+                    showDiagnostics = true
                 } label: {
-                    Text("Sign Out")
-                        .scaledFont(size: 15, weight: .bold)
-                        .foregroundStyle(.white)
-                        .frame(maxWidth: 280)
-                        .frame(height: 52)
-                        .background(Color.orange)
-                        .clipShape(Capsule())
-                        .shadow(color: Color.orange.opacity(0.35), radius: 14, y: 6)
+                    HStack(spacing: 6) {
+                        Image(systemName: "waveform.path.ecg")
+                            .scaledFont(size: 12, weight: .semibold)
+                        Text("Diagnostics")
+                            .scaledFont(size: 13, weight: .semibold)
+                    }
+                    .foregroundStyle(Theme.textSecondary)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                    .background(
+                        Capsule()
+                            .fill(Color.white.opacity(0.06))
+                    )
+                    .overlay(
+                        Capsule()
+                            .stroke(Color.white.opacity(0.10), lineWidth: 1)
+                    )
                 }
                 .buttonStyle(.plain)
-                .padding(.horizontal, 32)
-                .padding(.top, 12)
+                .padding(.top, 4)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .sheet(isPresented: $showDiagnostics) {
+            SupabaseDiagnosticsView()
         }
     }
 
     private var displayName: String {
+        if auth.isAuthenticated { return "Signed in" }
+        if auth.isGuest { return "Guest" }
         return "Your Profile"
     }
 }

@@ -63,6 +63,7 @@ nonisolated struct UserProfileUpsert: Encodable, Sendable {
     let id: String
     let display_name: String?
     let avatar_url: String?
+    let email: String?
 }
 
 nonisolated struct OnboardingPrefsUpsert: Encodable, Sendable {

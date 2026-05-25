@@ -43,6 +43,20 @@ struct ContentView: View {
         .task {
             await auth.restoreSession()
             didRestoreSession = true
+
+            // Capture a session_started event for every install — signed-in
+            // or guest. This is the first row that should appear in Supabase
+            // for any new device.
+            WatchIntentLogger.shared.log(
+                eventType: .sessionStarted,
+                metadata: [
+                    "first_launch": DeviceIdentity.shared.isFirstLaunch,
+                    "is_authenticated": auth.isAuthenticated,
+                    "is_guest": auth.isGuest,
+                    "onboarding_complete": auth.hasCompletedOnboarding
+                ]
+            )
+
             // Warm up the reels feed in the background so the tab opens instantly
             // when the user first taps it. Network calls and trailer-key lookups
             // would otherwise add a 2–3s spinner on first reveal.
