@@ -2,55 +2,87 @@
 //  WatchListBottomSheet.swift
 //  GuideStreamTV
 //
-//  Bottom sheet that lists every title in the user's watch list (sourced from
-//  the `user_streams` Supabase table) with swipe-to-delete + a row-level
-//  remove menu. Tapping a row opens the existing `EpisodeDetailSheet` so the
-//  user can pick up where they left off.
+//  Two surfaces that share the same content view (`WatchListContent`):
+//
+//  * `WatchListBottomSheet` \u2014 modal sheet presented from the home feed's
+//    "See all" link on the Watch List section.
+//  * `WatchListView` \u2014 pushed onto the Profile stack so users can manage
+//    their saved titles from the Profile tab as well.
+//
+//  Both surfaces pull the same `user_streams` Supabase rows, support
+//  swipe-to-delete, and open the existing `EpisodeDetailSheet` so the user
+//  can pick up where they left off.
 //
 
 import SwiftUI
 import UIKit
 
+// MARK: - Bottom sheet
+
 struct WatchListBottomSheet: View {
     @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            WatchListContent()
+                .navigationTitle("My Watch List")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button("Close") { dismiss() }
+                            .foregroundStyle(Color.textSecondary)
+                    }
+                }
+                .toolbarBackground(.hidden, for: .navigationBar)
+        }
+        .preferredColorScheme(.dark)
+    }
+}
+
+// MARK: - Pushable destination (Profile tab)
+
+struct WatchListView: View {
+    var body: some View {
+        WatchListContent()
+            .navigationTitle("My Watch List")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(Color.navy, for: .navigationBar)
+            .toolbarColorScheme(.dark, for: .navigationBar)
+    }
+}
+
+// MARK: - Shared content
+
+/// Renders the watch list itself \u2014 list, empty state, or guest prompt \u2014 plus
+/// background atmosphere and the detail-sheet plumbing. Wrap this view in
+/// whatever navigation chrome the surface needs (sheet vs. push).
+private struct WatchListContent: View {
     @State private var streams = StreamsViewModel.shared
     @State private var auth = AuthViewModel.shared
     @State private var detailSubject: DetailSubject?
 
     var body: some View {
-        NavigationStack {
-            ZStack {
-                Color.navy.ignoresSafeArea()
+        ZStack {
+            Color.navy.ignoresSafeArea()
 
-                // Atmosphere — keeps the sheet feeling like the rest of the app.
-                GeometryReader { geo in
-                    Circle()
-                        .fill(Color.blue.opacity(0.14))
-                        .frame(width: geo.size.width * 0.9)
-                        .blur(radius: 90)
-                        .offset(x: -geo.size.width * 0.35, y: -geo.size.height * 0.35)
-                    Circle()
-                        .fill(Color.orange.opacity(0.10))
-                        .frame(width: geo.size.width * 0.7)
-                        .blur(radius: 80)
-                        .offset(x: geo.size.width * 0.4, y: geo.size.height * 0.4)
-                }
-                .ignoresSafeArea()
-                .allowsHitTesting(false)
+            // Atmosphere \u2014 keeps the surface feeling like the rest of the app.
+            GeometryReader { geo in
+                Circle()
+                    .fill(Color.blue.opacity(0.14))
+                    .frame(width: geo.size.width * 0.9)
+                    .blur(radius: 90)
+                    .offset(x: -geo.size.width * 0.35, y: -geo.size.height * 0.35)
+                Circle()
+                    .fill(Color.orange.opacity(0.10))
+                    .frame(width: geo.size.width * 0.7)
+                    .blur(radius: 80)
+                    .offset(x: geo.size.width * 0.4, y: geo.size.height * 0.4)
+            }
+            .ignoresSafeArea()
+            .allowsHitTesting(false)
 
-                content
-            }
-            .navigationTitle("My Watch List")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button("Close") { dismiss() }
-                        .foregroundStyle(Color.textSecondary)
-                }
-            }
-            .toolbarBackground(.hidden, for: .navigationBar)
+            content
         }
-        .preferredColorScheme(.dark)
         .sheet(item: $detailSubject) { subject in
             EpisodeDetailSheet(subject: subject)
         }

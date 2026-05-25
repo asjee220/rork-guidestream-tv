@@ -434,7 +434,10 @@ struct EpisodeDetailSheet: View {
     // MARK: - CTA
 
     private var watchActions: some View {
-        HStack(spacing: 12) {
+        // `.top` alignment keeps the full-width Watch CTA pinned to the top
+        // while the watchlist circle + label hangs below — same vertical
+        // rhythm as the Reels rail button.
+        HStack(alignment: .top, spacing: 12) {
             watchButton
             watchlistButton
         }
@@ -472,41 +475,52 @@ struct EpisodeDetailSheet: View {
         .disabled(tmdbId == nil)
     }
 
-    /// Circular orange + button shown next to the main Watch CTA. Mirrors the
-    /// presentation of the Watch List rail button on the Reels screen — same
-    /// 56pt circle, same +/checkmark glyph, same brand colors — so users get
-    /// a consistent "save to my list" affordance everywhere a title is shown.
+    /// Circular + watchlist button shown next to the main Watch CTA. Visual
+    /// rules mirror the Reels rail button so users get a consistent
+    /// "save to my list" affordance everywhere a title is shown:
+    ///
+    /// * **Not saved** — solid orange circle with a `plus` glyph + "Watch List"
+    ///   label below.
+    /// * **Saved** — transparent circle with a white stroke (outlined) + a
+    ///   checkmark glyph and "Saved" label below.
     @ViewBuilder
     private var watchlistButton: some View {
         Button {
             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
             toggleWatchList()
         } label: {
-            ZStack {
-                if isSaved {
-                    Circle()
-                        .fill(Color.white.opacity(0.10))
-                        .overlay(Circle().stroke(Color.white.opacity(0.18), lineWidth: 1))
-                } else {
-                    Circle()
-                        .fill(Color.orange)
-                        .shadow(color: Color.orange.opacity(0.55), radius: 14, y: 0)
+            VStack(spacing: 6) {
+                ZStack {
+                    if isSaved {
+                        Circle()
+                            .fill(Color.clear)
+                            .overlay(Circle().stroke(Color.white, lineWidth: 1.8))
+                    } else {
+                        Circle()
+                            .fill(Color.orange)
+                            .shadow(color: Color.orange.opacity(0.55), radius: 14, y: 0)
+                    }
+                    if isToggleSaving {
+                        ProgressView()
+                            .controlSize(.small)
+                            .tint(.white)
+                    } else {
+                        Image(systemName: isSaved ? "checkmark" : "plus")
+                            .scaledFont(size: 22, weight: .bold)
+                            .foregroundStyle(.white)
+                    }
                 }
-                if isToggleSaving {
-                    ProgressView()
-                        .controlSize(.small)
-                        .tint(.white)
-                } else {
-                    Image(systemName: isSaved ? "checkmark" : "plus")
-                        .scaledFont(size: 22, weight: .bold)
-                        .foregroundStyle(.white)
-                }
+                .frame(width: 56, height: 56)
+
+                Text(isSaved ? "Saved" : "Watch List")
+                    .scaledFont(size: 11, weight: .semibold)
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
             }
-            .frame(width: 56, height: 56)
         }
         .buttonStyle(.plain)
         .disabled(tmdbId == nil || isToggleSaving)
-        .accessibilityLabel(isSaved ? "Remove from watch list" : "Add to watch list")
+        .accessibilityLabel(isSaved ? "Saved to watch list. Tap to remove." : "Add to watch list")
     }
 
     /// True when this title's id is already present in the Supabase-backed

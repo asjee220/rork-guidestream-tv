@@ -16,6 +16,7 @@ import Auth
 /// Type-safe routes the Profile stack can push onto.
 enum ProfileRoute: Hashable {
     case account
+    case watchList
     case connectedServices
     case devices
     case widget
@@ -29,6 +30,7 @@ enum ProfileRoute: Hashable {
 struct ProfileView: View {
     @State private var auth = AuthViewModel.shared
     @State private var stats = ProfileStatsService.shared
+    @State private var streams = StreamsViewModel.shared
     @State private var path: [ProfileRoute] = []
     @State private var showSignOutConfirm: Bool = false
     @State private var isSigningOut: Bool = false
@@ -86,6 +88,7 @@ struct ProfileView: View {
             .navigationDestination(for: ProfileRoute.self) { route in
                 switch route {
                 case .account: AccountView()
+                case .watchList: WatchListView()
                 case .connectedServices: ConnectedServicesView()
                 case .devices: DevicesView()
                 case .widget: WidgetSetupView()
@@ -98,12 +101,14 @@ struct ProfileView: View {
         .tint(Color.orange)
         .task {
             await stats.refresh()
+            await streams.fetchUserStreams()
             if auth.isAuthenticated {
                 await auth.loadDisplayName()
             }
         }
         .refreshable {
             await stats.refresh()
+            await streams.fetchUserStreams()
         }
         .confirmationDialog(
             signOutTitle,
@@ -183,8 +188,16 @@ struct ProfileView: View {
             )
             ProfileRowDivider()
             ProfileRow(
-                icon: "tv.fill",
+                icon: "bookmark.fill",
                 iconTint: Color.orange,
+                title: "Watch List",
+                subtitle: watchListSubtitle,
+                onTap: { path.append(.watchList) }
+            )
+            ProfileRowDivider()
+            ProfileRow(
+                icon: "tv.fill",
+                iconTint: Color(red: 0.95, green: 0.55, blue: 0.20),
                 title: "Connected Services",
                 subtitle: "\(stats.servicesCount) service\(stats.servicesCount == 1 ? "" : "s") connected",
                 onTap: { path.append(.connectedServices) }
@@ -200,7 +213,7 @@ struct ProfileView: View {
             ProfileRowDivider()
             ProfileRow(
                 icon: "square.text.square.fill",
-                iconTint: Color(red: 0.95, green: 0.55, blue: 0.20),
+                iconTint: Color(red: 0.95, green: 0.78, blue: 0.20),
                 title: "iOS Widget",
                 subtitle: "Next episodes on your Home Screen",
                 onTap: { path.append(.widget) }
@@ -214,6 +227,17 @@ struct ProfileView: View {
                 onTap: { path.append(.notifications) }
             )
         }
+    }
+
+    /// Subtitle for the Watch List row. Differs by auth state so guests get a
+    /// nudge to sign in while signed-in users see a live count of saved items.
+    private var watchListSubtitle: String {
+        if !auth.isAuthenticated {
+            return "Sign in to save shows, movies & games"
+        }
+        let count = streams.userStreams.count
+        if count == 0 { return "Save shows, movies & games for tonight" }
+        return "\(count) saved · shows, movies & games"
     }
 
     private var secondaryCard: some View {

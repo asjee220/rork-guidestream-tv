@@ -1075,6 +1075,15 @@ private struct RailButton: View {
     }
 }
 
+/// Rail save-affordance shown on every non-sponsored reel and reused as the
+/// design template for the watchlist circles on `EpisodeDetailSheet` and
+/// `SportsWatchSheet`. Two visual states:
+///
+/// * **Not saved** — solid orange circle with a `plus` glyph and a "Watch List"
+///   label underneath.
+/// * **Saved** — transparent circle with a white stroke (outlined), checkmark
+///   glyph, and a "Saved" label underneath so users see at a glance that the
+///   title is already on their list.
 private struct WatchListButton: View {
     let saved: Bool
     let sponsored: Bool
@@ -1088,8 +1097,10 @@ private struct WatchListButton: View {
                         Circle().fill(Color.white.opacity(0.15))
                             .overlay(Circle().stroke(Color.white.opacity(0.15), lineWidth: 1))
                     } else if saved {
-                        Circle().fill(Color.white.opacity(0.15))
-                            .overlay(Circle().stroke(Color.white.opacity(0.15), lineWidth: 1))
+                        // Outlined treatment — transparent fill, white stroke.
+                        Circle()
+                            .fill(Color.clear)
+                            .overlay(Circle().stroke(Color.white, lineWidth: 1.8))
                     } else {
                         Circle()
                             .fill(Color(hex: "F5821F"))
@@ -1100,12 +1111,17 @@ private struct WatchListButton: View {
                         .foregroundStyle(.white)
                 }
                 .frame(width: 52, height: 52)
-                Text(sponsored ? "Learn" : (saved ? "Saved ✓" : "Watch List"))
+                Text(sponsored ? "Learn" : (saved ? "Saved" : "Watch List"))
                     .scaledFont(size: 11, weight: .semibold)
                     .foregroundStyle(.white)
             }
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(
+            sponsored
+                ? "Learn more"
+                : (saved ? "Saved to watch list. Tap to remove." : "Add to watch list")
+        )
     }
 }
 

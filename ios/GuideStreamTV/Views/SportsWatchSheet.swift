@@ -438,7 +438,10 @@ struct SportsWatchSheet: View {
     // MARK: - Watch CTA
 
     private var watchActions: some View {
-        HStack(spacing: 12) {
+        // `.top` alignment keeps the full-width Watch CTA pinned to the top
+        // while the watchlist circle + label hangs below — matches the
+        // Reels rail rhythm so the affordance feels consistent.
+        HStack(alignment: .top, spacing: 12) {
             watchButton
             watchlistButton
         }
@@ -493,40 +496,52 @@ struct SportsWatchSheet: View {
         streams.userStreams.contains { $0.titleId == gameSaveId }
     }
 
-    /// Circular + button mirroring the Reels Watch List affordance. Lives
-    /// next to the main "Watch on \(broadcaster)" CTA so users can park a
-    /// game in their list with one tap without leaving the sheet.
+    /// Circular + watchlist button mirroring the Reels rail affordance. Lives
+    /// next to the main "Watch on \(broadcaster)" CTA so users can park a game
+    /// in their list with one tap without leaving the sheet.
+    ///
+    /// * **Not saved** — solid orange circle with a `plus` glyph + "Watch List"
+    ///   label below.
+    /// * **Saved** — transparent circle with a white stroke (outlined) + a
+    ///   checkmark glyph and "Saved" label below.
     @ViewBuilder
     private var watchlistButton: some View {
         Button {
             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
             toggleWatchList()
         } label: {
-            ZStack {
-                if isSaved {
-                    Circle()
-                        .fill(Color.white.opacity(0.10))
-                        .overlay(Circle().stroke(Color.white.opacity(0.18), lineWidth: 1))
-                } else {
-                    Circle()
-                        .fill(Color.orange)
-                        .shadow(color: Color.orange.opacity(0.55), radius: 14, y: 0)
+            VStack(spacing: 6) {
+                ZStack {
+                    if isSaved {
+                        Circle()
+                            .fill(Color.clear)
+                            .overlay(Circle().stroke(Color.white, lineWidth: 1.8))
+                    } else {
+                        Circle()
+                            .fill(Color.orange)
+                            .shadow(color: Color.orange.opacity(0.55), radius: 14, y: 0)
+                    }
+                    if isToggleSaving {
+                        ProgressView()
+                            .controlSize(.small)
+                            .tint(.white)
+                    } else {
+                        Image(systemName: isSaved ? "checkmark" : "plus")
+                            .scaledFont(size: 22, weight: .bold)
+                            .foregroundStyle(.white)
+                    }
                 }
-                if isToggleSaving {
-                    ProgressView()
-                        .controlSize(.small)
-                        .tint(.white)
-                } else {
-                    Image(systemName: isSaved ? "checkmark" : "plus")
-                        .scaledFont(size: 22, weight: .bold)
-                        .foregroundStyle(.white)
-                }
+                .frame(width: 56, height: 56)
+
+                Text(isSaved ? "Saved" : "Watch List")
+                    .scaledFont(size: 11, weight: .semibold)
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
             }
-            .frame(width: 56, height: 56)
         }
         .buttonStyle(.plain)
         .disabled(isToggleSaving)
-        .accessibilityLabel(isSaved ? "Remove game from watch list" : "Add game to watch list")
+        .accessibilityLabel(isSaved ? "Saved to watch list. Tap to remove." : "Add game to watch list")
     }
 
     private func toggleWatchList() {
