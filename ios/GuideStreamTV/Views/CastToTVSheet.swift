@@ -100,11 +100,11 @@ struct CastToTVSheet: View {
                 Text("Local Network access needed")
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(.white)
-                Text("To find your Apple TV or Roku, allow GuideStreamTV to discover devices on your Wi-Fi network in Settings.")
+Text("Open Settings → Privacy & Security → Local Network, then enable GuideStreamTV so it can discover your Apple TV or Roku on Wi-Fi.")
                     .font(.system(size: 13))
                     .foregroundStyle(Color.white.opacity(0.6))
                     .multilineTextAlignment(.center)
-                    .padding(.horizontal, 32)
+                    .padding(.horizontal, 28)
                 openSettingsButton
                 rescanButton
             } else {
@@ -125,10 +125,18 @@ struct CastToTVSheet: View {
     }
 
     private var openSettingsButton: some View {
-        Button {
+Button {
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
-            if let url = URL(string: UIApplication.openSettingsURLString) {
-                UIApplication.shared.open(url)
+            // Try the private Privacy > Local Network deep link first so the
+            // user lands on the exact toggle. Fall back to the app's own
+            // Settings page (the only officially-supported path) if iOS
+            // refuses to open the prefs URL.
+            let localNetworkURL = URL(string: "App-Prefs:Privacy&path=LOCAL_NETWORK")
+            let appSettingsURL = URL(string: UIApplication.openSettingsURLString)
+            if let localNetworkURL, UIApplication.shared.canOpenURL(localNetworkURL) {
+                UIApplication.shared.open(localNetworkURL)
+            } else if let appSettingsURL {
+                UIApplication.shared.open(appSettingsURL)
             }
         } label: {
             HStack(spacing: 6) {
@@ -246,7 +254,7 @@ struct CastToTVSheet: View {
         discovery.start()
 
         permissionCheckTask = Task { @MainActor in
-            try? await Task.sleep(for: .seconds(5))
+            try? await Task.sleep(for: .seconds(2))
             guard !Task.isCancelled else { return }
             if discovery.devices.isEmpty {
                 withAnimation(.easeInOut(duration: 0.25)) {
