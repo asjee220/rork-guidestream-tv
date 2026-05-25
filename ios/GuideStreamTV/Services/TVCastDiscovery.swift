@@ -6,11 +6,14 @@
 //
 //  IMPORTANT: SSDP multicast on iOS requires the Apple-gated
 //  `com.apple.developer.networking.multicast` entitlement and silently fails
-//  without it. We instead actively probe every host on the local /24 subnet
-//  over plain HTTP — Roku exposes ECP on port 8060, and we use AirPlay's port
-//  7000 as an Apple TV fallback when Bonjour is blocked. This works on any
-//  iOS device that has been granted Local Network access; no entitlements
-//  required.
+//  without it. We instead actively probe every host on the local /24 subnet.
+//  Roku exposes ECP on port 8060 and AirPlay listens on 7000.
+//
+//  We use raw `NWConnection` TCP sockets (NOT `URLSession`) because App
+//  Transport Security blocks cleartext HTTP to IP literals — every URLSession
+//  request to 192.168.x.x silently fails. NWConnection isn't governed by ATS,
+//  so we can connect to the LAN device, write an HTTP/1.0 request by hand,
+//  and read the response. No entitlements required.
 //
 
 import Foundation
@@ -156,8 +159,8 @@ final class TVCastDiscovery {
 
     private static func probe(host: String) async {
         // Roku ECP on :8060 — XML device-info; cheap and reliable.
-        if let rokuInfo = await fetchString(url: "http://\(host):8060/query/device-info", timeout: 1.2),
-           rokuInfo.lowercased().contains("<roku") || rokuInfo.lowercased().contains("roku") {
+        if let rokuInfo = await rawHTTPGet(host: host, port: 8060, path: "/query/device-info", timeout: 1.5),
+           rokuInfo.lowercased().contains("roku") {
             let name = extractTag("user-device-name", from: rokuInfo)
                 ?? extractTag("friendly-device-name", from: rokuInfo)
                 ?? extractTag("model-name", from: rokuInfo)
@@ -165,39 +168,91 @@ final class TVCastDiscovery {
             let udn = extractTag("device-id", from: rokuInfo) ?? host
             let snapshot: [(id: String, name: String, host: String?, port: UInt16?)] =
                 [(id: "roku-\(udn)", name: name, host: host, port: 8060)]
+            #if DEBUG
+            print("[TVCastDiscovery] found Roku \(name) @ \(host)")
+            #endif
             await MainActor.run {
                 TVCastDiscoveryStore.merge(snapshot: snapshot, kind: .roku)
             }
             return
         }
 
-        // AirPlay/Apple TV on :7000 — /info endpoint returns a plist with
-        // model + name. Use HEAD as a quick probe first.
-        if let airplayInfo = await fetchString(url: "http://\(host):7000/info", timeout: 1.2),
-           airplayInfo.lowercased().contains("airplay") || airplayInfo.lowercased().contains("appletv") {
-            // Best-effort name extraction from the plist text.
+        // AirPlay/Apple TV on :7000 — /info endpoint returns a plist.
+        if let airplayInfo = await rawHTTPGet(host: host, port: 7000, path: "/info", timeout: 1.5),
+           airplayInfo.lowercased().contains("airplay") || airplayInfo.lowercased().contains("appletv") || airplayInfo.lowercased().contains("apple tv") {
             let name = plistStringValue(key: "name", in: airplayInfo)
                 ?? plistStringValue(key: "deviceName", in: airplayInfo)
                 ?? "Apple TV (\(host))"
             let snapshot: [(id: String, name: String, host: String?, port: UInt16?)] =
                 [(id: "appletv-\(host)", name: name, host: host, port: 7000)]
+            #if DEBUG
+            print("[TVCastDiscovery] found Apple TV \(name) @ \(host)")
+            #endif
             await MainActor.run {
                 TVCastDiscoveryStore.merge(snapshot: snapshot, kind: .appleTV)
             }
         }
     }
 
-    private static func fetchString(url: String, timeout: TimeInterval) async -> String? {
-        guard let u = URL(string: url) else { return nil }
-        var req = URLRequest(url: u)
-        req.timeoutInterval = timeout
-        req.httpMethod = "GET"
-        do {
-            let (data, response) = try await URLSession.shared.data(for: req)
-            guard let http = response as? HTTPURLResponse, http.statusCode == 200 else { return nil }
-            return String(data: data, encoding: .utf8)
-        } catch {
-            return nil
+    /// Performs an HTTP/1.0 GET via raw NWConnection so ATS doesn't block
+    /// cleartext requests to LAN IP literals.
+    private static func rawHTTPGet(host: String, port: UInt16, path: String, timeout: TimeInterval) async -> String? {
+        await withCheckedContinuation { (continuation: CheckedContinuation<String?, Never>) in
+            let nwHost = NWEndpoint.Host(host)
+            guard let nwPort = NWEndpoint.Port(rawValue: port) else {
+                continuation.resume(returning: nil); return
+            }
+            let params = NWParameters.tcp
+            params.prohibitedInterfaceTypes = [.cellular]
+            let conn = NWConnection(host: nwHost, port: nwPort, using: params)
+
+            let lock = NSLock()
+            var didResume = false
+            let finish: (String?) -> Void = { value in
+                lock.lock()
+                let already = didResume
+                didResume = true
+                lock.unlock()
+                if already { return }
+                conn.cancel()
+                continuation.resume(returning: value)
+            }
+
+            // Hard timeout.
+            DispatchQueue.global().asyncAfter(deadline: .now() + timeout) {
+                finish(nil)
+            }
+
+            conn.stateUpdateHandler = { state in
+                switch state {
+                case .ready:
+                    let req = "GET \(path) HTTP/1.0\r\nHost: \(host)\r\nUser-Agent: GuideStreamTV/1.0\r\nConnection: close\r\nAccept: */*\r\n\r\n"
+                    conn.send(content: req.data(using: .utf8), completion: .contentProcessed { _ in })
+                    var buffer = Data()
+                    func readNext() {
+                        conn.receive(minimumIncompleteLength: 1, maximumLength: 16 * 1024) { data, _, isComplete, error in
+                            if let data = data, !data.isEmpty { buffer.append(data) }
+                            if isComplete || error != nil || buffer.count > 64 * 1024 {
+                                let raw = String(data: buffer, encoding: .utf8) ?? ""
+                                // Strip HTTP headers.
+                                if let range = raw.range(of: "\r\n\r\n") {
+                                    finish(String(raw[range.upperBound...]))
+                                } else {
+                                    finish(raw.isEmpty ? nil : raw)
+                                }
+                                return
+                            }
+                            readNext()
+                        }
+                    }
+                    readNext()
+                case .failed, .cancelled:
+                    finish(nil)
+                default:
+                    break
+                }
+            }
+            conn.start(queue: .global(qos: .userInitiated))
         }
     }
 
