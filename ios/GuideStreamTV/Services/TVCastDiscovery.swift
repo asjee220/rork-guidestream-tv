@@ -157,7 +157,7 @@ final class TVCastDiscovery {
         }
     }
 
-    private static func probe(host: String) async {
+    nonisolated private static func probe(host: String) async {
         // Roku ECP on :8060 — XML device-info; cheap and reliable.
         if let rokuInfo = await rawHTTPGet(host: host, port: 8060, path: "/query/device-info", timeout: 1.5),
            rokuInfo.lowercased().contains("roku") {
@@ -196,7 +196,7 @@ final class TVCastDiscovery {
 
     /// Performs an HTTP/1.0 GET via raw NWConnection so ATS doesn't block
     /// cleartext requests to LAN IP literals.
-    private static func rawHTTPGet(host: String, port: UInt16, path: String, timeout: TimeInterval) async -> String? {
+    nonisolated private static func rawHTTPGet(host: String, port: UInt16, path: String, timeout: TimeInterval) async -> String? {
         await withCheckedContinuation { (continuation: CheckedContinuation<String?, Never>) in
             let nwHost = NWEndpoint.Host(host)
             guard let nwPort = NWEndpoint.Port(rawValue: port) else {
@@ -256,7 +256,7 @@ final class TVCastDiscovery {
         }
     }
 
-    private static func extractTag(_ tag: String, from xml: String) -> String? {
+    nonisolated private static func extractTag(_ tag: String, from xml: String) -> String? {
         let open = "<\(tag)>"
         let close = "</\(tag)>"
         guard let s = xml.range(of: open),
@@ -265,7 +265,7 @@ final class TVCastDiscovery {
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    private static func plistStringValue(key: String, in plist: String) -> String? {
+    nonisolated private static func plistStringValue(key: String, in plist: String) -> String? {
         // <key>name</key><string>Living Room</string>
         guard let keyRange = plist.range(of: "<key>\(key)</key>", options: .caseInsensitive) else { return nil }
         let after = plist[keyRange.upperBound...]

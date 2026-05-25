@@ -418,6 +418,8 @@
 				INFOPLIST_KEY_NSBonjourServices = (
 					"_airplay._tcp",
 					"_raop._tcp",
+					"_companion-link._tcp",
+					"_rsp._tcp",
 					"_roku-ecp._tcp",
 					"_googlecast._tcp",
 				);
@@ -459,6 +461,8 @@
 				INFOPLIST_KEY_NSBonjourServices = (
 					"_airplay._tcp",
 					"_raop._tcp",
+					"_companion-link._tcp",
+					"_rsp._tcp",
 					"_roku-ecp._tcp",
 					"_googlecast._tcp",
 				);
