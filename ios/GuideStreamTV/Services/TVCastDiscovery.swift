@@ -2,15 +2,21 @@
 //  TVCastDiscovery.swift
 //  GuideStreamTV
 //
-//  Scans the local network for Apple TV (AirPlay via Bonjour/mDNS) and Roku
-//  (SSDP/UPnP on UDP 1900) devices. Roku does NOT advertise via Bonjour, so
-//  it requires a real SSDP M-SEARCH exchange — that's the part most apps get
-//  wrong.
+//  Scans the local network for Apple TV (Bonjour/AirPlay) and Roku devices.
+//
+//  IMPORTANT: SSDP multicast on iOS requires the Apple-gated
+//  `com.apple.developer.networking.multicast` entitlement and silently fails
+//  without it. We instead actively probe every host on the local /24 subnet
+//  over plain HTTP — Roku exposes ECP on port 8060, and we use AirPlay's port
+//  7000 as an Apple TV fallback when Bonjour is blocked. This works on any
+//  iOS device that has been granted Local Network access; no entitlements
+//  required.
 //
 
 import Foundation
 import Network
 import Observation
+import Darwin
 
 enum TVDeviceKind: String {
     case appleTV
@@ -39,36 +45,42 @@ final class TVCastDiscovery {
     private(set) var isScanning: Bool = false
 
     @ObservationIgnored private var browsers: [NWBrowser] = []
-    @ObservationIgnored private var ssdpGroup: NWConnectionGroup?
     @ObservationIgnored private var permissionPokeListener: NWListener?
+    @ObservationIgnored private var subnetScanTask: Task<Void, Never>?
 
     func start() {
         guard !isScanning else { return }
         isScanning = true
         devices = []
-        // Advertise a throwaway Bonjour service so iOS registers us as a
-        // local-network participant (also helps surface the permission prompt).
+        TVCastDiscoveryStore.register(self)
+
+        // Force iOS to surface the Local Network permission prompt and
+        // register the app on the LAN.
         startPermissionPokeListener()
-        // Apple TV: real Bonjour browse. Also browse raopa (AirTunes) and
-        // companion-link as fallbacks — some Apple TVs surface there first.
+
+        // Apple TV / AirPlay receivers via Bonjour.
         browseBonjour(type: "_airplay._tcp", kind: .appleTV)
-        browseBonjour(type: "_raop._tcp", kind: .appleTV)
+        browseBonjour(type: "_raop._tcp",    kind: .appleTV)
         browseBonjour(type: "_companion-link._tcp", kind: .appleTV)
-        // Roku: some models also advertise via Bonjour as a fallback.
+        // Some Roku models advertise _rsp._tcp.
         browseBonjour(type: "_rsp._tcp", kind: .roku)
-        // Roku: real SSDP M-SEARCH over UDP multicast.
-        startSSDPDiscovery()
+
+        // Active subnet probe — the reliable path for Roku and a great
+        // Bonjour fallback for Apple TV.
+        startSubnetProbe()
     }
 
     func stop() {
         isScanning = false
         for b in browsers { b.cancel() }
         browsers = []
-        ssdpGroup?.cancel()
-        ssdpGroup = nil
         permissionPokeListener?.cancel()
         permissionPokeListener = nil
+        subnetScanTask?.cancel()
+        subnetScanTask = nil
     }
+
+    // MARK: - Permission poke
 
     private func startPermissionPokeListener() {
         guard permissionPokeListener == nil else { return }
@@ -105,148 +117,174 @@ final class TVCastDiscovery {
         }
         browser.start(queue: .main)
         browsers.append(browser)
-        TVCastDiscoveryStore.register(self)
     }
 
-    // MARK: - SSDP (Roku)
-    //
-    // Roku replies to an M-SEARCH from each device's unicast address, NOT
-    // from the 239.255.255.250 multicast group we sent to. A regular
-    // `NWConnection` in connected mode only delivers packets from the
-    // connected endpoint, so unicast replies are silently dropped. The
-    // correct API is `NWConnectionGroup` with a multicast descriptor —
-    // it sends to the group AND surfaces unicast replies via
-    // setReceiveHandler.
+    // MARK: - Subnet probe (Roku ECP + AirPlay fallback)
 
-    private func startSSDPDiscovery() {
-        guard let port = NWEndpoint.Port(rawValue: 1900),
-              let multicast = try? NWMulticastGroup(
-                for: [.hostPort(host: "239.255.255.250", port: port)]
-              ) else {
+    private func startSubnetProbe() {
+        subnetScanTask?.cancel()
+        subnetScanTask = Task.detached(priority: .userInitiated) {
+            guard let localIP = Self.localIPv4Address() else {
+                #if DEBUG
+                print("[TVCastDiscovery] no local IPv4 — skipping subnet probe")
+                #endif
+                return
+            }
+            let parts = localIP.split(separator: ".")
+            guard parts.count == 4 else { return }
+            let prefix = "\(parts[0]).\(parts[1]).\(parts[2])."
             #if DEBUG
-            print("[TVCastDiscovery] SSDP: failed to create multicast group")
+            print("[TVCastDiscovery] probing subnet \(prefix)0/24")
             #endif
+
+            // Probe in batches to avoid socket exhaustion.
+            let allHosts = (1...254).map { "\(prefix)\($0)" }
+            let batchSize = 32
+            var index = 0
+            while index < allHosts.count {
+                if Task.isCancelled { return }
+                let end = min(index + batchSize, allHosts.count)
+                await withTaskGroup(of: Void.self) { group in
+                    for host in allHosts[index..<end] {
+                        group.addTask { await Self.probe(host: host) }
+                    }
+                }
+                index = end
+            }
+        }
+    }
+
+    private static func probe(host: String) async {
+        // Roku ECP on :8060 — XML device-info; cheap and reliable.
+        if let rokuInfo = await fetchString(url: "http://\(host):8060/query/device-info", timeout: 1.2),
+           rokuInfo.lowercased().contains("<roku") || rokuInfo.lowercased().contains("roku") {
+            let name = extractTag("user-device-name", from: rokuInfo)
+                ?? extractTag("friendly-device-name", from: rokuInfo)
+                ?? extractTag("model-name", from: rokuInfo)
+                ?? "Roku (\(host))"
+            let udn = extractTag("device-id", from: rokuInfo) ?? host
+            let snapshot: [(id: String, name: String, host: String?, port: UInt16?)] =
+                [(id: "roku-\(udn)", name: name, host: host, port: 8060)]
+            await MainActor.run {
+                TVCastDiscoveryStore.merge(snapshot: snapshot, kind: .roku)
+            }
             return
         }
 
-        let params = NWParameters.udp
-        params.allowLocalEndpointReuse = true
-        let group = NWConnectionGroup(with: multicast, using: params)
-        ssdpGroup = group
-
-        group.setReceiveHandler(maximumMessageSize: 65_535, rejectOversizedMessages: true) { [weak self] _, content, _ in
-            guard let data = content,
-                  let text = String(data: data, encoding: .utf8) else { return }
-            Task { @MainActor in
-                self?.handleSSDPResponse(text)
+        // AirPlay/Apple TV on :7000 — /info endpoint returns a plist with
+        // model + name. Use HEAD as a quick probe first.
+        if let airplayInfo = await fetchString(url: "http://\(host):7000/info", timeout: 1.2),
+           airplayInfo.lowercased().contains("airplay") || airplayInfo.lowercased().contains("appletv") {
+            // Best-effort name extraction from the plist text.
+            let name = plistStringValue(key: "name", in: airplayInfo)
+                ?? plistStringValue(key: "deviceName", in: airplayInfo)
+                ?? "Apple TV (\(host))"
+            let snapshot: [(id: String, name: String, host: String?, port: UInt16?)] =
+                [(id: "appletv-\(host)", name: name, host: host, port: 7000)]
+            await MainActor.run {
+                TVCastDiscoveryStore.merge(snapshot: snapshot, kind: .appleTV)
             }
         }
+    }
 
-        group.stateUpdateHandler = { [weak self] state in
-            #if DEBUG
-            print("[TVCastDiscovery] SSDP group state: \(state)")
-            #endif
-            if case .ready = state {
-                Task { @MainActor in
-                    self?.sendSSDPSearch()
+    private static func fetchString(url: String, timeout: TimeInterval) async -> String? {
+        guard let u = URL(string: url) else { return nil }
+        var req = URLRequest(url: u)
+        req.timeoutInterval = timeout
+        req.httpMethod = "GET"
+        do {
+            let (data, response) = try await URLSession.shared.data(for: req)
+            guard let http = response as? HTTPURLResponse, http.statusCode == 200 else { return nil }
+            return String(data: data, encoding: .utf8)
+        } catch {
+            return nil
+        }
+    }
+
+    private static func extractTag(_ tag: String, from xml: String) -> String? {
+        let open = "<\(tag)>"
+        let close = "</\(tag)>"
+        guard let s = xml.range(of: open),
+              let e = xml.range(of: close, range: s.upperBound..<xml.endIndex) else { return nil }
+        return String(xml[s.upperBound..<e.lowerBound])
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func plistStringValue(key: String, in plist: String) -> String? {
+        // <key>name</key><string>Living Room</string>
+        guard let keyRange = plist.range(of: "<key>\(key)</key>", options: .caseInsensitive) else { return nil }
+        let after = plist[keyRange.upperBound...]
+        guard let s = after.range(of: "<string>"),
+              let e = after.range(of: "</string>", range: s.upperBound..<after.endIndex) else { return nil }
+        return String(after[s.upperBound..<e.lowerBound])
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    // MARK: - Local IPv4 discovery
+
+    /// Returns the device's primary Wi-Fi IPv4 address (e.g. "192.168.1.42").
+    nonisolated private static func localIPv4Address() -> String? {
+        var address: String?
+        var ifaddr: UnsafeMutablePointer<ifaddrs>?
+        guard getifaddrs(&ifaddr) == 0, let first = ifaddr else { return nil }
+        defer { freeifaddrs(ifaddr) }
+
+        var ptr: UnsafeMutablePointer<ifaddrs>? = first
+        while let cur = ptr {
+            let flags = Int32(cur.pointee.ifa_flags)
+            let addr = cur.pointee.ifa_addr.pointee
+            // Up + running + not loopback, IPv4.
+            if (flags & (IFF_UP | IFF_RUNNING | IFF_LOOPBACK)) == (IFF_UP | IFF_RUNNING),
+               addr.sa_family == UInt8(AF_INET) {
+                let name = String(cString: cur.pointee.ifa_name)
+                // en0 = Wi-Fi on iPhone; en1/en2 sometimes.
+                if name.hasPrefix("en") {
+                    var hostname = [CChar](repeating: 0, count: Int(NI_MAXHOST))
+                    if getnameinfo(cur.pointee.ifa_addr, socklen_t(cur.pointee.ifa_addr.pointee.sa_len),
+                                   &hostname, socklen_t(hostname.count),
+                                   nil, 0, NI_NUMERICHOST) == 0 {
+                        address = String(cString: hostname)
+                        break
+                    }
                 }
             }
+            ptr = cur.pointee.ifa_next
         }
-        group.start(queue: .main)
-
-        // Re-send M-SEARCH a few times — UDP drops, and MX random delay
-        // means a single probe sometimes misses devices.
-        Task { @MainActor [weak self] in
-            for _ in 0..<4 {
-                try? await Task.sleep(for: .milliseconds(800))
-                self?.sendSSDPSearch()
-            }
-        }
+        return address
     }
 
-    private func sendSSDPSearch() {
-        guard let group = ssdpGroup else { return }
-        // Two probes: one targeted at Roku ECP, one wildcard so we also
-        // catch devices that don't match the Roku-specific ST.
-        for st in ["roku:ecp", "ssdp:all"] {
-            let msearch =
-                "M-SEARCH * HTTP/1.1\r\n" +
-                "HOST: 239.255.255.250:1900\r\n" +
-                "MAN: \"ssdp:discover\"\r\n" +
-                "ST: \(st)\r\n" +
-                "MX: 2\r\n" +
-                "\r\n"
-            group.send(content: Data(msearch.utf8)) { error in
-                #if DEBUG
-                if let error { print("[TVCastDiscovery] SSDP send error: \(error)") }
-                #endif
-            }
-        }
-    }
-
-    private func handleSSDPResponse(_ text: String) {
-        // We only care about Roku responses. They include a LOCATION header
-        // pointing at the ECP endpoint, e.g. "http://192.168.1.50:8060/".
-        let lowered = text.lowercased()
-        guard lowered.contains("roku") || lowered.contains("ecp") else { return }
-
-        var location: String?
-        var usn: String?
-        for rawLine in text.split(whereSeparator: { $0 == "\r" || $0 == "\n" }) {
-            let line = String(rawLine)
-            if let range = line.range(of: "LOCATION:", options: .caseInsensitive) {
-                location = String(line[range.upperBound...]).trimmingCharacters(in: .whitespaces)
-            } else if let range = line.range(of: "USN:", options: .caseInsensitive) {
-                usn = String(line[range.upperBound...]).trimmingCharacters(in: .whitespaces)
-            }
-        }
-
-        guard let loc = location, let url = URL(string: loc),
-              let host = url.host else { return }
-        let port = UInt16(url.port ?? 8060)
-        let id = "roku-\(usn ?? "\(host):\(port)")"
-        let name = "Roku (\(host))"
-
-        let snapshot: [(id: String, name: String, host: String?, port: UInt16?)] =
-            [(id: id, name: name, host: host, port: port)]
-        Task { @MainActor in
-            TVCastDiscoveryStore.merge(snapshot: snapshot, kind: .roku)
-            // Fetch the friendly name asynchronously from the device-info endpoint.
-            await TVCastDiscoveryStore.refineRokuName(deviceId: id, host: host, port: port)
-        }
-    }
+    // MARK: - Mutation (called via TVCastDiscoveryStore)
 
     fileprivate func mergeFound(_ items: [(id: String, name: String, host: String?, port: UInt16?)], kind: TVDeviceKind) {
         for item in items {
             if let idx = devices.firstIndex(where: { $0.id == item.id }) {
-                // Update host/port if we just learned them.
-                if devices[idx].host == nil, item.host != nil {
-                    devices[idx] = DiscoveredTVDevice(
-                        id: item.id, name: devices[idx].name,
-                        kind: kind, host: item.host, port: item.port
-                    )
-                }
+                let existing = devices[idx]
+                let newHost = existing.host ?? item.host
+                let newPort = existing.port ?? item.port
+                // Prefer the more descriptive name if we previously had a
+                // placeholder like "Apple TV (192.168.x.x)".
+                let newName: String = {
+                    if existing.name.contains("(") && !item.name.contains("(") {
+                        return item.name
+                    }
+                    return existing.name
+                }()
+                devices[idx] = DiscoveredTVDevice(
+                    id: existing.id, name: newName, kind: kind,
+                    host: newHost, port: newPort
+                )
                 continue
             }
             devices.append(DiscoveredTVDevice(
-                id: item.id,
-                name: item.name,
-                kind: kind,
-                host: item.host,
-                port: item.port
+                id: item.id, name: item.name, kind: kind,
+                host: item.host, port: item.port
             ))
         }
     }
-
-    fileprivate func renameDevice(id: String, to newName: String) {
-        guard let idx = devices.firstIndex(where: { $0.id == id }) else { return }
-        let d = devices[idx]
-        devices[idx] = DiscoveredTVDevice(id: d.id, name: newName, kind: d.kind, host: d.host, port: d.port)
-    }
 }
 
-/// Lightweight bridge so @Sendable Network callbacks can hand work back
-/// to the latest active discovery instance.
+/// Bridge so Network callbacks running on background queues can hand work
+/// back to the latest active discovery instance on the main actor.
 @MainActor
 enum TVCastDiscoveryStore {
     private static weak var current: TVCastDiscovery?
@@ -255,32 +293,5 @@ enum TVCastDiscoveryStore {
 
     static func merge(snapshot: [(id: String, name: String, host: String?, port: UInt16?)], kind: TVDeviceKind) {
         current?.mergeFound(snapshot, kind: kind)
-    }
-
-    /// Hits the Roku ECP `/query/device-info` endpoint to get the friendly
-    /// user-given name (e.g. "Living Room Roku") and updates the row.
-    static func refineRokuName(deviceId: String, host: String, port: UInt16) async {
-        guard let url = URL(string: "http://\(host):\(port)/query/device-info") else { return }
-        var req = URLRequest(url: url)
-        req.timeoutInterval = 2
-        do {
-            let (data, _) = try await URLSession.shared.data(for: req)
-            guard let xml = String(data: data, encoding: .utf8) else { return }
-            let name = extractTag("user-device-name", from: xml)
-                ?? extractTag("friendly-device-name", from: xml)
-                ?? extractTag("model-name", from: xml)
-            if let name, !name.isEmpty {
-                current?.renameDevice(id: deviceId, to: name)
-            }
-        } catch {
-            // Silent — we'll just keep the IP-based fallback name.
-        }
-    }
-
-    private static func extractTag(_ tag: String, from xml: String) -> String? {
-        let open = "<\(tag)>"
-        let close = "</\(tag)>"
-        guard let s = xml.range(of: open), let e = xml.range(of: close, range: s.upperBound..<xml.endIndex) else { return nil }
-        return String(xml[s.upperBound..<e.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
