@@ -105,6 +105,24 @@ struct CastToTVSheet: View {
         #endif
     }
 
+    /// `true` when the iPhone has a self-assigned (link-local) IPv4 address.
+    /// iOS only assigns 169.254.x.x when DHCP fails — meaning the phone is
+    /// associated with a Wi-Fi network but never got a real IP. In that state
+    /// it can't reach any LAN device (Apple TV, Roku, anything), so we need to
+    /// surface remediation steps rather than retry forever.
+    private var phoneOnLinkLocal: Bool {
+        guard let ip = discovery.localIPv4 else { return false }
+        return ip.hasPrefix("169.254.")
+    }
+
+    /// `true` when no IPv4 address could be detected at all — usually means
+    /// Wi-Fi is off or the phone is on cellular only.
+    private var phoneHasNoIPv4: Bool {
+        // We only treat "no IP" as a problem once the scan has had a chance
+        // to detect one. Before the probe starts, localIPv4 is briefly nil.
+        discovery.localIPv4 == nil && discovery.totalHosts > 0
+    }
+
     private var emptyState: some View {
         ScrollView {
             VStack(spacing: 16) {
@@ -133,6 +151,37 @@ struct CastToTVSheet: View {
                         .foregroundStyle(Color.white.opacity(0.6))
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, 28)
+                } else if phoneOnLinkLocal {
+                    Text("Your phone isn't on the Wi-Fi network")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 18)
+                    Text("iPhone has a self-assigned address (\(discovery.localIPv4 ?? "169.254.x.x")) because the router didn't give it a real one. Until that's fixed, no app can see your Apple TV or Roku.")
+                        .font(.system(size: 13))
+                        .foregroundStyle(Color.white.opacity(0.6))
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 24)
+                    linkLocalFixSteps
+                        .padding(.horizontal, 8)
+                        .padding(.top, 4)
+                    HStack(spacing: 10) {
+                        openWiFiSettingsButton
+                        rescanButton
+                    }
+                } else if phoneHasNoIPv4 {
+                    Text("Wi-Fi appears to be off")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(.white)
+                    Text("Connect your iPhone to the same Wi-Fi network as your Apple TV or Roku, then come back and tap Rescan.")
+                        .font(.system(size: 13))
+                        .foregroundStyle(Color.white.opacity(0.6))
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 28)
+                    HStack(spacing: 10) {
+                        openWiFiSettingsButton
+                        rescanButton
+                    }
                 } else if showPermissionPrompt {
                     Text("Couldn't find any devices yet")
                         .font(.system(size: 16, weight: .semibold))
@@ -201,6 +250,69 @@ struct CastToTVSheet: View {
         .buttonStyle(.plain)
     }
 
+    /// Opens iOS Wi-Fi settings directly so the user can toggle Wi-Fi off/on
+    /// or rejoin the network. Falls back to the app's settings page if iOS
+    /// rejects the prefs URL.
+    private var openWiFiSettingsButton: some View {
+        Button {
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            let wifiURL = URL(string: "App-Prefs:WIFI")
+            let appSettingsURL = URL(string: UIApplication.openSettingsURLString)
+            if let wifiURL, UIApplication.shared.canOpenURL(wifiURL) {
+                UIApplication.shared.open(wifiURL)
+            } else if let appSettingsURL {
+                UIApplication.shared.open(appSettingsURL)
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "wifi")
+                Text("Wi-Fi Settings")
+            }
+            .font(.system(size: 14, weight: .semibold))
+            .foregroundStyle(.black)
+            .padding(.horizontal, 18)
+            .padding(.vertical, 10)
+            .background(Capsule().fill(Color.white))
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// Step-by-step remediation shown when the phone has a 169.254.x.x address.
+    /// These are the standard fixes in order of likelihood, and all of them are
+    /// safe — they won't lose user data or change network settings.
+    private var linkLocalFixSteps: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            fixStep(number: 1, text: "Open Settings → Wi-Fi and toggle Wi-Fi off, then back on.")
+            fixStep(number: 2, text: "If that doesn't work, tap your network's (i) and choose \"Forget This Network\", then rejoin with the password.")
+            fixStep(number: 3, text: "Still no luck? Restart your router — it usually means DHCP ran out of addresses.")
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color.orange.opacity(0.08))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(Color.orange.opacity(0.18), lineWidth: 1)
+        )
+    }
+
+    private func fixStep(number: Int, text: String) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Text("\(number)")
+                .font(.system(size: 11, weight: .bold, design: .rounded))
+                .foregroundStyle(.white)
+                .frame(width: 18, height: 18)
+                .background(Circle().fill(Color.orange.opacity(0.85)))
+            Text(text)
+                .font(.system(size: 12.5))
+                .foregroundStyle(Color.white.opacity(0.78))
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+        }
+    }
+
     private var rescanButton: some View {
         Button {
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
@@ -224,10 +336,13 @@ struct CastToTVSheet: View {
     private var diagnosticsStrip: some View {
         VStack(spacing: 6) {
             diagnosticsRow(
-                icon: "wifi",
+                icon: phoneOnLinkLocal ? "wifi.exclamationmark" : "wifi",
                 label: "Phone IP",
                 value: discovery.localIPv4 ?? "—",
-                ok: discovery.localIPv4 != nil
+                state: phoneOnLinkLocal
+                    ? .warning
+                    : (discovery.localIPv4 != nil ? .ok : .neutral),
+                valueNote: phoneOnLinkLocal ? "link-local" : nil
             )
             diagnosticsRow(
                 icon: "magnifyingglass",
@@ -235,13 +350,13 @@ struct CastToTVSheet: View {
                 value: discovery.totalHosts > 0
                     ? "\(discovery.scannedHosts)/\(discovery.totalHosts) hosts"
                     : "starting…",
-                ok: discovery.scannedHosts > 0
+                state: discovery.scannedHosts > 0 ? .ok : .neutral
             )
             diagnosticsRow(
                 icon: "antenna.radiowaves.left.and.right",
                 label: "Bonjour",
                 value: "\(discovery.bonjourEndpointsSeen) services seen",
-                ok: discovery.bonjourEndpointsSeen > 0
+                state: discovery.bonjourEndpointsSeen > 0 ? .ok : .neutral
             )
         }
         .padding(.horizontal, 14)
@@ -256,19 +371,53 @@ struct CastToTVSheet: View {
         )
     }
 
-    private func diagnosticsRow(icon: String, label: String, value: String, ok: Bool) -> some View {
+    private enum DiagnosticRowState {
+        case ok
+        case warning
+        case neutral
+
+        var iconColor: Color {
+            switch self {
+            case .ok:      return Color.green.opacity(0.85)
+            case .warning: return Color.orange
+            case .neutral: return Color.white.opacity(0.4)
+            }
+        }
+    }
+
+    private func diagnosticsRow(
+        icon: String,
+        label: String,
+        value: String,
+        state: DiagnosticRowState,
+        valueNote: String? = nil
+    ) -> some View {
         HStack(spacing: 10) {
             Image(systemName: icon)
                 .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(ok ? Color.green.opacity(0.85) : Color.white.opacity(0.4))
+                .foregroundStyle(state.iconColor)
                 .frame(width: 16)
             Text(label)
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(Color.white.opacity(0.55))
             Spacer(minLength: 0)
-            Text(value)
-                .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                .foregroundStyle(Color.white.opacity(0.85))
+            HStack(spacing: 6) {
+                if let valueNote {
+                    Text(valueNote)
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(Color.orange)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(
+                            Capsule().fill(Color.orange.opacity(0.15))
+                        )
+                }
+                Text(value)
+                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(state == .warning
+                                     ? Color.orange
+                                     : Color.white.opacity(0.85))
+            }
         }
     }
 
