@@ -4,6 +4,7 @@
 //
 
 import SwiftUI
+import UIKit
 
 // MARK: - Color(hex:) helper
 
@@ -32,6 +33,14 @@ extension Color {
     }
 }
 
+// MARK: - Routes
+
+enum SportsRoute: Hashable {
+    case allLive
+    case allUpcoming
+    case allFinal
+}
+
 // MARK: - SportsView
 
 struct SportsView: View {
@@ -39,21 +48,18 @@ struct SportsView: View {
     @State private var games: [SportsGame] = []
     @State private var isLoading: Bool = true
     @State private var loadError: String?
+    @State private var path: [SportsRoute] = []
+    @State private var selectedGame: SportsGame?
 
     private let sports: [String] = ["All", "NBA", "NFL", "Soccer", "MLB", "UFC"]
 
-    private struct TeamChip {
+    private struct TeamChip: Hashable {
         let abbrev: String
         let name: String
         let color: Color
         let next: String
+        let isLive: Bool
     }
-
-    private let myTeams: [TeamChip] = [
-        TeamChip(abbrev: "NYK", name: "Knicks", color: Color(hex: "006BB6"), next: "Tonight"),
-        TeamChip(abbrev: "MAN", name: "Man Utd", color: Color(hex: "C8102E"), next: "Sat"),
-        TeamChip(abbrev: "DAL", name: "Cowboys", color: Color(hex: "003594"), next: "Sun")
-    ]
 
     private var filteredGames: [SportsGame] {
         selectedSport == "All" ? games : games.filter { $0.sport == selectedSport }
@@ -63,8 +69,51 @@ struct SportsView: View {
     private var upcomingGames: [SportsGame] { filteredGames.filter { $0.state == .pre } }
     private var finalGames: [SportsGame] { filteredGames.filter { $0.state == .post } }
 
+    /// Real "My Teams" derived from the day's live + upcoming games. Unique
+    /// teams ordered by live > today > later; capped at 5 chips so the rail
+    /// stays compact. The "Edit" affordance is a stub — a real favorites
+    /// store would replace this derivation.
+    private var derivedTeams: [TeamChip] {
+        let cal = Calendar.current
+        let pool = (liveGames + upcomingGames).filter {
+            $0.state == .live || cal.isDateInToday($0.startDate) || $0.startDate.timeIntervalSinceNow < 60 * 60 * 24 * 7
+        }
+        var seen = Set<String>()
+        var chips: [TeamChip] = []
+        for game in pool {
+            for team in [game.away, game.home] {
+                guard !team.abbreviation.isEmpty, team.abbreviation != "—" else { continue }
+                if seen.contains(team.abbreviation) { continue }
+                seen.insert(team.abbreviation)
+                let color = team.primaryHex.map { Color(hex: $0) } ?? Color.white.opacity(0.15)
+                let label = nextLabel(for: game, cal: cal)
+                chips.append(TeamChip(
+                    abbrev: team.abbreviation,
+                    name: team.shortName,
+                    color: color,
+                    next: label,
+                    isLive: game.state == .live
+                ))
+                if chips.count >= 5 { break }
+            }
+            if chips.count >= 5 { break }
+        }
+        return chips
+    }
+
+    private func nextLabel(for game: SportsGame, cal: Calendar) -> String {
+        if game.state == .live { return "LIVE" }
+        let f = DateFormatter()
+        if cal.isDateInToday(game.startDate) {
+            f.dateFormat = "h:mm a"
+            return f.string(from: game.startDate)
+        }
+        f.dateFormat = "EEE"
+        return f.string(from: game.startDate)
+    }
+
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             ZStack {
                 Color(hex: "04090F").ignoresSafeArea()
 
@@ -72,10 +121,12 @@ struct SportsView: View {
                     LazyVStack(alignment: .leading, spacing: 16) {
                         header
                         sportPills
-                        myTeamsSection
-                        Rectangle()
-                            .fill(Color.white.opacity(0.06))
-                            .frame(height: 1)
+                        if !derivedTeams.isEmpty {
+                            myTeamsSection
+                            Rectangle()
+                                .fill(Color.white.opacity(0.06))
+                                .frame(height: 1)
+                        }
 
                         if isLoading && games.isEmpty {
                             loadingPlaceholder
@@ -101,6 +152,19 @@ struct SportsView: View {
                 .tracksTabBarVisibility()
             }
             .navigationBarHidden(true)
+            .navigationDestination(for: SportsRoute.self) { route in
+                switch route {
+                case .allLive:
+                    SportsListView(games: liveGames, section: .live, sportFilter: selectedSport)
+                case .allUpcoming:
+                    SportsListView(games: upcomingGames, section: .upcoming, sportFilter: selectedSport)
+                case .allFinal:
+                    SportsListView(games: finalGames, section: .finalGames, sportFilter: selectedSport)
+                }
+            }
+            .sheet(item: $selectedGame) { game in
+                SportsWatchSheet(game: game)
+            }
         }
         .task { await load() }
     }
@@ -146,6 +210,7 @@ struct SportsView: View {
                 ForEach(sports, id: \.self) { sport in
                     let isActive = sport == selectedSport
                     Button {
+                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
                         selectedSport = sport
                     } label: {
                         Text(sport)
@@ -174,7 +239,7 @@ struct SportsView: View {
         }
     }
 
-    // MARK: - My Teams
+    // MARK: - My Teams (derived from real games)
 
     private var myTeamsSection: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -190,12 +255,29 @@ struct SportsView: View {
 
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 10) {
-                    ForEach(Array(myTeams.enumerated()), id: \.offset) { _, team in
-                        teamChip(team)
+                    ForEach(derivedTeams, id: \.abbrev) { team in
+                        Button {
+                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                            if let game = teamGame(for: team) {
+                                selectedGame = game
+                            }
+                        } label: {
+                            teamChip(team)
+                        }
+                        .buttonStyle(.plain)
                     }
                     addTeamChip
                 }
             }
+        }
+    }
+
+    /// Finds the next game involving `team` so tapping a chip opens that
+    /// game's sheet rather than a dead-end.
+    private func teamGame(for team: TeamChip) -> SportsGame? {
+        let abbr = team.abbrev
+        return (liveGames + upcomingGames).first { game in
+            game.away.abbreviation == abbr || game.home.abbreviation == abbr
         }
     }
 
@@ -212,24 +294,25 @@ struct SportsView: View {
             Text(team.name)
                 .scaledFont(size: 9, weight: .semibold)
                 .foregroundStyle(Color.white.opacity(0.6))
+                .lineLimit(1)
             Text(team.next)
                 .scaledFont(size: 8, weight: .bold)
-                .foregroundStyle(Color(hex: "F5821F"))
+                .foregroundStyle(team.isLive ? Color(hex: "E50914") : Color(hex: "F5821F"))
         }
         .padding(8)
-        .frame(minWidth: 58)
+        .frame(minWidth: 64)
         .background(
             RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.04))
         )
         .overlay(
             RoundedRectangle(cornerRadius: 12)
-                .stroke(Color.white.opacity(0.07), lineWidth: 1)
+                .stroke(team.isLive ? Color(hex: "E50914").opacity(0.35) : Color.white.opacity(0.07), lineWidth: 1)
         )
     }
 
     private var addTeamChip: some View {
         Button {
-            // no-op
+            // Placeholder — real favorites flow lives in Profile.
         } label: {
             VStack(spacing: 3) {
                 Text("+")
@@ -253,13 +336,32 @@ struct SportsView: View {
         .buttonStyle(.plain)
     }
 
+    // MARK: - Helper for tappable card wrapper
+
+    /// Wraps a card view in a Button that opens the SportsWatchSheet. Uses
+    /// `.plain` style so the visual layout is preserved exactly.
+    @ViewBuilder
+    private func tappableCard<Content: View>(_ game: SportsGame, @ViewBuilder content: () -> Content) -> some View {
+        Button {
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            selectedGame = game
+        } label: {
+            content()
+        }
+        .buttonStyle(.plain)
+    }
+
     // MARK: - Live Now
 
     private var liveNowSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            sectionHeader(title: "Live Now", count: liveGames.count)
-            ForEach(liveGames) { game in
-                liveScoreCard(game)
+            sectionHeader(title: "Live Now", count: liveGames.count) {
+                path.append(.allLive)
+            }
+            ForEach(liveGames.prefix(4)) { game in
+                tappableCard(game) {
+                    liveScoreCard(game)
+                }
             }
         }
     }
@@ -280,17 +382,16 @@ struct SportsView: View {
                         .lineLimit(1)
                 }
                 Spacer()
-                NavigationLink(destination: GameDetailView()) {
-                    Text("Watch ▶")
-                        .scaledFont(size: 11, weight: .bold)
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 8)
-                        .background(
-                            RoundedRectangle(cornerRadius: 20).fill(Color(hex: "F5821F"))
-                        )
-                }
-                .buttonStyle(.plain)
+                // The "Watch ▶" affordance now shares the same handler as the
+                // whole card — opens the SportsWatchSheet for this game.
+                Text("Watch ▶")
+                    .scaledFont(size: 11, weight: .bold)
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                    .background(
+                        RoundedRectangle(cornerRadius: 20).fill(Color(hex: "F5821F"))
+                    )
             }
 
             HStack {
@@ -342,9 +443,13 @@ struct SportsView: View {
 
     private var upcomingSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            sectionHeader(title: upcomingTitle, count: upcomingGames.count)
+            sectionHeader(title: upcomingTitle, count: upcomingGames.count) {
+                path.append(.allUpcoming)
+            }
             ForEach(upcomingGames.prefix(8)) { game in
-                upcomingGameCard(game)
+                tappableCard(game) {
+                    upcomingGameCard(game)
+                }
             }
         }
     }
@@ -393,21 +498,9 @@ struct SportsView: View {
                         .lineLimit(1)
                 }
                 Spacer()
-                Button { } label: {
-                    Text("+ Alert")
-                        .scaledFont(size: 11, weight: .semibold)
-                        .foregroundStyle(Color.white.opacity(0.6))
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 8)
-                        .background(
-                            RoundedRectangle(cornerRadius: 20).fill(Color.white.opacity(0.06))
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 20)
-                                .stroke(Color.white.opacity(0.12), lineWidth: 1)
-                        )
-                }
-                .buttonStyle(.plain)
+                Image(systemName: "chevron.right")
+                    .scaledFont(size: 12, weight: .bold)
+                    .foregroundStyle(Color.white.opacity(0.35))
             }
 
             broadcastsRow(game.broadcasts)
@@ -426,9 +519,13 @@ struct SportsView: View {
 
     private var finalSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            sectionHeader(title: "Final", count: finalGames.count)
+            sectionHeader(title: "Final", count: finalGames.count) {
+                path.append(.allFinal)
+            }
             ForEach(finalGames.prefix(6)) { game in
-                finalGameCard(game)
+                tappableCard(game) {
+                    finalGameCard(game)
+                }
             }
         }
     }
@@ -468,6 +565,9 @@ struct SportsView: View {
                     .foregroundStyle(Color.white.opacity(0.35))
             }
             Spacer()
+            Image(systemName: "chevron.right")
+                .scaledFont(size: 12, weight: .bold)
+                .foregroundStyle(Color.white.opacity(0.35))
         }
         .padding(12)
         .background(
@@ -552,7 +652,7 @@ struct SportsView: View {
 
     // MARK: - Helpers
 
-    private func sectionHeader(title: String, count: Int) -> some View {
+    private func sectionHeader(title: String, count: Int, onSeeAll: @escaping () -> Void) -> some View {
         HStack(spacing: 8) {
             Text(title)
                 .scaledFont(size: 16, weight: .bold)
@@ -566,9 +666,16 @@ struct SportsView: View {
                     Capsule().fill(Color.white.opacity(0.08))
                 )
             Spacer()
-            Text("See all")
-                .scaledFont(size: 13, weight: .medium)
+            Button(action: onSeeAll) {
+                HStack(spacing: 4) {
+                    Text("See all")
+                        .scaledFont(size: 13, weight: .medium)
+                    Image(systemName: "arrow.right")
+                        .scaledFont(size: 11, weight: .bold)
+                }
                 .foregroundStyle(Color(hex: "1A6FE8"))
+            }
+            .buttonStyle(.plain)
         }
     }
 }

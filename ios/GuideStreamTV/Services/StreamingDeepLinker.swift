@@ -358,6 +358,107 @@ enum StreamingDeepLinker {
             )
         }
 
+        // MARK: Sports broadcasters
+
+        // ESPN / ESPN+ / ESPN2 / ESPNU
+        if key.contains("espn") {
+            return Target(
+                appURL: URL(string: "sportscenter://"),
+                webURL: URL(string: "https://www.espn.com/watch/")!
+            )
+        }
+        // TNT / TBS / truTV — Bleacher Report Live carries the streams
+        if key.contains("tnt") || key.contains("tbs") || key.contains("trutv") {
+            return Target(
+                appURL: URL(string: "bleacherreport://"),
+                webURL: URL(string: "https://bleacherreport.com/live")!
+            )
+        }
+        // FOX Sports / FS1 / FS2
+        if key.contains("fox") {
+            return Target(
+                appURL: URL(string: "foxsports://"),
+                webURL: URL(string: "https://www.foxsports.com/live")!
+            )
+        }
+        // NBC Sports — most live coverage now lives in the Peacock app.
+        if key.contains("nbc") {
+            return Target(
+                appURL: URL(string: "nbcsports://"),
+                webURL: URL(string: "https://www.nbcsports.com/live")!
+            )
+        }
+        // CBS Sports
+        if key.contains("cbs") {
+            return Target(
+                appURL: URL(string: "cbssportsapp://"),
+                webURL: URL(string: "https://www.cbssports.com/live/")!
+            )
+        }
+        // ABC — owned by Disney, watch via the ESPN app for sports.
+        if key.contains("abc") {
+            return Target(
+                appURL: URL(string: "sportscenter://"),
+                webURL: URL(string: "https://www.espn.com/watch/")!
+            )
+        }
+        // NFL Network / NFL+
+        if key.contains("nfl") {
+            return Target(
+                appURL: URL(string: "nflmobile://"),
+                webURL: URL(string: "https://www.nfl.com/plus/")!
+            )
+        }
+        // NBA TV / NBA League Pass
+        if key.contains("nba") {
+            return Target(
+                appURL: URL(string: "nbaapp://"),
+                webURL: URL(string: "https://www.nba.com/watch")!
+            )
+        }
+        // MLB Network / MLB.tv
+        if key.contains("mlb") {
+            return Target(
+                appURL: URL(string: "mlbatbat://"),
+                webURL: URL(string: "https://www.mlb.com/tv")!
+            )
+        }
+        // NHL Network / NHL.tv
+        if key.contains("nhl") {
+            return Target(
+                appURL: URL(string: "nhl://"),
+                webURL: URL(string: "https://www.nhl.com/tv")!
+            )
+        }
+        // UFC Fight Pass
+        if key.contains("ufc") {
+            return Target(
+                appURL: URL(string: "ufc://"),
+                webURL: URL(string: "https://www.ufc.com/fight-pass")!
+            )
+        }
+        // FuboTV — common cord-cutter aggregator for live sports.
+        if key.contains("fubo") {
+            return Target(
+                appURL: URL(string: "fubotv://"),
+                webURL: URL(string: "https://www.fubo.tv/welcome")!
+            )
+        }
+        // Sling TV
+        if key.contains("sling") {
+            return Target(
+                appURL: URL(string: "sling://"),
+                webURL: URL(string: "https://www.sling.com/")!
+            )
+        }
+        // DAZN — boxing / international sports
+        if key.contains("dazn") {
+            return Target(
+                appURL: URL(string: "dazn://"),
+                webURL: URL(string: "https://www.dazn.com/")!
+            )
+        }
+
         let google = "https://www.google.com/search?q=watch+\(q)+on+\(platform.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")"
         return Target(appURL: nil, webURL: URL(string: google)!)
     }
