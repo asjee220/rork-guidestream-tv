@@ -20,6 +20,8 @@ struct CastToTVSheet: View {
     @State private var discovery: TVCastDiscovery = TVCastDiscovery()
     @State private var sendingDeviceId: String? = nil
     @State private var toast: ToastState? = nil
+    @State private var showPermissionPrompt: Bool = false
+    @State private var permissionCheckTask: Task<Void, Never>? = nil
 
     var body: some View {
         VStack(spacing: 0) {
@@ -33,8 +35,11 @@ struct CastToTVSheet: View {
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
         .presentationBackground(Color(red: 0x0A/255, green: 0x10/255, blue: 0x1E/255))
-        .onAppear { discovery.start() }
-        .onDisappear { discovery.stop() }
+        .onAppear { startScan() }
+        .onDisappear {
+            discovery.stop()
+            permissionCheckTask?.cancel()
+        }
     }
 
     // MARK: Header
@@ -79,33 +84,70 @@ struct CastToTVSheet: View {
         VStack(spacing: 16) {
             ZStack {
                 Circle()
-                    .fill(Color.white.opacity(0.06))
+                    .fill(showPermissionPrompt
+                          ? Color.orange.opacity(0.15)
+                          : Color.white.opacity(0.06))
                     .frame(width: 80, height: 80)
-                Image(systemName: "wifi")
+                Image(systemName: showPermissionPrompt ? "wifi.exclamationmark" : "wifi")
                     .font(.system(size: 30, weight: .regular))
-                    .foregroundStyle(Color.white.opacity(0.6))
+                    .foregroundStyle(showPermissionPrompt
+                                     ? Color.orange
+                                     : Color.white.opacity(0.6))
                     .symbolEffect(.variableColor.iterative.reversing, options: .repeating)
             }
-            Text("Looking for Apple TV & Roku…")
-                .font(.system(size: 15))
-                .foregroundStyle(Color.white.opacity(0.7))
-            Text("Make sure your phone and TV are on the same Wi-Fi network.")
-                .font(.system(size: 12))
-                .foregroundStyle(Color.white.opacity(0.45))
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 40)
-            rescanButton
+
+            if showPermissionPrompt {
+                Text("Local Network access needed")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(.white)
+                Text("To find your Apple TV or Roku, allow GuideStreamTV to discover devices on your Wi-Fi network in Settings.")
+                    .font(.system(size: 13))
+                    .foregroundStyle(Color.white.opacity(0.6))
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 32)
+                openSettingsButton
+                rescanButton
+            } else {
+                Text("Looking for Apple TV & Roku…")
+                    .font(.system(size: 15))
+                    .foregroundStyle(Color.white.opacity(0.7))
+                Text("Make sure your phone and TV are on the same Wi-Fi network.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Color.white.opacity(0.45))
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 40)
+                rescanButton
+            }
         }
         .frame(maxWidth: .infinity)
         .padding(.top, 18)
         .padding(.bottom, 36)
     }
 
+    private var openSettingsButton: some View {
+        Button {
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            if let url = URL(string: UIApplication.openSettingsURLString) {
+                UIApplication.shared.open(url)
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "gearshape.fill")
+                Text("Open Settings")
+            }
+            .font(.system(size: 14, weight: .semibold))
+            .foregroundStyle(.black)
+            .padding(.horizontal, 18)
+            .padding(.vertical, 10)
+            .background(Capsule().fill(Color.white))
+        }
+        .buttonStyle(.plain)
+    }
+
     private var rescanButton: some View {
         Button {
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
-            discovery.stop()
-            discovery.start()
+            startScan()
         } label: {
             HStack(spacing: 6) {
                 Image(systemName: "arrow.clockwise")
@@ -189,6 +231,29 @@ struct CastToTVSheet: View {
         .overlay(Capsule().stroke(Color.white.opacity(0.12), lineWidth: 1))
         .shadow(color: .black.opacity(0.35), radius: 14, y: 4)
         .transition(.move(edge: .top).combined(with: .opacity))
+    }
+
+    // MARK: Scan lifecycle
+
+    /// Starts a discovery scan and schedules a permission-prompt check. If no
+    /// devices appear after a short window, iOS has either denied Local Network
+    /// access or there's genuinely nothing on the LAN — either way, surfacing
+    /// the "Open Settings" affordance is the right call.
+    private func startScan() {
+        showPermissionPrompt = false
+        permissionCheckTask?.cancel()
+        discovery.stop()
+        discovery.start()
+
+        permissionCheckTask = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(5))
+            guard !Task.isCancelled else { return }
+            if discovery.devices.isEmpty {
+                withAnimation(.easeInOut(duration: 0.25)) {
+                    showPermissionPrompt = true
+                }
+            }
+        }
     }
 
     // MARK: Actions
