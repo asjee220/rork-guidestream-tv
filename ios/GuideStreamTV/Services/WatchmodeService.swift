@@ -74,13 +74,24 @@ nonisolated struct WatchmodeService {
 
     private let apiKey = "wqlepJq2xhEfyAVWpMOhVGmoUKBJFzHj3mlE3Lcw"
 
+    /// Fetches a title's metadata + all per-source watch links.
+    ///
+    /// Watchmode's title details live at `/v1/title/{id}/details/`. The bare
+    /// `/v1/title/{id}/` path returns `400 Invalid method.`, which silently
+    /// killed every "Watch on …" deeplink resolution. `append_to_response=sources`
+    /// inlines the per-streaming-service URLs we need to open the right title
+    /// inside Netflix / Max / Prime / etc.
     func titleDetail(titleId: String) async throws -> WatchmodeTitleDetail {
-        let urlString = "https://api.watchmode.com/v1/title/\(titleId)/?apiKey=\(apiKey)&append_to_response=sources"
+        let urlString = "https://api.watchmode.com/v1/title/\(titleId)/details/?apiKey=\(apiKey)&append_to_response=sources"
         guard let url = URL(string: urlString) else { throw URLError(.badURL) }
         var req = URLRequest(url: url)
         req.timeoutInterval = 12
         let (data, response) = try await URLSession.shared.data(for: req)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            #if DEBUG
+            let body = String(data: data, encoding: .utf8) ?? "<binary>"
+            print("[Watchmode] titleDetail HTTP \((response as? HTTPURLResponse)?.statusCode ?? -1) for id=\(titleId): \(body.prefix(200))")
+            #endif
             throw URLError(.badServerResponse)
         }
         return try JSONDecoder().decode(WatchmodeTitleDetail.self, from: data)

@@ -116,12 +116,29 @@ final class ShowDetailViewModel {
         return result
     }
 
-    /// Best deep link URL (prefer iOS, then web) from the first subscription source.
+    /// First subscription source returned by Watchmode. Used to drive the
+    /// orange CTA at the bottom of the screen and the service badges in the
+    /// "Where to Watch" row.
+    var primaryService: WhereToWatchService? { services.first }
+
+    /// Best deep link URL (prefer iOS native scheme, then web) from the first
+    /// subscription source. Filters out Watchmode free-tier placeholders that
+    /// otherwise short-circuit `URL(string:)` callers into doing nothing.
     var primaryDeeplink: URL? {
         guard let s = services.first else { return nil }
-        if let ios = s.iosUrl, let u = URL(string: ios) { return u }
-        if let web = s.webUrl, let u = URL(string: web) { return u }
+        if let ios = s.iosUrl, Self.isRealURL(ios), let u = URL(string: ios) { return u }
+        if let web = s.webUrl, Self.isRealURL(web), let u = URL(string: web) { return u }
         return nil
+    }
+
+    /// Watchmode's free tier returns the literal string
+    /// `"Deeplinks available for paid plans only."` in `ios_url` / `android_url`.
+    /// Anything that isn't a real http(s) URL must be rejected before we hand
+    /// it to `UIApplication.shared.open`.
+    private static func isRealURL(_ s: String) -> Bool {
+        let lower = s.lowercased()
+        guard lower.hasPrefix("http://") || lower.hasPrefix("https://") else { return false }
+        return URL(string: s) != nil
     }
 
     private func sourceRank(_ s: WatchmodeSource) -> Int {
@@ -279,16 +296,20 @@ struct ShowDetailScreen: View {
         }
     }
 
-    private func openDeeplink(iosUrl: String?, webUrl: String?) {
-        let urlString = iosUrl ?? webUrl
-        guard let urlString, let url = URL(string: urlString) else { return }
-        WatchIntentLogger.shared.log(
-            eventType: .deeplinkFired,
-            titleId: titleId,
-            platformId: platformId,
-            metadata: ["url": urlString]
+    /// Opens the streaming app for a specific tapped service badge. Routes
+    /// through `StreamingDeepLinker` so we get the same native-scheme
+    /// conversion (`nflx://`, `videos://`, `youtube://`, `primevideo://`) and
+    /// search-URL fallback used by the rest of the app, rather than handing
+    /// Watchmode's raw `ios_url` placeholder to `UIApplication.shared.open`.
+    private func openDeeplink(serviceName: String) {
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        StreamingDeepLinker.open(
+            platform: serviceName,
+            title: displayTitle,
+            tmdbId: resolvedTmdbId,
+            isTV: isTV,
+            titleSlug: titleId
         )
-        UIApplication.shared.open(url)
     }
 
     private func openPlayOn() {
@@ -652,7 +673,7 @@ struct ShowDetailScreen: View {
                     HStack(spacing: 10) {
                         ForEach(services) { s in
                             Button {
-                                openDeeplink(iosUrl: s.iosUrl, webUrl: s.webUrl)
+                                openDeeplink(serviceName: s.name)
                             } label: {
                                 ServiceBadge(service: s)
                             }
@@ -752,14 +773,12 @@ struct ShowDetailScreen: View {
             Rectangle().fill(Color.white.opacity(0.07)).frame(height: 1)
             HStack(spacing: 12) {
                 Button(action: {
-                    if let deeplink = vm.primaryDeeplink {
-                        WatchIntentLogger.shared.log(
-                            eventType: .deeplinkFired,
-                            titleId: titleId,
-                            platformId: platformId,
-                            metadata: ["url": deeplink.absoluteString]
-                        )
-                        UIApplication.shared.open(deeplink)
+                    // Prefer the resolved Watchmode source so the orange CTA
+                    // lands on the title's page in the right streaming app.
+                    // Falls back to the Play-on sheet only when Watchmode
+                    // returned nothing usable.
+                    if let svc = vm.primaryService {
+                        openDeeplink(serviceName: svc.name)
                     } else {
                         WatchIntentLogger.shared.log(
                             eventType: .deeplinkFired,
