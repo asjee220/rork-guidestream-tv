@@ -39,7 +39,7 @@ final class TVCastDiscovery {
     private(set) var isScanning: Bool = false
 
     @ObservationIgnored private var browsers: [NWBrowser] = []
-    @ObservationIgnored private var ssdpConnection: NWConnection?
+    @ObservationIgnored private var ssdpGroup: NWConnectionGroup?
     @ObservationIgnored private var permissionPokeListener: NWListener?
 
     func start() {
@@ -49,9 +49,14 @@ final class TVCastDiscovery {
         // Advertise a throwaway Bonjour service so iOS registers us as a
         // local-network participant (also helps surface the permission prompt).
         startPermissionPokeListener()
-        // Apple TV: real Bonjour browse.
+        // Apple TV: real Bonjour browse. Also browse raopa (AirTunes) and
+        // companion-link as fallbacks — some Apple TVs surface there first.
         browseBonjour(type: "_airplay._tcp", kind: .appleTV)
-        // Roku: SSDP M-SEARCH over UDP multicast. Roku does NOT use Bonjour.
+        browseBonjour(type: "_raop._tcp", kind: .appleTV)
+        browseBonjour(type: "_companion-link._tcp", kind: .appleTV)
+        // Roku: some models also advertise via Bonjour as a fallback.
+        browseBonjour(type: "_rsp._tcp", kind: .roku)
+        // Roku: real SSDP M-SEARCH over UDP multicast.
         startSSDPDiscovery()
     }
 
@@ -59,8 +64,8 @@ final class TVCastDiscovery {
         isScanning = false
         for b in browsers { b.cancel() }
         browsers = []
-        ssdpConnection?.cancel()
-        ssdpConnection = nil
+        ssdpGroup?.cancel()
+        ssdpGroup = nil
         permissionPokeListener?.cancel()
         permissionPokeListener = nil
     }
@@ -104,60 +109,77 @@ final class TVCastDiscovery {
     }
 
     // MARK: - SSDP (Roku)
+    //
+    // Roku replies to an M-SEARCH from each device's unicast address, NOT
+    // from the 239.255.255.250 multicast group we sent to. A regular
+    // `NWConnection` in connected mode only delivers packets from the
+    // connected endpoint, so unicast replies are silently dropped. The
+    // correct API is `NWConnectionGroup` with a multicast descriptor —
+    // it sends to the group AND surfaces unicast replies via
+    // setReceiveHandler.
 
     private func startSSDPDiscovery() {
-        let host = NWEndpoint.Host("239.255.255.250")
-        guard let port = NWEndpoint.Port(rawValue: 1900) else { return }
+        guard let port = NWEndpoint.Port(rawValue: 1900),
+              let multicast = try? NWMulticastGroup(
+                for: [.hostPort(host: "239.255.255.250", port: port)]
+              ) else {
+            #if DEBUG
+            print("[TVCastDiscovery] SSDP: failed to create multicast group")
+            #endif
+            return
+        }
+
         let params = NWParameters.udp
         params.allowLocalEndpointReuse = true
-        let conn = NWConnection(host: host, port: port, using: params)
-        ssdpConnection = conn
+        let group = NWConnectionGroup(with: multicast, using: params)
+        ssdpGroup = group
 
-        conn.stateUpdateHandler = { [weak self] state in
+        group.setReceiveHandler(maximumMessageSize: 65_535, rejectOversizedMessages: true) { [weak self] _, content, _ in
+            guard let data = content,
+                  let text = String(data: data, encoding: .utf8) else { return }
+            Task { @MainActor in
+                self?.handleSSDPResponse(text)
+            }
+        }
+
+        group.stateUpdateHandler = { [weak self] state in
             #if DEBUG
-            print("[TVCastDiscovery] SSDP state: \(state)")
+            print("[TVCastDiscovery] SSDP group state: \(state)")
             #endif
             if case .ready = state {
                 Task { @MainActor in
-                    guard let self else { return }
-                    self.sendSSDPSearch(conn)
-                    self.receiveSSDP(conn)
+                    self?.sendSSDPSearch()
                 }
             }
         }
-        conn.start(queue: .main)
+        group.start(queue: .main)
 
-        // Re-send the M-SEARCH a couple of times — UDP can drop and Roku's
-        // MX random delay means a single probe sometimes misses devices.
+        // Re-send M-SEARCH a few times — UDP drops, and MX random delay
+        // means a single probe sometimes misses devices.
         Task { @MainActor [weak self] in
-            for _ in 0..<3 {
-                try? await Task.sleep(for: .milliseconds(700))
-                guard let self, let c = self.ssdpConnection, c.state == .ready else { return }
-                self.sendSSDPSearch(c)
+            for _ in 0..<4 {
+                try? await Task.sleep(for: .milliseconds(800))
+                self?.sendSSDPSearch()
             }
         }
     }
 
-    private func sendSSDPSearch(_ conn: NWConnection) {
-        let msearch =
-            "M-SEARCH * HTTP/1.1\r\n" +
-            "HOST: 239.255.255.250:1900\r\n" +
-            "MAN: \"ssdp:discover\"\r\n" +
-            "ST: roku:ecp\r\n" +
-            "MX: 3\r\n" +
-            "\r\n"
-        conn.send(content: Data(msearch.utf8), completion: .contentProcessed { _ in })
-    }
-
-    private func receiveSSDP(_ conn: NWConnection) {
-        conn.receiveMessage { [weak self] data, _, _, _ in
-            let text = data.flatMap { String(data: $0, encoding: .utf8) }
-            Task { @MainActor in
-                guard let self else { return }
-                if let text { self.handleSSDPResponse(text) }
-                if conn.state != .cancelled {
-                    self.receiveSSDP(conn)
-                }
+    private func sendSSDPSearch() {
+        guard let group = ssdpGroup else { return }
+        // Two probes: one targeted at Roku ECP, one wildcard so we also
+        // catch devices that don't match the Roku-specific ST.
+        for st in ["roku:ecp", "ssdp:all"] {
+            let msearch =
+                "M-SEARCH * HTTP/1.1\r\n" +
+                "HOST: 239.255.255.250:1900\r\n" +
+                "MAN: \"ssdp:discover\"\r\n" +
+                "ST: \(st)\r\n" +
+                "MX: 2\r\n" +
+                "\r\n"
+            group.send(content: Data(msearch.utf8)) { error in
+                #if DEBUG
+                if let error { print("[TVCastDiscovery] SSDP send error: \(error)") }
+                #endif
             }
         }
     }
