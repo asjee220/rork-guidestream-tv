@@ -115,6 +115,9 @@ private struct HeroCarouselCard: View {
         switch item {
         case .media: return Color.orange.opacity(0.30)
         case .game: return Color.blue.opacity(0.40)
+        // News stroke matches the CTA tint, the same way media uses orange
+        // and sports uses blue — the rim glow is what carries the rail's
+        // semantic color, not the backdrop itself.
         case .news: return Color.newsGreen.opacity(0.45)
         }
     }
@@ -136,39 +139,24 @@ private struct HeroCarouselCard: View {
         }
     }
 
-    /// News tile backdrop — anchors on the brand teal/green so the rail can't
-    /// be mistaken for a movie/sport tile, then overlays the show's still
-    /// frame at lower opacity for depth without washing out the brand color.
+    /// News tile backdrop — matches the media tile's full-bleed image
+    /// treatment so the rail reads as a single carousel. When the image
+    /// fails to load the fallback gradient is news-brand green so the card
+    /// still feels on-rail; otherwise the show's backdrop carries the
+    /// imagery just like a movie/series tile.
     private func newsBackdrop(_ news: NewsStream) -> some View {
-        ZStack {
-            LinearGradient(
-                colors: [
-                    Color.newsGreen,
-                    Color.newsGreen.opacity(0.78),
-                    Color(red: 0.04, green: 0.20, blue: 0.18)
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            if let url = news.backdropUrl ?? news.posterUrl {
+        Color.black
+            .overlay {
                 RemoteImage(
-                    urlString: url,
-                    contentMode: .fill
+                    urlString: news.backdropUrl ?? news.posterUrl,
+                    contentMode: .fill,
+                    fallbackColors: [
+                        Color.newsGreen.opacity(0.85),
+                        Color(red: 0.04, green: 0.20, blue: 0.18)
+                    ]
                 )
-                .opacity(0.35)
-                .blendMode(.softLight)
                 .allowsHitTesting(false)
             }
-            // Subtle outlet watermark for visual rhythm with the sports tile.
-            HStack {
-                Spacer(minLength: 0)
-                Text("LIVE")
-                    .scaledFont(size: 112, weight: .black)
-                    .foregroundStyle(.white.opacity(0.08))
-                    .offset(x: 16, y: 16)
-            }
-            .allowsHitTesting(false)
-        }
     }
 
     private func mediaBackdrop(_ result: TMDBResult) -> some View {

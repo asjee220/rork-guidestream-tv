@@ -30,6 +30,7 @@ struct CastToTVSheet: View {
     @State private var sendingDeviceId: String? = nil
     @State private var toast: ToastState? = nil
     @State private var playingOn: PlayingOnState? = nil
+    @State private var limitedModeHelp: LimitedModeHelp? = nil
     @State private var showPermissionPrompt: Bool = false
     @State private var permissionCheckTask: Task<Void, Never>? = nil
     @State private var isManualEntryExpanded: Bool = false
@@ -51,6 +52,9 @@ struct CastToTVSheet: View {
             } else if let toast {
                 toastView(toast).padding(.top, 12)
             }
+        }
+        .sheet(item: $limitedModeHelp) { help in
+            LimitedModeHelpSheet(deviceName: help.deviceName)
         }
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
@@ -609,59 +613,77 @@ struct CastToTVSheet: View {
         )
 
         Task {
-            let ok = await dispatchLaunch(for: device)
+            let outcome = await dispatchLaunch(for: device)
             await MainActor.run {
                 sendingDeviceId = nil
-                guard ok else {
+
+                switch outcome {
+                case .ok:
+                    UINotificationFeedbackGenerator().notificationOccurred(.success)
+                    showPlayingOnBanner(PlayingOnState(
+                        deviceName: device.name,
+                        deviceKind: device.kind,
+                        hint: handoffHint(for: device.kind)
+                    ))
+
+                    // Register the session globally so the persistent home
+                    // banner takes over after this sheet dismisses. Includes
+                    // the host/port for Roku so the home banner's remote-app
+                    // button can re-target the same device without re-discovery.
+                    CastPlaybackState.shared.start(
+                        title: showTitle,
+                        platform: platform,
+                        deviceName: device.name,
+                        deviceKind: device.kind,
+                        host: device.host,
+                        port: device.port
+                    )
+
+                    // Give the user a moment to see the banner, then perform
+                    // the follow-up (open remote app or open streaming app
+                    // for AirPlay) and dismiss the sheet.
+                    Task { @MainActor in
+                        try? await Task.sleep(for: .milliseconds(1400))
+                        completeHandoff(for: device)
+                    }
+
+                case .limitedMode:
+                    // The Roku reached us, but it's in Limited Mode and is
+                    // rejecting ECP commands from this iPhone. This is the
+                    // most common cause of "cast doesn't work" today —
+                    // surface the fix path in a dedicated sheet so the user
+                    // can flip the setting and try again.
+                    UINotificationFeedbackGenerator().notificationOccurred(.warning)
+                    limitedModeHelp = LimitedModeHelp(deviceName: device.name)
+
+                case .rejected(let code):
+                    UINotificationFeedbackGenerator().notificationOccurred(.error)
+                    showToast(ToastState(
+                        message: "\(device.name) rejected the request (\(code))",
+                        icon: "exclamationmark.triangle.fill"
+                    ))
+
+                case .unreachable:
                     UINotificationFeedbackGenerator().notificationOccurred(.error)
                     showToast(ToastState(
                         message: "Couldn't reach \(device.name)",
                         icon: "exclamationmark.triangle.fill"
                     ))
-                    return
-                }
-
-                UINotificationFeedbackGenerator().notificationOccurred(.success)
-                showPlayingOnBanner(PlayingOnState(
-                    deviceName: device.name,
-                    deviceKind: device.kind,
-                    hint: handoffHint(for: device.kind)
-                ))
-
-                // Register the session globally so the persistent home
-                // banner takes over after this sheet dismisses. Includes
-                // the host/port for Roku so the home banner's remote-app
-                // button can re-target the same device without re-discovery.
-                CastPlaybackState.shared.start(
-                    title: showTitle,
-                    platform: platform,
-                    deviceName: device.name,
-                    deviceKind: device.kind,
-                    host: device.host,
-                    port: device.port
-                )
-
-                // Give the user a moment to see the banner, then perform the
-                // follow-up (open remote app or open streaming app for AirPlay)
-                // and dismiss the sheet.
-                Task { @MainActor in
-                    try? await Task.sleep(for: .milliseconds(1400))
-                    completeHandoff(for: device)
                 }
             }
         }
     }
 
     /// Performs the network-side launch — fires the Roku ECP command, or
-    /// returns true for Apple TV (no network call yet; the user has to open
+    /// returns `.ok` for Apple TV (no network call yet; the user has to open
     /// the app on the TV manually until Companion Link pairing is built).
-    private func dispatchLaunch(for device: DiscoveredTVDevice) async -> Bool {
+    private func dispatchLaunch(for device: DiscoveredTVDevice) async -> RokuLaunchResult {
         switch device.kind {
         case .roku:
             guard let host = device.host,
                   let port = device.port,
                   let channelId = RokuChannel.id(for: platform) else {
-                return false
+                return .unreachable
             }
             // Roku ECP is best-effort on the contentId: only channels that
             // explicitly accept arbitrary catalog IDs (sideloaded apps,
@@ -685,7 +707,7 @@ struct CastToTVSheet: View {
             // banner instruct the user. Crucially we DO NOT fall back to
             // opening the streaming app on iPhone — the user explicitly
             // flagged that as incorrect behavior.
-            return true
+            return .ok
         }
     }
 
@@ -697,7 +719,9 @@ struct CastToTVSheet: View {
     /// `.sheet` is still presented sometimes loses the app-switch (iOS
     /// queues the foreground request, then drops it when the sheet's
     /// dismiss animation runs first). Dismissing first guarantees the
-    /// Roku Remote launch wins the race.
+    /// Roku Remote launch wins the race. `CastPlaybackState.openRokuRemote`
+    /// also retries once internally, so a single transient drop won't
+    /// silently strand the user without the remote app open.
     private func completeHandoff(for device: DiscoveredTVDevice) {
         switch device.kind {
         case .roku:
@@ -706,7 +730,11 @@ struct CastToTVSheet: View {
             // app-switch animation isn't competing with the sheet dismiss.
             isPresented = false
             Task { @MainActor in
-                try? await Task.sleep(for: .milliseconds(250))
+                // Give the sheet's dismiss animation enough time to fully
+                // tear down (the default sheet dismissal is ~350ms) before
+                // we ask iOS to switch apps. Less than this is what was
+                // causing the Roku Remote app to silently not open.
+                try? await Task.sleep(for: .milliseconds(450))
                 openRemoteApp(for: .roku)
             }
         case .appleTV:
@@ -860,5 +888,179 @@ struct CastToTVSheet: View {
         )
         .shadow(color: .black.opacity(0.4), radius: 18, y: 6)
         .transition(.move(edge: .top).combined(with: .opacity))
+    }
+}
+
+// MARK: - Limited Mode help
+
+/// Tag value used to drive the `.sheet(item:)` presentation of the
+/// Limited Mode help. Carries the device name so the help copy can be
+/// specific ("Living Room Roku rejected the request…").
+struct LimitedModeHelp: Identifiable, Equatable {
+    let id = UUID()
+    let deviceName: String
+}
+
+/// Step-by-step fix path for the Roku OS 14.1+ "Network access" default of
+/// Limited mode, which blocks the ECP `launch`/`keypress` commands the cast
+/// flow depends on. Roku itself surfaces no UI hint when it rejects a
+/// command, so the user has no way to know what's wrong unless we tell them.
+private struct LimitedModeHelpSheet: View {
+    let deviceName: String
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 22) {
+                hero
+                explanation
+                stepsCard
+                whyCard
+                doneButton
+            }
+            .padding(.horizontal, 22)
+            .padding(.top, 18)
+            .padding(.bottom, 36)
+        }
+        .background(Color(red: 0x0A/255, green: 0x10/255, blue: 0x1E/255))
+        .presentationDetents([.large])
+        .presentationDragIndicator(.visible)
+        .presentationBackground(Color(red: 0x0A/255, green: 0x10/255, blue: 0x1E/255))
+    }
+
+    private var hero: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 10) {
+                Image(systemName: "lock.shield.fill")
+                    .scaledFont(size: 18, weight: .semibold)
+                    .foregroundStyle(Color.orange)
+                    .padding(8)
+                    .background(Circle().fill(Color.orange.opacity(0.18)))
+                Text("Roku is in Limited Mode")
+                    .scaledFont(size: 22, weight: .bold)
+                    .foregroundStyle(.white)
+            }
+            Text("\(deviceName) blocked the launch. A recent Roku update changed the default so phones can't open apps until you enable network control.")
+                .scaledFont(size: 14)
+                .foregroundStyle(Color.white.opacity(0.7))
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.top, 8)
+    }
+
+    private var explanation: some View {
+        Text("Here's the 30-second fix on the Roku itself — you only need to do this once.")
+            .scaledFont(size: 13, weight: .semibold)
+            .foregroundStyle(Color.white.opacity(0.85))
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var stepsCard: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            stepRow(
+                number: 1,
+                title: "Open Settings on your Roku",
+                detail: "Press the Home button on your Roku remote, then scroll down to Settings."
+            )
+            divider
+            stepRow(
+                number: 2,
+                title: "Go to System → Advanced system settings",
+                detail: "Then choose Control by mobile apps → Network access."
+            )
+            divider
+            stepRow(
+                number: 3,
+                title: "Switch from Limited to Permissive",
+                detail: "Or pick Enabled if you want full control from this app. Accept the security prompt that pops up."
+            )
+            divider
+            stepRow(
+                number: 4,
+                title: "Come back here and try again",
+                detail: "Tap the device once more in Play on TV and the channel should open straight away."
+            )
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 16)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(Color.white.opacity(0.06))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(Color.orange.opacity(0.22), lineWidth: 1)
+        )
+    }
+
+    private var whyCard: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: "info.circle.fill")
+                .scaledFont(size: 14)
+                .foregroundStyle(Color.blue)
+            Text("Roku OS 14.1 (December 2024) added a Network access lock that defaults to Limited. Until you change it, every phone and home-automation app gets a 403 from your Roku — not just this one.")
+                .scaledFont(size: 12)
+                .foregroundStyle(Color.white.opacity(0.7))
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color.blue.opacity(0.08))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(Color.blue.opacity(0.18), lineWidth: 1)
+        )
+    }
+
+    private var doneButton: some View {
+        Button {
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            dismiss()
+        } label: {
+            Text("Got it")
+                .scaledFont(size: 15, weight: .semibold)
+                .foregroundStyle(.black)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 14)
+                .background(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(Color.white)
+                )
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var divider: some View {
+        Rectangle()
+            .fill(Color.white.opacity(0.08))
+            .frame(height: 0.5)
+    }
+
+    private func stepRow(number: Int, title: String, detail: String) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Text("\(number)")
+                .scaledFont(size: 13, weight: .heavy, design: .rounded)
+                .foregroundStyle(.white)
+                .frame(width: 24, height: 24)
+                .background(
+                    Circle()
+                        .fill(Color.orange.opacity(0.85))
+                )
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .scaledFont(size: 14, weight: .semibold)
+                    .foregroundStyle(.white)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(detail)
+                    .scaledFont(size: 12.5)
+                    .foregroundStyle(Color.white.opacity(0.65))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+        }
     }
 }

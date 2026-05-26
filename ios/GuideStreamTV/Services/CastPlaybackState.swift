@@ -78,7 +78,9 @@ final class CastPlaybackState {
     }
 
     /// Sends `Home` to the active Roku so the TV returns to its main
-    /// dashboard. Best-effort — failures are silent.
+    /// dashboard. Best-effort — failures are silent (Limited mode on
+    /// Roku OS 14.1+ will block this without "Permissive" or "Enabled"
+    /// network access).
     func sendHomeToRoku() {
         guard let session = current,
               session.deviceKind == .roku,
@@ -89,21 +91,53 @@ final class CastPlaybackState {
         }
     }
 
-    /// Opens the iOS Roku Remote app. Falls back to the App Store listing
-    /// when the user doesn't have the app installed. Safe to call from any
-    /// actor — UIApplication APIs are dispatched to the main actor.
+    /// Opens the iOS Roku Remote app, with retries to survive cases where
+    /// the app-switch race against a sheet dismissal causes the first
+    /// `open` to be queued and dropped by iOS.
+    ///
+    /// Order of attempts:
+    ///   1. `roku://` — the documented native scheme; lands directly on the
+    ///      Roku Remote screen when the official Roku app is installed.
+    ///   2. Same scheme one more time after a 600ms delay — fixes the
+    ///      "sheet was still dismissing during the first open" race.
+    ///   3. Universal link to the Roku app on the App Store — when neither
+    ///      attempt succeeded, the user almost certainly doesn't have the
+    ///      app, so this hands them a one-tap install path.
     func openRokuRemote() {
         Task { @MainActor in
-            guard let url = URL(string: "roku://") else { return }
+            // Give the system a beat to settle any pending UI dismiss before
+            // the URL open. Without this, calling `open` while a sheet is
+            // mid-dismiss frequently no-ops on iOS 18+.
+            try? await Task.sleep(for: .milliseconds(120))
+
+            if await tryOpenRokuApp() { return }
+
+            // First attempt didn't land — wait, then retry once. The retry
+            // is what fixes the common "tapped from inside a sheet" failure.
+            try? await Task.sleep(for: .milliseconds(600))
+            if await tryOpenRokuApp() { return }
+
+            // Still nothing — the Roku app isn't installed (or iOS refused
+            // both opens). Send the user to the App Store listing as the
+            // graceful final fallback. We use the completion-handler form
+            // (which is non-async on iOS 18) so this branch doesn't have to
+            // suspend on a result we don't need.
+            if let store = URL(string: "https://apps.apple.com/app/the-roku-app-official/id482066631") {
+                UIApplication.shared.open(store, options: [:], completionHandler: nil)
+            }
+        }
+    }
+
+    /// Attempts to open `roku://`. Returns whether iOS reported success —
+    /// `true` means the foreground handoff actually went through; `false`
+    /// means the Roku app is missing OR iOS dropped the request (window
+    /// not foregrounded, scene inactive, etc.).
+    @MainActor
+    private func tryOpenRokuApp() async -> Bool {
+        guard let url = URL(string: "roku://") else { return false }
+        return await withCheckedContinuation { continuation in
             UIApplication.shared.open(url, options: [:]) { success in
-                if success { return }
-                // Roku app missing — fall back to its App Store listing so
-                // the user has a one-tap install path.
-                if let store = URL(string: "https://apps.apple.com/app/the-roku-app-official/id482066631") {
-                    Task { @MainActor in
-                        UIApplication.shared.open(store)
-                    }
-                }
+                continuation.resume(returning: success)
             }
         }
     }
