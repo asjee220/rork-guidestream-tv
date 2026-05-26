@@ -9,6 +9,10 @@ extension Color {
     static let navy = Color(red: 0x04/255, green: 0x09/255, blue: 0x0F/255)
     static let orange = Color(red: 0xF5/255, green: 0x82/255, blue: 0x1F/255)
     static let blue = Color(red: 0x1A/255, green: 0x6F/255, blue: 0xE8/255)
+    /// Brand teal-green used for the news rail and news-specific CTAs so
+    /// news content has its own visual identity across the app (carousel
+    /// tiles, home panel header, breaking-news pulse).
+    static let newsGreen = Color(red: 0x00/255, green: 0x9E/255, blue: 0x8A/255)
     static let textPrimary = Color.white
     static let textSecondary = Color.white.opacity(0.55)
     static let textTertiary = Color.white.opacity(0.35)

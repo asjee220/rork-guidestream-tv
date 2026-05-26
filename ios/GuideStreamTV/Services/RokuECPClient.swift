@@ -47,6 +47,12 @@ enum RokuECPClient {
     /// unrecognised id and open to their home screen, which is the correct
     /// fallback. For channels that DO accept arbitrary identifiers (Jellyfin,
     /// Plex, sideloaded apps) the deep-link will land directly on the title.
+    ///
+    /// Falls back to a deeplink-free launch (just `/launch/<channelId>`) if
+    /// the first attempt with the content-id query fails. Some channels
+    /// reject the request entirely if they don't recognise the id, so a
+    /// retry without parameters is what gets the channel screen on-screen
+    /// when a direct deeplink isn't possible.
     nonisolated static func launch(
         host: String,
         port: UInt16,
@@ -54,20 +60,39 @@ enum RokuECPClient {
         contentId: String? = nil,
         mediaType: String = "series"
     ) async -> Bool {
-        var path = "/launch/\(channelId)"
+        // Send Home first so we know the TV is at a clean state. Without
+        // this, a Roku that's already deep inside another app sometimes
+        // ignores the launch (or worse, the launch lands in a transitional
+        // overlay that the user can't dismiss).
+        _ = await rawHTTPPost(host: host, port: port, path: "/keypress/Home", timeout: 1.5)
+
+        // First attempt: with contentId + MediaType. Roku ECP is
+        // case-insensitive on parameter names but the public docs use
+        // `contentID` / `MediaType`, so we match exactly.
         if let contentId, !contentId.isEmpty {
             let cid = contentId.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? contentId
             let mt = mediaType.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? mediaType
-            // Roku ECP is case-insensitive on parameter names but the public
-            // docs use `contentID` / `MediaType`, so we match that exactly.
-            path += "?contentID=\(cid)&MediaType=\(mt)"
+            let withParams = "/launch/\(channelId)?contentID=\(cid)&MediaType=\(mt)"
+            if await rawHTTPPost(host: host, port: port, path: withParams, timeout: 4.0) {
+                return true
+            }
+            // Some channels prefer lowercase `contentId` — try that variant
+            // before giving up the deeplink.
+            let lowerCase = "/launch/\(channelId)?contentId=\(cid)&mediaType=\(mt)"
+            if await rawHTTPPost(host: host, port: port, path: lowerCase, timeout: 4.0) {
+                return true
+            }
         }
-        return await rawHTTPPost(host: host, port: port, path: path, timeout: 4.0)
+
+        // Final attempt: plain launch with no deeplink. This always opens
+        // the channel to its landing screen on a working Roku, so this is
+        // also our "did the network call even succeed?" signal.
+        return await rawHTTPPost(host: host, port: port, path: "/launch/\(channelId)", timeout: 4.0)
     }
 
-    /// Sends `keypress/<key>` to the Roku — useful for resuming playback
-    /// or sending Home/Back after a launch. Currently unused but exposed
-    /// for future remote-control UI.
+    /// Sends `keypress/<key>` to the Roku — useful for sending Home/Back
+    /// after a launch (e.g. dismissing the active session via the home
+    /// banner). Public so `CastPlaybackState` can reuse it.
     nonisolated static func keypress(host: String, port: UInt16, key: String) async -> Bool {
         await rawHTTPPost(host: host, port: port, path: "/keypress/\(key)", timeout: 2.5)
     }

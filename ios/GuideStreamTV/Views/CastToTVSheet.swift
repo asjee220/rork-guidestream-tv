@@ -580,10 +580,12 @@ struct CastToTVSheet: View {
     /// Coordinates the full cast-to-TV flow for a selected device:
     ///   1. Dispatch a launch command (Roku ECP for Roku; pending pairing for
     ///      Apple TV — see `dispatchLaunch`).
-    ///   2. Show a prominent "Playing on [Device]" banner.
-    ///   3. After a beat, open the Roku Remote app (Roku) or dismiss with an
+    ///   2. Register the active session in `CastPlaybackState` so the
+    ///      persistent home-screen "Playing on" banner appears.
+    ///   3. Show a prominent "Playing on [Device]" banner inside the sheet.
+    ///   4. After a beat, open the Roku Remote app (Roku) or dismiss with an
     ///      instructional banner (Apple TV).
-    ///   4. Dismiss the sheet.
+    ///   5. Dismiss the sheet.
     ///
     /// Apple TV NEVER triggers an iPhone-side streaming-app deeplink — the
     /// user explicitly flagged that as the wrong behavior. Direct app launch
@@ -625,6 +627,19 @@ struct CastToTVSheet: View {
                     deviceKind: device.kind,
                     hint: handoffHint(for: device.kind)
                 ))
+
+                // Register the session globally so the persistent home
+                // banner takes over after this sheet dismisses. Includes
+                // the host/port for Roku so the home banner's remote-app
+                // button can re-target the same device without re-discovery.
+                CastPlaybackState.shared.start(
+                    title: showTitle,
+                    platform: platform,
+                    deviceName: device.name,
+                    deviceKind: device.kind,
+                    host: device.host,
+                    port: device.port
+                )
 
                 // Give the user a moment to see the banner, then perform the
                 // follow-up (open remote app or open streaming app for AirPlay)
@@ -676,15 +691,23 @@ struct CastToTVSheet: View {
 
     /// Final step in the cast flow — runs after the "Playing on" banner has
     /// been visible long enough for the user to read it.
+    ///
+    /// Order matters here: we dismiss the sheet BEFORE asking iOS to open
+    /// the Roku Remote app. Calling `UIApplication.shared.open` while a
+    /// `.sheet` is still presented sometimes loses the app-switch (iOS
+    /// queues the foreground request, then drops it when the sheet's
+    /// dismiss animation runs first). Dismissing first guarantees the
+    /// Roku Remote launch wins the race.
     private func completeHandoff(for device: DiscoveredTVDevice) {
         switch device.kind {
         case .roku:
-            openRemoteApp(for: .roku)
-            // Brief pause so the system app-switch animation can begin
-            // before we tear down the sheet.
+            // Tear down the sheet first so iOS hands focus back to the app's
+            // main window. Only then ask to open Roku Remote — this way the
+            // app-switch animation isn't competing with the sheet dismiss.
+            isPresented = false
             Task { @MainActor in
-                try? await Task.sleep(for: .milliseconds(300))
-                isPresented = false
+                try? await Task.sleep(for: .milliseconds(250))
+                openRemoteApp(for: .roku)
             }
         case .appleTV:
             // No iPhone deeplink. No StreamingDeepLinker. No app switch.
@@ -740,16 +763,15 @@ struct CastToTVSheet: View {
     /// standalone Apple TV Remote was removed from the App Store in Oct
     /// 2020 and the modern remote lives only in Control Center (no public
     /// URL scheme).
+    ///
+    /// We delegate to `CastPlaybackState.openRokuRemote()` so the same code
+    /// path is reused by the persistent home banner's remote button — a
+    /// single source of truth for the Roku launch eliminates duplicate
+    /// failure handling.
     private func openRemoteApp(for kind: TVDeviceKind) {
         switch kind {
         case .roku:
-            guard let url = URL(string: "roku://") else { return }
-            UIApplication.shared.open(url, options: [:]) { success in
-                if !success,
-                   let store = URL(string: "https://apps.apple.com/app/the-roku-app-official/id482066631") {
-                    UIApplication.shared.open(store)
-                }
-            }
+            CastPlaybackState.shared.openRokuRemote()
         case .appleTV:
             break
         }

@@ -9,6 +9,7 @@ enum HomeRoute: Hashable {
     case newEpisodes
     case bingeWorthy
     case whatsNewToday
+    case news
     case widgetSetup
 }
 
@@ -780,6 +781,124 @@ struct WhatsNewTodayListView: View {
         .navigationBarTitleDisplayMode(.large)
         .toolbarBackground(Color.navy, for: .navigationBar)
         .toolbarColorScheme(.dark, for: .navigationBar)
+    }
+}
+
+// MARK: - News List
+
+/// Full-screen list of the top news streams pulled from streaming services.
+/// Uses a single-column row layout so each card has room for the outlet,
+/// title, and provider — keeping the news rail more scannable than the
+/// poster grid used by Binge Worthy / What's New Today.
+struct NewsListView: View {
+    let items: [NewsStream]
+    var onSelect: (NewsStream) -> Void
+
+    var body: some View {
+        ScrollView {
+            LazyVStack(spacing: 12) {
+                ForEach(items) { news in
+                    Button(action: { onSelect(news) }) {
+                        NewsRow(news: news)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 12)
+            .padding(.bottom, 120)
+        }
+        .background(Color.navy.ignoresSafeArea())
+        .navigationTitle("News")
+        .navigationBarTitleDisplayMode(.large)
+        .toolbarBackground(Color.navy, for: .navigationBar)
+        .toolbarColorScheme(.dark, for: .navigationBar)
+    }
+}
+
+private struct NewsRow: View {
+    let news: NewsStream
+
+    private static let formatter: RelativeDateTimeFormatter = {
+        let f = RelativeDateTimeFormatter()
+        f.unitsStyle = .short
+        return f
+    }()
+
+    var body: some View {
+        HStack(spacing: 14) {
+            Color.newsGreen
+                .frame(width: 110, height: 72)
+                .overlay {
+                    RemoteImage(
+                        urlString: news.backdropUrl ?? news.posterUrl,
+                        contentMode: .fill,
+                        fallbackColors: [Color.newsGreen, Color(red: 0.04, green: 0.20, blue: 0.18)]
+                    )
+                    .allowsHitTesting(false)
+                }
+                .overlay(alignment: .topLeading) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "dot.radiowaves.left.and.right")
+                            .scaledFont(size: 7, weight: .black)
+                        Text("LIVE")
+                            .scaledFont(size: 7, weight: .heavy)
+                            .tracking(0.5)
+                    }
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 2)
+                    .background(
+                        RoundedRectangle(cornerRadius: 3, style: .continuous)
+                            .fill(Color.newsGreen)
+                    )
+                    .padding(4)
+                }
+                .clipShape(.rect(cornerRadius: 8))
+
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
+                    Text(news.outlet.uppercased())
+                        .scaledFont(size: 9, weight: .bold)
+                        .tracking(0.5)
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(RoundedRectangle(cornerRadius: 4).fill(Color.newsGreen))
+                    if let provider = news.providerName {
+                        Text(provider)
+                            .scaledFont(size: 9, weight: .semibold)
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(RoundedRectangle(cornerRadius: 4).fill(Color.white.opacity(0.14)))
+                    }
+                }
+                Text(news.title)
+                    .scaledFont(size: 15, weight: .semibold)
+                    .foregroundStyle(Color.textPrimary)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+                if let d = news.publishedAt {
+                    Text(Self.formatter.localizedString(for: d, relativeTo: Date()))
+                        .scaledFont(size: 12)
+                        .foregroundStyle(Color.textTertiary)
+                }
+            }
+
+            Spacer(minLength: 0)
+
+            Image(systemName: "chevron.right")
+                .scaledFont(size: 13, weight: .semibold)
+                .foregroundStyle(Color.textTertiary)
+        }
+        .padding(10)
+        .background(
+            Color.white.opacity(0.05)
+                .background(.ultraThinMaterial)
+        )
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.newsGreen.opacity(0.30), lineWidth: 1))
+        .clipShape(.rect(cornerRadius: 12))
     }
 }
 
