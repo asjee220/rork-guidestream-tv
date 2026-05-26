@@ -524,13 +524,34 @@ struct EpisodeDetailSheet: View {
     private var watchButton: some View {
         Button {
             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-            StreamingDeepLinker.open(
-                platform: whereToWatchLabel,
-                title: title,
-                tmdbId: tmdbId,
-                isTV: isTV
-            )
-            dismiss()
+
+            // Fast path: when the sheet already resolved a Watchmode
+            // source, fire the deep link from the captured URL. This
+            // avoids a second ~500–1500ms Watchmode round-trip AND
+            // closes a race where iOS dropped the foreground request
+            // because the sheet started dismissing before open() ran.
+            if let pre = preResolvedDeepLinkURL {
+                StreamingDeepLinker.openResolvedURL(
+                    pre,
+                    platform: whereToWatchLabel,
+                    title: title,
+                    tmdbId: tmdbId
+                )
+            } else {
+                StreamingDeepLinker.open(
+                    platform: whereToWatchLabel,
+                    title: title,
+                    tmdbId: tmdbId,
+                    isTV: isTV
+                )
+            }
+
+            // Defer dismiss so the URL open completes first — iOS
+            // sometimes drops opens fired mid-dismiss animation.
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(180))
+                dismiss()
+            }
         } label: {
             HStack(spacing: 8) {
                 if isResolvingSource && resolvedSource == nil {
@@ -685,6 +706,26 @@ struct EpisodeDetailSheet: View {
         }
     }
 
+    /// Title-specific URL from the already-resolved Watchmode source.
+    /// Prefers `ios_url` (real deep link when Watchmode is on a paid plan);
+    /// otherwise the canonical `web_url`, which iOS routes into the
+    /// streaming app via universal links. `nil` if no source has resolved
+    /// yet — caller falls back to the async lookup.
+    private var preResolvedDeepLinkURL: URL? {
+        guard let src = resolvedSource else { return nil }
+        if let s = src.iosUrl, Self.isRealDeepLinkURL(s), let u = URL(string: s) { return u }
+        if let s = src.webUrl, Self.isRealDeepLinkURL(s), let u = URL(string: s) { return u }
+        return nil
+    }
+
+    /// Rejects Watchmode's free-tier placeholder string
+    /// ("Deeplinks available for paid plans only.").
+    private static func isRealDeepLinkURL(_ s: String) -> Bool {
+        let lower = s.lowercased()
+        guard lower.hasPrefix("http://") || lower.hasPrefix("https://") || lower.contains("://") else { return false }
+        if lower.contains("deeplinks available") || lower.contains("paid plan") { return false }
+        return URL(string: s) != nil
+    }
 }
 
 // MARK: - New Episodes List

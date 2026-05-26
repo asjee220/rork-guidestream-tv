@@ -97,6 +97,27 @@ struct PlayOnBottomSheet: View {
         return isTV
     }
 
+    /// Title-specific URL from the already-resolved Watchmode source.
+    /// Prefers `ios_url` when Watchmode returned a real deep link (paid
+    /// tier); falls back to the canonical `web_url` which iOS routes into
+    /// the app via universal links. `nil` when the source hasn't resolved
+    /// yet — caller falls back to the async lookup path.
+    private var preResolvedDeepLinkURL: URL? {
+        guard let src = resolvedSource else { return nil }
+        if let s = src.iosUrl, Self.isRealDeepLinkURL(s), let u = URL(string: s) { return u }
+        if let s = src.webUrl, Self.isRealDeepLinkURL(s), let u = URL(string: s) { return u }
+        return nil
+    }
+
+    /// Filters out Watchmode free-tier placeholders
+    /// ("Deeplinks available for paid plans only.") that aren't valid URLs.
+    private static func isRealDeepLinkURL(_ s: String) -> Bool {
+        let lower = s.lowercased()
+        guard lower.hasPrefix("http://") || lower.hasPrefix("https://") || lower.contains("://") else { return false }
+        if lower.contains("deeplinks available") || lower.contains("paid plan") { return false }
+        return URL(string: s) != nil
+    }
+
     var body: some View {
         GeometryReader { geo in
             ZStack(alignment: .bottom) {
@@ -458,13 +479,35 @@ struct PlayOnBottomSheet: View {
                 titleId: WatchIntentLogger.titleSlug(showTitle),
                 metadata: ["device_id": "watch-on-platform", "platform": whereToWatchLabel]
             )
-            StreamingDeepLinker.open(
-                platform: whereToWatchLabel,
-                title: showTitle,
-                tmdbId: tmdbId,
-                isTV: resolvedIsTV
-            )
-            onDeviceSelected("watch-on-platform")
+
+            // Fast path: when the sheet has already resolved a Watchmode
+            // source, fire the deep link synchronously from the captured
+            // URL. Avoids a second Watchmode round-trip AND removes the
+            // race where iOS dropped the open because the sheet started
+            // animating away before UIApplication.open ran.
+            if let pre = preResolvedDeepLinkURL {
+                StreamingDeepLinker.openResolvedURL(
+                    pre,
+                    platform: whereToWatchLabel,
+                    title: showTitle,
+                    tmdbId: tmdbId
+                )
+            } else {
+                StreamingDeepLinker.open(
+                    platform: whereToWatchLabel,
+                    title: showTitle,
+                    tmdbId: tmdbId,
+                    isTV: resolvedIsTV
+                )
+            }
+
+            // Defer the sheet dismiss by a beat so the URL open settles
+            // first — iOS occasionally drops a foreground request that
+            // fires while a sheet's dismiss animation is mid-flight.
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(180))
+                onDeviceSelected("watch-on-platform")
+            }
         } label: {
             HStack(spacing: 8) {
                 if isResolvingSource && resolvedSource == nil {

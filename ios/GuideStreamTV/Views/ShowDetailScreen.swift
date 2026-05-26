@@ -296,13 +296,31 @@ struct ShowDetailScreen: View {
         }
     }
 
-    /// Opens the streaming app for a specific tapped service badge. Routes
-    /// through `StreamingDeepLinker` so we get the same native-scheme
-    /// conversion (`nflx://`, `videos://`, `youtube://`, `primevideo://`) and
-    /// search-URL fallback used by the rest of the app, rather than handing
-    /// Watchmode's raw `ios_url` placeholder to `UIApplication.shared.open`.
+    /// Opens the streaming app for a specific tapped service badge.
+    ///
+    /// Fast path: when the view-model already has a matching Watchmode
+    /// source loaded (i.e. the user can see the service badge), feed its
+    /// HTTPS `web_url` straight to `openResolvedURL` — iOS routes it
+    /// into the streaming app via universal links so the app lands on
+    /// the title page, not its home screen.
+    ///
+    /// Falls back to `StreamingDeepLinker.open` (which performs a fresh
+    /// Watchmode lookup) if no matching source is loaded yet, or to a
+    /// platform search URL when Watchmode can't resolve the title.
     private func openDeeplink(serviceName: String) {
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
+
+        if let url = preResolvedURL(forService: serviceName) {
+            StreamingDeepLinker.openResolvedURL(
+                url,
+                platform: serviceName,
+                title: displayTitle,
+                tmdbId: resolvedTmdbId,
+                titleSlug: titleId
+            )
+            return
+        }
+
         StreamingDeepLinker.open(
             platform: serviceName,
             title: displayTitle,
@@ -310,6 +328,39 @@ struct ShowDetailScreen: View {
             isTV: isTV,
             titleSlug: titleId
         )
+    }
+
+    /// Looks up a title-specific URL for the tapped service from the
+    /// view-model's cached Watchmode sources. Filters out Watchmode
+    /// free-tier placeholders.
+    private func preResolvedURL(forService serviceName: String) -> URL? {
+        let key = serviceName.lowercased()
+        let services = vm.services
+        let match = services.first { svc in
+            let n = svc.name.lowercased()
+            if key.contains("netflix") { return n.contains("netflix") }
+            if key.contains("hbo") || key.contains("max") { return n.contains("max") || n.contains("hbo") }
+            if key.contains("hulu") { return n.contains("hulu") }
+            if key.contains("disney") { return n.contains("disney") }
+            if key.contains("apple") { return n.contains("apple tv") }
+            if key.contains("prime") || key.contains("amazon") { return n.contains("amazon") || n.contains("prime") }
+            if key.contains("paramount") { return n.contains("paramount") }
+            if key.contains("peacock") { return n.contains("peacock") }
+            if key.contains("youtube") { return n.contains("youtube") }
+            return n.contains(key) || key.contains(n)
+        } ?? services.first
+
+        guard let svc = match else { return nil }
+        if let s = svc.iosUrl, Self.isRealDeepLinkURL(s), let u = URL(string: s) { return u }
+        if let s = svc.webUrl, Self.isRealDeepLinkURL(s), let u = URL(string: s) { return u }
+        return nil
+    }
+
+    private static func isRealDeepLinkURL(_ s: String) -> Bool {
+        let lower = s.lowercased()
+        guard lower.hasPrefix("http://") || lower.hasPrefix("https://") || lower.contains("://") else { return false }
+        if lower.contains("deeplinks available") || lower.contains("paid plan") { return false }
+        return URL(string: s) != nil
     }
 
     private func openPlayOn() {
