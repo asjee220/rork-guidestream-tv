@@ -1,0 +1,89 @@
+//
+//  TVTMDBService.swift
+//  GuideStreamTVTV
+//
+//  Read-only TMDB client used by the tvOS Home. We only need a handful
+//  of endpoints (trending, on-the-air, top provider lookup) so this
+//  service is intentionally a leaner subset of the phone app's full TMDB
+//  surface.
+//
+
+import Foundation
+
+private nonisolated struct TVTMDBSearchEnvelope: Decodable, Sendable {
+    let results: [TVTMDBResult]
+}
+
+private nonisolated struct TVTMDBProviderRegion: Decodable, Sendable {
+    let flatrate: [TVTMDBWatchProvider]?
+    let ads: [TVTMDBWatchProvider]?
+    let free: [TVTMDBWatchProvider]?
+}
+
+private nonisolated struct TVTMDBProvidersEnvelope: Decodable, Sendable {
+    let results: [String: TVTMDBProviderRegion]
+}
+
+nonisolated struct TVTMDBService {
+    static let shared = TVTMDBService()
+
+    private let apiKey = "233f8054219ef58bc928549b4b5bab50"
+    private let base = "https://api.themoviedb.org/3"
+
+    /// Mixed trending feed (TV + movies) for the hero carousel + rail.
+    func getTrending() async throws -> [TVTMDBResult] {
+        let urlString = "\(base)/trending/all/week?api_key=\(apiKey)&language=en-US"
+        let data = try await get(urlString)
+        let env = try JSONDecoder().decode(TVTMDBSearchEnvelope.self, from: data)
+        return env.results
+            .filter { ($0.mediaType ?? "") == "tv" || ($0.mediaType ?? "") == "movie" }
+            .map { stamp($0, mediaType: $0.mediaType ?? "tv") }
+    }
+
+    /// Currently-airing TV — used for the "New Episodes" rail.
+    func getOnTheAir() async throws -> [TVTMDBResult] {
+        let urlString = "\(base)/tv/on_the_air?api_key=\(apiKey)&language=en-US&page=1"
+        let data = try await get(urlString)
+        let env = try JSONDecoder().decode(TVTMDBSearchEnvelope.self, from: data)
+        return env.results.map { stamp($0, mediaType: "tv") }
+    }
+
+    /// Returns the top US streaming provider for a title, or nil if no
+    /// real streaming service is associated with it.
+    func getTopWatchProvider(tmdbId: Int, isTV: Bool) async throws -> TVTMDBWatchProvider? {
+        let kind = isTV ? "tv" : "movie"
+        let urlString = "\(base)/\(kind)/\(tmdbId)/watch/providers?api_key=\(apiKey)"
+        let data = try await get(urlString)
+        let env = try JSONDecoder().decode(TVTMDBProvidersEnvelope.self, from: data)
+        guard let us = env.results["US"] else { return nil }
+        let pool = (us.flatrate ?? []) + (us.ads ?? []) + (us.free ?? [])
+        guard !pool.isEmpty else { return nil }
+        return pool.min(by: { ($0.displayPriority ?? 999) < ($1.displayPriority ?? 999) })
+    }
+
+    private func stamp(_ r: TVTMDBResult, mediaType: String) -> TVTMDBResult {
+        TVTMDBResult(
+            id: r.id,
+            mediaType: r.mediaType ?? mediaType,
+            name: r.name,
+            title: r.title,
+            posterPath: r.posterPath,
+            backdropPath: r.backdropPath,
+            overview: r.overview,
+            voteAverage: r.voteAverage,
+            firstAirDate: r.firstAirDate,
+            releaseDate: r.releaseDate
+        )
+    }
+
+    private func get(_ urlString: String) async throws -> Data {
+        guard let url = URL(string: urlString) else { throw URLError(.badURL) }
+        var req = URLRequest(url: url)
+        req.timeoutInterval = 12
+        let (data, response) = try await URLSession.shared.data(for: req)
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            throw URLError(.badServerResponse)
+        }
+        return data
+    }
+}

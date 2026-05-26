@@ -1,0 +1,57 @@
+//
+//  ContentView.swift
+//  GuideStreamTVTV
+//
+//  Root router. Restores the persisted Supabase session on launch and
+//  routes between the sign-in landing and the main tab shell. The launch
+//  splash sits over the gradient backdrop so the cold-launch flash
+//  matches the rest of the app instead of going system white.
+//
+
+import SwiftUI
+
+struct ContentView: View {
+    @State private var auth = TVAuthViewModel.shared
+    @State private var hasRestored: Bool = false
+
+    var body: some View {
+        Group {
+            if !hasRestored {
+                splash
+            } else if auth.isSignedIn {
+                TVMainView(onSignOut: { /* state flips via auth */ })
+                    .transition(.opacity)
+            } else {
+                TVSignInView(onContinue: { /* state flips via auth */ })
+                    .transition(.opacity)
+            }
+        }
+        .animation(.easeInOut(duration: 0.35), value: auth.isSignedIn)
+        .animation(.easeInOut(duration: 0.35), value: hasRestored)
+        .task {
+            await auth.restoreSession()
+            hasRestored = true
+        }
+    }
+
+    private var splash: some View {
+        ZStack {
+            TVTheme.backgroundGradient
+            VStack(spacing: 30) {
+                HStack(spacing: 18) {
+                    Image(systemName: "play.tv.fill")
+                        .font(.system(size: 80, weight: .black))
+                        .foregroundStyle(TVTheme.orange)
+                        .shadow(color: TVTheme.orange.opacity(0.6), radius: 30)
+                    Text("GuideStream")
+                        .font(.system(size: 64, weight: .black))
+                        .foregroundStyle(.white)
+                }
+                ProgressView()
+                    .tint(.white)
+                    .scaleEffect(1.6)
+                    .padding(.top, 24)
+            }
+        }
+    }
+}
