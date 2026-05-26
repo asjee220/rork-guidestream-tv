@@ -2,7 +2,7 @@
   "$schema": "https://rork.com/schema/rork.json",
   "apps": [
     {
-      "name": "GuideStream TV",
+      "name": "Guide Stream TV",
       "path": "ios",
       "framework": "swift"
     }
