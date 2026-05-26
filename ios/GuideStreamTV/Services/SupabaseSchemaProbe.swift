@@ -62,6 +62,8 @@ final class SupabaseSchemaProbe {
         ("watch_intent_events", "Analytics events for every tap, watch, and open", true),
         ("device_sessions", "One row per device install (the guest profile)", true),
         ("user_streams", "Your saved watch list", true),
+        ("title_likes", "Likes per title (episodes, shows, sports games)", true),
+        ("title_comments", "Comments per title", true),
         ("users", "Your profile (name, email, services)", false),
         ("new_episodes", "Server-managed episode releases", false)
     ]
@@ -164,6 +166,17 @@ final class SupabaseSchemaProbe {
                 "title_name": .string("Schema Probe"),
                 "device_id": .string(deviceId)
             ]
+        case "title_likes":
+            payload = [
+                "title_id": .string(probeTitleId),
+                "device_id": .string(deviceId)
+            ]
+        case "title_comments":
+            payload = [
+                "title_id": .string(probeTitleId),
+                "device_id": .string(deviceId),
+                "body": .string("Schema probe — safe to delete.")
+            ]
         default:
             checks[index].write = .unknown
             return
@@ -258,7 +271,7 @@ final class SupabaseSchemaProbe {
                     .delete()
                     .eq("event_type", value: "schema_probe")
                     .execute()
-            case "user_streams":
+            case "user_streams", "title_likes", "title_comments":
                 // Clean up by title_id only — covers both signed-in and
                 // device-id-owned probe rows.
                 try await SupabaseManager.shared.client

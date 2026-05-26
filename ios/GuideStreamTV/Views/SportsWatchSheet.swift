@@ -16,10 +16,11 @@ struct SportsWatchSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var isReminderSet: Bool = false
-    @State private var isNotifying: Bool = false
     @State private var showCastSheet: Bool = false
     @State private var streams = StreamsViewModel.shared
+    @State private var social = SocialViewModel.shared
     @State private var isToggleSaving: Bool = false
+    @State private var isTogglingLike: Bool = false
 
     private var awayColor: Color { game.away.primaryHex.map { Color(hex: $0) } ?? Color(white: 0.18) }
     private var homeColor: Color { game.home.primaryHex.map { Color(hex: $0) } ?? Color(white: 0.18) }
@@ -139,6 +140,9 @@ struct SportsWatchSheet: View {
                     "broadcasts": game.broadcasts
                 ]
             )
+        }
+        .task(id: gameSaveId) {
+            await social.refreshCounts(titleId: gameSaveId)
         }
     }
 
@@ -289,10 +293,14 @@ struct SportsWatchSheet: View {
     // MARK: - Actions
 
     private var actionsRow: some View {
-        HStack(spacing: 0) {
+        let key = gameSaveId
+        let isLiked = social.isLiked(key)
+        let likeCount = social.likes(key)
+        return HStack(spacing: 0) {
             circleAction(
                 icon: isReminderSet ? "bell.badge.fill" : "alarm",
                 label: "Remind me",
+                count: nil,
                 tint: isReminderSet ? Color.orange : .white,
                 showDot: isReminderSet
             ) {
@@ -302,17 +310,29 @@ struct SportsWatchSheet: View {
             .frame(maxWidth: .infinity)
 
             circleAction(
-                icon: "bell.fill",
-                label: "Notify",
-                tint: .white,
-                showDot: isNotifying
+                icon: isLiked ? "heart.fill" : "heart",
+                label: "Like",
+                count: likeCount,
+                tint: isLiked ? Color.orange : .white,
+                showDot: false
             ) {
                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) { isNotifying.toggle() }
+                guard !isTogglingLike else { return }
+                isTogglingLike = true
+                Task {
+                    await social.toggleLike(titleId: key)
+                    await MainActor.run { isTogglingLike = false }
+                }
             }
             .frame(maxWidth: .infinity)
 
-            circleAction(icon: "tv", label: "Send to TV", tint: .white, showDot: false) {
+            circleAction(
+                icon: "tv",
+                label: "Send to TV",
+                count: nil,
+                tint: .white,
+                showDot: false
+            ) {
                 UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                 showCastSheet = true
             }
@@ -320,9 +340,16 @@ struct SportsWatchSheet: View {
         }
     }
 
-    private func circleAction(icon: String, label: String, tint: Color, showDot: Bool, action: @escaping () -> Void) -> some View {
+    private func circleAction(
+        icon: String,
+        label: String,
+        count: Int?,
+        tint: Color,
+        showDot: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
         Button(action: action) {
-            VStack(spacing: 10) {
+            VStack(spacing: 8) {
                 ZStack {
                     Circle()
                         .fill(Color.white.opacity(0.08))
@@ -338,13 +365,29 @@ struct SportsWatchSheet: View {
                             .offset(x: 16, y: -16)
                     }
                 }
-                Text(label)
-                    .scaledFont(size: 13)
-                    .foregroundStyle(Color.white.opacity(0.7))
-                    .lineLimit(1)
+                VStack(spacing: 2) {
+                    Text(label)
+                        .scaledFont(size: 13)
+                        .foregroundStyle(Color.white.opacity(0.7))
+                        .lineLimit(1)
+                    if let count, count > 0 {
+                        Text(formatSocialCount(count))
+                            .scaledFont(size: 11, weight: .heavy)
+                            .foregroundStyle(.white)
+                    }
+                }
             }
         }
         .buttonStyle(.plain)
+    }
+
+    /// Compact count formatting used by the actions row, matching the
+    /// same rule the EpisodeDetailSheet uses so likes/comments look
+    /// consistent across the app.
+    private func formatSocialCount(_ n: Int) -> String {
+        if n >= 1_000_000 { return String(format: "%.1fM", Double(n) / 1_000_000) }
+        if n >= 1_000 { return String(format: "%.1fK", Double(n) / 1_000) }
+        return "\(n)"
     }
 
     // MARK: - About

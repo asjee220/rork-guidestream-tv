@@ -198,6 +198,67 @@ enum SupabaseSetupSQL {
     create policy "new_episodes_read_all"
       on public.new_episodes for select using (true);
 
+    -- TITLE LIKES (one row per (owner, title_id))
+    --
+    -- Same dual-ownership model as user_streams: signed-in users own rows by
+    -- user_id; guests + cross-device installs own rows by device_id. Partial
+    -- unique indexes keep each lane de-duplicated so toggle-like is idempotent.
+    create table if not exists public.title_likes (
+      id uuid primary key default gen_random_uuid(),
+      user_id uuid,
+      device_id text,
+      title_id text not null,
+      created_at timestamptz default now()
+    );
+    alter table public.title_likes add column if not exists user_id uuid;
+    alter table public.title_likes add column if not exists device_id text;
+    alter table public.title_likes drop constraint if exists title_likes_user_id_fkey;
+    alter table public.title_likes alter column user_id drop not null;
+
+    create index if not exists title_likes_title_idx on public.title_likes(title_id);
+    create index if not exists title_likes_user_idx on public.title_likes(user_id);
+    create index if not exists title_likes_device_idx on public.title_likes(device_id);
+
+    drop index if exists public.title_likes_user_title_uidx;
+    drop index if exists public.title_likes_device_title_uidx;
+    create unique index if not exists title_likes_user_title_uidx
+      on public.title_likes(user_id, title_id) where user_id is not null;
+    create unique index if not exists title_likes_device_title_uidx
+      on public.title_likes(device_id, title_id) where device_id is not null;
+
+    alter table public.title_likes enable row level security;
+    drop policy if exists "title_likes_open" on public.title_likes;
+    create policy "title_likes_open"
+      on public.title_likes for all
+      using (true) with check (true);
+
+    -- TITLE COMMENTS (append-only thread per title_id)
+    create table if not exists public.title_comments (
+      id uuid primary key default gen_random_uuid(),
+      user_id uuid,
+      device_id text,
+      title_id text not null,
+      body text not null,
+      display_name text,
+      initials text,
+      created_at timestamptz default now()
+    );
+    alter table public.title_comments add column if not exists user_id uuid;
+    alter table public.title_comments add column if not exists device_id text;
+    alter table public.title_comments add column if not exists display_name text;
+    alter table public.title_comments add column if not exists initials text;
+    alter table public.title_comments drop constraint if exists title_comments_user_id_fkey;
+    alter table public.title_comments alter column user_id drop not null;
+
+    create index if not exists title_comments_title_idx on public.title_comments(title_id);
+    create index if not exists title_comments_created_idx on public.title_comments(created_at desc);
+
+    alter table public.title_comments enable row level security;
+    drop policy if exists "title_comments_open" on public.title_comments;
+    create policy "title_comments_open"
+      on public.title_comments for all
+      using (true) with check (true);
+
     -- =====================================================
     -- All set! Re-open the Diagnostics screen in the app and
     -- tap "Re-test" to confirm every table reports OK.

@@ -31,11 +31,12 @@ struct EpisodeDetailSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var resolvedBackdrop: String?
-    @State private var isLiked: Bool = false
-    @State private var isNotifying: Bool = true
     @State private var showCastSheet: Bool = false
     @State private var streams = StreamsViewModel.shared
+    @State private var social = SocialViewModel.shared
     @State private var isToggleSaving: Bool = false
+    @State private var showComments: Bool = false
+    @State private var isTogglingLike: Bool = false
     /// Watchmode-resolved source for the show (top US sub > free > tve > rent).
     /// When set, drives the platform label, color, and the "Watch on" deeplink so
     /// shows show their real streaming service instead of the placeholder "HBO Max".
@@ -155,9 +156,31 @@ struct EpisodeDetailSheet: View {
                 isTV: isTV
             )
         }
+        .sheet(isPresented: $showComments) {
+            TitleCommentsSheet(
+                titleId: socialTitleKey,
+                title: title,
+                subtitle: meta,
+                posterUrl: posterUrl,
+                posterColors: colors,
+                accent: Color.orange
+            )
+        }
         .task(id: tmdbId ?? -1) {
             await resolveStreamingSource()
         }
+        .task(id: socialTitleKey) {
+            await social.refreshCounts(titleId: socialTitleKey)
+        }
+    }
+
+    /// Stable identifier used to scope likes & comments. Episodes and shows
+    /// with a TMDB id key off that (matches the watchlist's `titleId`).
+    /// Anything without a tmdbId falls back to a slug of the title so the
+    /// social state still has a stable home.
+    private var socialTitleKey: String {
+        if let tmdbId { return String(tmdbId) }
+        return WatchIntentLogger.titleSlug(title)
     }
 
     // MARK: - Source resolution
@@ -286,10 +309,10 @@ struct EpisodeDetailSheet: View {
 
                 HStack(spacing: 10) {
                     HStack(spacing: 6) {
-                        Image(systemName: "heart.fill")
+                        Image(systemName: social.isLiked(socialTitleKey) ? "heart.fill" : "heart")
                             .scaledFont(size: 12)
                             .foregroundStyle(Color.orange)
-                        Text("2.4K")
+                        Text(formatSocialCount(social.likes(socialTitleKey)))
                             .scaledFont(size: 13, weight: .semibold)
                             .foregroundStyle(.white)
                         Text("Likes")
@@ -303,7 +326,7 @@ struct EpisodeDetailSheet: View {
                         Image(systemName: "bubble.left")
                             .scaledFont(size: 12)
                             .foregroundStyle(Color.white.opacity(0.7))
-                        Text("183")
+                        Text(formatSocialCount(social.commentTotal(socialTitleKey)))
                             .scaledFont(size: 13, weight: .semibold)
                             .foregroundStyle(.white)
                         Text("Comments")
@@ -342,20 +365,52 @@ struct EpisodeDetailSheet: View {
     // MARK: - Actions row
 
     private var actionsRow: some View {
-        HStack(spacing: 0) {
-            circleAction(icon: isLiked ? "heart.fill" : "heart", label: "Like", tint: isLiked ? Color.orange : .white, showDot: false) {
+        let key = socialTitleKey
+        let isLiked = social.isLiked(key)
+        let likeCount = social.likes(key)
+        let commentCount = social.commentTotal(key)
+        return HStack(spacing: 0) {
+            circleAction(
+                icon: isLiked ? "heart.fill" : "heart",
+                label: "Like",
+                count: likeCount,
+                tint: isLiked ? Color.orange : .white,
+                showDot: false
+            ) {
                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) { isLiked.toggle() }
+                guard !isTogglingLike else { return }
+                isTogglingLike = true
+                Task {
+                    await social.toggleLike(titleId: key)
+                    await MainActor.run { isTogglingLike = false }
+                }
             }
             .frame(maxWidth: .infinity)
 
-            circleAction(icon: "bell.fill", label: "Notify", tint: .white, showDot: isNotifying) {
+            circleAction(
+                icon: "bubble.left.fill",
+                label: "Comments",
+                count: commentCount,
+                tint: .white,
+                showDot: false
+            ) {
                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) { isNotifying.toggle() }
+                showComments = true
+                WatchIntentLogger.shared.log(
+                    eventType: .commentsOpened,
+                    titleId: key,
+                    metadata: ["source": "episode_detail_sheet"]
+                )
             }
             .frame(maxWidth: .infinity)
 
-            circleAction(icon: "tv", label: "Send to TV", tint: .white, showDot: false) {
+            circleAction(
+                icon: "tv",
+                label: "Send to TV",
+                count: nil,
+                tint: .white,
+                showDot: false
+            ) {
                 UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                 showCastSheet = true
             }
@@ -363,9 +418,16 @@ struct EpisodeDetailSheet: View {
         }
     }
 
-    private func circleAction(icon: String, label: String, tint: Color, showDot: Bool, action: @escaping () -> Void) -> some View {
+    private func circleAction(
+        icon: String,
+        label: String,
+        count: Int?,
+        tint: Color,
+        showDot: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
         Button(action: action) {
-            VStack(spacing: 10) {
+            VStack(spacing: 8) {
                 ZStack {
                     Circle()
                         .fill(Color.white.opacity(0.08))
@@ -381,12 +443,27 @@ struct EpisodeDetailSheet: View {
                             .offset(x: 16, y: -16)
                     }
                 }
-                Text(label)
-                    .scaledFont(size: 13)
-                    .foregroundStyle(Color.white.opacity(0.7))
+                VStack(spacing: 2) {
+                    Text(label)
+                        .scaledFont(size: 13)
+                        .foregroundStyle(Color.white.opacity(0.7))
+                    if let count, count > 0 {
+                        Text(formatSocialCount(count))
+                            .scaledFont(size: 11, weight: .heavy)
+                            .foregroundStyle(.white)
+                    }
+                }
             }
         }
         .buttonStyle(.plain)
+    }
+
+    /// Compact count formatting used by the actions row + meta line:
+    /// 0 -> "0", 1234 -> "1.2K", 1_234_567 -> "1.2M".
+    private func formatSocialCount(_ n: Int) -> String {
+        if n >= 1_000_000 { return String(format: "%.1fM", Double(n) / 1_000_000) }
+        if n >= 1_000 { return String(format: "%.1fK", Double(n) / 1_000) }
+        return "\(n)"
     }
 
     // MARK: - About
