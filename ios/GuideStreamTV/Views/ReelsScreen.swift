@@ -924,82 +924,79 @@ private struct ReelView: View {
             VStack {
                 Spacer()
                 ZStack(alignment: .topTrailing) {
-                    HStack(spacing: 10) {
-                        ZStack {
-                            RoundedRectangle(cornerRadius: 8)
-                                .fill(target.color.opacity(0.12))
-                                .frame(width: 40, height: 40)
-                            if let service = StreamingCatalog.all
-                                .first(where: { $0.id == target.serviceId }) {
-                                ServiceBrandContent(
-                                    display: service.display,
-                                    size: .mini(32)
-                                )
-                                .frame(width: 32, height: 32)
-                            } else {
-                                Text(String(target.name.prefix(3)).uppercased())
-                                    .scaledFont(size: 11, weight: .black)
-                                    .foregroundStyle(target.color)
+                    Button {
+                        RakutenManager.shared.openAffiliateLink(
+                            serviceId: target.serviceId,
+                            metadata: [
+                                "source": "glass_overlay",
+                                "reel_platform": trailer.platformId,
+                                "show": trailer.showName
+                            ]
+                        )
+                        WatchIntentLogger.shared.log(
+                            eventType: .affiliateLinkTapped,
+                            platformId: target.serviceId,
+                            metadata: [
+                                "source": "reel_glass_overlay",
+                                "show_platform": trailer.platformId
+                            ]
+                        )
+                    } label: {
+                        HStack(spacing: 10) {
+                            ZStack {
+                                RoundedRectangle(cornerRadius: 8)
+                                    .fill(target.color.opacity(0.12))
+                                    .frame(width: 40, height: 40)
+                                if let service = StreamingCatalog.all
+                                    .first(where: { $0.id == target.serviceId }) {
+                                    ServiceBrandContent(
+                                        display: service.display,
+                                        size: .mini(32)
+                                    )
+                                    .frame(width: 32, height: 32)
+                                } else {
+                                    Text(String(target.name.prefix(3)).uppercased())
+                                        .scaledFont(size: 11, weight: .black)
+                                        .foregroundStyle(target.color)
+                                }
                             }
+                            .frame(width: 40, height: 40)
+
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Stream more on \(target.name)")
+                                    .scaledFont(size: 12, weight: .bold)
+                                    .foregroundStyle(.white)
+                                    .lineLimit(1)
+                                Text("Tap to start your free trial")
+                                    .scaledFont(size: 10)
+                                    .foregroundStyle(Color.white.opacity(0.50))
+                                Text("Sponsored · Rakuten")
+                                    .scaledFont(size: 9)
+                                    .foregroundStyle(Color.white.opacity(0.25))
+                            }
+
+                            Spacer(minLength: 0)
+
+                            // Arrow indicator replaces the old button
+                            Image(systemName: "arrow.up.right")
+                                .scaledFont(size: 11, weight: .semibold)
+                                .foregroundStyle(Color.white.opacity(0.45))
+                                .padding(.trailing, 4)
                         }
-                        .frame(width: 40, height: 40)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Stream more on \(target.name)")
-                                .scaledFont(size: 12, weight: .bold)
-                                .foregroundStyle(.white)
-                                .lineLimit(1)
-                            Text("Tap to start your free trial")
-                                .scaledFont(size: 10)
-                                .foregroundStyle(Color.white.opacity(0.50))
-                            Text("Sponsored · Rakuten")
-                                .scaledFont(size: 9)
-                                .foregroundStyle(Color.white.opacity(0.25))
-                        }
-                        Spacer(minLength: 0)
-                        Button {
-                            RakutenManager.shared.openAffiliateLink(
-                                serviceId: target.serviceId,
-                                metadata: [
-                                    "source": "glass_overlay",
-                                    "reel_platform": trailer.platformId,
-                                    "show": trailer.showName
-                                ]
-                            )
-                            WatchIntentLogger.shared.log(
-                                eventType: .affiliateLinkTapped,
-                                platformId: target.serviceId,
-                                metadata: [
-                                    "source": "reel_glass_overlay",
-                                    "show_platform": trailer.platformId
-                                ]
-                            )
-                        } label: {
-                            Text("Try free")
-                                .scaledFont(size: 11, weight: .bold)
-                                .foregroundStyle(.white)
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 7)
-                                .background(
-                                    Capsule()
-                                        .fill(Color(hex: "F5821F"))
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 10)
+                        .background(
+                            RoundedRectangle(cornerRadius: 14)
+                                .fill(Color(red: 8/255, green: 14/255,
+                                             blue: 24/255).opacity(0.82))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 14)
+                                        .stroke(Color.white.opacity(0.11),
+                                                lineWidth: 0.5)
                                 )
-                        }
-                        .buttonStyle(.plain)
+                        )
                     }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 10)
-                    .background(
-                        RoundedRectangle(cornerRadius: 14)
-                            .fill(Color(red: 8/255,
-                                         green: 14/255,
-                                         blue: 24/255)
-                                    .opacity(0.82))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 14)
-                                    .stroke(Color.white.opacity(0.11),
-                                            lineWidth: 0.5)
-                            )
-                    )
+                    .buttonStyle(.plain)
                     .padding(.horizontal, 14)
                     .padding(.bottom, bottomInset + 72)
 
@@ -1219,16 +1216,25 @@ private struct ReelView: View {
 
                     HStack(spacing: 12) {
                         if trailer.isSponsored {
-                            Button(action: onSponsorCTA) {
-                                Text("Try \(trailer.platformName.capitalized) Free")
-                                    .scaledFont(size: 15, weight: .bold)
-                                    .foregroundStyle(.white)
-                                    .frame(maxWidth: .infinity)
-                                    .frame(height: 52)
-                                    .background(Color(hex: "F5821F"))
-                                    .clipShape(Capsule())
-                            }
-                            .buttonStyle(.plain)
+                            // Make the whole bottom content area a tap target.
+                            // The explicit button is removed — tapping anywhere
+                            // on the lower half of the reel fires the CTA.
+                            Color.clear
+                                .frame(maxWidth: .infinity)
+                                .frame(height: 120)
+                                .contentShape(Rectangle())
+                                .onTapGesture { onSponsorCTA() }
+                                .overlay(alignment: .bottomLeading) {
+                                    HStack(spacing: 6) {
+                                        Text("Learn more")
+                                            .scaledFont(size: 13, weight: .semibold)
+                                            .foregroundStyle(.white)
+                                        Image(systemName: "arrow.up.right")
+                                            .scaledFont(size: 11, weight: .semibold)
+                                            .foregroundStyle(Color.white.opacity(0.70))
+                                    }
+                                    .padding(.bottom, 2)
+                                }
                         } else {
                             PlayOnPill(action: onShowDetail)
                         }

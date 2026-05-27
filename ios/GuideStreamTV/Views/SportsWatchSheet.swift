@@ -205,63 +205,54 @@ struct SportsWatchSheet: View {
            let service = StreamingCatalog.all
             .first(where: { $0.id == ad.serviceId }) {
             ZStack(alignment: .topTrailing) {
-                HStack(spacing: 12) {
-                    ServiceMiniIcon(service: service, size: 40)
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                Button {
+                    RakutenManager.shared.openAffiliateLink(
+                        serviceId: ad.serviceId,
+                        metadata: [
+                            "source": "sports_watch_sheet",
+                            "broadcast": primaryBroadcast ?? "",
+                            "sport": game.sport,
+                            "state": game.state.rawValue
+                        ]
+                    )
+                } label: {
+                    HStack(spacing: 12) {
+                        ServiceMiniIcon(service: service, size: 40)
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
 
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(ad.headline)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(ad.headline)
+                                .scaledFont(size: 13, weight: .semibold)
+                                .foregroundStyle(.white)
+                                .lineLimit(1)
+                            Text(ad.subtext)
+                                .scaledFont(size: 11)
+                                .foregroundStyle(Color.white.opacity(0.50))
+                            Text("Sponsored")
+                                .scaledFont(size: 9)
+                                .foregroundStyle(Color.white.opacity(0.25))
+                        }
+
+                        Spacer(minLength: 0)
+
+                        Image(systemName: "arrow.up.right")
                             .scaledFont(size: 13, weight: .semibold)
-                            .foregroundStyle(.white)
-                            .lineLimit(1)
-                        Text(ad.subtext)
-                            .scaledFont(size: 11)
-                            .foregroundStyle(Color.white.opacity(0.50))
-                        Text("Sponsored")
-                            .scaledFont(size: 9)
-                            .foregroundStyle(Color.white.opacity(0.25))
+                            .foregroundStyle(Color.white.opacity(0.35))
                     }
-
-                    Spacer(minLength: 0)
-
-                    Button {
-                        RakutenManager.shared.openAffiliateLink(
-                            serviceId: ad.serviceId,
-                            metadata: [
-                                "source": "sports_watch_sheet",
-                                "broadcast": primaryBroadcast ?? "",
-                                "sport": game.sport,
-                                "state": game.state.rawValue
-                            ]
-                        )
-                    } label: {
-                        let cta = ad.serviceId == "peacock"
-                            ? "Watch free" : "Try free"
-                        Text(cta)
-                            .scaledFont(size: 12, weight: .bold)
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 8)
-                            .background(
-                                Capsule().fill(Color(red:0xF5/255,
-                                                     green:0x82/255,
-                                                     blue:0x1F/255))
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 12)
+                    .background(
+                        RoundedRectangle(cornerRadius: 14)
+                            .fill(Color.white.opacity(0.05))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 14)
+                                    .stroke(Color.white.opacity(0.10),
+                                            lineWidth: 0.5)
                             )
-                    }
-                    .buttonStyle(.plain)
+                    )
+                    .padding(.horizontal, 20)
                 }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 12)
-                .background(
-                    RoundedRectangle(cornerRadius: 14)
-                        .fill(Color.white.opacity(0.05))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 14)
-                                .stroke(Color.white.opacity(0.10),
-                                        lineWidth: 0.5)
-                        )
-                )
-                .padding(.horizontal, 20)
+                .buttonStyle(.plain)
 
                 Button {
                     withAnimation(.easeOut(duration: 0.2)) {

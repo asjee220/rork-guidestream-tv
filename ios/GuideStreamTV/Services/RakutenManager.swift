@@ -107,6 +107,24 @@ final class RakutenManager {
     func openAffiliateLink(serviceId: String, metadata: [String: Any] = [:]) {
         let normalized = serviceId.lowercased()
 
+        // Check if the merchant ID is still a placeholder.
+        // If so, skip Rakuten entirely and open the direct signup
+        // URL so the link always works even before real IDs are set.
+        if let affiliate = affiliate(for: normalized),
+           affiliate.merchantId.hasPrefix("[") {
+            let directURL = Self.directSignupURL(for: normalized)
+            if let url = directURL {
+                UIApplication.shared.open(url)
+            }
+            WatchIntentLogger.shared.log(
+                eventType: .affiliateLinkTapped,
+                platformId: normalized,
+                metadata: ["type": "direct_fallback", "source":
+                    (metadata["source"] as? String) ?? "unknown"]
+            )
+            return
+        }
+
         if let url = affiliateURL(for: normalized) {
             UIApplication.shared.open(url, options: [:]) { [weak self] success in
                 guard !success, let fallback = self?.fallbackURL(for: normalized) else { return }
@@ -124,5 +142,34 @@ final class RakutenManager {
             platformId: normalized,
             metadata: meta
         )
+    }
+
+    private static func directSignupURL(for serviceId: String) -> URL? {
+        switch serviceId {
+        case "netflix":
+            return URL(string: "https://www.netflix.com/signup")
+        case "hbo":
+            return URL(string: "https://www.max.com/plans-and-pricing")
+        case "hulu":
+            return URL(string: "https://www.hulu.com/start")
+        case "disney":
+            return URL(string: "https://www.disneyplus.com/sign-up")
+        case "appletv", "apple":
+            return URL(string: "https://tv.apple.com")
+        case "prime":
+            return URL(string:
+                "https://www.amazon.com/amazonprimevideo")
+        case "paramount":
+            return URL(string:
+                "https://www.paramountplus.com/signup")
+        case "peacock":
+            return URL(string: "https://www.peacocktv.com/plan")
+        case "espn", "disney_bundle":
+            return URL(string:
+                "https://www.espn.com/espnplus/signup")
+        default:
+            return URL(string:
+                "https://www.google.com/search?q=\(serviceId)+streaming+free+trial")
+        }
     }
 }
