@@ -148,7 +148,7 @@ final class NewsService {
     private func fetchHeadlines(country: String) async throws -> [NewsAPIArticle] {
         let urlString = "https://newsapi.org/v2/top-headlines"
             + "?country=\(country)"
-            + "&category=entertainment"
+            + "&category=general"
             + "&pageSize=10"
             + "&apiKey=\(newsApiKey)"
         return try await fetchArticles(urlString)
