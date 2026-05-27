@@ -512,6 +512,8 @@
 					"_roku-ecp._tcp",
 					_googlecast._tcp,
 				);
+				INFOPLIST_KEY_NSAppTransportSecurity_NSExceptionDomains_newsapi.org_NSExceptionAllowsInsecureHTTPLoads = NO;
+				INFOPLIST_KEY_NSAppTransportSecurity_NSExceptionDomains_newsapi.org_NSIncludesSubdomains = YES;
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "GuideStream uses your local network to find Apple TV and Roku devices so you can send shows to them.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -588,6 +590,8 @@
 					"_roku-ecp._tcp",
 					_googlecast._tcp,
 				);
+				INFOPLIST_KEY_NSAppTransportSecurity_NSExceptionDomains_newsapi.org_NSExceptionAllowsInsecureHTTPLoads = NO;
+				INFOPLIST_KEY_NSAppTransportSecurity_NSExceptionDomains_newsapi.org_NSIncludesSubdomains = YES;
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "GuideStream uses your local network to find Apple TV and Roku devices so you can send shows to them.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
