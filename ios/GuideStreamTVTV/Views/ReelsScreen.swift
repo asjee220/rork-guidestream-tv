@@ -10,11 +10,13 @@
 
 import SwiftUI
 import UIKit
+#if !os(tvOS)
 import WebKit
+import YouTubeKit
+#endif
 import AVFoundation
 import AVKit
 import Supabase
-import YouTubeKit
 
 private extension Array {
     subscript(safe index: Int) -> Element? {
@@ -185,9 +187,11 @@ final class ReelsViewModel {
 
         // Pre-resolve the first few trailer stream URLs so playback starts
         // instantly when the user lands on the feed.
+        #if !os(tvOS)
         for trailer in combined.prefix(3) where !trailer.isSponsored && !trailer.trailerKey.isEmpty {
             TrailerStreamCache.shared.prefetch(trailer.trailerKey)
         }
+        #endif
     }
 
     private func mineResults(_ streams: [UserStream]) -> [TMDBResult] {
@@ -662,12 +666,14 @@ struct ReelsScreen: View {
     }
 
     private func prefetchNeighbors(around index: Int) {
+        #if !os(tvOS)
         let offsets = [-1, 0, 1, 2]
         for o in offsets {
             let i = index + o
             guard let t = vm.allTrailers[safe: i], !t.isSponsored, !t.trailerKey.isEmpty else { continue }
             TrailerStreamCache.shared.prefetch(t.trailerKey)
         }
+        #endif
     }
 
     private func showInterstitial(_ completion: @escaping () -> Void) {
@@ -783,13 +789,15 @@ private struct ReelView: View {
                 .allowsHitTesting(false)
 
             // Layer 8 — YouTube embed inside the letterbox window.
-            // The cloud iOS simulator cannot decode H.264 video inside WKWebView,
-            // so we show the trailer thumbnail with a tap-to-open overlay there.
-            // On real devices we render via inline HTML with baseURL = youtube.com
-            // so the IFrame Player API treats it as same-origin and doesn't throw
-            // error 150/153 for videos with embed restrictions.
+            // tvOS does not support WebKit or YouTubeKit, so we show the poster
+            // only. On iOS the cloud simulator also cannot decode H.264 inside
+            // WKWebView, so we show the poster there too.
             if !trailer.isSponsored, !trailer.trailerKey.isEmpty, !embedFailed {
-                #if targetEnvironment(simulator)
+                #if os(tvOS)
+                SimulatorTrailerPoster(trailer: trailer)
+                    .frame(width: size.width, height: size.height)
+                    .position(x: size.width / 2, y: size.height / 2)
+                #elseif targetEnvironment(simulator)
                 SimulatorTrailerPoster(trailer: trailer)
                     .frame(width: size.width, height: size.height)
                     .position(x: size.width / 2, y: size.height / 2)
@@ -1234,6 +1242,7 @@ private struct SimulatorTrailerPoster: View {
     }
 }
 
+#if !os(tvOS)
 // MARK: - Stream URL prefetch cache
 
 /// Resolves YouTube progressive stream URLs ahead of time so that when a reel
@@ -1276,7 +1285,9 @@ final class TrailerStreamCache {
         }
     }
 }
+#endif
 
+#if !os(tvOS)
 // MARK: - Native YouTube Player (AVPlayer + YouTubeKit)
 
 /// Plays a YouTube video natively via AVPlayer. YouTubeKit resolves the direct
@@ -1439,7 +1450,9 @@ private struct YouTubeNativePlayerView: UIViewRepresentable {
         }
     }
 }
+#endif
 
+#if !os(tvOS)
 // MARK: - YouTube WKWebView (legacy, unused)
 
 private struct YouTubePlayerView: UIViewRepresentable {
@@ -1577,6 +1590,7 @@ private struct YouTubePlayerView: UIViewRepresentable {
     }
 
 }
+#endif
 
 // MARK: - Comments Sheet
 

@@ -143,7 +143,6 @@ struct SportsWatchSheet: View {
             )
         }
         #endif
-        }
         .onAppear {
             WatchIntentLogger.shared.log(
                 eventType: .episodeDetailViewed,
