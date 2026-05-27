@@ -204,68 +204,68 @@ struct SportsWatchSheet: View {
         if !adDismissed, let ad = sportsAdData,
            let service = StreamingCatalog.all
             .first(where: { $0.id == ad.serviceId }) {
-            ZStack(alignment: .topTrailing) {
-                Button {
-                    RakutenManager.shared.openAffiliateLink(
-                        serviceId: ad.serviceId,
-                        metadata: [
-                            "source": "sports_watch_sheet",
-                            "broadcast": primaryBroadcast ?? "",
-                            "sport": game.sport,
-                            "state": game.state.rawValue
-                        ]
-                    )
-                } label: {
-                    HStack(spacing: 12) {
-                        ServiceMiniIcon(service: service, size: 40)
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
+            Button {
+                RakutenManager.shared.openAffiliateLink(
+                    serviceId: ad.serviceId,
+                    metadata: [
+                        "source": "sports_watch_sheet",
+                        "broadcast": primaryBroadcast ?? "",
+                        "sport": game.sport,
+                        "state": game.state.rawValue
+                    ]
+                )
+            } label: {
+                HStack(spacing: 12) {
+                    ServiceMiniIcon(service: service, size: 40)
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
 
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(ad.headline)
-                                .scaledFont(size: 13, weight: .semibold)
-                                .foregroundStyle(.white)
-                                .lineLimit(1)
-                            Text(ad.subtext)
-                                .scaledFont(size: 11)
-                                .foregroundStyle(Color.white.opacity(0.50))
-                            Text("Sponsored")
-                                .scaledFont(size: 9)
-                                .foregroundStyle(Color.white.opacity(0.25))
-                        }
-
-                        Spacer(minLength: 0)
-
-                        Image(systemName: "arrow.up.right")
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(ad.headline)
                             .scaledFont(size: 13, weight: .semibold)
-                            .foregroundStyle(Color.white.opacity(0.35))
+                            .foregroundStyle(.white)
+                            .lineLimit(1)
+                        Text(ad.subtext)
+                            .scaledFont(size: 11)
+                            .foregroundStyle(Color.white.opacity(0.50))
+                        Text("Sponsored")
+                            .scaledFont(size: 9)
+                            .foregroundStyle(Color.white.opacity(0.25))
                     }
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 12)
-                    .background(
-                        RoundedRectangle(cornerRadius: 14)
-                            .fill(Color.white.opacity(0.05))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 14)
-                                    .stroke(Color.white.opacity(0.10),
-                                            lineWidth: 0.5)
-                            )
-                    )
-                    .padding(.horizontal, 20)
-                }
-                .buttonStyle(.plain)
 
+                    Spacer(minLength: 0)
+
+                    Image(systemName: "arrow.up.right")
+                        .scaledFont(size: 13, weight: .semibold)
+                        .foregroundStyle(Color.white.opacity(0.35))
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 12)
+                .background(
+                    RoundedRectangle(cornerRadius: 14)
+                        .fill(Color.white.opacity(0.05))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 14)
+                                .stroke(Color.white.opacity(0.10),
+                                        lineWidth: 0.5)
+                        )
+                )
+                .padding(.horizontal, 20)
+            }
+            .buttonStyle(.plain)
+            .overlay(alignment: .topTrailing) {
                 Button {
                     withAnimation(.easeOut(duration: 0.2)) {
                         adDismissed = true
                     }
                 } label: {
                     Image(systemName: "xmark")
-                        .scaledFont(size: 10, weight: .semibold)
-                        .foregroundStyle(Color.white.opacity(0.30))
-                        .padding(10)
+                        .scaledFont(size: 12, weight: .semibold)
+                        .foregroundStyle(Color.white.opacity(0.35))
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .padding(.trailing, 22)
+                .offset(x: -8, y: -8)
             }
         }
     }

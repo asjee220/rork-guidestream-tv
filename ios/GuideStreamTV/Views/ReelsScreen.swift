@@ -923,96 +923,95 @@ private struct ReelView: View {
            let target = glassAdTarget {
             VStack {
                 Spacer()
-                ZStack(alignment: .topTrailing) {
-                    Button {
-                        RakutenManager.shared.openAffiliateLink(
-                            serviceId: target.serviceId,
-                            metadata: [
-                                "source": "glass_overlay",
-                                "reel_platform": trailer.platformId,
-                                "show": trailer.showName
-                            ]
-                        )
-                        WatchIntentLogger.shared.log(
-                            eventType: .affiliateLinkTapped,
-                            platformId: target.serviceId,
-                            metadata: [
-                                "source": "reel_glass_overlay",
-                                "show_platform": trailer.platformId
-                            ]
-                        )
-                    } label: {
-                        HStack(spacing: 10) {
-                            ZStack {
-                                RoundedRectangle(cornerRadius: 8)
-                                    .fill(target.color.opacity(0.12))
-                                    .frame(width: 40, height: 40)
-                                if let service = StreamingCatalog.all
-                                    .first(where: { $0.id == target.serviceId }) {
-                                    ServiceBrandContent(
-                                        display: service.display,
-                                        size: .mini(32)
-                                    )
-                                    .frame(width: 32, height: 32)
-                                } else {
-                                    Text(String(target.name.prefix(3)).uppercased())
-                                        .scaledFont(size: 11, weight: .black)
-                                        .foregroundStyle(target.color)
-                                }
-                            }
-                            .frame(width: 40, height: 40)
-
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Stream more on \(target.name)")
-                                    .scaledFont(size: 12, weight: .bold)
-                                    .foregroundStyle(.white)
-                                    .lineLimit(1)
-                                Text("Tap to start your free trial")
-                                    .scaledFont(size: 10)
-                                    .foregroundStyle(Color.white.opacity(0.50))
-                                Text("Sponsored · Rakuten")
-                                    .scaledFont(size: 9)
-                                    .foregroundStyle(Color.white.opacity(0.25))
-                            }
-
-                            Spacer(minLength: 0)
-
-                            // Arrow indicator replaces the old button
-                            Image(systemName: "arrow.up.right")
-                                .scaledFont(size: 11, weight: .semibold)
-                                .foregroundStyle(Color.white.opacity(0.45))
-                                .padding(.trailing, 4)
-                        }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 10)
-                        .background(
-                            RoundedRectangle(cornerRadius: 14)
-                                .fill(Color(red: 8/255, green: 14/255,
-                                             blue: 24/255).opacity(0.82))
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 14)
-                                        .stroke(Color.white.opacity(0.11),
-                                                lineWidth: 0.5)
+                Button {
+                    RakutenManager.shared.openAffiliateLink(
+                        serviceId: target.serviceId,
+                        metadata: [
+                            "source": "glass_overlay",
+                            "reel_platform": trailer.platformId,
+                            "show": trailer.showName
+                        ]
+                    )
+                    WatchIntentLogger.shared.log(
+                        eventType: .affiliateLinkTapped,
+                        platformId: target.serviceId,
+                        metadata: [
+                            "source": "reel_glass_overlay",
+                            "show_platform": trailer.platformId
+                        ]
+                    )
+                } label: {
+                    HStack(spacing: 10) {
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 8)
+                                .fill(target.color.opacity(0.12))
+                                .frame(width: 40, height: 40)
+                            if let service = StreamingCatalog.all
+                                .first(where: { $0.id == target.serviceId }) {
+                                ServiceBrandContent(
+                                    display: service.display,
+                                    size: .mini(32)
                                 )
-                        )
-                    }
-                    .buttonStyle(.plain)
-                    .padding(.horizontal, 14)
-                    .padding(.bottom, bottomInset + 72)
+                                .frame(width: 32, height: 32)
+                            } else {
+                                Text(String(target.name.prefix(3)).uppercased())
+                                    .scaledFont(size: 11, weight: .black)
+                                    .foregroundStyle(target.color)
+                            }
+                        }
+                        .frame(width: 40, height: 40)
 
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Stream more on \(target.name)")
+                                .scaledFont(size: 12, weight: .bold)
+                                .foregroundStyle(.white)
+                                .lineLimit(1)
+                            Text("Tap to start your free trial")
+                                .scaledFont(size: 10)
+                                .foregroundStyle(Color.white.opacity(0.50))
+                            Text("Sponsored · Rakuten")
+                                .scaledFont(size: 9)
+                                .foregroundStyle(Color.white.opacity(0.25))
+                        }
+
+                        Spacer(minLength: 0)
+
+                        // Arrow indicator replaces the old button
+                        Image(systemName: "arrow.up.right")
+                            .scaledFont(size: 11, weight: .semibold)
+                            .foregroundStyle(Color.white.opacity(0.45))
+                            .padding(.trailing, 4)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
+                    .background(
+                        RoundedRectangle(cornerRadius: 14)
+                            .fill(Color(red: 8/255, green: 14/255,
+                                         blue: 24/255).opacity(0.82))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 14)
+                                    .stroke(Color.white.opacity(0.11),
+                                            lineWidth: 0.5)
+                            )
+                    )
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal, 14)
+                .padding(.bottom, bottomInset + 72)
+                .overlay(alignment: .topTrailing) {
                     Button {
                         withAnimation(.easeOut(duration: 0.2)) {
                             glassAdDismissed = true
                         }
                     } label: {
                         Image(systemName: "xmark")
-                            .scaledFont(size: 10, weight: .semibold)
-                            .foregroundStyle(Color.white.opacity(0.35))
-                            .padding(8)
+                            .scaledFont(size: 12, weight: .semibold)
+                            .foregroundStyle(Color.white.opacity(0.40))
+                            .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    .padding(.trailing, 16)
-                    .padding(.bottom, bottomInset + 108)
+                    .offset(x: 6, y: -6)
                 }
             }
         }
