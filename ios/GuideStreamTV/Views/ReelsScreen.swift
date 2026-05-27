@@ -169,15 +169,32 @@ final class ReelsViewModel {
         let newItems = await buildItems(from: Array(onAir.prefix(15)), tab: .new)
 
         var combined = forYouItems + trendingItems + newItems
-        // Insert sponsored reel at slot 4 (0-indexed) if we have content.
-        if combined.count > 4 {
-            combined.insert(makeSponsoredReel(), at: 4)
-        } else if !combined.isEmpty {
-            combined.append(makeSponsoredReel())
-        }
 
-        self.allTrailers = combined
-        self.hasLoaded = !combined.isEmpty
+        let rakutenReels = makeRakutenAdReels()
+        var rakutenIndex = 0
+        var adSlotCount = 0
+        var finalFeed: [TrailerItem] = []
+
+        for (i, item) in combined.enumerated() {
+            finalFeed.append(item)
+            if (i + 1) % 5 == 0 {
+                adSlotCount += 1
+                if adSlotCount % 2 == 1 {
+                    // Odd slots (5, 15, 25...) → AdMob full-screen
+                    finalFeed.append(makeAdMobReel(slot: adSlotCount))
+                } else {
+                    // Even slots (10, 20, 30...) → Rakuten full-screen
+                    if !rakutenReels.isEmpty {
+                        finalFeed.append(
+                            rakutenReels[rakutenIndex % rakutenReels.count]
+                        )
+                        rakutenIndex += 1
+                    }
+                }
+            }
+        }
+        self.allTrailers = finalFeed
+        self.hasLoaded = !finalFeed.isEmpty
 
         // Saved state now lives in the shared StreamsViewModel store, which
         // hydrates itself from the local cache on init and refreshes from
@@ -303,31 +320,127 @@ final class ReelsViewModel {
         }
     }
 
-    private func makeSponsoredReel() -> TrailerItem {
-        let plat = ReelPlatform.info(for: "netflix")
+private func makeRakutenAdReels() -> [TrailerItem] {
+        let selected = AuthViewModel.shared.selectedServices
+            .map { $0.lowercased() }
+        let pool: [(id: String, name: String, color: String,
+                     headline: String, synopsis: String,
+                     backdrop: String, identity: String)] = [
+            ("netflix","NETFLIX","E50914",
+             "Stream the world's biggest hits",
+             "Unlimited movies, TV and more. Cancel anytime.",
+             "https://image.tmdb.org/t/p/w1280/56v2KjBlU4XaOv9rVYEQypROD7P.jpg",
+             "NFX"),
+            ("hbo","MAX","5B2D8E",
+             "Home of HBO. Home of Max.",
+             "The greatest shows, movies and Max Originals.",
+             "https://image.tmdb.org/t/p/w1280/etj8E2o0Bud0HkONVQPjyCkIvpv.jpg",
+             "MAX"),
+            ("hulu","HULU","1CE783",
+             "Live TV + on-demand. One subscription.",
+             "Watch TV, movies, Hulu Originals and live sports.",
+             "https://image.tmdb.org/t/p/w1280/3V4kLQg0kSqe6sqSlFBVPDZlTqf.jpg",
+             "HLU"),
+            ("disney","DISNEY+","113CCF",
+             "Marvel, Star Wars and more.",
+             "Infinite worlds of entertainment for the family.",
+             "https://image.tmdb.org/t/p/w1280/9yBVqNruk6Ykrwc32qDbHTE0z5o.jpg",
+             "D+"),
+            ("apple","APPLE TV+","101010",
+             "Award-winning originals.",
+             "Critically acclaimed shows. New every month.",
+             "https://image.tmdb.org/t/p/w1280/4MC3p4zRCGkpnJzSjkGIr3MUJPN.jpg",
+             "ATV"),
+            ("prime","PRIME VIDEO","00A8E1",
+             "Included with Prime.",
+             "Thursday Night Football and Amazon Originals.",
+             "https://image.tmdb.org/t/p/w1280/kqjL17yufvn9OVLyXYpvtyrFfak.jpg",
+             "PV"),
+            ("paramount","PARAMOUNT+","0064FF",
+             "NFL on CBS, live sports and originals.",
+             "Stream Paramount+ with Showtime available.",
+             "https://image.tmdb.org/t/p/w1280/5UkzNSOK561c2QRy2Zr4AkADzLT.jpg",
+             "P+"),
+            ("peacock","PEACOCK","000000",
+             "Stream free. Or go Premium.",
+             "NFL, Premier League, WWE and NBC hits.",
+             "https://image.tmdb.org/t/p/w1280/1Rr5SrvHxMXHu5RjKpaMba8VTzi.jpg",
+             "PCK")
+        ]
+        let eligible = pool.filter { !selected.contains($0.id) }
+        let source = eligible.isEmpty ? pool : eligible
+        return source.map { e in
+            TrailerItem(
+                id: "rak-\(e.id)-\(Int.random(in:1000...9999))",
+                tmdbId: -1,
+                showName: e.headline,
+                synopsis: e.synopsis,
+                genre: "SPONSORED · \(e.name)",
+                runtime: "Limited offer · Tap to start",
+                platformId: e.id,
+                platformName: e.name,
+                platformColor: Color(hex: e.color),
+                platformTextColor: .white,
+                backdropURL: URL(string: e.backdrop),
+                posterURL: URL(string: e.backdrop),
+                trailerKey: "",
+                thumbnailURL: URL(string: e.backdrop),
+                youtubeURL: nil,
+                deepLinkURL: nil,
+                voteAverage: 0,
+                likes: 0,
+                comments: 0,
+                tab: .forYou,
+                identityCode: e.identity,
+                gradeColor: Color(hex: e.color).opacity(0.18),
+                isSponsored: true
+            )
+        }
+    }
+
+    private func makeAdMobReel(slot: Int) -> TrailerItem {
+        let placeholders: [(String, String, String, String)] = [
+            ("Upgrade your home theater",
+             "TCL 4K QLED TV. Stunning picture, incredible sound.",
+             "Shop now",
+             "https://image.tmdb.org/t/p/w1280/zSWIOsYEWCBPEFrmVCBZAbMKFtA.jpg"),
+            ("Better sound. Every show.",
+             "Sony WH-1000XM5 headphones. Now $279 on Amazon.",
+             "Shop now",
+             "https://image.tmdb.org/t/p/w1280/1Rr5SrvHxMXHu5RjKpaMba8VTzi.jpg"),
+            ("Order dinner. Keep watching.",
+             "DoorDash — $0 delivery on your first order.",
+             "Order now",
+             "https://image.tmdb.org/t/p/w1280/9yBVqNruk6Ykrwc32qDbHTE0z5o.jpg"),
+            ("Game Pass. 100+ games.",
+             "Xbox Game Pass Ultimate. Play on phone & console.",
+             "Try free",
+             "https://image.tmdb.org/t/p/w1280/etj8E2o0Bud0HkONVQPjyCkIvpv.jpg")
+        ]
+        let p = placeholders[slot % placeholders.count]
         return TrailerItem(
-            id: "sponsored-netflix-1",
-            tmdbId: -1,
-            showName: "Stream the world's biggest hits",
-            synopsis: "Movies, series and live events. Try Netflix free for a month.",
-            genre: "SPONSORED · NETFLIX",
-            runtime: "Limited offer",
-            platformId: "netflix",
-            platformName: plat.name,
-            platformColor: plat.color,
+            id: "admob-\(slot)-\(Int.random(in:1000...9999))",
+            tmdbId: -2,
+            showName: p.0,
+            synopsis: p.1,
+            genre: "AD · \(p.2.uppercased())",
+            runtime: p.2,
+            platformId: "admob",
+            platformName: "AD",
+            platformColor: Color(hex: "1A6FE8"),
             platformTextColor: .white,
-            backdropURL: nil,
-            posterURL: nil,
+            backdropURL: URL(string: p.3),
+            posterURL: URL(string: p.3),
             trailerKey: "",
-            thumbnailURL: nil,
+            thumbnailURL: URL(string: p.3),
             youtubeURL: nil,
             deepLinkURL: nil,
             voteAverage: 0,
             likes: 0,
             comments: 0,
             tab: .forYou,
-            identityCode: "NFX",
-            gradeColor: Color.red.opacity(0.18),
+            identityCode: "AD",
+            gradeColor: Color(hex: "1A6FE8").opacity(0.15),
             isSponsored: true
         )
     }
@@ -450,12 +563,6 @@ struct ReelsScreen: View {
                             logTrailerViewed(trailer)
                         }
                         prefetchNeighbors(around: newValue)
-                        if vm.reelSwipeCount % 5 == 0 {
-                            // Fire interstitial *after* the swipe settles so the reel transition feels native.
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
-                                showInterstitial { }
-                            }
-                        }
                         _ = prev
                     }
                 }
@@ -578,71 +685,110 @@ struct ReelsScreen: View {
     @ViewBuilder
     private func reelCell(trailer: TrailerItem, index: Int, size: CGSize, topInset: CGFloat, bottomInset: CGFloat) -> some View {
         let isCurrent = index == vm.currentIndex
-        ReelView(
-            trailer: trailer,
-            size: size,
-            topInset: topInset,
-            bottomInset: bottomInset,
-            isPlaying: isCurrent && isPlaying,
-            isMuted: isMuted,
-            isCurrent: isCurrent,
-            likeCount: vm.likeCount(for: trailer),
-            isLiked: vm.isLiked(trailer),
-            isSaved: vm.isSaved(trailer),
-            activeTab: trailer.tab,
-            currentIndex: vm.currentIndex,
-            totalCount: vm.allTrailers.count,
-            onTogglePlay: { isPlaying.toggle() },
-            onToggleMute: {
-                UIImpactFeedbackGenerator(style: .soft).impactOccurred()
-                isMuted.toggle()
-            },
-            onLike: {
-                UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                vm.toggleLike(trailer)
-            },
-            onComments: {
-                showComments = true
-                WatchIntentLogger.shared.log(
-                    eventType: .commentsOpened,
-                    titleId: String(trailer.tmdbId),
-                    metadata: ["trailer_key": trailer.trailerKey]
-                )
-            },
-            onSave: {
-                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                Task { await vm.toggleSave(trailer) }
-            },
-            onShare: { showShare = true },
-            onTabSelect: { tab in
-                guard let idx = vm.allTrailers.firstIndex(where: { $0.tab == tab }) else { return }
-                withAnimation(.spring(response: 0.45, dampingFraction: 0.86)) {
-                    scrolledID = idx
+        if trailer.platformId == "admob" {
+            AdMobReelCard(
+                headline: trailer.showName,
+                bodyText: trailer.synopsis,
+                ctaText: trailer.runtime,
+                advertiser: trailer.genre
+                    .replacingOccurrences(of: "AD · ", with: "")
+                    .capitalized,
+                imageURL: trailer.backdropURL,
+                size: size,
+                topInset: topInset,
+                bottomInset: bottomInset,
+                onTap: {
+                    WatchIntentLogger.shared.log(
+                        eventType: .adImpression,
+                        metadata: [
+                            "ad_type": "native_reel",
+                            "position": index,
+                            "slot": index / 5
+                        ]
+                    )
                 }
-            },
-            onSponsorCTA: {
-                RakutenManager.shared.openAffiliateLink(
-                    serviceId: trailer.platformId,
-                    metadata: ["position": vm.currentIndex, "source": "reel"]
-                )
-                WatchIntentLogger.shared.log(
-                    eventType: .sponsoredReelTapped,
-                    platformId: trailer.platformId,
-                    metadata: ["position": vm.currentIndex]
-                )
-            },
-            onShowDetail: {
-                guard !trailer.isSponsored, trailer.tmdbId > 0 else { return }
-                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                detailSubject = .show(posterShow(from: trailer))
-                WatchIntentLogger.shared.log(
-                    eventType: .episodeDetailViewed,
-                    titleId: String(trailer.tmdbId),
-                    platformId: trailer.platformId,
-                    metadata: ["source": "reels_play_pill"]
-                )
-            }
-        )
+            )
+            .frame(width: size.width, height: size.height)
+            .id(index)
+        } else {
+            ReelView(
+                trailer: trailer,
+                size: size,
+                topInset: topInset,
+                bottomInset: bottomInset,
+                isPlaying: isCurrent && isPlaying,
+                isMuted: isMuted,
+                isCurrent: isCurrent,
+                likeCount: vm.likeCount(for: trailer),
+                isLiked: vm.isLiked(trailer),
+                isSaved: vm.isSaved(trailer),
+                activeTab: trailer.tab,
+                currentIndex: vm.currentIndex,
+                totalCount: vm.allTrailers.count,
+                onTogglePlay: { isPlaying.toggle() },
+                onToggleMute: {
+                    UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+                    isMuted.toggle()
+                },
+                onLike: {
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    vm.toggleLike(trailer)
+                },
+                onComments: {
+                    showComments = true
+                    WatchIntentLogger.shared.log(
+                        eventType: .commentsOpened,
+                        titleId: String(trailer.tmdbId),
+                        metadata: ["trailer_key": trailer.trailerKey]
+                    )
+                },
+                onSave: {
+                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                    Task { await vm.toggleSave(trailer) }
+                },
+                onShare: { showShare = true },
+                onTabSelect: { tab in
+                    guard let idx = vm.allTrailers.firstIndex(where: { $0.tab == tab }) else { return }
+                    withAnimation(.spring(response: 0.45, dampingFraction: 0.86)) {
+                        scrolledID = idx
+                    }
+                },
+                onSponsorCTA: {
+                    if trailer.platformId == "admob" {
+                        WatchIntentLogger.shared.log(
+                            eventType: .adImpression,
+                            metadata: ["ad_type":"native_cta","position":index]
+                        )
+                    } else {
+                        RakutenManager.shared.openAffiliateLink(
+                            serviceId: trailer.platformId,
+                            metadata: [
+                                "source": "sponsored_reel",
+                                "position": index
+                            ]
+                        )
+                        WatchIntentLogger.shared.log(
+                            eventType: .sponsoredReelTapped,
+                            platformId: trailer.platformId,
+                            metadata: ["position": index]
+                        )
+                    }
+                },
+                onShowDetail: {
+                    guard !trailer.isSponsored, trailer.tmdbId > 0 else { return }
+                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                    detailSubject = .show(posterShow(from: trailer))
+                    WatchIntentLogger.shared.log(
+                        eventType: .episodeDetailViewed,
+                        titleId: String(trailer.tmdbId),
+                        platformId: trailer.platformId,
+                        metadata: ["source": "reels_play_pill"]
+                    )
+                }
+            )
+            .frame(width: size.width, height: size.height)
+            .id(index)
+        }
     }
 
     private func prefetchNeighbors(around index: Int) {
@@ -720,6 +866,127 @@ private struct ReelView: View {
     @State private var showTapIndicator: Bool = false
     @State private var tapIndicatorIcon: String = "speaker.slash.fill"
     @State private var tapIndicatorTask: Task<Void, Never>?
+    @State private var glassAdDismissed: Bool = false
+    @State private var glassAdTarget: (serviceId: String, name: String, color: Color)? = nil
+
+    private func resolveGlassAd() -> (serviceId: String, name: String, color: Color)? {
+        let current = trailer.platformId.lowercased()
+        let selected = AuthViewModel.shared.selectedServices
+            .map { $0.lowercased() }
+        let pool: [(String, String, Color)] = [
+            ("netflix", "Netflix", Color(hex:"E50914")),
+            ("hbo", "Max", Color(hex:"5B2D8E")),
+            ("hulu", "Hulu", Color(hex:"1CE783")),
+            ("disney", "Disney+", Color(hex:"113CCF")),
+            ("apple", "Apple TV+", Color(white: 0.18)),
+            ("prime", "Prime Video", Color(hex:"00A8E1")),
+            ("paramount","Paramount+", Color(hex:"0064FF")),
+            ("peacock", "Peacock", Color(white: 0.10))
+        ]
+        return pool.first { entry in
+            entry.0 != current && !selected.contains(entry.0)
+        }.map { ($0.0, $0.1, $0.2) }
+    }
+
+    @ViewBuilder
+    private var glassAdOverlay: some View {
+        if !trailer.isSponsored,
+           !glassAdDismissed,
+           let target = glassAdTarget {
+            VStack {
+                Spacer()
+                ZStack(alignment: .topTrailing) {
+                    HStack(spacing: 10) {
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 8)
+                                .fill(target.color.opacity(0.15))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 8)
+                                        .stroke(target.color.opacity(0.25),
+                                                lineWidth: 0.5)
+                                )
+                                .frame(width: 40, height: 40)
+                            Image(systemName: "play.tv.fill")
+                                .scaledFont(size: 16, weight: .semibold)
+                                .foregroundStyle(target.color)
+                        }
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Stream more on \(target.name)")
+                                .scaledFont(size: 12, weight: .bold)
+                                .foregroundStyle(.white)
+                                .lineLimit(1)
+                            Text("Tap to start your free trial")
+                                .scaledFont(size: 10)
+                                .foregroundStyle(Color.white.opacity(0.50))
+                            Text("Sponsored · Rakuten")
+                                .scaledFont(size: 9)
+                                .foregroundStyle(Color.white.opacity(0.25))
+                        }
+                        Spacer(minLength: 0)
+                        Button {
+                            RakutenManager.shared.openAffiliateLink(
+                                serviceId: target.serviceId,
+                                metadata: [
+                                    "source": "glass_overlay",
+                                    "reel_platform": trailer.platformId,
+                                    "show": trailer.showName
+                                ]
+                            )
+                            WatchIntentLogger.shared.log(
+                                eventType: .affiliateLinkTapped,
+                                platformId: target.serviceId,
+                                metadata: [
+                                    "source": "reel_glass_overlay",
+                                    "show_platform": trailer.platformId
+                                ]
+                            )
+                        } label: {
+                            Text("Try free")
+                                .scaledFont(size: 11, weight: .bold)
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 7)
+                                .background(
+                                    Capsule()
+                                        .fill(Color(hex: "F5821F"))
+                                )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
+                    .background(
+                        RoundedRectangle(cornerRadius: 14)
+                            .fill(Color(red: 8/255,
+                                         green: 14/255,
+                                         blue: 24/255)
+                                    .opacity(0.82))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 14)
+                                    .stroke(Color.white.opacity(0.11),
+                                            lineWidth: 0.5)
+                            )
+                    )
+                    .padding(.horizontal, 14)
+                    .padding(.bottom, bottomInset + 72)
+
+                    Button {
+                        withAnimation(.easeOut(duration: 0.2)) {
+                            glassAdDismissed = true
+                        }
+                    } label: {
+                        Image(systemName: "xmark")
+                            .scaledFont(size: 10, weight: .semibold)
+                            .foregroundStyle(Color.white.opacity(0.35))
+                            .padding(8)
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.trailing, 16)
+                    .padding(.bottom, bottomInset + 108)
+                }
+            }
+        }
+    }
 
     var body: some View {
         ZStack {
@@ -898,7 +1165,7 @@ private struct ReelView: View {
                     .padding(.bottom, 8)
 
                     Text(trailer.showName)
-                        .scaledFont(size: 40, weight: .bold)
+                        .scaledFont(size: 28, weight: .bold)
                         .tracking(-0.8)
                         .foregroundStyle(.white)
                         .lineLimit(2)
@@ -943,6 +1210,8 @@ private struct ReelView: View {
                 }
             }
 
+            glassAdOverlay
+
             // Layer 19 — horizontal video scrubber, anchored just above the floating nav.
             VStack {
                 Spacer()
@@ -978,6 +1247,10 @@ private struct ReelView: View {
                 .transition(.scale(scale: 0.7).combined(with: .opacity))
                 .allowsHitTesting(false)
             }
+        }
+        .onAppear {
+            glassAdTarget = resolveGlassAd()
+            glassAdDismissed = false
         }
         .contentShape(Rectangle())
         .onTapGesture {
@@ -1813,5 +2086,191 @@ extension UIApplication {
         }
         if let presented = root?.presentedViewController { return topViewController(base: presented) }
         return root
+    }
+}
+
+// MARK: - AdMob Full-Screen Reel Card
+
+private struct AdMobReelCard: View {
+    let headline: String
+    let bodyText: String
+    let ctaText: String
+    let advertiser: String
+    let imageURL: URL?
+    let size: CGSize
+    let topInset: CGFloat
+    let bottomInset: CGFloat
+    let onTap: () -> Void
+
+    var body: some View {
+        ZStack {
+            RemoteImage(
+                url: imageURL,
+                contentMode: .fill,
+                fallbackColors: [
+                    Color(hex: "0B1828"),
+                    Color(hex: "04090F")
+                ]
+            )
+            .frame(width: size.width, height: size.height)
+            .clipped()
+
+            // Colour grade
+            Color(hex: "1A6FE8").opacity(0.12)
+                .ignoresSafeArea()
+                .allowsHitTesting(false)
+
+            // Identity letterforms
+            Text("AD")
+                .scaledFont(size: 240, weight: .black)
+                .foregroundStyle(Color.white.opacity(0.04))
+                .tracking(-9.6)
+                .offset(y: -80)
+                .allowsHitTesting(false)
+
+            // Top scrim
+            VStack {
+                LinearGradient(
+                    colors: [Color.navy.opacity(0.75),
+                             Color.navy.opacity(0.30), .clear],
+                    startPoint: .top, endPoint: .bottom)
+                    .frame(height: 130)
+                Spacer()
+            }
+            .allowsHitTesting(false)
+
+            // Bottom scrim
+            VStack {
+                Spacer()
+                LinearGradient(
+                    colors: [.clear,
+                             Color.navy.opacity(0.55),
+                             Color.navy.opacity(0.92),
+                             Color.navy],
+                    startPoint: .top, endPoint: .bottom)
+                    .frame(height: 440)
+            }
+            .allowsHitTesting(false)
+
+            // Sponsored + advertiser name row
+            VStack {
+                HStack {
+                    Text("Sponsored")
+                        .scaledFont(size: 10, weight: .semibold)
+                        .foregroundStyle(Color.white.opacity(0.60))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.white.opacity(0.20))
+                        .clipShape(.rect(cornerRadius: 4))
+                        .padding(.leading, 14)
+                        .padding(.top, topInset + 14)
+                    Spacer()
+                    Text(advertiser)
+                        .scaledFont(size: 10, weight: .medium)
+                        .foregroundStyle(Color.white.opacity(0.45))
+                        .padding(.trailing, 14)
+                        .padding(.top, topInset + 14)
+                }
+                Spacer()
+            }
+
+            // Right rail — dimmed, no actions on ad reels
+            VStack {
+                Spacer().frame(height: size.height * 0.30)
+                HStack {
+                    Spacer()
+                    VStack(spacing: 28) {
+                        ForEach(["heart", "message",
+                                 "arrowshape.turn.up.right"],
+                                id: \.self) { icon in
+                            VStack(spacing: 4) {
+                                ZStack {
+                                    Circle()
+                                        .fill(Color.black.opacity(0.30))
+                                        .overlay(Circle()
+                                            .stroke(Color.white.opacity(0.08),
+                                                    lineWidth: 1))
+                                    Image(systemName: icon)
+                                        .scaledFont(size: 20, weight: .semibold)
+                                        .foregroundStyle(
+                                            Color.white.opacity(0.20))
+                                }
+                                .frame(width: 52, height: 52)
+                            }
+                        }
+                    }
+                    .padding(.trailing, 18)
+                }
+                Spacer()
+            }
+            .allowsHitTesting(false)
+
+            // Bottom content
+            VStack {
+                Spacer()
+                VStack(alignment: .leading, spacing: 0) {
+                    // Ad pill
+                    Text("Ad")
+                        .scaledFont(size: 11, weight: .bold)
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(Color(hex: "F5821F"))
+                        .clipShape(.rect(cornerRadius: 6))
+                        .padding(.bottom, 8)
+
+                    Text(headline)
+                        .scaledFont(size: 28, weight: .bold)
+                        .tracking(-0.8)
+                        .foregroundStyle(.white)
+                        .lineLimit(2)
+                        .padding(.bottom, 10)
+
+                    Text(bodyText)
+                        .scaledFont(size: 14)
+                        .foregroundStyle(Color.white.opacity(0.78))
+                        .lineLimit(2)
+                        .padding(.bottom, 14)
+
+                    Button(action: onTap) {
+                        HStack(spacing: 8) {
+                            Image(systemName: "arrow.up.right")
+                                .scaledFont(size: 13, weight: .bold)
+                            Text(ctaText)
+                                .scaledFont(size: 15, weight: .bold)
+                        }
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 52)
+                        .background(Color(hex: "F5821F"))
+                        .clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.leading, 22)
+                .padding(.trailing, 90)
+                .padding(.bottom, bottomInset + 38)
+            }
+
+            // AdChoices badge — required for AdMob compliance
+            VStack {
+                Spacer()
+                HStack {
+                    Spacer()
+                    ZStack {
+                        Circle()
+                            .stroke(Color.white.opacity(0.20),
+                                    lineWidth: 1)
+                        Text("i")
+                            .scaledFont(size: 9, weight: .medium)
+                            .foregroundStyle(Color.white.opacity(0.35))
+                    }
+                    .frame(width: 16, height: 16)
+                    .padding(.trailing, 14)
+                    .padding(.bottom, bottomInset + 44)
+                }
+            }
+            .allowsHitTesting(false)
+        }
     }
 }
