@@ -33,12 +33,18 @@ nonisolated struct NewsStream: Identifiable, Hashable, Sendable {
     /// outlet's live-stream URL so the tile still has a deeplink target.
     var fallbackWebURL: String? {
         let key = outlet.lowercased()
-        if key.contains("fox news")   { return "https://www.foxnews.com/video/5614640629001" }
-        if key.contains("cbs news")   { return "https://www.cbsnews.com/live" }
-        if key.contains("abc news")   { return "https://abcnews.go.com/Live" }
-        if key.contains("nbc news")   { return "https://www.nbcnews.com/now" }
-        if key.contains("cnn")        { return "https://www.cnn.com/live-tv" }
-        if key.contains("msnbc")      { return "https://www.msnbc.com/live-video" }
+        if key.contains("fox news")    { return "https://www.foxnews.com/video/5614640629001" }
+        if key.contains("cbs news")    { return "https://www.cbsnews.com/live" }
+        if key.contains("abc news")    { return "https://abcnews.go.com/Live" }
+        if key.contains("nbc news")    { return "https://www.nbcnews.com/now" }
+        if key.contains("cnn")         { return "https://www.cnn.com/live-tv" }
+        if key.contains("msnbc")       { return "https://www.msnbc.com/live-video" }
+        if key.contains("bbc")         { return "https://www.bbc.co.uk/news/av/live" }
+        if key.contains("reuters")     { return "https://www.reuters.com/video/live" }
+        if key.contains("al jazeera")  { return "https://www.aljazeera.com/live" }
+        if key.contains("bloomberg")   { return "https://www.bloomberg.com/live" }
+        if key.contains("sky news")    { return "https://news.sky.com/watch-live" }
+        if key.contains("cbc")         { return "https://www.cbc.ca/player/live/1" }
         return nil
     }
 }
@@ -78,30 +84,49 @@ final class NewsService {
     func fetchTopNewsStreams(limit: Int = 10) async -> [NewsStream] {
         let regionCode = Locale.current.region?.identifier ?? "US"
         let countryParam = regionCode.lowercased()
+        let isUS = regionCode == "US"
 
-        // Fetch country headlines; US users also get the source-specific feed.
-        async let countryCall = try? fetchHeadlines(country: countryParam)
-        async let sourcesCall: [NewsAPIArticle]? = {
-            guard regionCode == "US" else { return nil }
-            return try? await fetchHeadlines(sources: "cnn,fox-news,cbs-news,abc-news,nbc-news,msnbc")
+        // Build source list based on region.
+        // US: major cable/broadcast networks.
+        // International: BBC, Reuters, Al Jazeera, Bloomberg —
+        // all available on NewsAPI free tier globally.
+        let sourcesForRegion: String = {
+            switch regionCode {
+            case "US":
+                return "cnn,fox-news,cbs-news,abc-news,nbc-news,msnbc"
+            case "GB":
+                return "bbc-news,sky-news,the-guardian-uk,independent"
+            case "CA":
+                return "cbc-news,global-news"
+            case "AU":
+                return "abc-news-au"
+            default:
+                // Universal fallback — works globally on free tier
+                return "bbc-news,reuters,al-jazeera-english,bloomberg,cnn"
+            }
         }()
 
-        let (countryArticles, sourceArticles) = await (countryCall, sourcesCall)
-        let combined = (countryArticles ?? []) + (sourceArticles ?? [])
+        // Always use the sources endpoint (works on free tier globally).
+        // Additionally fetch country headlines for US users as a supplement.
+        async let sourcesCall = try? fetchHeadlines(sources: sourcesForRegion)
+        async let countryCall: [NewsAPIArticle]? = isUS
+            ? (try? fetchHeadlines(country: countryParam))
+            : nil
 
-        // Dedupe by article URL so the same story from two feeds only
-        // appears once.
+        let (sourceArticles, countryArticles) = await (sourcesCall, countryCall)
+
+        // Sources feed is primary; country feed supplements for US users.
+        let combined = (sourceArticles ?? []) + (countryArticles ?? [])
+
         var seen: Set<String> = []
         let unique = combined.filter { seen.insert($0.url).inserted }
 
-        // Map to NewsStream and sort newest-first.
         let isoParser = ISO8601DateFormatter()
         isoParser.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
 
         let news: [NewsStream] = unique.map { article in
-            let date: Date? = isoParser.date(from: article.publishedAt)
+            let date = isoParser.date(from: article.publishedAt)
                 ?? ISO8601DateFormatter().date(from: article.publishedAt)
-
             return NewsStream(
                 id: article.url.hashValue,
                 title: article.title,
@@ -115,15 +140,16 @@ final class NewsService {
             )
         }
 
-        let sorted = news.sorted { a, b in
-            switch (a.publishedAt, b.publishedAt) {
-            case let (l?, r?): return l > r
-            case (_?, nil):    return true
-            case (nil, _?):    return false
-            default:           return a.title < b.title
-            }
-        }
-        return Array(sorted.prefix(limit))
+        return Array(
+            news.sorted { a, b in
+                switch (a.publishedAt, b.publishedAt) {
+                case let (l?, r?): return l > r
+                case (_?, nil):    return true
+                case (nil, _?):    return false
+                default:           return a.title < b.title
+                }
+            }.prefix(limit)
+        )
     }
 
     // MARK: - Outlet mapping
@@ -140,6 +166,12 @@ final class NewsService {
         if key.contains("cnn")        { return "CNN" }
         if key.contains("msnbc")      { return "MSNBC" }
         if key.contains("bloomberg")  { return "Bloomberg" }
+        if key.contains("bbc")        { return "BBC News" }
+        if key.contains("reuters")    { return "Reuters" }
+        if key.contains("al jazeera") { return "Al Jazeera" }
+        if key.contains("sky news")   { return "Sky News" }
+        if key.contains("cbc")        { return "CBC News" }
+        if key.contains("guardian")   { return "The Guardian" }
         return nil
     }
 
