@@ -1,0 +1,1483 @@
+//
+//  HomeView.swift
+//  GuideStreamTV
+//
+
+import SwiftUI
+import UserNotifications
+
+// MARK: - Home Models
+
+struct Platform {
+    let name: String
+    let color: Color
+
+    static let netflix = Platform(name: "NETFLIX", color: Color(red: 0xE5/255, green: 0x09/255, blue: 0x14/255))
+    static let hbo = Platform(name: "HBO", color: Color(red: 0x5A/255, green: 0x1F/255, blue: 0xCB/255))
+    static let appleTV = Platform(name: "Apple TV+", color: Color(red: 0x10/255, green: 0x10/255, blue: 0x10/255))
+    static let hulu = Platform(name: "HULU", color: Color(red: 0x1C/255, green: 0xE7/255, blue: 0x83/255))
+    static let prime = Platform(name: "PRIME", color: Color(red: 0x00/255, green: 0xA8/255, blue: 0xE1/255))
+    static let disney = Platform(name: "DISNEY+", color: Color(red: 0x11/255, green: 0x3C/255, blue: 0xCF/255))
+    static let paramount = Platform(name: "PARAMOUNT+", color: Color(red: 0x00/255, green: 0x64/255, blue: 0xFF/255))
+    static let peacock = Platform(name: "PEACOCK", color: Color(red: 0x00/255, green: 0x00/255, blue: 0x00/255))
+    static let starz = Platform(name: "STARZ", color: Color(red: 0x00/255, green: 0x00/255, blue: 0x00/255))
+    static let showtime = Platform(name: "SHOWTIME", color: Color(red: 0xD8/255, green: 0x00/255, blue: 0x00/255))
+    static let crunchyroll = Platform(name: "CRUNCHYROLL", color: Color(red: 0xF4/255, green: 0x7B/255, blue: 0x20/255))
+    static let youtube = Platform(name: "YOUTUBE", color: Color(red: 0xFF/255, green: 0x00/255, blue: 0x00/255))
+
+    /// Maps a TMDB watch-provider name to one of our branded Platforms. Returns nil if we don't
+    /// recognise the provider, so callers can hide items rather than label them generically.
+    static func from(providerName raw: String?) -> Platform? {
+        guard let raw, !raw.isEmpty else { return nil }
+        let key = raw.lowercased()
+        if key.contains("netflix") { return .netflix }
+        if key.contains("max") || key.contains("hbo") { return .hbo }
+        if key.contains("apple tv") { return .appleTV }
+        if key.contains("disney") { return .disney }
+        if key.contains("hulu") { return .hulu }
+        if key.contains("amazon") || key.contains("prime video") { return .prime }
+        if key.contains("paramount") { return .paramount }
+        if key.contains("peacock") { return .peacock }
+        if key.contains("starz") { return .starz }
+        if key.contains("showtime") { return .showtime }
+        if key.contains("crunchyroll") { return .crunchyroll }
+        if key.contains("youtube") { return .youtube }
+        return nil
+    }
+}
+
+struct Episode: Identifiable, Hashable {
+    let id = UUID()
+    let title: String
+    let season: String
+    let duration: String
+    let platform: String
+    let platformColor: Color
+    let isNew: Bool
+    let progress: Double
+    let posterColors: [Color]
+    let symbol: String
+    let posterUrl: String?
+    let tmdbId: Int?
+
+    init(title: String, season: String, duration: String, platform: Platform, isNew: Bool = false, progress: Double = 0, posterColors: [Color], symbol: String, posterUrl: String? = nil, tmdbId: Int? = nil) {
+        self.title = title
+        self.season = season
+        self.duration = duration
+        self.platform = platform.name
+        self.platformColor = platform.color
+        self.isNew = isNew
+        self.progress = progress
+        self.posterColors = posterColors
+        self.symbol = symbol
+        self.posterUrl = posterUrl
+        self.tmdbId = tmdbId
+    }
+}
+
+struct PosterShow: Identifiable, Hashable {
+    let id = UUID()
+    let title: String
+    let meta: String
+    let posterColors: [Color]
+    let symbol: String
+    var posterUrl: String? = nil
+    var tmdbId: Int? = nil
+}
+
+/// Default gradient colors used as a tasteful fallback while TMDB images load or when they fail.
+enum HomeFallback {
+    static let posterColors: [Color] = [
+        Color(red: 0.20, green: 0.15, blue: 0.45),
+        Color(red: 0.04, green: 0.02, blue: 0.10)
+    ]
+}
+
+// MARK: - HomeView
+
+struct HomeView: View {
+    var onOpenAgent: () -> Void = {}
+
+    @State private var widgetBannerDismissed: Bool = false
+    @State private var path: [HomeRoute] = []
+    @State private var detailSubject: DetailSubject?
+    @State private var showServicesSheet: Bool = false
+    @State private var showWatchListSheet: Bool = false
+    @State private var auth = AuthViewModel.shared
+    @State private var streams = StreamsViewModel.shared
+    @State private var castPlayback = CastPlaybackState.shared
+    @State private var trending: [TMDBResult] = []
+    @State private var onAir: [TMDBResult] = []
+    @State private var bingeFallback: [TMDBResult] = []
+    @State private var newToday: [TMDBResult] = []
+    @State private var sportsGames: [SportsGame] = []
+    @State private var newsStreams: [NewsStream] = []
+    @State private var selectedGame: SportsGame?
+    @State private var selectedNews: NewsStream?
+    /// Cached top US streaming provider per TMDB id. Items without an entry have no real
+    /// streaming service and are filtered out of the UI.
+    @State private var providerByTmdb: [Int: Platform] = [:]
+
+    var body: some View {
+        NavigationStack(path: $path) {
+            ZStack(alignment: .top) {
+                ScrollView(showsIndicators: false) {
+                    VStack(spacing: 20) {
+                        Color.clear.frame(height: 56)
+                        if !heroItems.isEmpty {
+                            HomeHeroCarousel(
+                                items: heroItems,
+                                onSelectMedia: { result, platform in
+                                    WatchIntentLogger.shared.log(
+                                        eventType: .cardTapped,
+                                        titleId: String(result.id),
+                                        platformId: platform?.name.lowercased() ?? "tmdb",
+                                        metadata: ["section": "hero_carousel"]
+                                    )
+                                    detailSubject = .show(mediaAsPoster(result, platform: platform))
+                                },
+                                onSelectGame: { game in
+                                    WatchIntentLogger.shared.log(
+                                        eventType: .cardTapped,
+                                        titleId: WatchIntentLogger.titleSlug("\(game.away.abbreviation)-\(game.home.abbreviation)-\(game.sport)"),
+                                        platformId: (game.broadcasts.first ?? "").lowercased(),
+                                        metadata: [
+                                            "section": "hero_carousel",
+                                            "kind": "sport",
+                                            "state": game.state.rawValue
+                                        ]
+                                    )
+                                    selectedGame = game
+                                },
+                                onSelectNews: { news in
+                                    WatchIntentLogger.shared.log(
+                                        eventType: .cardTapped,
+                                        titleId: String(news.id),
+                                        platformId: (news.providerName ?? "tmdb").lowercased(),
+                                        metadata: [
+                                            "section": "hero_carousel",
+                                            "kind": "news",
+                                            "outlet": news.outlet
+                                        ]
+                                    )
+                                    selectedNews = news
+                                }
+                            )
+                        }
+
+                        WatchListSection(
+                            items: watchListEpisodes,
+                            isAuthenticated: auth.isAuthenticated,
+                            onSeeAll: {
+                                WatchIntentLogger.shared.log(
+                                    eventType: .cardTapped,
+                                    metadata: ["section": "watch_list_see_all"]
+                                )
+                                showWatchListSheet = true
+                            },
+                            onOpen: { ep in
+                                WatchIntentLogger.shared.log(
+                                    eventType: .cardTapped,
+                                    titleId: WatchIntentLogger.titleSlug(ep.title),
+                                    platformId: ep.platform.lowercased(),
+                                    metadata: ["section": "watch_list"]
+                                )
+                                detailSubject = .episode(ep)
+                            }
+                        )
+                        .padding(.horizontal, 20)
+
+                        NewEpisodesSection(
+                            sectionTitle: (streams.userStreams.isEmpty && !trending.isEmpty) ? "Trending This Week" : "New Episodes",
+                            episodes: liveNewEpisodes,
+                            onSeeAll: {
+                                WatchIntentLogger.shared.log(
+                                    eventType: .cardTapped,
+                                    metadata: ["section": "new_episodes_see_all"]
+                                )
+                                path.append(.newEpisodes)
+                            },
+                            onOpen: { ep in
+                                WatchIntentLogger.shared.log(
+                                    eventType: .cardTapped,
+                                    titleId: WatchIntentLogger.titleSlug(ep.title),
+                                    platformId: ep.platform.lowercased()
+                                )
+                                detailSubject = .episode(ep)
+                            }
+                        )
+                        .padding(.horizontal, 20)
+
+                        if !whatsNewTodayShows.isEmpty {
+                            WhatsNewTodaySection(
+                                shows: whatsNewTodayShows,
+                                onSeeAll: {
+                                    WatchIntentLogger.shared.log(
+                                        eventType: .cardTapped,
+                                        metadata: ["section": "whats_new_today_see_all"]
+                                    )
+                                    path.append(.whatsNewToday)
+                                },
+                                onOpen: { show in
+                                    WatchIntentLogger.shared.log(
+                                        eventType: .cardTapped,
+                                        titleId: WatchIntentLogger.titleSlug(show.title),
+                                        metadata: ["section": "whats_new_today"]
+                                    )
+                                    detailSubject = .show(show)
+                                }
+                            )
+                            .padding(.horizontal, 20)
+                        }
+
+                        if !widgetBannerDismissed {
+                            WidgetPromoBanner(
+                                onSetUp: {
+                                    WatchIntentLogger.shared.log(eventType: .widgetSetupTapped)
+                                    path.append(.widgetSetup)
+                                },
+                                onDismiss: { withAnimation(.easeOut(duration: 0.25)) { widgetBannerDismissed = true } }
+                            )
+                            .padding(.horizontal, 20)
+                            .transition(.opacity.combined(with: .move(edge: .top)))
+                        }
+
+                        // Continue Watching is intentionally hidden when the user hasn't watched anything yet —
+                        // showing fake "continue watching" entries for shows the user never opened is worse than nothing.
+                        if !continueWatchingEpisodes.isEmpty {
+                            ContinueWatchingSection(
+                                episodes: continueWatchingEpisodes,
+                                onOpen: { ep in
+                                    WatchIntentLogger.shared.log(
+                                        eventType: .continueWatching,
+                                        titleId: WatchIntentLogger.titleSlug(ep.title),
+                                        platformId: ep.platform.lowercased()
+                                    )
+                                    detailSubject = .episode(ep)
+                                }
+                            )
+                            .padding(.horizontal, 20)
+                        }
+
+                        if !bingeReadyShows.isEmpty {
+                            BingeReadySection(
+                                sectionTitle: bingeReadyTitle,
+                                tag: bingeReadyTag,
+                                shows: bingeReadyShows,
+                                onSeeAll: {
+                                    WatchIntentLogger.shared.log(
+                                        eventType: .cardTapped,
+                                        metadata: ["section": "binge_ready_see_all"]
+                                    )
+                                    path.append(.bingeWorthy)
+                                },
+                                onOpen: { show in
+                                    WatchIntentLogger.shared.log(
+                                        eventType: .cardTapped,
+                                        titleId: WatchIntentLogger.titleSlug(show.title),
+                                        metadata: ["section": "binge_ready"]
+                                    )
+                                    detailSubject = .show(show)
+                                }
+                            )
+                            .padding(.horizontal, 20)
+                        }
+
+                        if !newsStreams.isEmpty {
+                            NewsSection(
+                                items: newsStreams,
+                                onSeeAll: {
+                                    WatchIntentLogger.shared.log(
+                                        eventType: .cardTapped,
+                                        metadata: ["section": "news_see_all"]
+                                    )
+                                    path.append(.news)
+                                },
+                                onOpen: { news in
+                                    WatchIntentLogger.shared.log(
+                                        eventType: .cardTapped,
+                                        titleId: String(news.id),
+                                        platformId: (news.providerName ?? "tmdb").lowercased(),
+                                        metadata: ["section": "news", "outlet": news.outlet]
+                                    )
+                                    selectedNews = news
+                                }
+                            )
+                            .padding(.horizontal, 20)
+                        }
+
+                        Color.clear.frame(height: 96)
+                    }
+                    .padding(.top, 4)
+                }
+                .tracksTabBarVisibility()
+
+                VStack(spacing: 0) {
+                    PageBar(
+                        selectedServiceIds: orderedSelectedServiceIds,
+                        onServicesPill: { showServicesSheet = true }
+                    )
+                    if let session = castPlayback.current {
+                        PlayingOnBanner(
+                            session: session,
+                            onTapRemote: {
+                                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                if session.deviceKind == .roku {
+                                    castPlayback.openRokuRemote()
+                                }
+                            },
+                            onDismiss: {
+                                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                withAnimation(.easeOut(duration: 0.25)) {
+                                    castPlayback.stop()
+                                }
+                            }
+                        )
+                        .padding(.horizontal, 14)
+                        .padding(.top, 6)
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                    }
+                }
+                .animation(.spring(response: 0.4, dampingFraction: 0.82), value: castPlayback.current?.id)
+            }
+            .background(Color.navy.ignoresSafeArea())
+            .navigationDestination(for: HomeRoute.self) { route in
+                switch route {
+                case .newEpisodes:
+                    NewEpisodesListView(
+                        episodes: liveNewEpisodes,
+                        onSelect: { ep in detailSubject = .episode(ep) }
+                    )
+                case .bingeWorthy:
+                    BingeWorthyListView(
+                        shows: allBingeReadyShows,
+                        sectionTitle: bingeReadyTitle,
+                        onSelect: { show in detailSubject = .show(show) }
+                    )
+                case .whatsNewToday:
+                    WhatsNewTodayListView(
+                        shows: allWhatsNewTodayShows,
+                        onSelect: { show in detailSubject = .show(show) }
+                    )
+                case .news:
+                    NewsListView(
+                        items: newsStreams,
+                        onSelect: { news in selectedNews = news }
+                    )
+                case .widgetSetup:
+                    WidgetSetupView()
+                }
+            }
+            #if os(tvOS)
+            .fullScreenCover(item: $detailSubject) { subject in
+                EpisodeDetailSheet(subject: subject)
+            }
+            .fullScreenCover(item: $selectedGame) { game in
+                SportsWatchSheet(game: game)
+            }
+            .fullScreenCover(item: $selectedNews) { news in
+                EpisodeDetailSheet(subject: .show(newsAsPoster(news)))
+            }
+            .fullScreenCover(isPresented: $showServicesSheet) {
+                ServicesBottomSheet()
+            }
+            .fullScreenCover(isPresented: $showWatchListSheet) {
+                WatchListBottomSheet()
+            }
+            #else
+            .sheet(item: $detailSubject) { subject in
+                EpisodeDetailSheet(subject: subject)
+            }
+            .sheet(item: $selectedGame) { game in
+                SportsWatchSheet(game: game)
+            }
+            .sheet(item: $selectedNews) { news in
+                EpisodeDetailSheet(subject: .show(newsAsPoster(news)))
+            }
+            .sheet(isPresented: $showServicesSheet) {
+                ServicesBottomSheet()
+            }
+            .sheet(isPresented: $showWatchListSheet) {
+                WatchListBottomSheet()
+            }
+            #endif
+            .toolbar(.hidden, for: .navigationBar)
+        }
+        .tint(Color.orange)
+        .task {
+            await clearBadgeAndMarkSeen()
+            await streams.refreshAll()
+            await loadTrendingIfNeeded()
+        }
+        .refreshable {
+            await streams.refreshAll()
+            await loadTrendingIfNeeded()
+        }
+    }
+
+    /// Clear the app icon badge and flag day-old new episodes as seen so the next launch doesn't re-pulse them.
+    private func clearBadgeAndMarkSeen() async {
+        try? await UNUserNotificationCenter.current().setBadgeCount(0)
+        await streams.markStaleEpisodesSeen()
+    }
+
+    /// Selected service ids in catalogue order — keeps the pill's stacked icons
+    /// in the same priority as the onboarding grid (Netflix first, Prime next, etc.).
+    private var orderedSelectedServiceIds: [String] {
+        StreamingCatalog.ordered(from: auth.selectedServices).map { $0.id }
+    }
+
+    private func loadTrendingIfNeeded() async {
+        // Always load TMDB content so the hero, new-episodes, and binge sections never fall back to a gradient-only state.
+        async let trendingCall = try? TMDBService.shared.getTrending()
+        async let onAirCall = try? TMDBService.shared.getOnTheAir()
+        async let endedCall = try? TMDBService.shared.getDiscoverEnded()
+        async let newTodayCall = try? TMDBService.shared.getNewToday()
+        async let sportsCall = SportsService.shared.fetchAll()
+        async let newsCall = NewsService.shared.fetchTopNewsStreams(limit: 10)
+        let (t, a, e, n, s, news) = await (trendingCall, onAirCall, endedCall, newTodayCall, sportsCall, newsCall)
+        if let t { trending = t }
+        if let a { onAir = a }
+        if let e { bingeFallback = e }
+        if let n { newToday = n }
+        sportsGames = s
+        newsStreams = news
+        await hydrateProviders()
+    }
+
+    /// Look up the top US streaming provider for every loaded TMDB result in parallel.
+    /// Items with no recognised streaming service are intentionally left out of the dictionary
+    /// so the rendering layer can hide them.
+    private func hydrateProviders() async {
+        let combined: [TMDBResult] = trending + onAir + bingeFallback + newToday
+        let unique = Array(Dictionary(grouping: combined, by: { $0.id }).compactMapValues { $0.first }.values)
+        let toFetch = unique.filter { providerByTmdb[$0.id] == nil }
+        guard !toFetch.isEmpty else { return }
+
+        let resolved: [(Int, Platform)] = await withTaskGroup(of: (Int, Platform)?.self) { group in
+            for r in toFetch {
+                group.addTask {
+                    let provider = try? await TMDBService.shared.getTopWatchProvider(tmdbId: r.id, isTV: r.isTV)
+                    guard let provider, let platform = Platform.from(providerName: provider.providerName) else {
+                        return nil
+                    }
+                    return (r.id, platform)
+                }
+            }
+            var out: [(Int, Platform)] = []
+            for await pair in group {
+                if let pair { out.append(pair) }
+            }
+            return out
+        }
+
+        var next = providerByTmdb
+        for (id, platform) in resolved { next[id] = platform }
+        providerByTmdb = next
+    }
+
+    // MARK: - Derived content
+
+    /// Builds the heterogeneous hero carousel. Leads with up to two live
+    /// sports broadcasts, then injects up to 2 news tiles right after the
+    /// sports block (always slotted before the entertainment titles so
+    /// breaking-news content sits front-and-center), then fills the rest
+    /// with up to 15 trending titles that have a confirmed streaming
+    /// provider, and finally one upcoming sports event when the rail is
+    /// still thin. Titles without provider info are skipped so the rail
+    /// never advertises a service we can't actually deeplink to.
+    private var heroItems: [HeroItem] {
+        var items: [HeroItem] = []
+
+        let liveGames = sportsGames.filter { $0.state == .live }.prefix(2)
+        for g in liveGames { items.append(.game(g)) }
+
+        // Insert up to 2 news tiles immediately after the sports block so
+        // news rides the high-priority real estate at the start of the rail.
+        for news in newsStreams.prefix(2) {
+            items.append(.news(news))
+        }
+
+        let mediaPool = trending + onAir + bingeFallback
+        var seen: Set<Int> = []
+        var media: [HeroItem] = []
+        for r in mediaPool {
+            if seen.contains(r.id) { continue }
+            seen.insert(r.id)
+            guard let platform = providerByTmdb[r.id] else { continue }
+            media.append(.media(r, platform))
+            if media.count >= 15 { break }
+        }
+        items.append(contentsOf: media)
+
+        if items.count < 8, let nextUp = sportsGames.first(where: { $0.state == .pre }) {
+            items.append(.game(nextUp))
+        }
+        return items
+    }
+
+    /// Wraps a `NewsStream` in the existing `PosterShow` shape so the
+    /// EpisodeDetailSheet can present it identically to a regular show.
+    /// Keeping the news flow on the same sheet means deeplinking, watchlist
+    /// toggling, and cast-to-TV all work for news without a parallel UI.
+    private func newsAsPoster(_ news: NewsStream) -> PosterShow {
+        let dateLabel: String = {
+            guard let d = news.publishedAt else { return "News" }
+            let f = RelativeDateTimeFormatter()
+            f.unitsStyle = .short
+            return f.localizedString(for: d, relativeTo: Date())
+        }()
+        return PosterShow(
+            title: news.title,
+            meta: "\(news.outlet) · \(dateLabel)",
+            posterColors: [Color.newsGreen, Color(red: 0.04, green: 0.20, blue: 0.18)],
+            symbol: "dot.radiowaves.left.and.right",
+            posterUrl: news.posterUrl,
+            tmdbId: news.id
+        )
+    }
+
+    private func mediaAsPoster(_ r: TMDBResult, platform: Platform?) -> PosterShow {
+        let colors: [Color] = platform.map { [$0.color, $0.color.opacity(0.7)] } ?? HomeFallback.posterColors
+        return PosterShow(
+            title: r.displayName,
+            meta: r.year.map { "\($0)" } ?? (r.isTV ? "Series" : "Movie"),
+            posterColors: colors,
+            symbol: "play.tv.fill",
+            posterUrl: r.posterUrl,
+            tmdbId: r.id
+        )
+    }
+
+    /// Continue Watching only ever shows real telemetry-derived rows — never mock placeholders.
+    private var continueWatchingEpisodes: [Episode] {
+        // No backing data source yet; intentionally empty so the section hides.
+        []
+    }
+
+    private var bingeReadyTitle: String {
+        streams.userStreams.isEmpty ? "Binge Worthy" : "Binge Ready 🎉"
+    }
+
+    private var bingeReadyTag: String {
+        streams.userStreams.isEmpty ? "BINGE WORTHY" : "FULL SEASON"
+    }
+
+    private var bingeReadyShows: [PosterShow] {
+        Array(allBingeReadyShows.prefix(12))
+    }
+
+    /// Full Binge Worthy list (no count limit) used by the "See all" list view.
+    private var allBingeReadyShows: [PosterShow] {
+        bingeFallback
+            .filter { providerByTmdb[$0.id] != nil }
+            .map { r in
+                PosterShow(
+                    title: r.displayName,
+                    meta: r.year.map { "\($0)" } ?? "Complete series",
+                    posterColors: HomeFallback.posterColors,
+                    symbol: "play.tv.fill",
+                    posterUrl: r.posterUrl,
+                    tmdbId: r.id
+                )
+            }
+    }
+
+    /// What's New Today — trending TV/movies dropping today. Only includes
+    /// items with a confirmed streaming provider so each card has a real
+    /// "Watch on X" deeplink behind it.
+    private var whatsNewTodayShows: [PosterShow] {
+        Array(allWhatsNewTodayShows.prefix(12))
+    }
+
+    private var allWhatsNewTodayShows: [PosterShow] {
+        newToday
+            .filter { providerByTmdb[$0.id] != nil }
+            .map { r in
+                PosterShow(
+                    title: r.displayName,
+                    meta: r.year.map { "\($0)" } ?? (r.isTV ? "New series" : "New release"),
+                    posterColors: HomeFallback.posterColors,
+                    symbol: "flame.fill",
+                    posterUrl: r.posterUrl,
+                    tmdbId: r.id
+                )
+            }
+    }
+
+    /// Episode cards built from the user's saved watch list. Falls back to a
+    /// neutral platform when the saved row didn't capture one.
+    var watchListEpisodes: [Episode] {
+        streams.userStreams.map { row in
+            let platformName = (row.platform ?? "").uppercased()
+            let platform: Platform
+            switch platformName {
+            case "NETFLIX": platform = .netflix
+            case "HBO", "HBO MAX", "MAX": platform = .hbo
+            case "APPLE TV+", "APPLETV", "APPLE": platform = .appleTV
+            case "HULU": platform = .hulu
+            case "PRIME", "AMAZON", "AMAZON PRIME": platform = .prime
+            case "DISNEY+", "DISNEY": platform = .disney
+            case "PARAMOUNT+", "PARAMOUNT": platform = .paramount
+            case "PEACOCK": platform = .peacock
+            case "CRUNCHYROLL": platform = .crunchyroll
+            case "YOUTUBE": platform = .youtube
+            default: platform = Platform(name: platformName.isEmpty ? "STREAM" : platformName, color: Color.orange)
+            }
+            return Episode(
+                title: row.title ?? "Untitled",
+                season: "Watch List",
+                duration: "",
+                platform: platform,
+                isNew: false,
+                posterColors: HomeFallback.posterColors,
+                symbol: "bookmark.fill",
+                posterUrl: row.posterUrl,
+                tmdbId: Int(row.titleId)
+            )
+        }
+    }
+
+    /// Maps TMDB results into Episode cards when no Supabase rows are available. Items without
+    /// a known streaming provider are omitted entirely so the UI never claims "On Air" as a service.
+    private func tmdbAsEpisodes(_ results: [TMDBResult]) -> [Episode] {
+        results.compactMap { r -> Episode? in
+            guard let platform = providerByTmdb[r.id] else { return nil }
+            return Episode(
+                title: r.displayName,
+                season: r.year.map { "\($0)" } ?? "New",
+                duration: "",
+                platform: platform,
+                isNew: true,
+                posterColors: HomeFallback.posterColors,
+                symbol: "flame.fill",
+                posterUrl: r.posterUrl,
+                tmdbId: r.id
+            )
+        }
+        .prefix(12)
+        .map { $0 }
+    }
+
+    /// Prefer live Supabase rows; otherwise fall back to TMDB on-air, then trending. Never returns mock data,
+    /// and never returns titles that don't have a verified streaming provider.
+    var liveNewEpisodes: [Episode] {
+        if streams.newEpisodes.isEmpty {
+            let onAirEpisodes = tmdbAsEpisodes(onAir)
+            if !onAirEpisodes.isEmpty { return onAirEpisodes }
+            let trendingEpisodes = tmdbAsEpisodes(trending)
+            if !trendingEpisodes.isEmpty { return trendingEpisodes }
+            return []
+        }
+        return streams.newEpisodes.map { row in
+            let platformName = (row.platform ?? "").uppercased()
+            let platform: Platform
+            switch platformName {
+            case "NETFLIX": platform = .netflix
+            case "HBO", "HBO MAX", "MAX": platform = .hbo
+            case "APPLE TV+", "APPLETV", "APPLE": platform = .appleTV
+            case "HULU": platform = .hulu
+            case "PRIME", "AMAZON", "AMAZON PRIME": platform = .prime
+            case "DISNEY+", "DISNEY": platform = .disney
+            default: platform = Platform(name: platformName.isEmpty ? "STREAM" : platformName, color: Color.blue)
+            }
+            let season = row.season ?? 1
+            let episode = row.episode ?? 1
+            let duration = row.durationMinutes.map { "\($0)min" } ?? ""
+            // Prefer the episode still, fall back to the show poster, so detail + see-all both render real art.
+            let imageUrl = row.posterUrl
+            let tmdbId = Int(row.titleId)
+            return Episode(
+                title: row.title ?? "Untitled",
+                season: "S\(season) E\(episode)",
+                duration: duration,
+                platform: platform,
+                isNew: row.isNew ?? true,
+                posterColors: [Color(red: 0.20, green: 0.15, blue: 0.45), Color(red: 0.04, green: 0.02, blue: 0.10)],
+                symbol: "sparkles",
+                posterUrl: imageUrl,
+                tmdbId: tmdbId
+            )
+        }
+    }
+}
+
+// MARK: - PageBar
+
+private struct PageBar: View {
+    let selectedServiceIds: [String]
+    let onServicesPill: () -> Void
+
+    var body: some View {
+        HStack(spacing: 10) {
+            HStack(alignment: .firstTextBaseline, spacing: 0) {
+                Text("Guide")
+                    .scaledFont(size: 22, weight: .semibold, design: .default)
+                    .foregroundStyle(Color.textPrimary)
+                Text("Stream")
+                    .scaledFont(size: 22, weight: .semibold, design: .default)
+                    .foregroundStyle(Color.orange)
+                Text(" TV")
+                    .scaledFont(size: 16, weight: .regular, design: .default)
+                    .foregroundStyle(Color.white.opacity(0.45))
+            }
+            Spacer()
+            if !selectedServiceIds.isEmpty {
+                ServicesPill(serviceIds: selectedServiceIds, onTap: onServicesPill)
+            }
+        }
+        .padding(.horizontal, 20)
+        .frame(height: 56)
+        .background(
+            Color.navy.opacity(0.92)
+                .background(.ultraThinMaterial)
+                .ignoresSafeArea(edges: .top)
+        )
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(Color.white.opacity(0.06))
+                .frame(height: 0.5)
+        }
+    }
+}
+
+// MARK: - Sections
+
+private struct SectionGlassCard<Content: View>: View {
+    let title: String
+    let onSeeAll: (() -> Void)?
+    let highlighted: Bool
+    /// Optional custom accent color used for the "See all" link and the
+    /// highlighted stroke. Defaults to brand orange so existing call sites
+    /// keep their current visual.
+    let accentColor: Color
+    @ViewBuilder let content: () -> Content
+
+    init(
+        title: String,
+        highlighted: Bool = false,
+        accentColor: Color = Color.orange,
+        onSeeAll: (() -> Void)? = nil,
+        @ViewBuilder content: @escaping () -> Content
+    ) {
+        self.title = title
+        self.highlighted = highlighted
+        self.accentColor = accentColor
+        self.onSeeAll = onSeeAll
+        self.content = content
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text(title)
+                    .scaledFont(size: 15, weight: .semibold)
+                    .foregroundStyle(Color.textPrimary)
+                Spacer()
+                if let onSeeAll {
+                    Button(action: onSeeAll) {
+                        HStack(spacing: 2) {
+                            Text("See all")
+                                .scaledFont(size: 13, weight: .semibold)
+                            Image(systemName: "arrow.right")
+                                .scaledFont(size: 11, weight: .bold)
+                        }
+                        .foregroundStyle(accentColor)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 14)
+            .padding(.bottom, 8)
+
+            content()
+                .padding(.vertical, 6)
+                .padding(.bottom, 8)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            Color.white.opacity(0.07)
+                .background(.ultraThinMaterial)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(highlighted ? accentColor.opacity(0.30) : Color.white.opacity(0.10), lineWidth: 1)
+        )
+        .clipShape(.rect(cornerRadius: 14))
+    }
+}
+
+private struct NewEpisodesSection: View {
+    let sectionTitle: String
+    let episodes: [Episode]
+    let onSeeAll: () -> Void
+    let onOpen: (Episode) -> Void
+
+    var body: some View {
+        SectionGlassCard(title: sectionTitle, highlighted: true, onSeeAll: onSeeAll) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    ForEach(episodes) { ep in
+                        EpisodeThumbCard(episode: ep, onTap: { onOpen(ep) })
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 6)
+            }
+        }
+    }
+}
+
+private struct ContinueWatchingSection: View {
+    let episodes: [Episode]
+    let onOpen: (Episode) -> Void
+
+    var body: some View {
+        SectionGlassCard(title: "Continue Watching", onSeeAll: {}) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    ForEach(episodes) { ep in
+                        EpisodeThumbCard(episode: ep, onTap: { onOpen(ep) })
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 6)
+            }
+        }
+    }
+}
+
+private struct BingeReadySection: View {
+    let sectionTitle: String
+    let tag: String
+    let shows: [PosterShow]
+    let onSeeAll: () -> Void
+    let onOpen: (PosterShow) -> Void
+
+    var body: some View {
+        SectionGlassCard(title: sectionTitle, onSeeAll: onSeeAll) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    ForEach(shows) { show in
+                        PosterCard(show: show, tag: tag, onTap: { onOpen(show) })
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 6)
+            }
+        }
+    }
+}
+
+// MARK: - Watch List section
+
+private struct WatchListSection: View {
+    let items: [Episode]
+    let isAuthenticated: Bool
+    let onSeeAll: () -> Void
+    let onOpen: (Episode) -> Void
+
+    var body: some View {
+        SectionGlassCard(
+            title: "My Watch List",
+            onSeeAll: items.isEmpty ? nil : onSeeAll
+        ) {
+            if items.isEmpty {
+                emptyState
+            } else {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 10) {
+                        ForEach(items) { ep in
+                            EpisodeThumbCard(episode: ep, onTap: { onOpen(ep) })
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 6)
+                }
+            }
+        }
+    }
+
+    private var emptyState: some View {
+        HStack(alignment: .top, spacing: 12) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(Color.orange.opacity(0.14))
+                    .frame(width: 52, height: 52)
+                Image(systemName: "bookmark.fill")
+                    .scaledFont(size: 22, weight: .semibold)
+                    .foregroundStyle(Color.orange)
+            }
+            VStack(alignment: .leading, spacing: 4) {
+                Text(isAuthenticated ? "Nothing saved yet" : "Sign in to start your list")
+                    .scaledFont(size: 14, weight: .semibold)
+                    .foregroundStyle(.white)
+                Text(isAuthenticated
+                     ? "Tap the + on any show, movie, or game to save it here for tonight."
+                     : "Create an account to keep your shows, movies, and games in sync across devices.")
+                    .scaledFont(size: 12)
+                    .foregroundStyle(Color.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 16)
+        .padding(.bottom, 4)
+    }
+}
+
+// MARK: - What's New Today section
+
+private struct WhatsNewTodaySection: View {
+    let shows: [PosterShow]
+    let onSeeAll: () -> Void
+    let onOpen: (PosterShow) -> Void
+
+    var body: some View {
+        SectionGlassCard(title: "What's New Today", highlighted: true, onSeeAll: onSeeAll) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    ForEach(shows) { show in
+                        PosterCard(show: show, tag: "NEW TODAY", onTap: { onOpen(show) })
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 6)
+            }
+        }
+    }
+}
+
+// MARK: - News section
+
+/// Horizontal rail of the top news streams across every connected
+/// streaming service. Uses the brand teal/green so news stands apart
+/// from the orange entertainment treatment and the blue sports rail.
+private struct NewsSection: View {
+    let items: [NewsStream]
+    let onSeeAll: () -> Void
+    let onOpen: (NewsStream) -> Void
+
+    var body: some View {
+        SectionGlassCard(
+            title: "News",
+            highlighted: true,
+            accentColor: Color.newsGreen,
+            onSeeAll: onSeeAll
+        ) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 12) {
+                    ForEach(items) { news in
+                        NewsCard(news: news, onTap: { onOpen(news) })
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 6)
+            }
+        }
+    }
+}
+
+private struct NewsCard: View {
+    let news: NewsStream
+    let onTap: () -> Void
+
+    private static let formatter: RelativeDateTimeFormatter = {
+        let f = RelativeDateTimeFormatter()
+        f.unitsStyle = .short
+        return f
+    }()
+
+    var body: some View {
+        Button(action: onTap) {
+            VStack(alignment: .leading, spacing: 8) {
+                Color.newsGreen
+                    .frame(width: 220, height: 124)
+                    .overlay {
+                        RemoteImage(
+                            urlString: news.backdropUrl ?? news.posterUrl,
+                            contentMode: .fill,
+                            fallbackColors: [Color.newsGreen, Color(red: 0.04, green: 0.20, blue: 0.18)]
+                        )
+                        .frame(width: 220, height: 124)
+                        .clipped()
+                        .allowsHitTesting(false)
+                    }
+                    .overlay(
+                        LinearGradient(
+                            colors: [
+                                Color.newsGreen.opacity(0.0),
+                                Color.newsGreen.opacity(0.4),
+                                Color(red: 0.04, green: 0.20, blue: 0.18).opacity(0.85)
+                            ],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                        .allowsHitTesting(false)
+                    )
+                    .overlay(alignment: .topLeading) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "dot.radiowaves.left.and.right")
+                                .scaledFont(size: 8, weight: .black)
+                                .symbolEffect(.variableColor.iterative.reversing, options: .repeating)
+                            Text("LIVE")
+                                .scaledFont(size: 8, weight: .heavy)
+                                .tracking(0.6)
+                        }
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 3)
+                        .background(
+                            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                .fill(Color.newsGreen)
+                        )
+                        .padding(8)
+                        .allowsHitTesting(false)
+                    }
+                    .overlay(alignment: .bottomLeading) {
+                        Text(news.outlet.uppercased())
+                            .scaledFont(size: 9, weight: .heavy)
+                            .tracking(0.6)
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 7)
+                            .padding(.vertical, 3)
+                            .background(
+                                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                    .fill(Color.black.opacity(0.55))
+                            )
+                            .padding(8)
+                            .allowsHitTesting(false)
+                    }
+                    .clipShape(.rect(cornerRadius: 10))
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(news.title)
+                        .scaledFont(size: 13, weight: .semibold)
+                        .foregroundStyle(Color.textPrimary)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+                    if let provider = news.providerName, let date = news.publishedAt {
+                        Text("\(provider) · \(Self.formatter.localizedString(for: date, relativeTo: Date()))")
+                            .scaledFont(size: 11)
+                            .foregroundStyle(Color.textTertiary)
+                            .lineLimit(1)
+                    } else if let provider = news.providerName {
+                        Text(provider)
+                            .scaledFont(size: 11)
+                            .foregroundStyle(Color.textTertiary)
+                            .lineLimit(1)
+                    } else if let date = news.publishedAt {
+                        Text(Self.formatter.localizedString(for: date, relativeTo: Date()))
+                            .scaledFont(size: 11)
+                            .foregroundStyle(Color.textTertiary)
+                    }
+                }
+                .frame(width: 220, alignment: .leading)
+            }
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+// MARK: - Playing on banner
+
+/// Persistent pill shown beneath the page header while a cast session is
+/// active. Tells the user which TV is currently playing their pick and
+/// gives a one-tap entry into the Roku Remote app (when applicable) plus
+/// a dismiss control that ends the session locally.
+private struct PlayingOnBanner: View {
+    let session: CastPlaybackState.ActiveSession
+    let onTapRemote: () -> Void
+    let onDismiss: () -> Void
+
+    var body: some View {
+        HStack(spacing: 12) {
+            ZStack {
+                Circle()
+                    .fill(
+                        session.deviceKind == .roku
+                        ? Color(red: 0x66/255, green: 0x2D/255, blue: 0x91/255).opacity(0.55)
+                        : Color.white.opacity(0.18)
+                    )
+                    .frame(width: 38, height: 38)
+                Image(systemName: session.deviceKind == .appleTV ? "appletv" : "tv.inset.filled")
+                    .scaledFont(size: 17, weight: .regular)
+                    .foregroundStyle(.white)
+                // Animated signal arc — mirrors the dismiss-on-success badge
+                // inside the CastToTVSheet so the visual language carries
+                // forward into the home banner.
+                Image(systemName: "wifi")
+                    .scaledFont(size: 9, weight: .bold)
+                    .foregroundStyle(Color(red: 0x3D/255, green: 0xE0/255, blue: 0x6A/255))
+                    .padding(3)
+                    .background(Circle().fill(Color.navy))
+                    .offset(x: 13, y: -11)
+                    .symbolEffect(.variableColor.iterative.reversing, options: .repeating)
+            }
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Playing on \(session.deviceName)")
+                    .scaledFont(size: 13, weight: .semibold)
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+                Text(session.title)
+                    .scaledFont(size: 11)
+                    .foregroundStyle(Color.white.opacity(0.6))
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: 0)
+
+            if session.deviceKind == .roku {
+                Button(action: onTapRemote) {
+                    Image(systemName: "av.remote.fill")
+                        .scaledFont(size: 14, weight: .semibold)
+                        .foregroundStyle(.white)
+                        .frame(width: 32, height: 32)
+                        .background(Circle().fill(Color.white.opacity(0.12)))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Open Roku Remote")
+            }
+
+            Button(action: onDismiss) {
+                Image(systemName: "xmark")
+                    .scaledFont(size: 12, weight: .bold)
+                    .foregroundStyle(.white)
+                    .frame(width: 32, height: 32)
+                    .background(Circle().fill(Color.white.opacity(0.08)))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Dismiss cast session")
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(Color.black.opacity(0.75))
+                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(
+                    LinearGradient(
+                        colors: [Color.newsGreen.opacity(0.5), Color.orange.opacity(0.5)],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    ),
+                    lineWidth: 1
+                )
+        )
+        .shadow(color: .black.opacity(0.35), radius: 12, y: 4)
+    }
+}
+
+// MARK: - Cards
+
+private struct EpisodeThumbCard: View {
+    let episode: Episode
+    let onTap: () -> Void
+
+    var body: some View {
+        Button(action: onTap) {
+            VStack(alignment: .leading, spacing: 8) {
+                Color.black
+                    .frame(width: 148, height: 88)
+                    .overlay {
+                        LinearGradient(
+                            colors: episode.posterColors,
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                        .allowsHitTesting(false)
+                    }
+                    .overlay {
+                        RemoteImage(
+                            urlString: episode.posterUrl,
+                            contentMode: .fill,
+                            fallbackColors: episode.posterColors
+                        )
+                        .frame(width: 148, height: 88)
+                        .clipped()
+                        .allowsHitTesting(false)
+                    }
+                    .overlay(alignment: .center) {
+                        Circle()
+                            .fill(.ultraThinMaterial)
+                            .frame(width: 30, height: 30)
+                            .overlay(
+                                Image(systemName: "play.fill")
+                                    .scaledFont(size: 11, weight: .bold)
+                                    .foregroundStyle(.white)
+                                    .offset(x: 1)
+                            )
+                            .allowsHitTesting(false)
+                    }
+                    .overlay(alignment: .bottomLeading) {
+                        Text(episode.platform)
+                            .scaledFont(size: 8, weight: .bold)
+                            .tracking(0.4)
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 3)
+                            .background(
+                                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                    .fill(episode.platformColor)
+                            )
+                            .padding(6)
+                            .allowsHitTesting(false)
+                    }
+                    .overlay(alignment: .topTrailing) {
+                        if episode.isNew {
+                            Text("NEW")
+                                .scaledFont(size: 8, weight: .heavy)
+                                .tracking(0.6)
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 3)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                        .fill(Color.orange)
+                                )
+                                .padding(6)
+                                .allowsHitTesting(false)
+                        }
+                    }
+                    .overlay(alignment: .bottom) {
+                        if episode.progress > 0 {
+                            GeometryReader { geo in
+                                ZStack(alignment: .leading) {
+                                    Rectangle()
+                                        .fill(Color.white.opacity(0.10))
+                                    Rectangle()
+                                        .fill(Color.orange)
+                                        .frame(width: geo.size.width * episode.progress)
+                                        .shadow(color: Color.orange.opacity(0.6), radius: 4)
+                                }
+                            }
+                            .frame(height: 4)
+                            .allowsHitTesting(false)
+                        }
+                    }
+                    .clipShape(.rect(cornerRadius: 10))
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(episode.title)
+                        .scaledFont(size: 13, weight: .semibold)
+                        .foregroundStyle(Color.textPrimary)
+                        .lineLimit(1)
+                    Text("\(episode.season) · \(episode.duration)")
+                        .scaledFont(size: 11)
+                        .foregroundStyle(Color.textTertiary)
+                        .lineLimit(1)
+                }
+                .frame(width: 148, alignment: .leading)
+            }
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+private struct PosterCard: View {
+    let show: PosterShow
+    let tag: String
+    let onTap: () -> Void
+
+    var body: some View {
+        Button(action: onTap) {
+            VStack(alignment: .leading, spacing: 8) {
+                Color.black
+                    .frame(width: 110, height: 155)
+                    .overlay {
+                        LinearGradient(
+                            colors: show.posterColors,
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                        .allowsHitTesting(false)
+                    }
+                    .overlay {
+                        RemoteImage(
+                            urlString: show.posterUrl,
+                            contentMode: .fill,
+                            fallbackColors: show.posterColors
+                        )
+                        .frame(width: 110, height: 155)
+                        .clipped()
+                        .allowsHitTesting(false)
+                    }
+                    .overlay(alignment: .bottom) {
+                        Text(tag)
+                            .scaledFont(size: 8, weight: .bold)
+                            .tracking(0.8)
+                            .foregroundStyle(Color.orange)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 5)
+                            .background(Color.orange.opacity(0.30))
+                            .allowsHitTesting(false)
+                    }
+                    .clipShape(.rect(cornerRadius: 10))
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(show.title)
+                        .scaledFont(size: 12, weight: .semibold)
+                        .foregroundStyle(Color.textPrimary)
+                        .lineLimit(1)
+                    Text(show.meta)
+                        .scaledFont(size: 10)
+                        .foregroundStyle(Color.textTertiary)
+                        .lineLimit(1)
+                }
+                .frame(width: 110, alignment: .leading)
+            }
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+// MARK: - Widget Promo
+
+private struct WidgetPromoBanner: View {
+    let onSetUp: () -> Void
+    let onDismiss: () -> Void
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 14) {
+            Rectangle()
+                .fill(Color.orange)
+                .frame(width: 3)
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("NEW")
+                    .scaledFont(size: 9, weight: .heavy)
+                    .tracking(0.6)
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 3)
+                    .background(Capsule().fill(Color.orange))
+
+                Text("GuideStream on Your Home Screen")
+                    .scaledFont(size: 14, weight: .semibold)
+                    .foregroundStyle(Color.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Text("See what's up next without opening the app")
+                    .scaledFont(size: 12)
+                    .foregroundStyle(Color.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                HStack(spacing: 14) {
+                    Button(action: onSetUp) {
+                        Text("Set Up")
+                            .scaledFont(size: 12, weight: .bold)
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 8)
+                            .background(
+                                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                    .fill(Color.orange)
+                            )
+                    }
+                    .buttonStyle(.plain)
+
+                    Button(action: onDismiss) {
+                        Text("Dismiss")
+                            .scaledFont(size: 12, weight: .medium)
+                            .foregroundStyle(Color.textSecondary)
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.top, 2)
+            }
+            .padding(.vertical, 14)
+
+            Spacer(minLength: 0)
+
+            MiniWidgetPreview()
+                .padding(.trailing, 14)
+                .padding(.top, 14)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            Color.white.opacity(0.07)
+                .background(.ultraThinMaterial)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(Color.white.opacity(0.10), lineWidth: 1)
+        )
+        .clipShape(.rect(cornerRadius: 14))
+    }
+}
+
+private struct MiniWidgetPreview: View {
+    var body: some View {
+        RoundedRectangle(cornerRadius: 12, style: .continuous)
+            .fill(
+                LinearGradient(
+                    colors: [
+                        Color(red: 0xFF/255, green: 0x9A/255, blue: 0x3C/255),
+                        Color(red: 0xE6/255, green: 0x72/255, blue: 0x1A/255)
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
+            .frame(width: 72, height: 72)
+            .overlay(alignment: .topLeading) {
+                Circle()
+                    .fill(Color.white.opacity(0.85))
+                    .frame(width: 6, height: 6)
+                    .padding(8)
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(Color.white.opacity(0.35))
+                    .frame(width: 36, height: 44)
+                    .blur(radius: 0.4)
+            }
+            .shadow(color: Color.orange.opacity(0.35), radius: 12, y: 6)
+    }
+}
+
+// MARK: - Badges
+
+private struct NetworkBadge: View {
+    let platform: Platform
+    var body: some View {
+        Text(platform.name)
+            .scaledFont(size: 8, weight: .bold)
+            .tracking(0.6)
+            .foregroundStyle(.white)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 4)
+            .background(
+                RoundedRectangle(cornerRadius: 5, style: .continuous)
+                    .fill(platform.color)
+            )
+    }
+}
+
+private struct NewChip: View {
+    var body: some View {
+        Text("NEW")
+            .scaledFont(size: 8.5, weight: .heavy)
+            .tracking(0.6)
+            .foregroundStyle(.white)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 4)
+            .background(
+                RoundedRectangle(cornerRadius: 5, style: .continuous)
+                    .fill(Color.orange)
+            )
+    }
+}
+
+#Preview {
+    ZStack {
+        Color.navy.ignoresSafeArea()
+        HomeView()
+    }
+    .preferredColorScheme(.dark)
+}
