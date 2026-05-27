@@ -177,22 +177,34 @@ final class ReelsViewModel {
 
         for (i, item) in combined.enumerated() {
             finalFeed.append(item)
-            if (i + 1) % 5 == 0 {
+
+            if (i + 1) % 3 == 0 {
                 adSlotCount += 1
                 if adSlotCount % 2 == 1 {
-                    // Odd slots (5, 15, 25...) → AdMob full-screen
-                    finalFeed.append(makeAdMobReel(slot: adSlotCount))
-                } else {
-                    // Even slots (10, 20, 30...) → Rakuten full-screen
+                    // Odd ad slots (after reels 3, 9, 15...) → Rakuten
                     if !rakutenReels.isEmpty {
                         finalFeed.append(
                             rakutenReels[rakutenIndex % rakutenReels.count]
                         )
                         rakutenIndex += 1
                     }
+                } else {
+                    // Even ad slots (after reels 6, 12, 18...) → AdMob
+                    finalFeed.append(makeAdMobReel(slot: adSlotCount))
                 }
             }
         }
+
+        // Safety net: if the feed was too short to insert any
+        // Rakuten reel at all, append one now so it always appears.
+        let hasRakuten = finalFeed.contains {
+            $0.isSponsored && $0.platformId != "admob"
+        }
+        if !hasRakuten, let first = rakutenReels.first {
+            let insertAt = min(2, finalFeed.count)
+            finalFeed.insert(first, at: insertAt)
+        }
+
         self.allTrailers = finalFeed
         self.hasLoaded = !finalFeed.isEmpty
 
@@ -401,26 +413,26 @@ private func makeRakutenAdReels() -> [TrailerItem] {
 
     private func makeAdMobReel(slot: Int) -> TrailerItem {
         let placeholders: [(String,String,String,String,String)] = [
+            ("Stream smarter. Watch everything.",
+             "GuideStream TV — every show, every service, one app.",
+             "Watch now",
+             "https://image.tmdb.org/t/p/w1280/etj8E2o0Bud0HkONVQPjyCkIvpv.jpg",
+             "dQw4w9WgXcQ"),
             ("Upgrade your home theater",
-             "TCL 4K QLED TV. Stunning picture. Now $299.",
+             "TCL 4K QLED TV. Stunning picture, incredible sound.",
              "Shop now",
              "https://image.tmdb.org/t/p/w1280/zSWIOsYEWCBPEFrmVCBZAbMKFtA.jpg",
-             "wXz3xgfpllo"),
-            ("Better sound. Every show.",
-             "Sony WH-1000XM5. Industry-leading noise cancelling.",
-             "Shop now",
-             "https://image.tmdb.org/t/p/w1280/1Rr5SrvHxMXHu5RjKpaMba8VTzi.jpg",
-             "UZWJ2vMlMz0"),
-            ("Order dinner. Keep watching.",
-             "DoorDash — $0 delivery on your first order.",
-             "Order now",
-             "https://image.tmdb.org/t/p/w1280/9yBVqNruk6Ykrwc32qDbHTE0z5o.jpg",
-             "5F2rZKh6Wkk"),
-            ("Game Pass. 100+ games.",
-             "Xbox Game Pass Ultimate. Play on phone and console.",
+             "M7lc1UVf-VE"),
+            ("Game Pass. 100+ games included.",
+             "Xbox Game Pass Ultimate — play on console and mobile.",
              "Try free",
-             "https://image.tmdb.org/t/p/w1280/etj8E2o0Bud0HkONVQPjyCkIvpv.jpg",
-             "Q3XMOaGIzT4")
+             "https://image.tmdb.org/t/p/w1280/9yBVqNruk6Ykrwc32qDbHTE0z5o.jpg",
+             "sPbJ4oyIrXA"),
+            ("Order dinner. Keep watching.",
+             "DoorDash — get food delivered to your door tonight.",
+             "Order now",
+             "https://image.tmdb.org/t/p/w1280/1Rr5SrvHxMXHu5RjKpaMba8VTzi.jpg",
+             "dQw4w9WgXcQ")
         ]
         let p = placeholders[slot % placeholders.count]
         return TrailerItem(
@@ -892,10 +904,16 @@ private struct ReelView: View {
             ("paramount","Paramount+", Color(red:0x00/255, green:0x64/255, blue:0xFF/255)),
             ("peacock", "Peacock", Color.black)
         ]
-        return pool.first { entry in
+        let eligible = pool.filter { entry in
             entry.0 != trailer.platformId.lowercased()
                 && !selected.contains(entry.0)
-        }.map { ($0.0, $0.1, $0.2) }
+        }
+        guard !eligible.isEmpty else { return nil }
+        // Use tmdbId to deterministically pick different services
+        // for different shows, giving variety across the feed.
+        let index = abs(trailer.tmdbId) % eligible.count
+        let entry = eligible[index]
+        return (entry.0, entry.1, entry.2)
     }
 
     @ViewBuilder
@@ -2134,22 +2152,18 @@ private struct AdMobReelCard: View {
             .frame(width: size.width, height: size.height)
             .clipped()
 
-            if !trailerKey.isEmpty {
-                #if !targetEnvironment(simulator)
-                if isPlaying {
-                    YouTubeNativePlayerView(
-                        videoId: trailerKey,
-                        isMuted: true,
-                        isPlaying: isPlaying,
-                        progress: $playbackProgress,
-                        onError: { }
-                    )
-                    .allowsHitTesting(false)
-                    .frame(width: size.width, height: size.height)
-                    .clipped()
-                    .position(x: size.width/2, y: size.height/2)
-                }
-                #endif
+            if !trailerKey.isEmpty && isPlaying {
+                YouTubeNativePlayerView(
+                    videoId: trailerKey,
+                    isMuted: true,
+                    isPlaying: isPlaying,
+                    progress: $playbackProgress,
+                    onError: { }
+                )
+                .allowsHitTesting(false)
+                .frame(width: size.width, height: size.height)
+                .clipped()
+                .position(x: size.width / 2, y: size.height / 2)
             }
 
             // Colour grade
