@@ -5,6 +5,7 @@
 
 import UIKit
 import UserNotifications
+import Supabase
 
 final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
 
@@ -33,6 +34,29 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         didFailToRegisterForRemoteNotificationsWithError error: Error
     ) {
         print("[Push] APNs registration failed: \(error.localizedDescription)")
+    }
+
+    // MARK: - URL handling (OAuth callbacks)
+
+    /// Catch OAuth redirects from Google Sign-In, Apple, and password recovery.
+    /// Supabase's `signInWithOAuth` uses `ASWebAuthenticationSession` internally,
+    /// but this handler serves as a safety net for edge cases where the session
+    /// doesn't intercept the callback (e.g. app-switching during authentication).
+    func application(
+        _ application: UIApplication,
+        open url: URL,
+        options: [UIApplication.OpenURLOptionsKey: Any] = [:]
+    ) -> Bool {
+        guard url.scheme == "guidestream" else { return false }
+        Task {
+            do {
+                try await SupabaseManager.shared.client.auth.session(from: url)
+                print("[Auth] OAuth callback handled via URL: \(url)")
+            } catch {
+                print("[Auth] URL session exchange failed: \(error.localizedDescription)")
+            }
+        }
+        return true
     }
 
     // MARK: - Notification handling
