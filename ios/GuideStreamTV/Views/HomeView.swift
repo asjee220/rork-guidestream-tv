@@ -83,6 +83,8 @@ struct PosterShow: Identifiable, Hashable {
     let symbol: String
     var posterUrl: String? = nil
     var tmdbId: Int? = nil
+    var voteAverage: Double? = nil
+    var seasonCount: Int? = nil
 }
 
 /// Default gradient colors used as a tasteful fallback while TMDB images load or when they fail.
@@ -117,6 +119,12 @@ struct HomeView: View {
     /// Cached top US streaming provider per TMDB id. Items without an entry have no real
     /// streaming service and are filtered out of the UI.
     @State private var providerByTmdb: [Int: Platform] = [:]
+    @State private var topRated: [TMDBResult] = []
+    @State private var genreShows: [TMDBResult] = []
+    @State private var recommendedShows: [TMDBResult] = []
+    @State private var expiringItems: [(tmdbId: Int, title: String, daysLeft: Int, sourceId: String)] = []
+    @State private var selectedGenreId: Int = 80
+    @State private var selectedGenreName: String = "Crime"
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -223,6 +231,124 @@ struct HomeView: View {
                                         eventType: .cardTapped,
                                         titleId: WatchIntentLogger.titleSlug(show.title),
                                         metadata: ["section": "whats_new_today"]
+                                    )
+                                    detailSubject = .show(show)
+                                }
+                            )
+                            .padding(.horizontal, 20)
+                        }
+
+                        ForEach(showsBySelectedPlatform, id: \.name) { row in
+                            PlatformRow(
+                                platformName: row.name,
+                                platformColor: row.color,
+                                shows: row.shows,
+                                onOpen: { show in
+                                    WatchIntentLogger.shared.log(
+                                        eventType: .cardTapped,
+                                        titleId: WatchIntentLogger.titleSlug(show.title),
+                                        platformId: row.name.lowercased(),
+                                        metadata: ["section": "platform_row"]
+                                    )
+                                    detailSubject = .show(show)
+                                }
+                            )
+                            .padding(.horizontal, 20)
+                        }
+
+                        if !trendingRanked.isEmpty {
+                            TrendingRankedSection(
+                                shows: trendingRanked,
+                                onOpen: { show in
+                                    WatchIntentLogger.shared.log(
+                                        eventType: .cardTapped,
+                                        titleId: WatchIntentLogger.titleSlug(show.title),
+                                        metadata: ["section": "trending_ranked"]
+                                    )
+                                    detailSubject = .show(show)
+                                }
+                            )
+                            .padding(.horizontal, 20)
+                        }
+
+                        GenreDiscoverySection { genreId, genreName in
+                            selectedGenreId = genreId
+                            selectedGenreName = genreName
+                            Task {
+                                if let shows = try? await TMDBService.shared.getDiscoverByGenre(genreId) {
+                                    genreShows = shows
+                                    recommendedShows = shows
+                                    await hydrateProviders()
+                                }
+                            }
+                        }
+                        .padding(.horizontal, 20)
+
+                        if !recommendedShows.isEmpty {
+                            let recShows = recommendedShows
+                                .filter { providerByTmdb[$0.id] != nil }
+                                .prefix(12)
+                                .map { mediaAsPoster($0, platform: providerByTmdb[$0.id]) }
+                            if !recShows.isEmpty {
+                                BecauseYouWatchSection(
+                                    genreName: selectedGenreName,
+                                    shows: recShows,
+                                    onOpen: { show in
+                                        WatchIntentLogger.shared.log(
+                                            eventType: .cardTapped,
+                                            titleId: WatchIntentLogger.titleSlug(show.title),
+                                            metadata: [
+                                                "section": "because_you_watch",
+                                                "genre": selectedGenreName
+                                            ]
+                                        )
+                                        detailSubject = .show(show)
+                                    }
+                                )
+                                .padding(.horizontal, 20)
+                            }
+                        }
+
+                        if !topRatedShows.isEmpty {
+                            TopRatedSection(
+                                shows: topRatedShows,
+                                onOpen: { show in
+                                    WatchIntentLogger.shared.log(
+                                        eventType: .cardTapped,
+                                        titleId: WatchIntentLogger.titleSlug(show.title),
+                                        metadata: ["section": "top_rated"]
+                                    )
+                                    detailSubject = .show(show)
+                                }
+                            )
+                            .padding(.horizontal, 20)
+                        }
+
+                        if !leavingSoonShows.isEmpty {
+                            LeavingSoonSection(
+                                items: leavingSoonShows,
+                                onOpen: { show in
+                                    WatchIntentLogger.shared.log(
+                                        eventType: .cardTapped,
+                                        titleId: WatchIntentLogger.titleSlug(show.title),
+                                        metadata: ["section": "leaving_soon"]
+                                    )
+                                    detailSubject = .show(show)
+                                }
+                            )
+                            .padding(.horizontal, 20)
+                        }
+
+                        if !newSeasonsYouKnow.isEmpty {
+                            NewSeasonsSection(
+                                results: newSeasonsYouKnow,
+                                providerByTmdb: providerByTmdb,
+                                streams: streams,
+                                onOpen: { show in
+                                    WatchIntentLogger.shared.log(
+                                        eventType: .cardTapped,
+                                        titleId: WatchIntentLogger.titleSlug(show.title),
+                                        metadata: ["section": "new_seasons"]
                                     )
                                     detailSubject = .show(show)
                                 }
@@ -417,14 +543,59 @@ struct HomeView: View {
         async let newTodayCall = try? TMDBService.shared.getNewToday()
         async let sportsCall = SportsService.shared.fetchAll()
         async let newsCall = NewsService.shared.fetchTopNewsStreams(limit: 10)
-        let (t, a, e, n, s, news) = await (trendingCall, onAirCall, endedCall, newTodayCall, sportsCall, newsCall)
+        async let topRatedCall = try? TMDBService.shared.getTopRated()
+        async let genreCall = try? TMDBService.shared.getDiscoverByGenre(selectedGenreId)
+        let (t, a, e, n, s, news, tr, genre) = await (trendingCall, onAirCall, endedCall, newTodayCall, sportsCall, newsCall, topRatedCall, genreCall)
         if let t { trending = t }
         if let a { onAir = a }
         if let e { bingeFallback = e }
         if let n { newToday = n }
+        if let tr { topRated = tr }
+        if let genre { genreShows = genre }
         sportsGames = s
         newsStreams = news
         await hydrateProviders()
+
+        // Fetch expiring titles from user's watch list
+        // (runs after hydrateProviders so we have tmdbIds)
+        let watchListIds = streams.userStreams.compactMap { Int($0.titleId) }
+        if !watchListIds.isEmpty {
+            Task {
+                expiringItems = await WatchmodeService.shared.getExpiringTitles(tmdbIds: watchListIds)
+            }
+        }
+
+        let topGenreId = topGenreFromWatchList()
+        if topGenreId.id != selectedGenreId {
+            selectedGenreId = topGenreId.id
+            selectedGenreName = topGenreId.name
+            if let rec = try? await TMDBService.shared.getDiscoverByGenre(topGenreId.id) {
+                recommendedShows = rec
+            }
+        } else {
+            recommendedShows = genreShows
+        }
+    }
+
+    /// Maps known platform IDs to genre biases.
+    /// Falls back to Drama (18) if no signal.
+    private func topGenreFromWatchList() -> (id: Int, name: String) {
+        let titles = streams.userStreams.compactMap { $0.title?.lowercased() }
+        let crimeKeywords = ["crime","murder","detective","law","police","heist","thriller","dark","drug"]
+        let scifiKeywords = ["space","star","alien","future","robot","sci","tech","galaxy"]
+        let comedyKeywords = ["comedy","funny","laugh","sitcom","office","friends","park"]
+
+        var crimeCt = 0, scifiCt = 0, comedyCt = 0
+        for t in titles {
+            if crimeKeywords.contains(where: { t.contains($0) }) { crimeCt += 1 }
+            if scifiKeywords.contains(where: { t.contains($0) }) { scifiCt += 1 }
+            if comedyKeywords.contains(where: { t.contains($0) }) { comedyCt += 1 }
+        }
+        let max = [crimeCt, scifiCt, comedyCt].max() ?? 0
+        if max == 0 { return (18, "Drama") }
+        if crimeCt == max { return (80, "Crime") }
+        if scifiCt == max { return (10765, "Sci-Fi") }
+        return (35, "Comedy")
     }
 
     /// Look up the top US streaming provider for every loaded TMDB result in parallel.
@@ -527,7 +698,8 @@ struct HomeView: View {
             posterColors: colors,
             symbol: "play.tv.fill",
             posterUrl: r.posterUrl,
-            tmdbId: r.id
+            tmdbId: r.id,
+            voteAverage: r.voteAverage
         )
     }
 
@@ -560,7 +732,8 @@ struct HomeView: View {
                     posterColors: HomeFallback.posterColors,
                     symbol: "play.tv.fill",
                     posterUrl: r.posterUrl,
-                    tmdbId: r.id
+                    tmdbId: r.id,
+                    voteAverage: r.voteAverage
                 )
             }
     }
@@ -582,7 +755,8 @@ struct HomeView: View {
                     posterColors: HomeFallback.posterColors,
                     symbol: "flame.fill",
                     posterUrl: r.posterUrl,
-                    tmdbId: r.id
+                    tmdbId: r.id,
+                    voteAverage: r.voteAverage
                 )
             }
     }
@@ -705,6 +879,82 @@ struct HomeView: View {
                 tmdbId: tmdbId
             )
         }
+    }
+
+    // MARK: - Derived content (new sections)
+
+    /// Section 2: Platform rows — groups loaded TMDB results by platform,
+    /// filtered to user's selected services.
+    private var showsBySelectedPlatform: [(name: String, color: Color, shows: [PosterShow])] {
+        let selected = auth.selectedServices.map { $0.lowercased() }
+        let order = ["netflix","hbo","hulu","disney","appletv","prime","paramount","peacock"]
+        let pool = trending + onAir + newToday
+        var map: [String: (Color, [PosterShow])] = [:]
+        for r in pool {
+            guard let plat = providerByTmdb[r.id] else { continue }
+            let key = plat.name.lowercased()
+            let owned = selected.contains { s in
+                key.contains(s) ||
+                (s == "appletv" && key.contains("apple")) ||
+                (s == "hbo" && (key.contains("hbo") || key.contains("max")))
+            }
+            guard owned else { continue }
+            let show = mediaAsPoster(r, platform: plat)
+            if map[key] == nil {
+                map[key] = (plat.color, [show])
+            } else if !(map[key]!.1.contains(where: { $0.tmdbId == r.id })) {
+                map[key]!.1.append(show)
+            }
+        }
+        return order.compactMap { key in
+            guard let (color, shows) = map[key], shows.count >= 3 else { return nil }
+            let displayName = providerByTmdb.values.first { $0.name.lowercased().contains(key) }?.name ?? key.capitalized
+            return (displayName, color, Array(shows.prefix(12)))
+        }
+    }
+
+    /// Section 3: Trending with rank numbers
+    private var trendingRanked: [PosterShow] {
+        trending
+            .filter { providerByTmdb[$0.id] != nil }
+            .prefix(10)
+            .map { mediaAsPoster($0, platform: providerByTmdb[$0.id]) }
+    }
+
+    /// Section 6: Top rated
+    private var topRatedShows: [PosterShow] {
+        topRated
+            .filter { providerByTmdb[$0.id] != nil }
+            .prefix(12)
+            .map { mediaAsPoster($0, platform: providerByTmdb[$0.id]) }
+    }
+
+    /// Section 7: Leaving soon
+    private var leavingSoonShows: [(show: PosterShow, daysLeft: Int)] {
+        expiringItems.compactMap { item in
+            guard let tmdbResult = (trending + onAir).first(where: { $0.id == item.tmdbId }),
+                  let plat = providerByTmdb[item.tmdbId]
+            else {
+                let show = PosterShow(
+                    title: item.title,
+                    meta: item.sourceId,
+                    posterColors: HomeFallback.posterColors,
+                    symbol: "clock",
+                    tmdbId: item.tmdbId
+                )
+                return (show, item.daysLeft)
+            }
+            return (mediaAsPoster(tmdbResult, platform: plat), item.daysLeft)
+        }
+    }
+
+    /// Section 8: New seasons of shows you follow
+    private var newSeasonsYouKnow: [TMDBResult] {
+        let savedIds = Set(streams.userStreams.compactMap { Int($0.titleId) })
+        return onAir
+            .filter { savedIds.contains($0.id) }
+            .prefix(8)
+            .map { $0 }
     }
 }
 
@@ -1300,37 +1550,64 @@ private struct PosterCard: View {
     var body: some View {
         Button(action: onTap) {
             VStack(alignment: .leading, spacing: 8) {
-                Color.black
-                    .frame(width: 110, height: 155)
-                    .overlay {
-                        LinearGradient(
-                            colors: show.posterColors,
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                        .allowsHitTesting(false)
-                    }
-                    .overlay {
-                        RemoteImage(
-                            urlString: show.posterUrl,
-                            contentMode: .fill,
-                            fallbackColors: show.posterColors
-                        )
+                ZStack {
+                    Color.black
                         .frame(width: 110, height: 155)
-                        .clipped()
+                        .overlay {
+                            LinearGradient(
+                                colors: show.posterColors,
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                            .allowsHitTesting(false)
+                        }
+                        .overlay {
+                            RemoteImage(
+                                urlString: show.posterUrl,
+                                contentMode: .fill,
+                                fallbackColors: show.posterColors
+                            )
+                            .frame(width: 110, height: 155)
+                            .clipped()
+                            .allowsHitTesting(false)
+                        }
+                        .overlay(alignment: .bottom) {
+                            Text(tag)
+                                .scaledFont(size: 8, weight: .bold)
+                                .tracking(0.8)
+                                .foregroundStyle(Color.orange)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 5)
+                                .background(Color.orange.opacity(0.30))
+                                .allowsHitTesting(false)
+                        }
+                        .clipShape(.rect(cornerRadius: 10))
+
+                    if let score = show.voteAverage, score > 0 {
+                        HStack(spacing: 2) {
+                            Image(systemName: "star.fill")
+                                .scaledFont(size: 7, weight: .bold)
+                                .foregroundStyle(Color(red:1, green:0.77, blue:0.24))
+                            Text(String(format: "%.1f", score))
+                                .scaledFont(size: 8, weight: .bold)
+                                .foregroundStyle(.white)
+                        }
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 3)
+                        .background(
+                            Capsule()
+                                .fill(Color.black.opacity(0.72))
+                                .overlay(
+                                    Capsule().stroke(
+                                        Color(red:1,green:0.77,blue:0.24).opacity(0.35),
+                                        lineWidth: 0.5)
+                                )
+                        )
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                        .padding(5)
                         .allowsHitTesting(false)
                     }
-                    .overlay(alignment: .bottom) {
-                        Text(tag)
-                            .scaledFont(size: 8, weight: .bold)
-                            .tracking(0.8)
-                            .foregroundStyle(Color.orange)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 5)
-                            .background(Color.orange.opacity(0.30))
-                            .allowsHitTesting(false)
-                    }
-                    .clipShape(.rect(cornerRadius: 10))
+                }
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(show.title)
@@ -1451,6 +1728,304 @@ private struct MiniWidgetPreview: View {
                     .blur(radius: 0.4)
             }
             .shadow(color: Color.orange.opacity(0.35), radius: 12, y: 6)
+    }
+}
+
+// MARK: - Platform Row (Section 2)
+
+private struct PlatformRow: View {
+    let platformName: String
+    let platformColor: Color
+    let shows: [PosterShow]
+    let onOpen: (PosterShow) -> Void
+
+    var body: some View {
+        SectionGlassCard(
+            title: "New on \(platformName)",
+            accentColor: platformColor
+        ) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    ForEach(shows) { show in
+                        PosterCard(show: show, tag: "", onTap: { onOpen(show) })
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 6)
+            }
+        }
+    }
+}
+
+// MARK: - Trending Ranked (Section 3)
+
+private struct TrendingRankedSection: View {
+    let shows: [PosterShow]
+    let onOpen: (PosterShow) -> Void
+
+    var body: some View {
+        SectionGlassCard(title: "Trending this week") {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    ForEach(Array(shows.enumerated()), id: \.element.id) { idx, show in
+                        ZStack(alignment: .topLeading) {
+                            PosterCard(show: show, tag: "", onTap: { onOpen(show) })
+                            Text("#\(idx + 1)")
+                                .scaledFont(size: 8, weight: .black)
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 3)
+                                .background(
+                                    Capsule()
+                                        .fill(Color(red:0.10, green:0.44, blue:0.91))
+                                )
+                                .padding(6)
+                                .allowsHitTesting(false)
+                        }
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 6)
+            }
+        }
+    }
+}
+
+// MARK: - Genre Discovery (Section 4)
+
+private struct GenreDiscoverySection: View {
+    let onSelectGenre: (Int, String) -> Void
+
+    private let genres: [(Int, String, String, Color)] = [
+        (80, "Crime & Thriller", "flame", Color(red:0.86,green:0.15,blue:0.15)),
+        (10765, "Sci-Fi", "sparkles", Color(red:0.55,green:0.36,blue:0.96)),
+        (35, "Comedy", "face.smiling", Color(red:0.13,green:0.77,blue:0.42)),
+        (18, "Drama", "theatermasks", Color(red:0.92,green:0.62,blue:0.12)),
+        (10759, "Action", "bolt", Color(red:0.96,green:0.38,blue:0.15)),
+        (99, "Documentary", "video", Color(red:0.10,green:0.60,blue:0.88))
+    ]
+
+    var body: some View {
+        SectionGlassCard(title: "Browse by genre") {
+            LazyVGrid(columns: [
+                GridItem(.flexible(), spacing: 8),
+                GridItem(.flexible(), spacing: 8)
+            ], spacing: 8) {
+                ForEach(genres, id: \.0) { id, name, icon, color in
+                    Button {
+                        onSelectGenre(id, name)
+                    } label: {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Image(systemName: icon)
+                                .scaledFont(size: 20, weight: .semibold)
+                                .foregroundStyle(color)
+                            Text(name)
+                                .scaledFont(size: 11, weight: .bold)
+                                .foregroundStyle(.white)
+                                .lineLimit(1)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(12)
+                        .background(
+                            RoundedRectangle(cornerRadius: 10)
+                                .fill(color.opacity(0.12))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 10)
+                                        .stroke(color.opacity(0.25), lineWidth: 0.5)
+                                )
+                        )
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 14)
+            .padding(.bottom, 12)
+        }
+    }
+}
+
+// MARK: - Because You Watch (Section 5)
+
+private struct BecauseYouWatchSection: View {
+    let genreName: String
+    let shows: [PosterShow]
+    let onOpen: (PosterShow) -> Void
+
+    var body: some View {
+        SectionGlassCard(
+            title: "Because you watch \(genreName)",
+            accentColor: Color.orange
+        ) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    ForEach(shows) { show in
+                        PosterCard(show: show, tag: "", onTap: { onOpen(show) })
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 6)
+            }
+        }
+    }
+}
+
+// MARK: - Top Rated (Section 6)
+
+private struct TopRatedSection: View {
+    let shows: [PosterShow]
+    let onOpen: (PosterShow) -> Void
+
+    var body: some View {
+        SectionGlassCard(
+            title: "Top rated right now",
+            accentColor: Color(red:1,green:0.77,blue:0.24)
+        ) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    ForEach(shows) { show in
+                        PosterCard(show: show, tag: "", onTap: { onOpen(show) })
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 6)
+            }
+        }
+    }
+}
+
+// MARK: - Leaving Soon (Section 7)
+
+private struct LeavingSoonSection: View {
+    let items: [(show: PosterShow, daysLeft: Int)]
+    let onOpen: (PosterShow) -> Void
+
+    var body: some View {
+        SectionGlassCard(
+            title: "Leaving soon — watch now",
+            accentColor: Color(red:0.86,green:0.15,blue:0.15)
+        ) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    ForEach(items, id: \.show.id) { item in
+                        ZStack(alignment: .bottom) {
+                            PosterCard(show: item.show, tag: "", onTap: { onOpen(item.show) })
+                            Text(item.daysLeft == 0
+                                ? "Leaves today"
+                                : "Leaves in \(item.daysLeft)d")
+                                .scaledFont(size: 7, weight: .heavy)
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 3)
+                                .background(
+                                    Capsule()
+                                        .fill(Color(red:0.86, green:0.15, blue:0.15))
+                                )
+                                .padding(.bottom, 26)
+                                .allowsHitTesting(false)
+                        }
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 6)
+            }
+        }
+    }
+}
+
+// MARK: - New Seasons (Section 8)
+
+private struct NewSeasonsSection: View {
+    let results: [TMDBResult]
+    let providerByTmdb: [Int: Platform]
+    let streams: StreamsViewModel
+    let onOpen: (PosterShow) -> Void
+
+    var body: some View {
+        SectionGlassCard(
+            title: "New seasons — shows you follow",
+            highlighted: true,
+            accentColor: Color.orange
+        ) {
+            VStack(spacing: 0) {
+                ForEach(results) { r in
+                    let plat = providerByTmdb[r.id]
+                    Button {
+                        onOpen(PosterShow(
+                            title: r.displayName,
+                            meta: r.year.map { "\($0)" } ?? "Series",
+                            posterColors: HomeFallback.posterColors,
+                            symbol: "play.tv.fill",
+                            posterUrl: r.posterUrl,
+                            tmdbId: r.id,
+                            voteAverage: r.voteAverage
+                        ))
+                    } label: {
+                        HStack(spacing: 12) {
+                            ZStack {
+                                RoundedRectangle(cornerRadius: 8)
+                                    .fill(plat?.color ?? Color.orange)
+                                    .frame(width: 52, height: 52)
+                                if let url = r.posterUrl {
+                                    RemoteImage(
+                                        urlString: url,
+                                        contentMode: .fill,
+                                        fallbackColors: HomeFallback.posterColors
+                                    )
+                                    .frame(width: 52, height: 52)
+                                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                                }
+                            }
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(r.displayName)
+                                    .scaledFont(size: 13, weight: .bold)
+                                    .foregroundStyle(.white)
+                                    .lineLimit(1)
+                                if let plat {
+                                    Text(plat.name)
+                                        .scaledFont(size: 10)
+                                        .foregroundStyle(Color.white.opacity(0.45))
+                                }
+                                HStack(spacing: 5) {
+                                    if let score = r.voteAverage, score > 0 {
+                                        HStack(spacing: 2) {
+                                            Image(systemName: "star.fill")
+                                                .scaledFont(size: 8)
+                                                .foregroundStyle(Color(red:1,green:0.77,blue:0.24))
+                                            Text(String(format:"%.1f",score))
+                                                .scaledFont(size: 9, weight: .bold)
+                                                .foregroundStyle(.white)
+                                        }
+                                    }
+                                    Text("New season")
+                                        .scaledFont(size: 9, weight: .semibold)
+                                        .foregroundStyle(Color.orange)
+                                        .padding(.horizontal, 5)
+                                        .padding(.vertical, 2)
+                                        .background(
+                                            Capsule()
+                                                .fill(Color.orange.opacity(0.15))
+                                        )
+                                }
+                            }
+                            Spacer(minLength: 0)
+                            Image(systemName: "play.fill")
+                                .scaledFont(size: 13, weight: .bold)
+                                .foregroundStyle(Color.orange)
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 10)
+                    }
+                    .buttonStyle(.plain)
+                    if r.id != results.last?.id {
+                        Rectangle()
+                            .fill(Color.white.opacity(0.06))
+                            .frame(height: 0.5)
+                            .padding(.horizontal, 16)
+                    }
+                }
+            }
+            .padding(.vertical, 4)
+        }
     }
 }
 

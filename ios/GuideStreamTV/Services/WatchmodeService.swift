@@ -26,6 +26,7 @@ nonisolated struct WatchmodeSource: Decodable, Hashable, Sendable, Identifiable 
     let androidUrl: String?
     let webUrl: String?
     let format: String?
+    let endDate: String?
 
     var id: String { "\(sourceId)-\(format ?? "")-\(region ?? "")" }
 
@@ -35,6 +36,7 @@ nonisolated struct WatchmodeSource: Decodable, Hashable, Sendable, Identifiable 
         case iosUrl = "ios_url"
         case androidUrl = "android_url"
         case webUrl = "web_url"
+        case endDate = "end_date"
     }
 }
 
@@ -73,6 +75,45 @@ nonisolated struct WatchmodeService {
     static let shared = WatchmodeService()
 
     private let apiKey = "wqlepJq2xhEfyAVWpMOhVGmoUKBJFzHj3mlE3Lcw"
+
+    /// Fetches source expiry dates for TMDB ids from the user's watch list and returns
+    /// titles that expire within 30 days.
+    func getExpiringTitles(
+        tmdbIds: [Int]
+    ) async -> [(tmdbId: Int, title: String, daysLeft: Int, sourceId: String)] {
+        var results: [(Int, String, Int, String)] = []
+        let calendar = Calendar.current
+        let now = Date()
+
+        await withTaskGroup(of: (Int, String, Int, String)?.self) { group in
+            for tmdbId in tmdbIds.prefix(10) {
+                group.addTask {
+                    guard let wmId = try? await WatchmodeService.shared.watchmodeId(forTMDBId: tmdbId, isTV: true),
+                          let detail = try? await WatchmodeService.shared.titleDetail(titleId: wmId),
+                          let sources = detail.sources
+                    else { return nil }
+
+                    let formatter = ISO8601DateFormatter()
+                    formatter.formatOptions = [.withFullDate]
+
+                    for source in sources {
+                        guard let endStr = source.endDate,
+                              let endDate = formatter.date(from: endStr)
+                        else { continue }
+                        let days = calendar.dateComponents([.day], from: now, to: endDate).day ?? 999
+                        if days >= 0 && days <= 30 {
+                            return (tmdbId, detail.title ?? "Unknown", days, source.name)
+                        }
+                    }
+                    return nil
+                }
+            }
+            for await result in group {
+                if let r = result { results.append(r) }
+            }
+        }
+        return results.sorted { $0.2 < $1.2 }
+    }
 
     /// Fetches a title's metadata + all per-source watch links.
     ///

@@ -284,6 +284,13 @@ nonisolated struct TMDBService {
         return env.results.map { stamp($0, mediaType: "tv") }
     }
 
+    func getTopRated() async throws -> [TMDBResult] {
+        let urlString = "\(base)/tv/top_rated?api_key=\(apiKey)&language=en-US&page=1"
+        let data = try await get(urlString)
+        let env = try JSONDecoder().decode(TMDBTrendingEnvelope.self, from: data)
+        return env.results.map { stamp($0, mediaType: "tv") }
+    }
+
     /// Returns the top streaming provider for a title in the requested
     /// region (defaults to the device's resolved region). Prefers
     /// subscription/flatrate, then ad-supported, then free. Returns `nil` if
