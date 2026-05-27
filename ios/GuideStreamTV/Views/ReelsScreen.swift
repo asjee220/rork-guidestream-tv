@@ -323,49 +323,50 @@ final class ReelsViewModel {
 private func makeRakutenAdReels() -> [TrailerItem] {
         let selected = AuthViewModel.shared.selectedServices
             .map { $0.lowercased() }
-        let pool: [(id: String, name: String, color: String,
-                     headline: String, synopsis: String,
-                     backdrop: String, identity: String)] = [
+        let pool: [(id:String, name:String, color:String,
+                     headline:String, synopsis:String,
+                     backdrop:String, identity:String,
+                     ytKey:String)] = [
             ("netflix","NETFLIX","E50914",
              "Stream the world's biggest hits",
              "Unlimited movies, TV and more. Cancel anytime.",
              "https://image.tmdb.org/t/p/w1280/56v2KjBlU4XaOv9rVYEQypROD7P.jpg",
-             "NFX"),
-            ("hbo","MAX","5B2D8E",
+             "NFX", "XEMwSdne6UE"),
+            ("hbo","MAX","001EE0",
              "Home of HBO. Home of Max.",
              "The greatest shows, movies and Max Originals.",
              "https://image.tmdb.org/t/p/w1280/etj8E2o0Bud0HkONVQPjyCkIvpv.jpg",
-             "MAX"),
+             "MAX", "q9GfZtJOBFw"),
             ("hulu","HULU","1CE783",
-             "Live TV + on-demand. One subscription.",
+             "Live TV + on-demand.",
              "Watch TV, movies, Hulu Originals and live sports.",
              "https://image.tmdb.org/t/p/w1280/3V4kLQg0kSqe6sqSlFBVPDZlTqf.jpg",
-             "HLU"),
+             "HLU", "aHjkaQ1K5_4"),
             ("disney","DISNEY+","113CCF",
              "Marvel, Star Wars and more.",
              "Infinite worlds of entertainment for the family.",
              "https://image.tmdb.org/t/p/w1280/9yBVqNruk6Ykrwc32qDbHTE0z5o.jpg",
-             "D+"),
-            ("apple","APPLE TV+","101010",
+             "D+", "JAOcxc96hxQ"),
+            ("appletv","APPLE TV+","101010",
              "Award-winning originals.",
              "Critically acclaimed shows. New every month.",
              "https://image.tmdb.org/t/p/w1280/4MC3p4zRCGkpnJzSjkGIr3MUJPN.jpg",
-             "ATV"),
+             "ATV", "FiHOjQ0sCj8"),
             ("prime","PRIME VIDEO","00A8E1",
              "Included with Prime.",
              "Thursday Night Football and Amazon Originals.",
              "https://image.tmdb.org/t/p/w1280/kqjL17yufvn9OVLyXYpvtyrFfak.jpg",
-             "PV"),
+             "PV", "q5w0mVONdT0"),
             ("paramount","PARAMOUNT+","0064FF",
-             "NFL on CBS, live sports and originals.",
+             "NFL on CBS and live sports.",
              "Stream Paramount+ with Showtime available.",
              "https://image.tmdb.org/t/p/w1280/5UkzNSOK561c2QRy2Zr4AkADzLT.jpg",
-             "P+"),
-            ("peacock","PEACOCK","000000",
+             "P+", "rBP9QQVdp9o"),
+            ("peacock","PEACOCK","333333",
              "Stream free. Or go Premium.",
              "NFL, Premier League, WWE and NBC hits.",
              "https://image.tmdb.org/t/p/w1280/1Rr5SrvHxMXHu5RjKpaMba8VTzi.jpg",
-             "PCK")
+             "PCK", "RY8p_7KQNtE")
         ]
         let eligible = pool.filter { !selected.contains($0.id) }
         let source = eligible.isEmpty ? pool : eligible
@@ -383,7 +384,7 @@ private func makeRakutenAdReels() -> [TrailerItem] {
                 platformTextColor: .white,
                 backdropURL: URL(string: e.backdrop),
                 posterURL: URL(string: e.backdrop),
-                trailerKey: "",
+                trailerKey: e.ytKey,
                 thumbnailURL: URL(string: e.backdrop),
                 youtubeURL: nil,
                 deepLinkURL: nil,
@@ -399,23 +400,27 @@ private func makeRakutenAdReels() -> [TrailerItem] {
     }
 
     private func makeAdMobReel(slot: Int) -> TrailerItem {
-        let placeholders: [(String, String, String, String)] = [
+        let placeholders: [(String,String,String,String,String)] = [
             ("Upgrade your home theater",
-             "TCL 4K QLED TV. Stunning picture, incredible sound.",
+             "TCL 4K QLED TV. Stunning picture. Now $299.",
              "Shop now",
-             "https://image.tmdb.org/t/p/w1280/zSWIOsYEWCBPEFrmVCBZAbMKFtA.jpg"),
+             "https://image.tmdb.org/t/p/w1280/zSWIOsYEWCBPEFrmVCBZAbMKFtA.jpg",
+             "wXz3xgfpllo"),
             ("Better sound. Every show.",
-             "Sony WH-1000XM5 headphones. Now $279 on Amazon.",
+             "Sony WH-1000XM5. Industry-leading noise cancelling.",
              "Shop now",
-             "https://image.tmdb.org/t/p/w1280/1Rr5SrvHxMXHu5RjKpaMba8VTzi.jpg"),
+             "https://image.tmdb.org/t/p/w1280/1Rr5SrvHxMXHu5RjKpaMba8VTzi.jpg",
+             "UZWJ2vMlMz0"),
             ("Order dinner. Keep watching.",
              "DoorDash — $0 delivery on your first order.",
              "Order now",
-             "https://image.tmdb.org/t/p/w1280/9yBVqNruk6Ykrwc32qDbHTE0z5o.jpg"),
+             "https://image.tmdb.org/t/p/w1280/9yBVqNruk6Ykrwc32qDbHTE0z5o.jpg",
+             "5F2rZKh6Wkk"),
             ("Game Pass. 100+ games.",
-             "Xbox Game Pass Ultimate. Play on phone & console.",
+             "Xbox Game Pass Ultimate. Play on phone and console.",
              "Try free",
-             "https://image.tmdb.org/t/p/w1280/etj8E2o0Bud0HkONVQPjyCkIvpv.jpg")
+             "https://image.tmdb.org/t/p/w1280/etj8E2o0Bud0HkONVQPjyCkIvpv.jpg",
+             "Q3XMOaGIzT4")
         ]
         let p = placeholders[slot % placeholders.count]
         return TrailerItem(
@@ -431,7 +436,7 @@ private func makeRakutenAdReels() -> [TrailerItem] {
             platformTextColor: .white,
             backdropURL: URL(string: p.3),
             posterURL: URL(string: p.3),
-            trailerKey: "",
+            trailerKey: p.4,
             thumbnailURL: URL(string: p.3),
             youtubeURL: nil,
             deepLinkURL: nil,
@@ -694,6 +699,10 @@ struct ReelsScreen: View {
                     .replacingOccurrences(of: "AD · ", with: "")
                     .capitalized,
                 imageURL: trailer.backdropURL,
+                trailerKey: trailer.trailerKey,
+                isPlaying: isCurrent && isPlaying,
+                isMuted: isMuted,
+                playbackProgress: .constant(0),
                 size: size,
                 topInset: topInset,
                 bottomInset: bottomInset,
@@ -874,17 +883,18 @@ private struct ReelView: View {
         let selected = AuthViewModel.shared.selectedServices
             .map { $0.lowercased() }
         let pool: [(String, String, Color)] = [
-            ("netflix", "Netflix", Color(hex:"E50914")),
-            ("hbo", "Max", Color(hex:"5B2D8E")),
-            ("hulu", "Hulu", Color(hex:"1CE783")),
-            ("disney", "Disney+", Color(hex:"113CCF")),
-            ("apple", "Apple TV+", Color(white: 0.18)),
-            ("prime", "Prime Video", Color(hex:"00A8E1")),
-            ("paramount","Paramount+", Color(hex:"0064FF")),
-            ("peacock", "Peacock", Color(white: 0.10))
+            ("netflix", "Netflix", Color(red:0xE5/255, green:0x09/255, blue:0x14/255)),
+            ("hbo", "Max", Color(red:0x00/255, green:0x1E/255, blue:0xE0/255)),
+            ("hulu", "Hulu", Color(red:0x1C/255, green:0xE7/255, blue:0x83/255)),
+            ("disney", "Disney+", Color(red:0x0E/255, green:0x29/255, blue:0x3F/255)),
+            ("appletv", "Apple TV+", Color.black),
+            ("prime", "Prime Video", Color(red:0x1A/255, green:0x20/255, blue:0x2C/255)),
+            ("paramount","Paramount+", Color(red:0x00/255, green:0x64/255, blue:0xFF/255)),
+            ("peacock", "Peacock", Color.black)
         ]
         return pool.first { entry in
-            entry.0 != current && !selected.contains(entry.0)
+            entry.0 != trailer.platformId.lowercased()
+                && !selected.contains(entry.0)
         }.map { ($0.0, $0.1, $0.2) }
     }
 
@@ -899,17 +909,22 @@ private struct ReelView: View {
                     HStack(spacing: 10) {
                         ZStack {
                             RoundedRectangle(cornerRadius: 8)
-                                .fill(target.color.opacity(0.15))
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 8)
-                                        .stroke(target.color.opacity(0.25),
-                                                lineWidth: 0.5)
-                                )
+                                .fill(target.color.opacity(0.12))
                                 .frame(width: 40, height: 40)
-                            Image(systemName: "play.tv.fill")
-                                .scaledFont(size: 16, weight: .semibold)
-                                .foregroundStyle(target.color)
+                            if let service = StreamingCatalog.all
+                                .first(where: { $0.id == target.serviceId }) {
+                                ServiceBrandContent(
+                                    display: service.display,
+                                    size: .mini(32)
+                                )
+                                .frame(width: 32, height: 32)
+                            } else {
+                                Text(String(target.name.prefix(3)).uppercased())
+                                    .scaledFont(size: 11, weight: .black)
+                                    .foregroundStyle(target.color)
+                            }
                         }
+                        .frame(width: 40, height: 40)
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Stream more on \(target.name)")
                                 .scaledFont(size: 12, weight: .bold)
@@ -1039,7 +1054,7 @@ private struct ReelView: View {
             // On real devices we render via inline HTML with baseURL = youtube.com
             // so the IFrame Player API treats it as same-origin and doesn't throw
             // error 150/153 for videos with embed restrictions.
-            if !trailer.isSponsored, !trailer.trailerKey.isEmpty, !embedFailed {
+            if !trailer.trailerKey.isEmpty, !embedFailed {
                 #if targetEnvironment(simulator)
                 SimulatorTrailerPoster(trailer: trailer)
                     .frame(width: size.width, height: size.height)
@@ -2097,6 +2112,10 @@ private struct AdMobReelCard: View {
     let ctaText: String
     let advertiser: String
     let imageURL: URL?
+    let trailerKey: String
+    let isPlaying: Bool
+    let isMuted: Bool
+    @Binding var playbackProgress: Double
     let size: CGSize
     let topInset: CGFloat
     let bottomInset: CGFloat
@@ -2114,6 +2133,24 @@ private struct AdMobReelCard: View {
             )
             .frame(width: size.width, height: size.height)
             .clipped()
+
+            if !trailerKey.isEmpty {
+                #if !targetEnvironment(simulator)
+                if isPlaying {
+                    YouTubeNativePlayerView(
+                        videoId: trailerKey,
+                        isMuted: true,
+                        isPlaying: isPlaying,
+                        progress: $playbackProgress,
+                        onError: { }
+                    )
+                    .allowsHitTesting(false)
+                    .frame(width: size.width, height: size.height)
+                    .clipped()
+                    .position(x: size.width/2, y: size.height/2)
+                }
+                #endif
+            }
 
             // Colour grade
             Color(hex: "1A6FE8").opacity(0.12)

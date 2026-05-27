@@ -21,10 +21,56 @@ struct SportsWatchSheet: View {
     @State private var social = SocialViewModel.shared
     @State private var isToggleSaving: Bool = false
     @State private var isTogglingLike: Bool = false
+    @State private var adDismissed: Bool = false
 
     private var awayColor: Color { game.away.primaryHex.map { Color(hex: $0) } ?? Color(white: 0.18) }
     private var homeColor: Color { game.home.primaryHex.map { Color(hex: $0) } ?? Color(white: 0.18) }
     private var primaryBroadcast: String? { game.broadcasts.first }
+
+    private var sportsAdData:
+    (serviceId: String, headline: String, subtext: String)? {
+        let broadcast = (primaryBroadcast ?? "").lowercased()
+        let owned = AuthViewModel.shared.selectedServices
+            .map { $0.lowercased() }
+
+        let target: String = {
+            if broadcast.contains("espn") ||
+                broadcast.contains("abc") { return "disney" }
+            if broadcast.contains("tnt") ||
+                broadcast.contains("tbs") ||
+                broadcast.contains("trutv") { return "hbo" }
+            if broadcast.contains("nbc") { return "peacock" }
+            if broadcast.contains("cbs") { return "paramount" }
+            if broadcast.contains("peacock") { return "peacock" }
+            if broadcast.contains("prime") ||
+                broadcast.contains("amazon") { return "prime" }
+            if broadcast.contains("apple") { return "appletv" }
+            if broadcast.contains("max") ||
+                broadcast.contains("hbo") { return "hbo" }
+            return "hulu"
+        }()
+
+        if owned.contains(target) { return nil }
+
+        let copy: [String: (String, String)] = [
+            "disney": ("Stream ESPN+ & Disney Bundle",
+                        "ESPN+, Disney+ & Hulu in one plan"),
+            "hbo": ("Watch TNT Sports on Max",
+                    "NBA, NHL & Max Originals · Try free"),
+            "peacock": ("Stream NBC Sports free",
+                        "NFL, Olympics & Premier League · Free tier"),
+            "paramount": ("NFL on CBS & March Madness",
+                          "Live sports on Paramount+ · Try free"),
+            "prime": ("Thursday Night Football",
+                      "Included with Prime · Prime Video"),
+            "appletv": ("MLS Season Pass",
+                        "Every MLS match live · Apple TV+"),
+            "hulu": ("Live sports on Hulu + Live TV",
+                     "ESPN, FOX, CBS, NBC & more · $82.99/mo")
+        ]
+        guard let c = copy[target] else { return nil }
+        return (target, c.0, c.1)
+    }
 
     private var gameTitle: String {
         "\(game.away.shortName) vs \(game.home.shortName)"
@@ -98,6 +144,10 @@ struct SportsWatchSheet: View {
                     .frame(height: 1)
                     .padding(.horizontal, 20)
 
+                sportsBanner
+                    .padding(.top, 12)
+                    .padding(.bottom, 4)
+
                 whereToWatchSection
                     .padding(.horizontal, 20)
                     .padding(.top, 20)
@@ -130,6 +180,7 @@ struct SportsWatchSheet: View {
             )
         }
         .onAppear {
+            adDismissed = false
             WatchIntentLogger.shared.log(
                 eventType: .episodeDetailViewed,
                 titleId: WatchIntentLogger.titleSlug("\(game.away.abbreviation)-\(game.home.abbreviation)-\(game.sport)"),
@@ -143,6 +194,88 @@ struct SportsWatchSheet: View {
         }
         .task(id: gameSaveId) {
             await social.refreshCounts(titleId: gameSaveId)
+        }
+    }
+
+    // MARK: - Sports affiliate banner
+
+    @ViewBuilder
+    private var sportsBanner: some View {
+        if !adDismissed, let ad = sportsAdData,
+           let service = StreamingCatalog.all
+            .first(where: { $0.id == ad.serviceId }) {
+            ZStack(alignment: .topTrailing) {
+                HStack(spacing: 12) {
+                    ServiceMiniIcon(service: service, size: 40)
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(ad.headline)
+                            .scaledFont(size: 13, weight: .semibold)
+                            .foregroundStyle(.white)
+                            .lineLimit(1)
+                        Text(ad.subtext)
+                            .scaledFont(size: 11)
+                            .foregroundStyle(Color.white.opacity(0.50))
+                        Text("Sponsored")
+                            .scaledFont(size: 9)
+                            .foregroundStyle(Color.white.opacity(0.25))
+                    }
+
+                    Spacer(minLength: 0)
+
+                    Button {
+                        RakutenManager.shared.openAffiliateLink(
+                            serviceId: ad.serviceId,
+                            metadata: [
+                                "source": "sports_watch_sheet",
+                                "broadcast": primaryBroadcast ?? "",
+                                "sport": game.sport,
+                                "state": game.state.rawValue
+                            ]
+                        )
+                    } label: {
+                        let cta = ad.serviceId == "peacock"
+                            ? "Watch free" : "Try free"
+                        Text(cta)
+                            .scaledFont(size: 12, weight: .bold)
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 8)
+                            .background(
+                                Capsule().fill(Color(red:0xF5/255,
+                                                     green:0x82/255,
+                                                     blue:0x1F/255))
+                            )
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 12)
+                .background(
+                    RoundedRectangle(cornerRadius: 14)
+                        .fill(Color.white.opacity(0.05))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 14)
+                                .stroke(Color.white.opacity(0.10),
+                                        lineWidth: 0.5)
+                        )
+                )
+                .padding(.horizontal, 20)
+
+                Button {
+                    withAnimation(.easeOut(duration: 0.2)) {
+                        adDismissed = true
+                    }
+                } label: {
+                    Image(systemName: "xmark")
+                        .scaledFont(size: 10, weight: .semibold)
+                        .foregroundStyle(Color.white.opacity(0.30))
+                        .padding(10)
+                }
+                .buttonStyle(.plain)
+                .padding(.trailing, 22)
+            }
         }
     }
 

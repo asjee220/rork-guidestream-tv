@@ -44,6 +44,7 @@ struct EpisodeDetailSheet: View {
     @State private var resolvedSource: WatchmodeSource?
     @State private var resolvedOverview: String?
     @State private var isResolvingSource: Bool = false
+    @State private var adDismissed: Bool = false
 
     private var platformColor: Color {
         if let name = resolvedSource?.name { return brandColor(for: name) }
@@ -51,6 +52,55 @@ struct EpisodeDetailSheet: View {
         case .episode(let e): return e.platformColor
         case .show(let s): return s.posterColors.first ?? Color(red: 0x6A/255, green: 0x3F/255, blue: 0xE0/255)
         }
+    }
+
+    private var affiliateAdData:
+    (serviceId: String, headline: String, subtext: String)? {
+        let rawPlatform: String = {
+            if let name = resolvedSource?.name { return name }
+            if case .episode(let e) = subject { return e.platform }
+            return ""
+        }()
+        let current = normalisedServiceKey(rawPlatform)
+
+        let owned = AuthViewModel.shared.selectedServices
+            .map { normalisedServiceKey($0) }
+
+        let pool: [(String, String, String)] = [
+            ("netflix", "Stream more on Netflix",
+             "Unlimited shows & movies · Try free"),
+            ("hbo", "Watch more on Max",
+             "HBO, Max Originals & more · Try free"),
+            ("hulu", "Live TV + streaming on Hulu",
+             "Starting at $7.99/mo · Try free"),
+            ("disney", "Disney+, Hulu & ESPN+ bundle",
+             "Disney Bundle · Try free"),
+            ("appletv", "Award-winning originals",
+             "Apple TV+ · First month free"),
+            ("prime", "Included with Prime",
+             "Prime Video · Try free"),
+            ("paramount", "NFL on CBS & live sports",
+             "Paramount+ · Try free"),
+            ("peacock", "Stream free on Peacock",
+             "NBC shows & live sports · Free tier")
+        ]
+
+        return pool.first { entry in
+            entry.0 != current && !owned.contains(entry.0)
+        }.map { ($0.0, $0.1, $0.2) }
+    }
+
+    private func normalisedServiceKey(_ raw: String) -> String {
+        let k = raw.lowercased()
+        if k.contains("netflix") { return "netflix" }
+        if k.contains("max") || k.contains("hbo") { return "hbo" }
+        if k.contains("hulu") { return "hulu" }
+        if k.contains("disney") { return "disney" }
+        if k.contains("apple") { return "appletv" }
+        if k.contains("prime") || k.contains("amazon") { return "prime" }
+        if k.contains("paramount") { return "paramount" }
+        if k.contains("peacock") { return "peacock" }
+        return k
     }
 
     /// True when we can confidently name an actual streaming service for
@@ -143,6 +193,10 @@ struct EpisodeDetailSheet: View {
                     .frame(height: 1)
                     .padding(.horizontal, 20)
 
+                affiliateBanner
+                    .padding(.top, 12)
+                    .padding(.bottom, 4)
+
                 whereToWatchSection
                     .padding(.horizontal, 20)
                     .padding(.top, 20)
@@ -185,6 +239,7 @@ struct EpisodeDetailSheet: View {
             )
         }
         .task(id: tmdbId ?? -1) {
+            adDismissed = false
             await resolveStreamingSource()
         }
         .task(id: socialTitleKey) {
@@ -275,6 +330,85 @@ struct EpisodeDetailSheet: View {
         if p.contains("starz") { return s.contains("starz") }
         if p.contains("crunchyroll") { return s.contains("crunchyroll") }
         return s.contains(p) || p.contains(s)
+    }
+
+    // MARK: - Affiliate banner
+
+    @ViewBuilder
+    private var affiliateBanner: some View {
+        if !adDismissed, let ad = affiliateAdData,
+           let service = StreamingCatalog.all
+            .first(where: { $0.id == ad.serviceId }) {
+            ZStack(alignment: .topTrailing) {
+                HStack(spacing: 12) {
+                    ServiceMiniIcon(service: service, size: 40)
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(ad.headline)
+                            .scaledFont(size: 13, weight: .semibold)
+                            .foregroundStyle(.white)
+                            .lineLimit(1)
+                        Text(ad.subtext)
+                            .scaledFont(size: 11)
+                            .foregroundStyle(Color.white.opacity(0.50))
+                        Text("Sponsored")
+                            .scaledFont(size: 9)
+                            .foregroundStyle(Color.white.opacity(0.25))
+                    }
+
+                    Spacer(minLength: 0)
+
+                    Button {
+                        RakutenManager.shared.openAffiliateLink(
+                            serviceId: ad.serviceId,
+                            metadata: [
+                                "source": "episode_detail_sheet",
+                                "platform_shown": platformName,
+                                "title": title
+                            ]
+                        )
+                    } label: {
+                        Text("Try free")
+                            .scaledFont(size: 12, weight: .bold)
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 8)
+                            .background(
+                                Capsule().fill(Color(red:0xF5/255,
+                                                     green:0x82/255,
+                                                     blue:0x1F/255))
+                            )
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 12)
+                .background(
+                    RoundedRectangle(cornerRadius: 14)
+                        .fill(Color.white.opacity(0.05))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 14)
+                                .stroke(Color.white.opacity(0.10),
+                                        lineWidth: 0.5)
+                        )
+                )
+                .padding(.horizontal, 20)
+
+                Button {
+                    withAnimation(.easeOut(duration: 0.2)) {
+                        adDismissed = true
+                    }
+                } label: {
+                    Image(systemName: "xmark")
+                        .scaledFont(size: 10, weight: .semibold)
+                        .foregroundStyle(Color.white.opacity(0.30))
+                        .padding(10)
+                }
+                .buttonStyle(.plain)
+                .padding(.trailing, 22)
+            }
+        }
     }
 
     // MARK: - Header row
