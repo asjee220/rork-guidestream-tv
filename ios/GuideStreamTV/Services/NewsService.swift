@@ -33,6 +33,22 @@ nonisolated struct NewsStream: Identifiable, Hashable, Sendable {
     let isTV: Bool
     let publishedAt: Date?
     let providerName: String?
+
+    /// When `providerName` is nil (common for broadcast networks like Fox,
+    /// CBS, ABC, NBC that don't have SVOD providers in TMDB), fall back to
+    /// the outlet's live-stream or news-homepage URL so the tile still has
+    /// a deeplink target.
+    var fallbackDeepLinkURL: String? {
+        let key = outlet.lowercased()
+        if key.contains("fox") { return "https://www.foxnews.com" }
+        if key.contains("cbs") { return "https://www.cbsnews.com/live" }
+        if key.contains("abc") { return "https://abcnews.go.com/Live" }
+        if key.contains("nbc") { return "https://www.nbcnews.com/now" }
+        if key.contains("pbs") { return "https://www.pbs.org/newshour/live" }
+        if key.contains("cnn") { return "https://www.cnn.com/live-tv" }
+        if key.contains("msnbc") { return "https://www.msnbc.com/live-video" }
+        return nil
+    }
 }
 
 @MainActor
@@ -85,7 +101,7 @@ final class NewsService {
         // Build NewsStream models and sort by air date (newest first).
         let isoFormatter = ISO8601DateFormatter()
         isoFormatter.formatOptions = [.withFullDate]
-        let news: [NewsStream] = resolved.compactMap { (r, providerName) in
+        let news: [NewsStream] = resolved.map { (r, providerName) in
             let outlet = Self.outlet(from: r.displayName)
             let dateString = r.firstAirDate ?? r.releaseDate
             let date = dateString.flatMap { isoFormatter.date(from: $0) }
