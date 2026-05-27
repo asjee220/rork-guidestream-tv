@@ -53,19 +53,36 @@ struct EpisodeDetailSheet: View {
         }
     }
 
+    /// True when we can confidently name an actual streaming service for
+    /// this title. Drives whether we render the where-to-watch chip and
+    /// the Watch CTA at all — we deliberately don't show "Streaming
+    /// services" anywhere because that isn't a real platform the user can
+    /// open.
+    private var hasResolvedPlatform: Bool {
+        if resolvedSource?.name != nil { return true }
+        if case .episode(let e) = subject, !e.platform.isEmpty, e.platform.uppercased() != "STREAM" {
+            return true
+        }
+        return false
+    }
+
     private var platformName: String {
         if let name = resolvedSource?.name { return name.uppercased() }
         switch subject {
-        case .episode(let e): return e.platform
-        case .show: return isResolvingSource ? "…" : "STREAM"
+        case .episode(let e) where !e.platform.isEmpty && e.platform.uppercased() != "STREAM":
+            return e.platform
+        default:
+            return isResolvingSource ? "…" : ""
         }
     }
 
     private var whereToWatchLabel: String {
         if let name = resolvedSource?.name { return name }
         switch subject {
-        case .episode(let e): return e.platform.capitalized
-        case .show: return isResolvingSource ? "Finding service…" : "Streaming services"
+        case .episode(let e) where !e.platform.isEmpty && e.platform.uppercased() != "STREAM":
+            return e.platform.capitalized
+        default:
+            return isResolvingSource ? "Finding service…" : ""
         }
     }
 
@@ -279,12 +296,14 @@ struct EpisodeDetailSheet: View {
                     .foregroundStyle(Color.white.opacity(0.55))
 
                 HStack(spacing: 8) {
-                    Text(platformName.uppercased())
-                        .scaledFont(size: 11, weight: .heavy)
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
-                        .background(Capsule().fill(platformColor))
+                    if hasResolvedPlatform || isResolvingSource {
+                        Text(platformName.uppercased())
+                            .scaledFont(size: 11, weight: .heavy)
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(Capsule().fill(platformColor))
+                    }
 
                     Text("Drama")
                         .scaledFont(size: 12, weight: .semibold)
@@ -353,13 +372,15 @@ struct EpisodeDetailSheet: View {
                 .allowsHitTesting(false)
             }
             .overlay(alignment: .bottomLeading) {
-                Text(String(platformName.prefix(4)).uppercased())
-                    .scaledFont(size: 10, weight: .heavy)
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(RoundedRectangle(cornerRadius: 5, style: .continuous).fill(platformColor))
-                    .padding(8)
+                if hasResolvedPlatform {
+                    Text(String(platformName.prefix(4)).uppercased())
+                        .scaledFont(size: 10, weight: .heavy)
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(RoundedRectangle(cornerRadius: 5, style: .continuous).fill(platformColor))
+                        .padding(8)
+                }
             }
     }
 
@@ -485,28 +506,60 @@ struct EpisodeDetailSheet: View {
 
     // MARK: - Where to watch
 
+    @ViewBuilder
     private var whereToWatchSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("WHERE TO WATCH")
-                .scaledFont(size: 12, weight: .heavy)
-                .tracking(1.4)
-                .foregroundStyle(Color.white.opacity(0.45))
+        // Hide the section entirely when no real streaming service is
+        // available for this title. Showing "Streaming services" as if it
+        // were a platform is worse than showing nothing — the chip used to
+        // imply users could tap a generic stream button that did nothing.
+        if hasResolvedPlatform || isResolvingSource {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("WHERE TO WATCH")
+                    .scaledFont(size: 12, weight: .heavy)
+                    .tracking(1.4)
+                    .foregroundStyle(Color.white.opacity(0.45))
 
-            HStack(spacing: 10) {
-                Text(whereToWatchLabel)
-                    .scaledFont(size: 13, weight: .heavy)
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 8)
-                    .background(Capsule().fill(platformColor))
+                HStack(spacing: 10) {
+                    if isResolvingSource && !hasResolvedPlatform {
+                        HStack(spacing: 8) {
+                            ProgressView().controlSize(.mini).tint(.white)
+                            Text("Finding service…")
+                                .scaledFont(size: 13, weight: .heavy)
+                                .foregroundStyle(.white)
+                        }
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                        .background(Capsule().fill(Color.white.opacity(0.10)))
+                    } else {
+                        Text(whereToWatchLabel)
+                            .scaledFont(size: 13, weight: .heavy)
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 8)
+                            .background(Capsule().fill(platformColor))
+                    }
+                }
+
+                Text("Available with subscription")
+                    .scaledFont(size: 13)
+                    .foregroundStyle(Color.white.opacity(0.5))
+                    .padding(.top, 2)
             }
-
-            Text("Available with subscription")
-                .scaledFont(size: 13)
-                .foregroundStyle(Color.white.opacity(0.5))
-                .padding(.top, 2)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        } else {
+            // No streaming service available — surface that explicitly so
+            // the user understands why there's no watch button.
+            VStack(alignment: .leading, spacing: 6) {
+                Text("WHERE TO WATCH")
+                    .scaledFont(size: 12, weight: .heavy)
+                    .tracking(1.4)
+                    .foregroundStyle(Color.white.opacity(0.45))
+                Text("Not currently available on any streaming service.")
+                    .scaledFont(size: 13)
+                    .foregroundStyle(Color.white.opacity(0.55))
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     // MARK: - CTA
@@ -516,7 +569,9 @@ struct EpisodeDetailSheet: View {
         // while the watchlist circle + label hangs below — same vertical
         // rhythm as the Reels rail button.
         HStack(alignment: .top, spacing: 12) {
-            watchButton
+            if hasResolvedPlatform || isResolvingSource {
+                watchButton
+            }
             watchlistButton
         }
     }

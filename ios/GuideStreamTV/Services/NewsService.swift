@@ -10,9 +10,12 @@
 //    * TMDB News-genre movies (documentaries / newsmagazines), so the rail
 //      isn't just cable news redux.
 //
-//  The result set is deduped, capped to the top 10 most-recent items, and
-//  every item is keyed to its top US streaming provider so the rail never
-//  advertises a service we can't deeplink to.
+//  Now **device-localized**: the TMDB `language`, `region`, and
+//  `watch_region` parameters are driven by `DeviceLocale` so a user in
+//  the UK gets BBC / Sky News / ITV results, a user in Germany sees DW /
+//  ARD, and so on. We always fall back to the top US streaming provider
+//  for the deeplink layer when no localised provider is available, so
+//  the rail still has something to open.
 //
 
 import Foundation
@@ -41,14 +44,15 @@ final class NewsService {
     /// both `discover/tv` and `discover/movie`.
     private static let newsGenreId = 10763
 
-    /// Returns up to 10 of the freshest news items spread across streaming
-    /// services. Items are sorted descending by air/release date so the
-    /// top-of-the-feed slot is always today's headlines. Items that can't
-    /// be paired with a recognised streaming provider are skipped — we
-    /// only show things users can actually open.
+    /// Returns up to `limit` of the freshest news items spread across
+    /// streaming services available in the device's region. Sorted by air
+    /// date desc. Items without a recognised streaming provider in the
+    /// device's region are skipped so the rail never advertises a service
+    /// users can't open from where they live.
     func fetchTopNewsStreams(limit: Int = 10) async -> [NewsStream] {
-        async let tvCall = try? fetchNewsTV()
-        async let movieCall = try? fetchNewsMovies()
+        let locale = DeviceLocale.current()
+        async let tvCall = try? fetchNewsTV(locale: locale)
+        async let movieCall = try? fetchNewsMovies(locale: locale)
         let (tv, movies) = await (tvCall, movieCall)
 
         let combined: [TMDBResult] = (tv ?? []) + (movies ?? [])
@@ -57,13 +61,17 @@ final class NewsService {
         var seen: Set<Int> = []
         let unique = combined.filter { seen.insert($0.id).inserted }
 
-        // Resolve top US streaming provider in parallel. Skip items with no
-        // recognised provider — those have no deeplink behind them, so
-        // showing the card would be misleading.
+        // Resolve top regional streaming provider in parallel. Skip items
+        // with no recognised provider — those have no deeplink behind them.
+        let region = locale.region
         let resolved: [(TMDBResult, String?)] = await withTaskGroup(of: (TMDBResult, String?)?.self) { group in
             for item in unique {
                 group.addTask {
-                    let provider = try? await TMDBService.shared.getTopWatchProvider(tmdbId: item.id, isTV: item.isTV)
+                    let provider = try? await TMDBService.shared.getTopWatchProvider(
+                        tmdbId: item.id,
+                        isTV: item.isTV,
+                        region: region
+                    )
                     return (item, provider?.providerName)
                 }
             }
@@ -107,16 +115,19 @@ final class NewsService {
 
     // MARK: - TMDB News endpoints
 
-    private func fetchNewsTV() async throws -> [TMDBResult] {
-        // Discover TV with News genre, sorted by most recent first-air-date.
-        let urlString = "https://api.themoviedb.org/3/discover/tv?api_key=\(apiKey)&language=en-US&sort_by=first_air_date.desc&with_genres=\(Self.newsGenreId)&air_date.lte=\(todayString())&page=1"
+    private func fetchNewsTV(locale: DeviceLocale) async throws -> [TMDBResult] {
+        // Discover TV with News genre, scoped to the device's region/language
+        // so a user in the UK gets BBC/Sky outlets, a user in Germany gets
+        // DW/ARD, etc. `watch_region` filters out titles that aren't on a
+        // streaming service in that country — the very thing we want.
+        let urlString = "https://api.themoviedb.org/3/discover/tv?api_key=\(apiKey)&language=\(locale.tmdbLanguage)&region=\(locale.region)&watch_region=\(locale.region)&sort_by=first_air_date.desc&with_genres=\(Self.newsGenreId)&air_date.lte=\(todayString())&page=1"
         let data = try await get(urlString)
         let env = try JSONDecoder().decode(TMDBDiscoverEnvelope.self, from: data)
         return env.results.map { Self.stamp($0, mediaType: "tv") }
     }
 
-    private func fetchNewsMovies() async throws -> [TMDBResult] {
-        let urlString = "https://api.themoviedb.org/3/discover/movie?api_key=\(apiKey)&language=en-US&sort_by=release_date.desc&with_genres=\(Self.newsGenreId)&release_date.lte=\(todayString())&page=1"
+    private func fetchNewsMovies(locale: DeviceLocale) async throws -> [TMDBResult] {
+        let urlString = "https://api.themoviedb.org/3/discover/movie?api_key=\(apiKey)&language=\(locale.tmdbLanguage)&region=\(locale.region)&watch_region=\(locale.region)&sort_by=release_date.desc&with_genres=\(Self.newsGenreId)&release_date.lte=\(todayString())&page=1"
         let data = try await get(urlString)
         let env = try JSONDecoder().decode(TMDBDiscoverEnvelope.self, from: data)
         return env.results.map { Self.stamp($0, mediaType: "movie") }
@@ -129,27 +140,62 @@ final class NewsService {
         return f.string(from: Date())
     }
 
-    /// Best-effort outlet extraction so the rail can label cards with a
-    /// short brand name (e.g. "CNN", "BBC News", "MSNBC") instead of the
-    /// long episode title. Falls back to the first word of the title when
-    /// no known network is mentioned.
+    /// Best-effort outlet extraction. Includes US, UK, EU, MENA, APAC, LatAm
+    /// outlets so the localised feed never falls back to a generic two-word
+    /// title slice when the rail lands in a non-US region.
     private static func outlet(from title: String) -> String {
         let key = title.lowercased()
+        // North America
         if key.contains("cnn") { return "CNN" }
-        if key.contains("bbc") { return "BBC News" }
         if key.contains("msnbc") { return "MSNBC" }
         if key.contains("fox news") || key.contains("fox business") { return "Fox News" }
         if key.contains("abc news") || key.contains("nightline") || key.contains("good morning america") { return "ABC News" }
         if key.contains("nbc nightly") || key.contains("today show") || key.contains("nbc news") { return "NBC News" }
         if key.contains("cbs news") || key.contains("60 minutes") || key.contains("cbs evening") { return "CBS News" }
         if key.contains("pbs news") || key.contains("newshour") { return "PBS NewsHour" }
-        if key.contains("al jazeera") { return "Al Jazeera" }
         if key.contains("vice news") || key.contains("vice") { return "VICE News" }
+        if key.contains("cbc") { return "CBC News" }
+        if key.contains("ctv") { return "CTV News" }
+        if key.contains("global news") { return "Global News" }
+        // UK / Ireland
+        if key.contains("bbc") { return "BBC News" }
+        if key.contains("sky news") { return "Sky News" }
+        if key.contains("itv news") || key.contains("itn") { return "ITV News" }
+        if key.contains("channel 4") { return "Channel 4 News" }
+        if key.contains("rte") { return "RTÉ News" }
+        // Continental Europe
+        if key.contains("dw news") || key.contains("deutsche welle") { return "DW News" }
+        if key.contains("zdf") { return "ZDF" }
+        if key.contains("ard") { return "ARD" }
+        if key.contains("euronews") { return "Euronews" }
+        if key.contains("france 24") || key.contains("france24") { return "France 24" }
+        if key.contains("tf1") { return "TF1" }
+        if key.contains("rai") { return "Rai News" }
+        if key.contains("rtve") { return "RTVE" }
+        if key.contains("nos") { return "NOS Nieuws" }
+        // Middle East / Africa
+        if key.contains("al jazeera") { return "Al Jazeera" }
+        if key.contains("al arabiya") { return "Al Arabiya" }
+        if key.contains("sabc") { return "SABC News" }
+        // APAC
+        if key.contains("nhk") { return "NHK" }
+        if key.contains("cctv") || key.contains("cgtn") { return "CGTN" }
+        if key.contains("abc australia") || key.contains("abc news australia") { return "ABC Australia" }
+        if key.contains("nine news") { return "9 News" }
+        if key.contains("seven news") { return "7 News" }
+        if key.contains("ndtv") { return "NDTV" }
+        if key.contains("times now") { return "Times Now" }
+        if key.contains("kbs") { return "KBS News" }
+        if key.contains("sbs") { return "SBS News" }
+        if key.contains("channel news asia") || key.contains("cna") { return "CNA" }
+        // Latin America
+        if key.contains("globo") { return "TV Globo" }
+        if key.contains("telesur") || key.contains("telesur") { return "teleSUR" }
+        if key.contains("televisa") { return "Televisa" }
+        // Wire services / financial
         if key.contains("reuters") { return "Reuters" }
         if key.contains("bloomberg") { return "Bloomberg" }
         if key.contains("cnbc") { return "CNBC" }
-        if key.contains("sky news") { return "Sky News" }
-        if key.contains("dw news") || key.contains("deutsche welle") { return "DW News" }
         // No known outlet — use the first two words of the title.
         let words = title.split(separator: " ").prefix(2).joined(separator: " ")
         return words.isEmpty ? title : words

@@ -54,6 +54,11 @@ final class StreamsViewModel {
         async let a: () = fetchUserStreams()
         async let b: () = fetchNewEpisodes()
         _ = await (a, b)
+        // After we have a fresh watch list, kick off the episode tracker
+        // so any titles that aired a new episode show up in the rail on
+        // the next fetch. The tracker has its own 6h cooldown so calling
+        // it on every refresh is safe.
+        EpisodeTrackerService.shared.scanIfNeeded()
     }
 
     /// Loads the canonical list. Fetches by user_id (signed-in) OR
@@ -179,6 +184,10 @@ final class StreamsViewModel {
         }
         // Local optimistic row stays even on failure — user still has it on
         // this device.
+        // Adding a new title is the most likely moment we'll discover a
+        // fresh episode for it, so trigger an immediate tracker scan
+        // (bypassing the 6h cooldown) without blocking the caller.
+        EpisodeTrackerService.shared.scanIfNeeded(force: true)
     }
 
     /// Inserts a row into `user_streams` using a dictionary payload so we can

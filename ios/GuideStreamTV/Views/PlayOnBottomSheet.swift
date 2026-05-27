@@ -59,12 +59,20 @@ struct PlayOnBottomSheet: View {
     @State private var isResolvingSource: Bool = false
 
     private var resolvedPlatformName: String {
-        resolvedSource?.name ?? (isResolvingSource ? "…" : "Streaming")
+        resolvedSource?.name ?? (isResolvingSource ? "…" : "")
     }
 
     private var platformLabel: String { resolvedPlatformName.uppercased() }
 
-    private var whereToWatchLabel: String { resolvedSource?.name ?? (isResolvingSource ? "Finding service…" : "Open streaming app") }
+    /// True once we have a real streaming service name from Watchmode. Used
+    /// to hide platform chips and CTAs when no service is available rather
+    /// than rendering a meaningless "Streaming" placeholder.
+    private var hasResolvedPlatform: Bool { resolvedSource?.name != nil }
+
+    private var whereToWatchLabel: String {
+        if let name = resolvedSource?.name { return name }
+        return isResolvingSource ? "Finding service…" : ""
+    }
 
     private var platformColor: Color { brandColor(for: resolvedPlatformName) }
 
@@ -262,12 +270,14 @@ struct PlayOnBottomSheet: View {
                     .foregroundStyle(Color.white.opacity(0.55))
 
                 HStack(spacing: 8) {
-                    Text(platformLabel)
-                        .scaledFont(size: 11, weight: .heavy)
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
-                        .background(Capsule().fill(platformColor))
+                    if hasResolvedPlatform || isResolvingSource {
+                        Text(platformLabel)
+                            .scaledFont(size: 11, weight: .heavy)
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(Capsule().fill(platformColor))
+                    }
 
                     Text(genreLabel)
                         .scaledFont(size: 12, weight: .semibold)
@@ -341,13 +351,15 @@ struct PlayOnBottomSheet: View {
             }
         }
         .overlay(alignment: .bottomLeading) {
-            Text(String(resolvedPlatformName.prefix(4)).uppercased())
-                .scaledFont(size: 10, weight: .heavy)
-                .foregroundStyle(.white)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(RoundedRectangle(cornerRadius: 5, style: .continuous).fill(platformColor))
-                .padding(8)
+            if hasResolvedPlatform {
+                Text(String(resolvedPlatformName.prefix(4)).uppercased())
+                    .scaledFont(size: 10, weight: .heavy)
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(RoundedRectangle(cornerRadius: 5, style: .continuous).fill(platformColor))
+                    .padding(8)
+            }
         }
     }
 
@@ -445,33 +457,66 @@ struct PlayOnBottomSheet: View {
 
     // MARK: - Where to watch
 
+    @ViewBuilder
     private var whereToWatchSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("WHERE TO WATCH")
-                .scaledFont(size: 12, weight: .heavy)
-                .tracking(1.4)
-                .foregroundStyle(Color.white.opacity(0.45))
+        if hasResolvedPlatform || isResolvingSource {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("WHERE TO WATCH")
+                    .scaledFont(size: 12, weight: .heavy)
+                    .tracking(1.4)
+                    .foregroundStyle(Color.white.opacity(0.45))
 
-            HStack(spacing: 10) {
-                Text(whereToWatchLabel)
-                    .scaledFont(size: 13, weight: .heavy)
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 8)
-                    .background(Capsule().fill(platformColor))
+                HStack(spacing: 10) {
+                    if isResolvingSource && !hasResolvedPlatform {
+                        HStack(spacing: 8) {
+                            ProgressView().controlSize(.mini).tint(.white)
+                            Text("Finding service…")
+                                .scaledFont(size: 13, weight: .heavy)
+                                .foregroundStyle(.white)
+                        }
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                        .background(Capsule().fill(Color.white.opacity(0.10)))
+                    } else {
+                        Text(whereToWatchLabel)
+                            .scaledFont(size: 13, weight: .heavy)
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 8)
+                            .background(Capsule().fill(platformColor))
+                    }
+                }
+
+                Text(availabilityLabel)
+                    .scaledFont(size: 13)
+                    .foregroundStyle(Color.white.opacity(0.5))
+                    .padding(.top, 2)
             }
-
-            Text(availabilityLabel)
-                .scaledFont(size: 13)
-                .foregroundStyle(Color.white.opacity(0.5))
-                .padding(.top, 2)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        } else {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("WHERE TO WATCH")
+                    .scaledFont(size: 12, weight: .heavy)
+                    .tracking(1.4)
+                    .foregroundStyle(Color.white.opacity(0.45))
+                Text("Not currently available on any streaming service in your region.")
+                    .scaledFont(size: 13)
+                    .foregroundStyle(Color.white.opacity(0.55))
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     // MARK: - CTA
 
+    @ViewBuilder
     private var watchButton: some View {
+        if hasResolvedPlatform || isResolvingSource {
+            actualWatchButton
+        }
+    }
+
+    private var actualWatchButton: some View {
         Button {
             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
             WatchIntentLogger.shared.log(

@@ -180,7 +180,13 @@ enum SupabaseSetupSQL {
       on public.device_sessions for all
       using (true) with check (true);
 
-    -- NEW EPISODES (read-only on client)
+    -- NEW EPISODES
+    --
+    -- Populated client-side by EpisodeTrackerService (iOS) which scans
+    -- the user's watch list, pulls last_episode_to_air from TMDB, and
+    -- writes a row when an episode aired in the last 14 days. The unique
+    -- index on (title_id, season, episode) keeps re-scans idempotent so
+    -- the same episode never appears twice in the rail.
     create table if not exists public.new_episodes (
       id uuid primary key default gen_random_uuid(),
       title_id text not null,
@@ -193,10 +199,31 @@ enum SupabaseSetupSQL {
       is_new boolean default true,
       released_at timestamptz default now()
     );
+    alter table public.new_episodes add column if not exists title text;
+    alter table public.new_episodes add column if not exists season int;
+    alter table public.new_episodes add column if not exists episode int;
+    alter table public.new_episodes add column if not exists duration_minutes int;
+    alter table public.new_episodes add column if not exists platform text;
+    alter table public.new_episodes add column if not exists poster_url text;
+    alter table public.new_episodes add column if not exists is_new boolean default true;
+    alter table public.new_episodes add column if not exists released_at timestamptz default now();
+
+    create index if not exists new_episodes_title_idx on public.new_episodes(title_id);
+    create index if not exists new_episodes_released_idx on public.new_episodes(released_at desc);
+    create unique index if not exists new_episodes_unique_idx
+      on public.new_episodes(title_id, season, episode)
+      where season is not null and episode is not null;
+
+    -- Permissive RLS so any authenticated user OR guest device can insert
+    -- fresh episodes for their own watch-list titles. Same model as
+    -- watch_intent_events and user_streams. The data is non-sensitive
+    -- (TMDB episode metadata only) and needs to be writable without auth.
     alter table public.new_episodes enable row level security;
     drop policy if exists "new_episodes_read_all" on public.new_episodes;
-    create policy "new_episodes_read_all"
-      on public.new_episodes for select using (true);
+    drop policy if exists "new_episodes_open" on public.new_episodes;
+    create policy "new_episodes_open"
+      on public.new_episodes for all
+      using (true) with check (true);
 
     -- TITLE LIKES (one row per (owner, title_id))
     --

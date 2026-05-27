@@ -2,6 +2,16 @@
 //  AskStreamSheet.swift
 //  GuideStreamTV
 //
+//  Hybrid Search + AI sheet. The bar auto-switches mode based on what the
+//  user types:
+//   * Single-word or short queries → TMDB title search (search results list)
+//   * Multi-word / question-style queries → Stream Agent AI via Perplexity
+//     sonar-pro (search-grounded answers with poster cards for each title
+//     the agent recommends)
+//
+//  Both paths share the bottom sheet, the orange brand chrome, and the
+//  same tap-through into the existing ShowDetailScreen.
+//
 
 import SwiftUI
 import UIKit
@@ -22,8 +32,39 @@ struct AskChatMessage: Identifiable, Equatable {
     let id = UUID()
     let isUser: Bool
     let text: String
-    /// AI special response with bolded match count
-    let isMatchResult: Bool
+    /// AI-side: titles the agent surfaced for this turn. The renderer
+    /// draws a horizontal poster rail under the bubble.
+    let matches: [AgentTitleMatchModel]
+    /// AI-side: true while we're awaiting Perplexity. The bubble shows
+    /// a typing-dots animation instead of text.
+    let isPending: Bool
+    /// AI-side: true when this is a friendly error so it can be styled
+    /// differently (orange instead of grey).
+    let isError: Bool
+
+    static func == (lhs: AskChatMessage, rhs: AskChatMessage) -> Bool { lhs.id == rhs.id }
+}
+
+/// Plain `Equatable` mirror of `AgentTitleMatch` so the chat message can
+/// own its matches without leaking the `Sendable` constraints up the view.
+struct AgentTitleMatchModel: Identifiable, Equatable, Hashable {
+    let id: Int
+    let title: String
+    let posterUrl: String?
+    let backdropUrl: String?
+    let year: Int?
+    let isTV: Bool
+    let providerName: String?
+
+    init(from match: AgentTitleMatch) {
+        self.id = match.id
+        self.title = match.tmdb.displayName
+        self.posterUrl = match.tmdb.posterUrl
+        self.backdropUrl = match.tmdb.backdropUrl
+        self.year = match.tmdb.year
+        self.isTV = match.tmdb.isTV
+        self.providerName = match.providerName
+    }
 }
 
 struct AskStreamSheet: View {
@@ -38,30 +79,20 @@ struct AskStreamSheet: View {
     @State private var isSearching: Bool = false
     @State private var searchError: String? = nil
     @State private var searchTask: Task<Void, Never>? = nil
+    @State private var aiTask: Task<Void, Never>? = nil
     @State private var selectedResult: TMDBResult? = nil
+    @State private var selectedMatch: AgentTitleMatchModel? = nil
+    @State private var auth = AuthViewModel.shared
     @FocusState private var inputFocused: Bool
-
-    private let trendingPosters: [(title: String, platform: String, colors: [Color])] = [
-        ("The Bear", "FX", [Color(red: 0.85, green: 0.25, blue: 0.15), Color(red: 0.45, green: 0.05, blue: 0.05)]),
-        ("Severance", "Apple TV+", [Color(red: 0.10, green: 0.25, blue: 0.50), Color(red: 0.02, green: 0.05, blue: 0.18)]),
-        ("Shōgun", "FX", [Color(red: 0.40, green: 0.05, blue: 0.10), Color(red: 0.10, green: 0.02, blue: 0.05)]),
-    ]
 
     private let suggestions: [String] = [
         "What should I watch tonight?",
         "Shows like Breaking Bad on my services",
         "Build me a binge queue",
+        "What's everyone watching this week?",
     ]
 
     private let filters: [String] = ["All", "Shows", "Movies", "People"]
-
-    private let mockResults: [(title: String, meta: String, owned: Bool, colors: [Color])] = [
-        ("Breaking Bad", "Netflix · Drama", true, [Color(red: 0.55, green: 0.20, blue: 0.15), Color(red: 0.10, green: 0.05, blue: 0.02)]),
-        ("Better Call Saul", "Netflix · Drama", true, [Color(red: 0.45, green: 0.30, blue: 0.10), Color(red: 0.10, green: 0.07, blue: 0.02)]),
-        ("Ozark", "Netflix · Thriller", true, [Color(red: 0.10, green: 0.25, blue: 0.30), Color(red: 0.02, green: 0.05, blue: 0.10)]),
-        ("Yellowstone", "Paramount+ · Drama", false, [Color(red: 0.30, green: 0.15, blue: 0.05), Color(red: 0.10, green: 0.05, blue: 0.02)]),
-        ("Succession", "HBO · Drama", true, [Color(red: 0.25, green: 0.10, blue: 0.35), Color(red: 0.05, green: 0.02, blue: 0.10)]),
-    ]
 
     var body: some View {
         GeometryReader { geo in
@@ -89,6 +120,16 @@ struct AskStreamSheet: View {
                 onBack: { selectedResult = nil }
             )
         }
+        .fullScreenCover(item: $selectedMatch) { match in
+            ShowDetailScreen(
+                titleId: String(match.id),
+                title: match.title,
+                posterUrl: match.posterUrl,
+                backdropUrl: match.backdropUrl,
+                isTV: match.isTV,
+                onBack: { selectedMatch = nil }
+            )
+        }
         .onChange(of: isOpen) { _, newValue in
             if newValue {
                 sheetOffset = 0
@@ -99,6 +140,8 @@ struct AskStreamSheet: View {
                 sheetOffset = 1200
                 inputFocused = false
                 searchTask?.cancel()
+                aiTask?.cancel()
+                StreamAgentService.shared.reset()
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                     if !isOpen {
                         query = ""
@@ -126,7 +169,11 @@ struct AskStreamSheet: View {
 
     private var barMode: AskBarMode {
         if query.isEmpty { return .idle }
-        return wordCount >= 3 ? .ai : .search
+        // Heuristic: 3+ words OR a question mark = AI mode; otherwise direct
+        // title search. Keeps the UX snappy: typing a show name doesn't fire
+        // an LLM call, asking "shows like…" does.
+        let isQuestion = query.contains("?")
+        return (wordCount >= 3 || isQuestion) ? .ai : .search
     }
 
     private var sheetState: AskSheetState {
@@ -333,43 +380,9 @@ struct AskStreamSheet: View {
     private var idleContent: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
-                // Trending
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("Trending on Your Services")
-                        .font(.guideHeading(size: 15, weight: .semibold))
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 16)
-
-                    HStack(spacing: 12) {
-                        ForEach(trendingPosters.indices, id: \.self) { i in
-                            let p = trendingPosters[i]
-                            VStack(alignment: .leading, spacing: 6) {
-                                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                    .fill(
-                                        LinearGradient(colors: p.colors, startPoint: .top, endPoint: .bottom)
-                                    )
-                                    .frame(width: 100, height: 140)
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                            .stroke(Color.white.opacity(0.08), lineWidth: 1)
-                                    )
-                                Text(p.title)
-                                    .font(.guideBody(size: 12, weight: .semibold))
-                                    .foregroundStyle(.white)
-                                    .lineLimit(1)
-                                Text(p.platform)
-                                    .font(.guideBody(size: 10, weight: .regular))
-                                    .foregroundStyle(Color.textTertiary)
-                            }
-                            .frame(width: 100)
-                        }
-                    }
-                    .padding(.horizontal, 16)
-                }
-
                 // AI Suggestions
                 VStack(alignment: .leading, spacing: 10) {
-                    Text("AI Suggestions")
+                    Text("Try asking")
                         .font(.guideHeading(size: 15, weight: .semibold))
                         .foregroundStyle(.white)
                         .padding(.horizontal, 16)
@@ -379,6 +392,7 @@ struct AskStreamSheet: View {
                             Button {
                                 haptic(.light)
                                 query = s
+                                submitQuery()
                             } label: {
                                 HStack(spacing: 10) {
                                     Image(systemName: "sparkles")
@@ -407,25 +421,16 @@ struct AskStreamSheet: View {
                     .padding(.horizontal, 16)
                 }
 
-                // Filter chips
-                HStack(spacing: 8) {
-                    ForEach(filters, id: \.self) { f in
-                        Button {
-                            haptic(.light)
-                            activeFilter = f
-                        } label: {
-                            Text(f)
-                                .font(.guideBody(size: 12, weight: .semibold))
-                                .foregroundStyle(activeFilter == f ? .white : Color.white.opacity(0.60))
-                                .padding(.horizontal, 14)
-                                .padding(.vertical, 8)
-                                .background(
-                                    Capsule().fill(activeFilter == f ? Color.orange : Color.white.opacity(0.08))
-                                )
-                        }
-                        .buttonStyle(.plain)
-                    }
-                    Spacer()
+                // How it works hint
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("HOW IT WORKS")
+                        .font(.guideBody(size: 10, weight: .heavy))
+                        .tracking(1.2)
+                        .foregroundStyle(Color.white.opacity(0.4))
+                    Text("Single titles run a fast search. Questions and longer prompts go to your AI co-pilot.")
+                        .font(.guideBody(size: 12))
+                        .foregroundStyle(Color.white.opacity(0.55))
+                        .lineSpacing(3)
                 }
                 .padding(.horizontal, 16)
 
@@ -565,29 +570,6 @@ struct AskStreamSheet: View {
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 
-    @ViewBuilder
-    private func ownedChip(owned: Bool) -> some View {
-        if owned {
-            Text("In your services")
-                .font(.guideBody(size: 10, weight: .semibold))
-                .foregroundStyle(Color(red: 0x34/255, green: 0xC7/255, blue: 0x59/255))
-                .padding(.horizontal, 8)
-                .padding(.vertical, 3)
-                .background(
-                    Capsule().fill(Color(red: 0x34/255, green: 0xC7/255, blue: 0x59/255).opacity(0.15))
-                )
-        } else {
-            Text("Not subscribed")
-                .font(.guideBody(size: 10, weight: .semibold))
-                .foregroundStyle(Color.white.opacity(0.55))
-                .padding(.horizontal, 8)
-                .padding(.vertical, 3)
-                .background(
-                    Capsule().fill(Color.white.opacity(0.08))
-                )
-        }
-    }
-
     // MARK: - AI Content
 
     private var aiContent: some View {
@@ -600,18 +582,25 @@ struct AskStreamSheet: View {
                     ForEach(messages) { m in
                         if m.isUser {
                             userBubble(m.text).id(m.id)
-                        } else if m.isMatchResult {
-                            matchResultBubble(id: m.id)
                         } else {
-                            agentBubble(text: m.text, id: m.id.uuidString)
+                            VStack(alignment: .leading, spacing: 10) {
+                                if m.isPending {
+                                    typingBubble().id(m.id)
+                                } else {
+                                    agentBubble(text: m.text, id: m.id.uuidString, accent: m.isError ? Color.orange : nil)
+                                }
+                                if !m.matches.isEmpty {
+                                    matchPosterRail(matches: m.matches)
+                                }
+                            }
                         }
                     }
 
                     // Follow-up suggestions (always show after at least one exchange)
-                    if messages.count >= 2 {
+                    if !messages.isEmpty && messages.last?.isPending == false {
                         VStack(spacing: 10) {
                             followUpButton("Only shows I haven't watched")
-                            followUpButton("Build me a binge queue from these")
+                            followUpButton("Build me a binge queue")
                         }
                         .padding(.top, 6)
                     }
@@ -628,15 +617,23 @@ struct AskStreamSheet: View {
                     }
                 }
             }
+            .onChange(of: messages.last?.isPending) { _, _ in
+                if let last = messages.last {
+                    withAnimation(.easeOut(duration: 0.25)) {
+                        proxy.scrollTo(last.id, anchor: .bottom)
+                    }
+                }
+            }
         }
     }
 
-    private func agentBubble(text: String, id: String) -> some View {
+    private func agentBubble(text: String, id: String, accent: Color? = nil) -> some View {
         HStack(alignment: .top) {
-            Text(text)
+            Text(LocalizedStringKey(stripUrls(text)))
                 .font(.guideBody(size: 13, weight: .regular))
-                .foregroundStyle(Color.textSecondary)
+                .foregroundStyle(accent ?? Color.textSecondary)
                 .lineSpacing(4)
+                .tint(Color.orange)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 12)
                 .background(
@@ -647,12 +644,22 @@ struct AskStreamSheet: View {
                         topTrailingRadius: 14,
                         style: .continuous
                     )
-                    .fill(Color.white.opacity(0.07))
+                    .fill(accent != nil ? Color.orange.opacity(0.10) : Color.white.opacity(0.07))
                 )
-                .frame(maxWidth: .infinity * 0.85, alignment: .leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
             Spacer(minLength: 0)
         }
         .id(id)
+    }
+
+    /// Strips bare http(s) URLs so the bubble body doesn't show long
+    /// inline citations — Perplexity returns clickable markdown that
+    /// renders cleanly thanks to `LocalizedStringKey`.
+    private func stripUrls(_ text: String) -> String {
+        let pattern = #"\s*\(https?://[^\s)]+\)\s*"#
+        return text.replacingOccurrences(of: pattern, with: " ", options: .regularExpression)
+            .replacingOccurrences(of: "  ", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private func userBubble(_ text: String) -> some View {
@@ -676,37 +683,20 @@ struct AskStreamSheet: View {
         }
     }
 
-    private func matchResultBubble(id: UUID) -> some View {
+    /// Three-dot typing indicator shown while the agent is generating.
+    private func typingBubble() -> some View {
         HStack(alignment: .top) {
-            VStack(alignment: .leading, spacing: 10) {
-                (
-                    Text("Found ")
-                        .foregroundColor(Color.textSecondary)
-                    + Text("8 matches")
-                        .foregroundColor(Color.orange)
-                        .bold()
-                    + Text(" across your services — intense character-driven dramas with no filler and protagonists you can't look away from.")
-                        .foregroundColor(Color.textSecondary)
-                )
-                .font(.guideBody(size: 13, weight: .regular))
-                .lineSpacing(4)
-
-                Button {
-                    haptic(.light)
-                } label: {
-                    Text("See all results →")
-                        .font(.guideBody(size: 11, weight: .bold))
-                        .foregroundStyle(Color.orange)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 8)
-                        .background(
-                            Capsule().stroke(Color.orange.opacity(0.40), lineWidth: 1)
-                        )
+            HStack(spacing: 6) {
+                ForEach(0..<3, id: \.self) { i in
+                    Circle()
+                        .fill(Color.orange)
+                        .frame(width: 6, height: 6)
+                        .opacity(0.4)
+                        .modifier(TypingDotPulse(delay: Double(i) * 0.15))
                 }
-                .buttonStyle(.plain)
             }
             .padding(.horizontal, 14)
-            .padding(.vertical, 12)
+            .padding(.vertical, 14)
             .background(
                 UnevenRoundedRectangle(
                     topLeadingRadius: 4,
@@ -719,7 +709,33 @@ struct AskStreamSheet: View {
             )
             Spacer(minLength: 0)
         }
-        .id(id)
+    }
+
+    /// Horizontal scroll of poster cards for titles the agent matched.
+    /// Tapping a poster opens the title's detail screen.
+    private func matchPosterRail(matches: [AgentTitleMatchModel]) -> some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 12) {
+                ForEach(matches) { m in
+                    Button {
+                        haptic(.light)
+                        WatchIntentLogger.shared.log(
+                            eventType: .cardTapped,
+                            titleId: String(m.id),
+                            platformId: m.providerName?.lowercased() ?? "ai_match",
+                            metadata: [
+                                "source": "ask_stream_ai_match",
+                                "title": m.title
+                            ]
+                        )
+                        selectedMatch = m
+                    } label: {
+                        AgentMatchCard(match: m)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
     }
 
     private func followUpButton(_ text: String) -> some View {
@@ -776,22 +792,9 @@ struct AskStreamSheet: View {
                     .submitLabel(.send)
                     .onSubmit(submitQuery)
 
-                Button {
-                    submitQuery()
-                } label: {
-                    ZStack {
-                        Circle().fill(Color.orange)
-                        Image(systemName: "mic.fill")
-                            .scaledFont(size: 14, weight: .semibold)
-                            .foregroundStyle(.white)
-                    }
-                    .frame(width: 36, height: 36)
-                }
-                .buttonStyle(.plain)
-
                 Button(action: submitQuery) {
                     ZStack {
-                        Circle().fill(Color.white.opacity(0.08))
+                        Circle().fill(query.isEmpty ? Color.white.opacity(0.08) : Color.orange)
                         Image(systemName: "arrow.up")
                             .scaledFont(size: 14, weight: .bold)
                             .foregroundStyle(.white)
@@ -799,6 +802,7 @@ struct AskStreamSheet: View {
                     .frame(width: 36, height: 36)
                 }
                 .buttonStyle(.plain)
+                .disabled(query.isEmpty)
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 14)
@@ -866,10 +870,51 @@ struct AskStreamSheet: View {
         }
     }
 
+    /// Appends the user message + a pending agent bubble, fires the
+    /// Perplexity call, then replaces the pending bubble with the real
+    /// response (or a friendly error).
     private func sendUser(_ text: String) {
-        messages.append(.init(isUser: true, text: text, isMatchResult: false))
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
-            messages.append(.init(isUser: false, text: "", isMatchResult: true))
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+
+        messages.append(AskChatMessage(isUser: true, text: trimmed, matches: [], isPending: false, isError: false))
+        let pending = AskChatMessage(isUser: false, text: "", matches: [], isPending: true, isError: false)
+        messages.append(pending)
+        let pendingId = pending.id
+        query = ""
+
+        aiTask?.cancel()
+        aiTask = Task { @MainActor in
+            do {
+                let response = try await StreamAgentService.shared.ask(
+                    query: trimmed,
+                    connectedServices: Array(auth.selectedServices)
+                )
+                if Task.isCancelled { return }
+                if let idx = messages.firstIndex(where: { $0.id == pendingId }) {
+                    messages[idx] = AskChatMessage(
+                        isUser: false,
+                        text: response.answer,
+                        matches: response.matches.map(AgentTitleMatchModel.init(from:)),
+                        isPending: false,
+                        isError: false
+                    )
+                }
+            } catch is CancellationError {
+                return
+            } catch {
+                if Task.isCancelled { return }
+                let msg = (error as? AgentError)?.errorDescription ?? "Couldn't reach the AI right now. Please try again."
+                if let idx = messages.firstIndex(where: { $0.id == pendingId }) {
+                    messages[idx] = AskChatMessage(
+                        isUser: false,
+                        text: msg,
+                        matches: [],
+                        isPending: false,
+                        isError: true
+                    )
+                }
+            }
         }
     }
 
@@ -881,6 +926,106 @@ struct AskStreamSheet: View {
 
     private func haptic(_ style: UIImpactFeedbackGenerator.FeedbackStyle) {
         UIImpactFeedbackGenerator(style: style).impactOccurred()
+    }
+}
+
+// MARK: - Match poster card
+
+private struct AgentMatchCard: View {
+    let match: AgentTitleMatchModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Color.black
+                .frame(width: 124, height: 168)
+                .overlay {
+                    if let urlString = match.posterUrl, let url = URL(string: urlString) {
+                        AsyncImage(url: url) { phase in
+                            switch phase {
+                            case .success(let img):
+                                img.resizable().aspectRatio(contentMode: .fill)
+                            default:
+                                LinearGradient(
+                                    colors: [Color.orange.opacity(0.35), Color.navy],
+                                    startPoint: .top,
+                                    endPoint: .bottom
+                                )
+                                .overlay {
+                                    Image(systemName: "film")
+                                        .scaledFont(size: 20, weight: .regular)
+                                        .foregroundStyle(Color.white.opacity(0.45))
+                                }
+                            }
+                        }
+                        .allowsHitTesting(false)
+                    } else {
+                        LinearGradient(
+                            colors: [Color.orange.opacity(0.35), Color.navy],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                        .overlay {
+                            Image(systemName: "film")
+                                .scaledFont(size: 20, weight: .regular)
+                                .foregroundStyle(Color.white.opacity(0.45))
+                        }
+                    }
+                }
+                .overlay(alignment: .bottomLeading) {
+                    if let provider = match.providerName, !provider.isEmpty {
+                        Text(provider.uppercased())
+                            .scaledFont(size: 8, weight: .heavy)
+                            .tracking(0.4)
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 3)
+                            .background(
+                                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                    .fill(Color.orange)
+                            )
+                            .padding(6)
+                            .allowsHitTesting(false)
+                    }
+                }
+                .clipShape(.rect(cornerRadius: 10))
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(match.title)
+                    .scaledFont(size: 12, weight: .semibold)
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+                Text(metaLine)
+                    .scaledFont(size: 10)
+                    .foregroundStyle(Color.white.opacity(0.55))
+                    .lineLimit(1)
+            }
+            .frame(width: 124, alignment: .leading)
+        }
+    }
+
+    private var metaLine: String {
+        var parts: [String] = []
+        if let y = match.year { parts.append(String(y)) }
+        parts.append(match.isTV ? "Series" : "Movie")
+        return parts.joined(separator: " · ")
+    }
+}
+
+// MARK: - Typing dot animation
+
+private struct TypingDotPulse: ViewModifier {
+    let delay: Double
+    @State private var animate: Bool = false
+
+    func body(content: Content) -> some View {
+        content
+            .scaleEffect(animate ? 1.4 : 0.6)
+            .opacity(animate ? 1.0 : 0.35)
+            .animation(
+                .easeInOut(duration: 0.6).repeatForever().delay(delay),
+                value: animate
+            )
+            .onAppear { animate = true }
     }
 }
 

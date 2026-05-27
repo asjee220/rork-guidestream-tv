@@ -74,6 +74,31 @@ nonisolated struct TMDBNetwork: Decodable, Hashable, Sendable {
     }
 }
 
+/// Compact episode summary returned inline on `/tv/{id}` via the
+/// `last_episode_to_air` / `next_episode_to_air` fields. Lets the
+/// `EpisodeTrackerService` figure out the latest aired episode without a
+/// second round-trip to `/tv/{id}/season/{n}`.
+nonisolated struct TMDBEpisodeSummary: Decodable, Sendable, Hashable {
+    let id: Int
+    let name: String?
+    let overview: String?
+    let airDate: String?
+    let episodeNumber: Int?
+    let seasonNumber: Int?
+    let runtime: Int?
+    let stillPath: String?
+
+    var stillUrl: String? { TMDBImage.url(stillPath, size: .still300) }
+
+    enum CodingKeys: String, CodingKey {
+        case id, name, overview, runtime
+        case airDate = "air_date"
+        case episodeNumber = "episode_number"
+        case seasonNumber = "season_number"
+        case stillPath = "still_path"
+    }
+}
+
 nonisolated struct TMDBTVDetail: Decodable, Sendable {
     let id: Int
     let name: String
@@ -87,6 +112,12 @@ nonisolated struct TMDBTVDetail: Decodable, Sendable {
     let status: String?
     let networks: [TMDBNetwork]?
     let firstAirDate: String?
+    /// The most recently aired episode (or the current week's, when the
+    /// show is in mid-season). Used by the new-episode tracker.
+    let lastEpisodeToAir: TMDBEpisodeSummary?
+    /// The next scheduled episode, when TMDB has one queued. Useful for
+    /// "premieres tomorrow" cards.
+    let nextEpisodeToAir: TMDBEpisodeSummary?
 
     var posterUrl: String? { TMDBImage.url(posterPath, size: .poster500) }
     var backdropUrl: String? { TMDBImage.url(backdropPath, size: .backdrop1280) }
@@ -105,6 +136,8 @@ nonisolated struct TMDBTVDetail: Decodable, Sendable {
         case numberOfSeasons = "number_of_seasons"
         case episodeRunTime = "episode_run_time"
         case firstAirDate = "first_air_date"
+        case lastEpisodeToAir = "last_episode_to_air"
+        case nextEpisodeToAir = "next_episode_to_air"
     }
 }
 
@@ -202,7 +235,8 @@ nonisolated struct TMDBService {
               let encoded = trimmed.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed)
         else { return [] }
 
-        let urlString = "\(base)/search/multi?query=\(encoded)&api_key=\(apiKey)&language=en-US&page=1&include_adult=false"
+        let locale = DeviceLocale.current()
+        let urlString = "\(base)/search/multi?query=\(encoded)&api_key=\(apiKey)&language=\(locale.tmdbLanguage)&region=\(locale.region)&page=1&include_adult=false"
         let data = try await get(urlString)
         let env = try JSONDecoder().decode(TMDBSearchEnvelope.self, from: data)
         return env.results.filter { ($0.mediaType ?? "") == "tv" || ($0.mediaType ?? "") == "movie" }
@@ -250,18 +284,41 @@ nonisolated struct TMDBService {
         return env.results.map { stamp($0, mediaType: "tv") }
     }
 
-    /// Returns the top US streaming provider for a title (prefers subscription/flatrate,
-    /// then ad-supported, then free). Returns `nil` if no real streaming service is
-    /// associated with the title — caller should hide the item rather than show a fake label.
-    func getTopWatchProvider(tmdbId: Int, isTV: Bool) async throws -> TMDBWatchProvider? {
+    /// Returns the top streaming provider for a title in the requested
+    /// region (defaults to the device's resolved region). Prefers
+    /// subscription/flatrate, then ad-supported, then free. Returns `nil` if
+    /// no real streaming service is associated with the title — caller
+    /// should hide the item rather than show a fake label.
+    ///
+    /// If the user's region returns nothing, we fall back to US so the rail
+    /// still has something to open (most TMDB providers carry a US entry
+    /// even when they're not active in the user's market).
+    func getTopWatchProvider(
+        tmdbId: Int,
+        isTV: Bool,
+        region: String? = nil
+    ) async throws -> TMDBWatchProvider? {
         let kind = isTV ? "tv" : "movie"
         let urlString = "\(base)/\(kind)/\(tmdbId)/watch/providers?api_key=\(apiKey)"
         let data = try await get(urlString)
         let env = try JSONDecoder().decode(TMDBProvidersEnvelope.self, from: data)
-        guard let us = env.results["US"] else { return nil }
+        let resolvedRegion = (region ?? DeviceLocale.current().region).uppercased()
+        if let provider = Self.bestProvider(in: env.results[resolvedRegion]) {
+            return provider
+        }
+        // Fallback to US — TMDB's most complete region — so callers always
+        // get a deeplink target when one exists somewhere in the world.
+        if resolvedRegion != "US", let provider = Self.bestProvider(in: env.results["US"]) {
+            return provider
+        }
+        return nil
+    }
+
+    private static func bestProvider(in region: TMDBProviderRegion?) -> TMDBWatchProvider? {
+        guard let region else { return nil }
         // Prefer subscription, then ad-supported, then free. Skip buy/rent — those
         // aren't "available to stream" in the sense users expect.
-        let pool = (us.flatrate ?? []) + (us.ads ?? []) + (us.free ?? [])
+        let pool = (region.flatrate ?? []) + (region.ads ?? []) + (region.free ?? [])
         guard !pool.isEmpty else { return nil }
         return pool.min(by: { ($0.displayPriority ?? 999) < ($1.displayPriority ?? 999) })
     }

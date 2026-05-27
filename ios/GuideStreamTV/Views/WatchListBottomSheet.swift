@@ -193,9 +193,19 @@ private struct WatchListContent: View {
     /// can render the title's "Where to Watch" / overview without bespoke
     /// rendering inside the bottom sheet.
     private func posterShow(from item: UserStream) -> PosterShow {
-        PosterShow(
+        // Show the platform name when we have one; otherwise show the
+        // generic media type so we don't leak "Streaming" as if it were a
+        // platform. The detail sheet's Watchmode lookup will fill in the
+        // real service moments later.
+        let platformMeta: String = {
+            if let p = item.platform, !p.isEmpty, p.uppercased() != "STREAM" {
+                return p.capitalized
+            }
+            return "Watch list"
+        }()
+        return PosterShow(
             title: item.title ?? "Watch List Item",
-            meta: item.platform?.capitalized ?? "Streaming",
+            meta: platformMeta,
             posterColors: HomeFallback.posterColors,
             symbol: "play.tv.fill",
             posterUrl: item.posterUrl,
@@ -224,7 +234,16 @@ private struct WatchListRow: View {
                 .clipShape(.rect(cornerRadius: 8))
 
             VStack(alignment: .leading, spacing: 4) {
-                if let platform = item.platform, !platform.isEmpty {
+                // Only render the platform chip when we have a real,
+                // recognised streaming service. Generic placeholders like
+                // "Streaming" or "Stream" used to leak through here and
+                // confused users who saw the same neutral grey chip on
+                // every saved title.
+                if let platform = item.platform,
+                   !platform.isEmpty,
+                   platform.uppercased() != "STREAM",
+                   platform.lowercased() != "streaming",
+                   platform.lowercased() != "streaming services" {
                     Text(platform.uppercased())
                         .scaledFont(size: 9, weight: .heavy)
                         .tracking(0.5)

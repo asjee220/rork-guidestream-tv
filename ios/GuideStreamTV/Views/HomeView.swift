@@ -587,11 +587,19 @@ struct HomeView: View {
             }
     }
 
-    /// Episode cards built from the user's saved watch list. Falls back to a
-    /// neutral platform when the saved row didn't capture one.
+    /// Episode cards built from the user's saved watch list. Skips the
+    /// platform badge entirely (empty string) when the saved row's platform
+    /// is missing or a generic placeholder — the detail sheet's Watchmode
+    /// lookup will fill in the real service when the user taps in.
     var watchListEpisodes: [Episode] {
         streams.userStreams.map { row in
-            let platformName = (row.platform ?? "").uppercased()
+            let raw = (row.platform ?? "").trimmingCharacters(in: .whitespaces)
+            let platformName = raw.uppercased()
+            let lowerRaw = raw.lowercased()
+            let isGenericPlaceholder = raw.isEmpty
+                || platformName == "STREAM"
+                || lowerRaw == "streaming"
+                || lowerRaw == "streaming services"
             let platform: Platform
             switch platformName {
             case "NETFLIX": platform = .netflix
@@ -604,7 +612,10 @@ struct HomeView: View {
             case "PEACOCK": platform = .peacock
             case "CRUNCHYROLL": platform = .crunchyroll
             case "YOUTUBE": platform = .youtube
-            default: platform = Platform(name: platformName.isEmpty ? "STREAM" : platformName, color: Color.orange)
+            default:
+                // Empty name means the rendering layer hides the chip
+                // entirely — better than the old "STREAM" placeholder.
+                platform = Platform(name: isGenericPlaceholder ? "" : platformName, color: Color.orange)
             }
             return Episode(
                 title: row.title ?? "Untitled",
@@ -651,8 +662,17 @@ struct HomeView: View {
             if !trendingEpisodes.isEmpty { return trendingEpisodes }
             return []
         }
-        return streams.newEpisodes.map { row in
-            let platformName = (row.platform ?? "").uppercased()
+        return streams.newEpisodes.compactMap { row -> Episode? in
+            let raw = (row.platform ?? "").trimmingCharacters(in: .whitespaces)
+            let platformName = raw.uppercased()
+            let lowerRaw = raw.lowercased()
+            // New episodes without a real streaming platform are skipped —
+            // a "STREAM" label has no app to open and is misleading.
+            let isGenericPlaceholder = raw.isEmpty
+                || platformName == "STREAM"
+                || lowerRaw == "streaming"
+                || lowerRaw == "streaming services"
+            guard !isGenericPlaceholder else { return nil }
             let platform: Platform
             switch platformName {
             case "NETFLIX": platform = .netflix
@@ -661,7 +681,11 @@ struct HomeView: View {
             case "HULU": platform = .hulu
             case "PRIME", "AMAZON", "AMAZON PRIME": platform = .prime
             case "DISNEY+", "DISNEY": platform = .disney
-            default: platform = Platform(name: platformName.isEmpty ? "STREAM" : platformName, color: Color.blue)
+            case "PARAMOUNT+", "PARAMOUNT": platform = .paramount
+            case "PEACOCK": platform = .peacock
+            case "CRUNCHYROLL": platform = .crunchyroll
+            case "YOUTUBE": platform = .youtube
+            default: platform = Platform(name: platformName, color: Color.blue)
             }
             let season = row.season ?? 1
             let episode = row.episode ?? 1
@@ -1197,18 +1221,25 @@ private struct EpisodeThumbCard: View {
                             .allowsHitTesting(false)
                     }
                     .overlay(alignment: .bottomLeading) {
-                        Text(episode.platform)
-                            .scaledFont(size: 8, weight: .bold)
-                            .tracking(0.4)
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 3)
-                            .background(
-                                RoundedRectangle(cornerRadius: 4, style: .continuous)
-                                    .fill(episode.platformColor)
-                            )
-                            .padding(6)
-                            .allowsHitTesting(false)
+                        // Only render the platform chip when we have a real,
+                        // recognised streaming service — empty / "STREAM" /
+                        // "Streaming" placeholders are never shown.
+                        if !episode.platform.isEmpty,
+                           episode.platform.uppercased() != "STREAM",
+                           episode.platform.lowercased() != "streaming" {
+                            Text(episode.platform)
+                                .scaledFont(size: 8, weight: .bold)
+                                .tracking(0.4)
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 3)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                        .fill(episode.platformColor)
+                                )
+                                .padding(6)
+                                .allowsHitTesting(false)
+                        }
                     }
                     .overlay(alignment: .topTrailing) {
                         if episode.isNew {
