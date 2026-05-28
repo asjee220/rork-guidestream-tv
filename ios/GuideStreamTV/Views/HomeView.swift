@@ -95,6 +95,19 @@ enum HomeFallback {
     ]
 }
 
+/// A show's next upcoming episode sourced from TheTVDB.
+/// Drives the "Upcoming Episodes" horizontal row on the home screen.
+struct TVDBUpcomingItem: Identifiable {
+    let id: Int
+    let showTitle: String
+    let posterUrl: String?
+    let seasonNumber: Int?
+    let episodeNumber: Int?
+    let episodeName: String?
+    let airDate: Date?
+    let platform: Platform?
+}
+
 // MARK: - HomeView
 
 struct HomeView: View {
@@ -124,6 +137,7 @@ struct HomeView: View {
     @State private var expiringItems: [(tmdbId: Int, title: String, daysLeft: Int, sourceId: String)] = []
     @State private var selectedGenreId: Int = 80
     @State private var selectedGenreName: String = "Crime"
+    @State private var tvdbUpcomingItems: [TVDBUpcomingItem] = []
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -355,6 +369,28 @@ struct HomeView: View {
                             .padding(.horizontal, 20)
                         }
 
+                        if !tvdbUpcomingItems.isEmpty {
+                            UpcomingEpisodesRow(
+                                items: tvdbUpcomingItems,
+                                onOpen: { item in
+                                    WatchIntentLogger.shared.log(
+                                        eventType: .cardTapped,
+                                        titleId: String(item.id),
+                                        metadata: ["section": "upcoming_episodes"]
+                                    )
+                                    detailSubject = .show(PosterShow(
+                                        title: item.showTitle,
+                                        meta: item.platform?.name ?? "Upcoming",
+                                        posterColors: item.platform.map { [$0.color, $0.color.opacity(0.7)] } ?? HomeFallback.posterColors,
+                                        symbol: "sparkles",
+                                        posterUrl: item.posterUrl,
+                                        tmdbId: item.id
+                                    ))
+                                }
+                            )
+                            .padding(.horizontal, 20)
+                        }
+
                         if !widgetBannerDismissed {
                             WidgetPromoBanner(
                                 onSetUp: {
@@ -552,6 +588,10 @@ struct HomeView: View {
         newsStreams = news
         await hydrateProviders()
 
+        // TVDB enrichment fires after providers resolve so we can attach
+        // platform badges — non-blocking, silently ignored when TVDB is down.
+        Task { await fetchTVDBUpcoming() }
+
         // Fetch expiring titles from user's watch list
         // (runs after hydrateProviders so we have tmdbIds)
         let watchListIds = streams.userStreams.compactMap { Int($0.titleId) }
@@ -571,6 +611,32 @@ struct HomeView: View {
         } else {
             recommendedShows = genreShows
         }
+    }
+
+    /// Fetches the next upcoming episode for each watch-listed show from
+    /// TheTVDB. Runs sequentially to respect MainActor isolation; 8 shows
+    /// complete in ~3 seconds. Items without a TVDB match are skipped.
+    private func fetchTVDBUpcoming() async {
+        let watchTmdbIds = streams.userStreams.compactMap { Int($0.titleId) }.prefix(8)
+        guard !watchTmdbIds.isEmpty else { return }
+        var items: [TVDBUpcomingItem] = []
+        for tmdbId in watchTmdbIds {
+            guard let tvdbId = try? await TheTVDBService.shared.tvdbSeriesId(forTMDBId: tmdbId),
+                  let nextEp = try? await TheTVDBService.shared.nextEpisode(seriesId: tvdbId)
+            else { continue }
+            let show = (trending + onAir).first { $0.id == tmdbId }
+            items.append(TVDBUpcomingItem(
+                id: tmdbId,
+                showTitle: show?.displayName ?? "Unknown",
+                posterUrl: show?.posterUrl,
+                seasonNumber: nextEp.seasonNumber,
+                episodeNumber: nextEp.episodeNumber,
+                episodeName: nextEp.name,
+                airDate: nextEp.airDate,
+                platform: show.flatMap { providerByTmdb[$0.id] }
+            ))
+        }
+        tvdbUpcomingItems = items
     }
 
     /// Maps known platform IDs to genre biases.
@@ -2044,6 +2110,130 @@ private struct NewChip: View {
                 RoundedRectangle(cornerRadius: 5, style: .continuous)
                     .fill(Color.orange)
             )
+    }
+}
+
+// MARK: - Upcoming Episodes (TVDB)
+
+/// Horizontal scrolling row of next-upcoming episodes from TheTVDB.
+/// Each card shows the show poster, episode code, episode name, and air date.
+private struct UpcomingEpisodesRow: View {
+    let items: [TVDBUpcomingItem]
+    let onOpen: (TVDBUpcomingItem) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 8) {
+                Image(systemName: "sparkles")
+                    .scaledFont(size: 14, weight: .semibold)
+                    .foregroundStyle(Color.orange)
+                Text("Upcoming Episodes")
+                    .scaledFont(size: 17, weight: .semibold)
+                    .foregroundStyle(.white)
+                Spacer(minLength: 0)
+            }
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 12) {
+                    ForEach(items) { item in
+                        Button { onOpen(item) } label: {
+                            UpcomingEpisodeCard(item: item)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Upcoming Episode Card
+
+private struct UpcomingEpisodeCard: View {
+    let item: TVDBUpcomingItem
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            // Poster thumbnail
+            ZStack(alignment: .bottomLeading) {
+                if let url = item.posterUrl {
+                    RemoteImage(
+                        urlString: url,
+                        contentMode: .fill,
+                        fallbackColors: item.platform.map { [$0.color, $0.color.opacity(0.7)] } ?? HomeFallback.posterColors
+                    )
+                    .frame(width: 148, height: 88)
+                    .clipShape(.rect(cornerRadius: 10))
+                } else {
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(
+                            LinearGradient(
+                                colors: item.platform.map { [$0.color, $0.color.opacity(0.7)] } ?? HomeFallback.posterColors,
+                                startPoint: .topLeading, endPoint: .bottomTrailing
+                            )
+                        )
+                        .frame(width: 148, height: 88)
+                }
+
+                // Platform badge
+                if let platform = item.platform {
+                    Text(platform.name)
+                        .scaledFont(size: 8, weight: .heavy)
+                        .tracking(0.5)
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 3)
+                        .background(
+                            RoundedRectangle(cornerRadius: 4)
+                                .fill(platform.color.opacity(0.85))
+                        )
+                        .padding(6)
+                }
+            }
+
+            // Show title
+            Text(item.showTitle)
+                .scaledFont(size: 11, weight: .semibold)
+                .foregroundStyle(Color.textSecondary)
+                .lineLimit(1)
+
+            // Episode code + name
+            if let season = item.seasonNumber, let episode = item.episodeNumber {
+                HStack(spacing: 4) {
+                    Text("S\(season) E\(episode)")
+                        .scaledFont(size: 13, weight: .bold)
+                        .foregroundStyle(.white)
+                    if let name = item.episodeName {
+                        Text("•")
+                            .scaledFont(size: 13)
+                            .foregroundStyle(Color.textTertiary)
+                        Text(name)
+                            .scaledFont(size: 13, weight: .medium)
+                            .foregroundStyle(.white)
+                            .lineLimit(1)
+                    }
+                }
+            }
+
+            // Air date
+            if let date = item.airDate {
+                HStack(spacing: 4) {
+                    Image(systemName: "calendar")
+                        .scaledFont(size: 10, weight: .medium)
+                        .foregroundStyle(Color.orange)
+                    Text(airDateFormatter.string(from: date))
+                        .scaledFont(size: 11, weight: .medium)
+                        .foregroundStyle(Color.textSecondary)
+                }
+            }
+        }
+        .frame(width: 148, alignment: .leading)
+    }
+
+    private var airDateFormatter: DateFormatter {
+        let fmt = DateFormatter()
+        fmt.dateFormat = "MMM d"
+        return fmt
     }
 }
 

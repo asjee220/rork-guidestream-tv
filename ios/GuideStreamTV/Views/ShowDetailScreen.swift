@@ -49,12 +49,15 @@ final class ShowDetailViewModel {
     var detail: WatchmodeTitleDetail?
     var tmdb: TMDBTVDetail?
     var season: TMDBSeason?
+    var tvdbNextEpisode: TVDBEpisode?
+    var tvdbSeries: TVDBSeriesExtended?
     var currentSeasonNumber: Int = 1
     var isLoading: Bool = false
     var errorMessage: String?
     private var loadedTitleId: String?
 
-    /// Loads TMDB detail + Watchmode sources in parallel.
+    /// Loads TMDB detail + Watchmode sources in parallel, then enriches with
+    /// TVDB for higher-fidelity episode air-date data.
     /// `titleId` may be a TMDB integer id (preferred) or a legacy Watchmode id.
     func loadIfNeeded(titleId: String, isTV: Bool = true) async {
         guard loadedTitleId != titleId else { return }
@@ -74,6 +77,10 @@ final class ShowDetailViewModel {
                 self.detail = try? await WatchmodeService.shared.titleDetail(titleId: wmId)
             }
             self.season = await seasonCall
+
+            // TVDB enrichment fires after core data loads — non-blocking,
+            // silently ignored on failure so the sheet always renders.
+            Task { await enrichWithTVDB(tmdbId: tmdbId) }
         } else {
             do {
                 let result = try await WatchmodeService.shared.titleDetail(titleId: titleId)
@@ -84,6 +91,18 @@ final class ShowDetailViewModel {
             }
         }
         isLoading = false
+    }
+
+    /// Looks up the TVDB series id from the TMDB id, then fetches the next
+    /// upcoming episode and extended series info in parallel.
+    private func enrichWithTVDB(tmdbId: Int) async {
+        guard let tvdbId = try? await TheTVDBService.shared.tvdbSeriesId(forTMDBId: tmdbId)
+        else { return }
+        async let nextEp = try? TheTVDBService.shared.nextEpisode(seriesId: tvdbId)
+        async let series = try? TheTVDBService.shared.seriesExtended(tvdbId)
+        let (ep, s) = await (nextEp, series)
+        tvdbNextEpisode = ep
+        tvdbSeries = s
     }
 
     func loadSeason(_ seasonNumber: Int) async {
@@ -219,6 +238,19 @@ struct ShowDetailScreen: View {
     }
     private var tmdbEpisodes: [TMDBEpisode] { vm.season?.episodes ?? [] }
 
+    /// TVDB next-episode air date formatted for display (e.g. "Airs May 30, 2026").
+    private var tvdbNextAirDateText: String? {
+        guard let date = vm.tvdbNextEpisode?.airDate else { return nil }
+        let fmt = DateFormatter()
+        fmt.dateFormat = "MMM d, yyyy"
+        return "Airs \(fmt.string(from: date))"
+    }
+
+    /// TVDB series status label. Falls back to TMDB status when TVDB unavailable.
+    private var seriesStatusText: String? {
+        vm.tvdbSeries?.status?.name ?? vm.tmdb?.status
+    }
+
     private let episodes: [ShowDetailEpisode] = [
         .init(code: "S4 E7", title: "Tailgate Party", duration: "64 min", status: .continueWatching, progress: 0.45),
         .init(code: "S4 E8", title: "America Decides", duration: "67 min", status: .new, progress: 0),
@@ -235,6 +267,9 @@ struct ShowDetailScreen: View {
                     hero
                     genresRow
                     socialCounter
+                    if vm.tvdbNextEpisode != nil || seriesStatusText != nil {
+                        nextEpisodeBanner
+                    }
                     synopsisSection
                     episodesSection
                     whereToWatchSection
@@ -597,6 +632,71 @@ struct ShowDetailScreen: View {
         }
         .padding(.horizontal, 20)
         .padding(.top, 14)
+    }
+
+    // MARK: Next Episode (TVDB)
+
+    /// Shows the next upcoming episode air date from TVDB, plus series status.
+    /// Hidden when no TVDB data has loaded yet.
+    private var nextEpisodeBanner: some View {
+        HStack(spacing: 12) {
+            // Left: episode thumbnail / placeholder
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(Color.orange.opacity(0.15))
+                .frame(width: 44, height: 44)
+                .overlay {
+                    Image(systemName: "sparkles")
+                        .scaledFont(size: 18, weight: .semibold)
+                        .foregroundStyle(Color.orange)
+                }
+
+            // Right: episode details
+            VStack(alignment: .leading, spacing: 3) {
+                if let ep = vm.tvdbNextEpisode {
+                    HStack(spacing: 4) {
+                        Text("S\(ep.seasonNumber ?? 0) E\(ep.episodeNumber ?? 0)")
+                            .scaledFont(size: 12, weight: .heavy)
+                            .foregroundStyle(Color.orange)
+                        if let name = ep.name {
+                            Text("•")
+                                .scaledFont(size: 12)
+                                .foregroundStyle(Color.textTertiary)
+                            Text(name)
+                                .scaledFont(size: 13, weight: .semibold)
+                                .foregroundStyle(.white)
+                                .lineLimit(1)
+                        }
+                    }
+                }
+                HStack(spacing: 6) {
+                    if let airText = tvdbNextAirDateText {
+                        Label(airText, systemImage: "calendar")
+                            .scaledFont(size: 12)
+                            .foregroundStyle(Color.textSecondary)
+                    }
+                    if let status = seriesStatusText {
+                        Text("•")
+                            .scaledFont(size: 12)
+                            .foregroundStyle(Color.textTertiary)
+                        Text(status)
+                            .scaledFont(size: 12, weight: .medium)
+                            .foregroundStyle(status.lowercased().contains("returning") ? Color.green : Color.textSecondary)
+                    }
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(Color.white.opacity(0.05))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                )
+        )
+        .padding(.horizontal, 20)
+        .padding(.top, 16)
     }
 
     // MARK: Synopsis
