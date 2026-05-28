@@ -100,15 +100,13 @@ struct EmailAuthView: View {
                 #endif
             }
             #if !os(tvOS)
-            .navigationBarTitleDisplayMode(.inline)
-            #endif
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("Close") { close() }
                         .foregroundStyle(Color.textSecondary)
                 }
             }
-            .toolbarBackground(.hidden, for: .navigationBar)
+            #endif
         }
         .preferredColorScheme(.dark)
         #if os(tvOS)
@@ -623,15 +621,13 @@ struct ForgotPasswordSheet: View {
                 #endif
             }
             #if !os(tvOS)
-            .navigationBarTitleDisplayMode(.inline)
-            #endif
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("Cancel") { dismiss() }
                         .foregroundStyle(Color.textSecondary)
                 }
             }
-            .toolbarBackground(.hidden, for: .navigationBar)
+            #endif
         }
         .preferredColorScheme(.dark)
         .onAppear {

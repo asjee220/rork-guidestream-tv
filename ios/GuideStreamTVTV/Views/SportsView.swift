@@ -239,7 +239,6 @@ struct SportsView: View {
                 ForEach(sports, id: \.self) { sport in
                     let isActive = sport == selectedSport
                     Button {
-                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
                         selectedSport = sport
                     } label: {
                         Text(sport)
@@ -286,7 +285,6 @@ struct SportsView: View {
                 HStack(spacing: 10) {
                     ForEach(derivedTeams, id: \.abbrev) { team in
                         Button {
-                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
                             if let game = teamGame(for: team) {
                                 selectedGame = game
                             }
@@ -372,7 +370,6 @@ struct SportsView: View {
     @ViewBuilder
     private func tappableCard<Content: View>(_ game: SportsGame, @ViewBuilder content: () -> Content) -> some View {
         Button {
-            UIImpactFeedbackGenerator(style: .light).impactOccurred()
             selectedGame = game
         } label: {
             content()

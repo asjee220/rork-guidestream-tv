@@ -308,7 +308,6 @@ struct ShowDetailScreen: View {
     /// search-URL fallback used by the rest of the app, rather than handing
     /// Watchmode's raw `ios_url` placeholder to `UIApplication.shared.open`.
     private func openDeeplink(serviceName: String) {
-        UIImpactFeedbackGenerator(style: .light).impactOccurred()
         StreamingDeepLinker.open(
             platform: serviceName,
             title: displayTitle,
@@ -319,7 +318,6 @@ struct ShowDetailScreen: View {
     }
 
     private func openPlayOn() {
-        UIImpactFeedbackGenerator(style: .light).impactOccurred()
         playOnOpen = true
     }
 

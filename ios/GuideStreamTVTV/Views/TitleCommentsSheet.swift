@@ -247,7 +247,6 @@ struct TitleCommentsSheet: View {
     private func sendComment() async {
         let trimmed = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
-        UIImpactFeedbackGenerator(style: .light).impactOccurred()
         draft = ""
         didJustPost = true
         let ok = await social.postComment(titleId: titleId, body: trimmed)

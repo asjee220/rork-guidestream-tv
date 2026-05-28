@@ -41,7 +41,6 @@ struct SportsListView: View {
                     LazyVStack(spacing: 12) {
                         ForEach(games) { game in
                             Button {
-                                UIImpactFeedbackGenerator(style: .light).impactOccurred()
                                 selectedGame = game
                             } label: {
                                 row(for: game)
@@ -56,9 +55,7 @@ struct SportsListView: View {
             }
         }
         .navigationTitle(navigationTitle)
-        .navigationBarTitleDisplayMode(.large)
         .toolbarBackground(Color(hex: "04090F"), for: .navigationBar)
-        .toolbarColorScheme(.dark, for: .navigationBar)
         #if os(tvOS)
         .fullScreenCover(item: $selectedGame) { game in
             SportsWatchSheet(game: game)

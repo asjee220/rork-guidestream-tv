@@ -318,7 +318,6 @@ struct SportsWatchSheet: View {
                 tint: isReminderSet ? Color.orange : .white,
                 showDot: isReminderSet
             ) {
-                UIImpactFeedbackGenerator(style: .light).impactOccurred()
                 withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) { isReminderSet.toggle() }
             }
             .frame(maxWidth: .infinity)
@@ -330,7 +329,6 @@ struct SportsWatchSheet: View {
                 tint: isLiked ? Color.orange : .white,
                 showDot: false
             ) {
-                UIImpactFeedbackGenerator(style: .light).impactOccurred()
                 guard !isTogglingLike else { return }
                 isTogglingLike = true
                 Task {
@@ -347,7 +345,6 @@ struct SportsWatchSheet: View {
                 tint: .white,
                 showDot: false
             ) {
-                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                 showCastSheet = true
             }
             .frame(maxWidth: .infinity)
@@ -508,7 +505,6 @@ struct SportsWatchSheet: View {
         let platform = primaryBroadcast ?? ""
         let canWatch = !platform.isEmpty
         return Button {
-            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
             let slug = WatchIntentLogger.titleSlug("\(game.away.abbreviation)-\(game.home.abbreviation)-\(game.sport)")
             WatchIntentLogger.shared.log(
                 eventType: .deeplinkFired,
@@ -564,7 +560,6 @@ struct SportsWatchSheet: View {
     @ViewBuilder
     private var watchlistButton: some View {
         Button {
-            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
             toggleWatchList()
         } label: {
             VStack(spacing: 6) {

@@ -363,7 +363,6 @@ struct PlayOnBottomSheet: View {
                 tint: isLiked ? Color.orange : .white,
                 showDot: false
             ) {
-                UIImpactFeedbackGenerator(style: .light).impactOccurred()
                 withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) { isLiked.toggle() }
             }
             .frame(maxWidth: .infinity)
@@ -374,7 +373,6 @@ struct PlayOnBottomSheet: View {
                 tint: .white,
                 showDot: isNotifying
             ) {
-                UIImpactFeedbackGenerator(style: .light).impactOccurred()
                 withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) { isNotifying.toggle() }
             }
             .frame(maxWidth: .infinity)
@@ -385,7 +383,6 @@ struct PlayOnBottomSheet: View {
                 tint: .white,
                 showDot: false
             ) {
-                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                 showCastSheet = true
             }
             .frame(maxWidth: .infinity)
@@ -464,7 +461,6 @@ struct PlayOnBottomSheet: View {
 
     private var watchButton: some View {
         Button {
-            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
             WatchIntentLogger.shared.log(
                 eventType: .playOnDeviceChosen,
                 titleId: WatchIntentLogger.titleSlug(showTitle),

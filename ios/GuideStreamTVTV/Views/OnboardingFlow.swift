@@ -193,8 +193,6 @@ struct WelcomeOnboardingView: View {
 
                 // Primary CTA — start as a guest (no auth required).
                 Button {
-                    let gen = UIImpactFeedbackGenerator(style: .medium)
-                    gen.impactOccurred()
                     auth.continueAsGuest()
                     onContinue()
                 } label: {
@@ -455,8 +453,6 @@ struct ConnectServicesView: View {
     }
 
     private func toggle(_ id: String) {
-        let gen = UIImpactFeedbackGenerator(style: .light)
-        gen.impactOccurred()
         withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
             if selected.contains(id) { selected.remove(id) } else { selected.insert(id) }
         }

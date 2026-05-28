@@ -729,10 +729,7 @@ struct NewEpisodesListView: View {
         .background(Color.navy.ignoresSafeArea())
         .navigationTitle("New Episodes")
         #if !os(tvOS)
-        .navigationBarTitleDisplayMode(.large)
         #endif
-        .toolbarBackground(Color.navy, for: .navigationBar)
-        .toolbarColorScheme(.dark, for: .navigationBar)
     }
 }
 
@@ -766,10 +763,7 @@ struct BingeWorthyListView: View {
         .background(Color.navy.ignoresSafeArea())
         .navigationTitle(sectionTitle)
         #if !os(tvOS)
-        .navigationBarTitleDisplayMode(.large)
         #endif
-        .toolbarBackground(Color.navy, for: .navigationBar)
-        .toolbarColorScheme(.dark, for: .navigationBar)
     }
 }
 
@@ -802,9 +796,6 @@ struct WhatsNewTodayListView: View {
         .background(Color.navy.ignoresSafeArea())
         .navigationTitle("What's New Today")
         #if !os(tvOS)
-        .navigationBarTitleDisplayMode(.large)
-        .toolbarBackground(Color.navy, for: .navigationBar)
-        .toolbarColorScheme(.dark, for: .navigationBar)
         #endif
     }
 }
@@ -836,9 +827,6 @@ struct NewsListView: View {
         .background(Color.navy.ignoresSafeArea())
         .navigationTitle("News")
         #if !os(tvOS)
-        .navigationBarTitleDisplayMode(.large)
-        .toolbarBackground(Color.navy, for: .navigationBar)
-        .toolbarColorScheme(.dark, for: .navigationBar)
         #endif
     }
 }
@@ -1107,9 +1095,6 @@ struct WidgetSetupView: View {
         .background(Color.navy.ignoresSafeArea())
         .navigationTitle("Set Up Widget")
         #if !os(tvOS)
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbarBackground(Color.navy, for: .navigationBar)
-        .toolbarColorScheme(.dark, for: .navigationBar)
         #endif
     }
 }

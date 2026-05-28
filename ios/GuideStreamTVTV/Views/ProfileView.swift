@@ -223,7 +223,6 @@ struct ProfileView: View {
     }
 
     private func openDiagnostics() {
-        UIImpactFeedbackGenerator(style: .light).impactOccurred()
         activeSheet = .diagnostics
     }
 
@@ -362,7 +361,6 @@ struct ProfileView: View {
                 trailingHidden: true,
                 titleColor: signOutTint,
                 onTap: {
-                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                     showSignOutConfirm = true
                 }
             )
@@ -450,7 +448,6 @@ struct ProfileView: View {
     private func performSignOut() async {
         isSigningOut = true
         defer { isSigningOut = false }
-        UINotificationFeedbackGenerator().notificationOccurred(.success)
         await auth.signOut()
     }
 
@@ -707,7 +704,6 @@ struct ProfileRow: View {
     }
 
     private func tap() {
-        UIImpactFeedbackGenerator(style: .light).impactOccurred()
         onTap()
     }
 }

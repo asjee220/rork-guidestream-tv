@@ -56,9 +56,6 @@ struct AccountView: View {
             .scrollDismissesKeyboard(.interactively)
         }
         .navigationTitle("Account")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbarBackground(Color.navy, for: .navigationBar)
-        .toolbarColorScheme(.dark, for: .navigationBar)
         .alert("Reset link sent", isPresented: $showResetSent) {
             Button("OK", role: .cancel) {}
         } message: {
@@ -278,14 +275,12 @@ struct AccountView: View {
             defer { isSaving = false }
             let ok = await auth.updateDisplayName(trimmed)
             if ok {
-                UINotificationFeedbackGenerator().notificationOccurred(.success)
                 withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
                     savedFlash = true
                 }
                 try? await Task.sleep(for: .seconds(1.6))
                 withAnimation(.easeOut(duration: 0.25)) { savedFlash = false }
             } else {
-                UINotificationFeedbackGenerator().notificationOccurred(.error)
             }
         }
     }
@@ -375,8 +370,9 @@ struct ProfileInfoRow: View {
     }
 
     private func copy() {
+        #if !os(tvOS)
         UIPasteboard.general.string = fullValueOverride ?? value
-        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        #endif
         withAnimation(.spring(response: 0.25, dampingFraction: 0.7)) {
             didCopy = true
         }
@@ -441,9 +437,6 @@ struct ConnectedServicesView: View {
             }
         }
         .navigationTitle("Connected Services")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbarBackground(Color.navy, for: .navigationBar)
-        .toolbarColorScheme(.dark, for: .navigationBar)
     }
 
     @ViewBuilder
@@ -525,14 +518,12 @@ struct ConnectedServicesView: View {
     }
 
     private func toggle(_ id: String) {
-        UIImpactFeedbackGenerator(style: .light).impactOccurred()
         withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
             if selected.contains(id) { selected.remove(id) } else { selected.insert(id) }
         }
     }
 
     private func save() {
-        UINotificationFeedbackGenerator().notificationOccurred(.success)
         auth.setSelectedServices(selected)
         withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) { saveFlash = true }
         Task {
@@ -602,9 +593,6 @@ struct DevicesView: View {
             .refreshable { await load() }
         }
         .navigationTitle("Devices")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbarBackground(Color.navy, for: .navigationBar)
-        .toolbarColorScheme(.dark, for: .navigationBar)
         .task { await load() }
         .confirmationDialog(
             "Sign this device out?",
@@ -727,11 +715,9 @@ struct DevicesView: View {
                 .delete()
                 .eq("device_id", value: deviceId)
                 .execute()
-            UINotificationFeedbackGenerator().notificationOccurred(.success)
             await load()
         } catch {
             loadError = error.localizedDescription
-            UINotificationFeedbackGenerator().notificationOccurred(.error)
             print("[Devices] remove failed: \(error.localizedDescription)")
         }
     }
@@ -948,9 +934,6 @@ struct NotificationsSettingsView: View {
             }
         }
         .navigationTitle("Notifications")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbarBackground(Color.navy, for: .navigationBar)
-        .toolbarColorScheme(.dark, for: .navigationBar)
         .task { await refreshSystemStatus() }
     }
 
@@ -1012,7 +995,6 @@ struct NotificationsSettingsView: View {
     }
 
     private func openSystemSettings() {
-        UIImpactFeedbackGenerator(style: .light).impactOccurred()
         if let url = URL(string: UIApplication.openSettingsURLString) {
             UIApplication.shared.open(url)
         }
@@ -1125,9 +1107,6 @@ struct ProfilesView: View {
             }
         }
         .navigationTitle("Profiles")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbarBackground(Color.navy, for: .navigationBar)
-        .toolbarColorScheme(.dark, for: .navigationBar)
         #if os(tvOS)
         .fullScreenCover(isPresented: $showAddSheet) {
             ProfileEditorSheet(existing: nil) { name, color, isKid, emoji in
@@ -1154,7 +1133,6 @@ struct ProfilesView: View {
     }
 
     private func select(_ id: UUID) {
-        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
         manager.setActive(id)
     }
 }
@@ -1346,15 +1324,14 @@ private struct ProfileEditorSheet: View {
                 }
             }
             .navigationTitle(existing == nil ? "New Profile" : "Edit Profile")
-            .navigationBarTitleDisplayMode(.inline)
+            #if !os(tvOS)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("Cancel") { dismiss() }
                         .foregroundStyle(Color.textSecondary)
                 }
             }
-            .toolbarBackground(Color.navy, for: .navigationBar)
-            .toolbarColorScheme(.dark, for: .navigationBar)
+            #endif
         }
         .preferredColorScheme(.dark)
     }
@@ -1390,7 +1367,6 @@ private struct ProfileEditorSheet: View {
             HStack(spacing: 10) {
                 ForEach(AppProfileManager.palette, id: \.self) { hex in
                     Button {
-                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
                         withAnimation(.spring(response: 0.3)) { color = hex }
                     } label: {
                         Circle()
@@ -1421,7 +1397,6 @@ private struct ProfileEditorSheet: View {
                 HStack(spacing: 8) {
                     ForEach(AppProfileManager.emojis, id: \.self) { glyph in
                         Button {
-                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
                             withAnimation(.spring(response: 0.3)) { emoji = glyph }
                         } label: {
                             Text(glyph)
@@ -1450,7 +1425,6 @@ private struct ProfileEditorSheet: View {
     private func commit() {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
-        UINotificationFeedbackGenerator().notificationOccurred(.success)
         onSave(trimmed, color, isKid, emoji)
         dismiss()
     }
@@ -1459,7 +1433,9 @@ private struct ProfileEditorSheet: View {
 // MARK: - Help & Feedback
 
 struct HelpFeedbackView: View {
+    #if !os(tvOS)
     @Environment(\.requestReview) private var requestReview
+    #endif
     @State private var showDiagnostics: Bool = false
     @State private var expandedFAQ: UUID?
 
@@ -1485,9 +1461,6 @@ struct HelpFeedbackView: View {
             }
         }
         .navigationTitle("Help & Feedback")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbarBackground(Color.navy, for: .navigationBar)
-        .toolbarColorScheme(.dark, for: .navigationBar)
         #if os(tvOS)
         .fullScreenCover(isPresented: $showDiagnostics) {
             SupabaseDiagnosticsView()
@@ -1514,7 +1487,7 @@ struct HelpFeedbackView: View {
                 iconTint: Color(red: 0.96, green: 0.78, blue: 0.20),
                 title: "Rate GuideStream TV",
                 subtitle: "Tell us how we're doing on the App Store",
-                onTap: { requestReview() }
+                onTap: { rateOnAppStore() }
             )
             ProfileRowDivider()
             ProfileRow(
@@ -1650,8 +1623,17 @@ struct HelpFeedbackView: View {
     }
 
     private func open(_ url: URL) {
-        UIImpactFeedbackGenerator(style: .light).impactOccurred()
         UIApplication.shared.open(url)
+    }
+
+    /// In-app App Store rating prompt. On iOS we use `requestReview` from
+    /// the SwiftUI environment; tvOS doesn't ship that API, so we silently
+    /// no-op (the App Store rating flow on Apple TV happens at the system
+    /// level).
+    private func rateOnAppStore() {
+        #if !os(tvOS)
+        requestReview()
+        #endif
     }
 
     private var appVersion: String {

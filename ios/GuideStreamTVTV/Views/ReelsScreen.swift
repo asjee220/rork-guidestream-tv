@@ -487,7 +487,6 @@ struct ReelsScreen: View {
                         let prev = vm.currentIndex
                         vm.currentIndex = newValue
                         vm.reelSwipeCount += 1
-                        UIImpactFeedbackGenerator(style: .soft).impactOccurred()
                         if let trailer = vm.allTrailers[safe: newValue] {
                             logTrailerViewed(trailer)
                         }
@@ -633,7 +632,6 @@ struct ReelsScreen: View {
     }
 
     private func handleDismiss() {
-        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
         withAnimation(.easeOut(duration: 0.24)) {
             dismissDragOffset = 0
         }
@@ -660,11 +658,9 @@ struct ReelsScreen: View {
             totalCount: vm.allTrailers.count,
             onTogglePlay: { isPlaying.toggle() },
             onToggleMute: {
-                UIImpactFeedbackGenerator(style: .soft).impactOccurred()
                 isMuted.toggle()
             },
             onLike: {
-                UIImpactFeedbackGenerator(style: .light).impactOccurred()
                 vm.toggleLike(trailer)
             },
             onComments: {
@@ -676,7 +672,6 @@ struct ReelsScreen: View {
                 )
             },
             onSave: {
-                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                 Task { await vm.toggleSave(trailer) }
             },
             onShare: { showShare = true },
@@ -699,7 +694,6 @@ struct ReelsScreen: View {
             },
             onShowDetail: {
                 guard !trailer.isSponsored, trailer.tmdbId > 0 else { return }
-                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                 detailSubject = .show(posterShow(from: trailer))
                 WatchIntentLogger.shared.log(
                     eventType: .episodeDetailViewed,
@@ -1893,7 +1887,9 @@ struct TrailerShareSheet: View {
             // Share grid
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 4), spacing: 16) {
                 ShareTile(icon: "link", label: didCopy ? "Copied" : "Copy") {
+                    #if !os(tvOS)
                     UIPasteboard.general.string = "https://guidestream.tv/trailer/\(trailer.trailerKey)"
+                    #endif
                     withAnimation { didCopy = true }
                 }
                 ShareTile(icon: "message.fill", label: "Messages") { open("sms:") }
