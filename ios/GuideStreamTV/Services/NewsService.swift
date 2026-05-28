@@ -27,6 +27,11 @@ nonisolated struct NewsStream: Identifiable, Hashable, Sendable {
     let isTV: Bool
     let publishedAt: Date?
     let providerName: String?
+    /// Canonical article URL on the publisher's site. Used to open the
+    /// original story in Safari when the user taps a news item — news
+    /// articles aren't streaming titles, so we can't resolve them via
+    /// Watchmode/TMDB.
+    let articleUrl: String?
 
     /// When `providerName` is nil (common for broadcast networks like Fox,
     /// CBS, ABC, NBC that don't have SVOD providers), fall back to the
@@ -136,7 +141,8 @@ final class NewsService {
                 overview: article.description,
                 isTV: false,
                 publishedAt: date,
-                providerName: Self.providerForOutlet(article.source.name)
+                providerName: Self.providerForOutlet(article.source.name),
+                articleUrl: article.url
             )
         }
 

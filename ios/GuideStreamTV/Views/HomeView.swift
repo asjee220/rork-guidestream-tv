@@ -115,7 +115,6 @@ struct HomeView: View {
     @State private var sportsGames: [SportsGame] = []
     @State private var newsStreams: [NewsStream] = []
     @State private var selectedGame: SportsGame?
-    @State private var selectedNews: NewsStream?
     /// Cached top US streaming provider per TMDB id. Items without an entry have no real
     /// streaming service and are filtered out of the UI.
     @State private var providerByTmdb: [Int: Platform] = [:]
@@ -168,7 +167,7 @@ struct HomeView: View {
                                             "outlet": news.outlet
                                         ]
                                     )
-                                    selectedNews = news
+                                    openNewsArticle(news)
                                 }
                             )
                         }
@@ -426,7 +425,7 @@ struct HomeView: View {
                                         platformId: (news.providerName ?? "tmdb").lowercased(),
                                         metadata: ["section": "news", "outlet": news.outlet]
                                     )
-                                    selectedNews = news
+                                    openNewsArticle(news)
                                 }
                             )
                             .padding(.horizontal, 20)
@@ -488,7 +487,7 @@ struct HomeView: View {
                 case .news:
                     NewsListView(
                         items: newsStreams,
-                        onSelect: { news in selectedNews = news }
+                        onSelect: { news in openNewsArticle(news) }
                     )
                 case .widgetSetup:
                     WidgetSetupView()
@@ -499,9 +498,6 @@ struct HomeView: View {
             }
             .sheet(item: $selectedGame) { game in
                 SportsWatchSheet(game: game)
-            }
-            .sheet(item: $selectedNews) { news in
-                EpisodeDetailSheet(subject: .show(newsAsPoster(news)))
             }
             .sheet(isPresented: $showServicesSheet) {
                 ServicesBottomSheet()
@@ -669,25 +665,14 @@ struct HomeView: View {
         return items
     }
 
-    /// Wraps a `NewsStream` in the existing `PosterShow` shape so the
-    /// EpisodeDetailSheet can present it identically to a regular show.
-    /// Keeping the news flow on the same sheet means deeplinking, watchlist
-    /// toggling, and cast-to-TV all work for news without a parallel UI.
-    private func newsAsPoster(_ news: NewsStream) -> PosterShow {
-        let dateLabel: String = {
-            guard let d = news.publishedAt else { return "News" }
-            let f = RelativeDateTimeFormatter()
-            f.unitsStyle = .short
-            return f.localizedString(for: d, relativeTo: Date())
-        }()
-        return PosterShow(
-            title: news.title,
-            meta: "\(news.outlet) · \(dateLabel)",
-            posterColors: [Color.newsGreen, Color(red: 0.04, green: 0.20, blue: 0.18)],
-            symbol: "dot.radiowaves.left.and.right",
-            posterUrl: news.posterUrl,
-            tmdbId: news.id
-        )
+    /// Opens a news article in Safari. News items come from NewsAPI —
+    /// they're publisher articles, not TMDB titles, so there's no
+    /// streaming service to resolve. The article URL (or the outlet's
+    /// live-stream fallback) takes the user to the original story.
+    private func openNewsArticle(_ news: NewsStream) {
+        let target = news.articleUrl ?? news.fallbackWebURL
+        guard let urlString = target, let url = URL(string: urlString) else { return }
+        UIApplication.shared.open(url)
     }
 
     private func mediaAsPoster(_ r: TMDBResult, platform: Platform?) -> PosterShow {
