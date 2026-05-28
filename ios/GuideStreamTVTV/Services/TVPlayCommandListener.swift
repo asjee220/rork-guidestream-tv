@@ -13,6 +13,7 @@
 //
 
 import Foundation
+import UIKit
 import Supabase
 
 /// Decodable payload arriving over the Supabase realtime broadcast channel.
