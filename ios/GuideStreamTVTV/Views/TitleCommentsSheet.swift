@@ -46,11 +46,11 @@ struct TitleCommentsSheet: View {
     }
 
     private var isLoading: Bool {
-        social.loadingComments.contains(titleId)
+        social.isLoadingComments(titleId)
     }
 
     private var isPosting: Bool {
-        social.postingComment.contains(titleId)
+        social.isPostingComment(titleId)
     }
 
     private var canSend: Bool {

@@ -44,8 +44,9 @@ struct NewEpisodeRow: Identifiable, Hashable {
 
 /// Slim mirror of the iOS `TitleComment` row. Powered by Supabase on iOS
 /// but the tvOS target intentionally short-circuits the social tier so all
-/// methods return empty data.
-struct TitleComment: Identifiable, Hashable, Sendable {
+/// methods return empty data. Marked `nonisolated` so it is usable across
+/// every actor context (mirrors the iOS `TitleComment` declaration).
+nonisolated struct TitleComment: Identifiable, Hashable, Sendable {
     let id: String
     let titleId: String
     let userId: String?
@@ -78,6 +79,19 @@ final class SocialViewModel {
     func isLiked(_ titleId: String) -> Bool { likedByMe.contains(titleId) }
     func commentTotal(_ titleId: String) -> Int { commentCounts[titleId] ?? 0 }
     func thread(_ titleId: String) -> [TitleComment] { commentThreads[titleId] ?? [] }
+
+    /// True while the comment thread for `titleId` is being fetched. Method
+    /// wrapper around `loadingComments` so views can read the state without
+    /// directly touching the `@Observable`-synthesized stored property
+    /// (which trips up Swift's key-path resolution in some build contexts).
+    func isLoadingComments(_ titleId: String) -> Bool {
+        loadingComments.contains(titleId)
+    }
+
+    /// True while a comment post for `titleId` is in flight.
+    func isPostingComment(_ titleId: String) -> Bool {
+        postingComment.contains(titleId)
+    }
 
     func refreshCounts(titleId: String) async {}
     func toggleLike(titleId: String) async {}
