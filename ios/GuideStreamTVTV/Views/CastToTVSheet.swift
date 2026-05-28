@@ -233,7 +233,6 @@ struct CastToTVSheet: View {
 
     private var openSettingsButton: some View {
         Button {
-            UIImpactFeedbackGenerator(style: .light).impactOccurred()
             // Try the private Privacy > Local Network deep link first so the
             // user lands on the exact toggle. Fall back to the app's own
             // Settings page (the only officially-supported path) if iOS
@@ -264,7 +263,6 @@ struct CastToTVSheet: View {
     /// rejects the prefs URL.
     private var openWiFiSettingsButton: some View {
         Button {
-            UIImpactFeedbackGenerator(style: .light).impactOccurred()
             let wifiURL = URL(string: "App-Prefs:WIFI")
             let appSettingsURL = URL(string: UIApplication.openSettingsURLString)
             if let wifiURL, UIApplication.shared.canOpenURL(wifiURL) {
@@ -324,7 +322,6 @@ struct CastToTVSheet: View {
 
     private var rescanButton: some View {
         Button {
-            UIImpactFeedbackGenerator(style: .light).impactOccurred()
             startScan()
         } label: {
             HStack(spacing: 6) {
@@ -345,7 +342,6 @@ struct CastToTVSheet: View {
     private var manualEntrySection: some View {
         VStack(spacing: 10) {
             Button {
-                UIImpactFeedbackGenerator(style: .light).impactOccurred()
                 withAnimation(.spring(response: 0.32, dampingFraction: 0.85)) {
                     isManualEntryExpanded.toggle()
                 }
@@ -456,20 +452,17 @@ struct CastToTVSheet: View {
         let host = manualHost.trimmingCharacters(in: .whitespacesAndNewlines)
         manualFieldFocused = false
         isProbingManual = true
-        UIImpactFeedbackGenerator(style: .light).impactOccurred()
 
         Task { @MainActor in
             let ok = await discovery.probeManualHost(host)
             isProbingManual = false
             if ok {
-                UINotificationFeedbackGenerator().notificationOccurred(.success)
                 showToast(ToastState(message: "Added \(host)", icon: "checkmark.circle.fill"))
                 withAnimation(.spring(response: 0.32, dampingFraction: 0.85)) {
                     isManualEntryExpanded = false
                 }
                 manualHost = ""
             } else {
-                UINotificationFeedbackGenerator().notificationOccurred(.error)
                 showToast(ToastState(message: "No TV responded at \(host)", icon: "exclamationmark.triangle.fill"))
             }
         }
@@ -596,7 +589,6 @@ struct CastToTVSheet: View {
     /// Until that ships, the banner tells the user to grab their Apple TV
     /// remote and open the app on the TV itself.
     private func handleSelect(_ device: DiscoveredTVDevice) {
-        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
         sendingDeviceId = device.id
 
         WatchIntentLogger.shared.log(
