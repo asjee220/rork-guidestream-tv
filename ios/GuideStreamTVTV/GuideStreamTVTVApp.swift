@@ -8,6 +8,7 @@
 //
 
 import SwiftUI
+import Supabase
 
 @main
 struct GuideStreamTVTVApp: App {
@@ -15,6 +16,17 @@ struct GuideStreamTVTVApp: App {
         WindowGroup {
             ContentView()
                 .preferredColorScheme(.dark)
+                .onOpenURL { url in
+                    guard url.scheme == "guidestream" else { return }
+                    Task {
+                        do {
+                            try await SupabaseManager.shared.client.auth.session(from: url)
+                            print("[Auth] tvOS onOpenURL handled: \(url)")
+                        } catch {
+                            print("[Auth] tvOS onOpenURL failed: \(error.localizedDescription)")
+                        }
+                    }
+                }
         }
     }
 }
