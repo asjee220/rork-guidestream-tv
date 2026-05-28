@@ -37,6 +37,34 @@ final class TVAuthViewModel {
     var isAuthenticated: Bool { currentUser != nil }
 
     private var currentNonce: String?
+    private var appleSignInDelegate: AppleSignInControllerDelegate?
+
+    /// Present the native Sign in with Apple authorization controller directly.
+    /// Called from a standard SwiftUI Button so tvOS focus works properly —
+    /// SignInWithAppleButton (UIViewRepresentable) doesn't handle tvOS focus
+    /// reliably because its underlying UIControl manages its own focus state.
+    func performAppleSignIn(onComplete: @escaping () -> Void) {
+        let nonce = Self.randomNonceString()
+        currentNonce = nonce
+
+        let request = ASAuthorizationAppleIDProvider().createRequest()
+        request.requestedScopes = [.fullName, .email]
+        request.nonce = Self.sha256(nonce)
+
+        let delegate = AppleSignInControllerDelegate { [weak self] result in
+            Task { @MainActor [weak self] in
+                await self?.handleAppleCompletion(result)
+                self?.appleSignInDelegate = nil
+                if self?.isAuthenticated == true { onComplete() }
+            }
+        }
+        self.appleSignInDelegate = delegate
+
+        let controller = ASAuthorizationController(authorizationRequests: [request])
+        controller.delegate = delegate
+        controller.presentationContextProvider = delegate
+        controller.performRequests()
+    }
 
     /// Loads any persisted Supabase session from Keychain. Called on app
     /// launch so a returning user lands directly on Home.
@@ -198,5 +226,38 @@ final class TVAuthViewModel {
         let data = Data(input.utf8)
         let hash = SHA256.hash(data: data)
         return hash.map { String(format: "%02x", $0) }.joined()
+    }
+}
+
+// MARK: - ASAuthorizationController Delegate
+
+/// Retained by `TVAuthViewModel` for the duration of the authorization
+/// flow so the ASAuthorizationController callbacks fire correctly.
+private final class AppleSignInControllerDelegate: NSObject,
+    ASAuthorizationControllerDelegate,
+    ASAuthorizationControllerPresentationContextProviding {
+
+    let onCompletion: (Result<ASAuthorization, Error>) -> Void
+
+    init(onCompletion: @escaping (Result<ASAuthorization, Error>) -> Void) {
+        self.onCompletion = onCompletion
+    }
+
+    func authorizationController(
+        controller: ASAuthorizationController,
+        didCompleteWithAuthorization authorization: ASAuthorization
+    ) {
+        onCompletion(.success(authorization))
+    }
+
+    func authorizationController(
+        controller: ASAuthorizationController,
+        didCompleteWithError error: Error
+    ) {
+        onCompletion(.failure(error))
+    }
+
+    func presentationAnchor(for controller: ASAuthorizationController) -> ASPresentationAnchor {
+        UIApplication.shared.windows.first ?? UIWindow()
     }
 }

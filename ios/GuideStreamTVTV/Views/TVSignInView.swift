@@ -54,21 +54,25 @@ struct TVSignInView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
 
                 VStack(spacing: 24) {
-                    SignInWithAppleButton(
-                        .signIn,
-                        onRequest: { request in
-                            auth.prepareAppleRequest(request)
-                        },
-                        onCompletion: { result in
-                            Task {
-                                await auth.handleAppleCompletion(result)
-                                if auth.isAuthenticated { onContinue() }
-                            }
+                    // Native SwiftUI Button instead of SignInWithAppleButton.
+                    // SignInWithAppleButton wraps a UIKit ASAuthorizationAppleIDButton
+                    // which doesn't work with tvOS focus — the UIViewRepresentable
+                    // handles its own focus internally. A regular Button + ASAuthorizationController
+                    // gives us full control over the tvOS focus ring.
+                    Button {
+                        auth.performAppleSignIn(onComplete: onContinue)
+                    } label: {
+                        HStack(spacing: 14) {
+                            Image(systemName: "apple.logo")
+                                .font(.system(size: 28, weight: .semibold))
+                            Text("Sign in with Apple")
+                                .font(.system(size: 24, weight: .semibold))
                         }
-                    )
-                    .signInWithAppleButtonStyle(.white)
-                    .frame(width: 480, height: 92)
-                    .clipShape(.rect(cornerRadius: 20))
+                        .foregroundStyle(.black)
+                        .frame(width: 480, height: 92)
+                        .background(Color.white, in: .rect(cornerRadius: 20))
+                    }
+                    .buttonStyle(.card)
                     .focused($isSignInFocused)
                     .defaultFocus($isSignInFocused, true)
 

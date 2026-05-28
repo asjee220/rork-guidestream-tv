@@ -97,6 +97,10 @@ final class AuthViewModel {
         await TVAuthViewModel.shared.handleAppleCompletion(result)
     }
 
+    func performAppleSignIn(onComplete: @escaping () -> Void) {
+        TVAuthViewModel.shared.performAppleSignIn(onComplete: onComplete)
+    }
+
     // MARK: - Onboarding persistence
 
     func setSelectedServices(_ services: Set<String>) {

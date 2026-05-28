@@ -156,17 +156,22 @@ struct WelcomeOnboardingView: View {
 
                 // Apple / Google row
                 HStack(spacing: 10) {
-                    SignInWithAppleButton(.signIn) { request in
-                        auth.prepareAppleRequest(request)
-                    } onCompletion: { result in
-                        Task {
-                            await auth.handleAppleCompletion(result)
-                            if auth.isSignedIn { onContinue() }
+                    Button {
+                        auth.performAppleSignIn(onComplete: onContinue)
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "apple.logo")
+                                .font(.system(size: 18, weight: .semibold))
+                            Text("Apple")
+                                .font(.custom("SF Pro Text", size: 15).weight(.semibold))
+                                .foregroundStyle(.black)
                         }
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 48)
+                        .background(Color.white)
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                     }
-                    .signInWithAppleButtonStyle(.white)
-                    .frame(height: 48)
-                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .buttonStyle(.plain)
                     .disabled(auth.isAuthenticating)
 
                     Button {
