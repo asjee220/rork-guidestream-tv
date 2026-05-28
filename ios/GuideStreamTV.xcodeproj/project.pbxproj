@@ -57,6 +57,11 @@
 			path = GuideStreamTVTV;
 			sourceTree = "<group>";
 		};
+		XXAA11BB22CC33DD44EE55XX /* Shared */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Shared;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -102,6 +107,7 @@
 				105FC5962E9EAD3200EA8BCF /* GuideStreamTVUITests */,
 				105FC57B2E9EAD3100EA8BCF /* Products */,
 				XX0A484E14E2DE04089045XX /* GuideStreamTVTV */,
+				XXAA11BB22CC33DD44EE55XX /* Shared */,
 			);
 			sourceTree = "<group>";
 		};
@@ -133,6 +139,7 @@
 			);
 			fileSystemSynchronizedGroups = (
 				105FC57C2E9EAD3100EA8BCF /* GuideStreamTV */,
+				XXAA11BB22CC33DD44EE55XX /* Shared */,
 			);
 			name = GuideStreamTV;
 			packageProductDependencies = (
@@ -203,6 +210,7 @@
 			);
 			fileSystemSynchronizedGroups = (
 				XX0A484E14E2DE04089045XX /* GuideStreamTVTV */,
+				XXAA11BB22CC33DD44EE55XX /* Shared */,
 			);
 			name = GuideStreamTVTV;
 			packageProductDependencies = (
