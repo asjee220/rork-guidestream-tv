@@ -39,7 +39,7 @@ struct ServicesBottomSheet: View {
                             ServiceTile(
                                 service: service,
                                 isSelected: selected.contains(service.id),
-                                onToggle: { toggle(service.id) }
+                                onTap: { toggle(service.id) }
                             )
                         }
                     }
@@ -104,48 +104,6 @@ struct ServicesBottomSheet: View {
 
     private func dismissAndCancel() {
         dismiss()
-    }
-}
-
-private struct ServiceTile: View {
-    let service: StreamingService
-    let isSelected: Bool
-    let onToggle: () -> Void
-
-    var body: some View {
-        Button(action: onToggle) {
-            VStack(spacing: 10) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .fill(service.color)
-                        .frame(height: 88)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                                .stroke(isSelected ? Color.orange : Color.white.opacity(0.10), lineWidth: isSelected ? 3 : 1)
-                        )
-
-                    Text(service.name)
-                        .scaledFont(size: 18, weight: .bold)
-                        .foregroundStyle(.white)
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal, 8)
-
-                    if isSelected {
-                        VStack {
-                            HStack {
-                                Spacer()
-                                Image(systemName: "checkmark.circle.fill")
-                                    .scaledFont(size: 22, weight: .bold)
-                                    .foregroundStyle(Color.orange)
-                                    .padding(8)
-                            }
-                            Spacer()
-                        }
-                    }
-                }
-            }
-        }
-        .buttonStyle(.plain)
     }
 }
 

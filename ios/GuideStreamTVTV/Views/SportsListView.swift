@@ -55,7 +55,9 @@ struct SportsListView: View {
             }
         }
         .navigationTitle(navigationTitle)
+        #if !os(tvOS)
         .toolbarBackground(Color(hex: "04090F"), for: .navigationBar)
+        #endif
         #if os(tvOS)
         .fullScreenCover(item: $selectedGame) { game in
             SportsWatchSheet(game: game)

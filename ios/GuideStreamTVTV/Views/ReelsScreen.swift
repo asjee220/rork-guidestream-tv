@@ -18,6 +18,8 @@ import AVFoundation
 import AVKit
 import Supabase
 
+#if !os(tvOS)
+
 private extension Array {
     subscript(safe index: Int) -> Element? {
         indices.contains(index) ? self[index] : nil
@@ -1962,3 +1964,5 @@ extension UIApplication {
         return root
     }
 }
+
+#endif
