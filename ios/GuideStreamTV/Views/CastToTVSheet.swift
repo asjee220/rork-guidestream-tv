@@ -724,8 +724,9 @@ struct CastToTVSheet: View {
     /// Resolves the title's content URL via Watchmode and broadcasts a
     /// play command to the tvOS companion app over the Supabase realtime
     /// channel `play-commands:{userId}`. The Apple TV picks up the
-    /// broadcast and deep-links into the streaming app with
-    /// `TVOSDeepLinker.open`.
+    /// broadcast, compares `target_name` to `UIDevice.current.name`
+    /// (case-insensitive), and deep-links into the streaming app with
+    /// `TVOSDeepLinker.open` when there's a match.
     private func publishPlayCommand(to device: DiscoveredTVDevice) async {
         guard let tmdbId else { return }
 
@@ -740,20 +741,41 @@ struct CastToTVSheet: View {
             platform: platform,
             title: showTitle,
             contentURL: resolvedURL?.absoluteString ?? "",
-            deviceId: device.id
+            target_name: device.name
         )
 
         do {
             let ch = SupabaseManager.shared.client.realtimeV2.channel("play-commands:\(userId)")
             try await ch.broadcast(event: "play-command", message: payload)
             #if DEBUG
-            print("[CastToTV] broadcast ok → play-commands:\(userId) device=\(device.id) platform=\(platform)")
+            print("[CastToTV] broadcast ok → play-commands:\(userId) target_name=\(device.name) platform=\(platform)")
             #endif
+            // Log the outbound command to debug_logs.
+            await logPlayCommandSent(device: device, userId: userId, resolvedURL: resolvedURL)
         } catch {
             #if DEBUG
             print("[CastToTV] broadcast failed: \(error.localizedDescription)")
             #endif
         }
+    }
+
+    /// Inserts a row into `debug_logs` on every outbound play command so
+    /// both sides of the Play on TV flow are traceable.
+    private func logPlayCommandSent(device: DiscoveredTVDevice, userId: String, resolvedURL: URL?) async {
+        let payloadDict: [String: AnyJSON] = [
+            "event": .string("play_command_sent"),
+            "user_id": .string(userId),
+            "target_name": .string(device.name),
+            "device_id": .string(device.id),
+            "device_kind": .string(device.kind.rawValue),
+            "platform": .string(platform),
+            "title": .string(showTitle),
+            "content_url": .string(resolvedURL?.absoluteString ?? "")
+        ]
+        try? await SupabaseManager.shared.client
+            .from("debug_logs")
+            .insert(payloadDict)
+            .execute()
     }
 
     /// Final step in the cast flow — runs after the "Playing on" banner has
@@ -937,12 +959,14 @@ struct CastToTVSheet: View {
 // MARK: - Play command payload (Supabase realtime)
 
 /// Encodable payload broadcast to the `play-commands:{userId}` realtime
-/// channel so the tvOS companion can pick it up and deep-link.
+/// channel so the tvOS companion can pick it up and deep-link. The tvOS
+/// app matches `target_name` against `UIDevice.current.name` so the same
+/// Bonjour-discovered name must appear on both sides.
 nonisolated struct PlayCommandOutgoing: Codable, Sendable {
     let platform: String
     let title: String
     let contentURL: String
-    let deviceId: String
+    let target_name: String
 }
 
 // MARK: - Limited Mode help

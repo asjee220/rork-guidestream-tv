@@ -20,7 +20,7 @@ nonisolated struct PlayCommandPayload: Sendable {
     let platform: String
     let title: String
     let contentURL: String?
-    let deviceId: String
+    let targetName: String
 }
 
 /// Singleton that subscribes to the `play-commands:{userId}` realtime
@@ -108,14 +108,14 @@ final class TVPlayCommandListener {
     private func decodePayload(from json: JSONObject) -> PlayCommandPayload? {
         guard case .string(let platform) = json["platform"],
               case .string(let title) = json["title"],
-              case .string(let deviceId) = json["deviceId"] else {
+              case .string(let targetName) = json["target_name"] else {
             return nil
         }
         let contentURL: String? = {
             guard case .string(let s) = json["contentURL"], !s.isEmpty else { return nil }
             return s
         }()
-        return PlayCommandPayload(platform: platform, title: title, contentURL: contentURL, deviceId: deviceId)
+        return PlayCommandPayload(platform: platform, title: title, contentURL: contentURL, targetName: targetName)
     }
 
     private func handle(event: JSONObject, myDeviceId: String) async {
@@ -126,17 +126,29 @@ final class TVPlayCommandListener {
             return
         }
 
-        // Ignore commands meant for other devices.
-        guard payload.deviceId == myDeviceId else {
+        let myName = UIDevice.current.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let targetName = payload.targetName.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // Case-insensitive name comparison so "Living Room" == "living room".
+        guard myName.caseInsensitiveCompare(targetName) == .orderedSame else {
             #if DEBUG
-            print("[TVPlayCommand] ignoring command for \(payload.deviceId) (we are \(myDeviceId))")
+            print("[TVPlayCommand] ignoring command for '\(targetName)' (we are '\(myName)')")
             #endif
+            // Log the filtered event to debug_logs so mismatches are visible.
+            Task { @MainActor in
+                await logFilteredEvent(targetName: targetName, myName: myName, payload: payload)
+            }
             return
         }
 
         #if DEBUG
         print("[TVPlayCommand] received: platform=\(payload.platform) title=\(payload.title) contentURL=\(payload.contentURL ?? "nil")")
         #endif
+
+        // Log the successful match.
+        Task { @MainActor in
+            await logReceivedEvent(payload: payload, matched: true)
+        }
 
         let contentURL: URL? = {
             guard let s = payload.contentURL,
@@ -150,5 +162,42 @@ final class TVPlayCommandListener {
             title: payload.title,
             contentURL: contentURL
         )
+    }
+
+    // MARK: - Debug logging
+
+    private func logReceivedEvent(payload: PlayCommandPayload, matched: Bool) async {
+        guard let userId = try? await TVSupabaseManager.shared.client.auth.session.user.id.uuidString else { return }
+        let deviceName = UIDevice.current.name
+        let payloadDict: [String: AnyJSON] = [
+            "event": .string("play_command_received"),
+            "user_id": .string(userId),
+            "device_name": .string(deviceName),
+            "target_name": .string(payload.targetName),
+            "matched": .bool(matched),
+            "platform": .string(payload.platform),
+            "title": .string(payload.title)
+        ]
+        try? await TVSupabaseManager.shared.client
+            .from("debug_logs")
+            .insert(payloadDict)
+            .execute()
+    }
+
+    private func logFilteredEvent(targetName: String, myName: String, payload: PlayCommandPayload) async {
+        guard let userId = try? await TVSupabaseManager.shared.client.auth.session.user.id.uuidString else { return }
+        let payloadDict: [String: AnyJSON] = [
+            "event": .string("play_command_filtered"),
+            "user_id": .string(userId),
+            "device_name": .string(myName),
+            "target_name": .string(targetName),
+            "matched": .bool(false),
+            "platform": .string(payload.platform),
+            "title": .string(payload.title)
+        ]
+        try? await TVSupabaseManager.shared.client
+            .from("debug_logs")
+            .insert(payloadDict)
+            .execute()
     }
 }
