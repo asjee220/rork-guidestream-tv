@@ -68,6 +68,8 @@ extension View {
 
 extension Color {
     static let navy = Color(red: 0x04 / 255, green: 0x09 / 255, blue: 0x0F / 255)
+    static let textSecondary = Color.white.opacity(0.65)
+    static let textTertiary = Color.white.opacity(0.40)
 }
 
 // MARK: - TV Theme

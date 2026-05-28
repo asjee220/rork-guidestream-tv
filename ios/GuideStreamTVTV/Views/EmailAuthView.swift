@@ -336,7 +336,6 @@ struct EmailAuthView: View {
             HStack {
                 Spacer()
                 Button {
-                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
                     showForgotPassword = true
                 } label: {
                     Text("Forgot password?")
@@ -408,7 +407,6 @@ struct EmailAuthView: View {
     // MARK: - Actions
 
     private func submit() {
-        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
         focusedField = nil
         let trimmedEmail = email.trimmingCharacters(in: .whitespaces)
         let trimmedFirst = firstName.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -652,7 +650,6 @@ struct ForgotPasswordSheet: View {
 
     private func send() {
         guard canSend else { return }
-        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
         emailFocused = false
         let trimmed = email.trimmingCharacters(in: .whitespaces)
         Task {
