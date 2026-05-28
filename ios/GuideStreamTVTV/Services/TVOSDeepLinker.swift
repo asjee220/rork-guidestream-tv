@@ -33,20 +33,11 @@ import UIKit
 
 enum TVOSDeepLinker {
 
-    /// How reliable tvOS deep linking is for a given platform. Drives the
-    /// hardware test matrix and tells the UI whether to promise "playing now"
-    /// vs. "opening on your TV".
-    enum LinkConfidence {
-        case verified   // PLAY link confirmed to start playback on tvOS
-        case partial    // app opens; title/playback inconsistent across versions
-        case unverified // no known tvOS PLAY scheme — expect HOME or SEARCH only
-    }
-
     struct TVTarget {
         let playURL: URL?        // tier 1: direct to the title
         let appHomeURL: URL?     // tier 2: app landing screen
         let searchURL: URL?      // tier 3: search inside the app / on the web
-        let confidence: LinkConfidence
+        let confidence: PlaybackConfidence
     }
 
     /// Opens the best available destination for the title on this Apple TV.
@@ -101,7 +92,7 @@ enum TVOSDeepLinker {
                 playURL: play ?? nil,
                 appHomeURL: URL(string: "nflx://"),
                 searchURL: URL(string: "nflx://www.netflix.com/search?q=\(q)"),
-                confidence: play != nil ? .verified : .partial
+                confidence: PlaybackSupport.confidence(for: platform)
             )
         }
 
@@ -112,7 +103,7 @@ enum TVOSDeepLinker {
                 playURL: play ?? nil,
                 appHomeURL: URL(string: "hulu://"),
                 searchURL: URL(string: "hulu://search?q=\(q)"),
-                confidence: .partial
+                confidence: PlaybackSupport.confidence(for: platform)
             )
         }
 
@@ -122,7 +113,7 @@ enum TVOSDeepLinker {
                 playURL: nil,
                 appHomeURL: URL(string: "disneyplus://"),
                 searchURL: nil,
-                confidence: .unverified
+                confidence: PlaybackSupport.confidence(for: platform)
             )
         }
 
@@ -132,7 +123,7 @@ enum TVOSDeepLinker {
                 playURL: nil,
                 appHomeURL: URL(string: "hbomax://"),
                 searchURL: nil,
-                confidence: .unverified
+                confidence: PlaybackSupport.confidence(for: platform)
             )
         }
 
@@ -142,7 +133,7 @@ enum TVOSDeepLinker {
                 playURL: nil,
                 appHomeURL: URL(string: "aiv://aiv/resume"),
                 searchURL: nil,
-                confidence: .unverified
+                confidence: PlaybackSupport.confidence(for: platform)
             )
         }
 
@@ -153,7 +144,7 @@ enum TVOSDeepLinker {
                 playURL: nil,
                 appHomeURL: URL(string: "videos://"),
                 searchURL: nil,
-                confidence: .unverified
+                confidence: PlaybackSupport.confidence(for: platform)
             )
         }
 
@@ -163,7 +154,7 @@ enum TVOSDeepLinker {
                 playURL: nil,
                 appHomeURL: URL(string: "paramountplus://"),
                 searchURL: nil,
-                confidence: .unverified
+                confidence: PlaybackSupport.confidence(for: platform)
             )
         }
 
@@ -173,7 +164,7 @@ enum TVOSDeepLinker {
                 playURL: nil,
                 appHomeURL: URL(string: "peacock://"),
                 searchURL: nil,
-                confidence: .unverified
+                confidence: PlaybackSupport.confidence(for: platform)
             )
         }
 
@@ -184,7 +175,7 @@ enum TVOSDeepLinker {
                 playURL: play ?? nil,
                 appHomeURL: URL(string: "youtube://"),
                 searchURL: URL(string: "youtube://results?search_query=\(q)"),
-                confidence: .partial
+                confidence: PlaybackSupport.confidence(for: platform)
             )
         }
 
@@ -194,12 +185,12 @@ enum TVOSDeepLinker {
                 playURL: nil,
                 appHomeURL: URL(string: "crunchyroll://"),
                 searchURL: nil,
-                confidence: .unverified
+                confidence: PlaybackSupport.confidence(for: platform)
             )
         }
 
         // Unknown platform — nothing safe to open on tvOS.
-        return TVTarget(playURL: nil, appHomeURL: nil, searchURL: nil, confidence: .unverified)
+        return TVTarget(playURL: nil, appHomeURL: nil, searchURL: nil, confidence: PlaybackSupport.confidence(for: platform))
     }
 
     // MARK: - Helpers
