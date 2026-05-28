@@ -38,6 +38,16 @@ enum StreamingDeepLinker {
 
     // MARK: - Public API
 
+    /// Resolves the best Watchmode content URL for a given TMDB id, format, and
+    /// platform. Returns `nil` when Watchmode has no matching source. Callers
+    /// that need the resolved HTTPS URL (e.g. to publish to a Supabase realtime
+    /// channel for tvOS deep linking) should use this instead of `open`. The
+    /// returned URL is the universal HTTPS link that the tvOS app can convert
+    /// into a platform-specific deep-link scheme.
+    static func resolveContentURL(tmdbId: Int, isTV: Bool, platform: String) async -> URL? {
+        await resolveDirectURL(tmdbId: tmdbId, isTV: isTV, platform: platform)
+    }
+
     /// Opens a pre-resolved title URL (typically Watchmode's `web_url`) without
     /// re-querying Watchmode. Preferred entry point from sheets that already
     /// resolved a `WatchmodeSource` — avoids ~500–1500ms of latency and the

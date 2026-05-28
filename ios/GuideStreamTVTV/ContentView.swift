@@ -31,6 +31,13 @@ struct ContentView: View {
         .task {
             await auth.restoreSession()
             hasRestored = true
+            TVPlayCommandListener.shared.start()
+        }
+        .onChange(of: auth.isSignedIn) { _, _ in
+            // Restart the listener with the updated Supabase user id
+            // when the user signs in or out.
+            TVPlayCommandListener.shared.stop()
+            TVPlayCommandListener.shared.start()
         }
     }
 

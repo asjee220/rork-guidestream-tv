@@ -14,6 +14,7 @@
 
 import SwiftUI
 import UIKit
+import Supabase
 
 struct CastToTVSheet: View {
     @Binding var isPresented: Bool
@@ -699,15 +700,50 @@ struct CastToTVSheet: View {
                 mediaType: isTV ? "series" : "movie"
             )
         case .appleTV:
-            // Apple TV doesn't expose a public deep-link endpoint. The only
-            // protocol that can remote-launch a tvOS app is Apple's Companion
-            // Link / MediaRemote, which requires a one-time PIN pairing
-            // handshake (SRP-6a → Curve25519 → ChaCha20-Poly1305 channel).
-            // That's not built yet, so we report success here and let the
-            // banner instruct the user. Crucially we DO NOT fall back to
-            // opening the streaming app on iPhone — the user explicitly
-            // flagged that as incorrect behavior.
+            // Publish a play command to the tvOS companion app via Supabase
+            // realtime. The Apple TV receives it over the play-commands
+            // channel and deep-links into the streaming app directly.
+            Task {
+                await publishPlayCommand(to: device)
+            }
             return .ok
+        }
+    }
+
+    // MARK: - Supabase play command (Apple TV)
+
+    /// Resolves the title's content URL via Watchmode and broadcasts a
+    /// play command to the tvOS companion app over the Supabase realtime
+    /// channel `play-commands:{userId}`. The Apple TV picks up the
+    /// broadcast and deep-links into the streaming app with
+    /// `TVOSDeepLinker.open`.
+    private func publishPlayCommand(to device: DiscoveredTVDevice) async {
+        guard let tmdbId else { return }
+
+        let userId = SupabaseManager.shared.client.auth.currentUser?.id.uuidString ?? "guest"
+        let resolvedURL = await StreamingDeepLinker.resolveContentURL(
+            tmdbId: tmdbId,
+            isTV: isTV,
+            platform: platform
+        )
+
+        let payload = PlayCommandOutgoing(
+            platform: platform,
+            title: showTitle,
+            contentURL: resolvedURL?.absoluteString ?? "",
+            deviceId: device.id
+        )
+
+        do {
+            let ch = SupabaseManager.shared.client.realtimeV2.channel("play-commands:\(userId)")
+            try await ch.broadcast(event: "play-command", message: payload)
+            #if DEBUG
+            print("[CastToTV] broadcast ok → play-commands:\(userId) device=\(device.id) platform=\(platform)")
+            #endif
+        } catch {
+            #if DEBUG
+            print("[CastToTV] broadcast failed: \(error.localizedDescription)")
+            #endif
         }
     }
 
@@ -758,9 +794,7 @@ struct CastToTVSheet: View {
         case .roku:
             return "Opening Roku Remote…"
         case .appleTV:
-            // Apple TV remote-launch needs Companion Link pairing — not
-            // built yet. Until then, tell the user exactly what to do.
-            return "Open \(platformShortName) on your Apple TV"
+            return "Opening \(platformShortName) on your TV"
         }
     }
 
@@ -889,6 +923,17 @@ struct CastToTVSheet: View {
         .shadow(color: .black.opacity(0.4), radius: 18, y: 6)
         .transition(.move(edge: .top).combined(with: .opacity))
     }
+}
+
+// MARK: - Play command payload (Supabase realtime)
+
+/// Encodable payload broadcast to the `play-commands:{userId}` realtime
+/// channel so the tvOS companion can pick it up and deep-link.
+nonisolated struct PlayCommandOutgoing: Codable, Sendable {
+    let platform: String
+    let title: String
+    let contentURL: String
+    let deviceId: String
 }
 
 // MARK: - Limited Mode help
