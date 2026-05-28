@@ -728,7 +728,7 @@ struct HomeView: View {
         if items.count < 8, let nextUp = sportsGames.first(where: { $0.state == .pre }) {
             items.append(.game(nextUp))
         }
-        return items
+        return items.shuffled()
     }
 
     /// Opens a news article in Safari. News items come from NewsAPI —
