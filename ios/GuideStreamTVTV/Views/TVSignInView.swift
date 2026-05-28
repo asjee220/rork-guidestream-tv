@@ -5,6 +5,11 @@
 //  Sign-in landing screen. Mirrors the phone app's auth gate:
 //   * "Sign in with Apple" — same Supabase auth, same identity
 //   * "Continue as Guest" — backs the watch list with a device id
+//      (now a smaller text link with a confirmation sheet)
+//
+//  After successful Apple sign-in the user is asked to name the room
+//  this Apple TV is in (defaults to "Living Room") so the Play on TV
+//  feature can target it from the phone app.
 //
 
 import SwiftUI
@@ -14,6 +19,14 @@ struct TVSignInView: View {
     @State private var auth = TVAuthViewModel.shared
     @FocusState private var isSignInFocused: Bool
     let onContinue: () -> Void
+
+    // MARK: - Guest confirmation
+    @State private var showGuestConfirm = false
+
+    // MARK: - Room prompt (after Apple sign-in)
+    @State private var showRoomPrompt = false
+    @State private var roomName = "Living Room"
+    @State private var roomIsSaving = false
 
     var body: some View {
         ZStack {
@@ -60,7 +73,11 @@ struct TVSignInView: View {
                     // handles its own focus internally. A regular Button + ASAuthorizationController
                     // gives us full control over the tvOS focus ring.
                     Button {
-                        auth.performAppleSignIn(onComplete: onContinue)
+                        auth.performAppleSignIn(onComplete: {
+                            // Auth succeeded — prompt for room name before
+                            // proceeding to the main app.
+                            showRoomPrompt = true
+                        })
                     } label: {
                         HStack(spacing: 14) {
                             Image(systemName: "apple.logo")
@@ -75,17 +92,18 @@ struct TVSignInView: View {
                     .buttonStyle(.card)
                     .focused($isSignInFocused)
                     .defaultFocus($isSignInFocused, true)
+                    .disabled(auth.isAuthenticating || roomIsSaving)
 
+                    // De-emphasised guest link — smaller, no card styling.
                     Button {
-                        auth.continueAsGuest()
-                        onContinue()
+                        showGuestConfirm = true
                     } label: {
                         Text("Continue as Guest")
-                            .font(.system(size: 22, weight: .semibold))
-                            .foregroundStyle(.white)
-                            .frame(width: 480, height: 80)
+                            .font(.system(size: 17, weight: .medium))
+                            .foregroundStyle(TVTheme.textTertiary)
                     }
-                    .buttonStyle(.card)
+                    .buttonStyle(.plain)
+                    .disabled(auth.isAuthenticating || roomIsSaving)
 
                     if let err = auth.lastError {
                         Text(err)
@@ -96,7 +114,7 @@ struct TVSignInView: View {
                             .padding(.top, 8)
                     }
 
-                    Text("Already signed in on your phone?\nUse the same Apple ID here to sync instantly.")
+                    Text("Tap Sign in with Apple to enable Play on TV and sync your watch list.")
                         .font(.system(size: 16))
                         .foregroundStyle(TVTheme.textTertiary)
                         .multilineTextAlignment(.center)
@@ -104,6 +122,39 @@ struct TVSignInView: View {
                 }
             }
             .padding(.horizontal, 100)
+        }
+        // MARK: - Guest confirmation sheet
+        .alert(
+            "Continue as Guest?",
+            isPresented: $showGuestConfirm
+        ) {
+            Button("Sign in with Apple", role: .none) {
+                // Dismiss and focus the Apple button — user explicitly
+                // decided not to go the guest route.
+            }
+            Button("Continue as Guest", role: .none) {
+                auth.continueAsGuest()
+                onContinue()
+            }
+        } message: {
+            Text("Play on TV and watch-list sync need sign-in. Continue as guest for browsing only?")
+        }
+        // MARK: - Room name prompt (after Apple sign-in)
+        .alert("What room is this Apple TV in?", isPresented: $showRoomPrompt) {
+            TextField("Living Room", text: $roomName)
+            Button("Continue") {
+                let room = roomName.trimmingCharacters(in: .whitespaces)
+                roomIsSaving = true
+                Task {
+                    await auth.registerDevice(room: room.isEmpty ? "Living Room" : room)
+                    await MainActor.run {
+                        roomIsSaving = false
+                        onContinue()
+                    }
+                }
+            }
+        } message: {
+            Text("Name this Apple TV so your phone can find it for Play on TV.")
         }
     }
 }

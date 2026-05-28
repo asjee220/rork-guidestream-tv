@@ -85,6 +85,36 @@ final class TVAuthViewModel {
         UserDefaults.standard.set(true, forKey: "gs.tv.isGuest")
     }
 
+    /// Writes (or updates) a row in the `devices` table so the phone
+    /// app can discover this Apple TV for the Play on TV feature.
+    /// Called after the room-name prompt that follows Sign in with Apple.
+    func registerDevice(room: String) async {
+        guard let uid = currentUser?.id.uuidString else { return }
+        let deviceId = TVDeviceIdentity.shared.deviceId
+        let model = UIDevice.current.model
+        let osVersion = UIDevice.current.systemVersion
+        do {
+            try await TVSupabaseManager.shared.client
+                .from("devices")
+                .upsert([
+                    "device_id": deviceId,
+                    "room": room,
+                    "user_id": uid,
+                    "device_model": model,
+                    "os_version": osVersion,
+                    "last_seen_at": ISO8601DateFormatter().string(from: Date())
+                ], onConflict: "device_id")
+                .execute()
+            #if DEBUG
+            print("[TVAuth] registered device \(deviceId) in room '\(room)'")
+            #endif
+        } catch {
+            #if DEBUG
+            print("[TVAuth] registerDevice failed: \(error.localizedDescription)")
+            #endif
+        }
+    }
+
     func signOut() async {
         do { try await TVSupabaseManager.shared.client.auth.signOut() } catch { }
         self.currentUser = nil
