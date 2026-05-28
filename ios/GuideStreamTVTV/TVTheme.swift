@@ -64,11 +64,17 @@ extension View {
     }
 }
 
+// MARK: - Color Extensions
+
+extension Color {
+    static let navy = Color(red: 0x04 / 255, green: 0x09 / 255, blue: 0x0F / 255)
+}
+
 // MARK: - TV Theme
 
 enum TVTheme {
     /// Deep midnight navy used across the app shell.
-    static let bg = Color(red: 0x04 / 255, green: 0x09 / 255, blue: 0x0F / 255)
+    static let bg = Color.navy
     /// Slightly raised surface for cards and elevated content.
     static let surface = Color(red: 0x0B / 255, green: 0x12 / 255, blue: 0x1C / 255)
     /// More-elevated surface for focused tiles.

@@ -155,3 +155,9 @@ struct TVGameTeam: Hashable {
     let primaryHex: String?
     let isWinner: Bool
 }
+
+// MARK: - Type aliases for iOS-compatible naming
+
+typealias SportsGame = TVSportsGame
+typealias GameTeam = TVGameTeam
+typealias GameState = TVGameState
