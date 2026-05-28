@@ -144,4 +144,10 @@ final class AuthViewModel {
         lastError = "Password reset is not available on Apple TV."
         return false
     }
+
+    /// Google sign-in is not available on tvOS — we route everyone through
+    /// Sign in with Apple. Surfaces an inline error so the UI can react.
+    func signInWithGoogle() async {
+        lastError = "Google sign-in is not available on Apple TV. Use Sign in with Apple instead."
+    }
 }

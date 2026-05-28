@@ -29,6 +29,8 @@ struct NewEpisodeRow: Identifiable, Hashable {
     let platform: String?
     let posterUrl: String?
     let releasedAt: Date?
+    let durationMinutes: Int?
+    let isNew: Bool?
 }
 
 // MARK: - SocialViewModel stub
