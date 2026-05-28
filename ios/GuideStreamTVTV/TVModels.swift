@@ -161,3 +161,6 @@ struct TVGameTeam: Hashable {
 typealias SportsGame = TVSportsGame
 typealias GameTeam = TVGameTeam
 typealias GameState = TVGameState
+typealias NewsStream = TVNewsStream
+typealias TMDBResult = TVTMDBResult
+typealias UserStream = TVUserStream

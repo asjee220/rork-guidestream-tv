@@ -99,7 +99,9 @@ struct EmailAuthView: View {
                 .presentationContentInteraction(.scrolls)
                 #endif
             }
+            #if !os(tvOS)
             .navigationBarTitleDisplayMode(.inline)
+            #endif
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("Close") { close() }
@@ -620,7 +622,9 @@ struct ForgotPasswordSheet: View {
                 .presentationContentInteraction(.scrolls)
                 #endif
             }
+            #if !os(tvOS)
             .navigationBarTitleDisplayMode(.inline)
+            #endif
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("Cancel") { dismiss() }

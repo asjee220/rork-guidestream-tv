@@ -26,6 +26,15 @@ final class TVStreamsViewModel {
     var isLoading: Bool = false
     var lastError: String?
 
+    // MARK: - iOS-compat stub state
+
+    /// Stub: episode-tracker rows are only populated on iOS. tvOS surfaces
+    /// trending fallback content instead so this stays empty.
+    var newEpisodes: [NewEpisodeRow] = []
+    var isLoadingEpisodes: Bool = false
+    /// Mirror of `isLoading` for iOS-shared call sites that expect this name.
+    var isLoadingStreams: Bool { isLoading }
+
     private let localCacheKey = "gs.tv.watchList.localCache.v1"
     private static let guestUserId = "guest"
 
@@ -191,6 +200,37 @@ final class TVStreamsViewModel {
             }
         }
         return false
+    }
+
+    // MARK: - iOS-compat stub methods
+
+    /// Refreshes both watch list + new-episodes feed. The episode feed is a
+    /// no-op on tvOS so this just delegates to `fetchUserStreams`.
+    func refreshAll() async {
+        await fetchUserStreams()
+    }
+
+    /// No-op stub: tvOS does not run the iOS episode tracker. Kept so views
+    /// shared with the iOS target compile cleanly.
+    func fetchNewEpisodes() async {}
+
+    /// No-op stub matching the iOS API. The episode rail is empty on tvOS
+    /// so there is nothing to mark.
+    func markStaleEpisodesSeen() async {}
+
+    /// iOS-style alias for `add(...)`. Keeps shared sheets compiling.
+    func addToMyStreams(
+        titleId: String,
+        title: String?,
+        posterUrl: String?,
+        platform: String?
+    ) async {
+        await add(titleId: titleId, title: title, posterUrl: posterUrl, platform: platform)
+    }
+
+    /// iOS-style alias for `remove(titleId:)`.
+    func removeFromMyStreams(titleId: String) async {
+        await remove(titleId: titleId)
     }
 
     // MARK: - Local cache helpers
