@@ -254,6 +254,14 @@ struct ShowDetailScreen: View {
     }
     private var tmdbEpisodes: [TMDBEpisode] { vm.season?.episodes ?? [] }
 
+    /// Network / platform name for the subtitle. Prefers Watchmode's primary
+    /// service over TMDB's networks so the label matches the badge below it
+    /// (e.g. "Max" instead of "HBO" when a network has rebranded).
+    private var networkName: String? {
+        if let svc = vm.primaryService { return svc.name }
+        return vm.tmdb?.networks?.first?.name
+    }
+
     private let episodes: [ShowDetailEpisode] = [
         .init(code: "S4 E7", title: "Tailgate Party", duration: "64 min", status: .continueWatching, progress: 0.45),
         .init(code: "S4 E8", title: "America Decides", duration: "67 min", status: .new, progress: 0),
@@ -486,10 +494,12 @@ struct ShowDetailScreen: View {
                         Text(yearText)
                             .scaledFont(size: 13)
                             .foregroundStyle(Color.textSecondary)
-                        dot
-                        Text("4 Seasons")
-                            .scaledFont(size: 13)
-                            .foregroundStyle(Color.textSecondary)
+                        if let net = networkName {
+                            dot
+                            Text(net)
+                                .scaledFont(size: 13, weight: .medium)
+                                .foregroundStyle(Color.textSecondary)
+                        }
                         dot
                         Text("TV-MA")
                             .scaledFont(size: 11, weight: .semibold)
