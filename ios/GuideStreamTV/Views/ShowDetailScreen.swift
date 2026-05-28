@@ -67,7 +67,7 @@ final class ShowDetailViewModel {
 
         if let tmdbId = Int(titleId), isTV {
             async let tmdbCall: TMDBTVDetail? = try? TMDBService.shared.getTVDetail(tmdbId: tmdbId)
-            async let wmIdCall: String? = try? WatchmodeService.shared.watchmodeId(forTMDBId: tmdbId, isTV: true)
+            async let wmIdCall: String? = try? WatchmodeService.shared.watchmodeId(forTMDBId: tmdbId, isTV: isTV)
             let tmdbResult = await tmdbCall
             self.tmdb = tmdbResult
             let seasonNum = max(1, tmdbResult?.numberOfSeasons ?? 1)
@@ -77,6 +77,41 @@ final class ShowDetailViewModel {
                 self.detail = try? await WatchmodeService.shared.titleDetail(titleId: wmId)
             }
             self.season = await seasonCall
+
+            // Fallback: if Watchmode returned no sources (common on free tier),
+            // use TMDB watch providers so the "Where to Watch" section renders.
+            if self.detail?.sources == nil {
+                if let provider = try? await TMDBService.shared.getTopWatchProvider(tmdbId: tmdbId, isTV: isTV) {
+                    let source = WatchmodeSource(
+                        sourceId: provider.providerId,
+                        name: provider.providerName,
+                        type: "sub",
+                        region: nil,
+                        iosUrl: nil,
+                        androidUrl: nil,
+                        webUrl: nil,
+                        format: nil,
+                        endDate: nil
+                    )
+                    self.detail = WatchmodeTitleDetail(
+                        id: self.detail?.id ?? tmdbId,
+                        title: self.detail?.title ?? self.tmdb?.name ?? titleId,
+                        year: self.detail?.year,
+                        userRating: self.detail?.userRating,
+                        plotOverview: self.detail?.plotOverview,
+                        genreNames: self.detail?.genreNames,
+                        trailer: self.detail?.trailer,
+                        posterUrl: self.detail?.posterUrl,
+                        backdrop: self.detail?.backdrop,
+                        releaseDate: self.detail?.releaseDate,
+                        endYear: self.detail?.endYear,
+                        runtimeMinutes: self.detail?.runtimeMinutes,
+                        usRating: self.detail?.usRating,
+                        type: self.detail?.type,
+                        sources: [source]
+                    )
+                }
+            }
 
             // TVDB enrichment fires after core data loads — non-blocking,
             // silently ignored on failure so the sheet always renders.
