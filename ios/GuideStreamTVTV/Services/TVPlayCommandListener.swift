@@ -16,7 +16,7 @@ import Foundation
 import Supabase
 
 /// Decodable payload arriving over the Supabase realtime broadcast channel.
-nonisolated struct PlayCommandPayload: Decodable, Sendable {
+nonisolated struct PlayCommandPayload: Sendable {
     let platform: String
     let title: String
     let contentURL: String?
@@ -103,13 +103,25 @@ final class TVPlayCommandListener {
         }
     }
 
-    private func handle(event: RealtimeMessageV2, myDeviceId: String) async {
-        let payload: PlayCommandPayload
-        do {
-            payload = try event.decode(as: PlayCommandPayload.self)
-        } catch {
+    // MARK: - JSONObject decoding
+
+    private func decodePayload(from json: JSONObject) -> PlayCommandPayload? {
+        guard case .string(let platform) = json["platform"],
+              case .string(let title) = json["title"],
+              case .string(let deviceId) = json["deviceId"] else {
+            return nil
+        }
+        let contentURL: String? = {
+            guard case .string(let s) = json["contentURL"], !s.isEmpty else { return nil }
+            return s
+        }()
+        return PlayCommandPayload(platform: platform, title: title, contentURL: contentURL, deviceId: deviceId)
+    }
+
+    private func handle(event: JSONObject, myDeviceId: String) async {
+        guard let payload = decodePayload(from: event) else {
             #if DEBUG
-            print("[TVPlayCommand] decode failed: \(error.localizedDescription)")
+            print("[TVPlayCommand] decode failed")
             #endif
             return
         }
