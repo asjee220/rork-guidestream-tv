@@ -67,6 +67,15 @@ struct TrailerItem: Identifiable, Hashable {
     func hash(into hasher: inout Hasher) { hasher.combine(id) }
 }
 
+/// Lazily-enriched TVDB data for a reel. Fetched when the reel becomes visible
+/// (current or next in the feed) so API calls stay proportional to viewport.
+struct TVDBReelInfo: Equatable, Sendable {
+    let nextAirDate: Date?
+    let episodeCode: String?      // "S3 E7"
+    let episodeName: String?
+    let seriesStatus: String?     // "Returning", "Ended", "Continuing"
+}
+
 // MARK: - Platform mapping
 
 private enum ReelPlatform {
@@ -139,6 +148,8 @@ final class ReelsViewModel {
     var likedTrailers: Set<String> = []
     var likeCounts: [String: Int] = [:]
     var reelSwipeCount: Int = 0
+    /// Lazily-populated TVDB next-episode data keyed by TMDB series id.
+    var tvdbCache: [Int: TVDBReelInfo] = [:]
 
     private let tmdb = TMDBService.shared
     private var hasLoaded: Bool = false
@@ -513,6 +524,33 @@ private func makeRakutenAdReels() -> [TrailerItem] {
         guard let idx = allTrailers.firstIndex(where: { $0.tab == tab }) else { return }
         currentIndex = idx
     }
+
+    // MARK: TVDB Enrichment
+
+    /// Looks up the TVDB series id from the TMDB id, fetches the next upcoming
+    /// episode and series status, and stores the result in `tvdbCache` so the
+    /// reel card can display an air-date banner without blocking feed load.
+    func enrichWithTVDB(tmdbId: Int) async {
+        guard tvdbCache[tmdbId] == nil else { return }
+        guard let tvdbId = try? await TheTVDBService.shared.tvdbSeriesId(forTMDBId: tmdbId)
+        else {
+            tvdbCache[tmdbId] = TVDBReelInfo(nextAirDate: nil, episodeCode: nil, episodeName: nil, seriesStatus: nil)
+            return
+        }
+        async let nextEp = try? TheTVDBService.shared.nextEpisode(seriesId: tvdbId)
+        async let series = try? TheTVDBService.shared.seriesExtended(tvdbId)
+        let (ep, s) = await (nextEp, series)
+        let code: String? = {
+            guard let sn = ep?.seasonNumber, let en = ep?.episodeNumber else { return nil }
+            return "S\(sn) E\(en)"
+        }()
+        tvdbCache[tmdbId] = TVDBReelInfo(
+            nextAirDate: ep?.airDate,
+            episodeCode: code,
+            episodeName: ep?.name,
+            seriesStatus: s?.status?.name
+        )
+    }
 }
 
 // MARK: - Reels Screen
@@ -580,6 +618,13 @@ struct ReelsScreen: View {
                             logTrailerViewed(trailer)
                         }
                         prefetchNeighbors(around: newValue)
+                        // Lazily enrich current + next reel with TVDB episode data.
+                        if let trailer = vm.allTrailers[safe: newValue], trailer.tmdbId > 0, !trailer.isSponsored {
+                            Task { await vm.enrichWithTVDB(tmdbId: trailer.tmdbId) }
+                        }
+                        if let nextTrailer = vm.allTrailers[safe: newValue + 1], nextTrailer.tmdbId > 0, !nextTrailer.isSponsored {
+                            Task { await vm.enrichWithTVDB(tmdbId: nextTrailer.tmdbId) }
+                        }
                         _ = prev
                     }
                 }
@@ -734,6 +779,7 @@ struct ReelsScreen: View {
         } else {
             ReelView(
                 trailer: trailer,
+                tvdbInfo: vm.tvdbCache[trailer.tmdbId],
                 size: size,
                 topInset: topInset,
                 bottomInset: bottomInset,
@@ -857,6 +903,7 @@ struct ReelsScreen: View {
 
 private struct ReelView: View {
     let trailer: TrailerItem
+    let tvdbInfo: TVDBReelInfo?
     let size: CGSize
     let topInset: CGFloat
     let bottomInset: CGFloat
@@ -1221,6 +1268,12 @@ private struct ReelView: View {
                         .foregroundStyle(Color.white.opacity(0.55))
                         .padding(.bottom, 14)
 
+                    // TVDB next-episode air-date banner
+                    if let tvdb = tvdbInfo, let code = tvdb.episodeCode {
+                        tvdbNextEpisodeRow(tvdb: tvdb)
+                            .padding(.bottom, 12)
+                    }
+
                     HStack(spacing: 12) {
                         if trailer.isSponsored {
                             // Make the whole bottom content area a tap target.
@@ -1331,6 +1384,74 @@ private struct ReelView: View {
         if n >= 1_000_000 { return String(format: "%.1fM", Double(n) / 1_000_000) }
         if n >= 1_000 { return String(format: "%.1fK", Double(n) / 1_000) }
         return "\(n)"
+    }
+
+    // MARK: TVDB Next-Episode Banner
+
+    private var tvdbNextAirDateText: String? {
+        guard let date = tvdbInfo?.nextAirDate else { return nil }
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMM d, yyyy"
+        return "Airs \(formatter.string(from: date))"
+    }
+
+    /// Compact next-episode air-date banner that mirrors the ShowDetailScreen
+    /// TVDB banner but scaled for the reel bottom overlay.
+    private func tvdbNextEpisodeRow(tvdb: TVDBReelInfo) -> some View {
+        HStack(spacing: 8) {
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(Color.orange.opacity(0.18))
+                .frame(width: 32, height: 32)
+                .overlay {
+                    Image(systemName: "sparkles")
+                        .scaledFont(size: 13, weight: .semibold)
+                        .foregroundStyle(Color.orange)
+                }
+
+            VStack(alignment: .leading, spacing: 2) {
+                if let name = tvdb.episodeName {
+                    Text("\(tvdb.episodeCode ?? "") • \(name)")
+                        .scaledFont(size: 11, weight: .semibold)
+                        .foregroundStyle(.white)
+                        .lineLimit(1)
+                } else if let code = tvdb.episodeCode {
+                    Text(code)
+                        .scaledFont(size: 11, weight: .semibold)
+                        .foregroundStyle(Color.orange)
+                }
+                HStack(spacing: 4) {
+                    if let airText = tvdbNextAirDateText {
+                        Label(airText, systemImage: "calendar")
+                            .scaledFont(size: 10)
+                            .foregroundStyle(Color.white.opacity(0.50))
+                    }
+                    if let status = tvdb.seriesStatus, !status.isEmpty {
+                        if tvdbNextAirDateText != nil {
+                            Text("•")
+                                .scaledFont(size: 10)
+                                .foregroundStyle(Color.white.opacity(0.30))
+                        }
+                        Text(status)
+                            .scaledFont(size: 10, weight: .medium)
+                            .foregroundStyle(
+                                status.lowercased().contains("returning")
+                                    ? Color.green.opacity(0.85)
+                                    : Color.white.opacity(0.50)
+                            )
+                    }
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(10)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color.white.opacity(0.06))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .stroke(Color.white.opacity(0.08), lineWidth: 0.5)
+                )
+        )
     }
 }
 
