@@ -402,7 +402,6 @@ struct EpisodeDetailSheet: View {
                 tint: isLiked ? Color.orange : .white,
                 showDot: false
             ) {
-                UIImpactFeedbackGenerator(style: .light).impactOccurred()
                 guard !isTogglingLike else { return }
                 isTogglingLike = true
                 Task {
@@ -419,7 +418,6 @@ struct EpisodeDetailSheet: View {
                 tint: .white,
                 showDot: false
             ) {
-                UIImpactFeedbackGenerator(style: .light).impactOccurred()
                 showComments = true
                 WatchIntentLogger.shared.log(
                     eventType: .commentsOpened,
@@ -436,7 +434,6 @@ struct EpisodeDetailSheet: View {
                 tint: .white,
                 showDot: false
             ) {
-                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                 showCastSheet = true
             }
             .frame(maxWidth: .infinity)
@@ -547,7 +544,6 @@ struct EpisodeDetailSheet: View {
 
     private var watchButton: some View {
         Button {
-            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
             StreamingDeepLinker.open(
                 platform: whereToWatchLabel,
                 title: title,
@@ -588,7 +584,6 @@ struct EpisodeDetailSheet: View {
     @ViewBuilder
     private var watchlistButton: some View {
         Button {
-            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
             toggleWatchList()
         } label: {
             VStack(spacing: 6) {
@@ -733,7 +728,9 @@ struct NewEpisodesListView: View {
         }
         .background(Color.navy.ignoresSafeArea())
         .navigationTitle("New Episodes")
+        #if !os(tvOS)
         .navigationBarTitleDisplayMode(.large)
+        #endif
         .toolbarBackground(Color.navy, for: .navigationBar)
         .toolbarColorScheme(.dark, for: .navigationBar)
     }
@@ -768,7 +765,9 @@ struct BingeWorthyListView: View {
         }
         .background(Color.navy.ignoresSafeArea())
         .navigationTitle(sectionTitle)
+        #if !os(tvOS)
         .navigationBarTitleDisplayMode(.large)
+        #endif
         .toolbarBackground(Color.navy, for: .navigationBar)
         .toolbarColorScheme(.dark, for: .navigationBar)
     }
