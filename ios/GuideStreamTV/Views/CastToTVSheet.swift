@@ -511,9 +511,9 @@ struct CastToTVSheet: View {
                     ProgressView()
                         .tint(.white)
                 } else {
-                    Image(systemName: "chevron.right")
-                        .scaledFont(size: 13, weight: .semibold)
-                        .foregroundStyle(Color.white.opacity(0.35))
+                    Text(PlaybackSupport.verb(platform: platform, contentURL: nil))
+                        .scaledFont(size: 12, weight: .semibold)
+                        .foregroundStyle(Color.white.opacity(0.45))
                 }
             }
             .padding(.horizontal, 14)
@@ -621,6 +621,15 @@ struct CastToTVSheet: View {
                 switch outcome {
                 case .ok:
                     UINotificationFeedbackGenerator().notificationOccurred(.success)
+                    showToast(ToastState(
+                        message: PlaybackSupport.statusLabel(
+                            platform: platform,
+                            title: showTitle,
+                            room: device.name,
+                            contentURL: nil
+                        ),
+                        icon: "checkmark.circle.fill"
+                    ))
                     showPlayingOnBanner(PlayingOnState(
                         deviceName: device.name,
                         deviceKind: device.kind,
