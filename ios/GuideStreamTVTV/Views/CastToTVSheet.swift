@@ -607,7 +607,6 @@ struct CastToTVSheet: View {
             await MainActor.run {
                 sendingDeviceId = nil
                 guard ok else {
-                    UINotificationFeedbackGenerator().notificationOccurred(.error)
                     showToast(ToastState(
                         message: "Couldn't reach \(device.name)",
                         icon: "exclamationmark.triangle.fill"
@@ -615,7 +614,6 @@ struct CastToTVSheet: View {
                     return
                 }
 
-                UINotificationFeedbackGenerator().notificationOccurred(.success)
                 showPlayingOnBanner(PlayingOnState(
                     deviceName: device.name,
                     deviceKind: device.kind,
