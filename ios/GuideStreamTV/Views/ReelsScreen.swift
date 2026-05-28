@@ -904,10 +904,18 @@ private struct ReelView: View {
             ("paramount","Paramount+", Color(red:0x00/255, green:0x64/255, blue:0xFF/255)),
             ("peacock", "Peacock", Color.black)
         ]
-        let eligible = pool.filter { entry in
-            entry.0 != trailer.platformId.lowercased()
-                && !selected.contains(entry.0)
+        // Prefer services the user doesn't already own AND aren't the
+        // current platform. If everything is owned, drop the owned filter so
+        // an ad still appears (only excluding the current platform). If even
+        // that's empty, fall back to the full pool.
+        let preferred = pool.filter { entry in
+            entry.0 != current && !selected.contains(entry.0)
         }
+        let secondary = pool.filter { $0.0 != current }
+        let eligible: [(String, String, Color)]
+        if !preferred.isEmpty { eligible = preferred }
+        else if !secondary.isEmpty { eligible = secondary }
+        else { eligible = pool }
         guard !eligible.isEmpty else { return nil }
         // Use tmdbId to deterministically pick different services
         // for different shows, giving variety across the feed.

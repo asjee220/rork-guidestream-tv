@@ -85,9 +85,18 @@ struct EpisodeDetailSheet: View {
              "NBC shows & live sports · Free tier")
         ]
 
-        return pool.first { entry in
+        // Prefer a service the user doesn't already own and isn't the
+        // current platform. If they own everything, fall back to any pool
+        // entry that isn't the current platform so an ad still appears.
+        if let preferred = pool.first(where: { entry in
             entry.0 != current && !owned.contains(entry.0)
-        }.map { ($0.0, $0.1, $0.2) }
+        }) {
+            return (preferred.0, preferred.1, preferred.2)
+        }
+        if let fallback = pool.first(where: { $0.0 != current }) {
+            return (fallback.0, fallback.1, fallback.2)
+        }
+        return pool.first.map { ($0.0, $0.1, $0.2) }
     }
 
     private func normalisedServiceKey(_ raw: String) -> String {

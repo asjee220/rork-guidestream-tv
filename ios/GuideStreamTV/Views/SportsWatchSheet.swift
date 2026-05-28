@@ -50,7 +50,15 @@ struct SportsWatchSheet: View {
             return "hulu"
         }()
 
-        if owned.contains(target) { return nil }
+        // If the user owns the target service, pick the first reasonable
+        // alternative so an ad still appears.
+        let resolvedTarget: String = {
+            guard owned.contains(target) else { return target }
+            let fallbackOrder = ["peacock", "paramount", "hbo",
+                                  "disney", "prime", "appletv",
+                                  "hulu", "netflix"]
+            return fallbackOrder.first { !owned.contains($0) } ?? target
+        }()
 
         let copy: [String: (String, String)] = [
             "disney": ("Stream ESPN+ & Disney Bundle",
@@ -68,8 +76,8 @@ struct SportsWatchSheet: View {
             "hulu": ("Live sports on Hulu + Live TV",
                      "ESPN, FOX, CBS, NBC & more · $82.99/mo")
         ]
-        guard let c = copy[target] else { return nil }
-        return (target, c.0, c.1)
+        guard let c = copy[resolvedTarget] else { return nil }
+        return (resolvedTarget, c.0, c.1)
     }
 
     private var gameTitle: String {
