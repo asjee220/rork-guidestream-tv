@@ -115,7 +115,7 @@ private struct CachedToken: Sendable {
 final class TheTVDBService {
     static let shared = TheTVDBService()
 
-    private let apiKey = "REPLACE_WITH_TVDB_V4_API_KEY"
+    private let apiKey = "fbc0d554a714e902a64695af14d97b34afd9"
     private let base = "https://api4.thetvdb.com/v4"
 
     private init() {}
