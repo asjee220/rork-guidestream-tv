@@ -745,6 +745,18 @@
 					},
 				);
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				INFOPLIST_KEY_LSApplicationQueriesSchemes = (
+					nflx,
+					hulu,
+					disneyplus,
+					hbomax,
+					aiv,
+					videos,
+					paramountplus,
+					peacock,
+					youtube,
+					crunchyroll,
+				);
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UIUserInterfaceStyle = Automatic;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks";
@@ -782,6 +794,18 @@
 					},
 				);
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				INFOPLIST_KEY_LSApplicationQueriesSchemes = (
+					nflx,
+					hulu,
+					disneyplus,
+					hbomax,
+					aiv,
+					videos,
+					paramountplus,
+					peacock,
+					youtube,
+					crunchyroll,
+				);
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UIUserInterfaceStyle = Automatic;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks";
