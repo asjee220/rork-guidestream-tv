@@ -321,13 +321,11 @@ struct HomeView: View {
                         PlayingOnBanner(
                             session: session,
                             onTapRemote: {
-                                UIImpactFeedbackGenerator(style: .light).impactOccurred()
                                 if session.deviceKind == .roku {
                                     castPlayback.openRokuRemote()
                                 }
                             },
                             onDismiss: {
-                                UIImpactFeedbackGenerator(style: .light).impactOccurred()
                                 withAnimation(.easeOut(duration: 0.25)) {
                                     castPlayback.stop()
                                 }
