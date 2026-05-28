@@ -12,6 +12,7 @@ import AuthenticationServices
 
 struct TVSignInView: View {
     @State private var auth = TVAuthViewModel.shared
+    @FocusState private var isSignInFocused: Bool
     let onContinue: () -> Void
 
     var body: some View {
@@ -35,14 +36,11 @@ struct TVSignInView: View {
 
             HStack(spacing: 80) {
                 VStack(alignment: .leading, spacing: 24) {
-                    HStack(spacing: 14) {
-                        Image(systemName: "play.tv.fill")
-                            .font(.system(size: 44, weight: .black))
-                            .foregroundStyle(TVTheme.orange)
-                        Text("GuideStream")
-                            .font(.system(size: 38, weight: .black))
-                            .foregroundStyle(.white)
-                    }
+                    Image("GuideStreamLogo")
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: 200, height: 90)
+                        .shadow(color: TVTheme.orange.opacity(0.4), radius: 30)
                     Text("Your living-room\nentertainment guide.")
                         .font(.system(size: 64, weight: .black))
                         .foregroundStyle(.white)
@@ -70,7 +68,9 @@ struct TVSignInView: View {
                     )
                     .signInWithAppleButtonStyle(.white)
                     .frame(width: 480, height: 92)
-                    .cornerRadius(20)
+                    .clipShape(.rect(cornerRadius: 20))
+                    .focused($isSignInFocused)
+                    .defaultFocus($isSignInFocused, true)
 
                     Button {
                         auth.continueAsGuest()

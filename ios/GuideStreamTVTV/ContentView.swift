@@ -44,20 +44,15 @@ struct ContentView: View {
     private var splash: some View {
         ZStack {
             TVTheme.backgroundGradient
-            VStack(spacing: 30) {
-                HStack(spacing: 18) {
-                    Image(systemName: "play.tv.fill")
-                        .font(.system(size: 80, weight: .black))
-                        .foregroundStyle(TVTheme.orange)
-                        .shadow(color: TVTheme.orange.opacity(0.6), radius: 30)
-                    Text("GuideStream")
-                        .font(.system(size: 64, weight: .black))
-                        .foregroundStyle(.white)
-                }
+            VStack(spacing: 40) {
+                Image("GuideStreamLogo")
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: 260, height: 120)
+                    .shadow(color: TVTheme.orange.opacity(0.5), radius: 40)
                 ProgressView()
                     .tint(.white)
                     .scaleEffect(1.6)
-                    .padding(.top, 24)
             }
         }
     }
