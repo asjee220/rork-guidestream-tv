@@ -16,13 +16,8 @@ struct WatchingNowView: View {
 
     @State private var activeService: String = ""
     @State private var selections: Set<String> = [] // "platform|titleId"
-    @State private var showsByService: [String: [WatchmodeResult]] = [:]
+    @State private var showsByService: [String: [TMDBResult]] = [:]
     @State private var isLoading = true
-
-    private let sourceIdMap: [String: Int] = [
-        "Netflix": 203, "Hulu": 157, "Paramount+": 9967,
-        "Max": 1825, "Disney+": 372, "Apple TV+": 371, "Peacock": 9995
-    ]
 
     private var totalSelected: Int { selections.count }
 
@@ -82,7 +77,7 @@ struct WatchingNowView: View {
                                 ShowPosterCard(
                                     show: show,
                                     platform: activeService,
-                                    isSelected: selections.contains("\(activeService)|\(show.titleId)"),
+                                    isSelected: selections.contains("\(activeService)|\(show.id)"),
                                     brandColor: serviceBrandColor(activeService),
                                     onTap: { toggleSelection(show: show) }
                                 )
@@ -152,42 +147,49 @@ struct WatchingNowView: View {
             )
         }
         .task {
-            await loadShows()
-        }
-    }
-
-    // MARK: - Data loading
-
-    private func loadShows() async {
-        let sortedServices = selectedServices.sorted()
-        for service in sortedServices {
-            let sourceId = sourceIdMap[service]
-            do {
-                let results: [WatchmodeResult]
-                if let sid = sourceId {
-                    results = try await WatchmodeService.shared.fetchTopTitles(sourceId: sid)
-                } else {
-                    results = try await WatchmodeService.shared.search(query: service)
+            let providerIdMap: [String: Int] = [
+                "Netflix": 8,
+                "Hulu": 15,
+                "Paramount+": 531,
+                "Max": 1899,
+                "HBO Max": 1899,
+                "Disney+": 337,
+                "Apple TV+": 350,
+                "Peacock": 386,
+                "Prime Video": 9
+            ]
+            await withTaskGroup(of: (String, [TMDBResult]).self) { group in
+                for service in selectedServices {
+                    group.addTask {
+                        guard let providerId = providerIdMap[service] else { return (service, []) }
+                        do {
+                            let results = try await TMDBService.shared.discoverByProvider(providerId: providerId)
+                            return (service, results)
+                        } catch {
+                            print("[GuideStream] TMDB discoverByProvider failed for \(service): \(error)")
+                            return (service, [])
+                        }
+                    }
                 }
-                await MainActor.run {
-                    showsByService[service] = results
+                for await (service, results) in group {
+                    await MainActor.run {
+                        showsByService[service] = results
+                    }
                 }
-            } catch {
-                print("[GuideStream] failed to load shows for \(service): \(error)")
             }
-        }
-        await MainActor.run {
-            activeService = sortedServices.first ?? ""
-            isLoading = false
+            await MainActor.run {
+                activeService = selectedServices.sorted().first ?? ""
+                isLoading = false
+            }
         }
     }
 
     // MARK: - Selection
 
-    private func toggleSelection(show: WatchmodeResult) {
+    private func toggleSelection(show: TMDBResult) {
         let gen = UIImpactFeedbackGenerator(style: .light)
         gen.impactOccurred()
-        let key = "\(activeService)|\(show.titleId)"
+        let key = "\(activeService)|\(show.id)"
         if selections.contains(key) {
             selections.remove(key)
         } else {
@@ -202,12 +204,12 @@ struct WatchingNowView: View {
             guard parts.count == 2 else { return nil }
             let platform = String(parts[0])
             let titleId = String(parts[1])
-            let show = showsByService[platform]?.first { $0.titleId == titleId }
+            let show = showsByService[platform]?.first { String($0.id) == titleId }
             return UserStreamInsert(
                 user_id: userId,
                 title_id: titleId,
-                title: show?.name,
-                poster_url: show?.imageUrl,
+                title: show?.displayName,
+                poster_url: show?.posterUrl,
                 platform: platform
             )
         }
@@ -292,7 +294,7 @@ struct WatchingNowView: View {
 // MARK: - ShowPosterCard
 
 private struct ShowPosterCard: View {
-    let show: WatchmodeResult
+    let show: TMDBResult
     let platform: String
     let isSelected: Bool
     let brandColor: Color
@@ -302,7 +304,7 @@ private struct ShowPosterCard: View {
         Button(action: onTap) {
             ZStack {
                 // Poster background
-                RemoteImage(urlString: show.imageUrl)
+                RemoteImage(urlString: show.posterUrl)
                     .aspectRatio(2.0 / 3.0, contentMode: .fill)
                     .frame(maxWidth: .infinity)
                     .clipped()
@@ -338,7 +340,7 @@ private struct ShowPosterCard: View {
                 // Bottom text
                 VStack {
                     Spacer()
-                    Text(show.name)
+                    Text(show.displayName)
                         .font(.system(size: 9, weight: .bold, design: .default))
                         .foregroundStyle(.white)
                         .lineLimit(2)

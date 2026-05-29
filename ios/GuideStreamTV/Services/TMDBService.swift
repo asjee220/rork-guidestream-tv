@@ -284,6 +284,13 @@ nonisolated struct TMDBService {
         return env.results.map { stamp($0, mediaType: "tv") }
     }
 
+    func discoverByProvider(providerId: Int, limit: Int = 15) async throws -> [TMDBResult] {
+        let urlString = "\(base)/discover/tv?api_key=\(apiKey)&language=en-US&sort_by=popularity.desc&watch_region=US&with_watch_providers=\(providerId)&with_type=0&page=1"
+        let data = try await get(urlString)
+        let env = try JSONDecoder().decode(TMDBTrendingEnvelope.self, from: data)
+        return Array(env.results.map { stamp($0, mediaType: "tv") }.prefix(limit))
+    }
+
     func getTopRated() async throws -> [TMDBResult] {
         let urlString = "\(base)/tv/top_rated?api_key=\(apiKey)&language=en-US&page=1"
         let data = try await get(urlString)
