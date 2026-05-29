@@ -19,21 +19,19 @@ struct SeedPromptView: View {
 
             Spacer(minLength: 20)
 
-            // Service badge row — dynamic from user's selected services (up to 3)
+            // Service badge row — dynamic brand icons (up to 3 in catalogue order)
             HStack(spacing: 10) {
-                ForEach(Array(selectedServices.sorted().prefix(3)), id: \.self) { service in
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .fill(Self.serviceBadgeColor(service))
-                            .frame(width: 48, height: 48)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                    .stroke(service == "Paramount+" ? Color(red: 0.96, green: 0.51, blue: 0.12) : Color.clear, lineWidth: 2)
-                            )
-                        Text(Self.serviceBadgeAbbr(service))
-                            .font(.custom("SF Pro Text", size: service == "Max" || service == "HBO Max" ? 9 : 13).weight(.heavy))
-                            .foregroundStyle(service == "Hulu" ? Color.black : Color.white)
-                    }
+                ForEach(StreamingCatalog.ordered(from: selectedServices).prefix(3).map { $0 }, id: \.id) { service in
+                    ServiceMiniIcon(service: service, size: 52)
+                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .stroke(
+                                    service.id == "paramount" ? Color(red: 0.96, green: 0.51, blue: 0.12) : Color.clear,
+                                    lineWidth: 2
+                                )
+                        )
+                        .shadow(color: service.glow.opacity(0.45), radius: 12, x: 0, y: 0)
                 }
             }
 
