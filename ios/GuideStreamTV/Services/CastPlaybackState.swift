@@ -40,6 +40,8 @@ final class CastPlaybackState {
         let startedAt: Date
 
         var canSendKeypress: Bool {
+            // Only Roku supports ECP keypress today. Other device protocols
+            // will be added via server-side Supabase Edge Functions.
             deviceKind == .roku && host != nil && port != nil
         }
     }

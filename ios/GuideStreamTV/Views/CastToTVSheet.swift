@@ -210,7 +210,7 @@ struct CastToTVSheet: View {
                         rescanButton
                     }
                 } else {
-                    Text("Looking for Apple TV & Roku…")
+                    Text("Looking for Apple TV, Roku, Google TV, Fire TV & Samsung…")
                         .scaledFont(size: 15)
                         .foregroundStyle(Color.white.opacity(0.7))
                     Text("Make sure your phone and TV are on the same Wi-Fi network.")
@@ -442,6 +442,28 @@ struct CastToTVSheet: View {
         }
     }
 
+    // MARK: Device icon helpers
+
+    private func deviceIconName(_ kind: TVDeviceKind) -> String {
+        switch kind {
+        case .appleTV:     return "appletv"
+        case .roku:        return "tv.inset.filled"
+        case .googleTV:    return "tv.and.mediabox"
+        case .fireTVStick: return "flame.fill"
+        case .samsungTV:   return "tv"
+        }
+    }
+
+    private func deviceIconBackground(_ kind: TVDeviceKind) -> Color {
+        switch kind {
+        case .appleTV:     return Color.white.opacity(0.10)
+        case .roku:        return Color(red: 0x66/255, green: 0x2D/255, blue: 0x91/255).opacity(0.35)
+        case .googleTV:    return Color(red: 0x1A/255, green: 0x73/255, blue: 0xE8/255).opacity(0.35)
+        case .fireTVStick: return Color(red: 0xFF/255, green: 0x99/255, blue: 0x00/255).opacity(0.35)
+        case .samsungTV:   return Color(red: 0x03/255, green: 0x78/255, blue: 0xFF/255).opacity(0.35)
+        }
+    }
+
     private var isManualHostValid: Bool {
         let host = manualHost.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !host.isEmpty else { return false }
@@ -486,11 +508,9 @@ struct CastToTVSheet: View {
             HStack(spacing: 14) {
                 ZStack {
                     Circle()
-                        .fill(device.kind == .appleTV
-                              ? Color.white.opacity(0.10)
-                              : Color(red: 0x66/255, green: 0x2D/255, blue: 0x91/255).opacity(0.35))
+                        .fill(deviceIconBackground(device.kind))
                         .frame(width: 46, height: 46)
-                    Image(systemName: device.kind == .appleTV ? "appletv" : "tv.inset.filled")
+                    Image(systemName: deviceIconName(device.kind))
                         .scaledFont(size: 20, weight: .regular)
                         .foregroundStyle(.white)
                 }
@@ -716,6 +736,14 @@ struct CastToTVSheet: View {
                 await publishPlayCommand(to: device)
             }
             return .ok
+        case .googleTV, .fireTVStick, .samsungTV:
+            // These devices don't have a public programmatic launch API
+            // accessible from iOS without external SDKs. We return true so
+            // the banner shows and the user gets a clear instruction to open
+            // the app on their TV. Programmatic launch for these platforms
+            // will be added via server-side Supabase Edge Functions in a
+            // future update.
+            return .ok
         }
     }
 
@@ -804,12 +832,8 @@ struct CastToTVSheet: View {
                 try? await Task.sleep(for: .milliseconds(450))
                 openRemoteApp(for: .roku)
             }
-        case .appleTV:
-            // No iPhone deeplink. No StreamingDeepLinker. No app switch.
-            // The banner stays on screen a beat longer so the user can read
-            // the "Open [Platform] on your Apple TV" instruction, then the
-            // sheet dismisses cleanly. Once Companion Link pairing ships,
-            // this branch will fire the actual remote launch command.
+        case .appleTV, .googleTV, .fireTVStick, .samsungTV:
+            // Show banner long enough to read, then dismiss cleanly.
             Task { @MainActor in
                 try? await Task.sleep(for: .milliseconds(2400))
                 isPresented = false
@@ -825,7 +849,13 @@ struct CastToTVSheet: View {
         case .roku:
             return "Opening Roku Remote…"
         case .appleTV:
-            return "Opening \(platformShortName) on your TV"
+            return "Open \(platformShortName) on your Apple TV"
+        case .googleTV:
+            return "Open \(platformShortName) on your Google TV"
+        case .fireTVStick:
+            return "Open \(platformShortName) on your Fire TV"
+        case .samsungTV:
+            return "Open \(platformShortName) on your Samsung TV"
         }
     }
 
@@ -865,7 +895,7 @@ struct CastToTVSheet: View {
         switch kind {
         case .roku:
             CastPlaybackState.shared.openRokuRemote()
-        case .appleTV:
+        case .appleTV, .googleTV, .fireTVStick, .samsungTV:
             break
         }
     }
@@ -902,11 +932,9 @@ struct CastToTVSheet: View {
         HStack(spacing: 14) {
             ZStack {
                 Circle()
-                    .fill(state.deviceKind == .appleTV
-                          ? Color.white.opacity(0.18)
-                          : Color(red: 0x66/255, green: 0x2D/255, blue: 0x91/255).opacity(0.55))
+                    .fill(deviceIconBackground(state.deviceKind).opacity(2.0))
                     .frame(width: 46, height: 46)
-                Image(systemName: state.deviceKind == .appleTV ? "appletv" : "tv.inset.filled")
+                Image(systemName: deviceIconName(state.deviceKind))
                     .scaledFont(size: 20, weight: .regular)
                     .foregroundStyle(.white)
                 // Animated signal arc to communicate "actively casting".

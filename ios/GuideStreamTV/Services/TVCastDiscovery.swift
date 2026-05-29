@@ -30,6 +30,9 @@ import Darwin
 enum TVDeviceKind: String {
     case appleTV
     case roku
+    case googleTV    // Chromecast / Google TV stick or built-in
+    case fireTVStick // Amazon Fire TV stick or cube
+    case samsungTV  // Samsung Tizen Smart TV
 }
 
 struct DiscoveredTVDevice: Identifiable, Equatable {
@@ -41,8 +44,11 @@ struct DiscoveredTVDevice: Identifiable, Equatable {
 
     var subtitle: String {
         switch kind {
-        case .appleTV: return "Apple TV"
-        case .roku:    return "Roku"
+        case .appleTV:     return "Apple TV"
+        case .roku:        return "Roku"
+        case .googleTV:    return "Google TV / Chromecast"
+        case .fireTVStick: return "Amazon Fire TV"
+        case .samsungTV:   return "Samsung Smart TV"
         }
     }
 }
@@ -85,9 +91,18 @@ final class TVCastDiscovery {
         // Some Roku models advertise _rsp._tcp.
         browseBonjour(type: "_rsp._tcp", kind: .roku)
 
+        // Google TV / Chromecast — reliable mDNS advertisement on all models.
+        browseBonjour(type: "_googlecast._tcp", kind: .googleTV)
+
+        // Amazon Fire TV — advertises via mDNS on the local network.
+        browseBonjour(type: "_amzn-wplay._tcp", kind: .fireTVStick)
+
         // Active subnet probe — the reliable path for Roku and a great
         // Bonjour fallback for Apple TV.
         startSubnetProbe()
+
+        // Samsung Tizen TVs use SSDP (UDP multicast) not Bonjour.
+        startSSDPProbe()
     }
 
     func stop() {
@@ -223,6 +238,93 @@ final class TVCastDiscovery {
         }
     }
 
+    // MARK: - SSDP probe (Samsung Tizen)
+
+    /// Sends a UPnP/SSDP M-SEARCH multicast packet to 239.255.255.255:1900.
+    /// Samsung Smart TVs (Tizen) respond with their USN and SERVER headers,
+    /// letting us detect them without walking the full /24.
+    /// Uses NWConnection with UDP so ATS cleartext rules don't apply.
+    private func startSSDPProbe() {
+        Task.detached(priority: .userInitiated) {
+            let message =
+                "M-SEARCH * HTTP/1.1\r\n" +
+                "HOST: 239.255.255.255:1900\r\n" +
+                "MAN: \"ssdp:discover\"\r\n" +
+                "MX: 3\r\n" +
+                "ST: urn:samsung.com:device:RemoteControlReceiver:1\r\n\r\n"
+
+            guard let data = message.data(using: .utf8) else { return }
+
+            // Send to SSDP multicast address.
+            let host = NWEndpoint.Host("239.255.255.255")
+            guard let port = NWEndpoint.Port(rawValue: 1900) else { return }
+            let params = NWParameters.udp
+            params.prohibitedInterfaceTypes = [.cellular]
+            let conn = NWConnection(host: host, port: port, using: params)
+
+            conn.stateUpdateHandler = { state in
+                if state == .ready {
+                    conn.send(content: data, completion: .contentProcessed { _ in })
+                    // Listen for responses for 4 seconds.
+                    Self.receiveSSDPResponses(conn: conn, duration: 4.0)
+                }
+            }
+            conn.start(queue: .global(qos: .userInitiated))
+
+            // Cancel after 5 seconds total.
+            try? await Task.sleep(for: .seconds(5))
+            conn.cancel()
+        }
+    }
+
+    nonisolated private static func receiveSSDPResponses(conn: NWConnection, duration: TimeInterval) {
+        let deadline = Date().addingTimeInterval(duration)
+        func readNext() {
+            guard Date() < deadline else { conn.cancel(); return }
+            conn.receiveMessage { data, _, _, error in
+                if let data = data,
+                   let response = String(data: data, encoding: .utf8) {
+                    let lower = response.lowercased()
+                    // Samsung Tizen TVs include "samsung" and "tizen" or
+                    // "RemoteControlReceiver" in their SSDP response.
+                    if lower.contains("samsung") || lower.contains("tizen") ||
+                        lower.contains("remotecontrolreceiver") {
+                        // Extract USN as stable ID, LOCATION for IP.
+                        let usn = Self.ssdpHeaderValue("USN", from: response) ?? UUID().uuidString
+                        let location = Self.ssdpHeaderValue("LOCATION", from: response) ?? ""
+                        let friendlyName = Self.ssdpHeaderValue("SERVER", from: response) ?? "Samsung TV"
+                        // Pull IP from LOCATION URL, e.g. http://192.168.1.5:52235/...
+                        let host = Self.extractHostFromURL(location)
+                        let snapshot: [(id: String, name: String, host: String?, port: UInt16?)] =
+                            [(id: "samsung-\(usn)", name: friendlyName, host: host, port: 8001)]
+                        Task { @MainActor in
+                            TVCastDiscoveryStore.merge(snapshot: snapshot, kind: .samsungTV)
+                        }
+                    }
+                }
+                if error == nil { readNext() }
+            }
+        }
+        readNext()
+    }
+
+    nonisolated private static func ssdpHeaderValue(_ header: String, from response: String) -> String? {
+        let lines = response.components(separatedBy: "\r\n")
+        for line in lines {
+            let parts = line.split(separator: ":", maxSplits: 1)
+            if parts.count == 2,
+               parts[0].trimmingCharacters(in: .whitespaces).lowercased() == header.lowercased() {
+                return parts[1].trimmingCharacters(in: .whitespaces)
+            }
+        }
+        return nil
+    }
+
+    nonisolated private static func extractHostFromURL(_ urlString: String) -> String? {
+        guard let url = URL(string: urlString), let host = url.host else { return nil }
+        return host
+    }
+
     nonisolated private static func probe(host: String) async {
         // Roku ECP on :8060 — XML device-info; cheap and reliable.
         if let rokuInfo = await rawHTTPGet(host: host, port: 8060, path: "/query/device-info", timeout: 1.0),
@@ -258,6 +360,50 @@ final class TVCastDiscovery {
             #endif
             await MainActor.run {
                 TVCastDiscoveryStore.merge(snapshot: snapshot, kind: .appleTV)
+            }
+            return
+        }
+
+        // Google TV / Chromecast REST API on :8008.
+        if let googleResponse = await rawHTTPGet(host: host, port: 8008, path: "/setup/eureka_info", timeout: 1.0),
+           !googleResponse.isEmpty {
+            let lower = googleResponse.lowercased()
+            if lower.contains("chromecast") || lower.contains("google") || lower.contains("eureka") {
+                // Extract name from JSON "name" field — simple scan, no full parser needed.
+                let name = jsonStringValue("name", from: googleResponse)
+                    ?? jsonStringValue("friendly_name", from: googleResponse)
+                    ?? "Chromecast (\(host))"
+                let deviceId = jsonStringValue("ssdp_udn", from: googleResponse) ?? host
+                let snapshot: [(id: String, name: String, host: String?, port: UInt16?)] =
+                    [(id: "googletv-\(deviceId)", name: name, host: host, port: 8008)]
+                #if DEBUG
+                print("[TVCastDiscovery] found Google TV \(name) @ \(host)")
+                #endif
+                await MainActor.run {
+                    TVCastDiscoveryStore.merge(snapshot: snapshot, kind: .googleTV)
+                }
+                return
+            }
+        }
+
+        // Samsung Tizen REST API on :8001.
+        if let samsungResponse = await rawHTTPGet(host: host, port: 8001, path: "/api/v2/", timeout: 1.0),
+           !samsungResponse.isEmpty {
+            let lower = samsungResponse.lowercased()
+            if lower.contains("samsung") || lower.contains("tizen") {
+                let name = jsonStringValue("name", from: samsungResponse)
+                    ?? jsonStringValue("DeviceName", from: samsungResponse)
+                    ?? "Samsung TV (\(host))"
+                let udn = jsonStringValue("id", from: samsungResponse) ?? host
+                let snapshot: [(id: String, name: String, host: String?, port: UInt16?)] =
+                    [(id: "samsung-\(udn)", name: name, host: host, port: 8001)]
+                #if DEBUG
+                print("[TVCastDiscovery] found Samsung TV \(name) @ \(host)")
+                #endif
+                await MainActor.run {
+                    TVCastDiscoveryStore.merge(snapshot: snapshot, kind: .samsungTV)
+                }
+                return
             }
         }
     }
@@ -460,6 +606,19 @@ final class TVCastDiscovery {
             i += 1
         }
         return nil
+    }
+
+    /// Extracts a string value for a given key from a minimal JSON response
+    /// without importing Foundation's JSONSerialization — avoids the overhead
+    /// for the simple flat objects returned by Chromecast and Samsung REST APIs.
+    nonisolated private static func jsonStringValue(_ key: String, from json: String) -> String? {
+        // Matches: "key":"value" or "key": "value"
+        let pattern = "\"\(key)\"\\s*:\\s*\"([^\"]+)\""
+        guard let range = json.range(of: pattern, options: .regularExpression) else { return nil }
+        let match = String(json[range])
+        // Extract the captured value between the last pair of quotes.
+        let parts = match.components(separatedBy: "\"")
+        return parts.count >= 4 ? parts[parts.count - 2] : nil
     }
 
     nonisolated private static func extractTag(_ tag: String, from xml: String) -> String? {
