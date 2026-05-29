@@ -45,11 +45,40 @@ struct WatchingNowView: View {
                     // Service tab bar
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 8) {
-                            ForEach(selectedServices.sorted(), id: \.self) { service in
-                                serviceTab(service)
+                            ForEach(Array(selectedServices).sorted(), id: \.self) { serviceId in
+                                let svc = StreamingCatalog.service(for: serviceId)
+                                Button {
+                                    withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                                        activeService = serviceId
+                                    }
+                                } label: {
+                                    HStack(spacing: 6) {
+                                        if let svc {
+                                            ServiceMiniIcon(service: svc, size: 18)
+                                                .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+                                        }
+                                        Text(svc?.name ?? serviceId.capitalized)
+                                            .font(.system(size: 12, weight: .semibold))
+                                            .foregroundStyle(activeService == serviceId ? .white : Color.textSecondary)
+                                    }
+                                    .padding(.vertical, 7)
+                                    .padding(.horizontal, 12)
+                                    .background(
+                                        Capsule()
+                                            .fill(activeService == serviceId
+                                                ? (svc?.glow ?? Color.blue).opacity(0.85)
+                                                : Color.white.opacity(0.08))
+                                    )
+                                    .overlay(
+                                        Capsule()
+                                            .stroke(Color.white.opacity(activeService == serviceId ? 0 : 0.12), lineWidth: 1)
+                                    )
+                                }
+                                .buttonStyle(.plain)
                             }
                         }
                         .padding(.horizontal, 20)
+                        .padding(.bottom, 2)
                     }
                     .padding(.bottom, 16)
 
@@ -76,9 +105,8 @@ struct WatchingNowView: View {
                             ForEach(showsByService[activeService] ?? [], id: \.id) { show in
                                 ShowPosterCard(
                                     show: show,
-                                    platform: activeService,
+                                    serviceId: activeService,
                                     isSelected: selections.contains("\(activeService)|\(show.id)"),
-                                    brandColor: serviceBrandColor(activeService),
                                     onTap: { toggleSelection(show: show) }
                                 )
                             }
@@ -148,15 +176,26 @@ struct WatchingNowView: View {
         }
         .task {
             let providerIdMap: [String: Int] = [
-                "Netflix": 8,
-                "Hulu": 15,
-                "Paramount+": 531,
-                "Max": 1899,
-                "HBO Max": 1899,
-                "Disney+": 337,
-                "Apple TV+": 350,
-                "Peacock": 386,
-                "Prime Video": 9
+                "netflix": 8,
+                "hulu": 15,
+                "paramount": 531,
+                "hbo": 1899,
+                "disney": 337,
+                "appletv": 350,
+                "peacock": 386,
+                "prime": 9,
+                "crunchyroll": 283,
+                "youtube": 192,
+                "tubi": 73,
+                "pluto": 300,
+                "starz": 43,
+                "showtime": 37,
+                "amc": 80,
+                "discovery": 510,
+                "espn": 337,
+                "fubo": 257,
+                "britbox": 151,
+                "acorntv": 122
             ]
             await withTaskGroup(of: (String, [TMDBResult]).self) { group in
                 for service in selectedServices {
@@ -252,38 +291,6 @@ struct WatchingNowView: View {
         }
     }
 
-    // MARK: - Service tab
-
-    private func serviceTab(_ service: String) -> some View {
-        let isActive = activeService == service
-        let color = serviceBrandColor(service)
-        return Button {
-            withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
-                activeService = service
-            }
-        } label: {
-            HStack(spacing: 6) {
-                Circle()
-                    .fill(color)
-                    .frame(width: 6, height: 6)
-                Text(serviceShortName(service))
-                    .font(.custom("SF Pro Text", size: 12).weight(.semibold))
-                    .foregroundStyle(isActive ? .white : Color.textSecondary)
-            }
-            .padding(.vertical, 7)
-            .padding(.horizontal, 12)
-            .background(
-                Capsule()
-                    .fill(isActive ? color : Color.clear)
-            )
-            .overlay(
-                Capsule()
-                    .stroke(isActive ? Color.clear : Color.white.opacity(0.15), lineWidth: 1)
-            )
-        }
-        .buttonStyle(.plain)
-    }
-
     // MARK: - Skeleton
 
     private var skeletonCard: some View {
@@ -295,12 +302,12 @@ struct WatchingNowView: View {
 
 private struct ShowPosterCard: View {
     let show: TMDBResult
-    let platform: String
+    let serviceId: String
     let isSelected: Bool
-    let brandColor: Color
     let onTap: () -> Void
 
     var body: some View {
+        let svc = StreamingCatalog.service(for: serviceId)
         Button(action: onTap) {
             ZStack {
                 // Poster background
@@ -316,7 +323,7 @@ private struct ShowPosterCard: View {
                         colors: [Color.black.opacity(0.9), Color.clear],
                         startPoint: .bottom, endPoint: .top
                     )
-                    .frame(height: 55) // relative, handled by aspect ratio
+                    .frame(height: 55)
                 }
 
                 // Bottom-left service badge
@@ -324,11 +331,11 @@ private struct ShowPosterCard: View {
                     Spacer()
                     HStack {
                         RoundedRectangle(cornerRadius: 3, style: .continuous)
-                            .fill(brandColor)
+                            .fill(svc?.glow ?? Color.blue)
                             .frame(width: 13, height: 13)
                             .overlay(
-                                Text(serviceAbbreviation(platform))
-                                    .font(.system(size: 5, weight: .bold, design: .default))
+                                Text(svc != nil ? String((svc!.name).prefix(2)).uppercased() : serviceId.prefix(2).uppercased())
+                                    .font(.system(size: 5, weight: .black))
                                     .foregroundStyle(.white)
                             )
                         Spacer()
@@ -380,19 +387,6 @@ private struct ShowPosterCard: View {
             )
         }
         .buttonStyle(.plain)
-    }
-
-    private func serviceAbbreviation(_ name: String) -> String {
-        switch name {
-        case "Netflix": return "N"
-        case "Paramount+": return "P+"
-        case "Max": return "MAX"
-        case "Hulu": return "H"
-        case "Disney+": return "D+"
-        case "Apple TV+": return "TV+"
-        case "Peacock": return "P"
-        default: return String(name.prefix(1))
-        }
     }
 }
 
