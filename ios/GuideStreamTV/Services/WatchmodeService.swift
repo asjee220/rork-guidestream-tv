@@ -138,6 +138,28 @@ nonisolated struct WatchmodeService {
         return try JSONDecoder().decode(WatchmodeTitleDetail.self, from: data)
     }
 
+    /// Fetches the top TV series for a given Watchmode source ID.
+    func fetchTopTitles(sourceId: Int, limit: Int = 12) async throws -> [WatchmodeResult] {
+        let urlString = "https://api.watchmode.com/v1/list-titles/?apiKey=\(apiKey)&source_ids=\(sourceId)&types=tv_series&sort_by=popularity_desc&limit=\(limit)"
+        guard let url = URL(string: urlString) else { throw URLError(.badURL) }
+        var req = URLRequest(url: url)
+        req.timeoutInterval = 12
+        let (data, response) = try await URLSession.shared.data(for: req)
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            throw URLError(.badServerResponse)
+        }
+        let envelope = try JSONDecoder().decode(WatchmodeListTitlesEnvelope.self, from: data)
+        return envelope.titles.map {
+            WatchmodeResult(
+                id: $0.id,
+                name: $0.title,
+                type: $0.type,
+                year: $0.year,
+                imageUrl: $0.poster
+            )
+        }
+    }
+
     func search(query: String) async throws -> [WatchmodeResult] {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return [] }
@@ -187,5 +209,27 @@ nonisolated struct WatchmodeTitleResult: Decodable, Sendable {
     enum CodingKeys: String, CodingKey {
         case id, name, type, year
         case imageUrl = "image_url"
+    }
+}
+
+// MARK: - List titles (source-based)
+
+nonisolated struct WatchmodeListTitlesEnvelope: Decodable, Sendable {
+    let titles: [WatchmodeListTitle]
+
+    enum CodingKeys: String, CodingKey {
+        case titles
+    }
+}
+
+nonisolated struct WatchmodeListTitle: Decodable, Sendable {
+    let id: Int
+    let title: String
+    let type: String
+    let year: Int?
+    let poster: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id, title, type, year, poster
     }
 }

@@ -41,6 +41,9 @@ final class AuthViewModel {
     /// True when there is a real Supabase user or the user chose "Get Started Free".
     var isSignedIn: Bool { currentUser != nil || isGuest }
     var isAuthenticated: Bool { currentUser != nil }
+    /// Stable string identifier for the current user. Works for both
+    /// authenticated users and guests (returns "guest" fallback).
+    var currentUserId: String { currentUser?.id.uuidString ?? "guest" }
 
     private var currentNonce: String?
 

@@ -7,6 +7,7 @@ import SwiftUI
 import AuthenticationServices
 import UserNotifications
 import UIKit
+import Supabase
 
 // MARK: - Coordinator
 
@@ -20,6 +21,7 @@ struct OnboardingFlow: View {
     @State private var pushOn: Bool = AuthViewModel.shared.notifyPushEnabled
     @State private var smsOn: Bool = AuthViewModel.shared.notifySMSEnabled
     @State private var showEmailAuth: Bool = false
+    @State private var seedSelections: [UserStreamInsert] = []
 
     var body: some View {
         ZStack {
@@ -56,15 +58,29 @@ struct OnboardingFlow: View {
                             advance()
                         }
                     )
-                default:
+                case 2:
                     StayNotifiedView(
                         pushOn: $pushOn,
                         smsOn: $smsOn,
                         onContinue: {
                             AuthViewModel.shared.setNotificationPreferences(push: pushOn, sms: smsOn)
-                            onFinish()
+                            advance()
                         },
                         onWidgetSettings: onWidgetSettings
+                    )
+                case 3:
+                    SeedPromptView(
+                        onContinue: { advance() },
+                        onSkip: { onFinish() }
+                    )
+                default:
+                    WatchingNowView(
+                        selectedServices: selectedServices,
+                        onContinue: { inserts in
+                            seedSelections = inserts
+                            commitSeedSelections()
+                        },
+                        onSkip: { onFinish() }
                     )
                 }
             }
@@ -97,6 +113,22 @@ struct OnboardingFlow: View {
     private func advance() {
         withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) {
             step += 1
+        }
+    }
+
+    private func commitSeedSelections() {
+        let inserts = seedSelections
+        guard !inserts.isEmpty else { onFinish(); return }
+        Task {
+            do {
+                try await SupabaseManager.shared.client
+                    .from("user_streams")
+                    .upsert(inserts, onConflict: "user_id,title_id")
+                    .execute()
+            } catch {
+                print("[GuideStream] seed upsert failed: \(error)")
+            }
+            await MainActor.run { onFinish() }
         }
     }
 }
@@ -291,7 +323,7 @@ private struct GoogleGlyph: View {
 
 // MARK: - Onboarding header
 
-private struct OnboardingHeader: View {
+struct OnboardingHeader: View {
     let progress: CGFloat // 0...1
     var onClose: (() -> Void)?
 
