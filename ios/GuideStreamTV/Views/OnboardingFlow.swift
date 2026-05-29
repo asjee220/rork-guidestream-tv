@@ -70,6 +70,7 @@ struct OnboardingFlow: View {
                     )
                 case 3:
                     SeedPromptView(
+                        selectedServices: selectedServices,
                         onContinue: { advance() },
                         onSkip: { onFinish() }
                     )

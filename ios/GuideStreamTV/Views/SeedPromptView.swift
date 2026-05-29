@@ -9,6 +9,7 @@ import UIKit
 /// Onboarding step 3 — introduces the "Seed Your List" concept and invites
 /// the user to pick shows they follow so their Watch List is pre-populated.
 struct SeedPromptView: View {
+    let selectedServices: Set<String>
     let onContinue: () -> Void
     let onSkip: () -> Void
 
@@ -18,30 +19,25 @@ struct SeedPromptView: View {
 
             Spacer(minLength: 20)
 
-            // Service badge row
-            HStack(spacing: 12) {
-                serviceBadge(text: "N", bg: Color(hex: "E50914"), fontSize: 16, weight: .bold)
-                serviceBadge(text: "MAX", bg: Color(hex: "5822B4"), fontSize: 9, weight: .bold)
-                serviceBadge(text: "P+", bg: Color(hex: "0064FF"), fontSize: 11, weight: .bold)
-                    .overlay(
+            // Service badge row — dynamic from user's selected services (up to 3)
+            HStack(spacing: 10) {
+                ForEach(Array(selectedServices.sorted().prefix(3)), id: \.self) { service in
+                    ZStack {
                         RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .stroke(Color(hex: "F5821F"), lineWidth: 2)
-                    )
+                            .fill(Self.serviceBadgeColor(service))
+                            .frame(width: 48, height: 48)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                    .stroke(service == "Paramount+" ? Color(red: 0.96, green: 0.51, blue: 0.12) : Color.clear, lineWidth: 2)
+                            )
+                        Text(Self.serviceBadgeAbbr(service))
+                            .font(.custom("SF Pro Text", size: service == "Max" || service == "HBO Max" ? 9 : 13).weight(.heavy))
+                            .foregroundStyle(service == "Hulu" ? Color.black : Color.white)
+                    }
+                }
             }
 
             Spacer(minLength: 16)
-
-            // "NEW STEP" pill
-            Text("NEW STEP")
-                .font(.system(size: 10, weight: .semibold, design: .default))
-                .tracking(0.06)
-                .foregroundStyle(Color.orange)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
-                .background(Capsule().fill(Color.orange.opacity(0.10)))
-                .overlay(Capsule().stroke(Color.orange.opacity(0.35), lineWidth: 1))
-
-            Spacer(minLength: 14)
 
             // Headline
             Text("What are you watching right now?")
@@ -123,15 +119,32 @@ struct SeedPromptView: View {
 
     // MARK: - Helpers
 
-    private func serviceBadge(text: String, bg: Color, fontSize: CGFloat, weight: Font.Weight) -> some View {
-        RoundedRectangle(cornerRadius: 14, style: .continuous)
-            .fill(bg)
-            .frame(width: 48, height: 48)
-            .overlay(
-                Text(text)
-                    .font(.system(size: fontSize, weight: weight, design: .default))
-                    .foregroundStyle(.white)
-            )
+    static func serviceBadgeColor(_ name: String) -> Color {
+        switch name {
+        case "Netflix": return Color(red: 0.90, green: 0.03, blue: 0.08)
+        case "Hulu": return Color(red: 0.11, green: 0.91, blue: 0.51)
+        case "Paramount+": return Color(red: 0.00, green: 0.39, blue: 1.00)
+        case "Max", "HBO Max": return Color(red: 0.34, green: 0.13, blue: 0.71)
+        case "Disney+": return Color(red: 0.04, green: 0.24, blue: 0.57)
+        case "Apple TV+": return Color.black
+        case "Peacock": return Color(red: 0.96, green: 0.51, blue: 0.12)
+        case "Prime Video": return Color(red: 0.00, green: 0.55, blue: 0.75)
+        default: return Color.blue
+        }
+    }
+
+    static func serviceBadgeAbbr(_ name: String) -> String {
+        switch name {
+        case "Netflix": return "N"
+        case "Hulu": return "Hu"
+        case "Paramount+": return "P+"
+        case "Max", "HBO Max": return "MAX"
+        case "Disney+": return "D+"
+        case "Apple TV+": return "TV+"
+        case "Peacock": return "Pc"
+        case "Prime Video": return "PV"
+        default: return String(name.prefix(2)).uppercased()
+        }
     }
 
     private func infoRow(_ text: String) -> some View {
@@ -148,6 +161,6 @@ struct SeedPromptView: View {
 }
 
 #Preview {
-    SeedPromptView(onContinue: {}, onSkip: {})
+    SeedPromptView(selectedServices: ["Netflix", "Max", "Paramount+"], onContinue: {}, onSkip: {})
         .preferredColorScheme(.dark)
 }
