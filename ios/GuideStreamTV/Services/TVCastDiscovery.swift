@@ -33,6 +33,8 @@ enum TVDeviceKind: String {
     case googleTV    // Chromecast / Google TV stick or built-in
     case fireTVStick // Amazon Fire TV stick or cube
     case samsungTV  // Samsung Tizen Smart TV
+    case lgTV        // LG webOS TV with AirPlay 2 built-in
+    case macAirPlay  // Mac AirPlay receiver — shown in list but not launchable
 }
 
 struct DiscoveredTVDevice: Identifiable, Equatable {
@@ -49,6 +51,8 @@ struct DiscoveredTVDevice: Identifiable, Equatable {
         case .googleTV:    return "Google TV / Chromecast"
         case .fireTVStick: return "Amazon Fire TV"
         case .samsungTV:   return "Samsung Smart TV"
+        case .lgTV:        return "LG Smart TV"
+        case .macAirPlay:  return "Mac — AirPlay"
         }
     }
 }
@@ -135,13 +139,24 @@ final class TVCastDiscovery {
             return true
         }
 
-        // AirPlay/Apple TV on :7000. Use the Data path so we can handle the
-        // binary plist response from modern tvOS.
+        // AirPlay on :7000 — covers Apple TV, LG webOS TVs, and Macs.
+        // The classifier reads the model field from the plist to distinguish them.
         if let airplayData = await Self.rawHTTPGetData(host: host, port: 7000, path: "/info", timeout: 3.0),
            Self.isAirPlayResponse(airplayData) {
-            let name = Self.extractAirPlayName(from: airplayData) ?? "Apple TV (\(host))"
+            let name = Self.extractAirPlayName(from: airplayData) ?? "AirPlay Device (\(host))"
             let deviceID = Self.extractAirPlayDeviceID(from: airplayData) ?? host
-            mergeFound([(id: "appletv-\(deviceID)", name: name, host: host, port: 7000)], kind: .appleTV)
+            let kind = Self.classifyAirPlayDevice(from: airplayData, name: name)
+
+            // Filter out Macs entirely — they are not TVs.
+            guard kind != .macAirPlay else {
+                #if DEBUG
+                print("[TVCastDiscovery] skipping Mac AirPlay receiver '\(name)' @ \(host)")
+                #endif
+                return false
+            }
+
+            let idPrefix = kind == .lgTV ? "lgtv" : "appletv"
+            mergeFound([(id: "\(idPrefix)-\(deviceID)", name: name, host: host, port: 7000)], kind: kind)
             return true
         }
 
@@ -226,6 +241,14 @@ final class TVCastDiscovery {
             var found: [(id: String, name: String, host: String?, port: UInt16?)] = []
             for result in results {
                 if case let .service(name, _, _, _) = result.endpoint {
+                    // Filter out obvious Mac AirPlay receivers by name at Bonjour time.
+                    // Full classification happens later in the subnet probe when we have
+                    // the actual plist data.
+                    let lower = name.lowercased()
+                    let looksLikeMac = lower.contains("macbook") || lower.contains("imac")
+                        || lower.contains("mac mini") || lower.contains("mac pro")
+                        || lower.contains("'s macbook") || lower.contains("s macbook")
+                    if looksLikeMac { continue }
                     found.append((id: "\(kindString)-\(name)", name: name, host: nil, port: nil))
                 }
             }
@@ -396,21 +419,30 @@ final class TVCastDiscovery {
             return
         }
 
-        // AirPlay/Apple TV on :7000 — /info returns a BINARY plist on modern
-        // tvOS (Apple TV HD / 4K). Using a String-based fetch fails because
-        // the binary bytes aren't valid UTF-8, so we have to read raw Data
-        // and parse with PropertyListSerialization.
+        // AirPlay on :7000 — covers Apple TV, LG webOS TVs, and Macs.
+        // The classifier reads the model field from the plist to distinguish them.
         if let airplayData = await rawHTTPGetData(host: host, port: 7000, path: "/info", timeout: 1.5),
            isAirPlayResponse(airplayData) {
-            let name = extractAirPlayName(from: airplayData) ?? "Apple TV (\(host))"
+            let name = extractAirPlayName(from: airplayData) ?? "AirPlay Device (\(host))"
             let deviceID = extractAirPlayDeviceID(from: airplayData) ?? host
+            let kind = classifyAirPlayDevice(from: airplayData, name: name)
+
+            // Filter out Macs entirely — they are not TVs.
+            guard kind != .macAirPlay else {
+                #if DEBUG
+                print("[TVCastDiscovery] skipping Mac AirPlay receiver '\(name)' @ \(host)")
+                #endif
+                return
+            }
+
+            let idPrefix = kind == .lgTV ? "lgtv" : "appletv"
             let snapshot: [(id: String, name: String, host: String?, port: UInt16?)] =
-                [(id: "appletv-\(deviceID)", name: name, host: host, port: 7000)]
+                [(id: "\(idPrefix)-\(deviceID)", name: name, host: host, port: 7000)]
             #if DEBUG
-            print("[TVCastDiscovery] found Apple TV \(name) @ \(host)")
+            print("[TVCastDiscovery] found \(kind.rawValue) '\(name)' @ \(host)")
             #endif
             await MainActor.run {
-                TVCastDiscoveryStore.merge(snapshot: snapshot, kind: .appleTV)
+                TVCastDiscoveryStore.merge(snapshot: snapshot, kind: kind)
             }
             return
         }
@@ -519,6 +551,54 @@ final class TVCastDiscovery {
             if let id = plist["pi"] as? String, !id.isEmpty { return id }
         }
         return nil
+    }
+
+    /// Classifies an AirPlay `/info` response into the correct TVDeviceKind.
+    /// Apple TV, LG webOS TVs, and Macs all respond on port 7000 — the `model`
+    /// field in the plist is the only reliable differentiator.
+    ///
+    /// Apple TV models: AppleTV5,3 / AppleTV6,2 / AppleTV11,1 / AppleTV14,1
+    /// LG AirPlay models: contain "LG" in the model or name field, or report
+    /// manufacturer "LG Electronics"
+    /// Mac models: MacBookPro / MacBookAir / Macmini / MacPro / iMac
+    nonisolated private static func classifyAirPlayDevice(from data: Data, name: String) -> TVDeviceKind {
+        var model: String = ""
+        var manufacturer: String = ""
+
+        // Binary plist — most reliable source.
+        if let plist = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil) as? [String: Any] {
+            model = (plist["model"] as? String ?? "").lowercased()
+            manufacturer = (plist["manufacturer"] as? String ?? "").lowercased()
+        }
+
+        // XML / text fallback.
+        if model.isEmpty, let body = String(data: data, encoding: .utf8) {
+            model = (plistStringValue(key: "model", in: body) ?? "").lowercased()
+            manufacturer = (plistStringValue(key: "manufacturer", in: body) ?? "").lowercased()
+        }
+
+        let nameLower = name.lowercased()
+
+        // Mac: model starts with known Mac prefixes.
+        let macPrefixes = ["macbookpro", "macbookair", "macmini", "macpro", "imac", "mac14", "mac13"]
+        if macPrefixes.contains(where: { model.hasPrefix($0) }) { return .macAirPlay }
+
+        // LG: manufacturer field, model contains "lg", or name contains "[LG]" or "webos".
+        if manufacturer.contains("lg")
+            || model.hasPrefix("lg")
+            || nameLower.contains("[lg]")
+            || nameLower.contains("webos")
+            || nameLower.contains("oled")
+            || nameLower.contains("nanocell") { return .lgTV }
+
+        // Apple TV: model starts with "AppleTV" prefix.
+        if model.hasPrefix("appletv") { return .appleTV }
+
+        // Fallback: if the name contains obvious Mac indicators.
+        if nameLower.contains("macbook") || nameLower.contains("imac") || nameLower.contains("mac mini") { return .macAirPlay }
+
+        // Default: treat unknown AirPlay receivers as Apple TV (safe fallback).
+        return .appleTV
     }
 
     /// Best-effort scan for a string value immediately following an ASCII

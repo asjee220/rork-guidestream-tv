@@ -451,6 +451,8 @@ struct CastToTVSheet: View {
         case .googleTV:    return "tv.and.mediabox"
         case .fireTVStick: return "flame.fill"
         case .samsungTV:   return "tv"
+        case .lgTV:        return "tv"
+        case .macAirPlay:  return "display"
         }
     }
 
@@ -461,6 +463,8 @@ struct CastToTVSheet: View {
         case .googleTV:    return Color(red: 0x1A/255, green: 0x73/255, blue: 0xE8/255).opacity(0.35)
         case .fireTVStick: return Color(red: 0xFF/255, green: 0x99/255, blue: 0x00/255).opacity(0.35)
         case .samsungTV:   return Color(red: 0x03/255, green: 0x78/255, blue: 0xFF/255).opacity(0.35)
+        case .lgTV:        return Color(red: 0xA5/255, green: 0x00/255, blue: 0x14/255).opacity(0.35)
+        case .macAirPlay:  return Color.white.opacity(0.07)
         }
     }
 
@@ -520,7 +524,7 @@ struct CastToTVSheet: View {
                         .scaledFont(size: 16, weight: .semibold)
                         .foregroundStyle(.white)
                         .lineLimit(1)
-                    Text(device.subtitle)
+                    Text(sendingDeviceId == device.id ? "Connecting…" : device.subtitle)
                         .scaledFont(size: 12)
                         .foregroundStyle(Color.white.opacity(0.55))
                 }
@@ -732,7 +736,7 @@ struct CastToTVSheet: View {
                 await publishPlayCommand(to: device)
             }
             return true
-        case .googleTV, .fireTVStick, .samsungTV:
+        case .googleTV, .fireTVStick, .samsungTV, .lgTV, .macAirPlay:
             // These devices don't have a public programmatic launch API
             // accessible from iOS without external SDKs. We return true so
             // the banner shows and the user gets a clear instruction to open
@@ -828,7 +832,7 @@ struct CastToTVSheet: View {
                 try? await Task.sleep(for: .milliseconds(450))
                 openRemoteApp(for: .roku)
             }
-        case .appleTV, .googleTV, .fireTVStick, .samsungTV:
+        case .appleTV, .googleTV, .fireTVStick, .samsungTV, .lgTV, .macAirPlay:
             // Show banner long enough to read, then dismiss cleanly.
             Task { @MainActor in
                 try? await Task.sleep(for: .milliseconds(2400))
@@ -852,6 +856,10 @@ struct CastToTVSheet: View {
             return "Open \(platformShortName) on your Fire TV"
         case .samsungTV:
             return "Open \(platformShortName) on your Samsung TV"
+        case .lgTV:
+            return "Open \(platformShortName) on your LG TV"
+        case .macAirPlay:
+            return "Open \(platformShortName) on your Mac"
         }
     }
 
@@ -891,7 +899,7 @@ struct CastToTVSheet: View {
         switch kind {
         case .roku:
             CastPlaybackState.shared.openRokuRemote()
-        case .appleTV, .googleTV, .fireTVStick, .samsungTV:
+        case .appleTV, .googleTV, .fireTVStick, .samsungTV, .lgTV, .macAirPlay:
             break
         }
     }
