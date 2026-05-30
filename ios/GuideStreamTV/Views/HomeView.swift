@@ -750,7 +750,7 @@ struct HomeView: View {
     /// Items with no recognised streaming service are intentionally left out of the dictionary
     /// so the rendering layer can hide them.
     private func hydrateProviders() async {
-        let combined: [TMDBResult] = trending + onAir + bingeFallback + newToday
+        let combined: [TMDBResult] = trending + onAir + bingeFallback + newToday + genreShows + recommendedShows
         let unique = Array(Dictionary(grouping: combined, by: { $0.id }).compactMapValues { $0.first }.values)
         let toFetch = unique.filter { providerByTmdb[$0.id] == nil }
         guard !toFetch.isEmpty else { return }
