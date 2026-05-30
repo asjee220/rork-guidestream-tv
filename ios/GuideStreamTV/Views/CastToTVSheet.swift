@@ -720,25 +720,31 @@ struct CastToTVSheet: View {
                 _ = await RokuECPClient.keypress(host: host, port: port, key: "Home")
                 return false
             }
+            // Extract the platform-native content ID from Watchmode's webUrl.
+            // On the free Watchmode plan, iosUrl is always a placeholder string
+            // ("Deeplinks available for paid plans only.") and cannot be used.
+            // webUrl is always a real URL on the free plan and contains the
+            // platform's own catalog ID embedded in the path — which is exactly
+            // what Roku ECP needs for deep linking.
             let contentId: String? = {
-                if let iosUrl = watchmodeSource?.iosUrl,
-                   !iosUrl.lowercased().contains("paid plans"),
-                   let id = RokuECPClient.extractContentId(from: iosUrl, platform: platform) {
-                    #if DEBUG
-                    print("[CastToTVSheet] Roku contentId from iosUrl: \(id)")
-                    #endif
-                    return id
-                }
                 if let webUrl = watchmodeSource?.webUrl,
-                   let id = RokuECPClient.extractContentId(from: webUrl, platform: platform) {
+                   webUrl.hasPrefix("http"),
+                   let id = RokuECPClient.extractContentId(fromWebURL: webUrl, platform: platform),
+                   !id.isEmpty {
                     #if DEBUG
-                    print("[CastToTVSheet] Roku contentId from webUrl: \(id)")
+                    print("[CastToTVSheet] Roku contentId from webUrl '\(webUrl)': \(id)")
                     #endif
                     return id
                 }
                 #if DEBUG
-                print("[CastToTVSheet] Roku — no URL-based contentId, falling back to tmdbId")
+                if let webUrl = watchmodeSource?.webUrl {
+                    print("[CastToTVSheet] Roku — webUrl '\(webUrl)' yielded no contentId")
+                } else {
+                    print("[CastToTVSheet] Roku — watchmodeSource is nil, no contentId available")
+                }
                 #endif
+                // TMDB ID fallback — will be ignored by first-party channels but
+                // still triggers a plain app open which is the graceful fallback.
                 return tmdbId.map { String($0) }
             }()
             #if DEBUG

@@ -222,9 +222,8 @@ enum RokuECPClient {
         }
     }
 
-    /// Extracts the platform-native content ID from a Watchmode ios_url or
-    /// web_url. This is the ID Roku ECP needs for deep linking — each channel
-    /// uses its own catalog ID system, embedded in the title's URL.
+    /// Extracts the platform-native content ID from a Watchmode web_url.
+    /// This is the ID Roku ECP needs for deep linking into a specific title.
     ///
     /// Examples:
     /// https://www.netflix.com/title/80057281 → "80057281"
@@ -232,15 +231,16 @@ enum RokuECPClient {
     /// https://www.hulu.com/series/ancient-aliens-xx → "ancient-aliens-xx"
     /// https://www.disneyplus.com/series/foo/barId → "barId"
     /// https://www.max.com/shows/foo/uuid-here → "uuid-here"
-    nonisolated static func extractContentId(from urlString: String, platform: String) -> String? {
-        guard let comps = URLComponents(string: urlString) else { return nil }
+    nonisolated static func extractContentId(fromWebURL urlString: String, platform: String) -> String? {
+        guard let comps = URLComponents(string: urlString),
+              let host = comps.host else { return nil }
         let path = comps.path
-        let host = comps.host?.lowercased() ?? ""
+        let hostLower = host.lowercased()
         let key = platform.lowercased()
-        let parts = path.split(separator: "/").map(String.init)
 
         // Netflix: /title/{id}
-        if key.contains("netflix") || host.contains("netflix") {
+        if hostLower.contains("netflix") || key.contains("netflix") {
+            let parts = path.split(separator: "/").map(String.init)
             if let idx = parts.firstIndex(of: "title"), idx + 1 < parts.count {
                 return parts[idx + 1]
             }
@@ -248,7 +248,8 @@ enum RokuECPClient {
         }
 
         // Amazon Prime Video: /dp/{ASIN} or /gp/video/detail/{ASIN}
-        if key.contains("prime") || key.contains("amazon") || host.contains("amazon") {
+        if hostLower.contains("amazon") || key.contains("prime") || key.contains("amazon") {
+            let parts = path.split(separator: "/").map(String.init)
             if let idx = parts.firstIndex(of: "dp"), idx + 1 < parts.count {
                 return parts[idx + 1]
             }
@@ -259,7 +260,8 @@ enum RokuECPClient {
         }
 
         // Hulu: /series/{slug} or /movie/{slug} or /watch/{id}
-        if key.contains("hulu") || host.contains("hulu") {
+        if hostLower.contains("hulu") || key.contains("hulu") {
+            let parts = path.split(separator: "/").map(String.init)
             if let idx = parts.firstIndex(where: { $0 == "series" || $0 == "movie" || $0 == "watch" }),
                idx + 1 < parts.count {
                 return parts[idx + 1]
@@ -267,18 +269,19 @@ enum RokuECPClient {
             return parts.last
         }
 
-        // Disney+: /series/{name}/{id} or /movies/{name}/{id}
-        if key.contains("disney") || host.contains("disneyplus") {
-            return parts.last
+        // Disney+: last non-empty path component is the content ID
+        if hostLower.contains("disneyplus") || key.contains("disney") {
+            return path.split(separator: "/").last.map(String.init)
         }
 
-        // Max (HBO): /shows/{name}/{uuid}
-        if key.contains("hbo") || key.contains("max") || host.contains("max.com") {
-            return parts.last
+        // Max (HBO Max): last path component is UUID
+        if hostLower.contains("max.com") || key.contains("hbo") || key.contains(" max") {
+            return path.split(separator: "/").last.map(String.init)
         }
 
         // Paramount+: /shows/{slug} or /movies/{slug}
-        if key.contains("paramount") || host.contains("paramount") {
+        if hostLower.contains("paramount") || key.contains("paramount") {
+            let parts = path.split(separator: "/").map(String.init)
             if let idx = parts.firstIndex(where: { $0 == "shows" || $0 == "movies" }),
                idx + 1 < parts.count {
                 return parts[idx + 1]
@@ -286,18 +289,8 @@ enum RokuECPClient {
             return parts.last
         }
 
-        // Peacock: /watch/{id} or /series/{id}
-        if key.contains("peacock") || host.contains("peacocktv") {
-            return parts.last
-        }
-
-        // Apple TV+: /show/{slug}/{id}
-        if key.contains("apple") || host.contains("tv.apple") {
-            return parts.last
-        }
-
-        // Generic fallback: last non-empty path component
-        return parts.last
+        // Peacock, Apple TV+, and others: last path component
+        return path.split(separator: "/").last.map(String.init)
     }
 
     // MARK: - Raw HTTP POST (ATS-bypass)
