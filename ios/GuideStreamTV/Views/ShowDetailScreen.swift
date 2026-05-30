@@ -315,7 +315,6 @@ struct ShowDetailScreen: View {
                     }
                     synopsisSection
                     episodesSection
-                    whereToWatchSection
                     fanActivitySection
                     Color.clear.frame(height: 140)
                 }
@@ -774,113 +773,18 @@ struct ShowDetailScreen: View {
     // MARK: Episodes
 
     private var episodesSection: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack {
-                Text(selectedSeason)
-                    .scaledFont(size: 17, weight: .semibold)
-                    .foregroundStyle(.white)
-                Spacer()
-                Menu {
-                    let total = max(1, vm.tmdb?.numberOfSeasons ?? 4)
-                    ForEach(1...total, id: \.self) { i in
-                        Button("Season \(i)") {
-                            selectedSeason = "Season \(i)"
-                            Task { await vm.loadSeason(i) }
-                        }
-                    }
-                } label: {
-                    HStack(spacing: 4) {
-                        Text("Season")
-                            .scaledFont(size: 12, weight: .semibold)
-                            .foregroundStyle(Color.white.opacity(0.75))
-                        Image(systemName: "chevron.down")
-                            .scaledFont(size: 10, weight: .bold)
-                            .foregroundStyle(Color.white.opacity(0.75))
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 7)
-                    .background(Capsule().fill(Color.white.opacity(0.08)))
+        EpisodeAvailabilitySection(
+            tmdbId: resolvedTmdbId,
+            isTV: isTV,
+            titleId: titleId,
+            onEpisodeTap: { row in
+                if case .available(_, _, let url) = row.state, let url = url {
+                    UIApplication.shared.open(url)
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
                 }
             }
-            .padding(.horizontal, 20)
-
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 12) {
-                    if !tmdbEpisodes.isEmpty {
-                        ForEach(tmdbEpisodes) { ep in
-                            Button {
-                                WatchIntentLogger.shared.log(
-                                    eventType: .cardTapped,
-                                    titleId: titleId,
-                                    metadata: [
-                                        "season": ep.seasonNumber ?? vm.currentSeasonNumber,
-                                        "episode": ep.episodeNumber
-                                    ]
-                                )
-                            } label: {
-                                TMDBEpisodeCardSmall(
-                                    episode: ep,
-                                    seasonNumber: vm.currentSeasonNumber
-                                )
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    } else {
-                        ForEach(episodes) { ep in
-                            Button {
-                                WatchIntentLogger.shared.log(
-                                    eventType: .cardTapped,
-                                    titleId: titleId,
-                                    metadata: [
-                                        "season": parseSeason(ep.code),
-                                        "episode": parseEpisode(ep.code)
-                                    ]
-                                )
-                            } label: {
-                                EpisodeCardSmall(episode: ep)
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-                }
-                .padding(.horizontal, 20)
-            }
-        }
-        .padding(.top, 22)
-    }
-
-    // MARK: Where to watch
-
-    private var whereToWatchSection: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("Where to Watch")
-                .scaledFont(size: 17, weight: .semibold)
-                .foregroundStyle(.white)
-                .padding(.horizontal, 20)
-
-            let services = vm.services
-            if services.isEmpty {
-                Text(vm.isLoading ? "Finding services\u{2026}" : "No streaming sources found.")
-                    .scaledFont(size: 13)
-                    .foregroundStyle(Color.textSecondary)
-                    .padding(.horizontal, 20)
-            } else {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 10) {
-                        ForEach(services) { s in
-                            Button {
-                                openDeeplink(serviceName: s.name)
-                            } label: {
-                                ServiceBadge(service: s)
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-                    .padding(.horizontal, 20)
-                }
-            }
-        }
-        .padding(.top, 24)
+        )
+        .padding(.top, 8)
     }
 
     // MARK: Fan activity

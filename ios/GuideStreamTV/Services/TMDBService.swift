@@ -229,6 +229,11 @@ nonisolated struct TMDBService {
     private let apiKey = "233f8054219ef58bc928549b4b5bab50"
     private let base = "https://api.themoviedb.org/3"
 
+    /// Wraps `searchContent` so SearchView callers can use the shorter name.
+    func search(query: String) async throws -> [TMDBResult] {
+        try await searchContent(query: query)
+    }
+
     func searchContent(query: String) async throws -> [TMDBResult] {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty,
@@ -359,6 +364,29 @@ nonisolated struct TMDBService {
             firstAirDate: r.firstAirDate,
             releaseDate: r.releaseDate
         )
+    }
+
+    /// Parameterized trending fetch — lets SearchView pull TV and movies separately.
+    func getTrending(mediaType: String, timeWindow: String) async throws -> [TMDBResult] {
+        let urlString = "\(base)/trending/\(mediaType)/\(timeWindow)?api_key=\(apiKey)&language=en-US"
+        let data = try await get(urlString)
+        let env = try JSONDecoder().decode(TMDBTrendingEnvelope.self, from: data)
+        return env.results
+            .filter { ($0.mediaType ?? mediaType) == "tv" || ($0.mediaType ?? mediaType) == "movie" }
+            .map { r in
+                TMDBResult(
+                    id: r.id,
+                    mediaType: r.mediaType ?? mediaType,
+                    name: r.name,
+                    title: r.title,
+                    posterPath: r.posterPath,
+                    backdropPath: r.backdropPath,
+                    overview: r.overview,
+                    voteAverage: r.voteAverage,
+                    firstAirDate: r.firstAirDate,
+                    releaseDate: r.releaseDate
+                )
+            }
     }
 
     func getTrending() async throws -> [TMDBResult] {

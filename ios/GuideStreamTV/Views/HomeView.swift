@@ -116,6 +116,7 @@ struct HomeView: View {
     @State private var widgetBannerDismissed: Bool = false
     @State private var path: [HomeRoute] = []
     @State private var detailSubject: DetailSubject?
+    @State private var showSearch: Bool = false
     @State private var showServicesSheet: Bool = false
     @State private var showWatchListSheet: Bool = false
     @State private var auth = AuthViewModel.shared
@@ -145,6 +146,32 @@ struct HomeView: View {
                 ScrollView(showsIndicators: false) {
                     VStack(spacing: 20) {
                         Color.clear.frame(height: 56)
+
+                        // Search bar tap target — opens SearchView
+                        Button {
+                            showSearch = true
+                        } label: {
+                            HStack(spacing: 10) {
+                                Image(systemName: "magnifyingglass")
+                                    .font(.system(size: 15, weight: .medium))
+                                    .foregroundStyle(Color.white.opacity(0.4))
+                                Text("Search shows, movies, sports…")
+                                    .font(.system(size: 14))
+                                    .foregroundStyle(Color.white.opacity(0.3))
+                                Spacer()
+                            }
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 11)
+                            .background(Color.white.opacity(0.07))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 14)
+                                    .stroke(Color.white.opacity(0.10), lineWidth: 1)
+                            )
+                            .clipShape(RoundedRectangle(cornerRadius: 14))
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.horizontal, 16)
+
                         if !heroItems.isEmpty {
                             HomeHeroCarousel(
                                 items: heroItems,
@@ -534,6 +561,21 @@ struct HomeView: View {
             }
             .sheet(item: $selectedGame) { game in
                 SportsWatchSheet(game: game)
+            }
+            .fullScreenCover(isPresented: $showSearch) {
+                SearchView(isPresented: $showSearch) { result in
+                    showSearch = false
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                        detailSubject = .show(PosterShow(
+                            title: result.title,
+                            meta: result.isTV ? "TV Series" : "Movie",
+                            posterColors: HomeFallback.posterColors,
+                            symbol: "play.fill",
+                            posterUrl: result.posterUrl,
+                            tmdbId: result.id
+                        ))
+                    }
+                }
             }
             .sheet(isPresented: $showServicesSheet) {
                 ServicesBottomSheet()
