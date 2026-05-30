@@ -156,6 +156,7 @@ final class SportsService {
         guard let s else { return nil }
         let f = ISO8601DateFormatter()
         f.formatOptions = [.withInternetDateTime]
+        f.timeZone = TimeZone.current
         return f.date(from: s)
     }
 }
