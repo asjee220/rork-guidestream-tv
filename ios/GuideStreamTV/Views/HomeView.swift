@@ -117,6 +117,7 @@ struct HomeView: View {
     @State private var path: [HomeRoute] = []
     @State private var detailSubject: DetailSubject?
     @State private var showSearch: Bool = false
+    @State private var searchResultForDetail: SearchResult?
     @State private var showServicesSheet: Bool = false
     @State private var showWatchListSheet: Bool = false
     @State private var auth = AuthViewModel.shared
@@ -610,16 +611,30 @@ struct HomeView: View {
                 SearchView(isPresented: $showSearch) { result in
                     showSearch = false
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
-                        detailSubject = .show(PosterShow(
-                            title: result.title,
-                            meta: result.isTV ? "TV Series" : "Movie",
-                            posterColors: HomeFallback.posterColors,
-                            symbol: "play.fill",
-                            posterUrl: result.posterUrl,
-                            tmdbId: result.id
-                        ))
+                        if result.isTV {
+                            searchResultForDetail = result
+                        } else {
+                            detailSubject = .show(PosterShow(
+                                title: result.title,
+                                meta: "Movie",
+                                posterColors: HomeFallback.posterColors,
+                                symbol: "play.fill",
+                                posterUrl: result.posterUrl,
+                                tmdbId: result.id
+                            ))
+                        }
                     }
                 }
+            }
+            .fullScreenCover(item: $searchResultForDetail) { result in
+                ShowDetailScreen(
+                    titleId: String(result.id),
+                    title: result.title,
+                    posterUrl: result.posterUrl,
+                    backdropUrl: result.backdropUrl,
+                    isTV: true,
+                    onBack: { searchResultForDetail = nil }
+                )
             }
             .sheet(isPresented: $showServicesSheet) {
                 ServicesBottomSheet()
