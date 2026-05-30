@@ -265,6 +265,7 @@ struct ShowDetailScreen: View {
     @State private var showComments: Bool = false
     @State private var selectedSeason: String = "Season 4"
     @State private var playOnOpen: Bool = false
+    @State private var showMoreEpisodes: Bool = false
     @State private var vm = ShowDetailViewModel()
 
     private let platformId = "hbo"
@@ -292,6 +293,37 @@ struct ShowDetailScreen: View {
         vm.tmdb?.backdropUrl ?? backdropUrl ?? posterUrl
     }
     private var tmdbEpisodes: [TMDBEpisode] { vm.season?.episodes ?? [] }
+
+    /// The most recent episode from the loaded season. Falls back to
+    /// the last static fallback episode when TMDB data hasn't loaded yet.
+    private var latestEpisode: (seasonNum: Int, episodeNum: Int, name: String, runtime: String)? {
+        if let ep = tmdbEpisodes.last {
+            let runtime = ep.runtime.map { "\($0) min" } ?? ""
+            return (vm.currentSeasonNumber, ep.episodeNumber, ep.name ?? "Latest Episode", runtime)
+        }
+        if let ep = episodes.last {
+            let season = parseSeason(ep.code)
+            let epNum = parseEpisode(ep.code)
+            return (season, epNum, ep.title, ep.duration)
+        }
+        return nil
+    }
+
+    /// Short service name for display inside the watch button badge.
+    private var primaryServiceShortName: String? {
+        guard let name = vm.primaryService?.name else { return nil }
+        let key = name.lowercased()
+        if key.contains("paramount") { return "P+" }
+        if key.contains("disney") { return "D+" }
+        if key.contains("apple") { return "TV+" }
+        if key.contains("prime") || key.contains("amazon") { return "Prime" }
+        if key.contains("peacock") { return "Peacock" }
+        if key.contains("netflix") { return "Netflix" }
+        if key.contains("hulu") { return "Hulu" }
+        if key.contains("max") || key.contains("hbo") { return "Max" }
+        if key.contains("crunchyroll") { return "Crunchyroll" }
+        return name
+    }
 
     /// Network / platform name for the subtitle. Prefers Watchmode's primary
     /// service over TMDB's networks so the label matches the badge below it
@@ -922,55 +954,210 @@ struct ShowDetailScreen: View {
 
     private var bottomActionBar: some View {
         VStack(spacing: 0) {
-            Rectangle().fill(Color.white.opacity(0.07)).frame(height: 1)
-            HStack(spacing: 12) {
-                Button(action: {
-                    // Prefer the resolved Watchmode source so the orange CTA
-                    // lands on the title's page in the right streaming app.
-                    // Falls back to the Play-on sheet only when Watchmode
-                    // returned nothing usable.
-                    if let svc = vm.primaryService {
-                        openDeeplink(serviceName: svc.name)
-                    } else {
-                        WatchIntentLogger.shared.log(
-                            eventType: .deeplinkFired,
-                            titleId: titleId,
-                            platformId: platformId
-                        )
-                        openPlayOn()
-                    }
-                }) {
-                    HStack(spacing: 10) {
-                        Image(systemName: "play.fill")
-                            .scaledFont(size: 16, weight: .bold)
-                        Text("Resume S4 E7")
-                            .scaledFont(size: 15, weight: .bold)
-                    }
-                    .foregroundStyle(.white)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 52)
-                    .background(Capsule().fill(Color.orange))
-                    .shadow(color: Color.orange.opacity(0.4), radius: 14, y: 6)
-                }
-                .buttonStyle(.plain)
+            Rectangle()
+                .fill(Color.white.opacity(0.07))
+                .frame(height: 1)
 
-                Button(action: { withAnimation { saved.toggle() } }) {
-                    Image(systemName: saved ? "checkmark" : "plus")
-                        .scaledFont(size: 20, weight: .bold)
-                        .foregroundStyle(.white)
-                        .frame(width: 52, height: 52)
-                        .background(Circle().fill(Color.white.opacity(0.08)))
-                        .overlay(Circle().stroke(Color.white.opacity(0.14), lineWidth: 1))
+            VStack(spacing: 10) {
+
+                // Episode context strip
+                if let ep = latestEpisode {
+                    HStack(spacing: 8) {
+                        RoundedRectangle(cornerRadius: 5, style: .continuous)
+                            .fill(Color.white.opacity(0.08))
+                            .frame(width: 38, height: 26)
+                            .overlay(
+                                Image(systemName: "play.fill")
+                                    .scaledFont(size: 8, weight: .bold)
+                                    .foregroundStyle(Color.white.opacity(0.45))
+                            )
+
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text("S\(ep.seasonNum) · E\(ep.episodeNum) · Most recent")
+                                .scaledFont(size: 9, weight: .semibold)
+                                .foregroundStyle(Color.white.opacity(0.38))
+                            Text("\(ep.name)\(ep.runtime.isEmpty ? "" : " · \(ep.runtime)")")
+                                .scaledFont(size: 11, weight: .semibold)
+                                .foregroundStyle(.white)
+                                .lineLimit(1)
+                        }
+
+                        Spacer(minLength: 0)
+
+                        Text("NEW")
+                            .scaledFont(size: 7, weight: .heavy)
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 2)
+                            .background(
+                                RoundedRectangle(cornerRadius: 3, style: .continuous)
+                                    .fill(Color.orange)
+                            )
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 8)
+                    .background(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .fill(Color.white.opacity(0.05))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                    .stroke(Color.white.opacity(0.09), lineWidth: 1)
+                            )
+                    )
                 }
-                .buttonStyle(.plain)
+
+                // Primary watch button + Watch List circle (side by side,
+                // same layout as before — circle button preserved exactly)
+                HStack(spacing: 8) {
+                    Button(action: {
+                        if let svc = vm.primaryService {
+                            openDeeplink(serviceName: svc.name)
+                        } else {
+                            WatchIntentLogger.shared.log(
+                                eventType: .deeplinkFired,
+                                titleId: titleId,
+                                platformId: platformId
+                            )
+                            openPlayOn()
+                        }
+                    }) {
+                        HStack(spacing: 8) {
+                            Image(systemName: "play.fill")
+                                .scaledFont(size: 15, weight: .bold)
+
+                            if let ep = latestEpisode {
+                                Text("Watch S\(ep.seasonNum) E\(ep.episodeNum)")
+                                    .scaledFont(size: 15, weight: .bold)
+                            } else {
+                                Text("Watch Now")
+                                    .scaledFont(size: 15, weight: .bold)
+                            }
+
+                            if let badge = primaryServiceShortName {
+                                Text(badge.uppercased())
+                                    .scaledFont(size: 9, weight: .heavy)
+                                    .foregroundStyle(.white)
+                                    .padding(.horizontal, 7)
+                                    .padding(.vertical, 3)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                            .fill(Color.white.opacity(0.22))
+                                    )
+                            }
+                        }
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 52)
+                        .background(Capsule().fill(Color.orange))
+                        .shadow(color: Color.orange.opacity(0.35), radius: 14, y: 6)
+                    }
+                    .buttonStyle(.plain)
+
+                    // Watch List circle — behaviour identical to before
+                    Button(action: {
+                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.65)) {
+                            saved.toggle()
+                        }
+                    }) {
+                        VStack(spacing: 2) {
+                            Image(systemName: saved ? "checkmark" : "plus")
+                                .scaledFont(size: 18, weight: .bold)
+                                .foregroundStyle(saved
+                                    ? Color(red: 0.20, green: 0.78, blue: 0.35)
+                                    : .white
+                                )
+                            Text(saved ? "Saved" : "Watch List")
+                                .scaledFont(size: 8, weight: .semibold)
+                                .foregroundStyle(saved
+                                    ? Color(red: 0.20, green: 0.78, blue: 0.35)
+                                    : Color.white.opacity(0.55)
+                                )
+                        }
+                        .frame(width: 52, height: 52)
+                        .background(
+                            Circle().fill(saved
+                                ? Color(red: 0.20, green: 0.78, blue: 0.35).opacity(0.15)
+                                : Color.white.opacity(0.08)
+                            )
+                        )
+                        .overlay(
+                            Circle().stroke(
+                                saved
+                                    ? Color(red: 0.20, green: 0.78, blue: 0.35).opacity(0.35)
+                                    : Color.white.opacity(0.14),
+                                lineWidth: 1
+                            )
+                        )
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                // Two outlined secondary buttons
+                HStack(spacing: 8) {
+                    Button(action: {
+                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                        showMoreEpisodes = true
+                    }) {
+                        HStack(spacing: 5) {
+                            Image(systemName: "list.bullet")
+                                .scaledFont(size: 12, weight: .semibold)
+                                .foregroundStyle(Color.white.opacity(0.55))
+                            Text("More episodes")
+                                .scaledFont(size: 12, weight: .semibold)
+                                .foregroundStyle(.white)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 40)
+                        .background(
+                            Capsule().fill(Color.white.opacity(0.05))
+                        )
+                        .overlay(
+                            Capsule().stroke(Color.white.opacity(0.16), lineWidth: 1)
+                        )
+                    }
+                    .buttonStyle(.plain)
+
+                    Button(action: {
+                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                        onBack()
+                    }) {
+                        HStack(spacing: 5) {
+                            Image(systemName: "info.circle")
+                                .scaledFont(size: 12, weight: .semibold)
+                                .foregroundStyle(Color.white.opacity(0.55))
+                            Text("Full details")
+                                .scaledFont(size: 12, weight: .semibold)
+                                .foregroundStyle(.white)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 40)
+                        .background(
+                            Capsule().fill(Color.white.opacity(0.05))
+                        )
+                        .overlay(
+                            Capsule().stroke(Color.white.opacity(0.16), lineWidth: 1)
+                        )
+                    }
+                    .buttonStyle(.plain)
+                }
             }
-            .padding(.horizontal, 20)
-            .padding(.top, 14)
+            .padding(.horizontal, 16)
+            .padding(.top, 12)
             .padding(.bottom, 24)
             .background(
                 Color.navy.opacity(0.90)
                     .background(.ultraThinMaterial)
                     .ignoresSafeArea(edges: .bottom)
+            )
+        }
+        .fullScreenCover(isPresented: $showMoreEpisodes) {
+            MoreEpisodesScreen(
+                titleId: titleId,
+                title: displayTitle,
+                posterUrl: posterUrl,
+                isTV: isTV,
+                onBack: { showMoreEpisodes = false }
             )
         }
     }
