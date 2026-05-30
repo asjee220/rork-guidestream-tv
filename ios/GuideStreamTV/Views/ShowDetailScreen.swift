@@ -310,12 +310,9 @@ struct ShowDetailScreen: View {
                     hero
                     genresRow
                     socialCounter
-                    if vm.tvdbNextEpisode != nil || seriesStatusText != nil {
-                        nextEpisodeBanner
-                    }
+                    fanActivitySection
                     synopsisSection
                     episodesSection
-                    fanActivitySection
                     Color.clear.frame(height: 140)
                 }
                 .background(
