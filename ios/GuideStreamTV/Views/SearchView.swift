@@ -222,7 +222,7 @@ struct SearchView: View {
  ForEach(Array(vm.results.enumerated()), id: \.element.id) { idx, result in
  TypeAheadRow(result: result, query: vm.query) { open(result) }
  if idx < vm.results.count - 1 {
- Divider().overlay(Color.white.opacity(0.06)).padding(.leading, 72)
+ Divider().overlay(Color.white.opacity(0.06)).padding(.leading, 58)
  }
  }
  Color.clear.frame(height: 100)
@@ -298,11 +298,11 @@ private struct TypeAheadRow: View {
 
  var body: some View {
  Button(action: onTap) {
- HStack(spacing: 12) {
- // Poster thumbnail
- RoundedRectangle(cornerRadius: 7)
+ HStack(spacing: 10) {
+ // Poster thumbnail — 80% scale of popular grid poster
+ RoundedRectangle(cornerRadius: 6)
  .fill(Color.white.opacity(0.06))
- .frame(width: 44, height: 60)
+ .frame(width: 35, height: 48)
  .overlay {
  if let url = result.posterUrl.flatMap(URL.init) {
  AsyncImage(url: url) { phase in
@@ -310,33 +310,33 @@ private struct TypeAheadRow: View {
  img.resizable().aspectRatio(contentMode: .fill)
  }
  }
- .clipShape(RoundedRectangle(cornerRadius: 7))
+ .clipShape(RoundedRectangle(cornerRadius: 6))
  }
  }
 
- VStack(alignment: .leading, spacing: 3) {
+ VStack(alignment: .leading, spacing: 2) {
  highlightedTitle
  Text(result.isTV ? "TV Series" : "Movie")
- .font(.system(size: 11))
+ .font(.system(size: 9))
  .foregroundStyle(Color.white.opacity(0.4))
  }
  .frame(maxWidth: .infinity, alignment: .leading)
 
  if let svc = result.serviceName {
  Text(result.serviceShort)
- .font(.system(size: 9, weight: .black))
+ .font(.system(size: 7, weight: .black))
  .foregroundStyle(.white)
- .padding(.horizontal, 6)
- .padding(.vertical, 3)
- .background(RoundedRectangle(cornerRadius: 5).fill(result.serviceColor))
+ .padding(.horizontal, 5)
+ .padding(.vertical, 2)
+ .background(RoundedRectangle(cornerRadius: 4).fill(result.serviceColor))
  }
 
  Image(systemName: "chevron.right")
- .font(.system(size: 12, weight: .semibold))
+ .font(.system(size: 10, weight: .semibold))
  .foregroundStyle(Color.white.opacity(0.2))
  }
  .padding(.horizontal, 16)
- .padding(.vertical, 9)
+ .padding(.vertical, 7)
  .contentShape(Rectangle())
  }
  .buttonStyle(.plain)
@@ -356,11 +356,11 @@ private struct TypeAheadRow: View {
  Text(String(match)).foregroundStyle(Color.orange) +
  Text(String(end)).foregroundStyle(.white)
  }
- .font(.system(size: 14, weight: .semibold))
+ .font(.system(size: 11, weight: .semibold))
  } else {
  Text(result.title)
  .foregroundStyle(.white)
- .font(.system(size: 14, weight: .semibold))
+ .font(.system(size: 11, weight: .semibold))
  }
  }
 }
