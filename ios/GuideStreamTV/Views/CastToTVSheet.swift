@@ -26,6 +26,7 @@ struct CastToTVSheet: View {
     /// IDs (Jellyfin, Plex, sideloaded apps) need the correct type to resolve
     /// the TMDB id to playback.
     var isTV: Bool = true
+    var watchmodeSource: WatchmodeSource? = nil
 
     @State private var discovery: TVCastDiscovery = TVCastDiscovery()
     @State private var sendingDeviceId: String? = nil
@@ -719,12 +720,33 @@ struct CastToTVSheet: View {
                 _ = await RokuECPClient.keypress(host: host, port: port, key: "Home")
                 return false
             }
+            let contentId: String? = {
+                if let iosUrl = watchmodeSource?.iosUrl,
+                   !iosUrl.lowercased().contains("paid plans"),
+                   let id = RokuECPClient.extractContentId(from: iosUrl, platform: platform) {
+                    #if DEBUG
+                    print("[CastToTVSheet] Roku contentId from iosUrl: \(id)")
+                    #endif
+                    return id
+                }
+                if let webUrl = watchmodeSource?.webUrl,
+                   let id = RokuECPClient.extractContentId(from: webUrl, platform: platform) {
+                    #if DEBUG
+                    print("[CastToTVSheet] Roku contentId from webUrl: \(id)")
+                    #endif
+                    return id
+                }
+                #if DEBUG
+                print("[CastToTVSheet] Roku — no URL-based contentId, falling back to tmdbId")
+                #endif
+                return tmdbId.map { String($0) }
+            }()
             #if DEBUG
-            print("[CastToTVSheet] Roku launch → host:\(host) port:\(port) channelId:\(channelId) platform:\(platform)")
+            print("[CastToTVSheet] Roku launch → host:\(host) port:\(port) channelId:\(channelId) contentId:\(contentId ?? "nil") platform:\(platform)")
             #endif
             let result = await RokuECPClient.launch(
                 host: host, port: port, channelId: channelId,
-                contentId: tmdbId.map { String($0) },
+                contentId: contentId,
                 mediaType: isTV ? "series" : "movie"
             )
             return result.isSuccess
@@ -737,12 +759,9 @@ struct CastToTVSheet: View {
             }
             return true
         case .googleTV, .fireTVStick, .samsungTV, .lgTV, .macAirPlay:
-            // These devices don't have a public programmatic launch API
-            // accessible from iOS without external SDKs. We return true so
-            // the banner shows and the user gets a clear instruction to open
-            // the app on their TV. Programmatic launch for these platforms
-            // will be added via server-side Supabase Edge Functions in a
-            // future update.
+            #if DEBUG
+            print("[CastToTVSheet] \(device.kind.rawValue) — showing manual instruction banner for '\(device.name)'")
+            #endif
             return true
         }
     }
@@ -857,7 +876,7 @@ struct CastToTVSheet: View {
         case .samsungTV:
             return "Open \(platformShortName) on your Samsung TV"
         case .lgTV:
-            return "Open \(platformShortName) on your LG TV"
+            return "Use your LG remote to open \(platformShortName)"
         case .macAirPlay:
             return "Open \(platformShortName) on your Mac"
         }

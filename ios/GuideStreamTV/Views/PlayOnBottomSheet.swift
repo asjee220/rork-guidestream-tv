@@ -145,9 +145,10 @@ struct PlayOnBottomSheet: View {
             CastToTVSheet(
                 isPresented: $showCastSheet,
                 showTitle: showTitle,
-                platform: whereToWatchLabel,
+                platform: resolvedSource?.name ?? whereToWatchLabel,
                 tmdbId: tmdbId,
-                isTV: resolvedIsTV
+                isTV: resolvedIsTV,
+                watchmodeSource: resolvedSource
             )
         }
         .task(id: tmdbId ?? -1) {

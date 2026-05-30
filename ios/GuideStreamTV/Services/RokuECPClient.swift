@@ -104,11 +104,13 @@ enum RokuECPClient {
     ///   3. `/launch/<id>` — bare launch, opens the channel home. This is the
     ///      "did we reach the box at all?" probe.
     ///
-    /// We deliberately do NOT send `/keypress/Home` first. On Roku OS 14.1+,
-    /// keypress is blocked in Limited mode while `launch` may still succeed,
-    /// so the Home pre-step would silently fail for most users and add ~1.5s
-    /// of latency. If the user wants a clean state they can press Home on
-    /// their physical remote.
+    /// Sends `/keypress/Home` first so the channel always launches from a
+    /// known state, then waits for the Home transition to finish before
+    /// sending the launch command. On TCL Roku TVs the launch is silently
+    /// dropped if it arrives mid-animation. On Roku OS 14.1+ in Limited mode
+    /// the Home keypress returns 403, but that's harmless — the launch still
+    /// proceeds and either succeeds (channel opens over whatever was on
+    /// screen) or returns `.limitedMode`.
     nonisolated static func launch(
         host: String,
         port: UInt16,
@@ -116,6 +118,12 @@ enum RokuECPClient {
         contentId: String? = nil,
         mediaType: String = "series"
     ) async -> RokuLaunchResult {
+        // Send Home first so we always launch from a known state.
+        // TCL Roku TVs silently drop the launch if it arrives while
+        // the Home transition is still animating, so we wait 900ms.
+        _ = await rawHTTPPost(host: host, port: port, path: "/keypress/Home", timeout: 1.5)
+        try? await Task.sleep(for: .milliseconds(900))
+
         // Build the candidate paths in priority order.
         var paths: [String] = []
         if let contentId, !contentId.isEmpty {
@@ -212,6 +220,84 @@ enum RokuECPClient {
             }
             conn.start(queue: .global(qos: .userInitiated))
         }
+    }
+
+    /// Extracts the platform-native content ID from a Watchmode ios_url or
+    /// web_url. This is the ID Roku ECP needs for deep linking — each channel
+    /// uses its own catalog ID system, embedded in the title's URL.
+    ///
+    /// Examples:
+    /// https://www.netflix.com/title/80057281 → "80057281"
+    /// https://www.amazon.com/dp/B01N4AH0XV → "B01N4AH0XV"
+    /// https://www.hulu.com/series/ancient-aliens-xx → "ancient-aliens-xx"
+    /// https://www.disneyplus.com/series/foo/barId → "barId"
+    /// https://www.max.com/shows/foo/uuid-here → "uuid-here"
+    nonisolated static func extractContentId(from urlString: String, platform: String) -> String? {
+        guard let comps = URLComponents(string: urlString) else { return nil }
+        let path = comps.path
+        let host = comps.host?.lowercased() ?? ""
+        let key = platform.lowercased()
+        let parts = path.split(separator: "/").map(String.init)
+
+        // Netflix: /title/{id}
+        if key.contains("netflix") || host.contains("netflix") {
+            if let idx = parts.firstIndex(of: "title"), idx + 1 < parts.count {
+                return parts[idx + 1]
+            }
+            return parts.last
+        }
+
+        // Amazon Prime Video: /dp/{ASIN} or /gp/video/detail/{ASIN}
+        if key.contains("prime") || key.contains("amazon") || host.contains("amazon") {
+            if let idx = parts.firstIndex(of: "dp"), idx + 1 < parts.count {
+                return parts[idx + 1]
+            }
+            if let idx = parts.firstIndex(of: "detail"), idx + 1 < parts.count {
+                return parts[idx + 1]
+            }
+            return parts.last
+        }
+
+        // Hulu: /series/{slug} or /movie/{slug} or /watch/{id}
+        if key.contains("hulu") || host.contains("hulu") {
+            if let idx = parts.firstIndex(where: { $0 == "series" || $0 == "movie" || $0 == "watch" }),
+               idx + 1 < parts.count {
+                return parts[idx + 1]
+            }
+            return parts.last
+        }
+
+        // Disney+: /series/{name}/{id} or /movies/{name}/{id}
+        if key.contains("disney") || host.contains("disneyplus") {
+            return parts.last
+        }
+
+        // Max (HBO): /shows/{name}/{uuid}
+        if key.contains("hbo") || key.contains("max") || host.contains("max.com") {
+            return parts.last
+        }
+
+        // Paramount+: /shows/{slug} or /movies/{slug}
+        if key.contains("paramount") || host.contains("paramount") {
+            if let idx = parts.firstIndex(where: { $0 == "shows" || $0 == "movies" }),
+               idx + 1 < parts.count {
+                return parts[idx + 1]
+            }
+            return parts.last
+        }
+
+        // Peacock: /watch/{id} or /series/{id}
+        if key.contains("peacock") || host.contains("peacocktv") {
+            return parts.last
+        }
+
+        // Apple TV+: /show/{slug}/{id}
+        if key.contains("apple") || host.contains("tv.apple") {
+            return parts.last
+        }
+
+        // Generic fallback: last non-empty path component
+        return parts.last
     }
 
     // MARK: - Raw HTTP POST (ATS-bypass)
