@@ -45,6 +45,7 @@ struct EpisodeDetailSheet: View {
     @State private var resolvedOverview: String?
     @State private var isResolvingSource: Bool = false
     @State private var adDismissed: Bool = false
+    @State private var showFullDetail: Bool = false
 
     private var platformColor: Color {
         if let name = resolvedSource?.name { return brandColor(for: name) }
@@ -250,6 +251,16 @@ struct EpisodeDetailSheet: View {
         .task(id: tmdbId ?? -1) {
             adDismissed = false
             await resolveStreamingSource()
+        }
+        .fullScreenCover(isPresented: $showFullDetail) {
+            ShowDetailScreen(
+                titleId: tmdbId.map(String.init) ?? "",
+                title: title,
+                posterUrl: posterUrl,
+                backdropUrl: resolvedBackdrop,
+                isTV: isTV,
+                onBack: { showFullDetail = false }
+            )
         }
         .task(id: socialTitleKey) {
             await social.refreshCounts(titleId: socialTitleKey)
@@ -841,7 +852,7 @@ struct EpisodeDetailSheet: View {
     }
 
     private var viewFullDetailsButton: some View {
-        Button(action: { dismiss() }) {
+        Button(action: { showFullDetail = true }) {
             HStack(spacing: 6) {
                 Text("View Full Details")
                     .scaledFont(size: 15, weight: .semibold)
