@@ -87,6 +87,83 @@ private enum RokuHTTPOutcome {
 
 enum RokuECPClient {
 
+    // MARK: - ECP status check (pre-launch)
+
+    /// Outcome of probing `/query/device-info` before attempting a launch.
+    /// Lets the UI route to the limited-mode help screen *before* we burn
+    /// the Home-keypress + 1.5s sleep on a device that will always 403.
+    enum ECPStatus { case enabled, limited, unreachable }
+
+    /// Checks whether ECP is enabled on the Roku device by probing
+    /// /query/device-info via raw HTTP GET.
+    ///
+    /// - `.enabled`  — ECP is working, proceed with launch.
+    /// - `.limited`  — Device is in limited mode (403 response). User must
+    ///   enable "Control by mobile apps" in Roku settings.
+    /// - `.unreachable` — No response within timeout (wrong IP, device off,
+    ///   firewall, or different network).
+    nonisolated static func checkECPEnabled(host: String, port: UInt16) async -> ECPStatus {
+        await withCheckedContinuation { (continuation: CheckedContinuation<ECPStatus, Never>) in
+            let nwHost = NWEndpoint.Host(host)
+            guard let nwPort = NWEndpoint.Port(rawValue: port) else {
+                continuation.resume(returning: .unreachable); return
+            }
+            let params = NWParameters.tcp
+            params.prohibitedInterfaceTypes = [.cellular]
+            let conn = NWConnection(host: nwHost, port: nwPort, using: params)
+
+            let lock = NSLock()
+            var didResume = false
+            let finish: (ECPStatus) -> Void = { value in
+                lock.lock()
+                let already = didResume
+                didResume = true
+                lock.unlock()
+                if already { return }
+                conn.cancel()
+                continuation.resume(returning: value)
+            }
+
+            DispatchQueue.global().asyncAfter(deadline: .now() + 3.0) {
+                finish(.unreachable)
+            }
+
+            conn.stateUpdateHandler = { state in
+                switch state {
+                case .ready:
+                    let req = "GET /query/device-info HTTP/1.0\r\n"
+                        + "Host: \(host)\r\n"
+                        + "Connection: close\r\n\r\n"
+                    conn.send(content: req.data(using: .utf8), completion: .contentProcessed { _ in })
+                    var buffer = Data()
+                    func readNext() {
+                        conn.receive(minimumIncompleteLength: 1, maximumLength: 4096) { data, _, isComplete, error in
+                            if let data = data { buffer.append(data) }
+                            if let line = firstResponseLine(in: buffer) {
+                                if line.contains(" 403") {
+                                    finish(.limited)
+                                } else if line.contains(" 2") {
+                                    finish(.enabled)
+                                } else {
+                                    finish(.unreachable)
+                                }
+                                return
+                            }
+                            if isComplete || error != nil { finish(.unreachable); return }
+                            readNext()
+                        }
+                    }
+                    readNext()
+                case .failed, .cancelled:
+                    finish(.unreachable)
+                default:
+                    break
+                }
+            }
+            conn.start(queue: .global(qos: .userInitiated))
+        }
+    }
+
     /// Fires an ECP launch request at the Roku device.
     ///
     /// `contentId` is the channel-specific catalog identifier — we pass the
@@ -120,9 +197,12 @@ enum RokuECPClient {
     ) async -> RokuLaunchResult {
         // Send Home first so we always launch from a known state.
         // TCL Roku TVs silently drop the launch if it arrives while
-        // the Home transition is still animating, so we wait 900ms.
-        _ = await rawHTTPPost(host: host, port: port, path: "/keypress/Home", timeout: 1.5)
-        try? await Task.sleep(for: .milliseconds(900))
+        // the Home transition is still animating. That animation takes
+        // 1.2–1.8s, so we wait 1500ms as the safe minimum — at 900ms the
+        // launch could still land mid-transition and the contentId gets
+        // dropped, opening the channel home screen instead of the title.
+        _ = await rawHTTPPost(host: host, port: port, path: "/keypress/Home", timeout: 2.0)
+        try? await Task.sleep(for: .milliseconds(1500))
 
         // Build the candidate paths in priority order.
         var paths: [String] = []

@@ -33,6 +33,7 @@ struct CastToTVSheet: View {
     @State private var toast: ToastState? = nil
     @State private var playingOn: PlayingOnState? = nil
     @State private var limitedModeHelp: LimitedModeHelp? = nil
+    @State private var rokuLimitedModeDevice: DiscoveredTVDevice? = nil
     @State private var showPermissionPrompt: Bool = false
     @State private var permissionCheckTask: Task<Void, Never>? = nil
     @State private var isManualEntryExpanded: Bool = false
@@ -41,30 +42,34 @@ struct CastToTVSheet: View {
     @FocusState private var manualFieldFocused: Bool
 
     var body: some View {
-        VStack(spacing: 0) {
-            header
-            content
-        }
-        .background(Color(red: 0x0A/255, green: 0x10/255, blue: 0x1E/255))
-        .overlay(alignment: .top) {
-            if let playingOn {
-                playingOnBanner(playingOn)
-                    .padding(.horizontal, 14)
-                    .padding(.top, 10)
-            } else if let toast {
-                toastView(toast).padding(.top, 12)
+        if rokuLimitedModeDevice != nil {
+            rokuLimitedModeView
+        } else {
+            VStack(spacing: 0) {
+                header
+                content
             }
-        }
-        .sheet(item: $limitedModeHelp) { help in
-            LimitedModeHelpSheet(deviceName: help.deviceName)
-        }
-        .presentationDetents([.medium, .large])
-        .presentationDragIndicator(.visible)
-        .presentationBackground(Color(red: 0x0A/255, green: 0x10/255, blue: 0x1E/255))
-        .onAppear { startScan() }
-        .onDisappear {
-            discovery.stop()
-            permissionCheckTask?.cancel()
+            .background(Color(red: 0x0A/255, green: 0x10/255, blue: 0x1E/255))
+            .overlay(alignment: .top) {
+                if let playingOn {
+                    playingOnBanner(playingOn)
+                        .padding(.horizontal, 14)
+                        .padding(.top, 10)
+                } else if let toast {
+                    toastView(toast).padding(.top, 12)
+                }
+            }
+            .sheet(item: $limitedModeHelp) { help in
+                LimitedModeHelpSheet(deviceName: help.deviceName)
+            }
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
+            .presentationBackground(Color(red: 0x0A/255, green: 0x10/255, blue: 0x1E/255))
+            .onAppear { startScan() }
+            .onDisappear {
+                discovery.stop()
+                permissionCheckTask?.cancel()
+            }
         }
     }
 
@@ -625,7 +630,6 @@ struct CastToTVSheet: View {
     /// remote and open the app on the TV itself.
     private func handleSelect(_ device: DiscoveredTVDevice) {
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-        sendingDeviceId = device.id
 
         WatchIntentLogger.shared.log(
             eventType: .playOnDeviceChosen,
@@ -638,26 +642,45 @@ struct CastToTVSheet: View {
             ]
         )
 
-        Task {
-            let ok = await dispatchLaunch(for: device)
-            await MainActor.run {
+        // For Roku: check ECP is enabled before attempting launch.
+        // This avoids burning the Home-keypress + 1.5s sleep on a device
+        // that will always 403 due to limited mode.
+        if device.kind == .roku {
+            Task { @MainActor in
+                sendingDeviceId = device.id
+                // Resolve host first (handles Bonjour-only devices).
+                let resolved = await discovery.resolveHostIfNeeded(for: device)
+                guard let host = resolved.host, let port = resolved.port else {
+                    sendingDeviceId = nil
+                    showToast(ToastState(message: "Couldn't reach \(device.name)", icon: "exclamationmark.triangle.fill"))
+                    return
+                }
+                // Check ECP status before attempting any launch command.
+                let ecpStatus = await RokuECPClient.checkECPEnabled(host: host, port: port)
+                switch ecpStatus {
+                case .limited:
+                    sendingDeviceId = nil
+                    rokuLimitedModeDevice = device
+                    return
+                case .unreachable:
+                    sendingDeviceId = nil
+                    showToast(ToastState(message: "Couldn't reach \(device.name)", icon: "exclamationmark.triangle.fill"))
+                    return
+                case .enabled:
+                    break // proceed to launch
+                }
+                // ECP confirmed enabled — proceed with normal launch flow.
+                let ok = await dispatchLaunch(for: resolved)
                 sendingDeviceId = nil
-
                 guard ok else {
                     UINotificationFeedbackGenerator().notificationOccurred(.error)
                     let channelKnown = RokuChannel.id(for: platform) != nil
-                    let message: String
-                    if device.kind == .roku && !channelKnown {
-                        message = "\(platformShortName) not supported on Roku yet"
-                    } else if device.kind == .roku {
-                        message = "Roku didn't respond — enable ECP in Roku Settings → System → Advanced System Settings → External Control"
-                    } else {
-                        message = "Couldn't reach \(device.name)"
-                    }
+                    let message = channelKnown
+                        ? "Roku didn't respond — try again"
+                        : "\(platformShortName) not supported on Roku yet"
                     showToast(ToastState(message: message, icon: "exclamationmark.triangle.fill"))
                     return
                 }
-
                 UINotificationFeedbackGenerator().notificationOccurred(.success)
                 showToast(ToastState(
                     message: PlaybackSupport.statusLabel(
@@ -673,11 +696,48 @@ struct CastToTVSheet: View {
                     deviceKind: device.kind,
                     hint: handoffHint(for: device.kind)
                 ))
+                CastPlaybackState.shared.start(
+                    title: showTitle,
+                    platform: platform,
+                    deviceName: device.name,
+                    deviceKind: device.kind,
+                    host: resolved.host,
+                    port: resolved.port
+                )
+                Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(1400))
+                    completeHandoff(for: resolved)
+                }
+            }
+            return
+        }
 
-                // Register the session globally so the persistent home
-                // banner takes over after this sheet dismisses. Includes
-                // the host/port for Roku so the home banner's remote-app
-                // button can re-target the same device without re-discovery.
+        // Non-Roku devices — existing flow unchanged.
+        sendingDeviceId = device.id
+        Task {
+            let ok = await dispatchLaunch(for: device)
+            await MainActor.run {
+                sendingDeviceId = nil
+                guard ok else {
+                    UINotificationFeedbackGenerator().notificationOccurred(.error)
+                    showToast(ToastState(message: "Couldn't reach \(device.name)", icon: "exclamationmark.triangle.fill"))
+                    return
+                }
+                UINotificationFeedbackGenerator().notificationOccurred(.success)
+                showToast(ToastState(
+                    message: PlaybackSupport.statusLabel(
+                        platform: platform,
+                        title: showTitle,
+                        room: device.name,
+                        contentURL: nil
+                    ),
+                    icon: "checkmark.circle.fill"
+                ))
+                showPlayingOnBanner(PlayingOnState(
+                    deviceName: device.name,
+                    deviceKind: device.kind,
+                    hint: handoffHint(for: device.kind)
+                ))
                 CastPlaybackState.shared.start(
                     title: showTitle,
                     platform: platform,
@@ -686,10 +746,6 @@ struct CastToTVSheet: View {
                     host: device.host,
                     port: device.port
                 )
-
-                // Give the user a moment to see the banner, then perform
-                // the follow-up (open remote app or open streaming app
-                // for AirPlay) and dismiss the sheet.
                 Task { @MainActor in
                     try? await Task.sleep(for: .milliseconds(1400))
                     completeHandoff(for: device)
@@ -1010,6 +1066,129 @@ struct CastToTVSheet: View {
         )
         .shadow(color: .black.opacity(0.4), radius: 18, y: 6)
         .transition(.move(edge: .top).combined(with: .opacity))
+    }
+
+    // MARK: - Roku limited mode inline view
+
+    /// Shown inline (replaces the device list) when the selected Roku is in
+    /// limited mode (ECP 403). Mirrors JustWatch's "Device in limited mode"
+    /// UX — exact steps, scan again button, and Roku support link.
+    @ViewBuilder
+    private var rokuLimitedModeView: some View {
+        if let device = rokuLimitedModeDevice {
+            VStack(spacing: 0) {
+                // Device row (non-tappable, shows which device triggered this)
+                HStack(spacing: 14) {
+                    ZStack {
+                        Circle()
+                            .fill(Color(red: 0x66/255, green: 0x2D/255, blue: 0x91/255).opacity(0.35))
+                            .frame(width: 46, height: 46)
+                        Image(systemName: "tv.inset.filled")
+                            .font(.system(size: 20))
+                            .foregroundStyle(.white)
+                    }
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(device.name)
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(.white)
+                        Text("Roku")
+                            .font(.system(size: 12))
+                            .foregroundStyle(Color.white.opacity(0.55))
+                    }
+                    Spacer()
+                }
+                .padding(.horizontal, 20)
+                .padding(.top, 22)
+                .padding(.bottom, 24)
+
+                Divider().background(Color.white.opacity(0.10))
+
+                // Instructions
+                VStack(alignment: .leading, spacing: 16) {
+                    Text("Device in limited mode")
+                        .font(.system(size: 20, weight: .bold))
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .padding(.top, 24)
+
+                    Text("To let GuideStream control your Roku device:")
+                        .font(.system(size: 15))
+                        .foregroundStyle(Color.white.opacity(0.75))
+                        .frame(maxWidth: .infinity, alignment: .center)
+
+                    VStack(alignment: .leading, spacing: 12) {
+                        rokuLimitedStep(number: "1", text: "Go to your Roku's **Settings → System → Advanced system settings → Control by mobile apps**")
+                        rokuLimitedStep(number: "2", text: "Select either **'Enabled'** or **'Permissive'**")
+                        rokuLimitedStep(number: "3", text: "Choose **'Yes, allow'** when prompted")
+                        rokuLimitedStep(number: "4", text: "Press **Scan again** below")
+                    }
+                    .padding(.horizontal, 4)
+                }
+                .padding(.horizontal, 20)
+
+                Spacer(minLength: 24)
+
+                // Scan again button
+                Button {
+                    rokuLimitedModeDevice = nil
+                    startScan()
+                } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: "arrow.clockwise")
+                        Text("Scan again")
+                            .font(.system(size: 16, weight: .semibold))
+                    }
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 52)
+                    .background(Color(red: 0x1A/255, green: 0x6F/255, blue: 0xE8/255))
+                    .clipShape(RoundedRectangle(cornerRadius: 14))
+                }
+                .padding(.horizontal, 20)
+                .padding(.bottom, 12)
+
+                // Roku support link
+                Link("\"Can I use a third-party Roku mobile app?\" - Roku Support",
+                     destination: URL(string: "https://support.roku.com/article/360009649793")!)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Color(red: 0x1A/255, green: 0x6F/255, blue: 0xE8/255))
+                    .padding(.bottom, 32)
+            }
+            .frame(maxWidth: .infinity)
+            .background(Color(red: 0x0A/255, green: 0x10/255, blue: 0x1E/255))
+        }
+    }
+
+    private func rokuLimitedStep(number: String, text: String) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Text(number + ".")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(Color.white.opacity(0.55))
+                .frame(width: 20, alignment: .leading)
+            Text(parseLimitedModeBold(text))
+                .font(.system(size: 15))
+                .foregroundStyle(Color.white.opacity(0.85))
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    /// Converts **text** markdown-style bold markers to an AttributedString.
+    private func parseLimitedModeBold(_ input: String) -> AttributedString {
+        var result = AttributedString()
+        var remaining = input
+        while let openRange = remaining.range(of: "**") {
+            let before = String(remaining[remaining.startIndex..<openRange.lowerBound])
+            result += AttributedString(before)
+            remaining = String(remaining[openRange.upperBound...])
+            if let closeRange = remaining.range(of: "**") {
+                var bold = AttributedString(String(remaining[remaining.startIndex..<closeRange.lowerBound]))
+                bold.font = .system(size: 15, weight: .semibold)
+                result += bold
+                remaining = String(remaining[closeRange.upperBound...])
+            }
+        }
+        result += AttributedString(remaining)
+        return result
     }
 }
 
