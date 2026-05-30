@@ -83,6 +83,7 @@ struct AskStreamSheet: View {
     @State private var selectedResult: TMDBResult? = nil
     @State private var selectedMatch: AgentTitleMatchModel? = nil
     @State private var auth = AuthViewModel.shared
+    @State private var providerByResult: [Int: Platform] = [:]
     @FocusState private var inputFocused: Bool
 
     private let suggestions: [String] = [
@@ -148,6 +149,7 @@ struct AskStreamSheet: View {
                         messages = []
                         activeFilter = "All"
                         searchResults = []
+                        providerByResult = [:]
                         searchError = nil
                         isSearching = false
                     }
@@ -495,13 +497,33 @@ struct AskStreamSheet: View {
                                         .foregroundStyle(.white)
                                         .lineLimit(2)
                                         .multilineTextAlignment(.leading)
+
                                     HStack(spacing: 6) {
+                                        // Platform badge — the core fragmentation solve
+                                        if let platform = providerByResult[r.id] {
+                                            Text(platform.name)
+                                                .font(.guideBody(size: 10, weight: .bold))
+                                                .tracking(0.4)
+                                                .foregroundStyle(.white)
+                                                .padding(.horizontal, 8)
+                                                .padding(.vertical, 3)
+                                                .background(
+                                                    Capsule().fill(platform.color)
+                                                )
+                                        } else {
+                                            // Skeleton pill while provider is loading
+                                            Capsule()
+                                                .fill(Color.white.opacity(0.08))
+                                                .frame(width: 72, height: 20)
+                                        }
+
                                         if let y = r.year {
                                             Text(String(y))
                                                 .font(.guideBody(size: 12, weight: .regular))
                                                 .foregroundStyle(Color.textSecondary)
                                         }
-                                        let typeLabel = r.isTV ? "TV" : "Movie"
+
+                                        let typeLabel = r.isTV ? "TV Series" : "Movie"
                                         Text(typeLabel)
                                             .font(.guideBody(size: 10, weight: .bold))
                                             .foregroundStyle(r.isTV ? Color.blue : Color.orange)
@@ -521,9 +543,9 @@ struct AskStreamSheet: View {
                                     .foregroundStyle(Color.white.opacity(0.30))
                             }
                             .padding(.horizontal, 12)
-                            .padding(.vertical, 8)
+                            .padding(.vertical, 10)
                             .background(
-                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                RoundedRectangle(cornerRadius: 14, style: .continuous)
                                     .fill(Color.white.opacity(0.04))
                             )
                         }
@@ -566,7 +588,7 @@ struct AskStreamSheet: View {
                     .foregroundStyle(Color.white.opacity(0.35))
             }
         }
-        .frame(width: 56, height: 80)
+        .frame(width: 80, height: 120)
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 
@@ -850,6 +872,7 @@ struct AskStreamSheet: View {
                 let results = try await TMDBService.shared.searchContent(query: q)
                 if Task.isCancelled { return }
                 searchResults = results
+                Task { await hydrateProviders(for: results) }
                 isSearching = false
             } catch is CancellationError {
                 return
@@ -873,6 +896,29 @@ struct AskStreamSheet: View {
     /// Appends the user message + a pending agent bubble, fires the
     /// Perplexity call, then replaces the pending bubble with the real
     /// response (or a friendly error).
+    private func hydrateProviders(for results: [TMDBResult]) async {
+        let toFetch = results.filter { providerByResult[$0.id] == nil }
+        guard !toFetch.isEmpty else { return }
+        await withTaskGroup(of: (Int, Platform)?.self) { group in
+            for r in toFetch {
+                group.addTask {
+                    let provider = try? await TMDBService.shared.getTopWatchProvider(
+                        tmdbId: r.id, isTV: r.isTV
+                    )
+                    guard let provider,
+                          let platform = Platform.from(providerName: provider.providerName)
+                    else { return nil }
+                    return (r.id, platform)
+                }
+            }
+            for await pair in group {
+                if let (id, platform) = pair {
+                    await MainActor.run { providerByResult[id] = platform }
+                }
+            }
+        }
+    }
+
     private func sendUser(_ text: String) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
