@@ -140,6 +140,7 @@ struct HomeView: View {
     @State private var selectedGenreName: String = "Crime"
     @State private var tvdbUpcomingItems: [TVDBUpcomingItem] = []
     @State private var genreHighlighted: Bool = false
+    @State private var becauseYouWatchHighlighted: Bool = false
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -327,6 +328,18 @@ struct HomeView: View {
                                     genreShows = shows
                                     recommendedShows = shows
                                     await hydrateProviders()
+                                    // Animate the Because You Watch panel: grow → shrink → stay highlighted
+                                    await MainActor.run {
+                                        withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
+                                            becauseYouWatchHighlighted = true
+                                        }
+                                    }
+                                    try? await Task.sleep(for: .milliseconds(400))
+                                    await MainActor.run {
+                                        withAnimation(.spring(response: 0.35, dampingFraction: 0.7)) {
+                                            becauseYouWatchHighlighted = true
+                                        }
+                                    }
                                 }
                             }
                             DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
@@ -347,6 +360,7 @@ struct HomeView: View {
                                 BecauseYouWatchSection(
                                     genreName: selectedGenreName,
                                     shows: recShows,
+                                    highlighted: becauseYouWatchHighlighted,
                                     onOpen: { show in
                                         WatchIntentLogger.shared.log(
                                             eventType: .cardTapped,
@@ -359,6 +373,8 @@ struct HomeView: View {
                                         detailSubject = .show(show)
                                     }
                                 )
+                                .scaleEffect(becauseYouWatchHighlighted ? 1.03 : 1.0)
+                                .animation(.spring(response: 0.3, dampingFraction: 0.6), value: becauseYouWatchHighlighted)
                                 .padding(.horizontal, 20)
                             }
                         }
@@ -1964,11 +1980,13 @@ private struct GenreDiscoverySection: View {
 private struct BecauseYouWatchSection: View {
     let genreName: String
     let shows: [PosterShow]
+    let highlighted: Bool
     let onOpen: (PosterShow) -> Void
 
     var body: some View {
         SectionGlassCard(
             title: "Because you watch \(genreName)",
+            highlighted: highlighted,
             accentColor: Color.orange
         ) {
             ScrollView(.horizontal, showsIndicators: false) {
