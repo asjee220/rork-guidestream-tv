@@ -139,10 +139,12 @@ struct HomeView: View {
     @State private var selectedGenreId: Int = 80
     @State private var selectedGenreName: String = "Crime"
     @State private var tvdbUpcomingItems: [TVDBUpcomingItem] = []
+    @State private var genreHighlighted: Bool = false
 
     var body: some View {
         NavigationStack(path: $path) {
             ZStack(alignment: .top) {
+                ScrollViewReader { scrollProxy in
                 ScrollView(showsIndicators: false) {
                     VStack(spacing: 20) {
                         Color.clear.frame(height: 56)
@@ -311,9 +313,15 @@ struct HomeView: View {
                             .padding(.horizontal, 20)
                         }
 
-                        GenreDiscoverySection { genreId, genreName in
+                        GenreDiscoverySection(highlighted: genreHighlighted) { genreId, genreName in
                             selectedGenreId = genreId
                             selectedGenreName = genreName
+                            withAnimation(.spring(response: 0.45, dampingFraction: 0.7)) {
+                                genreHighlighted = true
+                            }
+                            withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
+                                scrollProxy.scrollTo("browseByGenre", anchor: .top)
+                            }
                             Task {
                                 if let shows = try? await TMDBService.shared.getDiscoverByGenre(genreId) {
                                     genreShows = shows
@@ -321,7 +329,13 @@ struct HomeView: View {
                                     await hydrateProviders()
                                 }
                             }
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+                                withAnimation(.easeOut(duration: 0.5)) {
+                                    genreHighlighted = false
+                                }
+                            }
                         }
+                        .id("browseByGenre")
                         .padding(.horizontal, 20)
 
                         if !recommendedShows.isEmpty {
@@ -499,6 +513,7 @@ struct HomeView: View {
                     .padding(.top, 4)
                 }
                 .tracksTabBarVisibility()
+                } // ScrollViewReader
 
                 VStack(spacing: 0) {
                     PageBar(
@@ -1151,9 +1166,10 @@ private struct SectionGlassCard<Content: View>: View {
         )
         .overlay(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .stroke(highlighted ? accentColor.opacity(0.30) : Color.white.opacity(0.10), lineWidth: 1)
+                .stroke(highlighted ? accentColor.opacity(0.45) : Color.white.opacity(0.10), lineWidth: highlighted ? 1.5 : 1)
         )
         .clipShape(.rect(cornerRadius: 14))
+        .shadow(color: highlighted ? accentColor.opacity(0.35) : .clear, radius: highlighted ? 16 : 0, y: highlighted ? 4 : 0)
     }
 }
 
@@ -1887,6 +1903,7 @@ private struct TrendingRankedSection: View {
 // MARK: - Genre Discovery (Section 4)
 
 private struct GenreDiscoverySection: View {
+    let highlighted: Bool
     let onSelectGenre: (Int, String) -> Void
 
     private let genres: [(Int, String, String, Color)] = [
@@ -1895,11 +1912,16 @@ private struct GenreDiscoverySection: View {
         (35, "Comedy", "face.smiling", Color(red:0.13,green:0.77,blue:0.42)),
         (18, "Drama", "theatermasks", Color(red:0.92,green:0.62,blue:0.12)),
         (10759, "Action", "bolt", Color(red:0.96,green:0.38,blue:0.15)),
-        (99, "Documentary", "video", Color(red:0.10,green:0.60,blue:0.88))
+        (99, "Documentary", "video", Color(red:0.10,green:0.60,blue:0.88)),
+        (10749, "Romance", "heart.fill", Color(red:0.98,green:0.28,blue:0.52)),
+        (10769, "International", "globe", Color(red:0.18,green:0.65,blue:0.55))
     ]
 
     var body: some View {
-        SectionGlassCard(title: "Browse by genre") {
+        SectionGlassCard(
+            title: "Browse by genre",
+            highlighted: highlighted
+        ) {
             LazyVGrid(columns: [
                 GridItem(.flexible(), spacing: 8),
                 GridItem(.flexible(), spacing: 8)
