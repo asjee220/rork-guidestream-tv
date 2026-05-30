@@ -148,19 +148,39 @@ final class ShowDetailViewModel {
 
     var services: [WhereToWatchService] {
         guard let sources = detail?.sources else { return [] }
-        // Prefer subscription (sub) sources, dedupe by name.
+
+        func canonicalName(_ raw: String) -> String {
+            let key = raw.lowercased()
+            if key.contains("netflix") { return "Netflix" }
+            if key.contains("max") || key.contains("hbo") { return "Max" }
+            if key.contains("hulu") { return "Hulu" }
+            if key.contains("disney") { return "Disney+" }
+            if key.contains("apple") { return "Apple TV+" }
+            if key.contains("prime") || key.contains("amazon") { return "Prime Video" }
+            if key.contains("paramount") { return "Paramount+" }
+            if key.contains("peacock") { return "Peacock" }
+            if key.contains("youtube") { return "YouTube" }
+            if key.contains("starz") { return "Starz" }
+            if key.contains("showtime") { return "Showtime" }
+            if key.contains("crunchyroll") { return "Crunchyroll" }
+            return ""
+        }
+
         var seen = Set<String>()
         var result: [WhereToWatchService] = []
-        let sorted = sources.sorted { a, b in
-            sourceRank(a) < sourceRank(b)
-        }
-        for s in sorted {
-            if seen.contains(s.name) { continue }
-            seen.insert(s.name)
+        let subSources = sources
+            .filter { $0.type.lowercased() == "sub" }
+            .sorted { sourceRank($0) < sourceRank($1) }
+
+        for s in subSources {
+            let canonical = canonicalName(s.name)
+            guard !canonical.isEmpty else { continue }
+            if seen.contains(canonical) { continue }
+            seen.insert(canonical)
             result.append(WhereToWatchService(
-                id: s.id,
-                name: s.name,
-                color: brandColor(for: s.name),
+                id: canonical,
+                name: canonical,
+                color: brandColor(for: canonical),
                 iosUrl: s.iosUrl,
                 androidUrl: s.androidUrl,
                 webUrl: s.webUrl,
@@ -310,6 +330,7 @@ struct ShowDetailScreen: View {
                     hero
                     genresRow
                     socialCounter
+                    whereToWatchSection
                     fanActivitySection
                     synopsisSection
                     episodesSection
@@ -784,6 +805,40 @@ struct ShowDetailScreen: View {
         .padding(.top, 8)
     }
 
+    // MARK: Where to Watch
+
+    private var whereToWatchSection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Where to Watch")
+                .scaledFont(size: 17, weight: .semibold)
+                .foregroundStyle(.white)
+                .padding(.horizontal, 20)
+
+            let services = vm.services
+            if services.isEmpty {
+                Text(vm.isLoading ? "Finding services…" : "No streaming sources found.")
+                    .scaledFont(size: 13)
+                    .foregroundStyle(Color.textSecondary)
+                    .padding(.horizontal, 20)
+            } else {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 10) {
+                        ForEach(services) { s in
+                            Button {
+                                openDeeplink(serviceName: s.name)
+                            } label: {
+                                ServiceBadge(service: s)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.horizontal, 20)
+                }
+            }
+        }
+        .padding(.top, 24)
+    }
+
     // MARK: Fan activity
 
     private var fanActivitySection: some View {
@@ -1085,17 +1140,26 @@ private struct TMDBEpisodeCardSmall: View {
 
 private struct ServiceBadge: View {
     let service: WhereToWatchService
+
     var body: some View {
-        Text(service.name)
-            .scaledFont(size: 13, weight: .bold)
-            .foregroundStyle(.white)
-            .padding(.horizontal, 16)
-            .padding(.vertical, 10)
-            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(service.color))
-            .overlay(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .stroke(Color.white.opacity(0.12), lineWidth: 1)
-            )
+        HStack(spacing: 8) {
+            Circle()
+                .fill(service.color)
+                .frame(width: 8, height: 8)
+            Text(service.name)
+                .scaledFont(size: 14, weight: .semibold)
+                .foregroundStyle(.white)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(service.color.opacity(0.18))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(service.color.opacity(0.45), lineWidth: 1)
+        )
     }
 }
 
