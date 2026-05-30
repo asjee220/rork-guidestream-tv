@@ -148,6 +148,57 @@ final class TVCastDiscovery {
         return false
     }
 
+    /// If `device.host` is nil (Bonjour-only discovery), scans the subnet
+    /// to find the Roku by name and returns an updated device with host+port.
+    /// Returns the original device unchanged if resolution fails or host is already set.
+    func resolveHostIfNeeded(for device: DiscoveredTVDevice) async -> DiscoveredTVDevice {
+        if device.host != nil, device.port != nil { return device }
+        guard device.kind == .roku else { return device }
+        if let resolved = await Self.resolveRokuByName(device.name) {
+            mergeFound(
+                [(id: resolved.id, name: resolved.name, host: resolved.host, port: resolved.port)],
+                kind: .roku
+            )
+            return resolved
+        }
+        return device
+    }
+
+    nonisolated private static func resolveRokuByName(_ targetName: String) async -> DiscoveredTVDevice? {
+        guard let localIP = localIPv4Address() else { return nil }
+        let parts = localIP.split(separator: ".")
+        guard parts.count == 4 else { return nil }
+        let prefix = "\(parts[0]).\(parts[1]).\(parts[2])."
+        let allHosts = (1...254).map { "\(prefix)\($0)" }
+        let batchSize = 64
+        var index = 0
+        while index < allHosts.count {
+            let end = min(index + batchSize, allHosts.count)
+            let batch = Array(allHosts[index..<end])
+            let result: DiscoveredTVDevice? = await withTaskGroup(of: DiscoveredTVDevice?.self) { group in
+                for host in batch {
+                    group.addTask {
+                        guard let info = await rawHTTPGet(host: host, port: 8060, path: "/query/device-info", timeout: 1.0),
+                              info.lowercased().contains("roku") else { return nil }
+                        let name = extractTag("user-device-name", from: info)
+                            ?? extractTag("friendly-device-name", from: info)
+                            ?? extractTag("model-name", from: info)
+                            ?? "Roku (\(host))"
+                        guard name.trimmingCharacters(in: .whitespaces).lowercased()
+                            == targetName.trimmingCharacters(in: .whitespaces).lowercased() else { return nil }
+                        let udn = extractTag("device-id", from: info) ?? host
+                        return DiscoveredTVDevice(id: "roku-\(udn)", name: name, kind: .roku, host: host, port: 8060)
+                    }
+                }
+                for await r in group { if let r { return r } }
+                return nil
+            }
+            if let found = result { return found }
+            index = end
+        }
+        return nil
+    }
+
     // MARK: - Permission poke
 
     private func startPermissionPokeListener() {

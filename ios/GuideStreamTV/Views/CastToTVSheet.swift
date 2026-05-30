@@ -634,100 +634,96 @@ struct CastToTVSheet: View {
         )
 
         Task {
-            let outcome = await dispatchLaunch(for: device)
+            let ok = await dispatchLaunch(for: device)
             await MainActor.run {
                 sendingDeviceId = nil
 
-                switch outcome {
-                case .ok:
-                    UINotificationFeedbackGenerator().notificationOccurred(.success)
-                    showToast(ToastState(
-                        message: PlaybackSupport.statusLabel(
-                            platform: platform,
-                            title: showTitle,
-                            room: device.name,
-                            contentURL: nil
-                        ),
-                        icon: "checkmark.circle.fill"
-                    ))
-                    showPlayingOnBanner(PlayingOnState(
-                        deviceName: device.name,
-                        deviceKind: device.kind,
-                        hint: handoffHint(for: device.kind)
-                    ))
-
-                    // Register the session globally so the persistent home
-                    // banner takes over after this sheet dismisses. Includes
-                    // the host/port for Roku so the home banner's remote-app
-                    // button can re-target the same device without re-discovery.
-                    CastPlaybackState.shared.start(
-                        title: showTitle,
-                        platform: platform,
-                        deviceName: device.name,
-                        deviceKind: device.kind,
-                        host: device.host,
-                        port: device.port
-                    )
-
-                    // Give the user a moment to see the banner, then perform
-                    // the follow-up (open remote app or open streaming app
-                    // for AirPlay) and dismiss the sheet.
-                    Task { @MainActor in
-                        try? await Task.sleep(for: .milliseconds(1400))
-                        completeHandoff(for: device)
+                guard ok else {
+                    UINotificationFeedbackGenerator().notificationOccurred(.error)
+                    let channelKnown = RokuChannel.id(for: platform) != nil
+                    let message: String
+                    if device.kind == .roku && !channelKnown {
+                        message = "\(platformShortName) not supported on Roku yet"
+                    } else if device.kind == .roku {
+                        message = "Roku didn't respond — enable ECP in Roku Settings → System → Advanced System Settings → External Control"
+                    } else {
+                        message = "Couldn't reach \(device.name)"
                     }
+                    showToast(ToastState(message: message, icon: "exclamationmark.triangle.fill"))
+                    return
+                }
 
-                case .limitedMode:
-                    // The Roku reached us, but it's in Limited Mode and is
-                    // rejecting ECP commands from this iPhone. This is the
-                    // most common cause of "cast doesn't work" today —
-                    // surface the fix path in a dedicated sheet so the user
-                    // can flip the setting and try again.
-                    UINotificationFeedbackGenerator().notificationOccurred(.warning)
-                    limitedModeHelp = LimitedModeHelp(deviceName: device.name)
+                UINotificationFeedbackGenerator().notificationOccurred(.success)
+                showToast(ToastState(
+                    message: PlaybackSupport.statusLabel(
+                        platform: platform,
+                        title: showTitle,
+                        room: device.name,
+                        contentURL: nil
+                    ),
+                    icon: "checkmark.circle.fill"
+                ))
+                showPlayingOnBanner(PlayingOnState(
+                    deviceName: device.name,
+                    deviceKind: device.kind,
+                    hint: handoffHint(for: device.kind)
+                ))
 
-                case .rejected(let code):
-                    UINotificationFeedbackGenerator().notificationOccurred(.error)
-                    showToast(ToastState(
-                        message: "\(device.name) rejected the request (\(code))",
-                        icon: "exclamationmark.triangle.fill"
-                    ))
+                // Register the session globally so the persistent home
+                // banner takes over after this sheet dismisses. Includes
+                // the host/port for Roku so the home banner's remote-app
+                // button can re-target the same device without re-discovery.
+                CastPlaybackState.shared.start(
+                    title: showTitle,
+                    platform: platform,
+                    deviceName: device.name,
+                    deviceKind: device.kind,
+                    host: device.host,
+                    port: device.port
+                )
 
-                case .unreachable:
-                    UINotificationFeedbackGenerator().notificationOccurred(.error)
-                    showToast(ToastState(
-                        message: "Couldn't reach \(device.name)",
-                        icon: "exclamationmark.triangle.fill"
-                    ))
+                // Give the user a moment to see the banner, then perform
+                // the follow-up (open remote app or open streaming app
+                // for AirPlay) and dismiss the sheet.
+                Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(1400))
+                    completeHandoff(for: device)
                 }
             }
         }
     }
 
     /// Performs the network-side launch — fires the Roku ECP command, or
-    /// returns `.ok` for Apple TV (no network call yet; the user has to open
+    /// returns `true` for Apple TV (no network call yet; the user has to open
     /// the app on the TV manually until Companion Link pairing is built).
-    private func dispatchLaunch(for device: DiscoveredTVDevice) async -> RokuLaunchResult {
+    /// Resolves Bonjour-only Roku devices at tap time by scanning the subnet
+    /// for a matching device name before attempting ECP.
+    private func dispatchLaunch(for device: DiscoveredTVDevice) async -> Bool {
         switch device.kind {
         case .roku:
-            guard let host = device.host,
-                  let port = device.port,
-                  let channelId = RokuChannel.id(for: platform) else {
-                return .unreachable
+            let resolved = await discovery.resolveHostIfNeeded(for: device)
+            guard let host = resolved.host, let port = resolved.port else {
+                #if DEBUG
+                print("[CastToTVSheet] Roku launch failed — could not resolve host for '\(device.name)'")
+                #endif
+                return false
             }
-            // Roku ECP is best-effort on the contentId: only channels that
-            // explicitly accept arbitrary catalog IDs (sideloaded apps,
-            // Jellyfin, Plex) will deep-link straight to playback. For
-            // first-party catalogs the TMDB id won't resolve and the channel
-            // simply opens to its landing screen — which is the correct
-            // graceful fallback.
-            return await RokuECPClient.launch(
-                host: host,
-                port: port,
-                channelId: channelId,
+            guard let channelId = RokuChannel.id(for: platform) else {
+                #if DEBUG
+                print("[CastToTVSheet] Roku launch failed — no channel ID for platform '\(platform)'")
+                #endif
+                _ = await RokuECPClient.keypress(host: host, port: port, key: "Home")
+                return false
+            }
+            #if DEBUG
+            print("[CastToTVSheet] Roku launch → host:\(host) port:\(port) channelId:\(channelId) platform:\(platform)")
+            #endif
+            let result = await RokuECPClient.launch(
+                host: host, port: port, channelId: channelId,
                 contentId: tmdbId.map { String($0) },
                 mediaType: isTV ? "series" : "movie"
             )
+            return result.isSuccess
         case .appleTV:
             // Publish a play command to the tvOS companion app via Supabase
             // realtime. The Apple TV receives it over the play-commands
@@ -735,7 +731,7 @@ struct CastToTVSheet: View {
             Task {
                 await publishPlayCommand(to: device)
             }
-            return .ok
+            return true
         case .googleTV, .fireTVStick, .samsungTV:
             // These devices don't have a public programmatic launch API
             // accessible from iOS without external SDKs. We return true so
@@ -743,7 +739,7 @@ struct CastToTVSheet: View {
             // the app on their TV. Programmatic launch for these platforms
             // will be added via server-side Supabase Edge Functions in a
             // future update.
-            return .ok
+            return true
         }
     }
 

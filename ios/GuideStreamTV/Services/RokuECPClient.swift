@@ -26,21 +26,33 @@ import Network
 
 enum RokuChannel {
     /// Maps a streaming platform label to the Roku channel ID.
+    /// Normalises dashes, underscores, and parentheses before matching
+    /// so strings like "netflix-4k", "Amazon Prime Video", or "prime_video"
+    /// all resolve correctly.
     static func id(for platform: String) -> String? {
-        let key = platform.lowercased()
-        if key.contains("netflix")             { return "12" }
-        if key.contains("hbo") || key.contains("max") { return "61322" }
+        let key = platform
+            .lowercased()
+            .replacingOccurrences(of: "_", with: " ")
+            .replacingOccurrences(of: "-", with: " ")
+            .components(separatedBy: CharacterSet.alphanumerics.union(.whitespaces).inverted)
+            .joined()
+
+        if key.contains("netflix")              { return "12" }
+        if key.contains("hbo") || key.contains(" max") || key.hasSuffix("max") { return "61322" }
         if key.contains("hulu")                { return "2285" }
         if key.contains("disney")              { return "291097" }
         if key.contains("prime") || key.contains("amazon") { return "13" }
-        if key.contains("apple")               { return "551012" }
+        if key.contains("apple tv") || key.contains("appletv") || key.contains("apple ") { return "551012" }
         if key.contains("paramount")           { return "31440" }
         if key.contains("peacock")             { return "593099" }
-        if key.contains("youtube tv")          { return "195316" }
+        if key.contains("youtube tv") || key.contains("youtubetv") { return "195316" }
         if key.contains("youtube")             { return "837" }
         if key.contains("showtime")            { return "60308" }
         if key.contains("starz")               { return "151908" }
         if key.contains("crunchyroll")         { return "55307" }
+        if key.contains("tubi")                { return "41468" }
+        if key.contains("pluto")               { return "74519" }
+        if key.contains("plex")                { return "13535" }
         return nil
     }
 }
