@@ -314,7 +314,7 @@ struct HomeView: View {
                             .padding(.horizontal, 20)
                         }
 
-                        GenreDiscoverySection(highlighted: false) { genreId, genreName in
+                        GenreDiscoverySection(highlighted: false) { genreId, genreName, mediaType in
                             selectedGenreId = genreId
                             selectedGenreName = genreName
                             withAnimation(.spring(response: 0.3, dampingFraction: 0.75)) {
@@ -323,7 +323,16 @@ struct HomeView: View {
                             // Dramatic pulse sequence for the Because You Watch panel
                             becauseYouWatchHighlighted = false
                             Task {
-                                if let shows = try? await TMDBService.shared.getDiscoverByGenre(genreId) {
+                                let shows: [TMDBResult]?
+                                switch mediaType {
+                                case "movie":
+                                    shows = try? await TMDBService.shared.getDiscoverByGenre(genreId, mediaType: "movie")
+                                case "international":
+                                    shows = try? await TMDBService.shared.getDiscoverInternational()
+                                default:
+                                    shows = try? await TMDBService.shared.getDiscoverByGenre(genreId)
+                                }
+                                if let shows {
                                     genreShows = shows
                                     recommendedShows = shows
                                     await hydrateProviders()
@@ -1924,17 +1933,20 @@ private struct TrendingRankedSection: View {
 
 private struct GenreDiscoverySection: View {
     let highlighted: Bool
-    let onSelectGenre: (Int, String) -> Void
+    let onSelectGenre: (Int, String, String) -> Void
 
-    private let genres: [(Int, String, String, Color)] = [
-        (80, "Crime & Thriller", "flame", Color(red:0.86,green:0.15,blue:0.15)),
-        (10765, "Sci-Fi", "sparkles", Color(red:0.55,green:0.36,blue:0.96)),
-        (35, "Comedy", "face.smiling", Color(red:0.13,green:0.77,blue:0.42)),
-        (18, "Drama", "theatermasks", Color(red:0.92,green:0.62,blue:0.12)),
-        (10759, "Action", "bolt", Color(red:0.96,green:0.38,blue:0.15)),
-        (99, "Documentary", "video", Color(red:0.10,green:0.60,blue:0.88)),
-        (10749, "Romance", "heart.fill", Color(red:0.98,green:0.28,blue:0.52)),
-        (10769, "International", "globe", Color(red:0.18,green:0.65,blue:0.55))
+    /// Genre data: (id, name, icon, color, mediaType).
+    /// "movie" is used for Romance (10749 is a movie-only TMDB genre).
+    /// "international" triggers a foreign-language TV discovery call.
+    private let genres: [(Int, String, String, Color, String)] = [
+        (80, "Crime & Thriller", "flame", Color(red:0.86,green:0.15,blue:0.15), "tv"),
+        (10765, "Sci-Fi", "sparkles", Color(red:0.55,green:0.36,blue:0.96), "tv"),
+        (35, "Comedy", "face.smiling", Color(red:0.13,green:0.77,blue:0.42), "tv"),
+        (18, "Drama", "theatermasks", Color(red:0.92,green:0.62,blue:0.12), "tv"),
+        (10759, "Action", "bolt", Color(red:0.96,green:0.38,blue:0.15), "tv"),
+        (99, "Documentary", "video", Color(red:0.10,green:0.60,blue:0.88), "tv"),
+        (10749, "Romance", "heart.fill", Color(red:0.98,green:0.28,blue:0.52), "movie"),
+        (10769, "International", "globe", Color(red:0.18,green:0.65,blue:0.55), "international")
     ]
 
     var body: some View {
@@ -1946,9 +1958,9 @@ private struct GenreDiscoverySection: View {
                 GridItem(.flexible(), spacing: 8),
                 GridItem(.flexible(), spacing: 8)
             ], spacing: 8) {
-                ForEach(genres, id: \.0) { id, name, icon, color in
+                ForEach(genres, id: \.0) { id, name, icon, color, mediaType in
                     Button {
-                        onSelectGenre(id, name)
+                        onSelectGenre(id, name, mediaType)
                     } label: {
                         VStack(alignment: .leading, spacing: 4) {
                             Image(systemName: icon)

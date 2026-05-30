@@ -281,9 +281,19 @@ nonisolated struct TMDBService {
         return env.results.map { stamp($0, mediaType: "tv") }
     }
 
-    /// Popular TV shows for a single TMDB genre id (Drama 18, Crime 80, Comedy 35, Sci-Fi 10765, Documentary 99, Reality 10764).
-    func getDiscoverByGenre(_ genreId: Int) async throws -> [TMDBResult] {
-        let urlString = "\(base)/discover/tv?api_key=\(apiKey)&language=en-US&sort_by=popularity.desc&with_genres=\(genreId)&page=1"
+    /// Popular shows for a single TMDB genre id. Defaults to TV; pass "movie" for movie-only genres like Romance (10749).
+    func getDiscoverByGenre(_ genreId: Int, mediaType: String = "tv") async throws -> [TMDBResult] {
+        let urlString = "\(base)/discover/\(mediaType)?api_key=\(apiKey)&language=en-US&sort_by=popularity.desc&with_genres=\(genreId)&page=1"
+        let data = try await get(urlString)
+        let env = try JSONDecoder().decode(TMDBTrendingEnvelope.self, from: data)
+        return env.results.map { stamp($0, mediaType: mediaType) }
+    }
+
+    /// International / foreign-language TV — surfaces popular non-English shows across
+    /// major language markets so the "International" genre tile has real content.
+    func getDiscoverInternational() async throws -> [TMDBResult] {
+        let languages = "ko|ja|fr|de|es|it|pt|hi|ar|tr|sv|no|da|fi|nl|pl|th|zh"
+        let urlString = "\(base)/discover/tv?api_key=\(apiKey)&language=en-US&sort_by=popularity.desc&with_original_language=\(languages)&page=1"
         let data = try await get(urlString)
         let env = try JSONDecoder().decode(TMDBTrendingEnvelope.self, from: data)
         return env.results.map { stamp($0, mediaType: "tv") }
