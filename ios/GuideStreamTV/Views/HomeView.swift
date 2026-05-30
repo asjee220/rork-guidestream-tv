@@ -336,23 +336,23 @@ struct HomeView: View {
                                     genreShows = shows
                                     recommendedShows = shows
                                     await hydrateProviders()
-                                    // Phase 1: explosive grow-in with heavy spring
+                                    // Phase 1: slow grow-in with relaxed spring
                                     await MainActor.run {
-                                        withAnimation(.spring(response: 0.25, dampingFraction: 0.4, blendDuration: 0)) {
+                                        withAnimation(.spring(response: 0.55, dampingFraction: 0.55, blendDuration: 0)) {
                                             becauseYouWatchHighlighted = true
                                         }
                                     }
-                                    try? await Task.sleep(for: .milliseconds(250))
-                                    // Phase 2: quick snap-back overshoot
+                                    try? await Task.sleep(for: .milliseconds(550))
+                                    // Phase 2: leisurely snap-back overshoot
                                     await MainActor.run {
-                                        withAnimation(.spring(response: 0.35, dampingFraction: 0.5, blendDuration: 0)) {
+                                        withAnimation(.spring(response: 0.75, dampingFraction: 0.6, blendDuration: 0)) {
                                             becauseYouWatchHighlighted = false
                                         }
                                     }
-                                    try? await Task.sleep(for: .milliseconds(380))
-                                    // Phase 3: settle into persistent glow
+                                    try? await Task.sleep(for: .milliseconds(800))
+                                    // Phase 3: gentle settle into persistent glow
                                     await MainActor.run {
-                                        withAnimation(.spring(response: 0.6, dampingFraction: 0.65, blendDuration: 0.1)) {
+                                        withAnimation(.spring(response: 1.1, dampingFraction: 0.7, blendDuration: 0.15)) {
                                             becauseYouWatchHighlighted = true
                                         }
                                     }
@@ -385,9 +385,9 @@ struct HomeView: View {
                                     }
                                 )
                                 .scaleEffect(becauseYouWatchHighlighted ? 1.06 : 1.0)
-                                .animation(.spring(response: 0.35, dampingFraction: 0.45), value: becauseYouWatchHighlighted)
+                                .animation(.spring(response: 0.75, dampingFraction: 0.55), value: becauseYouWatchHighlighted)
                                 .shadow(color: becauseYouWatchHighlighted ? Color.orange.opacity(0.45) : .clear, radius: becauseYouWatchHighlighted ? 24 : 0, y: becauseYouWatchHighlighted ? 6 : 0)
-                                .animation(.spring(response: 0.4, dampingFraction: 0.5), value: becauseYouWatchHighlighted)
+                                .animation(.spring(response: 0.8, dampingFraction: 0.6), value: becauseYouWatchHighlighted)
                                 .padding(.horizontal, 20)
                             }
                         }
