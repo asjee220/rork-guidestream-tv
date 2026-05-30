@@ -314,37 +314,39 @@ struct HomeView: View {
                             .padding(.horizontal, 20)
                         }
 
-                        GenreDiscoverySection(highlighted: genreHighlighted) { genreId, genreName in
+                        GenreDiscoverySection(highlighted: false) { genreId, genreName in
                             selectedGenreId = genreId
                             selectedGenreName = genreName
-                            withAnimation(.spring(response: 0.45, dampingFraction: 0.7)) {
-                                genreHighlighted = true
-                            }
-                            withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.75)) {
                                 scrollProxy.scrollTo("browseByGenre", anchor: .top)
                             }
+                            // Dramatic pulse sequence for the Because You Watch panel
+                            becauseYouWatchHighlighted = false
                             Task {
                                 if let shows = try? await TMDBService.shared.getDiscoverByGenre(genreId) {
                                     genreShows = shows
                                     recommendedShows = shows
                                     await hydrateProviders()
-                                    // Animate the Because You Watch panel: grow → shrink → stay highlighted
+                                    // Phase 1: explosive grow-in with heavy spring
                                     await MainActor.run {
-                                        withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
+                                        withAnimation(.spring(response: 0.25, dampingFraction: 0.4, blendDuration: 0)) {
                                             becauseYouWatchHighlighted = true
                                         }
                                     }
-                                    try? await Task.sleep(for: .milliseconds(400))
+                                    try? await Task.sleep(for: .milliseconds(250))
+                                    // Phase 2: quick snap-back overshoot
                                     await MainActor.run {
-                                        withAnimation(.spring(response: 0.35, dampingFraction: 0.7)) {
+                                        withAnimation(.spring(response: 0.35, dampingFraction: 0.5, blendDuration: 0)) {
+                                            becauseYouWatchHighlighted = false
+                                        }
+                                    }
+                                    try? await Task.sleep(for: .milliseconds(380))
+                                    // Phase 3: settle into persistent glow
+                                    await MainActor.run {
+                                        withAnimation(.spring(response: 0.6, dampingFraction: 0.65, blendDuration: 0.1)) {
                                             becauseYouWatchHighlighted = true
                                         }
                                     }
-                                }
-                            }
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
-                                withAnimation(.easeOut(duration: 0.5)) {
-                                    genreHighlighted = false
                                 }
                             }
                         }
@@ -373,8 +375,10 @@ struct HomeView: View {
                                         detailSubject = .show(show)
                                     }
                                 )
-                                .scaleEffect(becauseYouWatchHighlighted ? 1.03 : 1.0)
-                                .animation(.spring(response: 0.3, dampingFraction: 0.6), value: becauseYouWatchHighlighted)
+                                .scaleEffect(becauseYouWatchHighlighted ? 1.06 : 1.0)
+                                .animation(.spring(response: 0.35, dampingFraction: 0.45), value: becauseYouWatchHighlighted)
+                                .shadow(color: becauseYouWatchHighlighted ? Color.orange.opacity(0.45) : .clear, radius: becauseYouWatchHighlighted ? 24 : 0, y: becauseYouWatchHighlighted ? 6 : 0)
+                                .animation(.spring(response: 0.4, dampingFraction: 0.5), value: becauseYouWatchHighlighted)
                                 .padding(.horizontal, 20)
                             }
                         }
