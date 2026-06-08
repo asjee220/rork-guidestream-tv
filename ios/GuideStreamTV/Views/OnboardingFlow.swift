@@ -160,7 +160,7 @@ struct WelcomeOnboardingView: View {
             .padding(.bottom, 32)
 
             // Card with copy + auth options
-            VStack(spacing: 18) {
+            VStack(spacing: 12) {
                 VStack(spacing: 4) {
                     Text("Every show. Every service.")
                         .font(.custom("SF Pro Text", size: 15))
@@ -172,81 +172,71 @@ struct WelcomeOnboardingView: View {
                 .multilineTextAlignment(.center)
                 .padding(.top, 4)
 
-                // Apple / Google row
-                HStack(spacing: 10) {
-                    SignInWithAppleButton(.signIn) { request in
-                        auth.prepareAppleRequest(request)
-                    } onCompletion: { result in
-                        Task {
-                            await auth.handleAppleCompletion(result)
-                            if auth.isSignedIn { onContinue() }
-                        }
+                // 1. Sign in with Apple — full width
+                SignInWithAppleButton(.signIn) { request in
+                    auth.prepareAppleRequest(request)
+                } onCompletion: { result in
+                    Task {
+                        await auth.handleAppleCompletion(result)
+                        if auth.isSignedIn { onContinue() }
                     }
-                    .signInWithAppleButtonStyle(.white)
-                    .frame(height: 48)
-                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    .disabled(auth.isAuthenticating)
-
-                    Button {
-                        Task {
-                            await auth.signInWithGoogle()
-                            if auth.isSignedIn { onContinue() }
-                        }
-                    } label: {
-                        HStack(spacing: 8) {
-                            GoogleGlyph()
-                                .frame(width: 18, height: 18)
-                            Text("Google")
-                                .font(.custom("SF Pro Text", size: 15).weight(.semibold))
-                                .foregroundStyle(.black)
-                        }
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 48)
-                        .background(Color.white)
-                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(auth.isAuthenticating)
                 }
+                .signInWithAppleButtonStyle(.white)
+                .frame(height: 54)
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .disabled(auth.isAuthenticating)
 
-                // Primary CTA — start as a guest (no auth required).
+                // 2. Sign in with Google — full width
                 Button {
-                    let gen = UIImpactFeedbackGenerator(style: .medium)
-                    gen.impactOccurred()
-                    auth.continueAsGuest()
-                    onContinue()
+                    Task {
+                        await auth.signInWithGoogle()
+                        if auth.isSignedIn { onContinue() }
+                    }
                 } label: {
                     HStack(spacing: 8) {
-                        Text("Start without login")
-                            .font(.custom("SF Pro Text", size: 16).weight(.bold))
-                        Image(systemName: "arrow.right")
-                            .scaledFont(size: 15, weight: .bold)
+                        GoogleGlyph()
+                            .frame(width: 18, height: 18)
+                        Text("Sign in with Google")
+                            .font(.custom("SF Pro Text", size: 16).weight(.semibold))
+                            .foregroundStyle(Color(red: 0.24, green: 0.25, blue: 0.26))
                     }
-                    .foregroundStyle(.white)
                     .frame(maxWidth: .infinity)
                     .frame(height: 54)
-                    .background(
-                        LinearGradient(
-                            colors: [Color(red: 0.16, green: 0.50, blue: 0.96), Color.blue],
-                            startPoint: .top, endPoint: .bottom
-                        )
-                    )
-                    .clipShape(Capsule())
-                    .shadow(color: Color.blue.opacity(0.55), radius: 22, x: 0, y: 0)
+                    .background(Color.white)
+                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                 }
                 .buttonStyle(.plain)
+                .disabled(auth.isAuthenticating)
 
+                // Divider — "or"
+                HStack(spacing: 10) {
+                    Color.white.opacity(0.1)
+                        .frame(height: 1)
+                    Text("or")
+                        .font(.custom("SF Pro Text", size: 12))
+                        .foregroundStyle(Color.textSecondary)
+                    Color.white.opacity(0.1)
+                        .frame(height: 1)
+                }
+
+                // 3. Sign in with email — outlined
                 Button(action: onEmailAuth) {
-                    HStack(spacing: 6) {
+                    HStack(spacing: 8) {
                         Image(systemName: "envelope.fill")
-                            .scaledFont(size: 12, weight: .semibold)
+                            .scaledFont(size: 14, weight: .medium)
+                            .foregroundStyle(Color(red: 0.96, green: 0.51, blue: 0.12).opacity(0.6))
                         Text("Sign in with email")
-                            .font(.custom("SF Pro Text", size: 13).weight(.medium))
+                            .font(.custom("SF Pro Text", size: 14).weight(.medium))
+                            .foregroundStyle(Color(red: 0.96, green: 0.51, blue: 0.12).opacity(0.75))
                     }
-                    .foregroundStyle(Color.textSecondary)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 48)
+                    .background(
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .stroke(Color(red: 0.96, green: 0.51, blue: 0.12).opacity(0.4), lineWidth: 1)
+                    )
                 }
                 .buttonStyle(.plain)
-                .padding(.bottom, 4)
 
                 if let err = auth.lastError {
                     Text(err)
