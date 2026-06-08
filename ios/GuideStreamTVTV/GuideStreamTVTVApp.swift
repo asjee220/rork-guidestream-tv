@@ -9,9 +9,12 @@
 
 import SwiftUI
 import Supabase
+import UIKit
 
 @main
 struct GuideStreamTVTVApp: App {
+    @UIApplicationDelegateAdaptor(TVAppDelegate.self) private var appDelegate
+
     var body: some Scene {
         WindowGroup {
             ContentView()

@@ -279,8 +279,9 @@ final class AuthViewModel {
                     ]
                 )
                 DeviceSessionService.shared.upsert(reason: "apple_signed_in")
-                // Promote any guest-era watch list rows to the new user.
+                // Promote any guest-era watch list rows and push token to the new user.
                 Task { await StreamsViewModel.shared.syncLocalToSupabase() }
+                Task { await PushTokenManager.shared.resaveCachedToken() }
             } catch {
                 lastError = error.localizedDescription
                 print("[Auth ERROR] signInWithIdToken (apple) failed: \(error.localizedDescription)")
@@ -451,6 +452,7 @@ final class AuthViewModel {
                 )
                 DeviceSessionService.shared.upsert(reason: "email_signed_up")
                 Task { await StreamsViewModel.shared.syncLocalToSupabase() }
+                Task { await PushTokenManager.shared.resaveCachedToken() }
                 return true
             }
             // Session is nil — Supabase requires email confirmation. The user
@@ -527,6 +529,7 @@ final class AuthViewModel {
             )
             DeviceSessionService.shared.upsert(reason: "email_signed_in")
             Task { await StreamsViewModel.shared.syncLocalToSupabase() }
+            Task { await PushTokenManager.shared.resaveCachedToken() }
             return true
         } catch {
             let message = error.localizedDescription
@@ -621,6 +624,7 @@ final class AuthViewModel {
             )
             DeviceSessionService.shared.upsert(reason: "google_signed_in")
             Task { await StreamsViewModel.shared.syncLocalToSupabase() }
+            Task { await PushTokenManager.shared.resaveCachedToken() }
         } catch {
             lastError = error.localizedDescription
             print("[Auth ERROR] Google sign-in failed: \(error.localizedDescription)")

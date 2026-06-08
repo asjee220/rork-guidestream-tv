@@ -176,6 +176,7 @@ final class TVAuthViewModel {
                 }
                 await loadDisplayName()
                 Task { await TVStreamsViewModel.shared.fetchUserStreams() }
+                Task { await PushTokenManager.shared.resaveCachedToken() }
             } catch {
                 lastError = error.localizedDescription
                 print("[TVAuth ERROR] signInWithIdToken (apple) failed: \(error.localizedDescription)")
