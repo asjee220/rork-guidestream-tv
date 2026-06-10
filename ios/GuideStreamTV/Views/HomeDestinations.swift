@@ -207,7 +207,7 @@ struct EpisodeDetailSheet: View {
                     .padding(.top, 12)
                     .padding(.bottom, 4)
 
-                whereToWatchSection
+                watchContextCard
                     .padding(.horizontal, 20)
                     .padding(.top, 20)
 
@@ -215,9 +215,9 @@ struct EpisodeDetailSheet: View {
                     .padding(.horizontal, 20)
                     .padding(.top, 22)
 
-                viewFullDetailsButton
+                secondaryPillRow
+                    .padding(.horizontal, 20)
                     .padding(.top, 16)
-                    .frame(maxWidth: .infinity)
 
                 aboutSection
                     .padding(.horizontal, 20)
@@ -225,7 +225,7 @@ struct EpisodeDetailSheet: View {
                     .padding(.bottom, 28)
             }
         }
-        .background(Color(red: 0x06/255, green: 0x0C/255, blue: 0x18/255).ignoresSafeArea())
+        .background(Color(red: 0x13/255, green: 0x18/255, blue: 0x1D/255).ignoresSafeArea())
         .presentationDetents([.fraction(0.8), .large])
         .presentationDragIndicator(.visible)
         .presentationContentInteraction(.scrolls)
@@ -481,9 +481,6 @@ struct EpisodeDetailSheet: View {
                         Text(formatSocialCount(social.likes(socialTitleKey)))
                             .scaledFont(size: 13, weight: .semibold)
                             .foregroundStyle(.white)
-                        Text("Likes")
-                            .scaledFont(size: 13)
-                            .foregroundStyle(Color.white.opacity(0.55))
                     }
                     Text("·")
                         .scaledFont(size: 13)
@@ -495,9 +492,6 @@ struct EpisodeDetailSheet: View {
                         Text(formatSocialCount(social.commentTotal(socialTitleKey)))
                             .scaledFont(size: 13, weight: .semibold)
                             .foregroundStyle(.white)
-                        Text("Comments")
-                            .scaledFont(size: 13)
-                            .foregroundStyle(Color.white.opacity(0.55))
                     }
                 }
                 .padding(.top, 4)
@@ -535,13 +529,10 @@ struct EpisodeDetailSheet: View {
     private var actionsRow: some View {
         let key = socialTitleKey
         let isLiked = social.isLiked(key)
-        let likeCount = social.likes(key)
-        let commentCount = social.commentTotal(key)
         return HStack(spacing: 0) {
             circleAction(
                 icon: isLiked ? "heart.fill" : "heart",
                 label: "Like",
-                count: likeCount,
                 tint: isLiked ? Color.orange : .white,
                 showDot: false
             ) {
@@ -558,7 +549,6 @@ struct EpisodeDetailSheet: View {
             circleAction(
                 icon: "bubble.left.fill",
                 label: "Comments",
-                count: commentCount,
                 tint: .white,
                 showDot: false
             ) {
@@ -572,10 +562,30 @@ struct EpisodeDetailSheet: View {
             }
             .frame(maxWidth: .infinity)
 
+            ShareLink(
+                item: URL(string: "https://guidestream.tv")!,
+                subject: Text(title),
+                message: Text("Watch \(title) on GuideStream TV")
+            ) {
+                VStack(spacing: 8) {
+                    ZStack {
+                        Circle()
+                            .fill(Color.white.opacity(0.08))
+                            .frame(width: 54, height: 54)
+                        Image(systemName: "square.and.arrow.up")
+                            .scaledFont(size: 22, weight: .regular)
+                            .foregroundStyle(.white)
+                    }
+                    Text("Share")
+                        .scaledFont(size: 13)
+                        .foregroundStyle(Color.white.opacity(0.7))
+                }
+            }
+            .frame(maxWidth: .infinity)
+
             circleAction(
                 icon: "tv",
                 label: "Send to TV",
-                count: nil,
                 tint: .white,
                 showDot: false
             ) {
@@ -589,7 +599,6 @@ struct EpisodeDetailSheet: View {
     private func circleAction(
         icon: String,
         label: String,
-        count: Int?,
         tint: Color,
         showDot: Bool,
         action: @escaping () -> Void
@@ -607,20 +616,13 @@ struct EpisodeDetailSheet: View {
                         Circle()
                             .fill(Color(red: 0x3D/255, green: 0xE0/255, blue: 0x6A/255))
                             .frame(width: 10, height: 10)
-                            .overlay(Circle().stroke(Color(red: 0x06/255, green: 0x0C/255, blue: 0x18/255), lineWidth: 2))
+                            .overlay(Circle().stroke(Color(red: 0x13/255, green: 0x18/255, blue: 0x1D/255), lineWidth: 2))
                             .offset(x: 16, y: -16)
                     }
                 }
-                VStack(spacing: 2) {
-                    Text(label)
-                        .scaledFont(size: 13)
-                        .foregroundStyle(Color.white.opacity(0.7))
-                    if let count, count > 0 {
-                        Text(formatSocialCount(count))
-                            .scaledFont(size: 11, weight: .heavy)
-                            .foregroundStyle(.white)
-                    }
-                }
+                Text(label)
+                    .scaledFont(size: 13)
+                    .foregroundStyle(Color.white.opacity(0.7))
             }
         }
         .buttonStyle(.plain)
@@ -650,61 +652,148 @@ struct EpisodeDetailSheet: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    // MARK: - Where to watch
+    // MARK: - Watch context card
 
     @ViewBuilder
-    private var whereToWatchSection: some View {
-        // Hide the section entirely when no real streaming service is
-        // available for this title. Showing "Streaming services" as if it
-        // were a platform is worse than showing nothing — the chip used to
-        // imply users could tap a generic stream button that did nothing.
-        if hasResolvedPlatform || isResolvingSource {
-            VStack(alignment: .leading, spacing: 10) {
-                Text("WHERE TO WATCH")
-                    .scaledFont(size: 12, weight: .heavy)
-                    .tracking(1.4)
-                    .foregroundStyle(Color.white.opacity(0.45))
+    private var watchContextCard: some View {
+        if case .episode(let episode) = subject {
+            RoundedRectangle(cornerRadius: 14)
+                .fill(Color.white.opacity(0.05))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 14)
+                        .stroke(Color.white.opacity(0.07), lineWidth: 0.5)
+                )
+                .overlay(alignment: .leading) {
+                    HStack(spacing: 12) {
+                        Color.black
+                            .frame(width: 56, height: 56)
+                            .overlay {
+                                RemoteImage(
+                                    urlString: episode.posterUrl,
+                                    contentMode: .fill,
+                                    fallbackColors: episode.posterColors
+                                )
+                                .allowsHitTesting(false)
+                            }
+                            .clipShape(.rect(cornerRadius: 8))
 
-                HStack(spacing: 10) {
-                    if isResolvingSource && !hasResolvedPlatform {
-                        HStack(spacing: 8) {
-                            ProgressView().controlSize(.mini).tint(.white)
-                            Text("Finding service…")
-                                .scaledFont(size: 13, weight: .heavy)
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack(spacing: 4) {
+                                Text("\(episode.season) ·")
+                                    .scaledFont(size: 12, weight: .semibold)
+                                    .foregroundStyle(Color.white.opacity(0.55))
+                                Text(episode.progress > 0 ? "Resume" : "Most recent")
+                                    .scaledFont(size: 12, weight: .semibold)
+                                    .foregroundStyle(.white)
+                            }
+                            Text(episode.title)
+                                .scaledFont(size: 13, weight: .bold)
                                 .foregroundStyle(.white)
+                                .lineLimit(1)
                         }
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 8)
-                        .background(Capsule().fill(Color.white.opacity(0.10)))
-                    } else {
-                        Text(whereToWatchLabel)
-                            .scaledFont(size: 13, weight: .heavy)
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 8)
-                            .background(Capsule().fill(platformColor))
+
+                        Spacer(minLength: 8)
+
+                        if episode.progress > 0 {
+                            Text("\(Int(episode.progress * 100))%")
+                                .scaledFont(size: 10, weight: .heavy)
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(RoundedRectangle(cornerRadius: 4).fill(Color.orange))
+                        } else if episode.isNew {
+                            Text("NEW")
+                                .scaledFont(size: 10, weight: .heavy)
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(RoundedRectangle(cornerRadius: 4).fill(Color.orange))
+                        }
+                    }
+                    .padding(12)
+                }
+                .overlay(alignment: .bottom) {
+                    if episode.progress > 0 {
+                        GeometryReader { geo in
+                            Color.orange
+                                .frame(width: geo.size.width * episode.progress, height: 3)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
                     }
                 }
+                .clipShape(.rect(cornerRadius: 14))
+        }
+    }
 
-                Text("Available with subscription")
-                    .scaledFont(size: 13)
-                    .foregroundStyle(Color.white.opacity(0.5))
-                    .padding(.top, 2)
+    // MARK: - Secondary pill row
+
+    private var secondaryPillRow: some View {
+        HStack(spacing: 10) {
+            if isTV {
+                Button {
+                    showFullDetail = true
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "list.bullet")
+                            .scaledFont(size: 14)
+                        Text("More episodes")
+                            .scaledFont(size: 13, weight: .medium)
+                    }
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 44)
+                    .background(Capsule().stroke(Color.white.opacity(0.12), lineWidth: 0.5))
+                }
+                .buttonStyle(.plain)
+            } else {
+                Button {
+                    guard let tmdbId else { return }
+                    Task {
+                        let key: String?
+                        if isTV {
+                            key = try? await TMDBService.shared.getTrailerKey(tmdbId: tmdbId)
+                        } else {
+                            key = try? await TMDBService.shared.getMovieTrailerKey(tmdbId: tmdbId)
+                        }
+                        await MainActor.run {
+                            if let key {
+                                UIApplication.shared.open(URL(string: "https://www.youtube.com/watch?v=\(key)")!)
+                            } else {
+                                let query = "\(title) trailer".addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed)!
+                                UIApplication.shared.open(URL(string: "https://www.youtube.com/results?search_query=\(query)")!)
+                            }
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "film")
+                            .scaledFont(size: 14)
+                        Text("Trailer")
+                            .scaledFont(size: 13, weight: .medium)
+                    }
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 44)
+                    .background(Capsule().stroke(Color.white.opacity(0.12), lineWidth: 0.5))
+                }
+                .buttonStyle(.plain)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        } else {
-            // No streaming service available — surface that explicitly so
-            // the user understands why there's no watch button.
-            VStack(alignment: .leading, spacing: 6) {
-                Text("WHERE TO WATCH")
-                    .scaledFont(size: 12, weight: .heavy)
-                    .tracking(1.4)
-                    .foregroundStyle(Color.white.opacity(0.45))
-                Text("Not currently available on any streaming service.")
-                    .scaledFont(size: 13)
-                    .foregroundStyle(Color.white.opacity(0.55))
+
+            Button {
+                showFullDetail = true
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "info.circle")
+                        .scaledFont(size: 14)
+                    Text("Full details")
+                        .scaledFont(size: 13, weight: .medium)
+                }
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity)
+                .frame(height: 44)
+                .background(Capsule().stroke(Color.white.opacity(0.12), lineWidth: 0.5))
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .buttonStyle(.plain)
         }
     }
 
@@ -764,6 +853,14 @@ struct EpisodeDetailSheet: View {
                      ? "Finding service…"
                      : "Watch on \(whereToWatchLabel)")
                     .scaledFont(size: 17, weight: .semibold)
+                if hasResolvedPlatform, !whereToWatchLabel.isEmpty {
+                    Text(whereToWatchLabel)
+                        .scaledFont(size: 11, weight: .bold)
+                        .foregroundStyle(Color(red: 0x5A/255, green: 0x2C/255, blue: 0x06/255))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(RoundedRectangle(cornerRadius: 6).fill(Color.white.opacity(0.30)))
+                }
             }
             .foregroundStyle(.white)
             .frame(maxWidth: .infinity)
@@ -849,19 +946,6 @@ struct EpisodeDetailSheet: View {
             }
             await MainActor.run { isToggleSaving = false }
         }
-    }
-
-    private var viewFullDetailsButton: some View {
-        Button(action: { showFullDetail = true }) {
-            HStack(spacing: 6) {
-                Text("View Full Details")
-                    .scaledFont(size: 15, weight: .semibold)
-                Image(systemName: "arrow.right")
-                    .scaledFont(size: 13, weight: .semibold)
-            }
-            .foregroundStyle(Color.white.opacity(0.85))
-        }
-        .buttonStyle(.plain)
     }
 
     private var title: String {

@@ -14,6 +14,7 @@ import UIKit
 struct SportsWatchSheet: View {
     let game: SportsGame
     @Environment(\.dismiss) private var dismiss
+    @Environment(AppRouter.self) private var router
 
     @State private var isReminderSet: Bool = false
     @State private var showCastSheet: Bool = false
@@ -156,13 +157,17 @@ struct SportsWatchSheet: View {
                     .padding(.top, 12)
                     .padding(.bottom, 4)
 
-                whereToWatchSection
+                watchContextCard
                     .padding(.horizontal, 20)
                     .padding(.top, 20)
 
                 watchActions
                     .padding(.horizontal, 20)
                     .padding(.top, 22)
+
+                secondaryPillRow
+                    .padding(.horizontal, 20)
+                    .padding(.top, 16)
 
                 aboutSection
                     .padding(.horizontal, 20)
@@ -174,7 +179,7 @@ struct SportsWatchSheet: View {
                     .frame(maxWidth: .infinity)
             }
         }
-        .background(Color(red: 0x06/255, green: 0x0C/255, blue: 0x18/255).ignoresSafeArea())
+        .background(Color(red: 0x13/255, green: 0x18/255, blue: 0x1D/255).ignoresSafeArea())
         .presentationDetents([.fraction(0.85), .large])
         .presentationDragIndicator(.visible)
         .presentationContentInteraction(.scrolls)
@@ -432,7 +437,6 @@ struct SportsWatchSheet: View {
             circleAction(
                 icon: isReminderSet ? "bell.badge.fill" : "alarm",
                 label: "Remind me",
-                count: nil,
                 tint: isReminderSet ? Color.orange : .white,
                 showDot: isReminderSet
             ) {
@@ -444,7 +448,6 @@ struct SportsWatchSheet: View {
             circleAction(
                 icon: isLiked ? "heart.fill" : "heart",
                 label: "Like",
-                count: likeCount,
                 tint: isLiked ? Color.orange : .white,
                 showDot: false
             ) {
@@ -458,10 +461,30 @@ struct SportsWatchSheet: View {
             }
             .frame(maxWidth: .infinity)
 
+            ShareLink(
+                item: URL(string: "https://guidestream.tv")!,
+                subject: Text(gameTitle),
+                message: Text("Watch \(gameTitle) on GuideStream TV")
+            ) {
+                VStack(spacing: 8) {
+                    ZStack {
+                        Circle()
+                            .fill(Color.white.opacity(0.08))
+                            .frame(width: 54, height: 54)
+                        Image(systemName: "square.and.arrow.up")
+                            .scaledFont(size: 22, weight: .regular)
+                            .foregroundStyle(.white)
+                    }
+                    Text("Share")
+                        .scaledFont(size: 13)
+                        .foregroundStyle(Color.white.opacity(0.7))
+                }
+            }
+            .frame(maxWidth: .infinity)
+
             circleAction(
                 icon: "tv",
                 label: "Send to TV",
-                count: nil,
                 tint: .white,
                 showDot: false
             ) {
@@ -475,7 +498,6 @@ struct SportsWatchSheet: View {
     private func circleAction(
         icon: String,
         label: String,
-        count: Int?,
         tint: Color,
         showDot: Bool,
         action: @escaping () -> Void
@@ -493,33 +515,17 @@ struct SportsWatchSheet: View {
                         Circle()
                             .fill(Color(red: 0x3D/255, green: 0xE0/255, blue: 0x6A/255))
                             .frame(width: 10, height: 10)
-                            .overlay(Circle().stroke(Color(red: 0x06/255, green: 0x0C/255, blue: 0x18/255), lineWidth: 2))
+                            .overlay(Circle().stroke(Color(red: 0x13/255, green: 0x18/255, blue: 0x1D/255), lineWidth: 2))
                             .offset(x: 16, y: -16)
                     }
                 }
-                VStack(spacing: 2) {
-                    Text(label)
-                        .scaledFont(size: 13)
-                        .foregroundStyle(Color.white.opacity(0.7))
-                        .lineLimit(1)
-                    if let count, count > 0 {
-                        Text(formatSocialCount(count))
-                            .scaledFont(size: 11, weight: .heavy)
-                            .foregroundStyle(.white)
-                    }
-                }
+                Text(label)
+                    .scaledFont(size: 13)
+                    .foregroundStyle(Color.white.opacity(0.7))
+                    .lineLimit(1)
             }
         }
         .buttonStyle(.plain)
-    }
-
-    /// Compact count formatting used by the actions row, matching the
-    /// same rule the EpisodeDetailSheet uses so likes/comments look
-    /// consistent across the app.
-    private func formatSocialCount(_ n: Int) -> String {
-        if n >= 1_000_000 { return String(format: "%.1fM", Double(n) / 1_000_000) }
-        if n >= 1_000 { return String(format: "%.1fK", Double(n) / 1_000) }
-        return "\(n)"
     }
 
     // MARK: - About
@@ -538,55 +544,73 @@ struct SportsWatchSheet: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    // MARK: - Where to watch
+    // MARK: - Watch context card
 
-    private var whereToWatchSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("WHERE TO WATCH")
-                .scaledFont(size: 12, weight: .heavy)
-                .tracking(1.4)
-                .foregroundStyle(Color.white.opacity(0.45))
-
-            if game.broadcasts.isEmpty {
-                Text("Broadcast not announced yet — check back closer to game time.")
-                    .scaledFont(size: 13)
-                    .foregroundStyle(Color.white.opacity(0.5))
-            } else {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        ForEach(game.broadcasts, id: \.self) { name in
-                            broadcastChip(name)
-                        }
-                    }
-                }
-                .scrollClipDisabled()
-            }
-
-            if !game.broadcasts.isEmpty {
-                Text(availabilityLabel)
-                    .scaledFont(size: 13)
-                    .foregroundStyle(Color.white.opacity(0.5))
-                    .padding(.top, 2)
+    @ViewBuilder
+    private var watchContextCard: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            statusChip
+            if game.state != .pre {
+                liveScoreRow
             }
         }
+        .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 14)
+                .fill(Color.white.opacity(0.05))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 14)
+                .stroke(Color.white.opacity(0.07), lineWidth: 0.5)
+        )
     }
 
-    private var availabilityLabel: String {
-        switch game.state {
-        case .live: return "Streaming live now"
-        case .pre: return "Coverage starts at \(formattedStartLocal)"
-        case .post: return "Highlights and replay available"
+    // MARK: - Secondary pill row
+
+    private var secondaryPillRow: some View {
+        HStack(spacing: 10) {
+            Button {
+                dismiss()
+                Task {
+                    try? await Task.sleep(for: .milliseconds(180))
+                    router.showSportsSchedule()
+                }
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "calendar")
+                        .scaledFont(size: 14)
+                    Text("Full schedule")
+                        .scaledFont(size: 13, weight: .medium)
+                }
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity)
+                .frame(height: 44)
+                .background(Capsule().stroke(Color.white.opacity(0.12), lineWidth: 0.5))
+            }
+            .buttonStyle(.plain)
+
+            Button {
+                let capturedGame = game
+                dismiss()
+                Task {
+                    try? await Task.sleep(for: .milliseconds(180))
+                    router.showGameDetail(capturedGame)
+                }
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "info.circle")
+                        .scaledFont(size: 14)
+                    Text("Game details")
+                        .scaledFont(size: 13, weight: .medium)
+                }
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity)
+                .frame(height: 44)
+                .background(Capsule().stroke(Color.white.opacity(0.12), lineWidth: 0.5))
+            }
+            .buttonStyle(.plain)
         }
-    }
-
-    private func broadcastChip(_ name: String) -> some View {
-        Text(name)
-            .scaledFont(size: 13, weight: .heavy)
-            .foregroundStyle(.white)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 8)
-            .background(Capsule().fill(broadcastColor(name)))
     }
 
     private func broadcastColor(_ name: String) -> Color {
@@ -650,6 +674,14 @@ struct SportsWatchSheet: View {
                     .scaledFont(size: 15, weight: .bold)
                 Text(canWatch ? "Watch on \(platform)" : "Broadcast TBA")
                     .scaledFont(size: 17, weight: .semibold)
+                if canWatch, let broadcast = primaryBroadcast {
+                    Text(broadcast)
+                        .scaledFont(size: 11, weight: .bold)
+                        .foregroundStyle(Color(red: 0x5A/255, green: 0x2C/255, blue: 0x06/255))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(RoundedRectangle(cornerRadius: 6).fill(Color.white.opacity(0.30)))
+                }
             }
             .foregroundStyle(.white)
             .frame(maxWidth: .infinity)

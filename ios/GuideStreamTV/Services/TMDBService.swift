@@ -361,6 +361,14 @@ nonisolated struct TMDBService {
         return yt.first?.key ?? env.results.first?.key
     }
 
+    func getMovieTrailerKey(tmdbId: Int) async throws -> String? {
+        let urlString = "\(base)/movie/\(tmdbId)/videos?api_key=\(apiKey)&language=en-US"
+        let data = try await get(urlString)
+        let env = try JSONDecoder().decode(TMDBVideosEnvelope.self, from: data)
+        let yt = env.results.filter { $0.site == "YouTube" && ($0.type == "Trailer" || $0.type == "Teaser") }
+        return yt.first?.key ?? env.results.first?.key
+    }
+
     private func stamp(_ r: TMDBResult, mediaType: String) -> TMDBResult {
         TMDBResult(
             id: r.id,

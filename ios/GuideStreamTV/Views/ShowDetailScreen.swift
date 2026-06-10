@@ -261,8 +261,8 @@ struct ShowDetailScreen: View {
     @State private var synopsisExpanded: Bool = false
     @State private var liked: Bool = false
     @State private var notifyOn: Bool = true
-    @State private var saved: Bool = false
     @State private var showComments: Bool = false
+    @State private var streams = StreamsViewModel.shared
     @State private var selectedSeason: String = "Season 4"
     @State private var playOnOpen: Bool = false
     @State private var showMoreEpisodes: Bool = false
@@ -323,6 +323,12 @@ struct ShowDetailScreen: View {
         if key.contains("max") || key.contains("hbo") { return "Max" }
         if key.contains("crunchyroll") { return "Crunchyroll" }
         return name
+    }
+
+    private var isSaved: Bool {
+        let key = titleId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !key.isEmpty else { return false }
+        return streams.userStreams.contains { $0.titleId == key }
     }
 
     /// Network / platform name for the subtitle. Prefers Watchmode's primary
@@ -488,6 +494,24 @@ struct ShowDetailScreen: View {
         guard lower.hasPrefix("http://") || lower.hasPrefix("https://") || lower.contains("://") else { return false }
         if lower.contains("deeplinks available") || lower.contains("paid plan") { return false }
         return URL(string: s) != nil
+    }
+
+    private func toggleWatchList() {
+        let key = titleId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !key.isEmpty else { return }
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        Task {
+            if isSaved {
+                await streams.removeFromMyStreams(titleId: key)
+            } else {
+                await streams.addToMyStreams(
+                    titleId: key,
+                    title: displayTitle,
+                    posterUrl: posterUrl,
+                    platform: vm.primaryService?.name
+                )
+            }
+        }
     }
 
     private func openPlayOn() {
@@ -894,12 +918,12 @@ struct ShowDetailScreen: View {
                     showComments = true
                 }
 
-                fanButton(label: "Save") {
-                    Image(systemName: saved ? "bookmark.fill" : "bookmark")
+                fanButton(label: isSaved ? "Saved" : "Save") {
+                    Image(systemName: isSaved ? "bookmark.fill" : "bookmark")
                         .scaledFont(size: 18, weight: .semibold)
-                        .foregroundStyle(saved ? Color.orange : .white)
+                        .foregroundStyle(isSaved ? Color.orange : .white)
                 } action: {
-                    withAnimation { saved.toggle() }
+                    toggleWatchList()
                 }
 
                 fanButton(label: "Notify", showDot: notifyOn) {
@@ -1053,42 +1077,13 @@ struct ShowDetailScreen: View {
                     }
                     .buttonStyle(.plain)
 
-                    // Watch List circle — behaviour identical to before
-                    Button(action: {
-                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.65)) {
-                            saved.toggle()
-                        }
-                    }) {
-                        VStack(spacing: 2) {
-                            Image(systemName: saved ? "checkmark" : "plus")
-                                .scaledFont(size: 18, weight: .bold)
-                                .foregroundStyle(saved
-                                    ? Color(red: 0.20, green: 0.78, blue: 0.35)
-                                    : .white
-                                )
-                            Text(saved ? "Saved" : "Watch List")
-                                .scaledFont(size: 8, weight: .semibold)
-                                .foregroundStyle(saved
-                                    ? Color(red: 0.20, green: 0.78, blue: 0.35)
-                                    : Color.white.opacity(0.55)
-                                )
-                        }
-                        .frame(width: 52, height: 52)
-                        .background(
-                            Circle().fill(saved
-                                ? Color(red: 0.20, green: 0.78, blue: 0.35).opacity(0.15)
-                                : Color.white.opacity(0.08)
-                            )
-                        )
-                        .overlay(
-                            Circle().stroke(
-                                saved
-                                    ? Color(red: 0.20, green: 0.78, blue: 0.35).opacity(0.35)
-                                    : Color.white.opacity(0.14),
-                                lineWidth: 1
-                            )
-                        )
+                    Button(action: toggleWatchList) {
+                        Image(systemName: isSaved ? "checkmark" : "plus")
+                            .scaledFont(size: 20, weight: .bold)
+                            .foregroundStyle(.white)
+                            .frame(width: 52, height: 52)
+                            .background(Circle().fill(isSaved ? Color.orange.opacity(0.20) : Color.white.opacity(0.08)))
+                            .overlay(Circle().stroke(isSaved ? Color.orange : Color.white.opacity(0.14), lineWidth: 1))
                     }
                     .buttonStyle(.plain)
                 }

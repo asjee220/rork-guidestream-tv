@@ -182,7 +182,8 @@ struct WelcomeOnboardingView: View {
                     }
                 }
                 .signInWithAppleButtonStyle(.white)
-                .frame(height: 54)
+                .frame(maxWidth: .infinity)
+                .frame(height: 50)
                 .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                 .disabled(auth.isAuthenticating)
 

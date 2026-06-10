@@ -7,6 +7,7 @@ import SwiftUI
 
 struct ContentView: View {
     @State private var selection: AppTab = .home
+    @State private var router = AppRouter()
     @State private var askSheetOpen: Bool = false
     @State private var previousTab: AppTab = .home
     /// Tab the user was on right before opening Reels. Used to dismiss the
@@ -36,6 +37,7 @@ struct ContentView: View {
         .animation(.easeOut(duration: 0.3), value: auth.hasCompletedOnboarding)
         .animation(.easeOut(duration: 0.3), value: auth.isSignedIn)
         .environment(\.tabBarVisibility, tabBarVisibility)
+        .environment(router)
         .preferredColorScheme(.dark)
         // Clamp Dynamic Type so extreme accessibility sizes don't break dense layouts.
         // Users still get meaningful scaling from .xSmall through .accessibility2.
@@ -127,6 +129,9 @@ struct ContentView: View {
                             tabBarVisibility.reset()
                         }
                     }
+                }
+                .onChange(of: router.selectedTab) { _, newTab in
+                    selection = newTab
                 }
 
             AskStreamSheet(isOpen: askSheetOpen, onClose: { askSheetOpen = false })

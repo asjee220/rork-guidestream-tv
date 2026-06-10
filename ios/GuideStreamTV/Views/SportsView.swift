@@ -39,11 +39,13 @@ enum SportsRoute: Hashable {
     case allLive
     case allUpcoming
     case allFinal
+    case gameDetail(SportsGame)
 }
 
 // MARK: - SportsView
 
 struct SportsView: View {
+    @Environment(AppRouter.self) private var router
     @State private var selectedSport: String = "All"
     @State private var games: [SportsGame] = []
     @State private var isLoading: Bool = true
@@ -162,6 +164,8 @@ struct SportsView: View {
                     SportsListView(games: upcomingGames, section: .upcoming, sportFilter: selectedSport)
                 case .allFinal:
                     SportsListView(games: finalGames, section: .finalGames, sportFilter: selectedSport)
+                case .gameDetail(let game):
+                    SportsGameDetailView(game: game)
                 }
             }
             .sheet(item: $selectedGame) { game in
@@ -172,6 +176,18 @@ struct SportsView: View {
             }
         }
         .task { await load() }
+        .onChange(of: router.pendingSportsRoute) { _, route in
+            if let route {
+                path.append(route)
+                router.pendingSportsRoute = nil
+            }
+        }
+        .onAppear {
+            if let route = router.pendingSportsRoute {
+                path.append(route)
+                router.pendingSportsRoute = nil
+            }
+        }
     }
 
     /// Selected service ids in catalogue order — keeps the pill's stacked icons
