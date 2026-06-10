@@ -133,6 +133,8 @@ struct HomeView: View {
     /// Cached top US streaming provider per TMDB id. Items without an entry have no real
     /// streaming service and are filtered out of the UI.
     @State private var providerByTmdb: [Int: Platform] = [:]
+    @State private var newOnServiceResults: [String: [TMDBResult]] = [:]
+    private let tmdbProviderIdMap: [String: Int] = ["netflix": 8, "prime": 9, "disney": 337, "hbo": 1899, "hulu": 15, "appletv": 350, "paramount": 531, "peacock": 386, "starz": 43, "showtime": 37, "crunchyroll": 283, "amc": 526, "discovery": 584, "mubi": 11, "britbox": 151, "fubo": 257, "tubi": 73, "pluto": 300, "youtube": 192]
     @State private var topRated: [TMDBResult] = []
     @State private var genreShows: [TMDBResult] = []
     @State private var recommendedShows: [TMDBResult] = []
@@ -280,6 +282,35 @@ struct HomeView: View {
                                 }
                             )
                             .padding(.horizontal, 20)
+                        }
+
+                        ForEach(StreamingCatalog.ordered(from: auth.selectedServices), id: \.id) { service in
+                            if let results = newOnServiceResults[service.id], !results.isEmpty {
+                                let shows = results.map { r in
+                                    PosterShow(
+                                        title: r.displayName,
+                                        meta: r.year.map { "\($0)" } ?? (r.isTV ? "Series" : "Movie"),
+                                        posterColors: [service.glow.opacity(0.85), service.bg],
+                                        symbol: "play.fill",
+                                        posterUrl: r.posterUrl,
+                                        tmdbId: r.id
+                                    )
+                                }
+                                NewOnServiceSection(
+                                    serviceName: service.name,
+                                    accentColor: service.glow,
+                                    shows: shows,
+                                    onOpen: { show in
+                                        WatchIntentLogger.shared.log(
+                                            eventType: .cardTapped,
+                                            titleId: WatchIntentLogger.titleSlug(show.title),
+                                            metadata: ["section": "new_on_\(service.id)"]
+                                        )
+                                        detailSubject = .show(show)
+                                    }
+                                )
+                                .padding(.horizontal, 20)
+                            }
                         }
 
                         ForEach(showsBySelectedPlatform, id: \.name) { row in
@@ -688,6 +719,7 @@ struct HomeView: View {
         sportsGames = s
         newsStreams = news
         await hydrateProviders()
+        await loadNewOnServices()
 
         // TVDB enrichment fires after providers resolve so we can attach
         // platform badges — non-blocking, silently ignored when TVDB is down.
@@ -790,6 +822,34 @@ struct HomeView: View {
         var next = providerByTmdb
         for (id, platform) in resolved { next[id] = platform }
         providerByTmdb = next
+    }
+
+    /// Fetches popular TV shows for each of the user's selected streaming
+    /// services using TMDB's provider-filtered discover endpoint. Results are
+    /// capped to 10 per service and cached in `newOnServiceResults`.
+    private func loadNewOnServices() async {
+        let services = StreamingCatalog.ordered(from: auth.selectedServices)
+        let collected: [(String, [TMDBResult])] = await withTaskGroup(
+            of: (String, [TMDBResult]).self
+        ) { group in
+            for service in services {
+                guard let providerId = tmdbProviderIdMap[service.id] else { continue }
+                group.addTask {
+                    let items = (try? await TMDBService.shared.getNewOnService(tmdbProviderId: providerId)) ?? []
+                    return (service.id, Array(items.prefix(10)))
+                }
+            }
+            var results: [(String, [TMDBResult])] = []
+            for await pair in group {
+                if !pair.1.isEmpty { results.append(pair) }
+            }
+            return results
+        }
+        var dict: [String: [TMDBResult]] = [:]
+        for (id, items) in collected where !items.isEmpty {
+            dict[id] = items
+        }
+        newOnServiceResults = dict
     }
 
     // MARK: - Derived content
@@ -2347,6 +2407,34 @@ private struct UpcomingEpisodeCard: View {
         let fmt = DateFormatter()
         fmt.dateFormat = "MMM d"
         return fmt
+    }
+}
+
+// MARK: - New on Service section
+
+private struct NewOnServiceSection: View {
+    let serviceName: String
+    let accentColor: Color
+    let shows: [PosterShow]
+    let onOpen: (PosterShow) -> Void
+
+    var body: some View {
+        SectionGlassCard(
+            title: "New on \(serviceName)",
+            highlighted: false,
+            accentColor: accentColor,
+            onSeeAll: nil
+        ) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    ForEach(shows) { show in
+                        PosterCard(show: show, tag: "NEW", onTap: { onOpen(show) })
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 6)
+            }
+        }
     }
 }
 
