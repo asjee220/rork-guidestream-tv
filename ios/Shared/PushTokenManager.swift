@@ -30,7 +30,7 @@ final class PushTokenManager {
         UserDefaults.standard.set(token, forKey: cachedTokenKey)
 
         guard let userId = SupabaseManager.shared.client.auth.currentUser?.id else {
-            print("[Push] token cached, no authenticated user yet — will resave on sign-in")
+            print("[Push] saveToken skipped — no authenticated user")
             return
         }
         await upsertToken(token, userId: userId.uuidString)

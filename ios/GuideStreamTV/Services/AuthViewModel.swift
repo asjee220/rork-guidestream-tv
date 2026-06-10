@@ -242,6 +242,7 @@ final class AuthViewModel {
                 self.currentUser = session.user
                 self.isGuest = false
                 UserDefaults.standard.set(false, forKey: "gs.isGuest")
+                await MainActor.run { UIApplication.shared.registerForRemoteNotifications() }
 
                 // Apple only returns fullName on the very first sign-in; cache
                 // it locally so it survives the next launch.
@@ -509,6 +510,7 @@ final class AuthViewModel {
             self.currentUser = session.user
             self.isGuest = false
             UserDefaults.standard.set(false, forKey: "gs.isGuest")
+            await MainActor.run { UIApplication.shared.registerForRemoteNotifications() }
             UserDefaults.standard.set(true, forKey: "gs.hasUsedEmailAuth")
             self.hasUsedEmailAuth = true
             await upsertProfile(
@@ -587,6 +589,7 @@ final class AuthViewModel {
             self.currentUser = session.user
             self.isGuest = false
             UserDefaults.standard.set(false, forKey: "gs.isGuest")
+            await MainActor.run { UIApplication.shared.registerForRemoteNotifications() }
 
             // Pull first/last name out of Google's `user_metadata` (Supabase
             // forwards the OAuth profile fields). Google supplies
