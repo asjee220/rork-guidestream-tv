@@ -233,6 +233,9 @@
 					105FC5792E9EAD3100EA8BCF = {
 						CreatedOnToolsVersion = 26.0;
 						SystemCapabilities = {
+							com.apple.Push = {
+								enabled = 1;
+							};
 							com.apple.SignInWithApple = {
 								enabled = 1;
 							};
