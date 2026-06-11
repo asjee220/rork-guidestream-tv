@@ -1567,9 +1567,7 @@ struct HelpFeedbackView: View {
 
     private var versionFooter: some View {
         VStack(spacing: 4) {
-            Text("GuideStream TV")
-                .scaledFont(size: 13, weight: .semibold)
-                .foregroundStyle(Color.textSecondary)
+            BrandWordmark(wordmarkSize: .small)
             Text("Version \(appVersion) (Build \(buildNumber))")
                 .scaledFont(size: 11)
                 .foregroundStyle(Color.textTertiary)

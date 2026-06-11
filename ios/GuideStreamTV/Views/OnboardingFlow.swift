@@ -265,12 +265,7 @@ struct WelcomeOnboardingView: View {
 
 struct GuideStreamLogo: View {
     var body: some View {
-        Image("GuideStreamLogo")
-            .resizable()
-            .renderingMode(.original)
-            .aspectRatio(contentMode: .fit)
-            .frame(maxWidth: 280)
-            .accessibilityLabel("GuideStream TV")
+        BrandWordmark(wordmarkSize: .large)
     }
 }
 
@@ -336,19 +331,7 @@ struct OnboardingHeader: View {
 
             Spacer()
 
-            HStack(alignment: .firstTextBaseline, spacing: 0) {
-                Text("Guide")
-                    .scaledFont(size: 18, weight: .semibold, design: .default)
-                    .foregroundStyle(Color.textPrimary)
-                Text("Stream")
-                    .scaledFont(size: 18, weight: .semibold, design: .default)
-                    .foregroundStyle(Color.orange)
-                Text(" TV")
-                    .scaledFont(size: 13, weight: .regular, design: .default)
-                    .foregroundStyle(Color.white.opacity(0.45))
-            }
-            .accessibilityElement(children: .combine)
-            .accessibilityLabel("GuideStream TV")
+            BrandWordmark(wordmarkSize: .nav)
 
             Spacer()
 
