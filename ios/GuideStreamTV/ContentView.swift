@@ -9,6 +9,7 @@ struct ContentView: View {
     @State private var selection: AppTab = .home
     @State private var router = AppRouter()
     @State private var askSheetOpen: Bool = false
+    @State private var searchSelectedResult: TMDBResult? = nil
     @State private var previousTab: AppTab = .home
     /// Tab the user was on right before opening Reels. Used to dismiss the
     /// reels feed (chevron tap or swipe-down) back to where they came from.
@@ -134,8 +135,18 @@ struct ContentView: View {
                     selection = newTab
                 }
 
-            AskStreamSheet(isOpen: askSheetOpen, onClose: { askSheetOpen = false })
+            AskStreamSheet(isOpen: askSheetOpen, onClose: { askSheetOpen = false }, onSelectResult: { searchSelectedResult = $0 })
                 .ignoresSafeArea()
+        }
+        .fullScreenCover(item: $searchSelectedResult) { result in
+            ShowDetailScreen(
+                titleId: String(result.id),
+                title: result.displayName,
+                posterUrl: result.posterUrl,
+                backdropUrl: result.backdropUrl,
+                isTV: result.isTV,
+                onBack: { searchSelectedResult = nil }
+            )
         }
     }
 

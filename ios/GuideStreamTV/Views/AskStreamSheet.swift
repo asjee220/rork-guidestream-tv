@@ -70,6 +70,7 @@ struct AgentTitleMatchModel: Identifiable, Equatable, Hashable {
 struct AskStreamSheet: View {
     let isOpen: Bool
     let onClose: () -> Void
+    var onSelectResult: (TMDBResult) -> Void = { _ in }
 
     @State private var query: String = ""
     @State private var activeFilter: String = "All"
@@ -80,7 +81,6 @@ struct AskStreamSheet: View {
     @State private var searchError: String? = nil
     @State private var searchTask: Task<Void, Never>? = nil
     @State private var aiTask: Task<Void, Never>? = nil
-    @State private var selectedResult: TMDBResult? = nil
     @State private var selectedMatch: AgentTitleMatchModel? = nil
     @State private var auth = AuthViewModel.shared
     @State private var providerByResult: [Int: Platform] = [:]
@@ -111,16 +111,6 @@ struct AskStreamSheet: View {
             }
         }
         .ignoresSafeArea(.container, edges: .bottom)
-        .fullScreenCover(item: $selectedResult) { result in
-            ShowDetailScreen(
-                titleId: String(result.id),
-                title: result.displayName,
-                posterUrl: result.posterUrl,
-                backdropUrl: result.backdropUrl,
-                isTV: result.isTV,
-                onBack: { selectedResult = nil }
-            )
-        }
         .fullScreenCover(item: $selectedMatch) { match in
             ShowDetailScreen(
                 titleId: String(match.id),
@@ -487,7 +477,7 @@ struct AskStreamSheet: View {
                                     "query": query
                                 ]
                             )
-                            selectedResult = r
+                            onSelectResult(r)
                         } label: {
                             HStack(spacing: 12) {
                                 resultPoster(url: r.posterUrl)
