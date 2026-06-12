@@ -426,7 +426,8 @@ final class AuthViewModel {
         do {
             let response = try await SupabaseManager.shared.client.auth.signUp(
                 email: email,
-                password: password
+                password: password,
+                redirectTo: URL(string: "guidestream://auth-callback")
             )
             UserDefaults.standard.set(true, forKey: "gs.hasUsedEmailAuth")
             self.hasUsedEmailAuth = true
@@ -434,6 +435,7 @@ final class AuthViewModel {
                 self.currentUser = session.user
                 self.isGuest = false
                 UserDefaults.standard.set(false, forKey: "gs.isGuest")
+                await MainActor.run { UIApplication.shared.registerForRemoteNotifications() }
                 await upsertProfile(
                     userId: session.user.id.uuidString,
                     displayName: composedName,
