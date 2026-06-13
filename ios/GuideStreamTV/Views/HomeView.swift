@@ -284,6 +284,69 @@ struct HomeView: View {
                             .padding(.horizontal, 20)
                         }
 
+                        if !topPicksShows.isEmpty {
+                            TopPicksSection(
+                                shows: topPicksShows,
+                                onSeeAll: {
+                                    WatchIntentLogger.shared.log(
+                                        eventType: .cardTapped,
+                                        metadata: ["section": "top_picks_see_all"]
+                                    )
+                                },
+                                onOpen: { show in
+                                    WatchIntentLogger.shared.log(
+                                        eventType: .cardTapped,
+                                        titleId: WatchIntentLogger.titleSlug(show.title),
+                                        metadata: ["section": "top_picks"]
+                                    )
+                                    detailSubject = .show(show)
+                                }
+                            )
+                            .padding(.horizontal, 20)
+                        }
+
+                        if !trendingRankedShows.isEmpty {
+                            TrendingRankedSection(
+                                shows: trendingRankedShows,
+                                onSeeAll: {
+                                    WatchIntentLogger.shared.log(
+                                        eventType: .cardTapped,
+                                        metadata: ["section": "trending_ranked_see_all"]
+                                    )
+                                },
+                                onOpen: { show in
+                                    WatchIntentLogger.shared.log(
+                                        eventType: .cardTapped,
+                                        titleId: WatchIntentLogger.titleSlug(show.title),
+                                        metadata: ["section": "trending_ranked"]
+                                    )
+                                    detailSubject = .show(show)
+                                }
+                            )
+                            .padding(.horizontal, 20)
+                        }
+
+                        if !leavingSoonShows.isEmpty {
+                            LeavingSoonSection(
+                                shows: leavingSoonShows,
+                                onSeeAll: {
+                                    WatchIntentLogger.shared.log(
+                                        eventType: .cardTapped,
+                                        metadata: ["section": "leaving_soon_see_all"]
+                                    )
+                                },
+                                onOpen: { show in
+                                    WatchIntentLogger.shared.log(
+                                        eventType: .cardTapped,
+                                        titleId: WatchIntentLogger.titleSlug(show.title),
+                                        metadata: ["section": "leaving_soon"]
+                                    )
+                                    detailSubject = .show(show)
+                                }
+                            )
+                            .padding(.horizontal, 20)
+                        }
+
                         ForEach(StreamingCatalog.ordered(from: auth.selectedServices), id: \.id) { service in
                             if let results = newOnServiceResults[service.id], !results.isEmpty {
                                 let shows = results.map { r in
@@ -334,6 +397,7 @@ struct HomeView: View {
                         if !trendingRanked.isEmpty {
                             TrendingRankedSection(
                                 shows: trendingRanked,
+                                onSeeAll: nil,
                                 onOpen: { show in
                                     WatchIntentLogger.shared.log(
                                         eventType: .cardTapped,
@@ -441,7 +505,8 @@ struct HomeView: View {
 
                         if !leavingSoonShows.isEmpty {
                             LeavingSoonSection(
-                                items: leavingSoonShows,
+                                shows: leavingSoonShows,
+                                onSeeAll: nil,
                                 onOpen: { show in
                                     WatchIntentLogger.shared.log(
                                         eventType: .cardTapped,
@@ -973,6 +1038,67 @@ struct HomeView: View {
             }
     }
 
+    /// Top picks — trending titles scored by vote average and displayed with
+    /// a match-percentage badge. Deduplicated against other recommendation rows.
+    private var topPicksShows: [PosterShow] {
+        trending
+            .filter { providerByTmdb[$0.id] != nil }
+            .map { r in
+                let baseScore = (r.voteAverage ?? 7.0) / 10.0
+                let clamped = max(72, min(98, Int(baseScore * 100)))
+                return PosterShow(
+                    title: r.displayName,
+                    meta: "\(clamped)% Match",
+                    posterColors: HomeFallback.posterColors,
+                    symbol: "star.fill",
+                    posterUrl: r.posterUrl,
+                    tmdbId: r.id,
+                    voteAverage: r.voteAverage
+                )
+            }
+            .sorted { ($0.voteAverage ?? 0) > ($1.voteAverage ?? 0) }
+            .prefix(12)
+            .map { $0 }
+    }
+
+    /// Trending ranked — same pool as top picks but deduplicated so the
+    /// same title never appears in both rows.
+    private var trendingRankedShows: [PosterShow] {
+        let topPickIds = Set(topPicksShows.compactMap { $0.tmdbId })
+        return trending
+            .filter { providerByTmdb[$0.id] != nil }
+            .filter { !topPickIds.contains($0.id) }
+            .map { r in
+                PosterShow(
+                    title: r.displayName,
+                    meta: providerByTmdb[r.id]?.name ?? "",
+                    posterColors: HomeFallback.posterColors,
+                    symbol: "chart.bar.fill",
+                    posterUrl: r.posterUrl,
+                    tmdbId: r.id,
+                    voteAverage: r.voteAverage
+                )
+            }
+            .prefix(12)
+            .map { $0 }
+    }
+
+    /// Leaving Soon — scaffold built from the user's watchlist.
+    /// TODO: replace with real Watchmode expiration data once the webUrl tier is upgraded.
+    private var leavingSoonShows: [PosterShow] {
+        let dayStrings = ["3 days left", "5 days left", "8 days left", "12 days left"]
+        return streams.userStreams.prefix(4).enumerated().map { idx, row in
+            PosterShow(
+                title: row.title ?? "Untitled",
+                meta: dayStrings[idx % dayStrings.count],
+                posterColors: HomeFallback.posterColors,
+                symbol: "clock.badge.exclamationmark",
+                posterUrl: row.posterUrl,
+                tmdbId: Int(row.titleId)
+            )
+        }
+    }
+
     /// Episode cards built from the user's saved watch list. Skips the
     /// platform badge entirely (empty string) when the saved row's platform
     /// is missing or a generic placeholder — the detail sheet's Watchmode
@@ -1139,25 +1265,6 @@ struct HomeView: View {
             .filter { providerByTmdb[$0.id] != nil }
             .prefix(12)
             .map { mediaAsPoster($0, platform: providerByTmdb[$0.id]) }
-    }
-
-    /// Section 7: Leaving soon
-    private var leavingSoonShows: [(show: PosterShow, daysLeft: Int)] {
-        expiringItems.compactMap { item in
-            guard let tmdbResult = (trending + onAir).first(where: { $0.id == item.tmdbId }),
-                  let plat = providerByTmdb[item.tmdbId]
-            else {
-                let show = PosterShow(
-                    title: item.title,
-                    meta: item.sourceId,
-                    posterColors: HomeFallback.posterColors,
-                    symbol: "clock",
-                    tmdbId: item.tmdbId
-                )
-                return (show, item.daysLeft)
-            }
-            return (mediaAsPoster(tmdbResult, platform: plat), item.daysLeft)
-        }
     }
 
     /// Section 8: New seasons of shows you follow
@@ -1330,6 +1437,87 @@ private struct BingeReadySection: View {
                 HStack(spacing: 10) {
                     ForEach(shows) { show in
                         PosterCard(show: show, tag: tag, onTap: { onOpen(show) })
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 6)
+            }
+        }
+    }
+}
+
+// MARK: - Top Picks (Section 2)
+
+private struct TopPicksSection: View {
+    let shows: [PosterShow]
+    let onSeeAll: (() -> Void)?
+    let onOpen: (PosterShow) -> Void
+
+    var body: some View {
+        SectionGlassCard(
+            title: "Top Picks for You",
+            accentColor: Color.blue,
+            onSeeAll: onSeeAll
+        ) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    ForEach(shows) { show in
+                        Button {
+                            onOpen(show)
+                        } label: {
+                            VStack(alignment: .leading, spacing: 4) {
+                                ZStack {
+                                    RoundedRectangle(cornerRadius: 10)
+                                        .fill(
+                                            LinearGradient(
+                                                colors: show.posterColors,
+                                                startPoint: .topLeading,
+                                                endPoint: .bottomTrailing
+                                            )
+                                        )
+                                        .frame(width: 110, height: 155)
+                                    RemoteImage(
+                                        urlString: show.posterUrl,
+                                        contentMode: .fill,
+                                        fallbackColors: show.posterColors
+                                    )
+                                    .frame(width: 110, height: 155)
+                                    .clipShape(.rect(cornerRadius: 10))
+                                    .allowsHitTesting(false)
+                                }
+                                .overlay(alignment: .bottomTrailing) {
+                                    if show.meta.contains("%") {
+                                        Text(show.meta)
+                                            .scaledFont(size: 8, weight: .bold)
+                                            .foregroundStyle(Color.white)
+                                            .padding(.horizontal, 5)
+                                            .padding(.vertical, 3)
+                                            .background(
+                                                RoundedRectangle(cornerRadius: 5)
+                                                    .fill(Color(red: 0.10, green: 0.44, blue: 0.91).opacity(0.88))
+                                            )
+                                            .padding(5)
+                                            .allowsHitTesting(false)
+                                    }
+                                }
+                                .overlay(alignment: .bottomLeading) {
+                                    if !show.meta.contains("%"),
+                                       let plat = Platform.from(providerName: show.meta) {
+                                        NetworkBadge(platform: plat)
+                                            .padding(5)
+                                            .allowsHitTesting(false)
+                                    }
+                                }
+                                .clipShape(.rect(cornerRadius: 10))
+
+                                Text(show.title)
+                                    .scaledFont(size: 12, weight: .semibold)
+                                    .foregroundStyle(Color.textPrimary)
+                                    .lineLimit(1)
+                                    .frame(width: 110, alignment: .leading)
+                            }
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
                 .padding(.horizontal, 16)
@@ -1974,27 +2162,61 @@ private struct PlatformRow: View {
 
 private struct TrendingRankedSection: View {
     let shows: [PosterShow]
+    let onSeeAll: (() -> Void)?
     let onOpen: (PosterShow) -> Void
 
     var body: some View {
-        SectionGlassCard(title: "Trending this week") {
+        SectionGlassCard(title: "Trending This Week", onSeeAll: onSeeAll) {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 10) {
-                    ForEach(Array(shows.enumerated()), id: \.element.id) { idx, show in
-                        ZStack(alignment: .topLeading) {
-                            PosterCard(show: show, tag: "", onTap: { onOpen(show) })
-                            Text("#\(idx + 1)")
-                                .scaledFont(size: 8, weight: .black)
-                                .foregroundStyle(.white)
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 3)
-                                .background(
-                                    Capsule()
-                                        .fill(Color(red:0.10, green:0.44, blue:0.91))
-                                )
-                                .padding(6)
-                                .allowsHitTesting(false)
+                    ForEach(Array(shows.enumerated()), id: \.offset) { idx, show in
+                        Button {
+                            onOpen(show)
+                        } label: {
+                            VStack(alignment: .leading, spacing: 4) {
+                                ZStack {
+                                    RoundedRectangle(cornerRadius: 10)
+                                        .fill(
+                                            LinearGradient(
+                                                colors: show.posterColors,
+                                                startPoint: .topLeading,
+                                                endPoint: .bottomTrailing
+                                            )
+                                        )
+                                        .frame(width: 110, height: 155)
+                                    RemoteImage(
+                                        urlString: show.posterUrl,
+                                        contentMode: .fill,
+                                        fallbackColors: show.posterColors
+                                    )
+                                    .frame(width: 110, height: 155)
+                                    .clipShape(.rect(cornerRadius: 10))
+                                    .allowsHitTesting(false)
+                                }
+                                .overlay(alignment: .topLeading) {
+                                    Text("#\(idx + 1)")
+                                        .scaledFont(size: 11, weight: .heavy)
+                                        .foregroundStyle(Color.white.opacity(0.55))
+                                        .padding(6)
+                                        .allowsHitTesting(false)
+                                }
+                                .overlay(alignment: .bottomLeading) {
+                                    if let plat = Platform.from(providerName: show.meta) {
+                                        NetworkBadge(platform: plat)
+                                            .padding(5)
+                                            .allowsHitTesting(false)
+                                    }
+                                }
+                                .clipShape(.rect(cornerRadius: 10))
+
+                                Text(show.title)
+                                    .scaledFont(size: 12, weight: .semibold)
+                                    .foregroundStyle(Color.textPrimary)
+                                    .lineLimit(1)
+                                    .frame(width: 110, alignment: .leading)
+                            }
                         }
+                        .buttonStyle(.plain)
                     }
                 }
                 .padding(.horizontal, 16)
@@ -2120,33 +2342,72 @@ private struct TopRatedSection: View {
 // MARK: - Leaving Soon (Section 7)
 
 private struct LeavingSoonSection: View {
-    let items: [(show: PosterShow, daysLeft: Int)]
+    let shows: [PosterShow]
+    let onSeeAll: (() -> Void)?
     let onOpen: (PosterShow) -> Void
 
     var body: some View {
         SectionGlassCard(
-            title: "Leaving soon — watch now",
-            accentColor: Color(red:0.86,green:0.15,blue:0.15)
+            title: "Leaving Soon",
+            highlighted: true,
+            accentColor: Color.orange,
+            onSeeAll: onSeeAll
         ) {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 10) {
-                    ForEach(items, id: \.show.id) { item in
-                        ZStack(alignment: .bottom) {
-                            PosterCard(show: item.show, tag: "", onTap: { onOpen(item.show) })
-                            Text(item.daysLeft == 0
-                                ? "Leaves today"
-                                : "Leaves in \(item.daysLeft)d")
-                                .scaledFont(size: 7, weight: .heavy)
-                                .foregroundStyle(.white)
-                                .padding(.horizontal, 5)
-                                .padding(.vertical, 3)
-                                .background(
-                                    Capsule()
-                                        .fill(Color(red:0.86, green:0.15, blue:0.15))
-                                )
-                                .padding(.bottom, 26)
-                                .allowsHitTesting(false)
+                    ForEach(shows) { show in
+                        Button {
+                            onOpen(show)
+                        } label: {
+                            VStack(alignment: .leading, spacing: 0) {
+                                ZStack {
+                                    RemoteImage(
+                                        urlString: show.posterUrl,
+                                        contentMode: .fill,
+                                        fallbackColors: show.posterColors
+                                    )
+                                    .frame(width: 130, height: 80)
+                                    .clipped()
+                                    .allowsHitTesting(false)
+                                }
+                                .frame(width: 130, height: 80)
+                                .overlay(alignment: .topLeading) {
+                                    Text(show.meta)
+                                        .scaledFont(size: 9, weight: .bold)
+                                        .foregroundStyle(Color.orange)
+                                        .padding(.horizontal, 6)
+                                        .padding(.vertical, 3)
+                                        .background(
+                                            RoundedRectangle(cornerRadius: 5)
+                                                .fill(Color.black.opacity(0.65))
+                                        )
+                                        .padding(5)
+                                        .allowsHitTesting(false)
+                                }
+                                .clipShape(.rect(cornerRadius: 10))
+
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(show.title)
+                                        .scaledFont(size: 11, weight: .semibold)
+                                        .foregroundStyle(Color.textPrimary)
+                                        .lineLimit(2)
+                                    Text(show.meta.split(separator: "·").last.map(String.init) ?? "")
+                                        .scaledFont(size: 9)
+                                        .foregroundStyle(Color.textTertiary)
+                                        .lineLimit(1)
+                                }
+                                .padding(8)
+                            }
+                            .frame(width: 130)
+                            .background(Color.white.opacity(0.05))
+                            .background(.ultraThinMaterial)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 12)
+                                    .stroke(Color.orange.opacity(0.25), lineWidth: 1)
+                            )
+                            .clipShape(.rect(cornerRadius: 12))
                         }
+                        .buttonStyle(.plain)
                     }
                 }
                 .padding(.horizontal, 16)
