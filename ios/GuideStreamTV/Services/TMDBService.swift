@@ -273,6 +273,22 @@ nonisolated struct TMDBService {
         return env.results.map { stamp($0, mediaType: "tv") }
     }
 
+    /// Movies currently in theaters (US).
+    func getNowPlayingMovies() async throws -> [TMDBResult] {
+        let urlString = "\(base)/movie/now_playing?api_key=\(apiKey)&language=en-US&page=1"
+        let data = try await get(urlString)
+        let env = try JSONDecoder().decode(TMDBTrendingEnvelope.self, from: data)
+        return env.results.map { stamp($0, mediaType: "movie") }
+    }
+
+    /// Popular TV shows trending globally.
+    func getPopularTV() async throws -> [TMDBResult] {
+        let urlString = "\(base)/tv/popular?api_key=\(apiKey)&language=en-US&page=1"
+        let data = try await get(urlString)
+        let env = try JSONDecoder().decode(TMDBTrendingEnvelope.self, from: data)
+        return env.results.map { stamp($0, mediaType: "tv") }
+    }
+
     /// Popular ended TV shows for the "Binge Ready" fallback.
     func getDiscoverEnded() async throws -> [TMDBResult] {
         let urlString = "\(base)/discover/tv?api_key=\(apiKey)&language=en-US&sort_by=popularity.desc&with_status=Ended&page=1"

@@ -166,20 +166,39 @@ final class ReelsViewModel {
         isLoading = true
         defer { isLoading = false }
 
-        // Fetch the three source lists in parallel.
+        // Fetch the five source lists in parallel.
         async let trendingTask: [TMDBResult] = (try? tmdb.getTrending()) ?? []
         async let onAirTask: [TMDBResult] = (try? tmdb.getOnTheAir()) ?? []
         async let myStreamsTask: [UserStream] = fetchMyStreams()
+        async let nowPlayingTask: [TMDBResult] = (try? tmdb.getNowPlayingMovies()) ?? []
+        async let popularTVTask: [TMDBResult] = (try? tmdb.getPopularTV()) ?? []
 
-        let (trending, onAir, mine) = await (trendingTask, onAirTask, myStreamsTask)
+        let (trending, onAir, mine, nowPlaying, popularTV) = await (trendingTask, onAirTask, myStreamsTask, nowPlayingTask, popularTVTask)
 
         // For each show, fetch its YouTube trailer key + TMDB detail.
         // Keep the work parallel but capped to avoid hammering TMDB.
         let forYouItems = await buildItems(from: mineResults(mine), tab: .forYou)
-        let trendingItems = await buildItems(from: Array(trending.prefix(15)), tab: .trending)
-        let newItems = await buildItems(from: Array(onAir.prefix(15)), tab: .new)
+        let trendingItems = await buildItems(from: Array(trending.prefix(50)), tab: .trending)
+        let newItems = await buildItems(from: Array(onAir.prefix(50)), tab: .new)
+        let nowPlayingItems = await buildItems(from: Array(nowPlaying.prefix(50)), tab: .new)
+        let popularTVItems = await buildItems(from: Array(popularTV.prefix(50)), tab: .forYou)
 
-        var combined = forYouItems + trendingItems + newItems
+        // Backfill For You feed with trending when the account has a light watchlist.
+        var forYouCombined = forYouItems + popularTVItems
+        if forYouCombined.count < 10 {
+            let trendingFallback = (try? await tmdb.getTrending()) ?? []
+            let needed = max(0, 10 - forYouCombined.count)
+            if !trendingFallback.isEmpty {
+                let extra = await buildItems(from: Array(trendingFallback.prefix(needed)), tab: .forYou)
+                forYouCombined += extra
+            }
+        }
+
+        var combined = forYouCombined + trendingItems + newItems + nowPlayingItems
+
+        // Deduplicate by trailer key so the same video doesn't appear twice.
+        var seen = Set<String>()
+        combined = combined.filter({ seen.insert($0.trailerKey).inserted })
 
         let rakutenReels = makeRakutenAdReels()
         var rakutenIndex = 0
@@ -225,13 +244,13 @@ final class ReelsViewModel {
 
         // Pre-resolve the first few trailer stream URLs so playback starts
         // instantly when the user lands on the feed.
-        for trailer in combined.prefix(3) where !trailer.isSponsored && !trailer.trailerKey.isEmpty {
+        for trailer in combined.prefix(6) where !trailer.isSponsored && !trailer.trailerKey.isEmpty {
             TrailerStreamCache.shared.prefetch(trailer.trailerKey)
         }
     }
 
     private func mineResults(_ streams: [UserStream]) -> [TMDBResult] {
-        streams.prefix(15).compactMap { s -> TMDBResult? in
+        streams.prefix(50).compactMap { s -> TMDBResult? in
             // user_streams may store numeric tmdb id in title_id (tt-xxx slug for some).
             // Only build items for entries with a numeric tmdb id available.
             let trimmed = s.titleId.trimmingCharacters(in: .whitespaces)
@@ -1690,9 +1709,12 @@ final class TrailerStreamCache {
             let yt = YouTube(videoID: videoId, methods: [.local, .remote])
             let streams = try await yt.streams
             let combined = streams.filterVideoAndAudio()
-            let pick = combined.lowestResolutionStream()
+            // Prefer HD (>= 720p) combined streams, falling back through lower qualities.
+            let hdStreams = combined.filter(byResolution: { ($0 ?? 0) >= 720 })
+            let pick = hdStreams.highestResolutionStream()
+                ?? combined.highestResolutionStream()
                 ?? combined.first
-                ?? streams.filterVideoOnly().lowestResolutionStream()
+                ?? streams.filterVideoOnly().highestResolutionStream()
                 ?? streams.first
             return pick?.url
         } catch {
