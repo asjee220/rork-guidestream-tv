@@ -14,7 +14,7 @@ public struct BrandWordmark: View {
         var baseSize: CGFloat {
             switch self {
             case .large: return 36
-            case .nav: return 18
+            case .nav: return 20
             case .small: return 13
             }
         }
@@ -22,7 +22,7 @@ public struct BrandWordmark: View {
         var tvSize: CGFloat {
             switch self {
             case .large: return 20
-            case .nav: return 11
+            case .nav: return 12
             case .small: return 8
             }
         }
@@ -30,8 +30,8 @@ public struct BrandWordmark: View {
         var weight: Font.Weight {
             switch self {
             case .large: return .heavy
-            case .nav: return .bold
-            case .small: return .semibold
+            case .nav: return .heavy
+            case .small: return .bold
             }
         }
     }
@@ -46,9 +46,11 @@ public struct BrandWordmark: View {
             Text("Stream")
                 .scaledFont(size: wordmarkSize.baseSize, weight: wordmarkSize.weight)
                 .foregroundStyle(Color(red: 0xF5 / 255, green: 0x82 / 255, blue: 0x1F / 255))
-            Text(" TV")
-                .scaledFont(size: wordmarkSize.tvSize, weight: wordmarkSize.weight)
+            Text("TV")
+                .scaledFont(size: wordmarkSize.tvSize, weight: .bold)
                 .foregroundStyle(Color(red: 0x5B / 255, green: 0xB0 / 255, blue: 0xFF / 255))
+                .baselineOffset(wordmarkSize.baseSize * 0.30)
+                .padding(.leading, 2)
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel("GuideStream TV")

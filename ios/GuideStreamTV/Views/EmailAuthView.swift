@@ -122,17 +122,7 @@ struct EmailAuthView: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .firstTextBaseline, spacing: 0) {
-                Text("Guide")
-                    .scaledFont(size: 20, weight: .semibold)
-                    .foregroundStyle(.white)
-                Text("Stream")
-                    .scaledFont(size: 20, weight: .semibold)
-                    .foregroundStyle(Color.orange)
-                Text(" TV")
-                    .scaledFont(size: 14, weight: .regular)
-                    .foregroundStyle(Color.white.opacity(0.45))
-            }
+            BrandWordmark(wordmarkSize: .nav)
             .padding(.top, 8)
 
             Text(mode == .signUp ? "Create your account" : "Welcome back")

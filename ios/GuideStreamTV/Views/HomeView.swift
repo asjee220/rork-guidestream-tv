@@ -292,6 +292,7 @@ struct HomeView: View {
                                         eventType: .cardTapped,
                                         metadata: ["section": "top_picks_see_all"]
                                     )
+                                    path.append(.topPicks)
                                 },
                                 onOpen: { show in
                                     WatchIntentLogger.shared.log(
@@ -313,6 +314,7 @@ struct HomeView: View {
                                         eventType: .cardTapped,
                                         metadata: ["section": "trending_ranked_see_all"]
                                     )
+                                    path.append(.trending)
                                 },
                                 onOpen: { show in
                                     WatchIntentLogger.shared.log(
@@ -334,6 +336,7 @@ struct HomeView: View {
                                         eventType: .cardTapped,
                                         metadata: ["section": "leaving_soon_see_all"]
                                     )
+                                    path.append(.leavingSoon)
                                 },
                                 onOpen: { show in
                                     WatchIntentLogger.shared.log(
@@ -575,6 +578,13 @@ struct HomeView: View {
                         if !continueWatchingEpisodes.isEmpty {
                             ContinueWatchingSection(
                                 episodes: continueWatchingEpisodes,
+                                onSeeAll: {
+                                    WatchIntentLogger.shared.log(
+                                        eventType: .cardTapped,
+                                        metadata: ["section": "continue_watching_see_all"]
+                                    )
+                                    path.append(.continueWatching)
+                                },
                                 onOpen: { ep in
                                     WatchIntentLogger.shared.log(
                                         eventType: .continueWatching,
@@ -695,6 +705,32 @@ struct HomeView: View {
                     )
                 case .widgetSetup:
                     WidgetSetupView()
+                case .topPicks:
+                    BingeWorthyListView(
+                        shows: topPicksShows,
+                        sectionTitle: "Top Picks for You",
+                        tag: "TOP PICK",
+                        onSelect: { show in detailSubject = .show(show) }
+                    )
+                case .trending:
+                    BingeWorthyListView(
+                        shows: trendingRankedShows,
+                        sectionTitle: "Trending This Week",
+                        tag: "TRENDING",
+                        onSelect: { show in detailSubject = .show(show) }
+                    )
+                case .leavingSoon:
+                    BingeWorthyListView(
+                        shows: leavingSoonShows,
+                        sectionTitle: "Leaving Soon",
+                        tag: "LEAVING SOON",
+                        onSelect: { show in detailSubject = .show(show) }
+                    )
+                case .continueWatching:
+                    ContinueWatchingGridView(
+                        episodes: continueWatchingEpisodes,
+                        onSelect: { ep in detailSubject = .episode(ep) }
+                    )
                 }
             }
             .sheet(item: $detailSubject) { subject in
@@ -1285,17 +1321,7 @@ private struct PageBar: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            HStack(alignment: .firstTextBaseline, spacing: 0) {
-                Text("Guide")
-                    .scaledFont(size: 22, weight: .semibold, design: .default)
-                    .foregroundStyle(Color.textPrimary)
-                Text("Stream")
-                    .scaledFont(size: 22, weight: .semibold, design: .default)
-                    .foregroundStyle(Color.orange)
-                Text(" TV")
-                    .scaledFont(size: 16, weight: .regular, design: .default)
-                    .foregroundStyle(Color.white.opacity(0.45))
-            }
+            BrandWordmark(wordmarkSize: .nav)
             Spacer()
             if !selectedServiceIds.isEmpty {
                 ServicesPill(serviceIds: selectedServiceIds, onTap: onServicesPill)
@@ -1407,10 +1433,11 @@ private struct NewEpisodesSection: View {
 
 private struct ContinueWatchingSection: View {
     let episodes: [Episode]
+    let onSeeAll: () -> Void
     let onOpen: (Episode) -> Void
 
     var body: some View {
-        SectionGlassCard(title: "Continue Watching", onSeeAll: {}) {
+        SectionGlassCard(title: "Continue Watching", onSeeAll: onSeeAll) {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 10) {
                     ForEach(episodes) { ep in

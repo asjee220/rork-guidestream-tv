@@ -11,6 +11,10 @@ enum HomeRoute: Hashable {
     case whatsNewToday
     case news
     case widgetSetup
+    case continueWatching
+    case topPicks
+    case trending
+    case leavingSoon
 }
 
 enum DetailSubject: Identifiable, Hashable {
@@ -1046,10 +1050,10 @@ struct NewEpisodesListView: View {
 struct BingeWorthyListView: View {
     let shows: [PosterShow]
     let sectionTitle: String
+    var tag: String = "BINGE"
     var onSelect: (PosterShow) -> Void
 
     private let columns = [
-        GridItem(.flexible(), spacing: 14),
         GridItem(.flexible(), spacing: 14),
         GridItem(.flexible(), spacing: 14)
     ]
@@ -1059,7 +1063,7 @@ struct BingeWorthyListView: View {
             LazyVGrid(columns: columns, spacing: 16) {
                 ForEach(shows) { show in
                     Button(action: { onSelect(show) }) {
-                        BingeGridCard(show: show, tag: "BINGE")
+                        BingeGridCard(show: show, tag: tag)
                     }
                     .buttonStyle(.plain)
                 }
@@ -1083,7 +1087,6 @@ struct WhatsNewTodayListView: View {
     var onSelect: (PosterShow) -> Void
 
     private let columns = [
-        GridItem(.flexible(), spacing: 14),
         GridItem(.flexible(), spacing: 14),
         GridItem(.flexible(), spacing: 14)
     ]
@@ -1254,7 +1257,7 @@ private struct BingeGridCard: View {
                 }
                 .overlay(alignment: .bottom) {
                     Text(tag)
-                        .scaledFont(size: 9, weight: .bold)
+                        .scaledFont(size: 10, weight: .bold)
                         .tracking(0.8)
                         .foregroundStyle(Color.orange)
                         .frame(maxWidth: .infinity)
@@ -1266,11 +1269,130 @@ private struct BingeGridCard: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(show.title)
-                    .scaledFont(size: 12, weight: .semibold)
+                    .scaledFont(size: 14, weight: .semibold)
                     .foregroundStyle(Color.textPrimary)
                     .lineLimit(1)
                 Text(show.meta)
-                    .scaledFont(size: 10)
+                    .scaledFont(size: 11.5)
+                    .foregroundStyle(Color.textTertiary)
+                    .lineLimit(1)
+            }
+            .padding(.horizontal, 2)
+        }
+    }
+}
+
+// MARK: - Continue Watching Grid
+
+struct ContinueWatchingGridView: View {
+    let episodes: [Episode]
+    var onSelect: (Episode) -> Void
+
+    private let columns = [
+        GridItem(.flexible(), spacing: 14),
+        GridItem(.flexible(), spacing: 14)
+    ]
+
+    var body: some View {
+        ScrollView {
+            LazyVGrid(columns: columns, spacing: 16) {
+                ForEach(episodes) { ep in
+                    Button(action: { onSelect(ep) }) {
+                        ContinueWatchingGridCard(episode: ep)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 12)
+            .padding(.bottom, 120)
+        }
+        .background(Color.navy.ignoresSafeArea())
+        .navigationTitle("Continue Watching")
+        .navigationBarTitleDisplayMode(.large)
+        .toolbarBackground(Color.navy, for: .navigationBar)
+        .toolbarColorScheme(.dark, for: .navigationBar)
+    }
+}
+
+private struct ContinueWatchingGridCard: View {
+    let episode: Episode
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Color.black
+                .aspectRatio(2.0 / 3.0, contentMode: .fit)
+                .overlay {
+                    LinearGradient(
+                        colors: episode.posterColors,
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                    .allowsHitTesting(false)
+                }
+                .overlay {
+                    RemoteImage(
+                        urlString: episode.posterUrl,
+                        contentMode: .fill,
+                        fallbackColors: episode.posterColors
+                    )
+                    .allowsHitTesting(false)
+                }
+                .overlay(alignment: .center) {
+                    Circle()
+                        .fill(.ultraThinMaterial)
+                        .frame(width: 44, height: 44)
+                        .overlay(
+                            Image(systemName: "play.fill")
+                                .scaledFont(size: 16, weight: .bold)
+                                .foregroundStyle(.white)
+                                .offset(x: 1)
+                        )
+                        .allowsHitTesting(false)
+                }
+                .overlay(alignment: .bottomLeading) {
+                    if !episode.platform.isEmpty,
+                       episode.platform.uppercased() != "STREAM",
+                       episode.platform.lowercased() != "streaming" {
+                        Text(episode.platform)
+                            .scaledFont(size: 8, weight: .bold)
+                            .tracking(0.4)
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 3)
+                            .background(
+                                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                    .fill(episode.platformColor)
+                            )
+                            .padding(6)
+                            .allowsHitTesting(false)
+                    }
+                }
+                .overlay(alignment: .bottom) {
+                    if episode.progress > 0 {
+                        GeometryReader { geo in
+                            ZStack(alignment: .leading) {
+                                Rectangle()
+                                    .fill(Color.white.opacity(0.12))
+                                Rectangle()
+                                    .fill(Color.orange)
+                                    .frame(width: geo.size.width * episode.progress)
+                                    .shadow(color: Color.orange.opacity(0.6), radius: 4)
+                            }
+                        }
+                        .frame(height: 5)
+                        .allowsHitTesting(false)
+                    }
+                }
+                .clipShape(.rect(cornerRadius: 10))
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(episode.title)
+                    .scaledFont(size: 14, weight: .semibold)
+                    .foregroundStyle(Color.textPrimary)
+                    .lineLimit(1)
+                Text("\(episode.season) · \(episode.duration)")
+                    .scaledFont(size: 11.5)
                     .foregroundStyle(Color.textTertiary)
                     .lineLimit(1)
             }
