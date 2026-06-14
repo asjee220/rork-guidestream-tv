@@ -46,23 +46,7 @@ struct ProfileView: View {
     var body: some View {
         NavigationStack(path: $path) {
             ZStack {
-                Color.navy.ignoresSafeArea()
-
-                // Subtle atmosphere — matches the rest of the app.
-                GeometryReader { geo in
-                    Circle()
-                        .fill(Color.blue.opacity(0.14))
-                        .frame(width: geo.size.width * 0.9)
-                        .blur(radius: 90)
-                        .offset(x: -geo.size.width * 0.4, y: -geo.size.height * 0.3)
-                    Circle()
-                        .fill(Color.orange.opacity(0.08))
-                        .frame(width: geo.size.width * 0.7)
-                        .blur(radius: 80)
-                        .offset(x: geo.size.width * 0.4, y: geo.size.height * 0.55)
-                }
-                .ignoresSafeArea()
-                .allowsHitTesting(false)
+                BrandBackground()
 
                 ScrollView(showsIndicators: false) {
                     VStack(spacing: 22) {

@@ -361,7 +361,7 @@ struct ShowDetailScreen: View {
 
     var body: some View {
         ZStack(alignment: .top) {
-            Color.navy.ignoresSafeArea()
+            BrandBackground()
 
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 0) {
@@ -1463,7 +1463,7 @@ struct CommentsViewerSheet: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .background(Color.navy.ignoresSafeArea())
+        .background(BrandBackground())
         .presentationDetents([.fraction(0.8), .large])
         .presentationDragIndicator(.hidden)
         .presentationContentInteraction(.scrolls)

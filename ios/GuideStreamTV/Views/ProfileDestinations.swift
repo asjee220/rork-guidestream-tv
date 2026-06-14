@@ -31,7 +31,7 @@ struct AccountView: View {
 
     var body: some View {
         ZStack {
-            Color.navy.ignoresSafeArea()
+            BrandBackground()
 
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 18) {
@@ -409,7 +409,7 @@ struct ConnectedServicesView: View {
 
     var body: some View {
         ZStack {
-            Color.navy.ignoresSafeArea()
+            BrandBackground()
 
             VStack(spacing: 0) {
                 ScrollView(showsIndicators: false) {
@@ -559,7 +559,7 @@ struct DevicesView: View {
 
     var body: some View {
         ZStack {
-            Color.navy.ignoresSafeArea()
+            BrandBackground()
 
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 14) {
@@ -889,7 +889,7 @@ struct NotificationsSettingsView: View {
 
     var body: some View {
         ZStack {
-            Color.navy.ignoresSafeArea()
+            BrandBackground()
 
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 16) {
@@ -1068,7 +1068,7 @@ struct ProfilesView: View {
 
     var body: some View {
         ZStack {
-            Color.navy.ignoresSafeArea()
+            BrandBackground()
 
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 14) {
@@ -1248,7 +1248,7 @@ private struct ProfileEditorSheet: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                Color.navy.ignoresSafeArea()
+                BrandBackground()
 
                 ScrollView(showsIndicators: false) {
                     VStack(spacing: 20) {
@@ -1456,7 +1456,7 @@ struct HelpFeedbackView: View {
 
     var body: some View {
         ZStack {
-            Color.navy.ignoresSafeArea()
+            BrandBackground()
 
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 18) {

@@ -30,7 +30,7 @@ struct ServicesBottomSheet: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                Color.navy.ignoresSafeArea()
+                BrandBackground()
 
                 // Atmosphere — keeps the sheet feeling like the same surface as the rest of the app.
                 GeometryReader { geo in

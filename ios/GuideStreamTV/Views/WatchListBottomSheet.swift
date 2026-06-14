@@ -63,7 +63,7 @@ private struct WatchListContent: View {
 
     var body: some View {
         ZStack {
-            Color.navy.ignoresSafeArea()
+            BrandBackground()
 
             // Atmosphere \u2014 keeps the surface feeling like the rest of the app.
             GeometryReader { geo in

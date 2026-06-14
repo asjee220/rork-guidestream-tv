@@ -1037,7 +1037,7 @@ struct NewEpisodesListView: View {
             .padding(.top, 12)
             .padding(.bottom, 120)
         }
-        .background(Color.navy.ignoresSafeArea())
+        .background(BrandBackground())
         .navigationTitle("New Episodes")
         .navigationBarTitleDisplayMode(.large)
         .toolbarBackground(Color.navy, for: .navigationBar)
@@ -1072,7 +1072,7 @@ struct BingeWorthyListView: View {
             .padding(.top, 12)
             .padding(.bottom, 120)
         }
-        .background(Color.navy.ignoresSafeArea())
+        .background(BrandBackground())
         .navigationTitle(sectionTitle)
         .navigationBarTitleDisplayMode(.large)
         .toolbarBackground(Color.navy, for: .navigationBar)
@@ -1105,7 +1105,7 @@ struct WhatsNewTodayListView: View {
             .padding(.top, 12)
             .padding(.bottom, 120)
         }
-        .background(Color.navy.ignoresSafeArea())
+        .background(BrandBackground())
         .navigationTitle("What's New Today")
         .navigationBarTitleDisplayMode(.large)
         .toolbarBackground(Color.navy, for: .navigationBar)
@@ -1137,7 +1137,7 @@ struct NewsListView: View {
             .padding(.top, 12)
             .padding(.bottom, 120)
         }
-        .background(Color.navy.ignoresSafeArea())
+        .background(BrandBackground())
         .navigationTitle("News")
         .navigationBarTitleDisplayMode(.large)
         .toolbarBackground(Color.navy, for: .navigationBar)
@@ -1307,7 +1307,7 @@ struct ContinueWatchingGridView: View {
             .padding(.top, 12)
             .padding(.bottom, 120)
         }
-        .background(Color.navy.ignoresSafeArea())
+        .background(BrandBackground())
         .navigationTitle("Continue Watching")
         .navigationBarTitleDisplayMode(.large)
         .toolbarBackground(Color.navy, for: .navigationBar)
@@ -1525,7 +1525,7 @@ struct WidgetSetupView: View {
             .padding(.top, 16)
             .padding(.bottom, 120)
         }
-        .background(Color.navy.ignoresSafeArea())
+        .background(BrandBackground())
         .navigationTitle("Set Up Widget")
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(Color.navy, for: .navigationBar)
@@ -1660,7 +1660,7 @@ struct NotificationsSheet: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(Color.navy.ignoresSafeArea())
+        .background(BrandBackground())
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
         .presentationContentInteraction(.scrolls)

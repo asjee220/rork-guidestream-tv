@@ -32,7 +32,7 @@ struct ContentView: View {
                 )
                 .transition(.opacity)
             } else {
-                Color.navy.ignoresSafeArea()
+                BrandBackground()
             }
         }
         .animation(.easeOut(duration: 0.3), value: auth.hasCompletedOnboarding)
@@ -77,23 +77,7 @@ struct ContentView: View {
 
     private var mainApp: some View {
         ZStack(alignment: .bottom) {
-            Theme.bg.ignoresSafeArea()
-
-            // Atmosphere
-            GeometryReader { geo in
-                Circle()
-                    .fill(Theme.blue.opacity(0.18))
-                    .frame(width: geo.size.width * 0.9)
-                    .blur(radius: 90)
-                    .offset(x: -geo.size.width * 0.35, y: -geo.size.height * 0.3)
-                Circle()
-                    .fill(Theme.orange.opacity(0.10))
-                    .frame(width: geo.size.width * 0.7)
-                    .blur(radius: 80)
-                    .offset(x: geo.size.width * 0.4, y: geo.size.height * 0.5)
-            }
-            .ignoresSafeArea()
-            .allowsHitTesting(false)
+            BrandBackground()
 
             Group {
                 switch selection {

@@ -23,7 +23,7 @@ struct WatchingNowView: View {
 
     var body: some View {
         ZStack(alignment: .bottom) {
-            Color.navy.ignoresSafeArea()
+            BrandBackground()
 
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 0) {

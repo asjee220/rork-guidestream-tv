@@ -679,7 +679,7 @@ struct HomeView: View {
                 }
                 .animation(.spring(response: 0.4, dampingFraction: 0.82), value: castPlayback.current?.id)
             }
-            .background(Color.navy.ignoresSafeArea())
+            .background(BrandBackground())
             .navigationDestination(for: HomeRoute.self) { route in
                 switch route {
                 case .newEpisodes:

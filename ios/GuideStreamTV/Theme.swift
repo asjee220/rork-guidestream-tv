@@ -105,6 +105,41 @@ extension View {
     }
 }
 
+/// A reusable full-screen background layer that renders the brand navy base
+/// plus three soft radial glows (blue, orange, light-blue) for a consistent
+/// "themed depth" effect across every screen, sheet, and destination in the app.
+/// Replace any `Color.navy.ignoresSafeArea()` or `.background(Color.navy)` with
+/// `BrandBackground()` to apply this effect.
+struct BrandBackground: View {
+    var body: some View {
+        ZStack {
+            Color.navy
+            GeometryReader { geo in
+                ZStack {
+                    Circle()
+                        .fill(Color.blue.opacity(0.24))
+                        .frame(width: geo.size.width * 0.95)
+                        .blur(radius: 95)
+                        .offset(x: -geo.size.width * 0.38, y: -geo.size.height * 0.22)
+                    Circle()
+                        .fill(Color.orange.opacity(0.15))
+                        .frame(width: geo.size.width * 0.85)
+                        .blur(radius: 90)
+                        .offset(x: geo.size.width * 0.42, y: geo.size.height * 0.55)
+                    Circle()
+                        .fill(Color(red: 0x5B/255, green: 0xB0/255, blue: 0xFF/255).opacity(0.08))
+                        .frame(width: geo.size.width * 0.7)
+                        .blur(radius: 90)
+                        .offset(x: -geo.size.width * 0.05, y: geo.size.height * 0.18)
+                }
+                .ignoresSafeArea()
+                .allowsHitTesting(false)
+            }
+        }
+        .ignoresSafeArea()
+    }
+}
+
 enum Theme {
     static let bg = Color.navy
     static let surface = Color(red: 0x0B/255, green: 0x12/255, blue: 0x1C/255)

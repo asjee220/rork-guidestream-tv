@@ -102,7 +102,7 @@ struct SearchView: View {
 
  var body: some View {
  ZStack(alignment: .top) {
- Color.navy.ignoresSafeArea()
+ BrandBackground()
 
  VStack(spacing: 0) {
  // Search bar row

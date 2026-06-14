@@ -48,7 +48,7 @@ struct EmailAuthView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                Color.navy.ignoresSafeArea()
+                BrandBackground()
 
                 // Atmosphere
                 GeometryReader { geo in
@@ -473,7 +473,7 @@ struct ForgotPasswordSheet: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                Color.navy.ignoresSafeArea()
+                BrandBackground()
 
                 GeometryReader { geo in
                     Circle()

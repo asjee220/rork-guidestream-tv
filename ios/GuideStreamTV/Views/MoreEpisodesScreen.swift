@@ -44,7 +44,7 @@ struct MoreEpisodesScreen: View {
 
     var body: some View {
         ZStack(alignment: .top) {
-            Color.navy.ignoresSafeArea()
+            BrandBackground()
 
             VStack(spacing: 0) {
                 // ── Top bar ──────────────────────────────────────

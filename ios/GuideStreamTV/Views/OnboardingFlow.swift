@@ -25,23 +25,7 @@ struct OnboardingFlow: View {
 
     var body: some View {
         ZStack {
-            Color.navy.ignoresSafeArea()
-
-            // Atmosphere
-            GeometryReader { geo in
-                Circle()
-                    .fill(Color.blue.opacity(0.18))
-                    .frame(width: geo.size.width * 0.9)
-                    .blur(radius: 90)
-                    .offset(x: -geo.size.width * 0.35, y: -geo.size.height * 0.35)
-                Circle()
-                    .fill(Color.orange.opacity(0.12))
-                    .frame(width: geo.size.width * 0.7)
-                    .blur(radius: 80)
-                    .offset(x: geo.size.width * 0.4, y: geo.size.height * 0.5)
-            }
-            .ignoresSafeArea()
-            .allowsHitTesting(false)
+            BrandBackground()
 
             Group {
                 switch step {
