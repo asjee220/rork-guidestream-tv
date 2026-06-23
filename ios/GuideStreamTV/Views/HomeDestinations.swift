@@ -46,6 +46,9 @@ struct EpisodeDetailSheet: View {
     /// When set, drives the platform label, color, and the "Watch on" deeplink so
     /// shows show their real streaming service instead of the placeholder "HBO Max".
     @State private var resolvedSource: WatchmodeSource?
+    /// TMDB-resolved provider name — middle-tier fallback when Watchmode
+    /// returns no usable source. Drives the platform label and badge.
+    @State private var resolvedProviderName: String? = nil
     @State private var resolvedOverview: String?
     @State private var isResolvingSource: Bool = false
     @State private var adDismissed: Bool = false
@@ -56,6 +59,7 @@ struct EpisodeDetailSheet: View {
 
     private var platformColor: Color {
         if let name = resolvedSource?.name { return brandColor(for: name) }
+        if let p = resolvedProviderName, !p.isEmpty { return brandColor(for: p) }
         switch subject {
         case .episode(let e): return e.platformColor
         case .show(let s): return s.posterColors.first ?? Color(red: 0x6A/255, green: 0x3F/255, blue: 0xE0/255)
@@ -127,6 +131,7 @@ struct EpisodeDetailSheet: View {
     /// open.
     private var hasResolvedPlatform: Bool {
         if resolvedSource?.name != nil { return true }
+        if let p = resolvedProviderName, !p.isEmpty { return true }
         if case .episode(let e) = subject, !e.platform.isEmpty, e.platform.uppercased() != "STREAM" {
             return true
         }
@@ -135,6 +140,7 @@ struct EpisodeDetailSheet: View {
 
     private var platformName: String {
         if let name = resolvedSource?.name { return name.uppercased() }
+        if let p = resolvedProviderName, !p.isEmpty { return p.uppercased() }
         switch subject {
         case .episode(let e) where !e.platform.isEmpty && e.platform.uppercased() != "STREAM":
             return e.platform
@@ -145,6 +151,7 @@ struct EpisodeDetailSheet: View {
 
     private var whereToWatchLabel: String {
         if let name = resolvedSource?.name { return name }
+        if let p = resolvedProviderName, !p.isEmpty { return p }
         switch subject {
         case .episode(let e) where !e.platform.isEmpty && e.platform.uppercased() != "STREAM":
             return e.platform.capitalized
@@ -327,14 +334,14 @@ struct EpisodeDetailSheet: View {
             }
             #endif
 
-            // Filter to US-region sources (or nil-region fallbacks)
+            // Filter to US-region sources; fall back to full array if none match.
             let usSources = sources.filter { s in
-                (s.region?.lowercased() == "us") || (s.region == nil)
+                (s.region ?? "").uppercased() == "US"
             }
-            let workingSources = usSources.isEmpty ? sources : usSources
+            let pool = usSources.isEmpty ? sources : usSources
 
             // Sort: non-reseller sub sources first, then other sub, then free/tve/rent/buy.
-            let ranked = workingSources.sorted { a, b in
+            let ranked = pool.sorted { a, b in
                 let ra = sourceRank(a)
                 let rb = sourceRank(b)
                 if ra != rb { return ra < rb }
@@ -347,12 +354,24 @@ struct EpisodeDetailSheet: View {
                 return false
             }
 
-            // Prefer a source whose name matches the episode's platform when
-            // we have one; then the first non-reseller; then ranked.first.
+            // Resolve TMDB's primary provider so we can break ties between
+            // same-type US sources (e.g. STARZ vs Prime Video for a STARZ original).
+            let tmdbProvider = try? await TMDBService.shared.getTopWatchProvider(tmdbId: tmdbId, isTV: inferTV)
+            let tmdbName = tmdbProvider?.providerName
+
+            // Prefer: (1) episode-platform match, (2) TMDB primary-provider match
+            // among non-resellers, (3) first non-reseller, (4) ranked.first.
             let preferred: WatchmodeSource? = {
                 if case .episode(let e) = subject, !e.platform.isEmpty {
                     let p = e.platform.lowercased()
                     if let match = ranked.first(where: { matches(sourceName: $0.name, platform: p) }) {
+                        return match
+                    }
+                }
+                // TMDB primary provider tiebreaker — prefer the direct service
+                // TMDB says is the primary US provider (e.g. STARZ for Power Book III).
+                if let tmdbName, !tmdbName.isEmpty {
+                    if let match = ranked.first(where: { !isResellerSource($0) && matches(sourceName: $0.name, platform: tmdbName) }) {
                         return match
                     }
                 }
@@ -364,6 +383,16 @@ struct EpisodeDetailSheet: View {
             }()
             if let chosen = preferred {
                 await MainActor.run { self.resolvedSource = chosen }
+            }
+            // TMDB watch-provider fallback: when Watchmode returns no usable
+            // source, query TMDB for a US flatrate/ads/free provider so the
+            // label and badge still show the correct service.
+            let needsFallback = await MainActor.run { self.resolvedSource == nil }
+            if needsFallback {
+                if let provider = try? await TMDBService.shared.getTopWatchProvider(tmdbId: tmdbId, isTV: inferTV),
+                   !provider.providerName.isEmpty {
+                    await MainActor.run { self.resolvedProviderName = provider.providerName }
+                }
             }
         } catch {
             #if DEBUG
@@ -383,11 +412,11 @@ struct EpisodeDetailSheet: View {
         }
     }
 
-    /// Returns `true` when the source name indicates a channel-reseller entry
-    /// (e.g. "Amazon Prime Channels", "Apple TV Channels") rather than a
+    /// Returns `true` when the source name indicates a reseller entry
+    /// (e.g. "STARZ (Via Hulu)", "STARZ (Via Amazon Prime)") rather than a
     /// direct-service subscription.
     private func isResellerSource(_ s: WatchmodeSource) -> Bool {
-        return s.name.lowercased().contains("channel")
+        return s.name.lowercased().contains("(via ")
     }
 
     // MARK: - Debug panel (temporary)
