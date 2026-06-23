@@ -27,11 +27,17 @@ nonisolated struct ResolvedStreaming: Sendable {
     /// Watchmode plot overview, captured regardless of source resolution.
     let overview: String?
 
+    /// Human-readable trace of what happened during resolution — each
+    /// checkpoint appends a short token. Diagnostic only; never shown
+    /// in production UI.
+    var debugTrace: String = ""
+
     static let empty = ResolvedStreaming(
         primarySource: nil,
         usSources: [],
         providerNameFallback: nil,
-        overview: nil
+        overview: nil,
+        debugTrace: ""
     )
 }
 
@@ -63,26 +69,40 @@ nonisolated struct StreamingSourceResolver {
         print("[Resolver] tmdb=\(tmdbId) resolving…")
         #endif
 
+        var traceParts: [String] = []
+
         // Step 1 — Watchmode lookup
         let wmId: String
         do {
             guard let id = try await WatchmodeService.shared.watchmodeId(forTMDBId: tmdbId, isTV: isTV) else {
-                return await tmdbOnlyFallback(tmdbId: tmdbId, isTV: isTV, overview: nil)
+                traceParts.append("wmId:nil")
+                var result = await tmdbOnlyFallback(tmdbId: tmdbId, isTV: isTV, overview: nil)
+                result.debugTrace = traceParts.joined(separator: " | ")
+                return result
             }
+            traceParts.append("wmId:ok")
             wmId = id
         } catch {
-            return await tmdbOnlyFallback(tmdbId: tmdbId, isTV: isTV, overview: nil)
+            traceParts.append("wmId:THREW(\(error))")
+            var result = await tmdbOnlyFallback(tmdbId: tmdbId, isTV: isTV, overview: nil)
+            result.debugTrace = traceParts.joined(separator: " | ")
+            return result
         }
 
         let detail: WatchmodeTitleDetail
         do {
             detail = try await WatchmodeService.shared.titleDetail(titleId: wmId)
+            traceParts.append("titleDetail:ok(sources=\(detail.sources?.count ?? 0))")
         } catch {
-            return await tmdbOnlyFallback(tmdbId: tmdbId, isTV: isTV, overview: nil)
+            traceParts.append("titleDetail:THREW(\(error))")
+            var result = await tmdbOnlyFallback(tmdbId: tmdbId, isTV: isTV, overview: nil)
+            result.debugTrace = traceParts.joined(separator: " | ")
+            return result
         }
 
         let overview = detail.plotOverview
         let sources = detail.sources ?? []
+        let parentTrace = traceParts.joined(separator: " | ")
 
         // Step 2 — If sources is non-empty, filter to US, dedupe, rank, and pick
         if !sources.isEmpty {
@@ -91,12 +111,13 @@ nonisolated struct StreamingSourceResolver {
                 tmdbId: tmdbId,
                 isTV: isTV,
                 episodePlatformHint: episodePlatformHint,
-                overview: overview
+                overview: overview,
+                parentTrace: parentTrace
             )
         }
 
         // No Watchmode sources — fall back to TMDB-only
-        return await tmdbOnlyFallback(tmdbId: tmdbId, isTV: isTV, overview: overview)
+        return await tmdbOnlyFallback(tmdbId: tmdbId, isTV: isTV, overview: overview, parentTrace: parentTrace)
     }
 
     // MARK: - Helpers (internal, fileprivate)
@@ -144,8 +165,12 @@ nonisolated struct StreamingSourceResolver {
         tmdbId: Int,
         isTV: Bool,
         episodePlatformHint: String?,
-        overview: String?
+        overview: String?,
+        parentTrace: String
     ) async -> ResolvedStreaming {
+        var traceParts: [String] = []
+        if !parentTrace.isEmpty { traceParts.append(parentTrace) }
+
         // Step 2 — US filter
         let usFiltered = sources.filter { ($0.region ?? "").uppercased() == "US" }
         let pool = usFiltered.isEmpty ? sources : usFiltered
@@ -166,6 +191,8 @@ nonisolated struct StreamingSourceResolver {
             return false
         }
 
+        traceParts.append("usFiltered=\(deduped.count)")
+
         // Step 4a — TMDB network (for TV shows, the originating network is the
         // most reliable signal of the true home service). Works well when the
         // network is itself a streamer (Starz, HBO/Max, Showtime, Paramount+,
@@ -174,14 +201,33 @@ nonisolated struct StreamingSourceResolver {
         // selection correctly falls through to the watch-provider signal below.
         var networkName: String?
         if isTV {
-            let tvDetail = try? await TMDBService.shared.getTVDetail(tmdbId: tmdbId)
-            networkName = tvDetail?.networks?.first?.name
+            do {
+                let tvDetail = try await TMDBService.shared.getTVDetail(tmdbId: tmdbId)
+                if let name = tvDetail.networks?.first?.name {
+                    networkName = name
+                    traceParts.append("network:\(name)")
+                } else {
+                    traceParts.append("network:nil")
+                }
+            } catch {
+                traceParts.append("tvDetail:THREW(\(error))")
+            }
         }
 
         // Step 4b — TMDB primary watch provider (lower-priority tiebreaker; may
         // be unreliable for shows where a reseller channel inflates the ranking).
-        let tmdbProvider = try? await TMDBService.shared.getTopWatchProvider(tmdbId: tmdbId, isTV: isTV)
-        let tmdbName = tmdbProvider?.providerName
+        var tmdbName: String?
+        do {
+            let tmdbProvider = try await TMDBService.shared.getTopWatchProvider(tmdbId: tmdbId, isTV: isTV)
+            if let name = tmdbProvider?.providerName {
+                tmdbName = name
+                traceParts.append("provider:\(name)")
+            } else {
+                traceParts.append("provider:nil")
+            }
+        } catch {
+            traceParts.append("provider:THREW(\(error))")
+        }
 
         // Priority selection, first match wins:
         // (1) Episode platform hint match
@@ -208,12 +254,16 @@ nonisolated struct StreamingSourceResolver {
             ?? ranked.first(where: { !isResellerSource($0) })
             ?? ranked.first
 
-        let result = ResolvedStreaming(
+        let selectedName = primary?.name ?? "none"
+        traceParts.append("chose:\(selectedName)")
+
+        var result = ResolvedStreaming(
             primarySource: primary,
             usSources: ranked,
             providerNameFallback: nil,
             overview: overview
         )
+        result.debugTrace = traceParts.joined(separator: " | ")
 
         #if DEBUG
         print("[Resolver] tmdb=\(tmdbId) network=\(networkName ?? "nil") provider=\(tmdbName ?? "nil") chose=\(result.primarySource?.name ?? result.providerNameFallback ?? "none")")
@@ -226,12 +276,26 @@ nonisolated struct StreamingSourceResolver {
     private func tmdbOnlyFallback(
         tmdbId: Int,
         isTV: Bool,
-        overview: String?
+        overview: String?,
+        parentTrace: String = ""
     ) async -> ResolvedStreaming {
-        let provider = try? await TMDBService.shared.getTopWatchProvider(tmdbId: tmdbId, isTV: isTV)
-        let fallbackName = provider?.providerName
+        var traceParts: [String] = []
+        if !parentTrace.isEmpty { traceParts.append(parentTrace) }
 
-        let result: ResolvedStreaming
+        var fallbackName: String?
+        do {
+            let provider = try await TMDBService.shared.getTopWatchProvider(tmdbId: tmdbId, isTV: isTV)
+            if let name = provider?.providerName {
+                fallbackName = name
+                traceParts.append("provider:\(name)")
+            } else {
+                traceParts.append("provider:nil")
+            }
+        } catch {
+            traceParts.append("provider:THREW(\(error))")
+        }
+
+        var result: ResolvedStreaming
         if let name = fallbackName, !name.isEmpty {
             result = ResolvedStreaming(
                 primarySource: nil,
@@ -247,6 +311,10 @@ nonisolated struct StreamingSourceResolver {
                 overview: overview
             )
         }
+
+        let selectedName = result.primarySource?.name ?? result.providerNameFallback ?? "none"
+        traceParts.append("chose:\(selectedName)")
+        result.debugTrace = traceParts.joined(separator: " | ")
 
         #if DEBUG
         print("[Resolver] tmdb=\(tmdbId) chose=\(result.primarySource?.name ?? result.providerNameFallback ?? "none")")

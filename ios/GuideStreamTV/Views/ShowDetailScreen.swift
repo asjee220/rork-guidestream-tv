@@ -58,6 +58,20 @@ final class ShowDetailViewModel {
     var debugTmdbIdUsed: String = "\u{2014}"
     var debugResolverRan: Bool = false
     private var loadedTitleId: String?
+    private var loadTask: Task<Void, Never>? = nil
+
+    /// Launches the network load on a view-model-owned ``Task`` so that view
+    /// re-renders (triggered by `@Observable` state mutations inside
+    /// `loadIfNeeded`) do not cancel the in-flight URLSession requests.
+    /// SwiftUI's `.task(id:)` would tear down the task on each re-render,
+    /// producing `NSURLErrorDomain -999` "cancelled" failures.
+    func startLoad(titleId: String, isTV: Bool = true) {
+        guard loadedTitleId != titleId else { return }
+        loadTask?.cancel()
+        loadTask = Task {
+            await self.loadIfNeeded(titleId: titleId, isTV: isTV)
+        }
+    }
 
     /// Loads TMDB detail + Watchmode sources in parallel, then enriches with
     /// TVDB for higher-fidelity episode air-date data.
@@ -144,7 +158,8 @@ final class ShowDetailViewModel {
             "services.count: \(services.count)",
             "services: \(svcNames.isEmpty ? "(none)" : svcNames)",
             "isLoading: \(isLoading ? "YES" : "NO")",
-            "errorMessage: \(errorMessage ?? "nil")"
+            "errorMessage: \(errorMessage ?? "nil")",
+            "trace: \(resolved.debugTrace)"
         ]
     }
 
@@ -399,8 +414,10 @@ struct ShowDetailScreen: View {
             )
         }
         .task(id: titleId) {
-            await vm.loadIfNeeded(titleId: titleId, isTV: isTV)
-            if let n = vm.tmdb?.numberOfSeasons {
+            vm.startLoad(titleId: titleId, isTV: isTV)
+        }
+        .onChange(of: vm.tmdb?.numberOfSeasons) { _, n in
+            if let n {
                 selectedSeason = "Season \(n)"
             }
         }
