@@ -50,6 +50,9 @@ struct EpisodeDetailSheet: View {
     @State private var isResolvingSource: Bool = false
     @State private var adDismissed: Bool = false
     @State private var showFullDetail: Bool = false
+    @State private var debugTmdbId: String = "—"
+    @State private var debugResolutionRan: Bool = false
+    @State private var debugSourceLines: [String] = []
 
     private var platformColor: Color {
         if let name = resolvedSource?.name { return brandColor(for: name) }
@@ -215,6 +218,12 @@ struct EpisodeDetailSheet: View {
                     .padding(.horizontal, 20)
                     .padding(.top, 20)
 
+                #if DEBUG
+                debugPanel
+                    .padding(.horizontal, 20)
+                    .padding(.top, 16)
+                #endif
+
                 watchActions
                     .padding(.horizontal, 20)
                     .padding(.top, 22)
@@ -287,7 +296,9 @@ struct EpisodeDetailSheet: View {
     /// for opening the right app on tap. Falls back silently if the lookup
     /// fails — the existing fallback URL keeps the button working.
     private func resolveStreamingSource() async {
+        await MainActor.run { debugTmdbId = tmdbId.map(String.init) ?? "nil" }
         guard let tmdbId, resolvedSource == nil, !isResolvingSource else { return }
+        await MainActor.run { debugResolutionRan = true }
         // Skip the lookup for episode rows that already carry a platform we
         // recognise — their `e.platform` string is more accurate than what
         // Watchmode would return for the parent show.
@@ -305,15 +316,49 @@ struct EpisodeDetailSheet: View {
                 self.resolvedOverview = detail.plotOverview
             }
             guard let sources = detail.sources else { return }
-            let ranked = sources.sorted { a, b in sourceRank(a) < sourceRank(b) }
+            let sourceLines = sources.map { s in
+                "\(s.name) | \(s.type) | region=\(s.region ?? "nil") | format=\(s.format ?? "nil")"
+            }
+            await MainActor.run { debugSourceLines = sourceLines }
+
+            #if DEBUG
+            for s in sources {
+                print("[SourceDebug] \(title) — name=\(s.name) type=\(s.type) region=\(s.region ?? "nil") format=\(s.format ?? "nil")")
+            }
+            #endif
+
+            // Filter to US-region sources (or nil-region fallbacks)
+            let usSources = sources.filter { s in
+                (s.region?.lowercased() == "us") || (s.region == nil)
+            }
+            let workingSources = usSources.isEmpty ? sources : usSources
+
+            // Sort: non-reseller sub sources first, then other sub, then free/tve/rent/buy.
+            let ranked = workingSources.sorted { a, b in
+                let ra = sourceRank(a)
+                let rb = sourceRank(b)
+                if ra != rb { return ra < rb }
+                // Both are same type (both "sub") — deprioritise resellers.
+                if ra == 0 {
+                    let aReseller = isResellerSource(a)
+                    let bReseller = isResellerSource(b)
+                    if aReseller != bReseller { return !aReseller }
+                }
+                return false
+            }
+
             // Prefer a source whose name matches the episode's platform when
-            // we have one; otherwise pick the top-ranked sub source.
+            // we have one; then the first non-reseller; then ranked.first.
             let preferred: WatchmodeSource? = {
                 if case .episode(let e) = subject, !e.platform.isEmpty {
                     let p = e.platform.lowercased()
                     if let match = ranked.first(where: { matches(sourceName: $0.name, platform: p) }) {
                         return match
                     }
+                }
+                // Prefer first non-reseller source.
+                if let nonReseller = ranked.first(where: { !isResellerSource($0) }) {
+                    return nonReseller
                 }
                 return ranked.first
             }()
@@ -337,6 +382,48 @@ struct EpisodeDetailSheet: View {
         default: return 5
         }
     }
+
+    /// Returns `true` when the source name indicates a channel-reseller entry
+    /// (e.g. "Amazon Prime Channels", "Apple TV Channels") rather than a
+    /// direct-service subscription.
+    private func isResellerSource(_ s: WatchmodeSource) -> Bool {
+        return s.name.lowercased().contains("channel")
+    }
+
+    // MARK: - Debug panel (temporary)
+
+    #if DEBUG
+    private var debugPanel: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("◆ SOURCE DEBUG")
+                .font(.caption.monospaced())
+                .foregroundStyle(Color.orange)
+            Text("tmdbId: \(debugTmdbId)")
+                .font(.caption.monospaced())
+                .foregroundStyle(Color.white.opacity(0.8))
+            Text("resolutionRan: \(debugResolutionRan ? "YES" : "NO")")
+                .font(.caption.monospaced())
+                .foregroundStyle(Color.white.opacity(0.8))
+            Text("sources (\(debugSourceLines.count)):")
+                .font(.caption.monospaced())
+                .foregroundStyle(Color.white.opacity(0.8))
+            ForEach(Array(debugSourceLines.indices), id: \.self) { idx in
+                Text(debugSourceLines[idx])
+                    .font(.caption2.monospaced())
+                    .foregroundStyle(Color.white.opacity(0.7))
+                    .lineLimit(nil)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(12)
+        .background(Color.black.opacity(0.6))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(Color.orange, lineWidth: 1)
+        )
+        .clipShape(.rect(cornerRadius: 10))
+    }
+    #endif
 
     private func matches(sourceName: String, platform: String) -> Bool {
         let s = sourceName.lowercased()
