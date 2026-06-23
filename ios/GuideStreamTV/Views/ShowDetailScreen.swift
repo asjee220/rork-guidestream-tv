@@ -54,6 +54,7 @@ final class ShowDetailViewModel {
     var currentSeasonNumber: Int = 1
     var isLoading: Bool = false
     var errorMessage: String?
+    var resolved: ResolvedStreaming = .empty
     private var loadedTitleId: String?
 
     /// Loads TMDB detail + Watchmode sources in parallel, then enriches with
@@ -67,7 +68,6 @@ final class ShowDetailViewModel {
 
         if let tmdbId = Int(titleId), isTV {
             async let tmdbCall: TMDBTVDetail? = try? TMDBService.shared.getTVDetail(tmdbId: tmdbId)
-            async let wmIdCall: String? = try? WatchmodeService.shared.watchmodeId(forTMDBId: tmdbId, isTV: isTV)
             let tmdbResult = await tmdbCall
             self.tmdb = tmdbResult
             let seasonNum = max(1, tmdbResult?.numberOfSeasons ?? 1)
@@ -79,9 +79,9 @@ final class ShowDetailViewModel {
             }
             self.currentSeasonNumber = seasonNum
 
-            if let wmId = await wmIdCall {
-                self.detail = try? await WatchmodeService.shared.titleDetail(titleId: wmId)
-            }
+            // Resolve streaming sources through the shared resolver
+            let r = await StreamingSourceResolver.shared.resolve(tmdbId: tmdbId, isTV: isTV)
+            self.resolved = r
 
             // Season fetch wrapped in try‑catch so a TMDB outage doesn't
             // leave the episodes section silently blank.
@@ -92,45 +92,11 @@ final class ShowDetailViewModel {
                 self.season = nil
             }
 
-            // Fallback: if Watchmode returned no sources (common on free tier),
-            // use TMDB watch providers so the "Where to Watch" section renders.
-            if self.detail?.sources == nil {
-                if let provider = try? await TMDBService.shared.getTopWatchProvider(tmdbId: tmdbId, isTV: isTV) {
-                    let source = WatchmodeSource(
-                        sourceId: provider.providerId,
-                        name: provider.providerName,
-                        type: "sub",
-                        region: nil,
-                        iosUrl: nil,
-                        androidUrl: nil,
-                        webUrl: nil,
-                        format: nil,
-                        endDate: nil
-                    )
-                    self.detail = WatchmodeTitleDetail(
-                        id: self.detail?.id ?? tmdbId,
-                        title: self.detail?.title ?? self.tmdb?.name ?? titleId,
-                        year: self.detail?.year,
-                        userRating: self.detail?.userRating,
-                        plotOverview: self.detail?.plotOverview,
-                        genreNames: self.detail?.genreNames,
-                        trailer: self.detail?.trailer,
-                        posterUrl: self.detail?.posterUrl,
-                        backdrop: self.detail?.backdrop,
-                        releaseDate: self.detail?.releaseDate,
-                        endYear: self.detail?.endYear,
-                        runtimeMinutes: self.detail?.runtimeMinutes,
-                        usRating: self.detail?.usRating,
-                        type: self.detail?.type,
-                        sources: [source]
-                    )
-                }
-            }
-
             // TVDB enrichment fires after core data loads — non-blocking,
             // silently ignored on failure so the sheet always renders.
             Task { await enrichWithTVDB(tmdbId: tmdbId) }
         } else {
+            self.resolved = .empty
             do {
                 let result = try await WatchmodeService.shared.titleDetail(titleId: titleId)
                 detail = result
@@ -161,47 +127,33 @@ final class ShowDetailViewModel {
     }
 
     var services: [WhereToWatchService] {
-        guard let sources = detail?.sources else { return [] }
-
-        func canonicalName(_ raw: String) -> String {
-            let key = raw.lowercased()
-            if key.contains("netflix") { return "Netflix" }
-            if key.contains("max") || key.contains("hbo") { return "Max" }
-            if key.contains("hulu") { return "Hulu" }
-            if key.contains("disney") { return "Disney+" }
-            if key.contains("apple") { return "Apple TV+" }
-            if key.contains("prime") || key.contains("amazon") { return "Prime Video" }
-            if key.contains("paramount") { return "Paramount+" }
-            if key.contains("peacock") { return "Peacock" }
-            if key.contains("youtube") { return "YouTube" }
-            if key.contains("starz") { return "Starz" }
-            if key.contains("showtime") { return "Showtime" }
-            if key.contains("crunchyroll") { return "Crunchyroll" }
-            return ""
+        if !resolved.usSources.isEmpty {
+            return resolved.usSources.map { s in
+                WhereToWatchService(
+                    id: String(s.sourceId),
+                    name: s.name,
+                    color: brandColor(for: s.name),
+                    iosUrl: s.iosUrl,
+                    androidUrl: s.androidUrl,
+                    webUrl: s.webUrl,
+                    format: s.format
+                )
+            }
         }
 
-        var seen = Set<String>()
-        var result: [WhereToWatchService] = []
-        let subSources = sources
-            .filter { $0.type.lowercased() == "sub" }
-            .sorted { sourceRank($0) < sourceRank($1) }
-
-        for s in subSources {
-            let canonical = canonicalName(s.name)
-            guard !canonical.isEmpty else { continue }
-            if seen.contains(canonical) { continue }
-            seen.insert(canonical)
-            result.append(WhereToWatchService(
-                id: canonical,
-                name: canonical,
-                color: brandColor(for: canonical),
-                iosUrl: s.iosUrl,
-                androidUrl: s.androidUrl,
-                webUrl: s.webUrl,
-                format: s.format
-            ))
+        if let fallback = resolved.providerNameFallback, !fallback.isEmpty {
+            return [WhereToWatchService(
+                id: "fallback-\(fallback)",
+                name: fallback,
+                color: brandColor(for: fallback),
+                iosUrl: nil,
+                androidUrl: nil,
+                webUrl: nil,
+                format: nil
+            )]
         }
-        return result
+
+        return []
     }
 
     /// First subscription source returned by Watchmode. Used to drive the
@@ -227,17 +179,6 @@ final class ShowDetailViewModel {
         let lower = s.lowercased()
         guard lower.hasPrefix("http://") || lower.hasPrefix("https://") else { return false }
         return URL(string: s) != nil
-    }
-
-    private func sourceRank(_ s: WatchmodeSource) -> Int {
-        switch s.type.lowercased() {
-        case "sub": return 0
-        case "free": return 1
-        case "tve": return 2
-        case "rent": return 3
-        case "buy": return 4
-        default: return 5
-        }
     }
 
     private func brandColor(for name: String) -> Color {
