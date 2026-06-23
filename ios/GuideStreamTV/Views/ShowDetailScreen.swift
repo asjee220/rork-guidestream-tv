@@ -55,8 +55,6 @@ final class ShowDetailViewModel {
     var isLoading: Bool = false
     var errorMessage: String?
     var resolved: ResolvedStreaming = .empty
-    var debugTmdbIdUsed: String = "\u{2014}"
-    var debugResolverRan: Bool = false
     private var loadedTitleId: String?
     private var loadTask: Task<Void, Never>? = nil
 
@@ -83,7 +81,6 @@ final class ShowDetailViewModel {
         errorMessage = nil
 
         if let tmdbId = Int(titleId), isTV {
-            self.debugTmdbIdUsed = String(tmdbId)
             async let tmdbCall: TMDBTVDetail? = try? TMDBService.shared.getTVDetail(tmdbId: tmdbId)
             let tmdbResult = await tmdbCall
             self.tmdb = tmdbResult
@@ -99,7 +96,6 @@ final class ShowDetailViewModel {
             // Resolve streaming sources through the shared resolver
             let r = await StreamingSourceResolver.shared.resolve(tmdbId: tmdbId, isTV: isTV)
             self.resolved = r
-            self.debugResolverRan = true
 
             // Season fetch wrapped in try‑catch so a TMDB outage doesn't
             // leave the episodes section silently blank.
@@ -115,7 +111,6 @@ final class ShowDetailViewModel {
             Task { await enrichWithTVDB(tmdbId: tmdbId) }
         } else {
             self.resolved = .empty
-            self.debugTmdbIdUsed = "non-int: \(titleId)"
             do {
                 let result = try await WatchmodeService.shared.titleDetail(titleId: titleId)
                 detail = result
@@ -143,24 +138,6 @@ final class ShowDetailViewModel {
         guard let tmdbId = tmdb?.id else { return }
         currentSeasonNumber = seasonNumber
         season = try? await TMDBService.shared.getSeason(tmdbId: tmdbId, seasonNumber: seasonNumber)
-    }
-
-    /// Diagnostic lines showing the resolver state, tmdbId, and services
-    /// count for on-screen debugging. Only compiled in DEBUG builds.
-    var debugSummaryLines: [String] {
-        let svcNames = services.prefix(3).map { $0.name }.joined(separator: ", ")
-        return [
-            "tmdbIdUsed: \(debugTmdbIdUsed)",
-            "resolverRan: \(debugResolverRan ? "YES" : "NO")",
-            "usSources: \(resolved.usSources.count)",
-            "primarySource: \(resolved.primarySource?.name ?? "nil")",
-            "providerFallback: \(resolved.providerNameFallback ?? "nil")",
-            "services.count: \(services.count)",
-            "services: \(svcNames.isEmpty ? "(none)" : svcNames)",
-            "isLoading: \(isLoading ? "YES" : "NO")",
-            "errorMessage: \(errorMessage ?? "nil")",
-            "trace: \(resolved.debugTrace)"
-        ]
     }
 
     var services: [WhereToWatchService] {
@@ -906,33 +883,6 @@ struct ShowDetailScreen: View {
                 }
             }
 
-            #if DEBUG
-            VStack(alignment: .leading, spacing: 4) {
-                Text("◆ DETAIL RESOLVE DEBUG")
-                    .font(.caption)
-                    .fontDesign(.monospaced)
-                    .foregroundStyle(Color.orange)
-                ForEach(vm.debugSummaryLines, id: \.self) { line in
-                    Text(line)
-                        .font(.caption2)
-                        .fontDesign(.monospaced)
-                        .foregroundStyle(Color.white.opacity(0.8))
-                        .lineLimit(nil)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-            .padding(12)
-            .background(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(Color.black.opacity(0.6))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .stroke(Color.orange.opacity(0.5), lineWidth: 1)
-            )
-            .padding(.horizontal, 20)
-            .padding(.top, 12)
-            #endif
         }
         .padding(.top, 24)
     }

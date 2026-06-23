@@ -53,12 +53,6 @@ struct EpisodeDetailSheet: View {
     @State private var isResolvingSource: Bool = false
     @State private var adDismissed: Bool = false
     @State private var showFullDetail: Bool = false
-    @State private var debugTmdbId: String = "—"
-    @State private var debugResolutionRan: Bool = false
-    @State private var debugSourceLines: [String] = []
-    @State private var debugTmdbProvider: String = "—"
-    @State private var debugSelectedSource: String = "—"
-    @State private var debugResolvedProviderName: String = "—"
 
     private var platformColor: Color {
         if let name = resolvedSource?.name { return brandColor(for: name) }
@@ -228,12 +222,6 @@ struct EpisodeDetailSheet: View {
                     .padding(.horizontal, 20)
                     .padding(.top, 20)
 
-                #if DEBUG
-                debugPanel
-                    .padding(.horizontal, 20)
-                    .padding(.top, 16)
-                #endif
-
                 watchActions
                     .padding(.horizontal, 20)
                     .padding(.top, 22)
@@ -301,14 +289,13 @@ struct EpisodeDetailSheet: View {
 
     // MARK: - Source resolution
 
-    /// Looks up the title's real top streaming source via Watchmode. We use
-    /// this both for displaying the correct platform name in the sheet and
-    /// for opening the right app on tap. Falls back silently if the lookup
-    /// fails — the existing fallback URL keeps the button working.
+    /// Looks up the title's real top streaming source via the shared
+    /// StreamingSourceResolver, which runs all network calls inside a
+    /// `Task.detached` (immune to view-lifecycle cancellation) and applies
+    /// US-region filtering, network-priority selection, and reseller
+    /// deprioritisation.
     private func resolveStreamingSource() async {
-        await MainActor.run { debugTmdbId = tmdbId.map(String.init) ?? "nil" }
         guard let tmdbId, resolvedSource == nil, !isResolvingSource else { return }
-        await MainActor.run { debugResolutionRan = true }
         // Skip the lookup for episode rows that already carry a platform we
         // recognise — their `e.platform` string is more accurate than what
         // Watchmode would return for the parent show.
@@ -318,188 +305,28 @@ struct EpisodeDetailSheet: View {
         }
         isResolvingSource = true
         defer { isResolvingSource = false }
-        do {
-            let inferTV = isTV
-            guard let watchmodeId = try await WatchmodeService.shared.watchmodeId(forTMDBId: tmdbId, isTV: inferTV) else { return }
-            let detail = try await WatchmodeService.shared.titleDetail(titleId: watchmodeId)
-            await MainActor.run {
-                self.resolvedOverview = detail.plotOverview
+
+        let hint: String? = {
+            if case .episode(let e) = subject, !e.platform.isEmpty {
+                return e.platform
             }
-            guard let sources = detail.sources else { return }
-            let sourceLines = sources.map { s in
-                "\(s.name) | \(s.type) | region=\(s.region ?? "nil") | format=\(s.format ?? "nil")"
-            }
-            await MainActor.run { debugSourceLines = sourceLines }
+            return nil
+        }()
 
-            #if DEBUG
-            for s in sources {
-                print("[SourceDebug] \(title) — name=\(s.name) type=\(s.type) region=\(s.region ?? "nil") format=\(s.format ?? "nil")")
-            }
-            #endif
-
-            // Filter to US-region sources; fall back to full array if none match.
-            let usSources = sources.filter { s in
-                (s.region ?? "").uppercased() == "US"
-            }
-            let pool = usSources.isEmpty ? sources : usSources
-
-            // Sort: non-reseller sub sources first, then other sub, then free/tve/rent/buy.
-            let ranked = pool.sorted { a, b in
-                let ra = sourceRank(a)
-                let rb = sourceRank(b)
-                if ra != rb { return ra < rb }
-                // Both are same type (both "sub") — deprioritise resellers.
-                if ra == 0 {
-                    let aReseller = isResellerSource(a)
-                    let bReseller = isResellerSource(b)
-                    if aReseller != bReseller { return !aReseller }
-                }
-                return false
-            }
-
-            // Resolve TMDB's primary provider so we can break ties between
-            // same-type US sources (e.g. STARZ vs Prime Video for a STARZ original).
-            let tmdbProvider = try? await TMDBService.shared.getTopWatchProvider(tmdbId: tmdbId, isTV: inferTV)
-            let tmdbName = tmdbProvider?.providerName
-            await MainActor.run { debugTmdbProvider = tmdbProvider?.providerName ?? "nil" }
-
-            // Prefer: (1) episode-platform match, (2) TMDB primary-provider match
-            // among non-resellers, (3) first non-reseller, (4) ranked.first.
-            let preferred: WatchmodeSource? = {
-                if case .episode(let e) = subject, !e.platform.isEmpty {
-                    let p = e.platform.lowercased()
-                    if let match = ranked.first(where: { matches(sourceName: $0.name, platform: p) }) {
-                        return match
-                    }
-                }
-                // TMDB primary provider tiebreaker — prefer the direct service
-                // TMDB says is the primary US provider (e.g. STARZ for Power Book III).
-                if let tmdbName, !tmdbName.isEmpty {
-                    if let match = ranked.first(where: { !isResellerSource($0) && matches(sourceName: $0.name, platform: tmdbName) }) {
-                        return match
-                    }
-                }
-                // Prefer first non-reseller source.
-                if let nonReseller = ranked.first(where: { !isResellerSource($0) }) {
-                    return nonReseller
-                }
-                return ranked.first
-            }()
-            if let chosen = preferred {
-                await MainActor.run {
-                    self.resolvedSource = chosen
-                    self.debugSelectedSource = "\(chosen.name) | region=\(chosen.region ?? "nil")"
-                }
-            } else {
-                await MainActor.run { debugSelectedSource = "NONE SELECTED" }
-            }
-            // TMDB watch-provider fallback: when Watchmode returns no usable
-            // source, query TMDB for a US flatrate/ads/free provider so the
-            // label and badge still show the correct service.
-            let needsFallback = await MainActor.run { self.resolvedSource == nil }
-            if needsFallback {
-                if let provider = try? await TMDBService.shared.getTopWatchProvider(tmdbId: tmdbId, isTV: inferTV),
-                   !provider.providerName.isEmpty {
-                    await MainActor.run {
-                        self.resolvedProviderName = provider.providerName
-                        self.debugResolvedProviderName = provider.providerName
-                    }
-                } else {
-                    await MainActor.run { debugResolvedProviderName = "nil" }
-                }
-            }
-        } catch {
-            #if DEBUG
-            print("[EpisodeDetailSheet] Watchmode lookup failed: \(error.localizedDescription)")
-            #endif
-        }
-    }
-
-    private func sourceRank(_ s: WatchmodeSource) -> Int {
-        switch s.type.lowercased() {
-        case "sub": return 0
-        case "free": return 1
-        case "tve": return 2
-        case "rent": return 3
-        case "purchase", "buy": return 4
-        default: return 5
-        }
-    }
-
-    /// Returns `true` when the source name indicates a reseller entry
-    /// (e.g. "STARZ (Via Hulu)", "STARZ (Via Amazon Prime)") rather than a
-    /// direct-service subscription.
-    private func isResellerSource(_ s: WatchmodeSource) -> Bool {
-        return s.name.lowercased().contains("(via ")
-    }
-
-    // MARK: - Debug panel (temporary)
-
-    #if DEBUG
-    private var debugPanel: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("◆ SOURCE DEBUG")
-                .font(.caption.monospaced())
-                .foregroundStyle(Color.orange)
-            Text("tmdbId: \(debugTmdbId)")
-                .font(.caption.monospaced())
-                .foregroundStyle(Color.white.opacity(0.8))
-            Text("resolutionRan: \(debugResolutionRan ? "YES" : "NO")")
-                .font(.caption.monospaced())
-                .foregroundStyle(Color.white.opacity(0.8))
-            Text("tmdbProvider: \(debugTmdbProvider)")
-                .font(.caption.monospaced())
-                .foregroundStyle(Color.white.opacity(0.8))
-            Text("selectedSource: \(debugSelectedSource)")
-                .font(.caption.monospaced())
-                .foregroundStyle(Color.white.opacity(0.8))
-            Text("resolvedProviderName: \(debugResolvedProviderName)")
-                .font(.caption.monospaced())
-                .foregroundStyle(Color.white.opacity(0.8))
-            Text("label/whereToWatch: \(whereToWatchLabel)")
-                .font(.caption.monospaced())
-                .foregroundStyle(Color.white.opacity(0.8))
-            Text("label/platformName: \(platformName)")
-                .font(.caption.monospaced())
-                .foregroundStyle(Color.white.opacity(0.8))
-            Text("sources (\(debugSourceLines.count)):")
-                .font(.caption.monospaced())
-                .foregroundStyle(Color.white.opacity(0.8))
-            ForEach(Array(debugSourceLines.indices), id: \.self) { idx in
-                Text(debugSourceLines[idx])
-                    .font(.caption2.monospaced())
-                    .foregroundStyle(Color.white.opacity(0.7))
-                    .lineLimit(nil)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-        .padding(12)
-        .background(Color.black.opacity(0.6))
-        .overlay(
-            RoundedRectangle(cornerRadius: 10)
-                .stroke(Color.orange, lineWidth: 1)
+        let r = await StreamingSourceResolver.shared.resolve(
+            tmdbId: tmdbId,
+            isTV: isTV,
+            episodePlatformHint: hint
         )
-        .clipShape(.rect(cornerRadius: 10))
-    }
-    #endif
 
-    private func matches(sourceName: String, platform: String) -> Bool {
-        let s = sourceName.lowercased()
-        let p = platform.lowercased()
-        if p.contains("netflix") { return s.contains("netflix") }
-        if p.contains("hbo") || p.contains("max") { return s.contains("max") || s.contains("hbo") }
-        if p.contains("hulu") { return s.contains("hulu") }
-        if p.contains("disney") { return s.contains("disney") }
-        if p.contains("apple") { return s.contains("apple tv") }
-        if p.contains("prime") || p.contains("amazon") { return s.contains("amazon") || s.contains("prime") }
-        if p.contains("paramount") { return s.contains("paramount") }
-        if p.contains("peacock") { return s.contains("peacock") }
-        if p.contains("youtube") { return s.contains("youtube") }
-        if p.contains("showtime") { return s.contains("showtime") }
-        if p.contains("starz") { return s.contains("starz") }
-        if p.contains("crunchyroll") { return s.contains("crunchyroll") }
-        return s.contains(p) || p.contains(s)
+        await MainActor.run {
+            self.resolvedSource = r.primarySource
+            self.resolvedOverview = r.overview
+            self.resolvedProviderName = r.providerNameFallback
+        }
     }
+
+
 
     // MARK: - Affiliate banner
 

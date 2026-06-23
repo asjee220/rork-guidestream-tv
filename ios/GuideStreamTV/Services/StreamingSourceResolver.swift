@@ -33,17 +33,11 @@ nonisolated struct ResolvedStreaming: Sendable {
     /// Watchmode plot overview, captured regardless of source resolution.
     let overview: String?
 
-    /// Human-readable trace of what happened during resolution — each
-    /// checkpoint appends a short token. Diagnostic only; never shown
-    /// in production UI.
-    var debugTrace: String = ""
-
     static let empty = ResolvedStreaming(
         primarySource: nil,
         usSources: [],
         providerNameFallback: nil,
-        overview: nil,
-        debugTrace: ""
+        overview: nil
     )
 }
 
@@ -72,10 +66,6 @@ nonisolated struct StreamingSourceResolver {
         isTV: Bool,
         episodePlatformHint: String? = nil
     ) async -> ResolvedStreaming {
-        #if DEBUG
-        print("[Resolver] tmdb=\(tmdbId) resolving…")
-        #endif
-
         // ── All network calls inside a single detached task ──────────
         // This task has NO parent — it cannot be cancelled by view
         // re-renders, .task teardown, superseding startLoad, or sibling
@@ -87,21 +77,15 @@ nonisolated struct StreamingSourceResolver {
             do {
                 if let id = try await WatchmodeService.shared.watchmodeId(forTMDBId: tmdbId, isTV: isTV) {
                     bundle.wmId = id
-                    bundle.traceParts.append("wmId:ok")
-                } else {
-                    bundle.traceParts.append("wmId:nil")
                 }
             } catch {
-                bundle.traceParts.append("wmId:THREW(\(error))")
             }
 
             // Watchmode title detail (only if we have an ID)
             if let wmId = bundle.wmId {
                 do {
                     bundle.detail = try await WatchmodeService.shared.titleDetail(titleId: wmId)
-                    bundle.traceParts.append("titleDetail:ok(sources=\(bundle.detail?.sources?.count ?? 0))")
                 } catch {
-                    bundle.traceParts.append("titleDetail:THREW(\(error))")
                 }
             }
 
@@ -110,12 +94,8 @@ nonisolated struct StreamingSourceResolver {
                 let provider = try await TMDBService.shared.getTopWatchProvider(tmdbId: tmdbId, isTV: isTV)
                 if let name = provider?.providerName {
                     bundle.providerName = name
-                    bundle.traceParts.append("provider:\(name)")
-                } else {
-                    bundle.traceParts.append("provider:nil")
                 }
             } catch {
-                bundle.traceParts.append("provider:THREW(\(error))")
             }
 
             // TMDB network (TV only — the originating network is the
@@ -125,12 +105,8 @@ nonisolated struct StreamingSourceResolver {
                     let tvDetail = try await TMDBService.shared.getTVDetail(tmdbId: tmdbId)
                     if let name = tvDetail.networks?.first?.name {
                         bundle.networkName = name
-                        bundle.traceParts.append("network:\(name)")
-                    } else {
-                        bundle.traceParts.append("network:nil")
                     }
                 } catch {
-                    bundle.traceParts.append("tvDetail:THREW(\(error))")
                 }
             }
 
@@ -138,14 +114,12 @@ nonisolated struct StreamingSourceResolver {
         }.value
 
         // ── Pure logic below — no more network calls ──────────────────
-        var traceParts = fetched.traceParts
 
         // wmId failed or nil → TMDB-only fallback
         guard let _ = fetched.wmId else {
             return buildFallback(
                 providerName: fetched.providerName,
                 overview: nil,
-                traceParts: &traceParts,
                 tmdbId: tmdbId,
                 networkName: fetched.networkName,
                 tmdbProviderName: fetched.providerName
@@ -157,7 +131,6 @@ nonisolated struct StreamingSourceResolver {
             return buildFallback(
                 providerName: fetched.providerName,
                 overview: nil,
-                traceParts: &traceParts,
                 tmdbId: tmdbId,
                 networkName: fetched.networkName,
                 tmdbProviderName: fetched.providerName
@@ -174,15 +147,13 @@ nonisolated struct StreamingSourceResolver {
                 providerName: fetched.providerName,
                 episodePlatformHint: episodePlatformHint,
                 overview: overview,
-                tmdbId: tmdbId,
-                traceParts: &traceParts
+                tmdbId: tmdbId
             )
         }
 
         return buildFallback(
             providerName: fetched.providerName,
             overview: overview,
-            traceParts: &traceParts,
             tmdbId: tmdbId,
             networkName: fetched.networkName,
             tmdbProviderName: fetched.providerName
@@ -236,8 +207,7 @@ nonisolated struct StreamingSourceResolver {
         providerName: String?,
         episodePlatformHint: String?,
         overview: String?,
-        tmdbId: Int,
-        traceParts: inout [String]
+        tmdbId: Int
     ) -> ResolvedStreaming {
         // Step 2 — US filter
         let usFiltered = sources.filter { ($0.region ?? "").uppercased() == "US" }
@@ -257,8 +227,6 @@ nonisolated struct StreamingSourceResolver {
             if aReseller != bReseller { return !aReseller }
             return false
         }
-
-        traceParts.append("usFiltered=\(deduped.count)")
 
         // Priority selection, first match wins:
         // (1) Episode platform hint match
@@ -287,21 +255,12 @@ nonisolated struct StreamingSourceResolver {
             ?? ranked.first(where: { !isResellerSource($0) })
             ?? ranked.first
 
-        let selectedName = primary?.name ?? "none"
-        traceParts.append("chose:\(selectedName)")
-
         var result = ResolvedStreaming(
             primarySource: primary,
             usSources: ranked,
             providerNameFallback: nil,
             overview: overview
         )
-        result.debugTrace = traceParts.joined(separator: " | ")
-
-        #if DEBUG
-        print("[Resolver] tmdb=\(tmdbId) network=\(networkName ?? "nil") provider=\(providerName ?? "nil") chose=\(result.primarySource?.name ?? result.providerNameFallback ?? "none")")
-        #endif
-
         return result
     }
 
@@ -309,7 +268,6 @@ nonisolated struct StreamingSourceResolver {
     private func buildFallback(
         providerName: String?,
         overview: String?,
-        traceParts: inout [String],
         tmdbId: Int,
         networkName: String?,
         tmdbProviderName: String?
@@ -331,14 +289,6 @@ nonisolated struct StreamingSourceResolver {
             )
         }
 
-        let selectedName = result.primarySource?.name ?? result.providerNameFallback ?? "none"
-        traceParts.append("chose:\(selectedName)")
-        result.debugTrace = traceParts.joined(separator: " | ")
-
-        #if DEBUG
-        print("[Resolver] tmdb=\(tmdbId) network=\(networkName ?? "nil") provider=\(tmdbProviderName ?? "nil") chose=\(result.primarySource?.name ?? result.providerNameFallback ?? "none")")
-        #endif
-
         return result
     }
 }
@@ -350,5 +300,4 @@ private struct FetchBundle: Sendable {
     var detail: WatchmodeTitleDetail?
     var providerName: String?
     var networkName: String?
-    var traceParts: [String] = []
 }

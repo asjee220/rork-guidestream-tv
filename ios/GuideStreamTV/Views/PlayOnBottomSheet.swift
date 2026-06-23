@@ -156,39 +156,28 @@ struct PlayOnBottomSheet: View {
         }
     }
 
-    /// Resolves the title's actual streaming service via Watchmode so the
-    /// sheet displays the correct platform and the watch CTA opens the right
-    /// app to the right title.
+    /// Resolves the title's actual streaming service via the shared
+    /// StreamingSourceResolver, which runs all network calls inside a
+    /// `Task.detached` (immune to view-lifecycle cancellation) and applies
+    /// US-region filtering, network-priority selection, and reseller
+    /// deprioritisation.
     private func resolveStreamingSource() async {
         guard let tmdbId, resolvedSource == nil, !isResolvingSource else { return }
         isResolvingSource = true
         defer { isResolvingSource = false }
-        do {
-            guard let watchmodeId = try await WatchmodeService.shared.watchmodeId(forTMDBId: tmdbId, isTV: isTV) else { return }
-            let detail = try await WatchmodeService.shared.titleDetail(titleId: watchmodeId)
-            await MainActor.run { self.resolvedOverview = detail.plotOverview }
-            guard let sources = detail.sources, !sources.isEmpty else { return }
-            let ranked = sources.sorted { a, b in sourceRank(a) < sourceRank(b) }
-            if let chosen = ranked.first {
-                await MainActor.run { self.resolvedSource = chosen }
-            }
-        } catch {
-            #if DEBUG
-            print("[PlayOnBottomSheet] Watchmode lookup failed: \(error.localizedDescription)")
-            #endif
+
+        let r = await StreamingSourceResolver.shared.resolve(
+            tmdbId: tmdbId,
+            isTV: isTV
+        )
+
+        await MainActor.run {
+            self.resolvedSource = r.primarySource
+            self.resolvedOverview = r.overview
         }
     }
 
-    private func sourceRank(_ s: WatchmodeSource) -> Int {
-        switch s.type.lowercased() {
-        case "sub": return 0
-        case "free": return 1
-        case "tve": return 2
-        case "rent": return 3
-        case "purchase", "buy": return 4
-        default: return 5
-        }
-    }
+
 
     private func close() { onClose() }
 

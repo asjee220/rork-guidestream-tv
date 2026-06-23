@@ -194,53 +194,41 @@ enum StreamingDeepLinker {
 
     // MARK: - Watchmode resolution
 
-    /// Picks the best deep-link URL for the requested platform by querying
-    /// Watchmode for the title's per-source data. Always returns the
-    /// universal HTTPS link (`web_url`) — we deliberately do NOT convert
-    /// to a custom scheme here because the streaming apps' AASA files
-    /// honour the HTTPS path and route to the title, whereas the custom
-    /// schemes typically only open the app home.
+    /// Picks the best deep-link URL for the requested platform by resolving
+    /// sources through the shared StreamingSourceResolver, then walking the
+    /// ranked US-source list (primary first) for the first usable URL.
+    /// Always returns the universal HTTPS link (`web_url`) — we deliberately
+    /// do NOT convert to a custom scheme here because the streaming apps'
+    /// AASA files honour the HTTPS path and route to the title, whereas the
+    /// custom schemes typically only open the app home.
     private static func resolveDirectURL(tmdbId: Int, isTV: Bool, platform: String) async -> URL? {
-        do {
-            guard let watchmodeId = try await WatchmodeService.shared.watchmodeId(forTMDBId: tmdbId, isTV: isTV) else {
-                return nil
-            }
-            let detail = try await WatchmodeService.shared.titleDetail(titleId: watchmodeId)
-            guard let sources = detail.sources, !sources.isEmpty else { return nil }
+        let r = await StreamingSourceResolver.shared.resolve(
+            tmdbId: tmdbId,
+            isTV: isTV,
+            episodePlatformHint: platform
+        )
 
-            // Rank candidates: matching platform first, then by source type
-            // (subscription > free > tve > rent > buy), then prefer US.
-            let candidates = sources.filter { matches(sourceName: $0.name, platform: platform) }
-            let pool: [WatchmodeSource] = candidates.isEmpty ? sources : candidates
-            let ranked = pool.sorted { a, b in
-                let ra = sourceRank(a), rb = sourceRank(b)
-                if ra != rb { return ra < rb }
-                let usA = (a.region ?? "").uppercased() == "US"
-                let usB = (b.region ?? "").uppercased() == "US"
-                if usA != usB { return usA }
-                return false
-            }
-
-            for src in ranked {
-                // Watchmode free tier returns "Deeplinks available for paid plans only."
-                // in ios_url, so isRealURL filters those out. When a paid Watchmode
-                // tier returns a real iOS deep link, prefer that.
-                if let s = src.iosUrl, isRealURL(s), let url = URL(string: s) {
-                    print("[Deeplink] watchmode ios_url for \(src.name): \(s)")
-                    return url
-                }
-                // Universal HTTPS link — the path is what makes the app land
-                // on the title page via universal-link routing.
-                if let s = src.webUrl, isRealURL(s), let url = URL(string: s) {
-                    print("[Deeplink] watchmode web_url for \(src.name): \(s)")
-                    return url
-                }
-            }
-            return nil
-        } catch {
-            print("[Deeplink] Watchmode lookup failed: \(error.localizedDescription)")
-            return nil
+        // Build candidate list: primary source first (the resolver already
+        // chose it as the best match), then the remaining usSources.
+        var candidates: [WatchmodeSource] = []
+        if let primary = r.primarySource {
+            candidates.append(primary)
         }
+        for src in r.usSources where src.sourceId != r.primarySource?.sourceId {
+            candidates.append(src)
+        }
+
+        for src in candidates {
+            if let s = src.iosUrl, isRealURL(s), let url = URL(string: s) {
+                print("[Deeplink] watchmode ios_url for \(src.name): \(s)")
+                return url
+            }
+            if let s = src.webUrl, isRealURL(s), let url = URL(string: s) {
+                print("[Deeplink] watchmode web_url for \(src.name): \(s)")
+                return url
+            }
+        }
+        return nil
     }
 
     /// Filters out Watchmode placeholders ("Deeplinks available for paid plans only.").
@@ -251,38 +239,7 @@ enum StreamingDeepLinker {
         return URL(string: s) != nil
     }
 
-    private static func sourceRank(_ s: WatchmodeSource) -> Int {
-        switch s.type.lowercased() {
-        case "sub": return 0
-        case "free": return 1
-        case "tve": return 2          // requires cable login
-        case "rent": return 3
-        case "purchase", "buy": return 4
-        default: return 5
-        }
-    }
 
-    /// Maps a platform display name (e.g. "HBO Max", "DISNEY+") to a
-    /// Watchmode source name with fuzzy matching.
-    private static func matches(sourceName: String, platform: String) -> Bool {
-        let s = sourceName.lowercased()
-        let p = platform.lowercased()
-        if p.isEmpty { return true }     // no filter when caller doesn't know
-        if p.contains("netflix") { return s.contains("netflix") }
-        if p.contains("hbo") || p.contains("max") { return s.contains("max") || s.contains("hbo") }
-        if p.contains("hulu") { return s.contains("hulu") }
-        if p.contains("disney") { return s.contains("disney") }
-        if p.contains("apple") { return s.contains("apple tv") }
-        if p.contains("prime") || p.contains("amazon") { return s.contains("amazon") || s.contains("prime") }
-        if p.contains("paramount") { return s.contains("paramount") }
-        if p.contains("peacock") { return s.contains("peacock") }
-        if p.contains("youtube") { return s.contains("youtube") }
-        if p.contains("showtime") { return s.contains("showtime") || s.contains("sho ") }
-        if p.contains("starz") { return s.contains("starz") }
-        if p.contains("crunchyroll") { return s.contains("crunchyroll") }
-        // Last-resort substring either direction.
-        return s.contains(p) || p.contains(s)
-    }
 
     // MARK: - Search-URL fallback
 
