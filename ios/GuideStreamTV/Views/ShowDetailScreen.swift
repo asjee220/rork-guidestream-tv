@@ -71,12 +71,26 @@ final class ShowDetailViewModel {
             let tmdbResult = await tmdbCall
             self.tmdb = tmdbResult
             let seasonNum = max(1, tmdbResult?.numberOfSeasons ?? 1)
+            guard seasonNum >= 1 else {
+                errorMessage = "Invalid season number"
+                isLoading = false
+                loadedTitleId = nil
+                return
+            }
             self.currentSeasonNumber = seasonNum
-            async let seasonCall: TMDBSeason? = try? TMDBService.shared.getSeason(tmdbId: tmdbId, seasonNumber: seasonNum)
+
             if let wmId = await wmIdCall {
                 self.detail = try? await WatchmodeService.shared.titleDetail(titleId: wmId)
             }
-            self.season = await seasonCall
+
+            // Season fetch wrapped in try‑catch so a TMDB outage doesn't
+            // leave the episodes section silently blank.
+            do {
+                self.season = try await TMDBService.shared.getSeason(tmdbId: tmdbId, seasonNumber: seasonNum)
+            } catch {
+                errorMessage = "Failed to load episodes"
+                self.season = nil
+            }
 
             // Fallback: if Watchmode returned no sources (common on free tier),
             // use TMDB watch providers so the "Where to Watch" section renders.
@@ -846,19 +860,40 @@ struct ShowDetailScreen: View {
 
     // MARK: Episodes
 
+    @ViewBuilder
     private var episodesSection: some View {
-        EpisodeAvailabilitySection(
-            tmdbId: resolvedTmdbId,
-            isTV: isTV,
-            titleId: titleId,
-            onEpisodeTap: { row in
-                if case .available(_, _, let url) = row.state, let url = url {
-                    UIApplication.shared.open(url)
-                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                }
+        if let error = vm.errorMessage, tmdbEpisodes.isEmpty {
+            VStack(spacing: 10) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .scaledFont(size: 24, weight: .semibold)
+                    .foregroundStyle(Color.orange.opacity(0.7))
+                Text("Failed to load episodes")
+                    .scaledFont(size: 14, weight: .semibold)
+                    .foregroundStyle(Color.textSecondary)
+                Text(error)
+                    .scaledFont(size: 12)
+                    .foregroundStyle(Color.textTertiary)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+                    .padding(.horizontal, 20)
             }
-        )
-        .padding(.top, 8)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 32)
+            .padding(.top, 8)
+        } else {
+            EpisodeAvailabilitySection(
+                tmdbId: resolvedTmdbId,
+                isTV: isTV,
+                titleId: titleId,
+                onEpisodeTap: { row in
+                    if case .available(_, _, let url) = row.state, let url = url {
+                        UIApplication.shared.open(url)
+                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    }
+                }
+            )
+            .padding(.top, 8)
+        }
     }
 
     // MARK: Where to Watch
@@ -1261,6 +1296,8 @@ private struct TMDBEpisodeCardSmall: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
+            // Gradient backdrop with explicit size — prevents SwiftUI from
+            // trying to render full-resolution TMDB stills unbounded.
             Color(red: 0x2D/255, green: 0x14/255, blue: 0x54/255)
                 .frame(width: 148, height: 88)
                 .overlay {
@@ -1271,6 +1308,7 @@ private struct TMDBEpisodeCardSmall: View {
                         ],
                         startPoint: .topLeading, endPoint: .bottomTrailing
                     )
+                    .frame(width: 148, height: 88)
                     .allowsHitTesting(false)
                 }
                 .overlay {
@@ -1278,20 +1316,41 @@ private struct TMDBEpisodeCardSmall: View {
                         AsyncImage(url: url) { phase in
                             switch phase {
                             case .success(let img):
-                                img.resizable().aspectRatio(contentMode: .fill)
-                            default:
+                                img
+                                    .resizable()
+                                    .aspectRatio(contentMode: .fill)
+                                    .frame(width: 148, height: 88)
+                                    .clipped()
+                            case .empty:
+                                Color.clear
+                                    .frame(width: 148, height: 88)
+                                    .overlay {
+                                        ProgressView()
+                                            .tint(Color.white.opacity(0.4))
+                                    }
+                            case .failure:
+                                Color.clear
+                                    .frame(width: 148, height: 88)
+                                    .overlay {
+                                        Image(systemName: "play.slash")
+                                            .scaledFont(size: 22, weight: .regular)
+                                            .foregroundStyle(.white.opacity(0.3))
+                                    }
+                            @unknown default:
+                                Color.clear
+                                    .frame(width: 148, height: 88)
+                            }
+                        }
+                        .frame(width: 148, height: 88)
+                        .allowsHitTesting(false)
+                    } else {
+                        Color.clear
+                            .frame(width: 148, height: 88)
+                            .overlay {
                                 Image(systemName: "play.fill")
                                     .scaledFont(size: 28, weight: .regular)
                                     .foregroundStyle(.white.opacity(0.6))
                             }
-                        }
-                        .frame(width: 148, height: 88)
-                        .clipped()
-                        .allowsHitTesting(false)
-                    } else {
-                        Image(systemName: "play.fill")
-                            .scaledFont(size: 28, weight: .regular)
-                            .foregroundStyle(.white.opacity(0.6))
                             .allowsHitTesting(false)
                     }
                 }
