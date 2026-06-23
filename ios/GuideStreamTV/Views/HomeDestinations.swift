@@ -56,6 +56,9 @@ struct EpisodeDetailSheet: View {
     @State private var debugTmdbId: String = "—"
     @State private var debugResolutionRan: Bool = false
     @State private var debugSourceLines: [String] = []
+    @State private var debugTmdbProvider: String = "—"
+    @State private var debugSelectedSource: String = "—"
+    @State private var debugResolvedProviderName: String = "—"
 
     private var platformColor: Color {
         if let name = resolvedSource?.name { return brandColor(for: name) }
@@ -358,6 +361,7 @@ struct EpisodeDetailSheet: View {
             // same-type US sources (e.g. STARZ vs Prime Video for a STARZ original).
             let tmdbProvider = try? await TMDBService.shared.getTopWatchProvider(tmdbId: tmdbId, isTV: inferTV)
             let tmdbName = tmdbProvider?.providerName
+            await MainActor.run { debugTmdbProvider = tmdbProvider?.providerName ?? "nil" }
 
             // Prefer: (1) episode-platform match, (2) TMDB primary-provider match
             // among non-resellers, (3) first non-reseller, (4) ranked.first.
@@ -382,7 +386,12 @@ struct EpisodeDetailSheet: View {
                 return ranked.first
             }()
             if let chosen = preferred {
-                await MainActor.run { self.resolvedSource = chosen }
+                await MainActor.run {
+                    self.resolvedSource = chosen
+                    self.debugSelectedSource = "\(chosen.name) | region=\(chosen.region ?? "nil")"
+                }
+            } else {
+                await MainActor.run { debugSelectedSource = "NONE SELECTED" }
             }
             // TMDB watch-provider fallback: when Watchmode returns no usable
             // source, query TMDB for a US flatrate/ads/free provider so the
@@ -391,7 +400,12 @@ struct EpisodeDetailSheet: View {
             if needsFallback {
                 if let provider = try? await TMDBService.shared.getTopWatchProvider(tmdbId: tmdbId, isTV: inferTV),
                    !provider.providerName.isEmpty {
-                    await MainActor.run { self.resolvedProviderName = provider.providerName }
+                    await MainActor.run {
+                        self.resolvedProviderName = provider.providerName
+                        self.debugResolvedProviderName = provider.providerName
+                    }
+                } else {
+                    await MainActor.run { debugResolvedProviderName = "nil" }
                 }
             }
         } catch {
@@ -431,6 +445,21 @@ struct EpisodeDetailSheet: View {
                 .font(.caption.monospaced())
                 .foregroundStyle(Color.white.opacity(0.8))
             Text("resolutionRan: \(debugResolutionRan ? "YES" : "NO")")
+                .font(.caption.monospaced())
+                .foregroundStyle(Color.white.opacity(0.8))
+            Text("tmdbProvider: \(debugTmdbProvider)")
+                .font(.caption.monospaced())
+                .foregroundStyle(Color.white.opacity(0.8))
+            Text("selectedSource: \(debugSelectedSource)")
+                .font(.caption.monospaced())
+                .foregroundStyle(Color.white.opacity(0.8))
+            Text("resolvedProviderName: \(debugResolvedProviderName)")
+                .font(.caption.monospaced())
+                .foregroundStyle(Color.white.opacity(0.8))
+            Text("label/whereToWatch: \(whereToWatchLabel)")
+                .font(.caption.monospaced())
+                .foregroundStyle(Color.white.opacity(0.8))
+            Text("label/platformName: \(platformName)")
                 .font(.caption.monospaced())
                 .foregroundStyle(Color.white.opacity(0.8))
             Text("sources (\(debugSourceLines.count)):")
