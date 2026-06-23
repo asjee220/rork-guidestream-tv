@@ -28,12 +28,14 @@ enum ReelTab: String, CaseIterable, Hashable {
     case forYou = "for-you"
     case trending = "trending"
     case new = "new"
+    case comingSoon = "coming-soon"
 
     var label: String {
         switch self {
         case .forYou: return "For You"
         case .trending: return "Trending"
         case .new: return "New"
+        case .comingSoon: return "Coming Soon"
         }
     }
 }
@@ -172,8 +174,9 @@ final class ReelsViewModel {
         async let myStreamsTask: [UserStream] = fetchMyStreams()
         async let nowPlayingTask: [TMDBResult] = (try? tmdb.getNowPlayingMovies()) ?? []
         async let popularTVTask: [TMDBResult] = (try? tmdb.getPopularTV()) ?? []
+        async let upcomingTask: [TMDBResult] = (try? tmdb.getUpcomingMovies()) ?? []
 
-        let (trending, onAir, mine, nowPlaying, popularTV) = await (trendingTask, onAirTask, myStreamsTask, nowPlayingTask, popularTVTask)
+        let (trending, onAir, mine, nowPlaying, popularTV, upcoming) = await (trendingTask, onAirTask, myStreamsTask, nowPlayingTask, popularTVTask, upcomingTask)
 
         // For each show, fetch its YouTube trailer key + TMDB detail.
         // Keep the work parallel but capped to avoid hammering TMDB.
@@ -182,6 +185,7 @@ final class ReelsViewModel {
         let newItems = await buildItems(from: Array(onAir.prefix(50)), tab: .new)
         let nowPlayingItems = await buildItems(from: Array(nowPlaying.prefix(50)), tab: .new)
         let popularTVItems = await buildItems(from: Array(popularTV.prefix(50)), tab: .forYou)
+        let comingSoonItems = await buildItems(from: Array(upcoming.prefix(50)), tab: .comingSoon)
 
         // Backfill For You feed with trending when the account has a light watchlist.
         var forYouCombined = forYouItems + popularTVItems
@@ -194,7 +198,7 @@ final class ReelsViewModel {
             }
         }
 
-        var combined = forYouCombined + trendingItems + newItems + nowPlayingItems
+        var combined = forYouCombined + trendingItems + newItems + nowPlayingItems + comingSoonItems
 
         // Deduplicate by trailer key so the same video doesn't appear twice.
         var seen = Set<String>()
@@ -292,7 +296,7 @@ final class ReelsViewModel {
             for r in results {
                 group.addTask { [tmdb] in
                     async let detailTask: TMDBTVDetail? = try? tmdb.getTVDetail(tmdbId: r.id)
-                    async let keyTask: String? = try? tmdb.getTrailerKey(tmdbId: r.id)
+                    async let keyTask: String? = try? (r.isTV ? tmdb.getTrailerKey(tmdbId: r.id) : tmdb.getMovieTrailerKey(tmdbId: r.id))
                     async let providerTask: TMDBWatchProvider? = try? tmdb.getTopWatchProvider(tmdbId: r.id, isTV: r.isTV)
                     let (detail, key, provider) = await (detailTask, keyTask, providerTask)
                     guard let key, !key.isEmpty else { return nil }
@@ -1734,9 +1738,9 @@ final class TrailerStreamCache {
             let yt = YouTube(videoID: videoId, methods: [.local, .remote])
             let streams = try await yt.streams
             let combined = streams.filterVideoAndAudio()
-            // Prefer HD (>= 720p) combined streams, falling back through lower qualities.
-            let hdStreams = combined.filter(byResolution: { ($0 ?? 0) >= 720 })
-            let pick = hdStreams.highestResolutionStream()
+            // Filter to HD (>=720p) combined streams, sorted by quality descending.
+            let hd720 = combined.filter(byResolution: { ($0 ?? 0) >= 720 })
+            let pick = hd720.highestResolutionStream()
                 ?? combined.highestResolutionStream()
                 ?? combined.first
                 ?? streams.filterVideoOnly().highestResolutionStream()
