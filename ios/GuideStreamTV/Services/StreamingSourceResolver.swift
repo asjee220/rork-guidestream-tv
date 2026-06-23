@@ -6,6 +6,12 @@
 //  source — combining Watchmode sources (US-filtered, ranked, deduped)
 //  with a TMDB primary-provider tiebreaker. Shared by all surfaces that
 //  need to show a "Where to Watch" label or open a deeplink.
+//
+//  Network-call architecture: all four external fetches (Watchmode ID,
+//  Watchmode detail, TMDB provider, TMDB network) execute inside a single
+//  Task.detached so they are immune to cancellation by the caller's
+//  lifecycle. Selection, ranking, and filtering are pure computation
+//  that runs after the detached task returns.
 
 import Foundation
 
@@ -50,9 +56,10 @@ nonisolated struct StreamingSourceResolver {
 
     /// Resolves streaming information for a title identified by TMDB id.
     ///
-    /// All network calls are tolerant of failure — a thrown error never
-    /// propagates out of this method. The result degrades gracefully
-    /// through every fallback until `ResolvedStreaming.empty`.
+    /// All network calls execute inside a `Task.detached` so they cannot
+    /// be cancelled by the caller's task lifecycle (fixes the -999
+    /// "cancelled" error). Selection, ranking, and filtering are pure
+    /// computation that runs after the detached task returns.
     ///
     /// - Parameters:
     ///   - tmdbId: The TMDB id (tv or movie).
@@ -69,55 +76,117 @@ nonisolated struct StreamingSourceResolver {
         print("[Resolver] tmdb=\(tmdbId) resolving…")
         #endif
 
-        var traceParts: [String] = []
+        // ── All network calls inside a single detached task ──────────
+        // This task has NO parent — it cannot be cancelled by view
+        // re-renders, .task teardown, superseding startLoad, or sibling
+        // async-let cancellation.
+        let fetched = await Task.detached(priority: .userInitiated) { () -> FetchBundle in
+            var bundle = FetchBundle()
 
-        // Step 1 — Watchmode lookup
-        let wmId: String
-        do {
-            guard let id = try await WatchmodeService.shared.watchmodeId(forTMDBId: tmdbId, isTV: isTV) else {
-                traceParts.append("wmId:nil")
-                var result = await tmdbOnlyFallback(tmdbId: tmdbId, isTV: isTV, overview: nil)
-                result.debugTrace = traceParts.joined(separator: " | ")
-                return result
+            // Watchmode ID
+            do {
+                if let id = try await WatchmodeService.shared.watchmodeId(forTMDBId: tmdbId, isTV: isTV) {
+                    bundle.wmId = id
+                    bundle.traceParts.append("wmId:ok")
+                } else {
+                    bundle.traceParts.append("wmId:nil")
+                }
+            } catch {
+                bundle.traceParts.append("wmId:THREW(\(error))")
             }
-            traceParts.append("wmId:ok")
-            wmId = id
-        } catch {
-            traceParts.append("wmId:THREW(\(error))")
-            var result = await tmdbOnlyFallback(tmdbId: tmdbId, isTV: isTV, overview: nil)
-            result.debugTrace = traceParts.joined(separator: " | ")
-            return result
+
+            // Watchmode title detail (only if we have an ID)
+            if let wmId = bundle.wmId {
+                do {
+                    bundle.detail = try await WatchmodeService.shared.titleDetail(titleId: wmId)
+                    bundle.traceParts.append("titleDetail:ok(sources=\(bundle.detail?.sources?.count ?? 0))")
+                } catch {
+                    bundle.traceParts.append("titleDetail:THREW(\(error))")
+                }
+            }
+
+            // TMDB primary watch provider (lower-priority tiebreaker)
+            do {
+                let provider = try await TMDBService.shared.getTopWatchProvider(tmdbId: tmdbId, isTV: isTV)
+                if let name = provider?.providerName {
+                    bundle.providerName = name
+                    bundle.traceParts.append("provider:\(name)")
+                } else {
+                    bundle.traceParts.append("provider:nil")
+                }
+            } catch {
+                bundle.traceParts.append("provider:THREW(\(error))")
+            }
+
+            // TMDB network (TV only — the originating network is the
+            // strongest signal for a show's true home service)
+            if isTV {
+                do {
+                    let tvDetail = try await TMDBService.shared.getTVDetail(tmdbId: tmdbId)
+                    if let name = tvDetail.networks?.first?.name {
+                        bundle.networkName = name
+                        bundle.traceParts.append("network:\(name)")
+                    } else {
+                        bundle.traceParts.append("network:nil")
+                    }
+                } catch {
+                    bundle.traceParts.append("tvDetail:THREW(\(error))")
+                }
+            }
+
+            return bundle
+        }.value
+
+        // ── Pure logic below — no more network calls ──────────────────
+        var traceParts = fetched.traceParts
+
+        // wmId failed or nil → TMDB-only fallback
+        guard let _ = fetched.wmId else {
+            return buildFallback(
+                providerName: fetched.providerName,
+                overview: nil,
+                traceParts: &traceParts,
+                tmdbId: tmdbId,
+                networkName: fetched.networkName,
+                tmdbProviderName: fetched.providerName
+            )
         }
 
-        let detail: WatchmodeTitleDetail
-        do {
-            detail = try await WatchmodeService.shared.titleDetail(titleId: wmId)
-            traceParts.append("titleDetail:ok(sources=\(detail.sources?.count ?? 0))")
-        } catch {
-            traceParts.append("titleDetail:THREW(\(error))")
-            var result = await tmdbOnlyFallback(tmdbId: tmdbId, isTV: isTV, overview: nil)
-            result.debugTrace = traceParts.joined(separator: " | ")
-            return result
+        // titleDetail failed → TMDB-only fallback
+        guard let detail = fetched.detail else {
+            return buildFallback(
+                providerName: fetched.providerName,
+                overview: nil,
+                traceParts: &traceParts,
+                tmdbId: tmdbId,
+                networkName: fetched.networkName,
+                tmdbProviderName: fetched.providerName
+            )
         }
 
         let overview = detail.plotOverview
         let sources = detail.sources ?? []
-        let parentTrace = traceParts.joined(separator: " | ")
 
-        // Step 2 — If sources is non-empty, filter to US, dedupe, rank, and pick
         if !sources.isEmpty {
-            return await resolveFromSources(
+            return selectFromSources(
                 sources: sources,
-                tmdbId: tmdbId,
-                isTV: isTV,
+                networkName: fetched.networkName,
+                providerName: fetched.providerName,
                 episodePlatformHint: episodePlatformHint,
                 overview: overview,
-                parentTrace: parentTrace
+                tmdbId: tmdbId,
+                traceParts: &traceParts
             )
         }
 
-        // No Watchmode sources — fall back to TMDB-only
-        return await tmdbOnlyFallback(tmdbId: tmdbId, isTV: isTV, overview: overview, parentTrace: parentTrace)
+        return buildFallback(
+            providerName: fetched.providerName,
+            overview: overview,
+            traceParts: &traceParts,
+            tmdbId: tmdbId,
+            networkName: fetched.networkName,
+            tmdbProviderName: fetched.providerName
+        )
     }
 
     // MARK: - Helpers (internal, fileprivate)
@@ -157,20 +226,19 @@ nonisolated struct StreamingSourceResolver {
         return s.contains(p) || p.contains(s)
     }
 
-    // MARK: - Resolution steps
+    // MARK: - Pure selection logic (no network calls)
 
-    /// Step 2–4: Watchmode returned sources — filter, dedupe, rank, pick.
-    private func resolveFromSources(
+    /// Watchmode has sources — filter to US, dedupe, rank, and pick the
+    /// best source using the network/provider signals captured earlier.
+    private func selectFromSources(
         sources: [WatchmodeSource],
-        tmdbId: Int,
-        isTV: Bool,
+        networkName: String?,
+        providerName: String?,
         episodePlatformHint: String?,
         overview: String?,
-        parentTrace: String
-    ) async -> ResolvedStreaming {
-        var traceParts: [String] = []
-        if !parentTrace.isEmpty { traceParts.append(parentTrace) }
-
+        tmdbId: Int,
+        traceParts: inout [String]
+    ) -> ResolvedStreaming {
         // Step 2 — US filter
         let usFiltered = sources.filter { ($0.region ?? "").uppercased() == "US" }
         let pool = usFiltered.isEmpty ? sources : usFiltered
@@ -184,7 +252,6 @@ nonisolated struct StreamingSourceResolver {
             let ra = sourceRank(a)
             let rb = sourceRank(b)
             if ra != rb { return ra < rb }
-            // Same rank — non-reseller sorts first
             let aReseller = isResellerSource(a)
             let bReseller = isResellerSource(b)
             if aReseller != bReseller { return !aReseller }
@@ -193,45 +260,11 @@ nonisolated struct StreamingSourceResolver {
 
         traceParts.append("usFiltered=\(deduped.count)")
 
-        // Step 4a — TMDB network (for TV shows, the originating network is the
-        // most reliable signal of the true home service). Works well when the
-        // network is itself a streamer (Starz, HBO/Max, Showtime, Paramount+,
-        // Peacock, Apple TV+, Netflix, Disney+). For broadcast networks (ABC,
-        // NBC, FOX, CBS) the name won't match any streaming source, so the
-        // selection correctly falls through to the watch-provider signal below.
-        var networkName: String?
-        if isTV {
-            do {
-                let tvDetail = try await TMDBService.shared.getTVDetail(tmdbId: tmdbId)
-                if let name = tvDetail.networks?.first?.name {
-                    networkName = name
-                    traceParts.append("network:\(name)")
-                } else {
-                    traceParts.append("network:nil")
-                }
-            } catch {
-                traceParts.append("tvDetail:THREW(\(error))")
-            }
-        }
-
-        // Step 4b — TMDB primary watch provider (lower-priority tiebreaker; may
-        // be unreliable for shows where a reseller channel inflates the ranking).
-        var tmdbName: String?
-        do {
-            let tmdbProvider = try await TMDBService.shared.getTopWatchProvider(tmdbId: tmdbId, isTV: isTV)
-            if let name = tmdbProvider?.providerName {
-                tmdbName = name
-                traceParts.append("provider:\(name)")
-            } else {
-                traceParts.append("provider:nil")
-            }
-        } catch {
-            traceParts.append("provider:THREW(\(error))")
-        }
-
         // Priority selection, first match wins:
         // (1) Episode platform hint match
-        // (2) Network match among non-resellers (new — highest signal for TV)
+        // (2) Network match among non-resellers — strongest TV signal.
+        //     Broadcast nets (ABC, NBC, FOX, CBS) won't match streaming
+        //     source names, so selection correctly falls through.
         // (3) TMDB primary-provider match among non-resellers
         // (4) First non-reseller
         // (5) First of any kind
@@ -242,9 +275,9 @@ nonisolated struct StreamingSourceResolver {
             chosen = ranked.first {
                 !isResellerSource($0) && matches(sourceName: $0.name, platform: net)
             }
-        } else if let tmdbName, !tmdbName.isEmpty {
+        } else if let providerName, !providerName.isEmpty {
             chosen = ranked.first {
-                !isResellerSource($0) && matches(sourceName: $0.name, platform: tmdbName)
+                !isResellerSource($0) && matches(sourceName: $0.name, platform: providerName)
             }
         } else {
             chosen = nil
@@ -266,37 +299,23 @@ nonisolated struct StreamingSourceResolver {
         result.debugTrace = traceParts.joined(separator: " | ")
 
         #if DEBUG
-        print("[Resolver] tmdb=\(tmdbId) network=\(networkName ?? "nil") provider=\(tmdbName ?? "nil") chose=\(result.primarySource?.name ?? result.providerNameFallback ?? "none")")
+        print("[Resolver] tmdb=\(tmdbId) network=\(networkName ?? "nil") provider=\(providerName ?? "nil") chose=\(result.primarySource?.name ?? result.providerNameFallback ?? "none")")
         #endif
 
         return result
     }
 
-    /// Step 5: TMDB-only fallback when Watchmode returned no usable sources.
-    private func tmdbOnlyFallback(
-        tmdbId: Int,
-        isTV: Bool,
+    /// TMDB-only fallback when Watchmode returned no usable sources.
+    private func buildFallback(
+        providerName: String?,
         overview: String?,
-        parentTrace: String = ""
-    ) async -> ResolvedStreaming {
-        var traceParts: [String] = []
-        if !parentTrace.isEmpty { traceParts.append(parentTrace) }
-
-        var fallbackName: String?
-        do {
-            let provider = try await TMDBService.shared.getTopWatchProvider(tmdbId: tmdbId, isTV: isTV)
-            if let name = provider?.providerName {
-                fallbackName = name
-                traceParts.append("provider:\(name)")
-            } else {
-                traceParts.append("provider:nil")
-            }
-        } catch {
-            traceParts.append("provider:THREW(\(error))")
-        }
-
+        traceParts: inout [String],
+        tmdbId: Int,
+        networkName: String?,
+        tmdbProviderName: String?
+    ) -> ResolvedStreaming {
         var result: ResolvedStreaming
-        if let name = fallbackName, !name.isEmpty {
+        if let name = providerName, !name.isEmpty {
             result = ResolvedStreaming(
                 primarySource: nil,
                 usSources: [],
@@ -317,9 +336,19 @@ nonisolated struct StreamingSourceResolver {
         result.debugTrace = traceParts.joined(separator: " | ")
 
         #if DEBUG
-        print("[Resolver] tmdb=\(tmdbId) chose=\(result.primarySource?.name ?? result.providerNameFallback ?? "none")")
+        print("[Resolver] tmdb=\(tmdbId) network=\(networkName ?? "nil") provider=\(tmdbProviderName ?? "nil") chose=\(result.primarySource?.name ?? result.providerNameFallback ?? "none")")
         #endif
 
         return result
     }
+}
+
+// MARK: - Fetch bundle (detached-task return value)
+
+private struct FetchBundle: Sendable {
+    var wmId: String?
+    var detail: WatchmodeTitleDetail?
+    var providerName: String?
+    var networkName: String?
+    var traceParts: [String] = []
 }

@@ -165,7 +165,7 @@ final class ShowDetailViewModel {
 
     var services: [WhereToWatchService] {
         if !resolved.usSources.isEmpty {
-            return resolved.usSources.map { s in
+            var list = resolved.usSources.map { s in
                 WhereToWatchService(
                     id: String(s.sourceId),
                     name: s.name,
@@ -176,6 +176,17 @@ final class ShowDetailViewModel {
                     format: s.format
                 )
             }
+
+            // Move the resolver's chosen primary source to the front so the
+            // "Where to Watch" row, deeplink, and action-bar CTA all lead
+            // with the correct service (e.g. STARZ, not Prime Video).
+            if let primary = resolved.primarySource,
+               let idx = list.firstIndex(where: { $0.name == primary.name }) {
+                let chosen = list.remove(at: idx)
+                list.insert(chosen, at: 0)
+            }
+
+            return list
         }
 
         if let fallback = resolved.providerNameFallback, !fallback.isEmpty {
