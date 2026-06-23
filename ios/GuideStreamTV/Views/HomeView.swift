@@ -758,8 +758,8 @@ struct HomeView: View {
                     )
                 }
             }
-            .fullScreenCover(item: $detailSubject) { subject in
-                detailScreen(for: subject)
+            .sheet(item: $detailSubject) { subject in
+                EpisodeDetailSheet(subject: subject)
             }
             .sheet(item: $selectedGame) { game in
                 SportsWatchSheet(game: game)
@@ -1041,31 +1041,6 @@ struct HomeView: View {
             tmdbId: r.id,
             voteAverage: r.voteAverage
         )
-    }
-
-    /// Builds the full-screen detail view for a tapped show or episode card,
-    /// matching the same ``ShowDetailScreen`` design used by search results.
-    private func detailScreen(for subject: DetailSubject) -> some View {
-        switch subject {
-        case .episode(let e):
-            ShowDetailScreen(
-                titleId: e.tmdbId.map(String.init) ?? "",
-                title: e.title,
-                posterUrl: e.posterUrl,
-                backdropUrl: nil,
-                isTV: true,
-                onBack: { detailSubject = nil }
-            )
-        case .show(let s):
-            ShowDetailScreen(
-                titleId: s.tmdbId.map(String.init) ?? "",
-                title: s.title,
-                posterUrl: s.posterUrl,
-                backdropUrl: nil,
-                isTV: true,
-                onBack: { detailSubject = nil }
-            )
-        }
     }
 
     /// Continue Watching only ever shows real telemetry-derived rows — never mock placeholders.

@@ -727,33 +727,8 @@ struct ReelsScreen: View {
                     .presentationBackground(Color(red: 10/255, green: 16/255, blue: 26/255).opacity(0.96))
             }
         }
-        .fullScreenCover(item: $detailSubject) { subject in
-            detailScreen(for: subject)
-        }
-    }
-
-    /// Builds the full-screen detail view for a tapped show or episode card,
-    /// matching the same ``ShowDetailScreen`` design used by search results.
-    private func detailScreen(for subject: DetailSubject) -> some View {
-        switch subject {
-        case .episode(let e):
-            ShowDetailScreen(
-                titleId: e.tmdbId.map(String.init) ?? "",
-                title: e.title,
-                posterUrl: e.posterUrl,
-                backdropUrl: nil,
-                isTV: true,
-                onBack: { detailSubject = nil }
-            )
-        case .show(let s):
-            ShowDetailScreen(
-                titleId: s.tmdbId.map(String.init) ?? "",
-                title: s.title,
-                posterUrl: s.posterUrl,
-                backdropUrl: nil,
-                isTV: true,
-                onBack: { detailSubject = nil }
-            )
+        .sheet(item: $detailSubject) { subject in
+            EpisodeDetailSheet(subject: subject)
         }
     }
 
@@ -844,6 +819,7 @@ struct ReelsScreen: View {
                 onToggleMute: {
                     UIImpactFeedbackGenerator(style: .soft).impactOccurred()
                     isMuted.toggle()
+                    WatchIntentLogger.shared.log(eventType: .muteToggled, titleId: String(trailer.tmdbId), metadata: ["muted": !isMuted, "trailer_key": trailer.trailerKey])
                 },
                 onLike: {
                     UIImpactFeedbackGenerator(style: .light).impactOccurred()
@@ -2092,13 +2068,21 @@ struct TrailerCommentsSheet: View {
             HStack(spacing: 10) {
                 Circle()
                     .fill(Color(hex: "F5821F"))
-                    .overlay(Text("MA").scaledFont(size: 11, weight: .bold).foregroundStyle(.white))
+                    .overlay(Text(String((AuthViewModel.shared.currentUser?.email ?? "GS").prefix(2)).uppercased()).scaledFont(size: 11, weight: .bold).foregroundStyle(.white))
                     .frame(width: 28, height: 28)
                 TextField("", text: $draft, prompt: Text("Add a comment…").foregroundColor(Color.white.opacity(0.40)))
                     .foregroundStyle(.white)
                     .tint(Color(hex: "F5821F"))
-                Image(systemName: "paperplane.fill")
-                    .foregroundStyle(Color(hex: "F5821F"))
+                Button(action: {
+                    guard !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+                    let initials = String((AuthViewModel.shared.currentUser?.email ?? "GS").prefix(2)).uppercased()
+                    comments.insert(CommentItem(username: "you", initials: initials, color: Color(hex: "F5821F"), verified: false, timestamp: "just now", text: draft.trimmingCharacters(in: .whitespacesAndNewlines), likes: 0), at: 0)
+                    draft = ""
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                }) {
+                    Image(systemName: "paperplane.fill")
+                        .foregroundStyle(Color(hex: "F5821F"))
+                }
             }
             .padding(.horizontal, 14)
             .frame(height: 44)
@@ -2186,6 +2170,7 @@ private struct CommentRow: View {
 struct TrailerShareSheet: View {
     let trailer: TrailerItem
     @State private var didCopy: Bool = false
+    @State private var showSystemShare: Bool = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -2248,13 +2233,19 @@ struct TrailerShareSheet: View {
                     open("https://twitter.com/intent/tweet?url=\(enc)")
                 }
                 ShareTile(icon: "ellipsis.message", label: "Messenger") { open("fb-messenger://") }
-                ShareTile(icon: "ellipsis", label: "More") {}
-                ShareTile(icon: "square.and.arrow.down", label: "Save") {}
+                ShareTile(icon: "ellipsis", label: "More") { showSystemShare = true }
+                ShareTile(icon: "square.and.arrow.down", label: "YouTube") {
+                    UIPasteboard.general.string = "https://www.youtube.com/watch?v=\(trailer.trailerKey)"
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                }
             }
             .padding(.horizontal, 20)
             .padding(.top, 14)
 
             Spacer()
+        }
+        .sheet(isPresented: $showSystemShare) {
+            ActivityView(activityItems: [URL(string: "https://guidestream.tv/trailer/\(trailer.trailerKey)") as Any, "\(trailer.showName) — watch the trailer on GuideStream TV"])
         }
     }
 
@@ -2288,6 +2279,16 @@ private struct ShareTile: View {
         }
         .buttonStyle(.plain)
     }
+}
+
+// MARK: - ActivityView (system share sheet)
+
+private struct ActivityView: UIViewControllerRepresentable {
+    let activityItems: [Any]
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        UIActivityViewController(activityItems: activityItems, applicationActivities: nil)
+    }
+    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }
 
 // MARK: - UIApplication helper
