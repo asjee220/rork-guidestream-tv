@@ -166,18 +166,36 @@ nonisolated struct StreamingSourceResolver {
             return false
         }
 
-        // Step 4 — TMDB primary provider (for tiebreaker)
+        // Step 4a — TMDB network (for TV shows, the originating network is the
+        // most reliable signal of the true home service). Works well when the
+        // network is itself a streamer (Starz, HBO/Max, Showtime, Paramount+,
+        // Peacock, Apple TV+, Netflix, Disney+). For broadcast networks (ABC,
+        // NBC, FOX, CBS) the name won't match any streaming source, so the
+        // selection correctly falls through to the watch-provider signal below.
+        var networkName: String?
+        if isTV {
+            let tvDetail = try? await TMDBService.shared.getTVDetail(tmdbId: tmdbId)
+            networkName = tvDetail?.networks?.first?.name
+        }
+
+        // Step 4b — TMDB primary watch provider (lower-priority tiebreaker; may
+        // be unreliable for shows where a reseller channel inflates the ranking).
         let tmdbProvider = try? await TMDBService.shared.getTopWatchProvider(tmdbId: tmdbId, isTV: isTV)
         let tmdbName = tmdbProvider?.providerName
 
         // Priority selection, first match wins:
         // (1) Episode platform hint match
-        // (2) TMDB primary-provider match among non-resellers
-        // (3) First non-reseller
-        // (4) First of any kind
+        // (2) Network match among non-resellers (new — highest signal for TV)
+        // (3) TMDB primary-provider match among non-resellers
+        // (4) First non-reseller
+        // (5) First of any kind
         let chosen: WatchmodeSource?
         if let hint = episodePlatformHint, !hint.isEmpty {
             chosen = ranked.first { matches(sourceName: $0.name, platform: hint) }
+        } else if let net = networkName, !net.isEmpty {
+            chosen = ranked.first {
+                !isResellerSource($0) && matches(sourceName: $0.name, platform: net)
+            }
         } else if let tmdbName, !tmdbName.isEmpty {
             chosen = ranked.first {
                 !isResellerSource($0) && matches(sourceName: $0.name, platform: tmdbName)
@@ -198,7 +216,7 @@ nonisolated struct StreamingSourceResolver {
         )
 
         #if DEBUG
-        print("[Resolver] tmdb=\(tmdbId) chose=\(result.primarySource?.name ?? result.providerNameFallback ?? "none")")
+        print("[Resolver] tmdb=\(tmdbId) network=\(networkName ?? "nil") provider=\(tmdbName ?? "nil") chose=\(result.primarySource?.name ?? result.providerNameFallback ?? "none")")
         #endif
 
         return result
