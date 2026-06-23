@@ -723,8 +723,33 @@ struct ReelsScreen: View {
                     .presentationBackground(Color(red: 10/255, green: 16/255, blue: 26/255).opacity(0.96))
             }
         }
-        .sheet(item: $detailSubject) { subject in
-            EpisodeDetailSheet(subject: subject)
+        .fullScreenCover(item: $detailSubject) { subject in
+            detailScreen(for: subject)
+        }
+    }
+
+    /// Builds the full-screen detail view for a tapped show or episode card,
+    /// matching the same ``ShowDetailScreen`` design used by search results.
+    private func detailScreen(for subject: DetailSubject) -> some View {
+        switch subject {
+        case .episode(let e):
+            ShowDetailScreen(
+                titleId: e.tmdbId.map(String.init) ?? "",
+                title: e.title,
+                posterUrl: e.posterUrl,
+                backdropUrl: nil,
+                isTV: true,
+                onBack: { detailSubject = nil }
+            )
+        case .show(let s):
+            ShowDetailScreen(
+                titleId: s.tmdbId.map(String.init) ?? "",
+                title: s.title,
+                posterUrl: s.posterUrl,
+                backdropUrl: nil,
+                isTV: true,
+                onBack: { detailSubject = nil }
+            )
         }
     }
 

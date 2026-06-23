@@ -108,6 +108,15 @@ struct TVDBUpcomingItem: Identifiable {
     let platform: Platform?
 }
 
+/// A movie in theaters heading to streaming — drives the "Coming to Streaming" rail.
+struct ComingToStreamingItem: Identifiable, Hashable {
+    let id = UUID()
+    let show: PosterShow
+    let badgeText: String
+    let isDated: Bool
+    let whereText: String
+}
+
 // MARK: - HomeView
 
 struct HomeView: View {
@@ -144,6 +153,7 @@ struct HomeView: View {
     @State private var tvdbUpcomingItems: [TVDBUpcomingItem] = []
     @State private var genreHighlighted: Bool = false
     @State private var becauseYouWatchHighlighted: Bool = false
+    @State private var comingToStreaming: [ComingToStreamingItem] = []
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -261,6 +271,21 @@ struct HomeView: View {
                             }
                         )
                         .padding(.horizontal, 20)
+
+                        if !comingToStreaming.isEmpty {
+                            ComingToStreamingSection(
+                                items: comingToStreaming,
+                                onOpen: { item in
+                                    WatchIntentLogger.shared.log(
+                                        eventType: .cardTapped,
+                                        titleId: WatchIntentLogger.titleSlug(item.show.title),
+                                        metadata: ["section": "coming_to_streaming"]
+                                    )
+                                    detailSubject = .show(item.show)
+                                }
+                            )
+                            .padding(.horizontal, 20)
+                        }
 
                         if !whatsNewTodayShows.isEmpty {
                             WhatsNewTodaySection(
@@ -733,8 +758,8 @@ struct HomeView: View {
                     )
                 }
             }
-            .sheet(item: $detailSubject) { subject in
-                EpisodeDetailSheet(subject: subject)
+            .fullScreenCover(item: $detailSubject) { subject in
+                detailScreen(for: subject)
             }
             .sheet(item: $selectedGame) { game in
                 SportsWatchSheet(game: game)
@@ -781,10 +806,12 @@ struct HomeView: View {
             await clearBadgeAndMarkSeen()
             await streams.refreshAll()
             await loadTrendingIfNeeded()
+            await loadComingToStreaming()
         }
         .refreshable {
             await streams.refreshAll()
             await loadTrendingIfNeeded()
+            await loadComingToStreaming()
         }
     }
 
@@ -1014,6 +1041,31 @@ struct HomeView: View {
             tmdbId: r.id,
             voteAverage: r.voteAverage
         )
+    }
+
+    /// Builds the full-screen detail view for a tapped show or episode card,
+    /// matching the same ``ShowDetailScreen`` design used by search results.
+    private func detailScreen(for subject: DetailSubject) -> some View {
+        switch subject {
+        case .episode(let e):
+            ShowDetailScreen(
+                titleId: e.tmdbId.map(String.init) ?? "",
+                title: e.title,
+                posterUrl: e.posterUrl,
+                backdropUrl: nil,
+                isTV: true,
+                onBack: { detailSubject = nil }
+            )
+        case .show(let s):
+            ShowDetailScreen(
+                titleId: s.tmdbId.map(String.init) ?? "",
+                title: s.title,
+                posterUrl: s.posterUrl,
+                backdropUrl: nil,
+                isTV: true,
+                onBack: { detailSubject = nil }
+            )
+        }
     }
 
     /// Continue Watching only ever shows real telemetry-derived rows — never mock placeholders.
@@ -1301,6 +1353,104 @@ struct HomeView: View {
             .filter { providerByTmdb[$0.id] != nil }
             .prefix(12)
             .map { mediaAsPoster($0, platform: providerByTmdb[$0.id]) }
+    }
+
+    /// Loads movies currently in theaters and resolves their upcoming US
+    /// digital streaming release dates. Dated items with a known release
+    /// date come first; heuristic "coming soon" items follow. Capped at 12.
+    private func loadComingToStreaming() async {
+        guard let movies = try? await TMDBService.shared.getNowPlayingMovies() else { return }
+
+        let calendar = Calendar.current
+        let today = Date()
+        let thirtyDaysAgo = calendar.date(byAdding: .day, value: -30, to: today) ?? today
+
+        let dateFmt: DateFormatter = {
+            let f = DateFormatter()
+            f.locale = Locale(identifier: "en_US_POSIX")
+            f.dateFormat = "MMM d"
+            return f
+        }()
+
+        let rawFmt: DateFormatter = {
+            let f = DateFormatter()
+            f.locale = Locale(identifier: "en_US_POSIX")
+            f.dateFormat = "yyyy-MM-dd"
+            return f
+        }()
+
+        var items: [ComingToStreamingItem] = []
+        let pool = movies.prefix(15)
+
+        let resolved: [(ComingToStreamingItem, Date?)] = await withTaskGroup(
+            of: (ComingToStreamingItem, Date?)?.self
+        ) { group in
+            for movie in pool {
+                group.addTask {
+                    let releaseResult = try? await TMDBService.shared.getUSDigitalReleaseDate(movieId: movie.id)
+
+                    if let digital = releaseResult {
+                        // Has a future digital date — dated item
+                        let badge = dateFmt.string(from: digital.date)
+                        let whereText: String = {
+                            if let n = digital.note?.trimmingCharacters(in: .whitespaces), !n.isEmpty {
+                                return n
+                            }
+                            return "Streaming soon"
+                        }()
+                        return (ComingToStreamingItem(
+                            show: PosterShow(
+                                title: movie.displayName,
+                                meta: whereText,
+                                posterColors: HomeFallback.posterColors,
+                                symbol: "film.fill",
+                                posterUrl: movie.posterUrl,
+                                tmdbId: movie.id
+                            ),
+                            badgeText: badge,
+                            isDated: true,
+                            whereText: whereText
+                        ), digital.date)
+                    } else if let rawDate = movie.releaseDate,
+                              let releaseDate = rawFmt.date(from: rawDate),
+                              releaseDate <= thirtyDaysAgo {
+                        // No future digital date, but the theatrical release was
+                        // at least 30 days ago — heuristic "coming soon" item
+                        return (ComingToStreamingItem(
+                            show: PosterShow(
+                                title: movie.displayName,
+                                meta: "In theaters now",
+                                posterColors: HomeFallback.posterColors,
+                                symbol: "film.fill",
+                                posterUrl: movie.posterUrl,
+                                tmdbId: movie.id
+                            ),
+                            badgeText: "Coming soon",
+                            isDated: false,
+                            whereText: "In theaters now"
+                        ), nil)
+                    }
+                    return nil
+                }
+            }
+
+            var out: [(ComingToStreamingItem, Date?)] = []
+            for await pair in group {
+                if let p = pair { out.append(p) }
+            }
+            return out
+        }
+
+        // Sort: dated items (earliest first), then heuristic items
+        items = resolved.sorted { a, b in
+            if a.1 != nil, b.1 == nil { return true }
+            if a.1 == nil, b.1 != nil { return false }
+            if let da = a.1, let db = b.1 { return da < db }
+            return false
+        }.map { $0.0 }
+
+        let capped = Array(items.prefix(12))
+        await MainActor.run { comingToStreaming = capped }
     }
 
     /// Section 8: New seasons of shows you follow
@@ -2722,6 +2872,103 @@ private struct NewOnServiceSection: View {
                 .padding(.horizontal, 16)
                 .padding(.vertical, 6)
             }
+        }
+    }
+}
+
+// MARK: - Coming to Streaming
+
+private struct ComingToStreamingSection: View {
+    let items: [ComingToStreamingItem]
+    let onOpen: (ComingToStreamingItem) -> Void
+
+    var body: some View {
+        SectionGlassCard(title: "Coming to Streaming", highlighted: true, onSeeAll: nil) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    ForEach(items) { item in
+                        ComingSoonPosterCard(item: item, onTap: { onOpen(item) })
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 6)
+            }
+        }
+    }
+}
+
+private struct ComingSoonPosterCard: View {
+    let item: ComingToStreamingItem
+    let onTap: () -> Void
+
+    var body: some View {
+        Button(action: onTap) {
+            VStack(alignment: .leading, spacing: 8) {
+                ZStack {
+                    Color.black
+                        .frame(width: 150, height: 225)
+                        .overlay {
+                            LinearGradient(
+                                colors: item.show.posterColors,
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                            .allowsHitTesting(false)
+                        }
+                        .overlay {
+                            RemoteImage(
+                                urlString: item.show.posterUrl,
+                                contentMode: .fill,
+                                fallbackColors: item.show.posterColors
+                            )
+                            .frame(width: 150, height: 225)
+                            .clipped()
+                            .allowsHitTesting(false)
+                        }
+                        .overlay(alignment: .bottom) {
+                            badgeLabel
+                        }
+                        .clipShape(.rect(cornerRadius: 12))
+                }
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(item.show.title)
+                        .scaledFont(size: 14, weight: .semibold)
+                        .foregroundStyle(Color.textPrimary)
+                        .lineLimit(1)
+                    Text(item.show.meta)
+                        .scaledFont(size: 11)
+                        .foregroundStyle(Color.textTertiary)
+                        .lineLimit(1)
+                }
+                .frame(width: 150, alignment: .leading)
+            }
+        }
+        .buttonStyle(.plain)
+    }
+
+    @ViewBuilder
+    private var badgeLabel: some View {
+        if item.isDated {
+            Text(item.badgeText)
+                .scaledFont(size: 11, weight: .bold)
+                .foregroundStyle(Color.navy)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 6)
+                .background(Color.orange)
+                .allowsHitTesting(false)
+        } else {
+            Text(item.badgeText)
+                .scaledFont(size: 11, weight: .medium)
+                .foregroundStyle(Color.textPrimary)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 6)
+                .background(Color.white.opacity(0.14))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(Color.white.opacity(0.15), lineWidth: 0.5)
+                )
+                .allowsHitTesting(false)
         }
     }
 }

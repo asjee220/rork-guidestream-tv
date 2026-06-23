@@ -182,6 +182,35 @@ private nonisolated struct TMDBTrendingEnvelope: Decodable, Sendable {
     let results: [TMDBResult]
 }
 
+// MARK: - Release Dates
+
+nonisolated struct TMDBReleaseDatesEnvelope: Decodable, Sendable {
+    let id: Int
+    let results: [TMDBReleaseDateCountry]
+}
+
+nonisolated struct TMDBReleaseDateCountry: Decodable, Sendable {
+    let iso31661: String
+    let releaseDates: [TMDBReleaseDateEntry]
+
+    enum CodingKeys: String, CodingKey {
+        case iso31661 = "iso_3166_1"
+        case releaseDates = "release_dates"
+    }
+}
+
+nonisolated struct TMDBReleaseDateEntry: Decodable, Sendable {
+    let releaseDate: String?
+    let type: Int?
+    let note: String?
+
+    enum CodingKeys: String, CodingKey {
+        case releaseDate = "release_date"
+        case type
+        case note
+    }
+}
+
 nonisolated struct TMDBVideo: Decodable, Sendable {
     let key: String
     let name: String?
@@ -275,10 +304,44 @@ nonisolated struct TMDBService {
 
     /// Movies currently in theaters (US).
     func getNowPlayingMovies() async throws -> [TMDBResult] {
-        let urlString = "\(base)/movie/now_playing?api_key=\(apiKey)&language=en-US&page=1"
+        let urlString = "\(base)/movie/now_playing?api_key=\(apiKey)&language=en-US&region=US&page=1"
         let data = try await get(urlString)
         let env = try JSONDecoder().decode(TMDBTrendingEnvelope.self, from: data)
         return env.results.map { stamp($0, mediaType: "movie") }
+    }
+
+    /// Returns the earliest future US digital release date (type 4) for a movie,
+    /// along with its note (e.g. "Netflix"). Returns nil when no future digital
+    /// release is scheduled.
+    func getUSDigitalReleaseDate(movieId: Int) async throws -> (date: Date, note: String?)? {
+        let urlString = "\(base)/movie/\(movieId)/release_dates?api_key=\(apiKey)"
+        let data = try await get(urlString)
+        let env = try JSONDecoder().decode(TMDBReleaseDatesEnvelope.self, from: data)
+        guard let us = env.results.first(where: { $0.iso31661 == "US" }) else { return nil }
+
+        let now = Date()
+        let isoFmt = ISO8601DateFormatter()
+        isoFmt.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let fallbackFmt: DateFormatter = {
+            let f = DateFormatter()
+            f.locale = Locale(identifier: "en_US_POSIX")
+            f.timeZone = TimeZone(secondsFromGMT: 0)
+            f.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSSZ"
+            return f
+        }()
+
+        func parseDate(_ raw: String) -> Date? {
+            isoFmt.date(from: raw) ?? fallbackFmt.date(from: raw)
+        }
+
+        let digitalEntries = us.releaseDates.filter { $0.type == 4 }
+        let futureEntries = digitalEntries.compactMap { entry -> (date: Date, note: String?)? in
+            guard let raw = entry.releaseDate, let date = parseDate(raw), date > now else { return nil }
+            return (date, entry.note)
+        }
+
+        // Earliest future digital release wins
+        return futureEntries.min(by: { $0.date < $1.date })
     }
 
     /// Popular TV shows trending globally.

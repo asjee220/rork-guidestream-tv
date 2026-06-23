@@ -83,8 +83,8 @@ private struct WatchListContent: View {
 
             content
         }
-        .sheet(item: $detailSubject) { subject in
-            EpisodeDetailSheet(subject: subject)
+        .fullScreenCover(item: $detailSubject) { subject in
+            detailScreen(for: subject)
         }
         .task {
             await streams.fetchUserStreams()
@@ -192,6 +192,31 @@ private struct WatchListContent: View {
     /// Builds a PosterShow from a saved stream so the existing detail sheet
     /// can render the title's "Where to Watch" / overview without bespoke
     /// rendering inside the bottom sheet.
+    /// Builds the full-screen detail view for a tapped show card,
+    /// matching the same ``ShowDetailScreen`` design used by search results.
+    private func detailScreen(for subject: DetailSubject) -> some View {
+        switch subject {
+        case .episode(let e):
+            ShowDetailScreen(
+                titleId: e.tmdbId.map(String.init) ?? "",
+                title: e.title,
+                posterUrl: e.posterUrl,
+                backdropUrl: nil,
+                isTV: true,
+                onBack: { detailSubject = nil }
+            )
+        case .show(let s):
+            ShowDetailScreen(
+                titleId: s.tmdbId.map(String.init) ?? "",
+                title: s.title,
+                posterUrl: s.posterUrl,
+                backdropUrl: nil,
+                isTV: true,
+                onBack: { detailSubject = nil }
+            )
+        }
+    }
+
     private func posterShow(from item: UserStream) -> PosterShow {
         // Show the platform name when we have one; otherwise show the
         // generic media type so we don't leak "Streaming" as if it were a
