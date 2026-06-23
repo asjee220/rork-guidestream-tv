@@ -88,7 +88,7 @@ final class ShowDetailViewModel {
             do {
                 self.season = try await TMDBService.shared.getSeason(tmdbId: tmdbId, seasonNumber: seasonNum)
             } catch {
-                errorMessage = "Failed to load episodes"
+                errorMessage = "Failed to load episodes for this season"
                 self.season = nil
             }
 
@@ -414,7 +414,7 @@ struct ShowDetailScreen: View {
                 isOpen: playOnOpen,
                 onClose: { playOnOpen = false },
                 showTitle: displayTitle,
-                showSubtitle: "Season 4 \u{00B7} Episode 7 \u{00B7} Tailgate Party",
+                showSubtitle: latestEpisode.map { "Season \($0.seasonNum) \u{00B7} Episode \($0.episodeNum) \u{00B7} \($0.name)" } ?? "Season 1 \u{00B7} Episode 1",
                 thumbnailUrl: posterUrl,
                 tmdbId: resolvedTmdbId,
                 isTV: isTV,
@@ -862,25 +862,13 @@ struct ShowDetailScreen: View {
 
     @ViewBuilder
     private var episodesSection: some View {
-        if let error = vm.errorMessage, tmdbEpisodes.isEmpty {
-            VStack(spacing: 10) {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .scaledFont(size: 24, weight: .semibold)
-                    .foregroundStyle(Color.orange.opacity(0.7))
-                Text("Failed to load episodes")
-                    .scaledFont(size: 14, weight: .semibold)
-                    .foregroundStyle(Color.textSecondary)
-                Text(error)
-                    .scaledFont(size: 12)
-                    .foregroundStyle(Color.textTertiary)
-                    .multilineTextAlignment(.center)
-                    .lineLimit(2)
-                    .padding(.horizontal, 20)
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 32)
-            .padding(.top, 8)
-        } else {
+        if let error = vm.errorMessage, !error.isEmpty {
+            Text(error)
+                .scaledFont(size: 13)
+                .foregroundStyle(Color.textSecondary)
+                .padding(.horizontal, 20)
+                .padding(.top, 8)
+        } else if !tmdbEpisodes.isEmpty || !episodes.isEmpty {
             EpisodeAvailabilitySection(
                 tmdbId: resolvedTmdbId,
                 isTV: isTV,
@@ -1318,40 +1306,56 @@ private struct TMDBEpisodeCardSmall: View {
                             case .success(let img):
                                 img
                                     .resizable()
-                                    .aspectRatio(contentMode: .fill)
+                                    .scaledToFill()
                                     .frame(width: 148, height: 88)
                                     .clipped()
-                            case .empty:
-                                Color.clear
-                                    .frame(width: 148, height: 88)
-                                    .overlay {
-                                        ProgressView()
-                                            .tint(Color.white.opacity(0.4))
-                                    }
-                            case .failure:
-                                Color.clear
-                                    .frame(width: 148, height: 88)
-                                    .overlay {
-                                        Image(systemName: "play.slash")
-                                            .scaledFont(size: 22, weight: .regular)
-                                            .foregroundStyle(.white.opacity(0.3))
-                                    }
+                            case .empty, .failure:
+                                LinearGradient(
+                                    colors: [
+                                        Color(red: 0x2D/255, green: 0x14/255, blue: 0x54/255),
+                                        Color(red: 0x0D/255, green: 0x2D/255, blue: 0x6E/255)
+                                    ],
+                                    startPoint: .topLeading, endPoint: .bottomTrailing
+                                )
+                                .frame(width: 148, height: 88)
+                                .overlay {
+                                    Image(systemName: "play.fill")
+                                        .scaledFont(size: 28, weight: .regular)
+                                        .foregroundStyle(.white.opacity(0.6))
+                                }
                             @unknown default:
-                                Color.clear
-                                    .frame(width: 148, height: 88)
+                                LinearGradient(
+                                    colors: [
+                                        Color(red: 0x2D/255, green: 0x14/255, blue: 0x54/255),
+                                        Color(red: 0x0D/255, green: 0x2D/255, blue: 0x6E/255)
+                                    ],
+                                    startPoint: .topLeading, endPoint: .bottomTrailing
+                                )
+                                .frame(width: 148, height: 88)
+                                .overlay {
+                                    Image(systemName: "play.fill")
+                                        .scaledFont(size: 28, weight: .regular)
+                                        .foregroundStyle(.white.opacity(0.6))
+                                }
                             }
                         }
                         .frame(width: 148, height: 88)
                         .allowsHitTesting(false)
                     } else {
-                        Color.clear
-                            .frame(width: 148, height: 88)
-                            .overlay {
-                                Image(systemName: "play.fill")
-                                    .scaledFont(size: 28, weight: .regular)
-                                    .foregroundStyle(.white.opacity(0.6))
-                            }
-                            .allowsHitTesting(false)
+                        LinearGradient(
+                            colors: [
+                                Color(red: 0x2D/255, green: 0x14/255, blue: 0x54/255),
+                                Color(red: 0x0D/255, green: 0x2D/255, blue: 0x6E/255)
+                            ],
+                            startPoint: .topLeading, endPoint: .bottomTrailing
+                        )
+                        .frame(width: 148, height: 88)
+                        .overlay {
+                            Image(systemName: "play.fill")
+                                .scaledFont(size: 28, weight: .regular)
+                                .foregroundStyle(.white.opacity(0.6))
+                        }
+                        .allowsHitTesting(false)
                     }
                 }
                 .clipShape(.rect(cornerRadius: 10))
