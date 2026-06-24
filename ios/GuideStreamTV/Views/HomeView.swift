@@ -158,26 +158,22 @@ struct HomeView: View {
     var body: some View {
         NavigationStack(path: $path) {
             ZStack(alignment: .top) {
+                // Atmosphere — mirrors the login/sign-in screen background so the
+                // branded depth feeling carries through every surface in the app.
                 GeometryReader { geo in
-                    Ellipse()
-                        .fill(
-                            RadialGradient(
-                                gradient: Gradient(stops: [
-                                    .init(color: Color(red: 168/255, green: 85/255, blue: 247/255).opacity(0.25), location: 0.0),
-                                    .init(color: Color(red: 139/255, green: 92/255, blue: 246/255).opacity(0.12), location: 0.5),
-                                    .init(color: .clear, location: 0.8)
-                                ]),
-                                center: .top,
-                                startRadius: 0,
-                                endRadius: 250
-                            )
-                        )
-                        .frame(width: 500, height: 400)
-                        .blur(radius: 1)
-                        .position(x: geo.size.width / 2, y: geo.size.height * 0.15)
-                        .ignoresSafeArea()
-                        .allowsHitTesting(false)
+                    Circle()
+                        .fill(Color.blue.opacity(0.18))
+                        .frame(width: geo.size.width * 0.9)
+                        .blur(radius: 90)
+                        .offset(x: -geo.size.width * 0.35, y: -geo.size.height * 0.35)
+                    Circle()
+                        .fill(Color.orange.opacity(0.10))
+                        .frame(width: geo.size.width * 0.7)
+                        .blur(radius: 80)
+                        .offset(x: geo.size.width * 0.4, y: geo.size.height * 0.45)
                 }
+                .ignoresSafeArea()
+                .allowsHitTesting(false)
 
                 ScrollViewReader { scrollProxy in
                 ScrollView(showsIndicators: false) {
@@ -724,6 +720,7 @@ struct HomeView: View {
                     }
                 }
                 .background(.ultraThinMaterial)
+                .opacity(0.75)
                 .overlay(alignment: .bottom) {
                     Rectangle()
                         .fill(Color.white.opacity(0.05))
@@ -1543,7 +1540,7 @@ private struct SectionGlassCard<Content: View>: View {
         .background(Theme.surface)
         .overlay(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .stroke(Color.white.opacity(0.06), lineWidth: 0.5)
+                .stroke(Color.white.opacity(0.10), lineWidth: 1)
         )
         .clipShape(.rect(cornerRadius: 14))
     }

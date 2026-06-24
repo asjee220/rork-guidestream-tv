@@ -50,7 +50,7 @@ struct FloatingTabBar: View {
         )
         .overlay(
             Capsule(style: .continuous)
-                .stroke(Color.white.opacity(0.06), lineWidth: 0.5)
+                .stroke(Color.white.opacity(0.10), lineWidth: 1)
         )
         .shadow(color: .black.opacity(0.55), radius: 28, y: 16)
         .padding(.horizontal, 22)
