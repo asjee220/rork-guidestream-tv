@@ -723,7 +723,7 @@ struct HomeView: View {
                         .transition(.move(edge: .top).combined(with: .opacity))
                     }
                 }
-                .background(Color.navy.opacity(0.10).background(.ultraThinMaterial))
+                .background(Color.clear)
                 .overlay(alignment: .bottom) {
                     Rectangle()
                         .fill(Color.white.opacity(0.05))
