@@ -723,7 +723,7 @@ struct HomeView: View {
                         .transition(.move(edge: .top).combined(with: .opacity))
                     }
                 }
-                .background(Color.clear)
+                .background(.ultraThinMaterial)
                 .overlay(alignment: .bottom) {
                     Rectangle()
                         .fill(Color.white.opacity(0.05))
@@ -1482,16 +1482,6 @@ private struct PageBar: View {
         }
         .padding(.horizontal, 20)
         .frame(height: 56)
-        .background(
-            Color.navy.opacity(0.92)
-                .background(.ultraThinMaterial)
-                .ignoresSafeArea(edges: .top)
-        )
-        .overlay(alignment: .bottom) {
-            Rectangle()
-                .fill(Color.white.opacity(0.06))
-                .frame(height: 0.5)
-        }
     }
 }
 
