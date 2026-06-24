@@ -2619,53 +2619,52 @@ private struct LeavingSoonSection: View {
                         Button {
                             onOpen(show)
                         } label: {
-                            VStack(alignment: .leading, spacing: 0) {
+                            VStack(alignment: .leading, spacing: 8) {
                                 ZStack {
-                                    RemoteImage(
-                                        urlString: show.posterUrl,
-                                        contentMode: .fill,
-                                        fallbackColors: show.posterColors
-                                    )
-                                    .frame(width: 130, height: 80)
-                                    .clipped()
-                                    .allowsHitTesting(false)
+                                    Color.black
+                                        .frame(width: 150, height: 225)
+                                        .overlay {
+                                            LinearGradient(
+                                                colors: show.posterColors,
+                                                startPoint: .topLeading,
+                                                endPoint: .bottomTrailing
+                                            )
+                                            .allowsHitTesting(false)
+                                        }
+                                        .overlay {
+                                            RemoteImage(
+                                                urlString: show.posterUrl,
+                                                contentMode: .fill,
+                                                fallbackColors: show.posterColors
+                                            )
+                                            .frame(width: 150, height: 225)
+                                            .clipped()
+                                            .allowsHitTesting(false)
+                                        }
+                                        .overlay(alignment: .bottom) {
+                                            Text(daysLeftText(for: show))
+                                                .scaledFont(size: 11, weight: .bold)
+                                                .foregroundStyle(Color.navy)
+                                                .frame(maxWidth: .infinity)
+                                                .padding(.vertical, 6)
+                                                .background(pColor)
+                                                .allowsHitTesting(false)
+                                        }
+                                        .clipShape(.rect(cornerRadius: 12))
                                 }
-                                .frame(width: 130, height: 80)
-                                .overlay(alignment: .topLeading) {
-                                    Text(daysLeftText(for: show))
-                                        .scaledFont(size: 9, weight: .bold)
-                                        .foregroundStyle(pColor)
-                                        .padding(.horizontal, 6)
-                                        .padding(.vertical, 3)
-                                        .background(
-                                            RoundedRectangle(cornerRadius: 5)
-                                                .fill(Color.black.opacity(0.65))
-                                        )
-                                        .padding(5)
-                                        .allowsHitTesting(false)
-                                }
-                                .clipShape(.rect(cornerRadius: 10))
 
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(show.title)
-                                        .scaledFont(size: 11, weight: .semibold)
+                                        .scaledFont(size: 14, weight: .semibold)
                                         .foregroundStyle(Color.textPrimary)
-                                        .lineLimit(2)
+                                        .lineLimit(1)
                                     Text(platformName(for: show))
-                                        .scaledFont(size: 9)
-                                        .foregroundStyle(pColor.opacity(0.85))
+                                        .scaledFont(size: 11)
+                                        .foregroundStyle(Color.textTertiary)
                                         .lineLimit(1)
                                 }
-                                .padding(8)
+                                .frame(width: 150, alignment: .leading)
                             }
-                            .frame(width: 130)
-                            .background(Color.white.opacity(0.05))
-                            .background(.ultraThinMaterial)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 12)
-                                    .stroke(pColor.opacity(0.35), lineWidth: 1)
-                            )
-                            .clipShape(.rect(cornerRadius: 12))
                         }
                         .buttonStyle(.plain)
                     }
