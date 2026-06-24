@@ -1356,7 +1356,7 @@ private struct ServiceBadge: View {
             Circle()
                 .fill(service.color)
                 .frame(width: 8, height: 8)
-            Text(service.name)
+            Text(gsDisplayName(for: service.name))
                 .scaledFont(size: 14, weight: .semibold)
                 .foregroundStyle(.white)
         }

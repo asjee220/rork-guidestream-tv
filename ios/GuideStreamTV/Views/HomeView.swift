@@ -1171,20 +1171,31 @@ struct HomeView: View {
             .map { $0 }
     }
 
-    /// Leaving Soon — scaffold built from the user's watchlist.
-    /// TODO: replace with real Watchmode expiration data once the webUrl tier is upgraded.
+    /// Leaving Soon — real expiration data from Watchmode.
+    /// Filters to titles leaving within 7 days and formats meta as "N days left · PLATFORM".
     private var leavingSoonShows: [PosterShow] {
-        let dayStrings = ["3 days left", "5 days left", "8 days left", "12 days left"]
-        return streams.userStreams.prefix(4).enumerated().map { idx, row in
-            PosterShow(
-                title: row.title ?? "Untitled",
-                meta: dayStrings[idx % dayStrings.count],
-                posterColors: HomeFallback.posterColors,
-                symbol: "clock.badge.exclamationmark",
-                posterUrl: row.posterUrl,
-                tmdbId: Int(row.titleId)
-            )
-        }
+        expiringItems
+            .filter { $0.daysLeft <= 7 }
+            .compactMap { item in
+                let platform = Platform.from(providerName: item.sourceId)
+                let platformName = platform?.name ?? item.sourceId.uppercased()
+                let daysText = item.daysLeft == 0 ? "Today"
+                    : item.daysLeft == 1 ? "1 day left"
+                    : "\(item.daysLeft) days left"
+                // Find poster URL from watchlist or loaded results
+                let posterUrl: String? = streams.userStreams
+                    .first(where: { Int($0.titleId) == item.tmdbId })?.posterUrl
+                    ?? trending.first(where: { $0.id == item.tmdbId })?.posterUrl
+                    ?? onAir.first(where: { $0.id == item.tmdbId })?.posterUrl
+                return PosterShow(
+                    title: item.title,
+                    meta: "\(daysText) · \(platformName)",
+                    posterColors: HomeFallback.posterColors,
+                    symbol: "clock.badge.exclamationmark",
+                    posterUrl: posterUrl,
+                    tmdbId: item.tmdbId
+                )
+            }
     }
 
     /// Episode cards built from the user's saved watch list. Skips the
@@ -2509,6 +2520,28 @@ private struct LeavingSoonSection: View {
     let onSeeAll: (() -> Void)?
     let onOpen: (PosterShow) -> Void
 
+    /// Extracts the platform color from a show's meta field (formatted as "N days left · PLATFORM").
+    private func platformColor(for show: PosterShow) -> Color {
+        let parts = show.meta.split(separator: "·")
+        guard parts.count >= 2 else { return Color.orange }
+        let name = String(parts[1]).trimmingCharacters(in: .whitespaces)
+        return Platform.from(providerName: name)?.color ?? Color.orange
+    }
+
+    /// Extracts just the days-left portion (e.g. "5 days left") from the meta field.
+    private func daysLeftText(for show: PosterShow) -> String {
+        let parts = show.meta.split(separator: "·")
+        guard let first = parts.first else { return show.meta }
+        return String(first).trimmingCharacters(in: .whitespaces)
+    }
+
+    /// Extracts just the platform name from the meta field.
+    private func platformName(for show: PosterShow) -> String {
+        let parts = show.meta.split(separator: "·")
+        guard parts.count >= 2 else { return "" }
+        return String(parts[1]).trimmingCharacters(in: .whitespaces)
+    }
+
     var body: some View {
         SectionGlassCard(
             title: "Leaving Soon",
@@ -2519,6 +2552,7 @@ private struct LeavingSoonSection: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 10) {
                     ForEach(shows) { show in
+                        let pColor = platformColor(for: show)
                         Button {
                             onOpen(show)
                         } label: {
@@ -2535,9 +2569,9 @@ private struct LeavingSoonSection: View {
                                 }
                                 .frame(width: 130, height: 80)
                                 .overlay(alignment: .topLeading) {
-                                    Text(show.meta)
+                                    Text(daysLeftText(for: show))
                                         .scaledFont(size: 9, weight: .bold)
-                                        .foregroundStyle(Color.orange)
+                                        .foregroundStyle(pColor)
                                         .padding(.horizontal, 6)
                                         .padding(.vertical, 3)
                                         .background(
@@ -2554,9 +2588,9 @@ private struct LeavingSoonSection: View {
                                         .scaledFont(size: 11, weight: .semibold)
                                         .foregroundStyle(Color.textPrimary)
                                         .lineLimit(2)
-                                    Text(show.meta.split(separator: "·").last.map(String.init) ?? "")
+                                    Text(platformName(for: show))
                                         .scaledFont(size: 9)
-                                        .foregroundStyle(Color.textTertiary)
+                                        .foregroundStyle(pColor.opacity(0.85))
                                         .lineLimit(1)
                                 }
                                 .padding(8)
@@ -2566,7 +2600,7 @@ private struct LeavingSoonSection: View {
                             .background(.ultraThinMaterial)
                             .overlay(
                                 RoundedRectangle(cornerRadius: 12)
-                                    .stroke(Color.orange.opacity(0.25), lineWidth: 1)
+                                    .stroke(pColor.opacity(0.35), lineWidth: 1)
                             )
                             .clipShape(.rect(cornerRadius: 12))
                         }

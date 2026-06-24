@@ -59,7 +59,8 @@ struct PlayOnBottomSheet: View {
     @State private var isResolvingSource: Bool = false
 
     private var resolvedPlatformName: String {
-        resolvedSource?.name ?? (isResolvingSource ? "…" : "")
+        let raw = resolvedSource?.name ?? (isResolvingSource ? "…" : "")
+        return raw.isEmpty || raw == "…" ? raw : gsDisplayName(for: raw)
     }
 
     private var platformLabel: String { resolvedPlatformName.uppercased() }
@@ -70,7 +71,7 @@ struct PlayOnBottomSheet: View {
     private var hasResolvedPlatform: Bool { resolvedSource?.name != nil }
 
     private var whereToWatchLabel: String {
-        if let name = resolvedSource?.name { return name }
+        if let name = resolvedSource?.name { return gsDisplayName(for: name) }
         return isResolvingSource ? "Finding service…" : ""
     }
 

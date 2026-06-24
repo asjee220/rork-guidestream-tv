@@ -84,6 +84,29 @@ func gsShortName(for name: String) -> String {
  return String(name.prefix(4)).uppercased()
 }
 
+/// Normalises Watchmode source names to their canonical display forms.
+/// Watchmode returns raw names like "Paramount Plus" or "Amazon Prime Video"
+/// that diverge from the user-facing brand; this maps them to the expected
+/// labels used everywhere else in the app.
+func gsDisplayName(for raw: String) -> String {
+ let k = raw.lowercased()
+ if k.contains("paramount") {
+  if k.contains("plus") || k.contains("+") { return "Paramount+" }
+  return "Paramount+"
+ }
+ if k.contains("disney") {
+  if k.contains("plus") || k.contains("+") { return "Disney+" }
+  return "Disney+"
+ }
+ if k.contains("apple") && (k.contains("tv") || k.contains("+")) { return "Apple TV+" }
+ if k.contains("max") || (k.contains("hbo") && k.contains("max")) { return "Max" }
+ if k.contains("prime") || (k.contains("amazon") && k.contains("prime")) { return "Prime Video" }
+ if k.contains("peacock") { return "Peacock" }
+ if k.contains("crunchyroll") { return "Crunchyroll" }
+ if k.contains("showtime") { return "Showtime" }
+ return raw
+}
+
 func gsSourceRank(_ s: WatchmodeSource) -> Int {
  switch s.type.lowercased() {
  case "sub": return 0; case "free": return 1
@@ -111,6 +134,7 @@ func buildEpisodeAvailRows(
  state: .unavailable
  )
  }
+ let displayName = gsDisplayName(for: src.name)
  let color = gsBrandColor(for: src.name)
  let userHas = userServiceNames.contains(where: { gsSourceMatches(sourceName: src.name, platform: $0) })
  let deeplink: URL? = {
@@ -119,8 +143,8 @@ func buildEpisodeAvailRows(
  return nil
  }()
  let state: EpisodeAvailState = userHas
- ? .available(serviceName: src.name, serviceColor: color, deeplink: deeplink)
- : .locked(serviceName: src.name, serviceColor: color)
+ ? .available(serviceName: displayName, serviceColor: color, deeplink: deeplink)
+ : .locked(serviceName: displayName, serviceColor: color)
  return EpisodeAvailRow(
  seasonNumber: seasonNumber,
  episodeNumber: ep.episodeNumber,
@@ -141,13 +165,14 @@ func buildSeasonCoverage(
  var result: [SeasonCoverage] = []
  let ranked = sources.sorted { gsSourceRank($0) < gsSourceRank($1) }
  for src in ranked {
- if seen.contains(src.name) { continue }
- seen.insert(src.name)
+ let displayName = gsDisplayName(for: src.name)
+ if seen.contains(displayName) { continue }
+ seen.insert(displayName)
  let userHas = userServiceNames.contains(where: { gsSourceMatches(sourceName: src.name, platform: $0) })
  result.append(SeasonCoverage(
  id: result.count,
  seasonNumber: 1,
- serviceName: src.name,
+ serviceName: displayName,
  serviceShort: gsShortName(for: src.name),
  serviceColor: gsBrandColor(for: src.name),
  userHasSubscription: userHas,

@@ -59,12 +59,16 @@ struct PlayOnBottomSheet: View {
     @State private var isResolvingSource: Bool = false
 
     private var resolvedPlatformName: String {
-        resolvedSource?.name ?? (isResolvingSource ? "…" : "Streaming")
+        let raw = resolvedSource?.name ?? (isResolvingSource ? "…" : "Streaming")
+        return raw == "…" || raw == "Streaming" ? raw : gsDisplayName(for: raw)
     }
 
     private var platformLabel: String { resolvedPlatformName.uppercased() }
 
-    private var whereToWatchLabel: String { resolvedSource?.name ?? (isResolvingSource ? "Finding service…" : "Open streaming app") }
+    private var whereToWatchLabel: String {
+        if let name = resolvedSource?.name { return gsDisplayName(for: name) }
+        return isResolvingSource ? "Finding service…" : "Open streaming app"
+    }
 
     private var platformColor: Color { brandColor(for: resolvedPlatformName) }
 

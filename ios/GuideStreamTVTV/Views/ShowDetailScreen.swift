@@ -1038,7 +1038,7 @@ private struct TMDBEpisodeCardSmall: View {
 private struct ServiceBadge: View {
     let service: WhereToWatchService
     var body: some View {
-        Text(service.name)
+        Text(gsDisplayName(for: service.name))
             .scaledFont(size: 13, weight: .bold)
             .foregroundStyle(.white)
             .padding(.horizontal, 16)
