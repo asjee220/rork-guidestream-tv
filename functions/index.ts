@@ -156,6 +156,16 @@ async function runPushDispatch(env: Env): Promise<DispatchResult> {
         : "New episode";
     const platform = ep.platform ? ` on ${ep.platform}` : "";
 
+    const platformId = ep.platform?.toLowerCase() ?? "";
+    const encodedPlatform = encodeURIComponent(ep.platform ?? "");
+    const encodedTitle = encodeURIComponent(ep.title ?? "");
+
+    const deepLinkParams = [
+      `platform=${encodedPlatform}`,
+      `platform_id=${encodeURIComponent(platformId)}`,
+      `title=${encodedTitle}`,
+    ].join("&");
+
     const payload = {
       aps: {
         alert: {
@@ -167,8 +177,9 @@ async function runPushDispatch(env: Env): Promise<DispatchResult> {
         "mutable-content": 1,
       },
       title_id: ep.title_id,
+      platform_id: platformId,
       notification_type: "new_episode",
-      deep_link: `guidestream://show/${ep.title_id}`,
+      deep_link: `guidestream://show/${ep.title_id}?${deepLinkParams}`,
     };
 
     // 4. Send pushes

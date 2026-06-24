@@ -1266,7 +1266,7 @@ private struct ReelView: View {
             if !trailer.trailerKey.isEmpty, !embedFailed {
                 #if targetEnvironment(simulator)
                 SimulatorTrailerPoster(trailer: trailer)
-                    .frame(width: size.width, height: size.height)
+                    .frame(width: size.height * 16 / 9, height: size.height)
                     .position(x: size.width / 2, y: size.height / 2)
                 #else
                 if isCurrent {
@@ -1284,13 +1284,13 @@ private struct ReelView: View {
                         )
                         .allowsHitTesting(false)
                     }
-                    .frame(width: size.width, height: size.height)
+                    .frame(width: size.height * 16 / 9, height: size.height)
                     .clipped()
                     .position(x: size.width / 2, y: size.height / 2)
                 } else {
                     // Neighbors show poster only — avoids spinning up multiple players simultaneously.
                     SimulatorTrailerPoster(trailer: trailer)
-                        .frame(width: size.width, height: size.height)
+                        .frame(width: size.height * 16 / 9, height: size.height)
                         .position(x: size.width / 2, y: size.height / 2)
                         .allowsHitTesting(false)
                 }
@@ -1488,6 +1488,7 @@ private struct ReelView: View {
                 .allowsHitTesting(false)
             }
         }
+        .clipped()
         .onAppear { armGlassAdFade() }
         .onChange(of: isCurrent) { _, nowCurrent in
             if nowCurrent {
@@ -2159,7 +2160,7 @@ private struct AdMobReelCard: View {
                     onEmbedError: { }
                 )
                 .allowsHitTesting(false)
-                .frame(width: size.width, height: size.height)
+                .frame(width: size.height * 16 / 9, height: size.height)
                 .clipped()
                 .position(x: size.width / 2, y: size.height / 2)
             }
