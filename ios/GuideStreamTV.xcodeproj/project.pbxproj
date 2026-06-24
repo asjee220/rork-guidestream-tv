@@ -71,6 +71,7 @@
 			files = (
 				XX50D61ED0BAE05FA2F8E9XX /* Supabase in Frameworks */,
 				XXAC3EF89597191F3A09AEXX /* YouTubeKit in Frameworks */,
+				YY10A1B2C3D4E5F6A7B8C9D0YY /* YouTubeiOSPlayerHelper in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -145,6 +146,7 @@
 			packageProductDependencies = (
 				XX1C9FF110ABBCE8BF456CXX /* Supabase */,
 				XX45D5A1BA7EF4022DE2E3XX /* YouTubeKit */,
+				YY20A1B2C3D4E5F6A7B8C9D0YY /* YouTubeiOSPlayerHelper */,
 			);
 			productName = GuideStreamTV;
 			productReference = 105FC57A2E9EAD3100EA8BCF /* GuideStreamTV.app */;
@@ -264,6 +266,7 @@
 			packageReferences = (
 				XX20EB7F6EA71E9F2E096CXX /* XCRemoteSwiftPackageReference "supabase-swift.git" */,
 				XXC440DD1AA4A7A1F8B8ADXX /* XCRemoteSwiftPackageReference "YouTubeKit.git" */,
+				YY30A1B2C3D4E5F6A7B8C9D0YY /* XCRemoteSwiftPackageReference "youtube-ios-player-helper.git" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 105FC57B2E9EAD3100EA8BCF /* Products */;
@@ -902,6 +905,14 @@
 				minimumVersion = 0.4.8;
 			};
 		};
+		YY30A1B2C3D4E5F6A7B8C9D0YY /* XCRemoteSwiftPackageReference "youtube-ios-player-helper.git" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/youtube/youtube-ios-player-helper.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.0.4;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -919,6 +930,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = XXC440DD1AA4A7A1F8B8ADXX /* XCRemoteSwiftPackageReference "YouTubeKit.git" */;
 			productName = YouTubeKit;
+		};
+		YY20A1B2C3D4E5F6A7B8C9D0YY /* YouTubeiOSPlayerHelper */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = YY30A1B2C3D4E5F6A7B8C9D0YY /* XCRemoteSwiftPackageReference "youtube-ios-player-helper.git" */;
+			productName = YouTubeiOSPlayerHelper;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

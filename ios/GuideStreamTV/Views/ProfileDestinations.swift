@@ -1453,6 +1453,7 @@ struct HelpFeedbackView: View {
     private let supportEmail = "support@guidestream.tv"
     private let privacyURL = URL(string: "https://guidestream.tv/privacy")!
     private let termsURL = URL(string: "https://guidestream.tv/terms")!
+    private let youTubeTermsURL = URL(string: "https://www.youtube.com/t/terms")!
 
     var body: some View {
         ZStack {
@@ -1534,22 +1535,38 @@ struct HelpFeedbackView: View {
     }
 
     private var legalCard: some View {
-        ProfileCard {
-            ProfileRow(
-                icon: "lock.shield.fill",
-                iconTint: Color(red: 0.55, green: 0.78, blue: 0.95),
-                title: "Privacy Policy",
-                subtitle: "How we handle your data",
-                onTap: { open(privacyURL) }
-            )
-            ProfileRowDivider()
-            ProfileRow(
-                icon: "doc.text.fill",
-                iconTint: Color.textSecondary,
-                title: "Terms of Service",
-                subtitle: "The fine print",
-                onTap: { open(termsURL) }
-            )
+        VStack(alignment: .leading, spacing: 10) {
+            ProfileCard {
+                ProfileRow(
+                    icon: "lock.shield.fill",
+                    iconTint: Color(red: 0.55, green: 0.78, blue: 0.95),
+                    title: "Privacy Policy",
+                    subtitle: "How we handle your data",
+                    onTap: { open(privacyURL) }
+                )
+                ProfileRowDivider()
+                ProfileRow(
+                    icon: "doc.text.fill",
+                    iconTint: Color.textSecondary,
+                    title: "Terms of Service",
+                    subtitle: "The fine print",
+                    onTap: { open(termsURL) }
+                )
+                ProfileRowDivider()
+                ProfileRow(
+                    icon: "play.rectangle.fill",
+                    iconTint: Color(red: 0.92, green: 0.25, blue: 0.25),
+                    title: "YouTube Terms of Service",
+                    subtitle: "Trailers are powered by YouTube",
+                    onTap: { open(youTubeTermsURL) }
+                )
+            }
+
+            Text("By using GuideStream TV, including watching trailers, you agree to be bound by the YouTube Terms of Service.")
+                .scaledFont(size: 12)
+                .foregroundStyle(Color.textTertiary)
+                .padding(.leading, 4)
+                .padding(.top, 2)
         }
     }
 

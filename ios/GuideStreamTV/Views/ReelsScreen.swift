@@ -10,8 +10,7 @@
 
 import SwiftUI
 import UIKit
-import WebKit
-import AVFoundation
+import YouTubeiOSPlayerHelper
 import Supabase
 
 private extension Array {
@@ -1669,10 +1668,11 @@ private struct SimulatorTrailerPoster: View {
     }
 }
 
-// MARK: - YouTube WKWebView (IFrame embed)
+// MARK: - YouTube YTPlayerView (Official IFrame embed)
 
-/// Official youtube.com/embed IFrame player. Progress events are fed back
-/// through the ytbridge message handler so the scrubber bar stays in sync.
+/// Official youtube.com/embed IFrame player via Google's youtube-ios-player-helper.
+/// Progress events are fed back through YTPlayerViewDelegate so the scrubber
+/// bar stays in sync.
 private struct YouTubePlayerView: UIViewRepresentable {
     let videoId: String
     let isMuted: Bool
@@ -1680,188 +1680,137 @@ private struct YouTubePlayerView: UIViewRepresentable {
     var progress: Binding<Double>? = nil
     var onEmbedError: (() -> Void)? = nil
 
-    func makeUIView(context: Context) -> WKWebView {
-        // Activate a playback-friendly audio session so the WebView is allowed to
-        // start audio without a user gesture (it's muted at first, but iOS still
-        // checks the audio session before letting the video decoder spin up).
-        Self.activateAudioSessionIfNeeded()
+    func makeUIView(context: Context) -> YTPlayerView {
+        let playerView = YTPlayerView()
+        playerView.delegate = context.coordinator
+        playerView.backgroundColor = .clear
+        playerView.webView?.backgroundColor = .clear
+        playerView.webView?.isOpaque = false
+        playerView.webView?.scrollView.isScrollEnabled = false
+        playerView.isUserInteractionEnabled = false
 
-        let config = WKWebViewConfiguration()
-        config.allowsInlineMediaPlayback = true
-        config.mediaTypesRequiringUserActionForPlayback = []
-        config.allowsPictureInPictureMediaPlayback = false
-        let userContent = WKUserContentController()
-        userContent.add(context.coordinator, name: "ytbridge")
-        config.userContentController = userContent
-        // Tell the embedded player we're mobile Safari so YouTube serves the right
-        // playback pipeline.
-        config.applicationNameForUserAgent = "Version/17.0 Mobile/15E148 Safari/604.1"
-
-        let webView = WKWebView(frame: .zero, configuration: config)
-        webView.isOpaque = false
-        webView.backgroundColor = .clear
-        webView.scrollView.isScrollEnabled = false
-        webView.scrollView.backgroundColor = .clear
-        webView.scrollView.bounces = false
-        webView.isUserInteractionEnabled = true
-        if #available(iOS 16.4, *) { webView.isInspectable = false }
         context.coordinator.onEmbedError = onEmbedError
         context.coordinator.progress = progress
-        Self.load(videoId: videoId, muted: isMuted, into: webView)
+
+        let playerVars: [String: Any] = [
+            "playsinline": 1,
+            "autoplay": 1,
+            "controls": 0,
+            "rel": 0,
+            "modestbranding": 1,
+            "fs": 0,
+            "iv_load_policy": 3,
+            "mute": isMuted ? 1 : 0
+        ]
+        playerView.load(withVideoId: videoId, playerVars: playerVars)
         context.coordinator.lastVideoId = videoId
         context.coordinator.lastMuted = isMuted
-        return webView
+        context.coordinator.lastPlaying = isPlaying
+        return playerView
     }
 
-    func updateUIView(_ webView: WKWebView, context: Context) {
+    func updateUIView(_ playerView: YTPlayerView, context: Context) {
         context.coordinator.onEmbedError = onEmbedError
         context.coordinator.progress = progress
-        // Only reload the HTML when the videoId itself changes.
+
+        // Only reload the entire webview when the videoId itself changes.
         if context.coordinator.lastVideoId != videoId {
-            Self.load(videoId: videoId, muted: isMuted, into: webView)
+            let playerVars: [String: Any] = [
+                "playsinline": 1,
+                "autoplay": 1,
+                "controls": 0,
+                "rel": 0,
+                "modestbranding": 1,
+                "fs": 0,
+                "iv_load_policy": 3,
+                "mute": isMuted ? 1 : 0
+            ]
+            playerView.load(withVideoId: videoId, playerVars: playerVars)
             context.coordinator.lastVideoId = videoId
             context.coordinator.lastMuted = isMuted
+            context.coordinator.lastPlaying = isPlaying
+            context.coordinator.cachedDuration = 0
             progress?.wrappedValue = 0
             return
         }
-        // Mute toggle without reloading — sends IFrame API command so the
-        // video does not restart or flash.
+
+        // Mute toggle — the official youtube-ios-player-helper does not expose
+        // mute/unMute as public Swift methods, so we fall back to reloading the
+        // video with the updated mute playerVar. This causes a brief restart but
+        // is the only available path without the private API.
         if context.coordinator.lastMuted != isMuted {
-            let muteCmd = isMuted ? "mute" : "unMute"
-            let js = """
-            try {
-              var f = document.getElementById('player');
-              if (f && f.contentWindow) {
-                f.contentWindow.postMessage(JSON.stringify({event:'command', func:'\(muteCmd)', args:[]}), '*');
-              }
-            } catch(e) {}
-            """
-            webView.evaluateJavaScript(js, completionHandler: nil)
+            let playerVars: [String: Any] = [
+                "playsinline": 1,
+                "autoplay": 1,
+                "controls": 0,
+                "rel": 0,
+                "modestbranding": 1,
+                "fs": 0,
+                "iv_load_policy": 3,
+                "mute": isMuted ? 1 : 0
+            ]
+            playerView.load(withVideoId: videoId, playerVars: playerVars)
             context.coordinator.lastMuted = isMuted
         }
-        // Toggle play/pause via the IFrame API postMessage channel.
-        let funcName = isPlaying ? "playVideo" : "pauseVideo"
-        let js = """
-        try {
-          var f = document.getElementById('player');
-          if (f && f.contentWindow) {
-            f.contentWindow.postMessage(JSON.stringify({event:'command', func:'\(funcName)', args:[]}), '*');
-          }
-        } catch(e) {}
-        """
-        webView.evaluateJavaScript(js, completionHandler: nil)
-    }
 
-    static func dismantleUIView(_ webView: WKWebView, coordinator: Coordinator) {
-        // Pause the video so audio doesn't continue in the background.
-        let js = """
-        try {
-          var f = document.getElementById('player');
-          if (f && f.contentWindow) {
-            f.contentWindow.postMessage(JSON.stringify({event:'command', func:'pauseVideo', args:[]}), '*');
-          }
-        } catch(e) {}
-        """
-        webView.evaluateJavaScript(js, completionHandler: nil)
-    }
-
-    private static func activateAudioSessionIfNeeded() {
-        let session = AVAudioSession.sharedInstance()
-        do {
-            try session.setCategory(.playback, mode: .moviePlayback, options: [.mixWithOthers])
-            try session.setActive(true, options: [])
-        } catch {
-            // best effort — autoplay still works for muted video without this
+        // Toggle play/pause only when the state actually changed.
+        if context.coordinator.lastPlaying != isPlaying {
+            if isPlaying {
+                playerView.playVideo()
+            } else {
+                playerView.pauseVideo()
+            }
+            context.coordinator.lastPlaying = isPlaying
         }
     }
 
-    private static func load(videoId: String, muted: Bool, into webView: WKWebView) {
-        // Wrap the embed in a tiny HTML doc so we can attach `playsinline` and
-        // `webkit-playsinline` attributes to the iframe element itself — those
-        // attributes are what actually let the video render inline on iOS, the
-        // URL query param is insufficient on its own.
-        let muteFlag = muted ? 1 : 0
-        let html = """
-        <!DOCTYPE html>
-        <html><head>
-        <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
-        <style>html,body{margin:0;padding:0;background:#000;height:100%;width:100%;overflow:hidden;}
-        iframe{position:absolute;inset:0;width:100%;height:100%;border:0;display:block;}</style>
-        </head><body>
-        <iframe id="player"
-          src="https://www.youtube.com/embed/\(videoId)?autoplay=1&mute=\(muteFlag)&playsinline=1&controls=0&rel=0&modestbranding=1&showinfo=0&iv_load_policy=3&fs=0&disablekb=1&loop=1&playlist=\(videoId)&enablejsapi=1&origin=https://www.youtube.com"
-          frameborder="0"
-          allow="autoplay; encrypted-media; picture-in-picture"
-          allowfullscreen
-          playsinline
-          webkit-playsinline></iframe>
-        <script>
-          var f = document.getElementById('player');
-          window.__gsCT = 0;
-          window.__gsDur = 0;
-          f.addEventListener('load', function(){
-            try {
-              f.contentWindow.postMessage(JSON.stringify({event:'listening', id:'player'}), '*');
-              f.contentWindow.postMessage(JSON.stringify({event:'command', func:'addEventListener', args:['onError']}), '*');
-              f.contentWindow.postMessage(JSON.stringify({event:'command', func:'addEventListener', args:['onReady']}), '*');
-              // Kick off playback again after the player frame is up — covers the
-              // case where autoplay was deferred during initial iframe load.
-              setTimeout(function(){
-                try { f.contentWindow.postMessage(JSON.stringify({event:'command', func:'playVideo', args:[]}), '*'); } catch(e){}
-              }, 250);
-            } catch(e) {}
-          });
-          // Poll currentTime and duration so the progress scrubber stays in sync.
-          setInterval(function(){
-            try {
-              f.contentWindow.postMessage(JSON.stringify({event:'command', func:'getCurrentTime', args:[]}), '*');
-              f.contentWindow.postMessage(JSON.stringify({event:'command', func:'getDuration', args:[]}), '*');
-            } catch(e) {}
-          }, 500);
-          window.addEventListener('message', function(ev){
-            try {
-              var d = typeof ev.data === 'string' ? JSON.parse(ev.data) : ev.data;
-              if (d && d.event === 'onError') {
-                window.webkit.messageHandlers.ytbridge.postMessage({type:'error', code:d.info});
-              }
-              if (d && d.event === 'infoDelivery' && d.info) {
-                if (d.info.currentTime !== undefined) window.__gsCT = d.info.currentTime;
-                if (d.info.duration !== undefined) window.__gsDur = d.info.duration;
-                if (window.__gsDur > 0) {
-                  window.webkit.messageHandlers.ytbridge.postMessage({type:'progress', currentTime: window.__gsCT, duration: window.__gsDur});
-                }
-              }
-            } catch(e) {}
-          });
-        </script>
-        </body></html>
-        """
-        webView.loadHTMLString(html, baseURL: URL(string: "https://www.youtube.com"))
+    static func dismantleUIView(_ playerView: YTPlayerView, coordinator: Coordinator) {
+        // Stop playback so no audio or video continues in the background.
+        playerView.stopVideo()
     }
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
-    final class Coordinator: NSObject, WKScriptMessageHandler {
+    final class Coordinator: NSObject, YTPlayerViewDelegate {
         var lastVideoId: String = ""
         var lastMuted: Bool = true
+        var lastPlaying: Bool = true
         var onEmbedError: (() -> Void)?
         var progress: Binding<Double>?
+        var cachedDuration: Double = 0
 
-        nonisolated func userContentController(_ userContentController: WKUserContentController,
-                                               didReceive message: WKScriptMessage) {
-            guard message.name == "ytbridge" else { return }
-            guard let body = message.body as? [String: Any],
-                  let type = body["type"] as? String else { return }
-            if type == "error" {
-                Task { @MainActor in self.onEmbedError?() }
+        func playerViewDidBecomeReady(_ playerView: YTPlayerView) {
+            // Kick off playback after the player is fully loaded.
+            playerView.playVideo()
+        }
+
+        func playerView(_ playerView: YTPlayerView, didPlayTime playTime: Float) {
+            // Lazily fetch duration once from the YouTube IFrame API.
+            if cachedDuration <= 0 {
+                playerView.duration { [weak self] result, error in
+                    guard let self, error == nil, result > 0 else { return }
+                    self.cachedDuration = result
+                }
             }
-            if type == "progress",
-               let currentTime = body["currentTime"] as? Double,
-               let duration = body["duration"] as? Double,
-               duration > 0 {
-                let fraction = max(0, min(1, currentTime / duration))
-                Task { @MainActor in self.progress?.wrappedValue = fraction }
+            guard cachedDuration > 0 else { return }
+            let fraction = max(0, min(1, Double(playTime) / cachedDuration))
+            Task { @MainActor in
+                self.progress?.wrappedValue = fraction
             }
+        }
+
+        func playerView(_ playerView: YTPlayerView, didChangeTo state: YTPlayerState) {
+            if state == .ended {
+                // Loop the trailer seamlessly.
+                playerView.seek(toSeconds: 0, allowSeekAhead: true)
+                playerView.playVideo()
+            }
+        }
+
+        func playerView(_ playerView: YTPlayerView, receivedError error: YTPlayerError) {
+            // Any embed error — not-embeddable, html5, video not found, etc.
+            // Collapses the reel to its poster with no stream-extraction fallback.
+            Task { @MainActor in self.onEmbedError?() }
         }
     }
 
