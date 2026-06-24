@@ -61,8 +61,8 @@ struct HomeHeroCarousel: View {
                     }
                     .scrollTransition(.interactive) { content, phase in
                         content
-                            .opacity(phase.isIdentity ? 1 : 0.78)
-                            .scaleEffect(phase.isIdentity ? 1 : 0.96)
+                            .opacity(phase.isIdentity ? 1 : 0.92)
+                            .scaleEffect(phase.isIdentity ? 1 : 0.985)
                     }
                 }
             }

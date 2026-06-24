@@ -878,12 +878,20 @@ struct HomeView: View {
         // platform badges — non-blocking, silently ignored when TVDB is down.
         Task { await fetchTVDBUpcoming() }
 
-        // Fetch expiring titles from user's watch list
-        // (runs after hydrateProviders so we have tmdbIds)
+        // Fetch expiring titles — prioritises watchlist IDs, falls back
+        // to trending + on-air so the section always has content.
         let watchListIds = streams.userStreams.compactMap { Int($0.titleId) }
-        if !watchListIds.isEmpty {
+        let trendingIds = trending.map { $0.id }
+        let onAirIds = onAir.map { $0.id }
+        // Deduplicate: watchlist first, then trending, then on-air
+        var seen = Set<Int>()
+        var poolIds: [Int] = []
+        for id in (watchListIds + trendingIds + onAirIds) where seen.insert(id).inserted {
+            poolIds.append(id)
+        }
+        if !poolIds.isEmpty {
             Task {
-                expiringItems = await WatchmodeService.shared.getExpiringTitles(tmdbIds: watchListIds)
+                expiringItems = await WatchmodeService.shared.getExpiringTitles(tmdbIds: poolIds)
             }
         }
 

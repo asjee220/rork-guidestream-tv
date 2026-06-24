@@ -86,7 +86,7 @@ nonisolated struct WatchmodeService {
         let now = Date()
 
         await withTaskGroup(of: (Int, String, Int, String)?.self) { group in
-            for tmdbId in tmdbIds.prefix(10) {
+            for tmdbId in tmdbIds.prefix(25) {
                 group.addTask {
                     guard let wmId = try? await WatchmodeService.shared.watchmodeId(forTMDBId: tmdbId, isTV: true),
                           let detail = try? await WatchmodeService.shared.titleDetail(titleId: wmId),

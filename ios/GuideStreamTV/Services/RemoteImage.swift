@@ -123,6 +123,9 @@ struct RemoteImage: View {
         self.fallbackColors = fallbackColors
     }
 
+    @State private var loadedImage: Image?
+    @State private var loadFailed: Bool = false
+
     var body: some View {
         Group {
             if let url {
@@ -131,35 +134,46 @@ struct RemoteImage: View {
                         .resizable()
                         .aspectRatio(contentMode: contentMode)
                 } else {
-                    AsyncImage(url: url) { phase in
-                        switch phase {
-                        case .success(let image):
+                    ZStack {
+                        // Stable base — shimmer while loading, fallback on failure
+                        if loadFailed {
+                            GradientFallbackView(colors: fallbackColors)
+                        } else {
+                            ShimmerView()
+                        }
+
+                        // Image fades in over the base when it arrives
+                        if let image = loadedImage {
                             image
                                 .resizable()
                                 .aspectRatio(contentMode: contentMode)
-                                .onAppear { cacheRenderedImage(from: url, image: image) }
-                        case .failure:
-                            GradientFallbackView(colors: fallbackColors)
-                        case .empty:
-                            ShimmerView()
-                        @unknown default:
-                            GradientFallbackView(colors: fallbackColors)
+                                .opacity(loadFailed ? 0 : 1)
+                                .animation(.easeOut(duration: 0.5), value: loadedImage)
+                        }
+                    }
+                    .task {
+                        loadedImage = nil
+                        loadFailed = false
+                        do {
+                            let (data, _) = try await URLSession.shared.data(from: url)
+                            if let ui = UIImage(data: data) {
+                                ImageCacheManager.shared.store(ui, for: url)
+                                // Brief delay so shimmer has time to appear before crossfade
+                                try? await Task.sleep(for: .milliseconds(80))
+                                withAnimation(.easeOut(duration: 0.5)) {
+                                    loadedImage = Image(uiImage: ui)
+                                }
+                            } else {
+                                loadFailed = true
+                            }
+                        } catch {
+                            loadFailed = true
                         }
                     }
                 }
             } else {
                 GradientFallbackView(colors: fallbackColors)
             }
-        }
-    }
-
-    private func cacheRenderedImage(from url: URL, image: Image) {
-        // Background fetch to populate cache for next render (AsyncImage already has it).
-        Task.detached {
-            if ImageCacheManager.shared.image(for: url) != nil { return }
-            guard let (data, _) = try? await URLSession.shared.data(from: url),
-                  let ui = UIImage(data: data) else { return }
-            ImageCacheManager.shared.store(ui, for: url)
         }
     }
 }
