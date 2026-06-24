@@ -120,6 +120,18 @@ final class AppProfileManager {
         persist()
     }
 
+    /// Removes all watch profiles and the active profile selection from
+    /// UserDefaults so the next sign-in starts fresh.
+    func clearAll() {
+        let defaults = UserDefaults.standard
+        defaults.removeObject(forKey: profilesKey)
+        defaults.removeObject(forKey: activeKey)
+        self.profiles = [
+            WatchProfile(name: "Main", colorHex: "#F5821F", isKid: false, emoji: "🎬")
+        ]
+        self.activeProfileId = profiles.first?.id
+    }
+
     private func persist() {
         let defaults = UserDefaults.standard
         if let data = try? JSONEncoder().encode(profiles) {

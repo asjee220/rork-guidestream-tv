@@ -95,6 +95,13 @@ private enum ReelPlatform {
         if key.contains("showtime") { return "showtime" }
         if key.contains("crunchyroll") { return "crunchyroll" }
         if key.contains("youtube") { return "youtube" }
+        if key.contains("fubo") { return "fubo" }
+        if key.contains("tubi") { return "tubi" }
+        if key.contains("pluto") { return "pluto" }
+        if key.contains("amc") { return "amc" }
+        if key.contains("discovery") { return "discovery" }
+        if key.contains("mubi") { return "mubi" }
+        if key.contains("britbox") { return "britbox" }
         return nil
     }
 
@@ -125,6 +132,20 @@ private enum ReelPlatform {
             return ("crunchyroll", "CRUNCHYROLL", Color(hex: "F47B20"), Color.orange.opacity(0.15))
         case let s where s.contains("youtube"):
             return ("youtube", "YOUTUBE", Color(hex: "FF0000"), Color.red.opacity(0.15))
+        case let s where s.contains("fubo"):
+            return ("fubo", "FUBO", Color(hex: "FF5500"), Color.orange.opacity(0.15))
+        case let s where s.contains("tubi"):
+            return ("tubi", "TUBI", Color(hex: "4B0896"), Color.purple.opacity(0.15))
+        case let s where s.contains("pluto"):
+            return ("pluto", "PLUTO TV", Color(hex: "1D1D1D"), Color.gray.opacity(0.15))
+        case let s where s.contains("amc"):
+            return ("amc", "AMC+", Color(hex: "000000"), Color.gray.opacity(0.15))
+        case let s where s.contains("discovery"):
+            return ("discovery", "DISCOVERY+", Color(hex: "0066FF"), Color.blue.opacity(0.15))
+        case let s where s.contains("mubi"):
+            return ("mubi", "MUBI", Color(hex: "000000"), Color.gray.opacity(0.15))
+        case let s where s.contains("britbox"):
+            return ("britbox", "BRITBOX", Color(hex: "003366"), Color.teal.opacity(0.15))
         default:
             return ("tmdb", "STREAMING", Color(hex: "F5821F"), Color.orange.opacity(0.12))
         }
@@ -186,6 +207,8 @@ final class ReelsViewModel {
 
         let (trending, onAir, mine, nowPlaying, popularTV, upcoming, streamingMovies) = await (trendingTask, onAirTask, myStreamsTask, nowPlayingTask, popularTVTask, upcomingTask, streamingMoviesTask)
 
+        print("[REELS] Fetched sources: trending=\(trending.count) onAir=\(onAir.count) mine=\(mine.count) nowPlaying=\(nowPlaying.count) popularTV=\(popularTV.count) upcoming=\(upcoming.count) streamingMovies=\(streamingMovies.count)")
+
         // For each show, fetch its YouTube trailer key + TMDB detail.
         // Keep the work parallel but capped to avoid hammering TMDB.
         let forYouItems = await buildItems(from: mineResults(mine), tab: .forYou)
@@ -194,7 +217,9 @@ final class ReelsViewModel {
         let nowPlayingItems = await buildItems(from: Array(nowPlaying.prefix(50)), tab: .new)
         let popularTVItems = await buildItems(from: Array(popularTV.prefix(50)), tab: .forYou)
         let comingSoonItems = await buildItems(from: Array(upcoming.prefix(50)), tab: .comingSoon)
-        let streamingMovieItems = await buildItems(from: Array(streamingMovies.prefix(50)), tab: .new)
+        let streamingMovieItems = await buildItems(from: Array(streamingMovies.prefix(50)), tab: .forYou)
+
+        print("[REELS] Built items: forYou=\(forYouItems.count) trending=\(trendingItems.count) new=\(newItems.count) nowPlaying=\(nowPlayingItems.count) popularTV=\(popularTVItems.count) comingSoon=\(comingSoonItems.count) streamingMovies=\(streamingMovieItems.count)")
 
         // Backfill For You feed with trending when the account has a light watchlist.
         var forYouCombined = forYouItems + popularTVItems
@@ -207,7 +232,15 @@ final class ReelsViewModel {
             }
         }
 
-        var combined = forYouCombined + trendingItems + newItems + nowPlayingItems + streamingMovieItems + comingSoonItems
+        // Intersperse streaming movies with For You content so movies appear
+        // early in the feed rather than buried after 100+ TV reels.
+        var combined: [TrailerItem] = []
+        let interleaveCount = max(forYouCombined.count, streamingMovieItems.count)
+        for i in 0..<interleaveCount {
+            if i < forYouCombined.count { combined.append(forYouCombined[i]) }
+            if i < streamingMovieItems.count { combined.append(streamingMovieItems[i]) }
+        }
+        combined += trendingItems + newItems + nowPlayingItems + comingSoonItems
 
         // Deduplicate by trailer key so the same video doesn't appear twice.
         var seen = Set<String>()
@@ -298,24 +331,36 @@ final class ReelsViewModel {
 
     /// Fetches popular movies currently streaming across ALL major services
     /// (not just the ones the user has chosen) so the reels feed always
-    /// includes movies available to watch now. Uses a task group so all
-    /// provider calls run concurrently — 19 providers at ~1s each drops
-    /// from 19s to ~1s total.
+    /// includes movies available to watch now. Uses async let for the 5 largest
+    /// providers (Netflix, Prime, Disney+, HBO/Max, Hulu) plus a task group
+    /// for the remaining 14 providers — all run concurrently.
     private func fetchStreamingMovies() async -> [TMDBResult] {
-        await withTaskGroup(of: (Int, [TMDBResult]).self) { group in
-            for providerId in tmdbProviderIdMap.values {
+        // Fetch the "big five" directly with async let for reliability.
+        async let netflix = (try? tmdb.getPopularMoviesOnService(tmdbProviderId: 8)) ?? []
+        async let prime = (try? tmdb.getPopularMoviesOnService(tmdbProviderId: 9)) ?? []
+        async let disney = (try? tmdb.getPopularMoviesOnService(tmdbProviderId: 337)) ?? []
+        async let hbo = (try? tmdb.getPopularMoviesOnService(tmdbProviderId: 1899)) ?? []
+        async let hulu = (try? tmdb.getPopularMoviesOnService(tmdbProviderId: 15)) ?? []
+
+        // Remaining providers via task group.
+        let secondaryProviderIds = [350, 531, 386, 43, 37, 283, 526, 584, 11, 151, 257, 73, 300, 192]
+        async let secondary: [TMDBResult] = await withTaskGroup(of: [TMDBResult].self) { group in
+            for pid in secondaryProviderIds {
                 group.addTask { [tmdb] in
-                    let results = (try? await tmdb.getPopularMoviesOnService(tmdbProviderId: providerId)) ?? []
-                    return (providerId, results)
+                    (try? await tmdb.getPopularMoviesOnService(tmdbProviderId: pid)) ?? []
                 }
             }
-            var allMovies: [TMDBResult] = []
-            for await (_, results) in group {
-                allMovies.append(contentsOf: results.prefix(6))
-            }
-            var seen = Set<Int>()
-            return allMovies.filter { seen.insert($0.id).inserted }
+            var all: [TMDBResult] = []
+            for await results in group { all.append(contentsOf: results) }
+            return all
         }
+
+        let (n, p, d, hb, hu, sec) = await (netflix, prime, disney, hbo, hulu, secondary)
+        let allSources = [[n, p, d, hb, hu].flatMap { $0 }, sec].flatMap { $0 }
+        var seen = Set<Int>()
+        let deduped = allSources.filter { seen.insert($0.id).inserted }
+        NSLog("[REELS] fetchStreamingMovies: big5=\([n.count, p.count, d.count, hb.count, hu.count]) secondary=\(sec.count) deduped=\(deduped.count)")
+        return deduped
     }
 
     private func buildItems(from results: [TMDBResult], tab: ReelTab) async -> [TrailerItem] {

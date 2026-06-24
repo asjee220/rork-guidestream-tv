@@ -32,6 +32,17 @@ final class ProfileStatsService {
 
     private init() {}
 
+    /// Clears all cached stats and removes the UserDefaults keys. Called from
+    /// `AuthViewModel.signOut()` so the next user sees fresh stats.
+    func clearCache() {
+        self.showsCount = 0
+        self.hoursWatched = 0
+        self.devicesCount = 1
+        UserDefaults.standard.removeObject(forKey: "gs.stats.showsCount")
+        UserDefaults.standard.removeObject(forKey: "gs.stats.hoursWatched")
+        UserDefaults.standard.removeObject(forKey: "gs.stats.devicesCount")
+    }
+
     /// Live count, no fetch required.
     var servicesCount: Int {
         AuthViewModel.shared.selectedServices.count

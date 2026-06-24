@@ -360,15 +360,43 @@ final class AuthViewModel {
         } catch {
             // Even if remote sign-out fails, clear local state
         }
+
+        // ── In-memory state ───────────────────────────────────────────
         self.currentUser = nil
         self.isGuest = false
         self.displayName = nil
-        UserDefaults.standard.set(false, forKey: "gs.isGuest")
-        UserDefaults.standard.removeObject(forKey: "gs.displayName")
-        // NOTE: `hasCompletedOnboarding` is *not* reset on sign-out — a user
-        // who has already chosen their services on this device should not be
-        // forced through onboarding again when their session expires or they
-        // sign back in with a different method.
+        self.firstName = nil
+        self.lastName = nil
+        self.hasCompletedOnboarding = false
+        self.selectedServices = []
+        self.notifyPushEnabled = false
+        self.notifySMSEnabled = false
+        self.hasUsedEmailAuth = false
+
+        // ── UserDefaults — remove every user-scoped key so the next
+        //    sign-in starts completely fresh. ─────────────────────────
+        for key in [
+            "gs.isGuest",
+            "gs.displayName",
+            "gs.firstName",
+            "gs.lastName",
+            "gs.onboardingComplete",
+            "gs.selectedServices",
+            "gs.notifyPush",
+            "gs.notifySMS",
+            "gs.hasUsedEmailAuth"
+        ] {
+            UserDefaults.standard.removeObject(forKey: key)
+        }
+
+        // ── Dependent services — wipe their local caches so the next
+        //    user doesn't inherit the previous user's watchlist, likes,
+        //    stats, or profiles. ──────────────────────────────────────
+        StreamsViewModel.shared.clearLocalCache()
+        SocialViewModel.shared.clearLocalCache()
+        ProfileStatsService.shared.clearCache()
+        AppProfileManager.shared.clearAll()
+
         // Update the device row to reflect the signed-out state so the
         // server stops attributing future events to the old user_id.
         DeviceSessionService.shared.upsert(reason: "signed_out")

@@ -359,6 +359,17 @@ final class StreamsViewModel {
         await fetchUserStreams()
     }
 
+    // MARK: - Sign-out cleanup
+
+    /// Clears all in-memory watch list state and removes the local UserDefaults
+    /// cache. Called from `AuthViewModel.signOut()` so the next user starts
+    /// with a clean slate instead of inheriting the previous user's saved titles.
+    func clearLocalCache() {
+        self.userStreams = []
+        self.newEpisodes = []
+        UserDefaults.standard.removeObject(forKey: localCacheKey)
+    }
+
     // MARK: - Local cache helpers
 
     private func loadLocalCache() -> [UserStream] {

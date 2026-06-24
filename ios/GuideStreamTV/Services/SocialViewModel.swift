@@ -399,6 +399,23 @@ final class SocialViewModel {
         return "G"
     }
 
+    // MARK: - Sign-out cleanup
+
+    /// Clears all in-memory social state and removes the local UserDefaults
+    /// cache. Called from `AuthViewModel.signOut()` so the next user starts
+    /// with empty likes/comments instead of the previous user's data.
+    func clearLocalCache() {
+        self.likeCounts = [:]
+        self.likedByMe = []
+        self.commentCounts = [:]
+        self.commentsByTitle = [:]
+        self.loadingComments = []
+        self.loadingCounts = []
+        self.togglingLikes = []
+        self.postingComment = []
+        UserDefaults.standard.removeObject(forKey: localCacheKey)
+    }
+
     // MARK: - Local cache (small + fast)
 
     /// Serializable snapshot of the data we want to survive cold launches.
