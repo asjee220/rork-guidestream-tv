@@ -128,6 +128,64 @@ final class WidgetDataService {
         )
     }
 
+    // MARK: - Diagnostics
+
+    /// Snapshot of the shared-container health, used by the in-app Widget
+    /// setup screen to show ground truth instead of guessing.
+    struct Diagnostics {
+        let fileContainerReachable: Bool
+        let userDefaultsReachable: Bool
+        let hasPayload: Bool
+        let leavingSoonCount: Int
+        let watchlistCount: Int
+        let newEpisodeCount: Int
+        let lastUpdated: Date?
+    }
+
+    func diagnostics() -> Diagnostics {
+        let fileReachable = FileManager.default.containerURL(
+            forSecurityApplicationGroupIdentifier: appGroupId
+        ) != nil
+        let defaultsReachable = UserDefaults(suiteName: appGroupId) != nil
+        let payload = loadExistingPayload()
+        return Diagnostics(
+            fileContainerReachable: fileReachable,
+            userDefaultsReachable: defaultsReachable,
+            hasPayload: payload != nil,
+            leavingSoonCount: payload?.leavingSoon.count ?? 0,
+            watchlistCount: payload?.watchlistCount ?? 0,
+            newEpisodeCount: payload?.newEpisodeCount ?? 0,
+            lastUpdated: payload?.lastUpdated
+        )
+    }
+
+    /// Writes a known sample payload so the user can confirm the transport
+    /// end-to-end without depending on Watchmode data. If the widget shows
+    /// this sample, the App Group container works and the real issue is
+    /// upstream (no expiring titles / empty watchlist).
+    func pushTestData() {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMM d"
+        let sample: [WidgetLeavingSoonItem] = [
+            ("Stranger Things", "NETFLIX", "#E50914", 3),
+            ("The Last of Us", "HBO", "#5A1FCB", 5),
+            ("Severance", "Apple TV+", "#101010", 8),
+        ].enumerated().map { idx, t in
+            let expire = Calendar.current.date(byAdding: .day, value: t.3, to: Date()) ?? Date()
+            return WidgetLeavingSoonItem(
+                id: "sample-\(idx)",
+                title: t.0,
+                platform: t.1,
+                platformColorHex: t.2,
+                posterUrl: nil,
+                daysRemaining: t.3,
+                expireDate: formatter.string(from: expire)
+            )
+        }
+        cachedLeavingSoon = sample
+        writePayload(leavingSoon: sample, watchlistCount: 12, newEpisodeCount: 3)
+    }
+
     // MARK: - Widget reload trigger
 
     /// Call this when the app enters the foreground so the widget can

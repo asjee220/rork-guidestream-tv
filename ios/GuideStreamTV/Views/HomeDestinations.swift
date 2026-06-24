@@ -1480,6 +1480,9 @@ struct WidgetSetupView: View {
                 }
                 .padding(.horizontal, 20)
 
+                WidgetDiagnosticsCard()
+                    .padding(.horizontal, 20)
+
                 Button(action: { dismiss() }) {
                     Text("Got it")
                         .scaledFont(size: 16, weight: .bold)
@@ -1503,6 +1506,112 @@ struct WidgetSetupView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(Color.navy, for: .navigationBar)
         .toolbarColorScheme(.dark, for: .navigationBar)
+    }
+}
+
+/// Live diagnostic showing whether the App Group shared container is
+/// actually reachable from the app, what payload the widget will read, and
+/// a button to push known sample data end-to-end.
+struct WidgetDiagnosticsCard: View {
+    @State private var diag: WidgetDataService.Diagnostics?
+    @State private var didSendTest: Bool = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                Image(systemName: "stethoscope")
+                    .scaledFont(size: 13, weight: .bold)
+                    .foregroundStyle(Color.orange)
+                Text("Widget Diagnostics")
+                    .scaledFont(size: 14, weight: .bold)
+                    .foregroundStyle(Color.textPrimary)
+                Spacer()
+                Button(action: refresh) {
+                    Image(systemName: "arrow.clockwise")
+                        .scaledFont(size: 12, weight: .bold)
+                        .foregroundStyle(Color.textSecondary)
+                }
+                .buttonStyle(.plain)
+            }
+
+            if let diag {
+                // The file container is the ONLY reliable test of whether the
+                // App Group is actually provisioned at runtime. UserDefaults(suiteName:)
+                // returns non-nil even when the group is NOT entitled (it falls back
+                // to a private container the widget can't see), so we don't surface it
+                // as a separate green check — it would be a false positive.
+                statusRow("App Group shared container", ok: diag.fileContainerReachable)
+                statusRow("Data written for widget", ok: diag.hasPayload && diag.fileContainerReachable)
+
+                if diag.fileContainerReachable, diag.hasPayload {
+                    Text("Leaving soon: \(diag.leavingSoonCount) · Watchlist: \(diag.watchlistCount) · New eps: \(diag.newEpisodeCount)")
+                        .scaledFont(size: 11)
+                        .foregroundStyle(Color.textSecondary)
+                    if let updated = diag.lastUpdated {
+                        Text("Last written \(updated.formatted(.relative(presentation: .named)))")
+                            .scaledFont(size: 11)
+                            .foregroundStyle(Color.textTertiary)
+                    }
+                }
+
+                if !diag.fileContainerReachable {
+                    Text("The App Group container isn't available on this build, so the widget can't read app data — no matter what the app writes. This is a signing/provisioning issue: the App Group must be registered in the provisioning profile that signs the build. Widgets share data only in a fully provisioned build (TestFlight or App Store), not in the preview/companion build.")
+                        .scaledFont(size: 11)
+                        .foregroundStyle(Color(red: 0xFF/255, green: 0x6B/255, blue: 0x6B/255))
+                } else if !diag.hasPayload {
+                    Text("Storage works but nothing has been written yet. Open the Home tab to load your shows, or tap below to send sample data.")
+                        .scaledFont(size: 11)
+                        .foregroundStyle(Color.textSecondary)
+                }
+            } else {
+                Text("Checking…")
+                    .scaledFont(size: 12)
+                    .foregroundStyle(Color.textSecondary)
+            }
+
+            Button(action: sendTest) {
+                Text(didSendTest ? "Sample sent — check your widget" : "Send test data to widget")
+                    .scaledFont(size: 13, weight: .semibold)
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 42)
+                    .background(Capsule().fill(Color.orange.opacity(didSendTest ? 0.4 : 1)))
+            }
+            .buttonStyle(.plain)
+            .padding(.top, 2)
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(Color.white.opacity(0.05))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                )
+        )
+        .onAppear(perform: refresh)
+    }
+
+    private func statusRow(_ label: String, ok: Bool) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: ok ? "checkmark.circle.fill" : "xmark.circle.fill")
+                .scaledFont(size: 13)
+                .foregroundStyle(ok ? Color.green : Color(red: 0xFF/255, green: 0x6B/255, blue: 0x6B/255))
+            Text(label)
+                .scaledFont(size: 12)
+                .foregroundStyle(Color.textPrimary)
+            Spacer()
+        }
+    }
+
+    private func refresh() {
+        diag = WidgetDataService.shared.diagnostics()
+    }
+
+    private func sendTest() {
+        WidgetDataService.shared.pushTestData()
+        didSendTest = true
+        refresh()
     }
 }
 
