@@ -1048,76 +1048,82 @@ private struct ReelView: View {
                         ]
                     )
                 } label: {
-                    HStack(spacing: 10) {
-                        ZStack {
-                            RoundedRectangle(cornerRadius: 8)
-                                .fill(target.color.opacity(0.12))
-                                .frame(width: 40, height: 40)
-                            if let service = StreamingCatalog.all
-                                .first(where: { $0.id == target.serviceId }) {
-                                ServiceBrandContent(
-                                    display: service.display,
-                                    size: .mini(32)
-                                )
-                                .frame(width: 32, height: 32)
-                            } else {
-                                Text(String(target.name.prefix(3)).uppercased())
-                                    .scaledFont(size: 11, weight: .black)
-                                    .foregroundStyle(target.color)
-                            }
-                        }
-                        .frame(width: 40, height: 40)
+                    let resolvedService = StreamingCatalog.all.first(where: { $0.id == target.serviceId })
+                    let tileFill: Color = resolvedService?.bg ?? Color.white.opacity(0.10)
 
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Stream more on \(target.name)")
-                                .scaledFont(size: 12, weight: .bold)
-                                .foregroundStyle(.white)
-                                .lineLimit(1)
-                            Text("Tap to start your free trial")
-                                .scaledFont(size: 10)
-                                .foregroundStyle(Color.white.opacity(0.62))
-                            Text("Sponsored · Rakuten")
-                                .scaledFont(size: 9)
-                                .foregroundStyle(Color.white.opacity(0.45))
+                    ZStack(alignment: .topTrailing) {
+                        HStack(spacing: 10) {
+                            ZStack {
+                                RoundedRectangle(cornerRadius: 8)
+                                    .fill(tileFill)
+                                    .frame(width: 40, height: 40)
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 8)
+                                            .stroke(Color.white.opacity(0.12), lineWidth: 0.5)
+                                    )
+                                if let service = resolvedService {
+                                    ServiceBrandContent(
+                                        display: service.display,
+                                        size: .mini(32)
+                                    )
+                                    .frame(width: 32, height: 32)
+                                } else {
+                                    Text(String(target.name.prefix(3)).uppercased())
+                                        .scaledFont(size: 11, weight: .black)
+                                        .foregroundStyle(target.color)
+                                }
+                            }
+                            .frame(width: 40, height: 40)
+
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Stream more on \(target.name)")
+                                    .scaledFont(size: 12, weight: .bold)
+                                    .foregroundStyle(.white)
+                                    .lineLimit(1)
+                                Text("Tap to start your free trial")
+                                    .scaledFont(size: 10)
+                                    .foregroundStyle(Color.white.opacity(0.62))
+                                Text("Sponsored · Rakuten")
+                                    .scaledFont(size: 9)
+                                    .foregroundStyle(Color.white.opacity(0.45))
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
                         }
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 10)
+                        .background(
+                            RoundedRectangle(cornerRadius: 14)
+                                .fill(Color(red: 8/255, green: 14/255,
+                                             blue: 24/255).opacity(0.94))
+                                .shadow(color: Color.black.opacity(0.45), radius: 14, y: 4)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 14)
+                                        .stroke(Color.white.opacity(0.11),
+                                                lineWidth: 0.5)
+                                )
+                        )
+
+                        Button {
+                            withAnimation(.easeOut(duration: 0.2)) {
+                                glassAdDismissed = true
+                            }
+                        } label: {
+                            Image(systemName: "xmark")
+                                .scaledFont(size: 12, weight: .semibold)
+                                .foregroundStyle(Color.white.opacity(0.40))
+                                .frame(width: 28, height: 28)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.top, 8)
+                        .padding(.trailing, 8)
                     }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 10)
-                    .background(
-                        RoundedRectangle(cornerRadius: 14)
-                            .fill(Color(red: 8/255, green: 14/255,
-                                         blue: 24/255).opacity(0.94))
-                            .shadow(color: Color.black.opacity(0.45), radius: 14, y: 4)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 14)
-                                    .stroke(Color.white.opacity(0.11),
-                                            lineWidth: 0.5)
-                            )
-                    )
                 }
                 .buttonStyle(.plain)
                 .opacity(glassAdVisible ? 1 : 0)
                 .allowsHitTesting(glassAdVisible)
                 .padding(.horizontal, 28)
                 .padding(.bottom, bottomInset + 150)
-                .overlay(alignment: .topTrailing) {
-                    Button {
-                        withAnimation(.easeOut(duration: 0.2)) {
-                            glassAdDismissed = true
-                        }
-                    } label: {
-                        Image(systemName: "xmark")
-                            .scaledFont(size: 12, weight: .semibold)
-                            .foregroundStyle(Color.white.opacity(0.40))
-                            .frame(width: 44, height: 44)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .frame(width: 28, height: 28)
-                    .padding(.top, 6)
-                    .padding(.trailing, 6)
-                }
             }
         }
     }
@@ -1398,17 +1404,13 @@ private struct ReelView: View {
                 .allowsHitTesting(false)
             }
         }
-        .onAppear {
-            glassAdFadeTask?.cancel()
-            glassAdTarget = resolveGlassAd()
-            glassAdDismissed = false
-            glassAdVisible = false
-            glassAdFadeTask = Task { @MainActor in
-                try? await Task.sleep(for: .seconds(4))
-                guard !Task.isCancelled, isCurrent, !glassAdDismissed else { return }
-                withAnimation(.easeIn(duration: 0.45)) {
-                    glassAdVisible = true
-                }
+        .onAppear { armGlassAdFade() }
+        .onChange(of: isCurrent) { _, nowCurrent in
+            if nowCurrent {
+                armGlassAdFade()
+            } else {
+                glassAdFadeTask?.cancel()
+                glassAdVisible = false
             }
         }
         .onDisappear {
@@ -1426,6 +1428,20 @@ private struct ReelView: View {
             triggerTapIndicator(muted: willBeMuted)
         }
         .animation(.easeOut(duration: 0.15), value: isMuted)
+    }
+
+    private func armGlassAdFade() {
+        glassAdFadeTask?.cancel()
+        glassAdTarget = resolveGlassAd()
+        glassAdDismissed = false
+        glassAdVisible = false
+        glassAdFadeTask = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(4))
+            guard !Task.isCancelled, isCurrent, !glassAdDismissed else { return }
+            withAnimation(.easeIn(duration: 0.45)) {
+                glassAdVisible = true
+            }
+        }
     }
 
     private func triggerTapIndicator(muted: Bool) {
