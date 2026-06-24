@@ -986,6 +986,8 @@ private struct ReelView: View {
     @State private var tapIndicatorTask: Task<Void, Never>?
     @State private var glassAdDismissed: Bool = false
     @State private var glassAdTarget: (serviceId: String, name: String, color: Color)? = nil
+    @State private var glassAdVisible: Bool = false
+    @State private var glassAdFadeTask: Task<Void, Never>? = nil
 
     private func resolveGlassAd() -> (serviceId: String, name: String, color: Color)? {
         let current = trailer.platformId.lowercased()
@@ -1073,26 +1075,20 @@ private struct ReelView: View {
                                 .lineLimit(1)
                             Text("Tap to start your free trial")
                                 .scaledFont(size: 10)
-                                .foregroundStyle(Color.white.opacity(0.50))
+                                .foregroundStyle(Color.white.opacity(0.62))
                             Text("Sponsored · Rakuten")
                                 .scaledFont(size: 9)
-                                .foregroundStyle(Color.white.opacity(0.25))
+                                .foregroundStyle(Color.white.opacity(0.45))
                         }
-
-                        Spacer(minLength: 0)
-
-                        // Arrow indicator replaces the old button
-                        Image(systemName: "arrow.up.right")
-                            .scaledFont(size: 11, weight: .semibold)
-                            .foregroundStyle(Color.white.opacity(0.45))
-                            .padding(.trailing, 4)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     .padding(.horizontal, 12)
                     .padding(.vertical, 10)
                     .background(
                         RoundedRectangle(cornerRadius: 14)
                             .fill(Color(red: 8/255, green: 14/255,
-                                         blue: 24/255).opacity(0.82))
+                                         blue: 24/255).opacity(0.94))
+                            .shadow(color: Color.black.opacity(0.45), radius: 14, y: 4)
                             .overlay(
                                 RoundedRectangle(cornerRadius: 14)
                                     .stroke(Color.white.opacity(0.11),
@@ -1101,8 +1097,10 @@ private struct ReelView: View {
                     )
                 }
                 .buttonStyle(.plain)
-                .padding(.horizontal, 14)
-                .padding(.bottom, bottomInset + 72)
+                .opacity(glassAdVisible ? 1 : 0)
+                .allowsHitTesting(glassAdVisible)
+                .padding(.horizontal, 28)
+                .padding(.bottom, bottomInset + 150)
                 .overlay(alignment: .topTrailing) {
                     Button {
                         withAnimation(.easeOut(duration: 0.2)) {
@@ -1116,7 +1114,9 @@ private struct ReelView: View {
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    .offset(x: 6, y: -6)
+                    .frame(width: 28, height: 28)
+                    .padding(.top, 6)
+                    .padding(.trailing, 6)
                 }
             }
         }
@@ -1399,8 +1399,20 @@ private struct ReelView: View {
             }
         }
         .onAppear {
+            glassAdFadeTask?.cancel()
             glassAdTarget = resolveGlassAd()
             glassAdDismissed = false
+            glassAdVisible = false
+            glassAdFadeTask = Task { @MainActor in
+                try? await Task.sleep(for: .seconds(4))
+                guard !Task.isCancelled, isCurrent, !glassAdDismissed else { return }
+                withAnimation(.easeIn(duration: 0.45)) {
+                    glassAdVisible = true
+                }
+            }
+        }
+        .onDisappear {
+            glassAdFadeTask?.cancel()
         }
         .contentShape(Rectangle())
         .onTapGesture {
