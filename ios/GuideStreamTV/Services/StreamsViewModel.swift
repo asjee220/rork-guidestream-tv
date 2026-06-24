@@ -59,6 +59,11 @@ final class StreamsViewModel {
         // the next fetch. The tracker has its own 6h cooldown so calling
         // it on every refresh is safe.
         EpisodeTrackerService.shared.scanIfNeeded()
+        // Keep the widget in sync with the latest counts.
+        WidgetDataService.shared.pushCounts(
+            watchlistCount: userStreams.count,
+            newEpisodeCount: newEpisodes.count
+        )
     }
 
     /// Loads the canonical list. Fetches by user_id (signed-in) OR
@@ -188,6 +193,11 @@ final class StreamsViewModel {
         // fresh episode for it, so trigger an immediate tracker scan
         // (bypassing the 6h cooldown) without blocking the caller.
         EpisodeTrackerService.shared.scanIfNeeded(force: true)
+        // Keep the widget in sync after add.
+        WidgetDataService.shared.pushCounts(
+            watchlistCount: userStreams.count,
+            newEpisodeCount: newEpisodes.count
+        )
     }
 
     /// Inserts a row into `user_streams` using a dictionary payload so we can
@@ -293,6 +303,11 @@ final class StreamsViewModel {
             self.lastError = error.localizedDescription
             print("[Streams] remove failed: \(error.localizedDescription)")
         }
+        // Keep the widget in sync after remove.
+        WidgetDataService.shared.pushCounts(
+            watchlistCount: userStreams.count,
+            newEpisodeCount: newEpisodes.count
+        )
     }
 
     /// Mark any `new_episodes` rows older than 24h as no longer new for the current user's titles.

@@ -47,6 +47,14 @@ struct ContentView: View {
             await auth.restoreSession()
             didRestoreSession = true
 
+            // Push whatever watchlist / new-episode counts we have right now
+            // so the widget has data immediately — before the home screen
+            // finishes its network round-trips.
+            WidgetDataService.shared.pushCounts(
+                watchlistCount: StreamsViewModel.shared.userStreams.count,
+                newEpisodeCount: StreamsViewModel.shared.newEpisodes.count
+            )
+
             // Capture a session_started event for every install — signed-in
             // or guest. This is the first row that should appear in Supabase
             // for any new device.
