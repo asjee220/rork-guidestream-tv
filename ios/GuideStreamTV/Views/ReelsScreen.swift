@@ -296,33 +296,39 @@ final class ReelsViewModel {
         }
     }
 
-    /// Fetches popular movies currently streaming on the user's subscribed
-    /// services so the reels feed includes movies available to watch now —
-    /// not just theatrical releases or upcoming titles.
+    /// Fetches popular movies currently streaming across ALL major services
+    /// (not just the ones the user has chosen) so the reels feed always
+    /// includes movies available to watch now. Uses a task group so all
+    /// provider calls run concurrently — 19 providers at ~1s each drops
+    /// from 19s to ~1s total.
     private func fetchStreamingMovies() async -> [TMDBResult] {
-        let selected = AuthViewModel.shared.selectedServices
-        guard !selected.isEmpty else { return [] }
-
-        var allMovies: [TMDBResult] = []
-        for serviceId in selected {
-            guard let providerId = tmdbProviderIdMap[serviceId] else { continue }
-            if let results = try? await tmdb.getPopularMoviesOnService(tmdbProviderId: providerId) {
-                allMovies.append(contentsOf: results.prefix(10))
+        await withTaskGroup(of: (Int, [TMDBResult]).self) { group in
+            for providerId in tmdbProviderIdMap.values {
+                group.addTask { [tmdb] in
+                    let results = (try? await tmdb.getPopularMoviesOnService(tmdbProviderId: providerId)) ?? []
+                    return (providerId, results)
+                }
             }
+            var allMovies: [TMDBResult] = []
+            for await (_, results) in group {
+                allMovies.append(contentsOf: results.prefix(6))
+            }
+            var seen = Set<Int>()
+            return allMovies.filter { seen.insert($0.id).inserted }
         }
-        // Deduplicate by TMDB id — a movie may appear on multiple services.
-        var seen = Set<Int>()
-        return allMovies.filter { seen.insert($0.id).inserted }
     }
 
     private func buildItems(from results: [TMDBResult], tab: ReelTab) async -> [TrailerItem] {
         await withTaskGroup(of: TrailerItem?.self) { group in
             for r in results {
                 group.addTask { [tmdb] in
-                    async let detailTask: TMDBTVDetail? = try? tmdb.getTVDetail(tmdbId: r.id)
+                    // Only fetch the TV detail endpoint for TV shows — calling
+                    // /tv/{movieId} for movies returns a slow 404 and blocks the
+                    // task group for up to 12 seconds per movie result.
+                    let detail: TMDBTVDetail? = r.isTV ? (try? await tmdb.getTVDetail(tmdbId: r.id)) : nil
                     async let keyTask: String? = try? (r.isTV ? tmdb.getTrailerKey(tmdbId: r.id) : tmdb.getMovieTrailerKey(tmdbId: r.id))
                     async let providerTask: TMDBWatchProvider? = try? tmdb.getTopWatchProvider(tmdbId: r.id, isTV: r.isTV)
-                    let (detail, key, provider) = await (detailTask, keyTask, providerTask)
+                    let (key, provider) = await (keyTask, providerTask)
                     guard let key, !key.isEmpty else { return nil }
                     // Reels must point at an app users can actually open — skip titles
                     // with no verified US streaming provider.
