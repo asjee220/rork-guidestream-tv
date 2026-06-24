@@ -12,9 +12,7 @@ import SwiftUI
 import UIKit
 import WebKit
 import AVFoundation
-import AVKit
 import Supabase
-import YouTubeKit
 
 private extension Array {
     subscript(safe index: Int) -> Element? {
@@ -246,11 +244,7 @@ final class ReelsViewModel {
         // hydrates itself from the local cache on init and refreshes from
         // Supabase whenever the user signs in. Nothing else to do here.
 
-        // Pre-resolve the first few trailer stream URLs so playback starts
-        // instantly when the user lands on the feed.
-        for trailer in combined.prefix(6) where !trailer.isSponsored && !trailer.trailerKey.isEmpty {
-            TrailerStreamCache.shared.prefetch(trailer.trailerKey)
-        }
+
     }
 
     private func mineResults(_ streams: [UserStream]) -> [TMDBResult] {
@@ -882,14 +876,7 @@ struct ReelsScreen: View {
         }
     }
 
-    private func prefetchNeighbors(around index: Int) {
-        let offsets = [-1, 0, 1, 2]
-        for o in offsets {
-            let i = index + o
-            guard let t = vm.allTrailers[safe: i], !t.isSponsored, !t.trailerKey.isEmpty else { continue }
-            TrailerStreamCache.shared.prefetch(t.trailerKey)
-        }
-    }
+    private func prefetchNeighbors(around index: Int) {}
 
     private func showInterstitial(_ completion: @escaping () -> Void) {
         guard let root = UIApplication.shared.topViewController() else {
@@ -1156,14 +1143,14 @@ private struct ReelView: View {
                 if isCurrent {
                     ZStack {
                         // Poster sits underneath so the reel is never blank
-                        // while the AVPlayer is resolving the YouTube stream URL.
+                        // while the IFrame embed loads.
                         SimulatorTrailerPoster(trailer: trailer)
-                        YouTubeNativePlayerView(
+                        YouTubePlayerView(
                             videoId: trailer.trailerKey,
                             isMuted: isMuted,
                             isPlaying: isPlaying,
                             progress: $playbackProgress,
-                            onError: { embedFailed = true }
+                            onEmbedError: { embedFailed = true }
                         )
                         .allowsHitTesting(false)
                     }
@@ -1682,221 +1669,15 @@ private struct SimulatorTrailerPoster: View {
     }
 }
 
-// MARK: - Stream URL prefetch cache
+// MARK: - YouTube WKWebView (IFrame embed)
 
-/// Resolves YouTube progressive stream URLs ahead of time so that when a reel
-/// becomes current, the AVPlayer can install immediately without waiting on
-/// YouTubeKit. Cuts visible lag from ~1–2s to near-instant on real devices.
-@MainActor
-final class TrailerStreamCache {
-    static let shared = TrailerStreamCache()
-
-    private var cache: [String: URL] = [:]
-    private var inflight: Set<String> = []
-
-    func cached(_ videoId: String) -> URL? { cache[videoId] }
-
-    func prefetch(_ videoId: String) {
-        guard !videoId.isEmpty, cache[videoId] == nil, !inflight.contains(videoId) else { return }
-        inflight.insert(videoId)
-        Task { [weak self] in
-            let resolved: URL? = await Self.resolve(videoId: videoId)
-            await MainActor.run {
-                guard let self else { return }
-                if let resolved { self.cache[videoId] = resolved }
-                self.inflight.remove(videoId)
-            }
-        }
-    }
-
-    nonisolated static func resolve(videoId: String) async -> URL? {
-        do {
-            let yt = YouTube(videoID: videoId, methods: [.local, .remote])
-            let streams = try await yt.streams
-            let combined = streams.filterVideoAndAudio()
-            // Filter to HD (>=720p) combined streams, sorted by quality descending.
-            let hd720 = combined.filter(byResolution: { ($0 ?? 0) >= 720 })
-            let pick = hd720.highestResolutionStream()
-                ?? combined.highestResolutionStream()
-                ?? combined.first
-                ?? streams.filterVideoOnly().highestResolutionStream()
-                ?? streams.first
-            return pick?.url
-        } catch {
-            return nil
-        }
-    }
-}
-
-// MARK: - Native YouTube Player (AVPlayer + YouTubeKit)
-
-/// Plays a YouTube video natively via AVPlayer. YouTubeKit resolves the direct
-/// progressive stream URL (audio+video combined) on-device, then we hand it to
-/// AVPlayer. This is dramatically more reliable than WKWebView + IFrame on
-/// real devices — there's no embed handshake, no referrer/origin checks, no
-/// silent black-frame failures.
-private struct YouTubeNativePlayerView: UIViewRepresentable {
-    let videoId: String
-    let isMuted: Bool
-    let isPlaying: Bool
-    var progress: Binding<Double>? = nil
-    var onError: (() -> Void)? = nil
-
-    func makeUIView(context: Context) -> PlayerContainerView {
-        Self.activateAudioSessionIfNeeded()
-        let v = PlayerContainerView()
-        v.backgroundColor = .black
-        context.coordinator.container = v
-        context.coordinator.onError = onError
-        context.coordinator.progress = progress
-        context.coordinator.load(videoId: videoId, muted: isMuted, playing: isPlaying)
-        return v
-    }
-
-    func updateUIView(_ uiView: PlayerContainerView, context: Context) {
-        context.coordinator.onError = onError
-        context.coordinator.progress = progress
-        context.coordinator.update(videoId: videoId, muted: isMuted, playing: isPlaying)
-    }
-
-    static func dismantleUIView(_ uiView: PlayerContainerView, coordinator: Coordinator) {
-        coordinator.teardown()
-    }
-
-    private static func activateAudioSessionIfNeeded() {
-        let session = AVAudioSession.sharedInstance()
-        do {
-            try session.setCategory(.playback, mode: .moviePlayback, options: [.mixWithOthers])
-            try session.setActive(true, options: [])
-        } catch {}
-    }
-
-    func makeCoordinator() -> Coordinator { Coordinator() }
-
-    @MainActor
-    final class Coordinator {
-        weak var container: PlayerContainerView?
-        var player: AVPlayer?
-        var looper: AVPlayerLooper?
-        var queuePlayer: AVQueuePlayer?
-        var currentVideoId: String = ""
-        var resolveTask: Task<Void, Never>?
-        var onError: (() -> Void)?
-        var loopObserver: NSObjectProtocol?
-        var progress: Binding<Double>?
-        var timeObserverToken: Any?
-
-        func load(videoId: String, muted: Bool, playing: Bool) {
-            guard currentVideoId != videoId else { return }
-            currentVideoId = videoId
-            resolveTask?.cancel()
-            teardownPlayer()
-
-            // Fast path — URL already prefetched. Install immediately so playback starts
-            // the moment the reel becomes current (no spinner, no black frame).
-            if let cached = TrailerStreamCache.shared.cached(videoId) {
-                installPlayer(url: cached, muted: muted, playing: playing)
-                return
-            }
-
-            resolveTask = Task { [weak self] in
-                guard let self else { return }
-                let resolved = await TrailerStreamCache.resolve(videoId: videoId)
-                if Task.isCancelled { return }
-                await MainActor.run {
-                    guard self.currentVideoId == videoId else { return }
-                    guard let url = resolved else { self.onError?(); return }
-                    TrailerStreamCache.shared.cached(videoId).map { _ in } // keep cache as source of truth via prefetch
-                    self.installPlayer(url: url, muted: muted, playing: playing)
-                }
-            }
-        }
-
-        func update(videoId: String, muted: Bool, playing: Bool) {
-            if currentVideoId != videoId {
-                load(videoId: videoId, muted: muted, playing: playing)
-                return
-            }
-            player?.isMuted = muted
-            if playing { player?.play() } else { player?.pause() }
-        }
-
-        private func installPlayer(url: URL, muted: Bool, playing: Bool) {
-            guard let container else { return }
-            let item = AVPlayerItem(url: url)
-            let queue = AVQueuePlayer()
-            queue.isMuted = muted
-            queue.actionAtItemEnd = .advance
-            let loop = AVPlayerLooper(player: queue, templateItem: item)
-            self.queuePlayer = queue
-            self.looper = loop
-            self.player = queue
-
-            let layer = AVPlayerLayer(player: queue)
-            layer.videoGravity = .resizeAspectFill
-            container.setPlayerLayer(layer)
-            if playing { queue.play() }
-            attachTimeObserver(to: queue)
-        }
-
-        private func attachTimeObserver(to player: AVPlayer) {
-            let interval = CMTime(seconds: 0.1, preferredTimescale: 600)
-            timeObserverToken = player.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] time in
-                guard let self else { return }
-                let current = time.seconds
-                let duration = player.currentItem?.duration.seconds ?? 0
-                guard duration.isFinite, duration > 0 else { return }
-                let pct = max(0, min(1, current / duration))
-                self.progress?.wrappedValue = pct
-            }
-        }
-
-        func teardown() {
-            resolveTask?.cancel()
-            resolveTask = nil
-            teardownPlayer()
-        }
-
-        private func teardownPlayer() {
-            if let obs = loopObserver { NotificationCenter.default.removeObserver(obs); loopObserver = nil }
-            if let token = timeObserverToken {
-                queuePlayer?.removeTimeObserver(token)
-                timeObserverToken = nil
-            }
-            queuePlayer?.pause()
-            looper = nil
-            queuePlayer = nil
-            player = nil
-            container?.setPlayerLayer(nil)
-            progress?.wrappedValue = 0
-        }
-    }
-
-    final class PlayerContainerView: UIView {
-        private var currentLayer: AVPlayerLayer?
-
-        func setPlayerLayer(_ layer: AVPlayerLayer?) {
-            currentLayer?.removeFromSuperlayer()
-            currentLayer = layer
-            if let layer {
-                layer.frame = bounds
-                self.layer.addSublayer(layer)
-            }
-        }
-
-        override func layoutSubviews() {
-            super.layoutSubviews()
-            currentLayer?.frame = bounds
-        }
-    }
-}
-
-// MARK: - YouTube WKWebView (legacy, unused)
-
+/// Official youtube.com/embed IFrame player. Progress events are fed back
+/// through the ytbridge message handler so the scrubber bar stays in sync.
 private struct YouTubePlayerView: UIViewRepresentable {
     let videoId: String
     let isMuted: Bool
     let isPlaying: Bool
+    var progress: Binding<Double>? = nil
     var onEmbedError: (() -> Void)? = nil
 
     func makeUIView(context: Context) -> WKWebView {
@@ -1925,6 +1706,7 @@ private struct YouTubePlayerView: UIViewRepresentable {
         webView.isUserInteractionEnabled = true
         if #available(iOS 16.4, *) { webView.isInspectable = false }
         context.coordinator.onEmbedError = onEmbedError
+        context.coordinator.progress = progress
         Self.load(videoId: videoId, muted: isMuted, into: webView)
         context.coordinator.lastVideoId = videoId
         context.coordinator.lastMuted = isMuted
@@ -1933,11 +1715,29 @@ private struct YouTubePlayerView: UIViewRepresentable {
 
     func updateUIView(_ webView: WKWebView, context: Context) {
         context.coordinator.onEmbedError = onEmbedError
-        if context.coordinator.lastVideoId != videoId || context.coordinator.lastMuted != isMuted {
+        context.coordinator.progress = progress
+        // Only reload the HTML when the videoId itself changes.
+        if context.coordinator.lastVideoId != videoId {
             Self.load(videoId: videoId, muted: isMuted, into: webView)
             context.coordinator.lastVideoId = videoId
             context.coordinator.lastMuted = isMuted
+            progress?.wrappedValue = 0
             return
+        }
+        // Mute toggle without reloading — sends IFrame API command so the
+        // video does not restart or flash.
+        if context.coordinator.lastMuted != isMuted {
+            let muteCmd = isMuted ? "mute" : "unMute"
+            let js = """
+            try {
+              var f = document.getElementById('player');
+              if (f && f.contentWindow) {
+                f.contentWindow.postMessage(JSON.stringify({event:'command', func:'\(muteCmd)', args:[]}), '*');
+              }
+            } catch(e) {}
+            """
+            webView.evaluateJavaScript(js, completionHandler: nil)
+            context.coordinator.lastMuted = isMuted
         }
         // Toggle play/pause via the IFrame API postMessage channel.
         let funcName = isPlaying ? "playVideo" : "pauseVideo"
@@ -1946,6 +1746,19 @@ private struct YouTubePlayerView: UIViewRepresentable {
           var f = document.getElementById('player');
           if (f && f.contentWindow) {
             f.contentWindow.postMessage(JSON.stringify({event:'command', func:'\(funcName)', args:[]}), '*');
+          }
+        } catch(e) {}
+        """
+        webView.evaluateJavaScript(js, completionHandler: nil)
+    }
+
+    static func dismantleUIView(_ webView: WKWebView, coordinator: Coordinator) {
+        // Pause the video so audio doesn't continue in the background.
+        let js = """
+        try {
+          var f = document.getElementById('player');
+          if (f && f.contentWindow) {
+            f.contentWindow.postMessage(JSON.stringify({event:'command', func:'pauseVideo', args:[]}), '*');
           }
         } catch(e) {}
         """
@@ -1984,6 +1797,8 @@ private struct YouTubePlayerView: UIViewRepresentable {
           webkit-playsinline></iframe>
         <script>
           var f = document.getElementById('player');
+          window.__gsCT = 0;
+          window.__gsDur = 0;
           f.addEventListener('load', function(){
             try {
               f.contentWindow.postMessage(JSON.stringify({event:'listening', id:'player'}), '*');
@@ -1996,11 +1811,25 @@ private struct YouTubePlayerView: UIViewRepresentable {
               }, 250);
             } catch(e) {}
           });
+          // Poll currentTime and duration so the progress scrubber stays in sync.
+          setInterval(function(){
+            try {
+              f.contentWindow.postMessage(JSON.stringify({event:'command', func:'getCurrentTime', args:[]}), '*');
+              f.contentWindow.postMessage(JSON.stringify({event:'command', func:'getDuration', args:[]}), '*');
+            } catch(e) {}
+          }, 500);
           window.addEventListener('message', function(ev){
             try {
               var d = typeof ev.data === 'string' ? JSON.parse(ev.data) : ev.data;
               if (d && d.event === 'onError') {
                 window.webkit.messageHandlers.ytbridge.postMessage({type:'error', code:d.info});
+              }
+              if (d && d.event === 'infoDelivery' && d.info) {
+                if (d.info.currentTime !== undefined) window.__gsCT = d.info.currentTime;
+                if (d.info.duration !== undefined) window.__gsDur = d.info.duration;
+                if (window.__gsDur > 0) {
+                  window.webkit.messageHandlers.ytbridge.postMessage({type:'progress', currentTime: window.__gsCT, duration: window.__gsDur});
+                }
               }
             } catch(e) {}
           });
@@ -2016,14 +1845,23 @@ private struct YouTubePlayerView: UIViewRepresentable {
         var lastVideoId: String = ""
         var lastMuted: Bool = true
         var onEmbedError: (() -> Void)?
+        var progress: Binding<Double>?
 
         nonisolated func userContentController(_ userContentController: WKUserContentController,
                                                didReceive message: WKScriptMessage) {
             guard message.name == "ytbridge" else { return }
             guard let body = message.body as? [String: Any],
-                  let type = body["type"] as? String,
-                  type == "error" else { return }
-            Task { @MainActor in self.onEmbedError?() }
+                  let type = body["type"] as? String else { return }
+            if type == "error" {
+                Task { @MainActor in self.onEmbedError?() }
+            }
+            if type == "progress",
+               let currentTime = body["currentTime"] as? Double,
+               let duration = body["duration"] as? Double,
+               duration > 0 {
+                let fraction = max(0, min(1, currentTime / duration))
+                Task { @MainActor in self.progress?.wrappedValue = fraction }
+            }
         }
     }
 
@@ -2339,12 +2177,12 @@ private struct AdMobReelCard: View {
             .clipped()
 
             if !trailerKey.isEmpty && isPlaying {
-                YouTubeNativePlayerView(
+                YouTubePlayerView(
                     videoId: trailerKey,
                     isMuted: true,
                     isPlaying: isPlaying,
                     progress: $playbackProgress,
-                    onError: { }
+                    onEmbedError: { }
                 )
                 .allowsHitTesting(false)
                 .frame(width: size.width, height: size.height)
