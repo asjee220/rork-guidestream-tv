@@ -827,15 +827,16 @@ struct EpisodeDetailSheet: View {
                 }
                 Text(resolvedSource == nil && isResolvingSource
                      ? "Finding service…"
-                     : "Watch on \(whereToWatchLabel)")
+                     : "Watch on")
                     .scaledFont(size: 17, weight: .semibold)
+                    .lineLimit(1)
                 if hasResolvedPlatform, !whereToWatchLabel.isEmpty {
-                    Text(whereToWatchLabel)
+                    Text(whereToWatchLabel.uppercased())
                         .scaledFont(size: 11, weight: .bold)
-                        .foregroundStyle(Color(red: 0x5A/255, green: 0x2C/255, blue: 0x06/255))
+                        .foregroundStyle(.white)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 3)
-                        .background(RoundedRectangle(cornerRadius: 6).fill(Color.white.opacity(0.30)))
+                        .background(RoundedRectangle(cornerRadius: 6).fill(platformColor))
                 }
             }
             .foregroundStyle(.white)

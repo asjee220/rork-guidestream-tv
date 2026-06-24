@@ -1041,13 +1041,9 @@ struct ShowDetailScreen: View {
                             Image(systemName: "play.fill")
                                 .scaledFont(size: 15, weight: .bold)
 
-                            if let ep = latestEpisode {
-                                Text("Watch S\(ep.seasonNum) E\(ep.episodeNum)")
-                                    .scaledFont(size: 15, weight: .bold)
-                            } else {
-                                Text("Watch Now")
-                                    .scaledFont(size: 15, weight: .bold)
-                            }
+                            Text("Watch on")
+                                .scaledFont(size: 15, weight: .bold)
+                                .lineLimit(1)
 
                             if let badge = primaryServiceShortName {
                                 Text(badge.uppercased())
@@ -1057,7 +1053,7 @@ struct ShowDetailScreen: View {
                                     .padding(.vertical, 3)
                                     .background(
                                         RoundedRectangle(cornerRadius: 4, style: .continuous)
-                                            .fill(Color.white.opacity(0.22))
+                                            .fill(vm.primaryService?.color ?? Color.white.opacity(0.22))
                                     )
                             }
                         }

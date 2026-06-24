@@ -552,8 +552,17 @@ struct PlayOnBottomSheet: View {
                 }
                 Text(resolvedSource == nil && isResolvingSource
                      ? "Finding service…"
-                     : "Watch on \(whereToWatchLabel)")
+                     : "Watch on")
                     .scaledFont(size: 17, weight: .semibold)
+                    .lineLimit(1)
+                if hasResolvedPlatform, !whereToWatchLabel.isEmpty {
+                    Text(whereToWatchLabel.uppercased())
+                        .scaledFont(size: 11, weight: .bold)
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(RoundedRectangle(cornerRadius: 6).fill(platformColor))
+                }
             }
             .foregroundStyle(.white)
             .frame(maxWidth: .infinity)
