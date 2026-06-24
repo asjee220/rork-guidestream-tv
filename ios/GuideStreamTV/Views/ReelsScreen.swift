@@ -151,6 +151,16 @@ final class ReelsViewModel {
     private let tmdb = TMDBService.shared
     private var hasLoaded: Bool = false
 
+    /// TMDB provider IDs for the user's subscribed services, used to surface
+    /// movies that are currently streaming (not just theatrical / upcoming).
+    private let tmdbProviderIdMap: [String: Int] = [
+        "netflix": 8, "prime": 9, "disney": 337, "hbo": 1899, "hulu": 15,
+        "appletv": 350, "paramount": 531, "peacock": 386, "starz": 43,
+        "showtime": 37, "crunchyroll": 283, "amc": 526, "discovery": 584,
+        "mubi": 11, "britbox": 151, "fubo": 257, "tubi": 73, "pluto": 300,
+        "youtube": 192
+    ]
+
     /// Loads the feed once per app session. Subsequent calls are no-ops so the
     /// data is shared across reentries into the Reels tab.
     func loadIfNeeded() async {
@@ -163,15 +173,18 @@ final class ReelsViewModel {
         isLoading = true
         defer { isLoading = false }
 
-        // Fetch the five source lists in parallel.
+        // Fetch source lists in parallel — including movies currently on the
+        // user's subscribed services so the feed includes streaming movies,
+        // not just theatrical / upcoming titles.
         async let trendingTask: [TMDBResult] = (try? tmdb.getTrending()) ?? []
         async let onAirTask: [TMDBResult] = (try? tmdb.getOnTheAir()) ?? []
         async let myStreamsTask: [UserStream] = fetchMyStreams()
         async let nowPlayingTask: [TMDBResult] = (try? tmdb.getNowPlayingMovies()) ?? []
         async let popularTVTask: [TMDBResult] = (try? tmdb.getPopularTV()) ?? []
         async let upcomingTask: [TMDBResult] = (try? tmdb.getUpcomingMovies()) ?? []
+        async let streamingMoviesTask: [TMDBResult] = fetchStreamingMovies()
 
-        let (trending, onAir, mine, nowPlaying, popularTV, upcoming) = await (trendingTask, onAirTask, myStreamsTask, nowPlayingTask, popularTVTask, upcomingTask)
+        let (trending, onAir, mine, nowPlaying, popularTV, upcoming, streamingMovies) = await (trendingTask, onAirTask, myStreamsTask, nowPlayingTask, popularTVTask, upcomingTask, streamingMoviesTask)
 
         // For each show, fetch its YouTube trailer key + TMDB detail.
         // Keep the work parallel but capped to avoid hammering TMDB.
@@ -181,6 +194,7 @@ final class ReelsViewModel {
         let nowPlayingItems = await buildItems(from: Array(nowPlaying.prefix(50)), tab: .new)
         let popularTVItems = await buildItems(from: Array(popularTV.prefix(50)), tab: .forYou)
         let comingSoonItems = await buildItems(from: Array(upcoming.prefix(50)), tab: .comingSoon)
+        let streamingMovieItems = await buildItems(from: Array(streamingMovies.prefix(50)), tab: .new)
 
         // Backfill For You feed with trending when the account has a light watchlist.
         var forYouCombined = forYouItems + popularTVItems
@@ -193,7 +207,7 @@ final class ReelsViewModel {
             }
         }
 
-        var combined = forYouCombined + trendingItems + newItems + nowPlayingItems + comingSoonItems
+        var combined = forYouCombined + trendingItems + newItems + nowPlayingItems + streamingMovieItems + comingSoonItems
 
         // Deduplicate by trailer key so the same video doesn't appear twice.
         var seen = Set<String>()
@@ -280,6 +294,25 @@ final class ReelsViewModel {
         } catch {
             return []
         }
+    }
+
+    /// Fetches popular movies currently streaming on the user's subscribed
+    /// services so the reels feed includes movies available to watch now —
+    /// not just theatrical releases or upcoming titles.
+    private func fetchStreamingMovies() async -> [TMDBResult] {
+        let selected = AuthViewModel.shared.selectedServices
+        guard !selected.isEmpty else { return [] }
+
+        var allMovies: [TMDBResult] = []
+        for serviceId in selected {
+            guard let providerId = tmdbProviderIdMap[serviceId] else { continue }
+            if let results = try? await tmdb.getPopularMoviesOnService(tmdbProviderId: providerId) {
+                allMovies.append(contentsOf: results.prefix(10))
+            }
+        }
+        // Deduplicate by TMDB id — a movie may appear on multiple services.
+        var seen = Set<Int>()
+        return allMovies.filter { seen.insert($0.id).inserted }
     }
 
     private func buildItems(from results: [TMDBResult], tab: ReelTab) async -> [TrailerItem] {

@@ -983,9 +983,10 @@ struct HomeView: View {
         providerByTmdb = next
     }
 
-    /// Fetches popular TV shows for each of the user's selected streaming
-    /// services using TMDB's provider-filtered discover endpoint. Results are
-    /// capped to 10 per service and cached in `popularOnServiceResults`.
+    /// Fetches popular TV shows AND movies for each of the user's selected
+    /// streaming services using TMDB's provider-filtered discover endpoint.
+    /// Each service gets up to 10 TV shows and 5 movies, merged and capped
+    /// to 12 total so the horizontal rail stays snappy.
     private func loadPopularOnServices() async {
         let services = StreamingCatalog.ordered(from: auth.selectedServices)
         let collected: [(String, [TMDBResult])] = await withTaskGroup(
@@ -994,8 +995,23 @@ struct HomeView: View {
             for service in services {
                 guard let providerId = tmdbProviderIdMap[service.id] else { continue }
                 group.addTask {
-                    let items = (try? await TMDBService.shared.getPopularOnService(tmdbProviderId: providerId)) ?? []
-                    return (service.id, Array(items.prefix(10)))
+                    async let tvItems = (try? await TMDBService.shared.getPopularOnService(tmdbProviderId: providerId)) ?? []
+                    async let movieItems = (try? await TMDBService.shared.getPopularMoviesOnService(tmdbProviderId: providerId)) ?? []
+                    let (tv, movies) = await (tvItems, movieItems)
+                    // Interleave: show → movie → show → movie so both types are visible.
+                    var merged: [TMDBResult] = []
+                    let tvSlice = tv.prefix(10)
+                    let movieSlice = movies.prefix(5)
+                    var ti = tvSlice.makeIterator()
+                    var mi = movieSlice.makeIterator()
+                    while merged.count < 12 {
+                        if let t = ti.next() { merged.append(t) }
+                        if merged.count >= 12 { break }
+                        if let m = mi.next() { merged.append(m) }
+                        if merged.count >= 12 { break }
+                        if ti.next() == nil && mi.next() == nil { break }
+                    }
+                    return (service.id, merged)
                 }
             }
             var results: [(String, [TMDBResult])] = []

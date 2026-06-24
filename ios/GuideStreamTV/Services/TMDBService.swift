@@ -447,12 +447,35 @@ nonisolated struct TMDBService {
     }
 
     /// Trailers / teasers attached to a TV show. Returns a YouTube key for the best match, or nil.
+    /// For ongoing shows, also checks season-specific video endpoints (latest 3 seasons)
+    /// because TMDB's main `/tv/{id}/videos` often only carries the original pilot trailer.
     func getTrailerKey(tmdbId: Int) async throws -> String? {
-        let urlString = "\(base)/tv/\(tmdbId)/videos?api_key=\(apiKey)&language=en-US"
-        let data = try await get(urlString)
-        let env = try JSONDecoder().decode(TMDBVideosEnvelope.self, from: data)
-        let yt = env.results.filter { $0.site == "YouTube" && ($0.type == "Trailer" || $0.type == "Teaser") }
-        if yt.isEmpty { return env.results.first?.key }
+        // 1. Grab the main video list.
+        let mainUrl = "\(base)/tv/\(tmdbId)/videos?api_key=\(apiKey)&language=en-US"
+        let mainData = try await get(mainUrl)
+        let mainEnv = try JSONDecoder().decode(TMDBVideosEnvelope.self, from: mainData)
+        var allVideos = mainEnv.results
+
+        // 2. Try to discover newer trailers via season-specific endpoints.
+        if let detail = try? await getTVDetail(tmdbId: tmdbId),
+           let seasons = detail.numberOfSeasons, seasons > 1 {
+            let startSeason = seasons
+            let endSeason = max(1, seasons - 2)
+            for season in stride(from: startSeason, through: endSeason, by: -1) {
+                guard let seasonData = try? await get("\(base)/tv/\(tmdbId)/season/\(season)/videos?api_key=\(apiKey)&language=en-US"),
+                      let seasonEnv = try? JSONDecoder().decode(TMDBVideosEnvelope.self, from: seasonData)
+                else { continue }
+                allVideos.append(contentsOf: seasonEnv.results)
+            }
+        }
+
+        // 3. Deduplicate by key — season endpoints may return the same videos as the main list.
+        var seen = Set<String>()
+        let unique = allVideos.filter { seen.insert($0.key).inserted }
+
+        // 4. Filter to YouTube Trailers/Teasers and sort: official → newest → Trailer over Teaser.
+        let yt = unique.filter { $0.site == "YouTube" && ($0.type == "Trailer" || $0.type == "Teaser") }
+        if yt.isEmpty { return unique.first?.key }
         let sorted = yt.sorted { a, b in
             let aOfficial = a.official == true ? 1 : 0
             let bOfficial = b.official == true ? 1 : 0
@@ -557,6 +580,16 @@ nonisolated struct TMDBService {
         let data = try await get(urlString)
         let env = try JSONDecoder().decode(TMDBTrendingEnvelope.self, from: data)
         return env.results.map { stamp($0, mediaType: "tv") }
+    }
+
+    /// Popular movies currently available on a specific streaming service,
+    /// using TMDB's discover endpoint filtered to flat-rate + ad-supported
+    /// titles available in the US. Mirrors `getPopularOnService` but for movies.
+    func getPopularMoviesOnService(tmdbProviderId: Int) async throws -> [TMDBResult] {
+        let urlString = "\(base)/discover/movie?api_key=\(apiKey)&language=en-US&sort_by=popularity.desc&watch_region=US&with_watch_providers=\(tmdbProviderId)&with_watch_monetization_types=flatrate%7Cads&page=1"
+        let data = try await get(urlString)
+        let env = try JSONDecoder().decode(TMDBTrendingEnvelope.self, from: data)
+        return env.results.map { stamp($0, mediaType: "movie") }
     }
 
     /// "What's New Today" — trending TV + movies for the current day, capturing
