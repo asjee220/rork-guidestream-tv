@@ -44,7 +44,7 @@ func gsBrandColor(for name: String) -> Color {
  if k.contains("disney") { return Color(red:0.049,green:0.098,blue:0.420) }
  if k.contains("apple") { return Color(white:0.12) }
  if k.contains("prime") || k.contains("amazon") { return Color(red:0.0,green:0.659,blue:0.929) }
- if k.contains("paramount") { return Color(red:0.0,green:0.400,blue:0.949) }
+ if k.contains("paramount") { return Color(red: 0x00/255, green: 0x64/255, blue: 0xFF/255) }
  if k.contains("peacock") { return Color(red:0.043,green:0.043,blue:0.098) }
  if k.contains("youtube") { return Color(red:0.898,green:0.098,blue:0.098) }
  if k.contains("starz") { return Color(red:0.1,green:0.1,blue:0.1) }

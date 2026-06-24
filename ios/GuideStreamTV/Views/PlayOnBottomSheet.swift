@@ -86,7 +86,7 @@ struct PlayOnBottomSheet: View {
         if key.contains("disney") { return Color(red: 0.05, green: 0.10, blue: 0.42) }
         if key.contains("apple") { return Color(white: 0.12) }
         if key.contains("prime") || key.contains("amazon") { return Color(red: 0.0, green: 0.66, blue: 0.93) }
-        if key.contains("paramount") { return Color(red: 0.0, green: 0.40, blue: 0.95) }
+        if key.contains("paramount") { return Color(red: 0x00/255, green: 0x64/255, blue: 0xFF/255) }
         if key.contains("peacock") { return Color(red: 0.05, green: 0.05, blue: 0.10) }
         if key.contains("youtube") { return Color(red: 0.90, green: 0.10, blue: 0.10) }
         if key.contains("crunchyroll") { return Color(red: 0xF4/255, green: 0x7B/255, blue: 0x20/255) }

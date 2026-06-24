@@ -1208,7 +1208,7 @@ struct HomeView: View {
             case "HULU": platform = .hulu
             case "PRIME", "AMAZON", "AMAZON PRIME": platform = .prime
             case "DISNEY+", "DISNEY": platform = .disney
-            case "PARAMOUNT+", "PARAMOUNT": platform = .paramount
+            case "PARAMOUNT+", "PARAMOUNT", "PARAMOUNT PLUS": platform = .paramount
             case "PEACOCK": platform = .peacock
             case "CRUNCHYROLL": platform = .crunchyroll
             case "YOUTUBE": platform = .youtube
@@ -1281,7 +1281,7 @@ struct HomeView: View {
             case "HULU": platform = .hulu
             case "PRIME", "AMAZON", "AMAZON PRIME": platform = .prime
             case "DISNEY+", "DISNEY": platform = .disney
-            case "PARAMOUNT+", "PARAMOUNT": platform = .paramount
+            case "PARAMOUNT+", "PARAMOUNT", "PARAMOUNT PLUS": platform = .paramount
             case "PEACOCK": platform = .peacock
             case "CRUNCHYROLL": platform = .crunchyroll
             case "YOUTUBE": platform = .youtube
