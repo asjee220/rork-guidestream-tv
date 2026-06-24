@@ -216,6 +216,13 @@ nonisolated struct TMDBVideo: Decodable, Sendable {
     let name: String?
     let site: String?
     let type: String?
+    let publishedAt: String?
+    let official: Bool?
+
+    enum CodingKeys: String, CodingKey {
+        case key, name, site, type, official
+        case publishedAt = "published_at"
+    }
 }
 
 private nonisolated struct TMDBVideosEnvelope: Decodable, Sendable {
@@ -445,7 +452,19 @@ nonisolated struct TMDBService {
         let data = try await get(urlString)
         let env = try JSONDecoder().decode(TMDBVideosEnvelope.self, from: data)
         let yt = env.results.filter { $0.site == "YouTube" && ($0.type == "Trailer" || $0.type == "Teaser") }
-        return yt.first?.key ?? env.results.first?.key
+        if yt.isEmpty { return env.results.first?.key }
+        let sorted = yt.sorted { a, b in
+            let aOfficial = a.official == true ? 1 : 0
+            let bOfficial = b.official == true ? 1 : 0
+            if aOfficial != bOfficial { return aOfficial > bOfficial }
+            let aDate = a.publishedAt ?? ""
+            let bDate = b.publishedAt ?? ""
+            if aDate != bDate { return aDate > bDate }
+            let aIsTrailer = a.type == "Trailer" ? 1 : 0
+            let bIsTrailer = b.type == "Trailer" ? 1 : 0
+            return aIsTrailer > bIsTrailer
+        }
+        return sorted.first?.key
     }
 
     func getMovieTrailerKey(tmdbId: Int) async throws -> String? {
@@ -453,7 +472,19 @@ nonisolated struct TMDBService {
         let data = try await get(urlString)
         let env = try JSONDecoder().decode(TMDBVideosEnvelope.self, from: data)
         let yt = env.results.filter { $0.site == "YouTube" && ($0.type == "Trailer" || $0.type == "Teaser") }
-        return yt.first?.key ?? env.results.first?.key
+        if yt.isEmpty { return env.results.first?.key }
+        let sorted = yt.sorted { a, b in
+            let aOfficial = a.official == true ? 1 : 0
+            let bOfficial = b.official == true ? 1 : 0
+            if aOfficial != bOfficial { return aOfficial > bOfficial }
+            let aDate = a.publishedAt ?? ""
+            let bDate = b.publishedAt ?? ""
+            if aDate != bDate { return aDate > bDate }
+            let aIsTrailer = a.type == "Trailer" ? 1 : 0
+            let bIsTrailer = b.type == "Trailer" ? 1 : 0
+            return aIsTrailer > bIsTrailer
+        }
+        return sorted.first?.key
     }
 
     private func stamp(_ r: TMDBResult, mediaType: String) -> TMDBResult {
