@@ -723,12 +723,13 @@ struct HomeView: View {
                         .transition(.move(edge: .top).combined(with: .opacity))
                     }
                 }
-                .background(Color.navy.opacity(0.50))
-                .background(.ultraThinMaterial)
+                .background(Color.navy.opacity(0.10).background(.ultraThinMaterial))
                 .overlay(alignment: .bottom) {
-                    Color.white.opacity(0.05)
-                        .frame(height: 1)
+                    Rectangle()
+                        .fill(Color.white.opacity(0.05))
+                        .frame(height: 0.5)
                 }
+                .allowsHitTesting(true)
                 .animation(.spring(response: 0.4, dampingFraction: 0.82), value: castPlayback.current?.id)
             }
             .background(BrandBackground())
