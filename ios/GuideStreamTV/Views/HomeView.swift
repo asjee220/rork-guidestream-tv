@@ -1048,7 +1048,7 @@ struct HomeView: View {
         if items.count < 8, let nextUp = sportsGames.first(where: { $0.state == .pre }) {
             items.append(.game(nextUp))
         }
-        return items.shuffled()
+        return items
     }
 
     /// Opens a news article in Safari. News items come from NewsAPI —
@@ -2332,7 +2332,7 @@ private struct PlatformRow: View {
 
     var body: some View {
         SectionGlassCard(
-            title: "New on \(platformName)",
+            title: "Popular on \(platformName)",
             accentColor: platformColor
         ) {
             ScrollView(.horizontal, showsIndicators: false) {
@@ -2884,7 +2884,7 @@ private struct UpcomingEpisodeCard: View {
     }
 }
 
-// MARK: - New on Service section
+// MARK: - Popular on Service section
 
 private struct PopularOnServiceSection: View {
     let serviceName: String
