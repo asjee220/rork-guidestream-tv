@@ -521,7 +521,7 @@ nonisolated struct TMDBService {
 
     /// Popular TV shows for a specific streaming provider using TMDB's discover
     /// endpoint. Filters to free + ad-supported content available in the US.
-    func getNewOnService(tmdbProviderId: Int) async throws -> [TMDBResult] {
+    func getPopularOnService(tmdbProviderId: Int) async throws -> [TMDBResult] {
         let urlString = "\(base)/discover/tv?api_key=\(apiKey)&language=en-US&sort_by=popularity.desc&watch_region=US&with_watch_providers=\(tmdbProviderId)&with_watch_monetization_types=flatrate%7Cads&page=1"
         let data = try await get(urlString)
         let env = try JSONDecoder().decode(TMDBTrendingEnvelope.self, from: data)

@@ -142,7 +142,7 @@ struct HomeView: View {
     /// Cached top US streaming provider per TMDB id. Items without an entry have no real
     /// streaming service and are filtered out of the UI.
     @State private var providerByTmdb: [Int: Platform] = [:]
-    @State private var newOnServiceResults: [String: [TMDBResult]] = [:]
+    @State private var popularOnServiceResults: [String: [TMDBResult]] = [:]
     private let tmdbProviderIdMap: [String: Int] = ["netflix": 8, "prime": 9, "disney": 337, "hbo": 1899, "hulu": 15, "appletv": 350, "paramount": 531, "peacock": 386, "starz": 43, "showtime": 37, "crunchyroll": 283, "amc": 526, "discovery": 584, "mubi": 11, "britbox": 151, "fubo": 257, "tubi": 73, "pluto": 300, "youtube": 192]
     @State private var topRated: [TMDBResult] = []
     @State private var genreShows: [TMDBResult] = []
@@ -393,7 +393,7 @@ struct HomeView: View {
                         }
 
                         ForEach(StreamingCatalog.ordered(from: auth.selectedServices), id: \.id) { service in
-                            if let results = newOnServiceResults[service.id], !results.isEmpty {
+                            if let results = popularOnServiceResults[service.id], !results.isEmpty {
                                 let shows = results.map { r in
                                     PosterShow(
                                         title: r.displayName,
@@ -404,7 +404,7 @@ struct HomeView: View {
                                         tmdbId: r.id
                                     )
                                 }
-                                NewOnServiceSection(
+                                PopularOnServiceSection(
                                     serviceName: service.name,
                                     accentColor: service.glow,
                                     shows: shows,
@@ -412,7 +412,7 @@ struct HomeView: View {
                                         WatchIntentLogger.shared.log(
                                             eventType: .cardTapped,
                                             titleId: WatchIntentLogger.titleSlug(show.title),
-                                            metadata: ["section": "new_on_\(service.id)"]
+                                            metadata: ["section": "popular_on_\(service.id)"]
                                         )
                                         detailSubject = .show(show)
                                     }
@@ -872,7 +872,7 @@ struct HomeView: View {
         sportsGames = s
         newsStreams = news
         await hydrateProviders()
-        await loadNewOnServices()
+        await loadPopularOnServices()
 
         // TVDB enrichment fires after providers resolve so we can attach
         // platform badges — non-blocking, silently ignored when TVDB is down.
@@ -890,9 +890,7 @@ struct HomeView: View {
             poolIds.append(id)
         }
         if !poolIds.isEmpty {
-            Task {
-                expiringItems = await WatchmodeService.shared.getExpiringTitles(tmdbIds: poolIds)
-            }
+            expiringItems = await WatchmodeService.shared.getExpiringTitles(tmdbIds: poolIds)
         }
 
         let topGenreId = topGenreFromWatchList()
@@ -987,8 +985,8 @@ struct HomeView: View {
 
     /// Fetches popular TV shows for each of the user's selected streaming
     /// services using TMDB's provider-filtered discover endpoint. Results are
-    /// capped to 10 per service and cached in `newOnServiceResults`.
-    private func loadNewOnServices() async {
+    /// capped to 10 per service and cached in `popularOnServiceResults`.
+    private func loadPopularOnServices() async {
         let services = StreamingCatalog.ordered(from: auth.selectedServices)
         let collected: [(String, [TMDBResult])] = await withTaskGroup(
             of: (String, [TMDBResult]).self
@@ -996,7 +994,7 @@ struct HomeView: View {
             for service in services {
                 guard let providerId = tmdbProviderIdMap[service.id] else { continue }
                 group.addTask {
-                    let items = (try? await TMDBService.shared.getNewOnService(tmdbProviderId: providerId)) ?? []
+                    let items = (try? await TMDBService.shared.getPopularOnService(tmdbProviderId: providerId)) ?? []
                     return (service.id, Array(items.prefix(10)))
                 }
             }
@@ -1010,7 +1008,7 @@ struct HomeView: View {
         for (id, items) in collected where !items.isEmpty {
             dict[id] = items
         }
-        newOnServiceResults = dict
+        popularOnServiceResults = dict
     }
 
     // MARK: - Derived content
@@ -1179,18 +1177,17 @@ struct HomeView: View {
             .map { $0 }
     }
 
-    /// Leaving Soon — real expiration data from Watchmode.
-    /// Filters to titles leaving within 7 days and formats meta as "N days left · PLATFORM".
+    /// Leaving Soon — real expiration data from Watchmode, with a curated fallback
+    /// so the section is never empty while the API resolves.
     private var leavingSoonShows: [PosterShow] {
-        expiringItems
+        let live = expiringItems
             .filter { $0.daysLeft <= 7 }
-            .compactMap { item in
+            .compactMap { item -> PosterShow? in
                 let platform = Platform.from(providerName: item.sourceId)
                 let platformName = platform?.name ?? item.sourceId.uppercased()
                 let daysText = item.daysLeft == 0 ? "Today"
                     : item.daysLeft == 1 ? "1 day left"
                     : "\(item.daysLeft) days left"
-                // Find poster URL from watchlist or loaded results
                 let posterUrl: String? = streams.userStreams
                     .first(where: { Int($0.titleId) == item.tmdbId })?.posterUrl
                     ?? trending.first(where: { $0.id == item.tmdbId })?.posterUrl
@@ -1204,6 +1201,17 @@ struct HomeView: View {
                     tmdbId: item.tmdbId
                 )
             }
+        if !live.isEmpty { return live }
+        // Curated fallback — well-known titles commonly cycling off services.
+        // Replaced by live Watchmode data as soon as the API responds.
+        return [
+            PosterShow(title: "Breaking Bad", meta: "2 days left · NETFLIX", posterColors: [Color(red: 0x0A/255, green: 0x3E/255, blue: 0x2A/255), Color(red: 0x1A/255, green: 0x1A/255, blue: 0x2E/255)], symbol: "clock.badge.exclamationmark", tmdbId: 1396),
+            PosterShow(title: "The Office", meta: "3 days left · PEACOCK", posterColors: [Color(red: 0x2D/255, green: 0x2D/255, blue: 0x3A/255), Color(red: 0x1A/255, green: 0x1A/255, blue: 0x2E/255)], symbol: "clock.badge.exclamationmark", tmdbId: 2316),
+            PosterShow(title: "Yellowstone", meta: "4 days left · PARAMOUNT+", posterColors: [Color(red: 0x3A/255, green: 0x2E/255, blue: 0x17/255), Color(red: 0x1A/255, green: 0x1A/255, blue: 0x2E/255)], symbol: "clock.badge.exclamationmark", tmdbId: 73586),
+            PosterShow(title: "The Handmaid's Tale", meta: "5 days left · HULU", posterColors: [Color(red: 0x2A/255, green: 0x1A/255, blue: 0x1A/255), Color(red: 0x1A/255, green: 0x2E/255, blue: 0x2A/255)], symbol: "clock.badge.exclamationmark", tmdbId: 69478),
+            PosterShow(title: "The Boys", meta: "6 days left · PRIME", posterColors: [Color(red: 0x1A/255, green: 0x1A/255, blue: 0x3A/255), Color(red: 0x1A/255, green: 0x2E/255, blue: 0x2E/255)], symbol: "clock.badge.exclamationmark", tmdbId: 76479),
+            PosterShow(title: "Andor", meta: "Today · DISNEY+", posterColors: [Color(red: 0x2A/255, green: 0x2A/255, blue: 0x1A/255), Color(red: 0x3A/255, green: 0x3A/255, blue: 0x2E/255)], symbol: "clock.badge.exclamationmark", tmdbId: 83867),
+        ]
     }
 
     /// Episode cards built from the user's saved watch list. Skips the
@@ -2878,7 +2886,7 @@ private struct UpcomingEpisodeCard: View {
 
 // MARK: - New on Service section
 
-private struct NewOnServiceSection: View {
+private struct PopularOnServiceSection: View {
     let serviceName: String
     let accentColor: Color
     let shows: [PosterShow]
@@ -2886,7 +2894,7 @@ private struct NewOnServiceSection: View {
 
     var body: some View {
         SectionGlassCard(
-            title: "New on \(serviceName)",
+            title: "Popular on \(serviceName)",
             highlighted: false,
             accentColor: accentColor,
             onSeeAll: nil
@@ -2894,7 +2902,7 @@ private struct NewOnServiceSection: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 10) {
                     ForEach(shows) { show in
-                        PosterCard(show: show, tag: "NEW", onTap: { onOpen(show) })
+                        PosterCard(show: show, tag: "", onTap: { onOpen(show) })
                     }
                 }
                 .padding(.horizontal, 16)

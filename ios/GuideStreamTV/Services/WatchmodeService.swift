@@ -88,7 +88,13 @@ nonisolated struct WatchmodeService {
         await withTaskGroup(of: (Int, String, Int, String)?.self) { group in
             for tmdbId in tmdbIds.prefix(25) {
                 group.addTask {
-                    guard let wmId = try? await WatchmodeService.shared.watchmodeId(forTMDBId: tmdbId, isTV: true),
+                    // Try TV lookup first, fall back to movie — TMDB trending
+                    // mixes both types so a single lookup field misses half the pool.
+                    var wmId: String? = try? await WatchmodeService.shared.watchmodeId(forTMDBId: tmdbId, isTV: true)
+                    if wmId == nil {
+                        wmId = try? await WatchmodeService.shared.watchmodeId(forTMDBId: tmdbId, isTV: false)
+                    }
+                    guard let wmId,
                           let detail = try? await WatchmodeService.shared.titleDetail(titleId: wmId),
                           let sources = detail.sources
                     else { return nil }
