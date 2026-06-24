@@ -148,6 +148,7 @@ struct HomeView: View {
     @State private var genreShows: [TMDBResult] = []
     @State private var recommendedShows: [TMDBResult] = []
     @State private var expiringItems: [(tmdbId: Int, title: String, daysLeft: Int, sourceId: String)] = []
+    @State private var expiringPosterUrls: [Int: String] = [:]
     @State private var selectedGenreId: Int = 80
     @State private var selectedGenreName: String = "Crime"
     @State private var tvdbUpcomingItems: [TVDBUpcomingItem] = []
@@ -548,22 +549,6 @@ struct HomeView: View {
                             .padding(.horizontal, 20)
                         }
 
-                        if !leavingSoonShows.isEmpty {
-                            LeavingSoonSection(
-                                shows: leavingSoonShows,
-                                onSeeAll: nil,
-                                onOpen: { show in
-                                    WatchIntentLogger.shared.log(
-                                        eventType: .cardTapped,
-                                        titleId: WatchIntentLogger.titleSlug(show.title),
-                                        metadata: ["section": "leaving_soon"]
-                                    )
-                                    detailSubject = .show(show)
-                                }
-                            )
-                            .padding(.horizontal, 20)
-                        }
-
                         if !newSeasonsYouKnow.isEmpty {
                             NewSeasonsSection(
                                 results: newSeasonsYouKnow,
@@ -837,6 +822,13 @@ struct HomeView: View {
             await streams.refreshAll()
             await loadTrendingIfNeeded()
             await loadComingToStreaming()
+            // Push updated widget data on pull-to-refresh.
+            WidgetDataService.shared.push(
+                expiringItems: expiringItems,
+                posterUrls: expiringPosterUrls,
+                watchlistCount: streams.userStreams.count,
+                newEpisodeCount: streams.newEpisodes.count
+            )
         }
     }
 
@@ -891,7 +883,16 @@ struct HomeView: View {
         }
         if !poolIds.isEmpty {
             expiringItems = await WatchmodeService.shared.getExpiringTitles(tmdbIds: poolIds)
+            await resolveExpiringPosters()
         }
+
+        // Push fresh data to the widget via App Group UserDefaults.
+        WidgetDataService.shared.push(
+            expiringItems: expiringItems,
+            posterUrls: expiringPosterUrls,
+            watchlistCount: streams.userStreams.count,
+            newEpisodeCount: streams.newEpisodes.count
+        )
 
         let topGenreId = topGenreFromWatchList()
         if topGenreId.id != selectedGenreId {
@@ -1193,6 +1194,33 @@ struct HomeView: View {
             .map { $0 }
     }
 
+    /// Fetches TMDB TV detail for each expiring item in parallel and caches the
+    /// poster URL keyed by tmdbId so `leavingSoonShows` always has real artwork.
+    /// Also resolves posters for the curated fallback so those cards are never blank.
+    private func resolveExpiringPosters() async {
+        let fallbackIds: Set<Int> = [1396, 2316, 73586, 69478, 76479, 83867]
+        let allIds = Set(expiringItems.map { $0.tmdbId }).union(fallbackIds)
+        guard !allIds.isEmpty else { return }
+
+        var fresh: [Int: String] = [:]
+        await withTaskGroup(of: (Int, String?).self) { group in
+            for tmdbId in allIds {
+                group.addTask {
+                    guard let detail = try? await TMDBService.shared.getTVDetail(tmdbId: tmdbId) else {
+                        return (tmdbId, nil)
+                    }
+                    return (tmdbId, detail.posterUrl)
+                }
+            }
+            for await (id, url) in group {
+                fresh[id] = url
+            }
+        }
+        // Merge into the existing dictionary so earlier posters aren't discarded
+        // when a second batch arrives.
+        expiringPosterUrls.merge(fresh) { _, new in new }
+    }
+
     /// Leaving Soon — real expiration data from Watchmode, with a curated fallback
     /// so the section is never empty while the API resolves.
     private var leavingSoonShows: [PosterShow] {
@@ -1204,8 +1232,11 @@ struct HomeView: View {
                 let daysText = item.daysLeft == 0 ? "Today"
                     : item.daysLeft == 1 ? "1 day left"
                     : "\(item.daysLeft) days left"
-                let posterUrl: String? = streams.userStreams
-                    .first(where: { Int($0.titleId) == item.tmdbId })?.posterUrl
+                // Ordered lookup: dedicated poster map, then user streams, then
+                // trending, then on-air — ensures real artwork is always found.
+                let posterUrl: String? = expiringPosterUrls[item.tmdbId]
+                    ?? streams.userStreams
+                        .first(where: { Int($0.titleId) == item.tmdbId })?.posterUrl
                     ?? trending.first(where: { $0.id == item.tmdbId })?.posterUrl
                     ?? onAir.first(where: { $0.id == item.tmdbId })?.posterUrl
                 return PosterShow(
@@ -1219,14 +1250,14 @@ struct HomeView: View {
             }
         if !live.isEmpty { return live }
         // Curated fallback — well-known titles commonly cycling off services.
-        // Replaced by live Watchmode data as soon as the API responds.
+        // Poster URLs resolved by resolveExpiringPosters() alongside live items.
         return [
-            PosterShow(title: "Breaking Bad", meta: "2 days left · NETFLIX", posterColors: [Color(red: 0x0A/255, green: 0x3E/255, blue: 0x2A/255), Color(red: 0x1A/255, green: 0x1A/255, blue: 0x2E/255)], symbol: "clock.badge.exclamationmark", tmdbId: 1396),
-            PosterShow(title: "The Office", meta: "3 days left · PEACOCK", posterColors: [Color(red: 0x2D/255, green: 0x2D/255, blue: 0x3A/255), Color(red: 0x1A/255, green: 0x1A/255, blue: 0x2E/255)], symbol: "clock.badge.exclamationmark", tmdbId: 2316),
-            PosterShow(title: "Yellowstone", meta: "4 days left · PARAMOUNT+", posterColors: [Color(red: 0x3A/255, green: 0x2E/255, blue: 0x17/255), Color(red: 0x1A/255, green: 0x1A/255, blue: 0x2E/255)], symbol: "clock.badge.exclamationmark", tmdbId: 73586),
-            PosterShow(title: "The Handmaid's Tale", meta: "5 days left · HULU", posterColors: [Color(red: 0x2A/255, green: 0x1A/255, blue: 0x1A/255), Color(red: 0x1A/255, green: 0x2E/255, blue: 0x2A/255)], symbol: "clock.badge.exclamationmark", tmdbId: 69478),
-            PosterShow(title: "The Boys", meta: "6 days left · PRIME", posterColors: [Color(red: 0x1A/255, green: 0x1A/255, blue: 0x3A/255), Color(red: 0x1A/255, green: 0x2E/255, blue: 0x2E/255)], symbol: "clock.badge.exclamationmark", tmdbId: 76479),
-            PosterShow(title: "Andor", meta: "Today · DISNEY+", posterColors: [Color(red: 0x2A/255, green: 0x2A/255, blue: 0x1A/255), Color(red: 0x3A/255, green: 0x3A/255, blue: 0x2E/255)], symbol: "clock.badge.exclamationmark", tmdbId: 83867),
+            PosterShow(title: "Breaking Bad", meta: "2 days left · NETFLIX", posterColors: [Color(red: 0x0A/255, green: 0x3E/255, blue: 0x2A/255), Color(red: 0x1A/255, green: 0x1A/255, blue: 0x2E/255)], symbol: "clock.badge.exclamationmark", posterUrl: expiringPosterUrls[1396], tmdbId: 1396),
+            PosterShow(title: "The Office", meta: "3 days left · PEACOCK", posterColors: [Color(red: 0x2D/255, green: 0x2D/255, blue: 0x3A/255), Color(red: 0x1A/255, green: 0x1A/255, blue: 0x2E/255)], symbol: "clock.badge.exclamationmark", posterUrl: expiringPosterUrls[2316], tmdbId: 2316),
+            PosterShow(title: "Yellowstone", meta: "4 days left · PARAMOUNT+", posterColors: [Color(red: 0x3A/255, green: 0x2E/255, blue: 0x17/255), Color(red: 0x1A/255, green: 0x1A/255, blue: 0x2E/255)], symbol: "clock.badge.exclamationmark", posterUrl: expiringPosterUrls[73586], tmdbId: 73586),
+            PosterShow(title: "The Handmaid's Tale", meta: "5 days left · HULU", posterColors: [Color(red: 0x2A/255, green: 0x1A/255, blue: 0x1A/255), Color(red: 0x1A/255, green: 0x2E/255, blue: 0x2A/255)], symbol: "clock.badge.exclamationmark", posterUrl: expiringPosterUrls[69478], tmdbId: 69478),
+            PosterShow(title: "The Boys", meta: "6 days left · PRIME", posterColors: [Color(red: 0x1A/255, green: 0x1A/255, blue: 0x3A/255), Color(red: 0x1A/255, green: 0x2E/255, blue: 0x2E/255)], symbol: "clock.badge.exclamationmark", posterUrl: expiringPosterUrls[76479], tmdbId: 76479),
+            PosterShow(title: "Andor", meta: "Today · DISNEY+", posterColors: [Color(red: 0x2A/255, green: 0x2A/255, blue: 0x1A/255), Color(red: 0x3A/255, green: 0x3A/255, blue: 0x2E/255)], symbol: "clock.badge.exclamationmark", posterUrl: expiringPosterUrls[83867], tmdbId: 83867),
         ]
     }
 

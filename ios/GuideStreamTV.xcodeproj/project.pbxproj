@@ -10,6 +10,7 @@
 		AB50D61ED0BAE05FA2F8EA /* Supabase in Frameworks */ = {isa = PBXBuildFile; productRef = AB1C9FF110ABBCE8BF456A /* Supabase */; };
 		XX50D61ED0BAE05FA2F8E9XX /* Supabase in Frameworks */ = {isa = PBXBuildFile; productRef = XX1C9FF110ABBCE8BF456CXX /* Supabase */; };
 		XXAC3EF89597191F3A09AEXX /* YouTubeKit in Frameworks */ = {isa = PBXBuildFile; productRef = XX45D5A1BA7EF4022DE2E3XX /* YouTubeKit */; };
+		XXCC7674DCAED9654ED19DXX /* GuideStreamWidget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = XX878FD47A39EC99354D39XX /* GuideStreamWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -27,14 +28,99 @@
 			remoteGlobalIDString = 105FC5792E9EAD3100EA8BCF;
 			remoteInfo = GuideStreamTV;
 		};
+		XX2CCE1F29D24EC5E7279DXX /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 105FC5722E9EAD3100EA8BCF /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = XX6E895901CF0DAEECE76CXX;
+			remoteInfo = GuideStreamWidget;
+		};
 /* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		XX34D8491024DBD4FADA40XX /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				XXCC7674DCAED9654ED19DXX /* GuideStreamWidget.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		105FC57A2E9EAD3100EA8BCF /* GuideStreamTV.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = GuideStreamTV.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		105FC5892E9EAD3200EA8BCF /* GuideStreamTVTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = GuideStreamTVTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		105FC5932E9EAD3200EA8BCF /* GuideStreamTVUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = GuideStreamTVUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		XX80E2B28F6EB68EEE2794XX /* GuideStreamTVTV.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = GuideStreamTVTV.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		XX878FD47A39EC99354D39XX /* GuideStreamWidget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = GuideStreamWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		XX3A109F19F7FEB1EFA9C8XX /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = XX6E895901CF0DAEECE76CXX /* GuideStreamWidget */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		XXFE3FBA6264EA26BA6BC1XX /* GuideStreamWidget */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = GuideStreamWidget;
+			sourceTree = "<group>";
+			exceptions = (
+				XX3A109F19F7FEB1EFA9C8XX /* PBXFileSystemSynchronizedBuildFileExceptionSet */,
+			);
+		};
+/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		105FC5772E9EAD3100EA8BCF /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				XX50D61ED0BAE05FA2F8E9XX /* Supabase in Frameworks */,
+				XXAC3EF89597191F3A09AEXX /* YouTubeKit in Frameworks */,
+				YY10A1B2C3D4E5F6A7B8C9D0YY,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		105FC5862E9EAD3200EA8BCF /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		105FC5902E9EAD3200EA8BCF /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		XX28A9A27FCA465D91AA27XX /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		XX75B8358D2242CEB782C5XX /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AB50D61ED0BAE05FA2F8EA /* Supabase in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		105FC57C2E9EAD3100EA8BCF /* GuideStreamTV */ = {
@@ -64,41 +150,6 @@
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
-/* Begin PBXFrameworksBuildPhase section */
-		105FC5772E9EAD3100EA8BCF /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-				XX50D61ED0BAE05FA2F8E9XX /* Supabase in Frameworks */,
-				XXAC3EF89597191F3A09AEXX /* YouTubeKit in Frameworks */,
-				YY10A1B2C3D4E5F6A7B8C9D0YY /* YouTubeiOSPlayerHelper in Frameworks */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		105FC5862E9EAD3200EA8BCF /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		105FC5902E9EAD3200EA8BCF /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		XX75B8358D2242CEB782C5XX /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-				AB50D61ED0BAE05FA2F8EA /* Supabase in Frameworks */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-/* End PBXFrameworksBuildPhase section */
-
 /* Begin PBXGroup section */
 		105FC5712E9EAD3100EA8BCF = {
 			isa = PBXGroup;
@@ -109,6 +160,7 @@
 				105FC57B2E9EAD3100EA8BCF /* Products */,
 				XX0A484E14E2DE04089045XX /* GuideStreamTVTV */,
 				XXAA11BB22CC33DD44EE55XX /* Shared */,
+				XXFE3FBA6264EA26BA6BC1XX /* GuideStreamWidget */,
 			);
 			sourceTree = "<group>";
 		};
@@ -119,6 +171,7 @@
 				105FC5892E9EAD3200EA8BCF /* GuideStreamTVTests.xctest */,
 				105FC5932E9EAD3200EA8BCF /* GuideStreamTVUITests.xctest */,
 				XX80E2B28F6EB68EEE2794XX /* GuideStreamTVTV.app */,
+				XX878FD47A39EC99354D39XX /* GuideStreamWidget.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -133,10 +186,12 @@
 				105FC5762E9EAD3100EA8BCF /* Sources */,
 				105FC5772E9EAD3100EA8BCF /* Frameworks */,
 				105FC5782E9EAD3100EA8BCF /* Resources */,
+				XX34D8491024DBD4FADA40XX /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				XXE6D9D65E8D45AAD6428FXX /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				105FC57C2E9EAD3100EA8BCF /* GuideStreamTV */,
@@ -197,6 +252,26 @@
 			productName = GuideStreamTVUITests;
 			productReference = 105FC5932E9EAD3200EA8BCF /* GuideStreamTVUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+		XX6E895901CF0DAEECE76CXX /* GuideStreamWidget */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = XX370873CB038F2035FD96XX /* Build configuration list for PBXNativeTarget "GuideStreamWidget" */;
+			buildPhases = (
+				XX178B45C53EB340DB4155XX /* Sources */,
+				XX28A9A27FCA465D91AA27XX /* Frameworks */,
+				XX4FEB6E8356710642DD83XX /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = GuideStreamWidget;
+			productName = GuideStreamWidget;
+			productReference = XX878FD47A39EC99354D39XX /* GuideStreamWidget.appex */;
+			productType = "com.apple.product-type.app-extension";
+			fileSystemSynchronizedGroups = (
+				XXFE3FBA6264EA26BA6BC1XX /* GuideStreamWidget */,
+			);
 		};
 		XX71A30A2228E328830383XX /* GuideStreamTVTV */ = {
 			isa = PBXNativeTarget;
@@ -264,9 +339,9 @@
 			mainGroup = 105FC5712E9EAD3100EA8BCF;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
-				XX20EB7F6EA71E9F2E096CXX /* XCRemoteSwiftPackageReference "supabase-swift.git" */,
-				XXC440DD1AA4A7A1F8B8ADXX /* XCRemoteSwiftPackageReference "YouTubeKit.git" */,
-				YY30A1B2C3D4E5F6A7B8C9D0YY /* XCRemoteSwiftPackageReference "youtube-ios-player-helper.git" */,
+				XX20EB7F6EA71E9F2E096CXX /* XCRemoteSwiftPackageReference "supabase-swift" */,
+				XXC440DD1AA4A7A1F8B8ADXX /* XCRemoteSwiftPackageReference "YouTubeKit" */,
+				YY30A1B2C3D4E5F6A7B8C9D0YY /* XCRemoteSwiftPackageReference "youtube-ios-player-helper" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 105FC57B2E9EAD3100EA8BCF /* Products */;
@@ -277,6 +352,7 @@
 				105FC5882E9EAD3200EA8BCF /* GuideStreamTVTests */,
 				105FC5922E9EAD3200EA8BCF /* GuideStreamTVUITests */,
 				XX71A30A2228E328830383XX /* GuideStreamTVTV */,
+				XX6E895901CF0DAEECE76CXX /* GuideStreamWidget */,
 			);
 		};
 /* End PBXProject section */
@@ -297,6 +373,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		105FC5912E9EAD3200EA8BCF /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		XX4FEB6E8356710642DD83XX /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -334,6 +417,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		XX178B45C53EB340DB4155XX /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		XXE0FD6AFA7551401BFCEBXX /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -353,6 +443,11 @@
 			isa = PBXTargetDependency;
 			target = 105FC5792E9EAD3100EA8BCF /* GuideStreamTV */;
 			targetProxy = 105FC5942E9EAD3200EA8BCF /* PBXContainerItemProxy */;
+		};
+		XXE6D9D65E8D45AAD6428FXX /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = XX6E895901CF0DAEECE76CXX /* GuideStreamWidget */;
+			targetProxy = XX2CCE1F29D24EC5E7279DXX /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -492,7 +587,7 @@
 				INFOPLIST_KEY_CFBundleURLTypes = (
 					{
 						CFBundleTypeRole = Editor;
-						CFBundleURLName = "com.guidestream.tv";
+						CFBundleURLName = com.guidestream.tv;
 						CFBundleURLSchemes = (
 							guidestream,
 						);
@@ -539,7 +634,7 @@
 					_rsp._tcp,
 					"_roku-ecp._tcp",
 					_googlecast._tcp,
-					_amzn-wplay._tcp,
+					"_amzn-wplay._tcp",
 				);
 				INFOPLIST_KEY_NSAppTransportSecurity_NSExceptionDomains_newsapi.org_NSExceptionAllowsInsecureHTTPLoads = NO;
 				INFOPLIST_KEY_NSAppTransportSecurity_NSExceptionDomains_newsapi.org_NSIncludesSubdomains = YES;
@@ -580,7 +675,7 @@
 				INFOPLIST_KEY_CFBundleURLTypes = (
 					{
 						CFBundleTypeRole = Editor;
-						CFBundleURLName = "com.guidestream.tv";
+						CFBundleURLName = com.guidestream.tv;
 						CFBundleURLSchemes = (
 							guidestream,
 						);
@@ -627,7 +722,7 @@
 					_rsp._tcp,
 					"_roku-ecp._tcp",
 					_googlecast._tcp,
-					_amzn-wplay._tcp,
+					"_amzn-wplay._tcp",
 				);
 				INFOPLIST_KEY_NSAppTransportSecurity_NSExceptionDomains_newsapi.org_NSExceptionAllowsInsecureHTTPLoads = NO;
 				INFOPLIST_KEY_NSAppTransportSecurity_NSExceptionDomains_newsapi.org_NSIncludesSubdomains = YES;
@@ -738,6 +833,52 @@
 			};
 			name = Release;
 		};
+		XX1B97DDB9C95A1CDAA3BBXX /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				PRODUCT_BUNDLE_IDENTIFIER = "app.rork.guidestream-tv.guidestreamwidget";
+				PRODUCT_NAME = GuideStreamWidget;
+				SWIFT_VERSION = 5.0;
+				SDKROOT = iphoneos;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				CODE_SIGN_ENTITLEMENTS = GuideStreamWidget/GuideStreamWidget.entitlements;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = GuideStreamWidget/Info.plist;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				MARKETING_VERSION = 1.0;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks";
+				INFOPLIST_KEY_CFBundleDisplayName = "$(PRODUCT_NAME)";
+			};
+			name = Debug;
+		};
+		XXBB1E26D56845F1900B28XX /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				PRODUCT_BUNDLE_IDENTIFIER = "app.rork.guidestream-tv.guidestreamwidget";
+				PRODUCT_NAME = GuideStreamWidget;
+				SWIFT_VERSION = 5.0;
+				SDKROOT = iphoneos;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				CODE_SIGN_ENTITLEMENTS = GuideStreamWidget/GuideStreamWidget.entitlements;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = GuideStreamWidget/Info.plist;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				MARKETING_VERSION = 1.0;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks";
+				INFOPLIST_KEY_CFBundleDisplayName = "$(PRODUCT_NAME)";
+			};
+			name = Release;
+		};
 		XXCC5E98EEE3393F05FCD4XX /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -752,7 +893,7 @@
 				INFOPLIST_KEY_CFBundleURLTypes = (
 					{
 						CFBundleTypeRole = Editor;
-						CFBundleURLName = "com.guidestream.tv";
+						CFBundleURLName = com.guidestream.tv;
 						CFBundleURLSchemes = (
 							guidestream,
 						);
@@ -802,7 +943,7 @@
 				INFOPLIST_KEY_CFBundleURLTypes = (
 					{
 						CFBundleTypeRole = Editor;
-						CFBundleURLName = "com.guidestream.tv";
+						CFBundleURLName = com.guidestream.tv;
 						CFBundleURLSchemes = (
 							guidestream,
 						);
@@ -886,10 +1027,19 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
+		XX370873CB038F2035FD96XX /* Build configuration list for PBXNativeTarget "GuideStreamWidget" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				XX1B97DDB9C95A1CDAA3BBXX /* Debug */,
+				XXBB1E26D56845F1900B28XX /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
-		XX20EB7F6EA71E9F2E096CXX /* XCRemoteSwiftPackageReference "supabase-swift.git" */ = {
+		XX20EB7F6EA71E9F2E096CXX /* XCRemoteSwiftPackageReference "supabase-swift" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/supabase/supabase-swift.git";
 			requirement = {
@@ -897,7 +1047,7 @@
 				minimumVersion = 2.0.0;
 			};
 		};
-		XXC440DD1AA4A7A1F8B8ADXX /* XCRemoteSwiftPackageReference "YouTubeKit.git" */ = {
+		XXC440DD1AA4A7A1F8B8ADXX /* XCRemoteSwiftPackageReference "YouTubeKit" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = https://github.com/alexeichhorn/YouTubeKit.git;
 			requirement = {
@@ -905,7 +1055,7 @@
 				minimumVersion = 0.4.8;
 			};
 		};
-		YY30A1B2C3D4E5F6A7B8C9D0YY /* XCRemoteSwiftPackageReference "youtube-ios-player-helper.git" */ = {
+		YY30A1B2C3D4E5F6A7B8C9D0YY /* XCRemoteSwiftPackageReference "youtube-ios-player-helper" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/youtube/youtube-ios-player-helper.git";
 			requirement = {
@@ -918,22 +1068,22 @@
 /* Begin XCSwiftPackageProductDependency section */
 		AB1C9FF110ABBCE8BF456A /* Supabase */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = XX20EB7F6EA71E9F2E096CXX /* XCRemoteSwiftPackageReference "supabase-swift.git" */;
+			package = XX20EB7F6EA71E9F2E096CXX /* XCRemoteSwiftPackageReference "supabase-swift" */;
 			productName = Supabase;
 		};
 		XX1C9FF110ABBCE8BF456CXX /* Supabase */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = XX20EB7F6EA71E9F2E096CXX /* XCRemoteSwiftPackageReference "supabase-swift.git" */;
+			package = XX20EB7F6EA71E9F2E096CXX /* XCRemoteSwiftPackageReference "supabase-swift" */;
 			productName = Supabase;
 		};
 		XX45D5A1BA7EF4022DE2E3XX /* YouTubeKit */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = XXC440DD1AA4A7A1F8B8ADXX /* XCRemoteSwiftPackageReference "YouTubeKit.git" */;
+			package = XXC440DD1AA4A7A1F8B8ADXX /* XCRemoteSwiftPackageReference "YouTubeKit" */;
 			productName = YouTubeKit;
 		};
 		YY20A1B2C3D4E5F6A7B8C9D0YY /* YouTubeiOSPlayerHelper */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = YY30A1B2C3D4E5F6A7B8C9D0YY /* XCRemoteSwiftPackageReference "youtube-ios-player-helper.git" */;
+			package = YY30A1B2C3D4E5F6A7B8C9D0YY /* XCRemoteSwiftPackageReference "youtube-ios-player-helper" */;
 			productName = YouTubeiOSPlayerHelper;
 		};
 /* End XCSwiftPackageProductDependency section */
