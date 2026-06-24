@@ -144,8 +144,6 @@ final class ReelsViewModel {
     var currentIndex: Int = 0
     var isLoading: Bool = true
     var activeTab: ReelTab = .forYou
-    var likedTrailers: Set<String> = []
-    var likeCounts: [String: Int] = [:]
     var reelSwipeCount: Int = 0
     /// Lazily-populated TVDB next-episode data keyed by TMDB series id.
     var tvdbCache: [Int: TVDBReelInfo] = [:]
@@ -342,8 +340,8 @@ final class ReelsViewModel {
                         youtubeURL: embed,
                         deepLinkURL: nil,
                         voteAverage: detail?.voteAverage ?? (r.voteAverage ?? 0),
-                        likes: Int.random(in: 800...18_000),
-                        comments: Int.random(in: 40...1_400),
+                        likes: 0,
+                        comments: 0,
                         tab: tab,
                         identityCode: identity,
                         gradeColor: plat.grade,
@@ -492,16 +490,14 @@ private func makeRakutenAdReels() -> [TrailerItem] {
     // MARK: - Mutations
 
     func toggleLike(_ trailer: TrailerItem) {
-        let id = trailer.id
-        if likedTrailers.contains(id) {
-            likedTrailers.remove(id)
-            likeCounts[id] = (likeCounts[id] ?? trailer.likes) - 1
-        } else {
-            likedTrailers.insert(id)
-            likeCounts[id] = (likeCounts[id] ?? trailer.likes) + 1
+        guard !trailer.isSponsored, trailer.tmdbId > 0 else { return }
+        let titleId = String(trailer.tmdbId)
+        let wasLiked = SocialViewModel.shared.isLiked(titleId)
+        Task { await SocialViewModel.shared.toggleLike(titleId: titleId) }
+        if !wasLiked {
             WatchIntentLogger.shared.log(
                 eventType: .trailerLiked,
-                titleId: String(trailer.tmdbId)
+                titleId: titleId
             )
         }
     }
@@ -523,10 +519,16 @@ private func makeRakutenAdReels() -> [TrailerItem] {
     }
 
     func likeCount(for trailer: TrailerItem) -> Int {
-        likeCounts[trailer.id] ?? trailer.likes
+        SocialViewModel.shared.likes(String(trailer.tmdbId))
     }
 
-    func isLiked(_ trailer: TrailerItem) -> Bool { likedTrailers.contains(trailer.id) }
+    func isLiked(_ trailer: TrailerItem) -> Bool {
+        SocialViewModel.shared.isLiked(String(trailer.tmdbId))
+    }
+
+    func commentCount(for trailer: TrailerItem) -> Int {
+        SocialViewModel.shared.commentTotal(String(trailer.tmdbId))
+    }
     /// Mirrors `StreamsViewModel.userStreams` so the Reels rail button stays
     /// in sync with every other save surface (Episode/Sports sheets, Home
     /// panel, Profile). Reading the shared store also automatically subscribes
@@ -573,6 +575,7 @@ private func makeRakutenAdReels() -> [TrailerItem] {
 
 struct ReelsScreen: View {
     @State private var vm = ReelsViewModel.shared
+    @State private var social = SocialViewModel.shared
     @State private var isMuted: Bool = false
     @State private var isPlaying: Bool = true
     @State private var showComments: Bool = false
@@ -642,6 +645,7 @@ struct ReelsScreen: View {
                             Task { await vm.enrichWithTVDB(tmdbId: nextTrailer.tmdbId) }
                         }
                         _ = prev
+                        refreshSocialCounts(around: newValue)
                     }
                 }
 
@@ -701,15 +705,24 @@ struct ReelsScreen: View {
             await vm.loadIfNeeded()
             if scrolledID == nil { scrolledID = 0 }
             prefetchNeighbors(around: vm.currentIndex)
+            // Refresh social counts for the first visible reel and its neighbours.
+            refreshSocialCounts(around: vm.currentIndex)
         }
         .onAppear { tabBarVisibility.hide() }
         .onDisappear { tabBarVisibility.show() }
         .sheet(isPresented: $showComments) {
-            if let trailer = currentTrailer {
-                TrailerCommentsSheet(trailer: trailer)
-                    .presentationDetents([.fraction(0.72)])
-                    .presentationDragIndicator(.visible)
-                    .presentationBackground(Color(red: 10/255, green: 16/255, blue: 26/255).opacity(0.96))
+            if let trailer = currentTrailer, !trailer.isSponsored, trailer.tmdbId > 0 {
+                TitleCommentsSheet(
+                    titleId: String(trailer.tmdbId),
+                    title: trailer.showName,
+                    subtitle: trailer.genre,
+                    posterUrl: trailer.posterURL?.absoluteString ?? trailer.backdropURL?.absoluteString,
+                    posterColors: [trailer.platformColor.opacity(0.85), Color(hex: "04090F")],
+                    accent: Color(hex: "F5821F")
+                )
+                .presentationDetents([.fraction(0.72)])
+                .presentationDragIndicator(.visible)
+                .presentationBackground(Color(red: 10/255, green: 16/255, blue: 26/255).opacity(0.96))
             }
         }
         .sheet(isPresented: $showShare) {
@@ -805,9 +818,18 @@ struct ReelsScreen: View {
                 likeCount: vm.likeCount(for: trailer),
                 isLiked: vm.isLiked(trailer),
                 isSaved: vm.isSaved(trailer),
+                commentCount: vm.commentCount(for: trailer),
                 activeTab: trailer.tab,
                 currentIndex: vm.currentIndex,
                 totalCount: vm.allTrailers.count,
+                onEnded: index == vm.allTrailers.count - 1
+                    ? nil
+                    : {
+                        guard index == vm.currentIndex else { return }
+                        withAnimation(.spring(response: 0.45, dampingFraction: 0.86)) {
+                            scrolledID = index + 1
+                        }
+                    },
                 onTogglePlay: { isPlaying.toggle() },
                 onToggleMute: {
                     UIImpactFeedbackGenerator(style: .soft).impactOccurred()
@@ -877,6 +899,22 @@ struct ReelsScreen: View {
 
     private func prefetchNeighbors(around index: Int) {}
 
+    /// Lazily fetch like + comment counts for the current reel and its
+    /// immediate neighbours so the right-rail numbers are live by the time
+    /// the user swipes. Sponsored reels and entries with non-positive
+    /// tmdbId are skipped.
+    private func refreshSocialCounts(around index: Int) {
+        let neighbours = [index - 1, index, index + 1]
+        for i in neighbours {
+            guard let trailer = vm.allTrailers[safe: i],
+                  !trailer.isSponsored,
+                  trailer.tmdbId > 0 else { continue }
+            Task {
+                await SocialViewModel.shared.refreshCounts(titleId: String(trailer.tmdbId))
+            }
+        }
+    }
+
     private func showInterstitial(_ completion: @escaping () -> Void) {
         guard let root = UIApplication.shared.topViewController() else {
             completion(); return
@@ -923,9 +961,11 @@ private struct ReelView: View {
     let likeCount: Int
     let isLiked: Bool
     let isSaved: Bool
+    let commentCount: Int
     let activeTab: ReelTab
     let currentIndex: Int
     let totalCount: Int
+    var onEnded: (() -> Void)? = nil
 
     let onTogglePlay: () -> Void
     let onToggleMute: () -> Void
@@ -1149,7 +1189,8 @@ private struct ReelView: View {
                             isMuted: isMuted,
                             isPlaying: isPlaying,
                             progress: $playbackProgress,
-                            onEmbedError: { embedFailed = true }
+                            onEmbedError: { embedFailed = true },
+                            onEnded: onEnded
                         )
                         .allowsHitTesting(false)
                     }
@@ -1207,7 +1248,7 @@ private struct ReelView: View {
                             )
                             .scaleEffect(likeBounce)
 
-                            RailButton(icon: "message", label: formatCount(trailer.comments), tint: .white, action: onComments)
+                            RailButton(icon: "message", label: formatCount(commentCount), tint: .white, action: onComments)
                         }
 
                         WatchListButton(saved: isSaved, sponsored: trailer.isSponsored, action: onSave)
@@ -1679,6 +1720,7 @@ private struct YouTubePlayerView: UIViewRepresentable {
     let isPlaying: Bool
     var progress: Binding<Double>? = nil
     var onEmbedError: (() -> Void)? = nil
+    var onEnded: (() -> Void)? = nil
 
     func makeUIView(context: Context) -> YTPlayerView {
         let playerView = YTPlayerView()
@@ -1691,6 +1733,7 @@ private struct YouTubePlayerView: UIViewRepresentable {
 
         context.coordinator.onEmbedError = onEmbedError
         context.coordinator.progress = progress
+        context.coordinator.onEnded = onEnded
 
         let playerVars: [String: Any] = [
             "playsinline": 1,
@@ -1712,6 +1755,7 @@ private struct YouTubePlayerView: UIViewRepresentable {
     func updateUIView(_ playerView: YTPlayerView, context: Context) {
         context.coordinator.onEmbedError = onEmbedError
         context.coordinator.progress = progress
+        context.coordinator.onEnded = onEnded
 
         // Only reload the entire webview when the videoId itself changes.
         if context.coordinator.lastVideoId != videoId {
@@ -1776,6 +1820,7 @@ private struct YouTubePlayerView: UIViewRepresentable {
         var lastMuted: Bool = true
         var lastPlaying: Bool = true
         var onEmbedError: (() -> Void)?
+        var onEnded: (() -> Void)?
         var progress: Binding<Double>?
         var cachedDuration: Double = 0
 
@@ -1801,9 +1846,13 @@ private struct YouTubePlayerView: UIViewRepresentable {
 
         func playerView(_ playerView: YTPlayerView, didChangeTo state: YTPlayerState) {
             if state == .ended {
-                // Loop the trailer seamlessly.
-                playerView.seek(toSeconds: 0, allowSeekAhead: true)
-                playerView.playVideo()
+                if let onEnded {
+                    Task { @MainActor in onEnded() }
+                } else {
+                    // Loop the trailer seamlessly when no onEnded is provided.
+                    playerView.seek(toSeconds: 0, allowSeekAhead: true)
+                    playerView.playVideo()
+                }
             }
         }
 
@@ -1814,142 +1863,6 @@ private struct YouTubePlayerView: UIViewRepresentable {
         }
     }
 
-}
-
-// MARK: - Comments Sheet
-
-struct TrailerCommentsSheet: View {
-    let trailer: TrailerItem
-
-    @State private var draft: String = ""
-    @State private var comments: [CommentItem] = CommentItem.mock
-
-    var body: some View {
-        VStack(spacing: 0) {
-            HStack {
-                Text("Comments")
-                    .scaledFont(size: 17, weight: .semibold)
-                    .foregroundStyle(.white)
-                Text("\(comments.count)")
-                    .scaledFont(size: 13)
-                    .foregroundStyle(Color.white.opacity(0.55))
-                Spacer()
-            }
-            .padding(.horizontal, 20)
-            .padding(.top, 16)
-            .padding(.bottom, 12)
-
-            Divider().background(Color.white.opacity(0.07))
-
-            ScrollView {
-                VStack(spacing: 18) {
-                    ForEach(comments) { c in
-                        CommentRow(item: c)
-                    }
-                }
-                .padding(.horizontal, 20)
-                .padding(.vertical, 14)
-            }
-
-            // Input bar
-            HStack(spacing: 10) {
-                Circle()
-                    .fill(Color(hex: "F5821F"))
-                    .overlay(Text(String((AuthViewModel.shared.currentUser?.email ?? "GS").prefix(2)).uppercased()).scaledFont(size: 11, weight: .bold).foregroundStyle(.white))
-                    .frame(width: 28, height: 28)
-                TextField("", text: $draft, prompt: Text("Add a comment…").foregroundColor(Color.white.opacity(0.40)))
-                    .foregroundStyle(.white)
-                    .tint(Color(hex: "F5821F"))
-                Button(action: {
-                    guard !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-                    let initials = String((AuthViewModel.shared.currentUser?.email ?? "GS").prefix(2)).uppercased()
-                    comments.insert(CommentItem(username: "you", initials: initials, color: Color(hex: "F5821F"), verified: false, timestamp: "just now", text: draft.trimmingCharacters(in: .whitespacesAndNewlines), likes: 0), at: 0)
-                    draft = ""
-                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                }) {
-                    Image(systemName: "paperplane.fill")
-                        .foregroundStyle(Color(hex: "F5821F"))
-                }
-            }
-            .padding(.horizontal, 14)
-            .frame(height: 44)
-            .background(Color.white.opacity(0.06))
-            .overlay(Capsule().stroke(Color.white.opacity(0.10)))
-            .clipShape(Capsule())
-            .padding(.horizontal, 12)
-            .padding(.bottom, 16)
-        }
-    }
-}
-
-struct CommentItem: Identifiable {
-    let id = UUID()
-    let username: String
-    let initials: String
-    let color: Color
-    let verified: Bool
-    let timestamp: String
-    let text: String
-    let likes: Int
-
-    static let mock: [CommentItem] = [
-        .init(username: "cinema_mark", initials: "CM", color: .blue, verified: true,
-              timestamp: "2h", text: "This is going to be the show of the year. Trailer alone is cinema.", likes: 124),
-        .init(username: "stream_sara", initials: "SS", color: .orange, verified: false,
-              timestamp: "4h", text: "Finally a return to form 🔥", likes: 41),
-        .init(username: "tv_jake", initials: "TJ", color: .purple, verified: false,
-              timestamp: "1d", text: "The cinematography in this is unreal.", likes: 18)
-    ]
-}
-
-private struct CommentRow: View {
-    let item: CommentItem
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            Circle()
-                .fill(item.color)
-                .overlay(Text(item.initials).scaledFont(size: 12, weight: .bold).foregroundStyle(.white))
-                .frame(width: 36, height: 36)
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 6) {
-                    Text(item.username)
-                        .scaledFont(size: 14, weight: .semibold)
-                        .foregroundStyle(.white)
-                    if item.verified {
-                        ZStack {
-                            Circle().fill(Color(hex: "F5821F")).frame(width: 14, height: 14)
-                            Image(systemName: "checkmark")
-                                .scaledFont(size: 8, weight: .black)
-                                .foregroundStyle(.white)
-                        }
-                    }
-                    Text(item.timestamp)
-                        .scaledFont(size: 12)
-                        .foregroundStyle(Color.white.opacity(0.40))
-                }
-                Text(item.text)
-                    .scaledFont(size: 14)
-                    .foregroundStyle(Color.white.opacity(0.85))
-                HStack(spacing: 14) {
-                    Text("Like")
-                        .scaledFont(size: 12)
-                        .foregroundStyle(Color.white.opacity(0.45))
-                    Text("Reply")
-                        .scaledFont(size: 12)
-                        .foregroundStyle(Color.white.opacity(0.45))
-                }
-            }
-            Spacer()
-            VStack(spacing: 2) {
-                Image(systemName: "hand.thumbsup")
-                    .foregroundStyle(Color.white.opacity(0.45))
-                Text("\(item.likes)")
-                    .scaledFont(size: 10)
-                    .foregroundStyle(Color.white.opacity(0.45))
-            }
-        }
-    }
 }
 
 // MARK: - Share Sheet

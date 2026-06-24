@@ -229,6 +229,15 @@ struct WelcomeOnboardingView: View {
                         .foregroundStyle(Color.red.opacity(0.85))
                         .multilineTextAlignment(.center)
                 }
+
+                // Legal disclosure — links open in browser via Markdown
+                Text("By continuing, you agree to our [Privacy Policy](https://guidestream.tv/privacy) and [Terms of Service](https://guidestream.tv/terms).")
+                    .font(.custom("SF Pro Text", size: 11))
+                    .foregroundStyle(Color.textTertiary)
+                    .multilineTextAlignment(.center)
+                    .tint(Color.blue)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 2)
             }
             .padding(20)
             .background(
