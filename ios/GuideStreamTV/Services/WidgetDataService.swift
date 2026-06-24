@@ -2,15 +2,17 @@
 //  WidgetDataService.swift
 //  GuideStreamTV
 //
-//  Writes a WidgetPayload JSON file into the App Group shared container
-//  every time the home screen refreshes its leaving-soon, watchlist, or
-//  new-episode data. The widget reads this file to render up-to-date
-//  cards without ever hitting the network itself.
+//  Writes a WidgetPayload JSON into BOTH a file AND UserDefaults in the
+//  App Group shared container. Belt-and-suspenders: if one transport fails
+//  (entitlement sandbox, provisioning profile, iOS version quirk) the other
+//  still delivers the payload to the widget.
 //
-//  Uses FileManager.containerURL (not UserDefaults(suiteName:)) because
-//  the container URL API is more explicit and avoids subtle entitlement /
-//  sandbox issues that can cause UserDefaults to silently return nil in
-//  either the main app or the widget extension.
+//  IMPORTANT — Data preservation:
+//  `pushCounts()` (called early at launch before the home screen loads) first
+//  reads any existing payload already in the shared container. If the
+//  previous session wrote real Leaving Soon data, we preserve it — we only
+//  update the counts. This prevents the widget from flashing empty on every
+//  fresh app launch.
 //
 
 import Foundation
@@ -52,6 +54,7 @@ final class WidgetDataService {
 
     private let appGroupId = "group.app.rork.guidestream-tv"
     private let payloadFileName = "widget_payload_v1.json"
+    private let userDefaultsKey = "gs.widgetPayload.v1"
 
     /// Cached leaving-soon items from the last full push so `pushCounts()`
     /// (called from ContentView / StreamsViewModel on every change) can
@@ -60,8 +63,6 @@ final class WidgetDataService {
 
     // MARK: - Full push (called from HomeView after Watchmode resolves)
 
-    /// Serialises the full app state — leaving-soon titles, watchlist count,
-    /// and new episode count — into the App Group shared container.
     func push(
         expiringItems: [(tmdbId: Int, title: String, daysLeft: Int, sourceId: String)],
         posterUrls: [Int: String],
@@ -99,22 +100,70 @@ final class WidgetDataService {
         )
     }
 
-    // MARK: - Counts-only push (called from ContentView / StreamsViewModel)
+    // MARK: - Counts-only push (called early from ContentView / StreamsViewModel)
 
-    /// Writes updated counts while preserving whatever leaving-soon items
-    /// were last pushed. Safe to call from any point in the app lifecycle
-    /// — no Watchmode data required. This is the call that ensures the
-    /// widget has data immediately after login, not just after the home
-    /// screen finishes its network round-trips.
+    /// Updates watchlist and new-episode counts without overwriting any
+    /// Leaving Soon data that was written by a previous session. If the
+    /// in-memory cache is empty (first launch), we try to recover the
+    /// Leaving Soon items already stored in the shared container so the
+    /// widget doesn't blink back to empty.
     func pushCounts(watchlistCount: Int, newEpisodeCount: Int) {
+        // Preserve in-memory cache if we have one
+        var leavingSoon = cachedLeavingSoon
+
+        // If cache is cold, try to recover from the shared container so
+        // the widget doesn't lose its Leaving Soon data on a fresh launch.
+        if leavingSoon.isEmpty {
+            if let existing = loadExistingPayload(),
+               !existing.leavingSoon.isEmpty {
+                leavingSoon = existing.leavingSoon
+                cachedLeavingSoon = existing.leavingSoon
+            }
+        }
+
         writePayload(
-            leavingSoon: cachedLeavingSoon,
+            leavingSoon: leavingSoon,
             watchlistCount: watchlistCount,
             newEpisodeCount: newEpisodeCount
         )
     }
 
-    // MARK: - File-based write
+    // MARK: - Widget reload trigger
+
+    /// Call this when the app enters the foreground so the widget can
+    /// pick up any data written by a previous session.
+    func refreshWidget() {
+        WidgetCenter.shared.reloadTimelines(ofKind: "GuideStreamWidget")
+    }
+
+    // MARK: - Dual-transport read
+
+    private func loadExistingPayload() -> WidgetPayload? {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+
+        // Try file first
+        if let containerURL = FileManager.default.containerURL(
+            forSecurityApplicationGroupIdentifier: appGroupId
+        ) {
+            let fileURL = containerURL.appendingPathComponent(payloadFileName)
+            if let data = try? Data(contentsOf: fileURL),
+               let payload = try? decoder.decode(WidgetPayload.self, from: data) {
+                return payload
+            }
+        }
+
+        // Then UserDefaults
+        if let shared = UserDefaults(suiteName: appGroupId),
+           let data = shared.data(forKey: userDefaultsKey),
+           let payload = try? decoder.decode(WidgetPayload.self, from: data) {
+            return payload
+        }
+
+        return nil
+    }
+
+    // MARK: - Dual-transport write (file + UserDefaults)
 
     private func writePayload(
         leavingSoon: [WidgetLeavingSoonItem],
@@ -128,29 +177,39 @@ final class WidgetDataService {
             lastUpdated: Date()
         )
 
-        // Primary path: write JSON file to the App Group shared container.
-        // This is more reliable than UserDefaults(suiteName:) because it
-        // uses the explicit container URL API.
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+
+        guard let data = try? encoder.encode(payload) else {
+            print("[WidgetData] Failed to encode payload")
+            return
+        }
+
+        var anySucceeded = false
+
+        // --- Transport 1: JSON file in App Group shared container ---
         if let containerURL = FileManager.default.containerURL(
             forSecurityApplicationGroupIdentifier: appGroupId
         ) {
             let fileURL = containerURL.appendingPathComponent(payloadFileName)
-            let encoder = JSONEncoder()
-            encoder.dateEncodingStrategy = .iso8601
-            encoder.outputFormatting = .prettyPrinted
             do {
-                let data = try encoder.encode(payload)
                 try data.write(to: fileURL, options: .atomic)
-                print("[WidgetData] Wrote \(leavingSoon.count) leaving-soon, \(watchlistCount) watchlist, \(newEpisodeCount) new eps → \(fileURL.path)")
+                anySucceeded = true
             } catch {
                 print("[WidgetData] File write failed: \(error.localizedDescription)")
             }
-        } else {
-            print("[WidgetData] containerURL returned nil for \(appGroupId) — check entitlements & provisioning profile")
         }
 
-        // Always reload widget timelines after writing.
-        WidgetCenter.shared.reloadTimelines(ofKind: "GuideStreamWidget")
+        // --- Transport 2: UserDefaults in the same App Group ---
+        if let shared = UserDefaults(suiteName: appGroupId) {
+            shared.set(data, forKey: userDefaultsKey)
+            shared.synchronize()
+            anySucceeded = true
+        }
+
+        if anySucceeded {
+            WidgetCenter.shared.reloadTimelines(ofKind: "GuideStreamWidget")
+        }
     }
 }
 

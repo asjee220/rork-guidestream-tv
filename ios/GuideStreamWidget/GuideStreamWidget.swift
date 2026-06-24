@@ -57,10 +57,10 @@ nonisolated struct Provider: TimelineProvider {
     func getTimeline(in context: Context, completion: @escaping (Timeline<WidgetEntry>) -> Void) {
         let payload = WidgetDataStore.load()
         let entry = WidgetEntry(date: Date(), payload: payload)
-        // Refresh every 15 minutes so the widget picks up new Leaving Soon data
-        // and watchlist changes without waiting hours. The main app also calls
+        // Refresh every 5 minutes so the widget picks up new Leaving Soon data
+        // and watchlist changes quickly. The main app also calls
         // WidgetCenter.shared.reloadTimelines() on every data change.
-        let nextUpdate = Date().addingTimeInterval(15 * 60)
+        let nextUpdate = Date().addingTimeInterval(5 * 60)
         let timeline = Timeline(entries: [entry], policy: .after(nextUpdate))
         completion(timeline)
     }

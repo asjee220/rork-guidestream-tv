@@ -2,12 +2,10 @@
 //  WidgetData.swift
 //  GuideStreamWidget
 //
-//  Shared data model decoded from the JSON file that the main app writes
-//  into the App Group shared container whenever Leaving Soon / watchlist
-//  data changes.
-//
-//  Uses FileManager.containerURL (not UserDefaults) for more reliable
-//  cross-process data sharing between the main app and widget extension.
+//  Shared data model decoded from the JSON that the main app writes into
+//  the App Group shared container. The main app writes to BOTH a flat file
+//  AND UserDefaults(suiteName:) on every change — this loader tries both
+//  transports so the widget never misses data due to a single-path failure.
 //
 
 import Foundation
@@ -36,32 +34,34 @@ nonisolated struct WidgetPayload: Codable, Sendable {
 enum WidgetDataStore {
     static let appGroupId = "group.app.rork.guidestream-tv"
     static let payloadFileName = "widget_payload_v1.json"
+    static let userDefaultsKey = "gs.widgetPayload.v1"
 
-    /// Loads the payload from the JSON file in the shared App Group container.
-    /// Falls back to UserDefaults if the file doesn't exist yet (during the
-    /// transition period), then returns nil if neither source has data.
+    /// Loads the payload from the App Group shared container.
+    ///
+    /// The main app writes to BOTH a JSON file AND UserDefaults(suiteName:)
+    /// on every data change. This loader tries both paths — whichever has
+    /// data and decodes successfully wins. Returns nil only if neither
+    /// transport has valid data yet (first launch before any data is pushed).
     static func load() -> WidgetPayload? {
-        // Primary: file-based approach via containerURL
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+
+        // --- Transport 1: JSON file via containerURL ---
         if let containerURL = FileManager.default.containerURL(
             forSecurityApplicationGroupIdentifier: appGroupId
         ) {
             let fileURL = containerURL.appendingPathComponent(payloadFileName)
-            if let data = try? Data(contentsOf: fileURL) {
-                let decoder = JSONDecoder()
-                decoder.dateDecodingStrategy = .iso8601
-                if let payload = try? decoder.decode(WidgetPayload.self, from: data) {
-                    return payload
-                }
+            if let data = try? Data(contentsOf: fileURL),
+               let payload = try? decoder.decode(WidgetPayload.self, from: data) {
+                return payload
             }
         }
 
-        // Fallback: try the old UserDefaults key (for devices that still
-        // have data from the previous version of the service).
+        // --- Transport 2: UserDefaults(suiteName:) ---
         if let shared = UserDefaults(suiteName: appGroupId),
-           let data = shared.data(forKey: "gs.widgetPayload.v1") {
-            let decoder = JSONDecoder()
-            decoder.dateDecodingStrategy = .iso8601
-            return try? decoder.decode(WidgetPayload.self, from: data)
+           let data = shared.data(forKey: userDefaultsKey),
+           let payload = try? decoder.decode(WidgetPayload.self, from: data) {
+            return payload
         }
 
         return nil

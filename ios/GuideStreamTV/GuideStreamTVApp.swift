@@ -5,15 +5,26 @@
 
 import SwiftUI
 import Supabase
+import WidgetKit
 
 @main
 struct GuideStreamTVApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some Scene {
         WindowGroup {
             ContentView()
                 .preferredColorScheme(.dark)
+                .onChange(of: scenePhase) { _, newPhase in
+                    if newPhase == .active {
+                        // Every time the user brings the app to the foreground,
+                        // kick the widget timelines so the widget picks up any
+                        // data that may have been written while the app was
+                        // backgrounded (or if the widget missed a previous reload).
+                        WidgetCenter.shared.reloadTimelines(ofKind: "GuideStreamWidget")
+                    }
+                }
                 .onOpenURL { url in
                     guard url.scheme == "guidestream" else { return }
 
