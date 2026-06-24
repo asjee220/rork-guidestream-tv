@@ -46,12 +46,11 @@ struct FloatingTabBar: View {
         .frame(height: 74)
         .background(
             Capsule(style: .continuous)
-                .fill(Color.white.opacity(0.07))
-                .background(.ultraThinMaterial, in: Capsule(style: .continuous))
+                .fill(Theme.surface)
         )
         .overlay(
             Capsule(style: .continuous)
-                .stroke(Color.white.opacity(0.10), lineWidth: 1)
+                .stroke(Color.white.opacity(0.06), lineWidth: 0.5)
         )
         .shadow(color: .black.opacity(0.55), radius: 28, y: 16)
         .padding(.horizontal, 22)

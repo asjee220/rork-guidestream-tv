@@ -158,6 +158,27 @@ struct HomeView: View {
     var body: some View {
         NavigationStack(path: $path) {
             ZStack(alignment: .top) {
+                GeometryReader { geo in
+                    Ellipse()
+                        .fill(
+                            RadialGradient(
+                                gradient: Gradient(stops: [
+                                    .init(color: Color(red: 168/255, green: 85/255, blue: 247/255).opacity(0.25), location: 0.0),
+                                    .init(color: Color(red: 139/255, green: 92/255, blue: 246/255).opacity(0.12), location: 0.5),
+                                    .init(color: .clear, location: 0.8)
+                                ]),
+                                center: .top,
+                                startRadius: 0,
+                                endRadius: 250
+                            )
+                        )
+                        .frame(width: 500, height: 400)
+                        .blur(radius: 1)
+                        .position(x: geo.size.width / 2, y: geo.size.height * 0.15)
+                        .ignoresSafeArea()
+                        .allowsHitTesting(false)
+                }
+
                 ScrollViewReader { scrollProxy in
                 ScrollView(showsIndicators: false) {
                     VStack(spacing: 20) {
@@ -701,6 +722,12 @@ struct HomeView: View {
                         .padding(.top, 6)
                         .transition(.move(edge: .top).combined(with: .opacity))
                     }
+                }
+                .background(Color.navy.opacity(0.50))
+                .background(.ultraThinMaterial)
+                .overlay(alignment: .bottom) {
+                    Color.white.opacity(0.05)
+                        .frame(height: 1)
                 }
                 .animation(.spring(response: 0.4, dampingFraction: 0.82), value: castPlayback.current?.id)
             }
@@ -1522,16 +1549,12 @@ private struct SectionGlassCard<Content: View>: View {
                 .padding(.bottom, 8)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            Color.white.opacity(0.07)
-                .background(.ultraThinMaterial)
-        )
+        .background(Theme.surface)
         .overlay(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .stroke(highlighted ? accentColor.opacity(0.45) : Color.white.opacity(0.10), lineWidth: highlighted ? 1.5 : 1)
+                .stroke(Color.white.opacity(0.06), lineWidth: 0.5)
         )
         .clipShape(.rect(cornerRadius: 14))
-        .shadow(color: highlighted ? accentColor.opacity(0.35) : .clear, radius: highlighted ? 16 : 0, y: highlighted ? 4 : 0)
     }
 }
 
