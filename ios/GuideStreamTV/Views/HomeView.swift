@@ -170,6 +170,9 @@ struct HomeView: View {
     @State private var liveStatusMap: [String: LiveStatus] = [:]
     /// Full-screen detail for non-TMDB creator / podcast entities.
     @State private var creatorDetailTarget: CreatorDetailTarget?
+    /// Maps prefixed title_ids to their content_sources.image_url, used as a
+    /// poster fallback so every creator/podcast/streamer always shows an image.
+    @State private var sourceImageMap: [String: String] = [:]
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -899,11 +902,13 @@ struct HomeView: View {
             await loadTrendingIfNeeded()
             await loadComingToStreaming()
             await subscribeToLiveStatus()
+            await hydrateSourceImages()
         }
         .refreshable {
             await streams.refreshAll()
             await loadTrendingIfNeeded()
             await loadComingToStreaming()
+            await hydrateSourceImages()
             // Push updated widget data on pull-to-refresh.
             WidgetDataService.shared.push(
                 expiringItems: expiringItems,
@@ -958,6 +963,23 @@ struct HomeView: View {
                 for s in statuses { map[s.titleId] = s }
                 await MainActor.run { liveStatusMap = map }
             }
+        }
+    }
+
+    /// Gathers non-TMDB title_ids from user_streams and new_episodes, fetches
+    /// their image_url from content_sources, and seeds sourceImageMap so every
+    /// creator/podcast/streamer always shows a poster image.
+    private func hydrateSourceImages() async {
+        let streamIds = streams.userStreams
+            .filter { SourceKind.from(titleId: $0.titleId).isNonTMDB && ($0.posterUrl?.isEmpty ?? true) }
+            .map { $0.titleId }
+        let episodeIds = streams.newEpisodes
+            .filter { SourceKind.from(titleId: $0.titleId).isNonTMDB && ($0.posterUrl?.isEmpty ?? true) && ($0.thumbnailUrl?.isEmpty ?? true) }
+            .map { $0.titleId }
+        let allIds = Array(Set(streamIds + episodeIds))
+        guard !allIds.isEmpty else { return }
+        if let map = try? await ContentSourcesService.shared.fetchSourceImages(for: allIds) {
+            await MainActor.run { sourceImageMap.merge(map) { _, new in new } }
         }
     }
 
@@ -1428,7 +1450,7 @@ struct HomeView: View {
                 isNew: false,
                 posterColors: kind.isNonTMDB ? [sourceKindColor(kind), sourceKindColor(kind).opacity(0.5)] : HomeFallback.posterColors,
                 symbol: kind == .podcast ? "mic.fill" : "bookmark.fill",
-                posterUrl: row.posterUrl,
+                posterUrl: row.posterUrl ?? sourceImageMap[row.titleId],
                 tmdbId: kind == .tmdb ? Int(row.titleId) : nil,
                 titleId: row.titleId
             )
@@ -1503,7 +1525,7 @@ struct HomeView: View {
                     isNew: row.isNew ?? true,
                     posterColors: [platformColor, platformColor.opacity(0.5)],
                     symbol: kind == .podcast ? "mic.fill" : "play.rectangle.fill",
-                    posterUrl: row.posterUrl,
+                    posterUrl: row.posterUrl ?? row.thumbnailUrl ?? sourceImageMap[row.titleId],
                     tmdbId: nil,
                     titleId: row.titleId,
                     episodeId: row.episodeId,
@@ -2346,29 +2368,27 @@ private struct EpisodeThumbCard: View {
                         .allowsHitTesting(false)
                     }
                     .overlay {
-                        // Non-TMDB creators: composed card with branded gradient
-                        // and a centered inset (circle for streamers, rounded-square
-                        // for podcasts) so square images aren't cropped.
-                        if let kind = nonTMDBKind {
-                            CreatorPosterArt(
-                                imageUrl: episode.posterUrl,
-                                kind: kind,
-                                width: 150,
-                                height: 225,
-                                brandColor: sourceKindColor(kind)
-                            )
-                            .allowsHitTesting(false)
-                        } else {
-                            // TMDB: keep the existing crop-to-fill poster.
-                            RemoteImage(
-                                urlString: episode.posterUrl,
-                                contentMode: .fill,
-                                fallbackColors: fallbackColors
-                            )
-                            .frame(width: 150, height: 225)
-                            .clipped()
-                            .allowsHitTesting(false)
+                        // Full-bleed poster for all entities (TMDB and non-TMDB).
+                        // Non-TMDB creators now fill the 2:3 card the same way
+                        // movie/show posters do — no more circular inset crop.
+                        RemoteImage(
+                            urlString: episode.posterUrl,
+                            contentMode: .fill,
+                            fallbackColors: fallbackColors
+                        )
+                        .frame(width: 150, height: 225)
+                        .clipped()
+                        .overlay {
+                            // Source glyph shown when no image is available
+                            // for a non-TMDB creator / podcast.
+                            if let kind = nonTMDBKind, (episode.posterUrl?.isEmpty ?? true) {
+                                Image(systemName: kind == .podcast ? "mic.fill" : "play.rectangle.fill")
+                                    .font(.system(size: 36, weight: .semibold))
+                                    .foregroundStyle(.white.opacity(0.30))
+                                    .allowsHitTesting(false)
+                            }
                         }
+                        .allowsHitTesting(false)
                     }
 
                     .overlay(alignment: .bottomLeading) {

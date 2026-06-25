@@ -115,6 +115,28 @@ final class ContentSourcesService {
         }
     }
 
+    // MARK: - Source image URLs by title_id
+
+    /// Returns a dictionary mapping title_id → image_url for the given ids.
+    /// Used as a poster fallback so non-TMDB creators always show an image
+    /// even when new_episodes or user_streams rows lack a poster_url.
+    func fetchSourceImages(for titleIds: [String]) async throws -> [String: String] {
+        guard !titleIds.isEmpty else { return [:] }
+        let rows: [ContentSource] = try await client
+            .from("content_sources")
+            .select()
+            .in("title_id", values: titleIds)
+            .execute()
+            .value
+        var map: [String: String] = [:]
+        for row in rows {
+            if let url = row.imageUrl, !url.isEmpty {
+                map[row.titleId] = url
+            }
+        }
+        return map
+    }
+
     // MARK: - Per-title episode fetch
 
     /// Returns new_episodes rows for a single creator title_id, ordered by

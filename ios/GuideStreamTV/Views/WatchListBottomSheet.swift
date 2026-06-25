@@ -66,6 +66,9 @@ private struct WatchListContent: View {
     @State private var creatorDetailTarget: CreatorDetailTarget?
     /// Maps prefixed title_ids to their live status for in-list LIVE/OFFLINE pills.
     @State private var liveStatusMap: [String: LiveStatus] = [:]
+    /// Maps prefixed title_ids to their content_sources.image_url, used as a
+    /// poster fallback so every creator/podcast/streamer always shows an image.
+    @State private var sourceImageMap: [String: String] = [:]
 
     var body: some View {
         ZStack {
@@ -105,6 +108,7 @@ private struct WatchListContent: View {
         .task {
             await streams.fetchUserStreams()
             await hydrateLiveStatus()
+            await hydrateSourceImages()
         }
         .task {
             await subscribeToLiveStatus()
@@ -112,6 +116,7 @@ private struct WatchListContent: View {
         .refreshable {
             await streams.fetchUserStreams()
             await hydrateLiveStatus()
+            await hydrateSourceImages()
         }
     }
 
@@ -151,7 +156,8 @@ private struct WatchListContent: View {
                                 item: item,
                                 isLive: liveStatusMap[item.titleId]?.isLive ?? false,
                                 isStreamer: SourceKind.from(titleId: item.titleId).isLivestream,
-                                streamTitle: liveStatusMap[item.titleId]?.streamTitle
+                                streamTitle: liveStatusMap[item.titleId]?.streamTitle,
+                                effectivePosterUrl: item.posterUrl ?? sourceImageMap[item.titleId]
                             )
                         }
                         .buttonStyle(.plain)
@@ -298,6 +304,19 @@ private struct WatchListContent: View {
         }
     }
 
+    /// Gathers non-TMDB title_ids from user_streams, fetches their image_url
+    /// from content_sources, and seeds sourceImageMap so every creator/podcast
+    /// always shows a poster image.
+    private func hydrateSourceImages() async {
+        let creatorIds = streams.userStreams
+            .filter { SourceKind.from(titleId: $0.titleId).isNonTMDB && ($0.posterUrl?.isEmpty ?? true) }
+            .map { $0.titleId }
+        guard !creatorIds.isEmpty else { return }
+        if let map = try? await ContentSourcesService.shared.fetchSourceImages(for: creatorIds) {
+            await MainActor.run { sourceImageMap.merge(map) { _, new in new } }
+        }
+    }
+
     /// Subscribe to live_status changes via Supabase Realtime so in-list
     /// LIVE pills update without a manual refresh.
     private func subscribeToLiveStatus() async {
@@ -351,31 +370,37 @@ private struct WatchListRow: View {
     var isLive: Bool = false
     var isStreamer: Bool = false
     var streamTitle: String? = nil
+    /// Resolved poster URL — uses content_sources.image_url as a fallback
+    /// when user_streams.poster_url is nil, so every creator shows an image.
+    var effectivePosterUrl: String? = nil
 
     private var posterKind: SourceKind { SourceKind.from(titleId: item.titleId) }
 
     var body: some View {
         HStack(spacing: 12) {
             ZStack {
-                if posterKind.isNonTMDB {
-                    CreatorPosterArt(
-                        imageUrl: item.posterUrl,
-                        kind: posterKind,
-                        width: 60,
-                        height: 90,
-                        brandColor: sourceKindColor(posterKind)
-                    )
-                } else {
-                    Color.black
+                // Full-bleed poster for all entities (TMDB and non-TMDB)
+                // at the small watch-list row size. Non-TMDB creators now
+                // fill the card the same way show/movie posters do — no more
+                // circular inset crop. Brand-colour fallback when no image.
+                Color.black
+                    .overlay {
+                        RemoteImage(
+                            urlString: effectivePosterUrl ?? item.posterUrl,
+                            contentMode: .fill,
+                            fallbackColors: posterKind.isNonTMDB
+                                ? [sourceKindColor(posterKind), sourceKindColor(posterKind).opacity(0.4)]
+                                : HomeFallback.posterColors
+                        )
                         .overlay {
-                            RemoteImage(
-                                urlString: item.posterUrl,
-                                contentMode: .fill,
-                                fallbackColors: HomeFallback.posterColors
-                            )
-                            .allowsHitTesting(false)
+                            if posterKind.isNonTMDB, ((effectivePosterUrl ?? item.posterUrl)?.isEmpty ?? true) {
+                                Image(systemName: posterKind == .podcast ? "mic.fill" : "play.rectangle.fill")
+                                    .font(.system(size: 16, weight: .semibold))
+                                    .foregroundStyle(.white.opacity(0.30))
+                            }
                         }
-                }
+                        .allowsHitTesting(false)
+                    }
             }
             .frame(width: 60, height: 90)
             .clipShape(.rect(cornerRadius: 8))
