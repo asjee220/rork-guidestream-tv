@@ -8,6 +8,13 @@
 
 import Foundation
 
+/// Notification posted when the app receives a `guidestream://title/{id}` deep link.
+/// The `userInfo` dictionary contains a `"titleId"` key with the raw title_id string.
+/// HomeView observes this to route to CreatorDetailView (non-TMDB) or show detail (TMDB).
+extension Notification.Name {
+    static let guideStreamOpenTitle = Notification.Name("GuideStreamOpenTitle")
+}
+
 /// The kind of source a title_id represents, derived from its prefix.
 enum SourceKind: String, CaseIterable, Sendable {
     case tmdb

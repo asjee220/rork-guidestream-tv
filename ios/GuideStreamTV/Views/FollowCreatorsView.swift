@@ -315,7 +315,8 @@ private struct CreatorRow: View {
                     HStack(spacing: 6) {
                         SourceTypeBadge(kind: creator.kind)
                         if let handle = creator.handle {
-                            Text("@\(handle)")
+                            let cleanHandle = handle.hasPrefix("@") ? String(handle.dropFirst()) : handle
+                            Text("@\(cleanHandle)")
                                 .scaledFont(size: 12)
                                 .foregroundStyle(Color.textTertiary)
                                 .lineLimit(1)
@@ -438,6 +439,24 @@ struct LivePill: View {
                 pulse = true
             }
         }
+    }
+}
+
+/// Dimmed OFFLINE pill shown on streamer rows when the channel is not currently live.
+struct OfflinePill: View {
+    var body: some View {
+        HStack(spacing: 3) {
+            Circle()
+                .fill(Color.white.opacity(0.35))
+                .frame(width: 5, height: 5)
+            Text("OFFLINE")
+                .scaledFont(size: 9, weight: .heavy)
+                .tracking(0.5)
+        }
+        .foregroundStyle(Color.white.opacity(0.5))
+        .padding(.horizontal, 6)
+        .padding(.vertical, 3)
+        .background(Capsule().fill(Color.white.opacity(0.10)))
     }
 }
 

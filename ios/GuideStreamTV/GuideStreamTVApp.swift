@@ -35,6 +35,14 @@ struct GuideStreamTVApp: App {
                         return
                     }
 
+                    // Title deep links (e.g. guidestream://title/tw:caedrel)
+                    // route into the in-app detail views — CreatorDetailView for
+                    // non-TMDB prefixed ids, ShowDetailScreen for bare TMDB ids.
+                    if let host = url.host, host == "title" {
+                        handleTitleDeepLink(url)
+                        return
+                    }
+
                     // OAuth callback (existing flow)
                     Task {
                         do {
@@ -46,6 +54,24 @@ struct GuideStreamTVApp: App {
                     }
                 }
         }
+    }
+
+    /// Parses a `guidestream://title/{title_id}` URL and routes to the appropriate
+    /// in-app detail view. Prefixed ids (yt:, pod:, tw:, kick:) open CreatorDetailView;
+    /// bare numeric TMDB ids open the existing show-detail path.
+    private func handleTitleDeepLink(_ url: URL) {
+        let rawTitleId = url.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        guard !rawTitleId.isEmpty else {
+            print("[DeepLink] title URL missing title_id: \(url)")
+            return
+        }
+        print("[DeepLink] title deep link: title_id=\(rawTitleId)")
+        // Post a notification so HomeView can route the user to the correct screen.
+        NotificationCenter.default.post(
+            name: .guideStreamOpenTitle,
+            object: nil,
+            userInfo: ["titleId": rawTitleId]
+        )
     }
 
     /// Parses a `guidestream://show/{title_id}?platform=...&title=...` URL and

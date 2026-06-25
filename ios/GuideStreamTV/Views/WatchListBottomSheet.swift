@@ -16,6 +16,7 @@
 
 import SwiftUI
 import UIKit
+import Supabase
 
 // MARK: - Bottom sheet
 
@@ -63,6 +64,8 @@ private struct WatchListContent: View {
     @State private var showFollowCreators: Bool = false
     /// Full-screen detail for non-TMDB creator/ podcast entities.
     @State private var creatorDetailId: IdentifiableString?
+    /// Maps prefixed title_ids to their live status for in-list LIVE/OFFLINE pills.
+    @State private var liveStatusMap: [String: LiveStatus] = [:]
 
     var body: some View {
         ZStack {
@@ -97,9 +100,14 @@ private struct WatchListContent: View {
         }
         .task {
             await streams.fetchUserStreams()
+            await hydrateLiveStatus()
+        }
+        .task {
+            await subscribeToLiveStatus()
         }
         .refreshable {
             await streams.fetchUserStreams()
+            await hydrateLiveStatus()
         }
     }
 
@@ -125,7 +133,7 @@ private struct WatchListContent: View {
                     .padding(.top, 8)
                     .padding(.bottom, 4)
                 List {
-                    ForEach(streams.userStreams) { item in
+                    ForEach(sortedStreams) { item in
                         Button {
                             UIImpactFeedbackGenerator(style: .light).impactOccurred()
                             let kind = SourceKind.from(titleId: item.titleId)
@@ -135,7 +143,12 @@ private struct WatchListContent: View {
                                 detailSubject = .show(posterShow(from: item))
                             }
                         } label: {
-                            WatchListRow(item: item)
+                            WatchListRow(
+                                item: item,
+                                isLive: liveStatusMap[item.titleId]?.isLive ?? false,
+                                isStreamer: SourceKind.from(titleId: item.titleId).isLivestream,
+                                streamTitle: liveStatusMap[item.titleId]?.streamTitle
+                            )
                         }
                         .buttonStyle(.plain)
                         .listRowBackground(Color.clear)
@@ -255,6 +268,51 @@ private struct WatchListContent: View {
         )
     }
 
+    /// User streams sorted with live items first, then by added date.
+    private var sortedStreams: [UserStream] {
+        streams.userStreams.sorted { a, b in
+            let aLive = liveStatusMap[a.titleId]?.isLive ?? false
+            let bLive = liveStatusMap[b.titleId]?.isLive ?? false
+            if aLive != bLive { return aLive }
+            let aDate = a.addedAt ?? Date.distantPast
+            let bDate = b.addedAt ?? Date.distantPast
+            return aDate > bDate
+        }
+    }
+
+    /// Fetch live_status for saved creator/streamer items so LIVE/OFFLINE pills
+    /// render immediately without waiting for a Realtime event.
+    private func hydrateLiveStatus() async {
+        let creatorIds = streams.userStreams
+            .filter { SourceKind.from(titleId: $0.titleId).isLivestream }
+            .map { $0.titleId }
+        guard !creatorIds.isEmpty else { return }
+        if let statuses = try? await ContentSourcesService.shared.fetchLiveStatus(for: creatorIds) {
+            var map: [String: LiveStatus] = [:]
+            for s in statuses { map[s.titleId] = s }
+            await MainActor.run { liveStatusMap = map }
+        }
+    }
+
+    /// Subscribe to live_status changes via Supabase Realtime so in-list
+    /// LIVE pills update without a manual refresh.
+    private func subscribeToLiveStatus() async {
+        Task {
+            let client = SupabaseManager.shared.client
+            let channel = client.channel("live-status-watchlist")
+            let changes = channel.postgresChange(
+                AnyAction.self,
+                schema: "public",
+                table: "live_status"
+            )
+            await channel.subscribe()
+            for await _ in changes {
+                // hydrateLiveStatus is @MainActor and writes to @State liveStatusMap.
+                await hydrateLiveStatus()
+            }
+        }
+    }
+
     private func remove(_ item: UserStream) {
         UINotificationFeedbackGenerator().notificationOccurred(.success)
         Task { await streams.removeFromMyStreams(titleId: item.titleId) }
@@ -286,42 +344,81 @@ private struct WatchListContent: View {
 
 private struct WatchListRow: View {
     let item: UserStream
+    var isLive: Bool = false
+    var isStreamer: Bool = false
+    var streamTitle: String? = nil
+
+    private var posterKind: SourceKind { SourceKind.from(titleId: item.titleId) }
 
     var body: some View {
         HStack(spacing: 12) {
             Color.black
                 .frame(width: 60, height: 90)
                 .overlay {
+                    // Brand-tinted gradient for non-TMDB items
+                    if posterKind.isNonTMDB {
+                        LinearGradient(
+                            colors: [sourceKindColor(posterKind), sourceKindColor(posterKind).opacity(0.5)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                        .allowsHitTesting(false)
+                    }
+                }
+                .overlay {
                     RemoteImage(
                         urlString: item.posterUrl,
                         contentMode: .fill,
-                        fallbackColors: HomeFallback.posterColors
+                        fallbackColors: posterKind.isNonTMDB
+                            ? [sourceKindColor(posterKind), sourceKindColor(posterKind).opacity(0.5)]
+                            : HomeFallback.posterColors
                     )
                     .allowsHitTesting(false)
+                }
+                .overlay {
+                    if posterKind.isNonTMDB && item.posterUrl == nil {
+                        Image(systemName: posterKind == .podcast ? "mic.fill" : "play.rectangle.fill")
+                            .scaledFont(size: 22, weight: .semibold)
+                            .foregroundStyle(.white.opacity(0.45))
+                            .allowsHitTesting(false)
+                    }
                 }
                 .clipShape(.rect(cornerRadius: 8))
 
             VStack(alignment: .leading, spacing: 4) {
-                // Only render the platform chip when we have a real,
-                // recognised streaming service. Generic placeholders like
-                // "Streaming" or "Stream" used to leak through here and
-                // confused users who saw the same neutral grey chip on
-                // every saved title.
-                if let platform = item.platform,
-                   !platform.isEmpty,
-                   platform.uppercased() != "STREAM",
-                   platform.lowercased() != "streaming",
-                   platform.lowercased() != "streaming services" {
-                    Text(platform.uppercased())
-                        .scaledFont(size: 9, weight: .heavy)
-                        .tracking(0.5)
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(
-                            RoundedRectangle(cornerRadius: 4)
-                                .fill(brandColor(for: platform))
-                        )
+                HStack(spacing: 6) {
+                    // Show LIVE/OFFLINE pill for streamer entities
+                    if isStreamer {
+                        if isLive {
+                            LivePill()
+                        } else {
+                            OfflinePill()
+                        }
+                    }
+                    // Only render the platform chip when we have a real,
+                    // recognised streaming service. Generic placeholders like
+                    // "Streaming" or "Stream" used to leak through here and
+                    // confused users who saw the same neutral grey chip on
+                    // every saved title.
+                    if !isStreamer,
+                       let platform = item.platform,
+                       !platform.isEmpty,
+                       platform.uppercased() != "STREAM",
+                       platform.lowercased() != "streaming",
+                       platform.lowercased() != "streaming services" {
+                        Text(platform.uppercased())
+                            .scaledFont(size: 9, weight: .heavy)
+                            .tracking(0.5)
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(
+                                RoundedRectangle(cornerRadius: 4)
+                                    .fill(brandColor(for: platform))
+                            )
+                    } else if !isStreamer && posterKind.isNonTMDB {
+                        SourceTypeBadge(kind: posterKind)
+                    }
                 }
                 Text(item.title ?? "Untitled")
                     .scaledFont(size: 16, weight: .semibold)
@@ -332,6 +429,12 @@ private struct WatchListRow: View {
                         .scaledFont(size: 11)
                         .foregroundStyle(Color.textTertiary)
                 }
+                if isLive, let liveTitle = streamTitle {
+                    Text(liveTitle)
+                        .scaledFont(size: 11)
+                        .foregroundStyle(Color.textSecondary)
+                        .lineLimit(1)
+                }
             }
             Spacer(minLength: 8)
             Image(systemName: "chevron.right")
@@ -341,6 +444,16 @@ private struct WatchListRow: View {
         .padding(.vertical, 8)
         .padding(.horizontal, 4)
         .contentShape(Rectangle())
+    }
+
+    private func sourceKindColor(_ kind: SourceKind) -> Color {
+        switch kind {
+        case .youtube: return Color(red: 0xFF/255, green: 0x00/255, blue: 0x00/255)
+        case .podcast: return Color(red: 0x7C/255, green: 0x3A/255, blue: 0xED/255)
+        case .twitch: return Color(red: 0x91/255, green: 0x46/255, blue: 0xFF/255)
+        case .kick: return Color(red: 0x53/255, green: 0xFC/255, blue: 0x18/255)
+        case .tmdb: return Color.orange
+        }
     }
 
     private static let formatter: RelativeDateTimeFormatter = {

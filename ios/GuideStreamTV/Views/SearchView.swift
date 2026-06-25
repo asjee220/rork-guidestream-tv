@@ -483,7 +483,8 @@ private struct CreatorSearchRow: View {
                     HStack(spacing: 6) {
                         SourceTypeBadge(kind: creator.kind)
                         if let handle = creator.handle {
-                            Text("@\(handle)")
+                            let cleanHandle = handle.hasPrefix("@") ? String(handle.dropFirst()) : handle
+                            Text("@\(cleanHandle)")
                                 .scaledFont(size: 12)
                                 .foregroundStyle(Color.textTertiary)
                                 .lineLimit(1)

@@ -296,10 +296,14 @@ struct HomeView: View {
                             onOpen: { ep in
                                 WatchIntentLogger.shared.log(
                                     eventType: .cardTapped,
-                                    titleId: WatchIntentLogger.titleSlug(ep.title),
+                                    titleId: ep.titleId ?? WatchIntentLogger.titleSlug(ep.title),
                                     platformId: ep.platform.lowercased()
                                 )
-                                detailSubject = .episode(ep)
+                                if let tid = ep.titleId, SourceKind.from(titleId: tid).isNonTMDB {
+                                    creatorDetailId = IdentifiableString(tid)
+                                } else {
+                                    detailSubject = .episode(ep)
+                                }
                             }
                         )
                         .padding(.horizontal, 20)
@@ -734,7 +738,13 @@ struct HomeView: View {
                 case .newEpisodes:
                     NewEpisodesListView(
                         episodes: liveNewEpisodes,
-                        onSelect: { ep in detailSubject = .episode(ep) }
+                        onSelect: { ep in
+                            if let tid = ep.titleId, SourceKind.from(titleId: tid).isNonTMDB {
+                                creatorDetailId = IdentifiableString(tid)
+                            } else {
+                                detailSubject = .episode(ep)
+                            }
+                        }
                     )
                 case .bingeWorthy:
                     BingeWorthyListView(
@@ -829,6 +839,34 @@ struct HomeView: View {
             .toolbar(.hidden, for: .navigationBar)
         }
         .tint(Color.orange)
+        .onReceive(NotificationCenter.default.publisher(for: .guideStreamOpenTitle)) { notification in
+            guard let titleId = notification.userInfo?["titleId"] as? String else { return }
+            let kind = SourceKind.from(titleId: titleId)
+            if kind.isNonTMDB {
+                WatchIntentLogger.shared.log(
+                    eventType: .deeplinkFired,
+                    titleId: titleId,
+                    platformId: kind.sourceType,
+                    metadata: ["source": "push_notification", "kind": "went_live"]
+                )
+                creatorDetailId = IdentifiableString(titleId)
+            } else if let tmdbId = Int(titleId) {
+                WatchIntentLogger.shared.log(
+                    eventType: .deeplinkFired,
+                    titleId: titleId,
+                    metadata: ["source": "push_notification"]
+                )
+                let show = PosterShow(
+                    title: "Show",
+                    meta: "",
+                    posterColors: HomeFallback.posterColors,
+                    symbol: "play.tv.fill",
+                    posterUrl: nil,
+                    tmdbId: tmdbId
+                )
+                detailSubject = .show(show)
+            }
+        }
         .task {
             await clearBadgeAndMarkSeen()
             await streams.refreshAll()
@@ -1414,16 +1452,37 @@ struct HomeView: View {
             return []
         }
         return streams.newEpisodes.compactMap { row -> Episode? in
+            let kind = SourceKind.from(titleId: row.titleId)
             let raw = (row.platform ?? "").trimmingCharacters(in: .whitespaces)
             let platformName = raw.uppercased()
             let lowerRaw = raw.lowercased()
             // New episodes without a real streaming platform are skipped —
             // a "STREAM" label has no app to open and is misleading.
-            let isGenericPlaceholder = raw.isEmpty
+            // Non-TMDB rows (podcast, youtube) are never generic placeholders.
+            let isGenericPlaceholder = !kind.isNonTMDB && (
+                raw.isEmpty
                 || platformName == "STREAM"
                 || lowerRaw == "streaming"
                 || lowerRaw == "streaming services"
+            )
             guard !isGenericPlaceholder else { return nil }
+
+            if kind.isNonTMDB {
+                let platformColor = sourceKindColor(kind)
+                return Episode(
+                    title: row.title ?? "Untitled",
+                    season: kind.displayLabel,
+                    duration: "",
+                    platform: Platform(name: kind.displayLabel.uppercased(), color: platformColor),
+                    isNew: row.isNew ?? true,
+                    posterColors: [platformColor, platformColor.opacity(0.5)],
+                    symbol: kind == .podcast ? "mic.fill" : "play.rectangle.fill",
+                    posterUrl: row.posterUrl,
+                    tmdbId: nil,
+                    titleId: row.titleId
+                )
+            }
+
             let platform: Platform
             switch platformName {
             case "NETFLIX": platform = .netflix
@@ -1453,7 +1512,8 @@ struct HomeView: View {
                 posterColors: [Color(red: 0.20, green: 0.15, blue: 0.45), Color(red: 0.04, green: 0.02, blue: 0.10)],
                 symbol: "sparkles",
                 posterUrl: imageUrl,
-                tmdbId: tmdbId
+                tmdbId: tmdbId,
+                titleId: row.titleId
             )
         }
     }
@@ -2218,6 +2278,32 @@ private struct EpisodeThumbCard: View {
     var isLive: Bool = false
     let onTap: () -> Void
 
+    /// The SourceKind for this episode's titleId, if non-TMDB.
+    private var nonTMDBKind: SourceKind? {
+        guard let tid = episode.titleId else { return nil }
+        let kind = SourceKind.from(titleId: tid)
+        return kind.isNonTMDB ? kind : nil
+    }
+
+    /// Fallback colors — brandColor gradient for non-TMDB, generic for TMDB.
+    private var fallbackColors: [Color] {
+        if let kind = nonTMDBKind {
+            let c = sourceKindColor(kind)
+            return [c, c.opacity(0.4)]
+        }
+        return episode.posterColors
+    }
+
+    private func sourceKindColor(_ kind: SourceKind) -> Color {
+        switch kind {
+        case .youtube: return Color(red: 0xFF/255, green: 0x00/255, blue: 0x00/255)
+        case .podcast: return Color(red: 0x7C/255, green: 0x3A/255, blue: 0xED/255)
+        case .twitch: return Color(red: 0x91/255, green: 0x46/255, blue: 0xFF/255)
+        case .kick: return Color(red: 0x53/255, green: 0xFC/255, blue: 0x18/255)
+        case .tmdb: return Color.orange
+        }
+    }
+
     var body: some View {
         Button(action: onTap) {
             VStack(alignment: .leading, spacing: 8) {
@@ -2225,7 +2311,7 @@ private struct EpisodeThumbCard: View {
                     .frame(width: 150, height: 225)
                     .overlay {
                         LinearGradient(
-                            colors: episode.posterColors,
+                            colors: fallbackColors,
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         )
@@ -2235,11 +2321,20 @@ private struct EpisodeThumbCard: View {
                         RemoteImage(
                             urlString: episode.posterUrl,
                             contentMode: .fill,
-                            fallbackColors: episode.posterColors
+                            fallbackColors: fallbackColors
                         )
                         .frame(width: 150, height: 225)
                         .clipped()
                         .allowsHitTesting(false)
+                    }
+                    .overlay {
+                        // Source-type glyph for non-TMDB entities when no poster image exists.
+                        if let kind = nonTMDBKind {
+                            Image(systemName: kind == .podcast ? "mic.fill" : "play.rectangle.fill")
+                                .scaledFont(size: 28, weight: .semibold)
+                                .foregroundStyle(.white.opacity(0.5))
+                                .allowsHitTesting(false)
+                        }
                     }
                     .overlay(alignment: .center) {
                         Circle()
@@ -2256,6 +2351,20 @@ private struct EpisodeThumbCard: View {
                     .overlay(alignment: .bottomLeading) {
                         if isLive {
                             LiveCornerBadge()
+                                .padding(6)
+                                .allowsHitTesting(false)
+                        } else if let kind = nonTMDBKind {
+                            // Source-type label for non-TMDB entities (e.g. "PODCAST", "YOUTUBE")
+                            Text(kind.displayLabel.uppercased())
+                                .scaledFont(size: 8, weight: .bold)
+                                .tracking(0.4)
+                                .foregroundStyle(kind == .kick ? Color(red: 0.05, green: 0.05, blue: 0.05) : .white)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 3)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                        .fill(sourceKindColor(kind))
+                                )
                                 .padding(6)
                                 .allowsHitTesting(false)
                         } else if !episode.platform.isEmpty,
