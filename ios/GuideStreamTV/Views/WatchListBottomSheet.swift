@@ -356,38 +356,29 @@ private struct WatchListRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            Color.black
-                .frame(width: 60, height: 90)
-                .overlay {
-                    // Brand-tinted gradient for non-TMDB items
-                    if posterKind.isNonTMDB {
-                        LinearGradient(
-                            colors: [sourceKindColor(posterKind), sourceKindColor(posterKind).opacity(0.5)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                        .allowsHitTesting(false)
-                    }
-                }
-                .overlay {
-                    RemoteImage(
-                        urlString: item.posterUrl,
-                        contentMode: .fill,
-                        fallbackColors: posterKind.isNonTMDB
-                            ? [sourceKindColor(posterKind), sourceKindColor(posterKind).opacity(0.5)]
-                            : HomeFallback.posterColors
+            ZStack {
+                if posterKind.isNonTMDB {
+                    CreatorPosterArt(
+                        imageUrl: item.posterUrl,
+                        kind: posterKind,
+                        width: 60,
+                        height: 90,
+                        brandColor: sourceKindColor(posterKind)
                     )
-                    .allowsHitTesting(false)
-                }
-                .overlay {
-                    if posterKind.isNonTMDB && item.posterUrl == nil {
-                        Image(systemName: posterKind == .podcast ? "mic.fill" : "play.rectangle.fill")
-                            .scaledFont(size: 22, weight: .semibold)
-                            .foregroundStyle(.white.opacity(0.45))
+                } else {
+                    Color.black
+                        .overlay {
+                            RemoteImage(
+                                urlString: item.posterUrl,
+                                contentMode: .fill,
+                                fallbackColors: HomeFallback.posterColors
+                            )
                             .allowsHitTesting(false)
-                    }
+                        }
                 }
-                .clipShape(.rect(cornerRadius: 8))
+            }
+            .frame(width: 60, height: 90)
+            .clipShape(.rect(cornerRadius: 8))
 
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {

@@ -2346,36 +2346,31 @@ private struct EpisodeThumbCard: View {
                         .allowsHitTesting(false)
                     }
                     .overlay {
-                        RemoteImage(
-                            urlString: episode.posterUrl,
-                            contentMode: .fill,
-                            fallbackColors: fallbackColors
-                        )
-                        .frame(width: 150, height: 225)
-                        .clipped()
-                        .allowsHitTesting(false)
-                    }
-                    .overlay {
-                        // Source-type glyph for non-TMDB entities when no poster image exists.
+                        // Non-TMDB creators: composed card with branded gradient
+                        // and a centered inset (circle for streamers, rounded-square
+                        // for podcasts) so square images aren't cropped.
                         if let kind = nonTMDBKind {
-                            Image(systemName: kind == .podcast ? "mic.fill" : "play.rectangle.fill")
-                                .scaledFont(size: 28, weight: .semibold)
-                                .foregroundStyle(.white.opacity(0.5))
-                                .allowsHitTesting(false)
-                        }
-                    }
-                    .overlay(alignment: .center) {
-                        Circle()
-                            .fill(.ultraThinMaterial)
-                            .frame(width: 30, height: 30)
-                            .overlay(
-                                Image(systemName: "play.fill")
-                                    .scaledFont(size: 11, weight: .bold)
-                                    .foregroundStyle(.white)
-                                    .offset(x: 1)
+                            CreatorPosterArt(
+                                imageUrl: episode.posterUrl,
+                                kind: kind,
+                                width: 150,
+                                height: 225,
+                                brandColor: sourceKindColor(kind)
                             )
                             .allowsHitTesting(false)
+                        } else {
+                            // TMDB: keep the existing crop-to-fill poster.
+                            RemoteImage(
+                                urlString: episode.posterUrl,
+                                contentMode: .fill,
+                                fallbackColors: fallbackColors
+                            )
+                            .frame(width: 150, height: 225)
+                            .clipped()
+                            .allowsHitTesting(false)
+                        }
                     }
+
                     .overlay(alignment: .bottomLeading) {
                         if isLive {
                             LiveCornerBadge()
