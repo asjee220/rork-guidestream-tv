@@ -172,7 +172,12 @@ final class SocialViewModel {
     /// Toggle the user's like on `titleId`. Local state flips immediately so
     /// the UI reacts on the next frame; the Supabase write happens in the
     /// background and is best-effort.
-    func toggleLike(titleId: String) async {
+    ///
+    /// `mediaType` ("tv" or "movie") and `tmdbId` describe the title so each
+    /// `title_likes` row records what kind of title it is and its TMDB id.
+    /// They are optional because some likeable entries (e.g. sports games)
+    /// have no TMDB identity; those rows simply omit the columns.
+    func toggleLike(titleId: String, mediaType: String? = nil, tmdbId: Int? = nil) async {
         let trimmed = titleId.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         togglingLikes.insert(trimmed)
@@ -195,12 +200,20 @@ final class SocialViewModel {
             metadata: ["liked": !wasLiked, "source": "detail_sheet"]
         )
 
+        var watchlistMeta: [String: Any] = ["source": "detail_sheet"]
+        if let mediaType { watchlistMeta["media_type"] = mediaType }
+        WatchIntentLogger.shared.log(
+            eventType: wasLiked ? .watchlistRemoved : .watchlistAdded,
+            titleId: trimmed,
+            metadata: watchlistMeta
+        )
+
         let deviceId = DeviceIdentity.shared.deviceId
         let userId = currentUserId?.uuidString
         if wasLiked {
             await removeLike(titleId: trimmed, userId: userId, deviceId: deviceId)
         } else {
-            await insertLike(titleId: trimmed, userId: userId, deviceId: deviceId)
+            await insertLike(titleId: trimmed, userId: userId, deviceId: deviceId, mediaType: mediaType, tmdbId: tmdbId)
         }
         // Refresh the canonical count once Supabase has settled.
         let canonical = await fetchLikeCount(titleId: trimmed)
@@ -209,12 +222,14 @@ final class SocialViewModel {
     }
 
     @discardableResult
-    private func insertLike(titleId: String, userId: String?, deviceId: String) async -> Bool {
+    private func insertLike(titleId: String, userId: String?, deviceId: String, mediaType: String?, tmdbId: Int?) async -> Bool {
         var payload: [String: AnyJSON] = [
             "title_id": .string(titleId),
             "device_id": .string(deviceId)
         ]
         if let userId { payload["user_id"] = .string(userId) }
+        if let mediaType { payload["media_type"] = .string(mediaType) }
+        if let tmdbId { payload["tmdb_id"] = .integer(tmdbId) }
         do {
             try await SupabaseManager.shared.client
                 .from("title_likes")
@@ -224,8 +239,10 @@ final class SocialViewModel {
         } catch {
             let message = error.localizedDescription.lowercased()
             // Duplicate is fine — partial unique index hit means the like
-            // already exists for this owner.
+            // already exists for this owner. Silently bring its media_type /
+            // tmdb_id up to date instead of surfacing an error.
             if message.contains("duplicate") || message.contains("23505") {
+                await updateLikeMetadata(titleId: titleId, userId: userId, deviceId: deviceId, mediaType: mediaType, tmdbId: tmdbId)
                 return true
             }
             if message.contains("42501") || message.contains("row-level security") {
@@ -235,6 +252,30 @@ final class SocialViewModel {
             }
             print("[Social] like insert failed: \(error.localizedDescription)")
             return false
+        }
+    }
+
+    /// Silent best-effort update of an existing like row's `media_type` /
+    /// `tmdb_id` for this owner. Used when an insert hits the partial unique
+    /// index (the like already existed). Never surfaces an error.
+    private func updateLikeMetadata(titleId: String, userId: String?, deviceId: String, mediaType: String?, tmdbId: Int?) async {
+        var values: [String: AnyJSON] = [:]
+        if let mediaType { values["media_type"] = .string(mediaType) }
+        if let tmdbId { values["tmdb_id"] = .integer(tmdbId) }
+        guard !values.isEmpty else { return }
+        do {
+            var query = try SupabaseManager.shared.client
+                .from("title_likes")
+                .update(values)
+                .eq("title_id", value: titleId)
+            if let userId {
+                query = query.or("user_id.eq.\(userId),device_id.eq.\(deviceId)")
+            } else {
+                query = query.eq("device_id", value: deviceId)
+            }
+            try await query.execute()
+        } catch {
+            print("[Social] like metadata update failed: \(error.localizedDescription)")
         }
     }
 

@@ -207,6 +207,45 @@ final class AuthViewModel {
         }
     }
 
+    // MARK: - Timezone
+
+    /// Captures the device's IANA timezone (e.g. "America/New_York") and
+    /// syncs it to Supabase so episode notifications can be scheduled in the
+    /// user's local time. Signed-in users write to `users.timezone`; guests
+    /// write to `device_sessions.timezone` keyed on the stable device id.
+    /// Called on app launch, after every successful sign-in, and after
+    /// onboarding completes.
+    func setUserTimezone() {
+        let tz = TimeZone.current.identifier
+        if let userId = currentUser?.id.uuidString {
+            Task {
+                do {
+                    try await SupabaseManager.shared.client
+                        .from("users")
+                        .update(["timezone": tz])
+                        .eq("id", value: userId)
+                        .execute()
+                    print("[Auth] timezone \(tz) saved for user \(userId)")
+                } catch {
+                    print("[Auth ERROR] users timezone update failed: \(error.localizedDescription)")
+                }
+            }
+        } else {
+            let deviceId = DeviceIdentity.shared.deviceId
+            Task {
+                do {
+                    try await SupabaseManager.shared.client
+                        .from("device_sessions")
+                        .upsert(["device_id": deviceId, "timezone": tz], onConflict: "device_id")
+                        .execute()
+                    print("[Auth] timezone \(tz) saved for device \(deviceId)")
+                } catch {
+                    print("[Auth ERROR] device_sessions timezone upsert failed: \(error.localizedDescription)")
+                }
+            }
+        }
+    }
+
     // MARK: - Apple Sign-In
 
     func prepareAppleRequest(_ request: ASAuthorizationAppleIDRequest) {
@@ -280,6 +319,7 @@ final class AuthViewModel {
                     ]
                 )
                 DeviceSessionService.shared.upsert(reason: "apple_signed_in")
+                setUserTimezone()
                 // Promote any guest-era watch list rows and push token to the new user.
                 Task { await StreamsViewModel.shared.syncLocalToSupabase() }
                 Task { await PushTokenManager.shared.resaveCachedToken() }
@@ -326,6 +366,11 @@ final class AuthViewModel {
         // Sync the device row with the final selection — fires for guests
         // too so a "signed-out" install still gets a complete row.
         DeviceSessionService.shared.upsert(reason: "onboarding_completed")
+
+        // Capture the device timezone now that onboarding is done — writes to
+        // `users.timezone` for signed-in users, `device_sessions.timezone`
+        // for guests.
+        setUserTimezone()
 
         // Authenticated users get a richer row in `users` keyed by their
         // Supabase auth uuid. Guests skip this — most schemas FK `users.id`
@@ -482,6 +527,7 @@ final class AuthViewModel {
                     ]
                 )
                 DeviceSessionService.shared.upsert(reason: "email_signed_up")
+                setUserTimezone()
                 Task { await StreamsViewModel.shared.syncLocalToSupabase() }
                 Task { await PushTokenManager.shared.resaveCachedToken() }
                 return true
@@ -560,6 +606,7 @@ final class AuthViewModel {
                 ]
             )
             DeviceSessionService.shared.upsert(reason: "email_signed_in")
+            setUserTimezone()
             Task { await StreamsViewModel.shared.syncLocalToSupabase() }
             Task { await PushTokenManager.shared.resaveCachedToken() }
             return true
@@ -656,6 +703,7 @@ final class AuthViewModel {
                 ]
             )
             DeviceSessionService.shared.upsert(reason: "google_signed_in")
+            setUserTimezone()
             Task { await StreamsViewModel.shared.syncLocalToSupabase() }
             Task { await PushTokenManager.shared.resaveCachedToken() }
         } catch {

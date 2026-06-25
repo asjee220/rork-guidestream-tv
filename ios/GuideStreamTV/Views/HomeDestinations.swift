@@ -515,8 +515,10 @@ struct EpisodeDetailSheet: View {
                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
                 guard !isTogglingLike else { return }
                 isTogglingLike = true
+                let mediaType = isTV ? "tv" : "movie"
+                let likeTmdbId = tmdbId
                 Task {
-                    await social.toggleLike(titleId: key)
+                    await social.toggleLike(titleId: key, mediaType: mediaType, tmdbId: likeTmdbId)
                     await MainActor.run { isTogglingLike = false }
                 }
             }

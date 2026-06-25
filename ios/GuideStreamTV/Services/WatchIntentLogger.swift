@@ -30,6 +30,8 @@ enum IntentEventType: String {
     case notifyReleaseTapped = "notify_release_tapped"
     case commentsOpened = "comments_opened"
     case muteToggled = "mute_toggled"
+    case watchlistAdded = "watchlist_added"
+    case watchlistRemoved = "watchlist_removed"
 
     // Lifecycle events — fire whether signed in or not so we capture every device.
     case sessionStarted = "session_started"

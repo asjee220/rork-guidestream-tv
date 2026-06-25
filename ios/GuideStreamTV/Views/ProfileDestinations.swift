@@ -886,6 +886,10 @@ struct NotificationsSettingsView: View {
     @State private var pushOn: Bool = AuthViewModel.shared.notifyPushEnabled
     @State private var smsOn: Bool = AuthViewModel.shared.notifySMSEnabled
     @State private var systemDenied: Bool = false
+    /// Currently-synced timezone shown in the read-only row. Defaults to the
+    /// live device identifier and is replaced with the persisted value from
+    /// `users.timezone` once `loadTimezone()` resolves for signed-in users.
+    @State private var timezone: String = TimeZone.current.identifier
 
     var body: some View {
         ZStack {
@@ -935,6 +939,10 @@ struct NotificationsSettingsView: View {
                         )
                     }
 
+                    ProfileCard {
+                        TimezoneInfoRow(value: timezone)
+                    }
+
                     Text("We only send notifications about shows on services you actually have. Update your services in Connected Services to fine-tune what you hear about.")
                         .scaledFont(size: 12)
                         .foregroundStyle(Color.textTertiary)
@@ -952,6 +960,33 @@ struct NotificationsSettingsView: View {
         .toolbarBackground(Color.navy, for: .navigationBar)
         .toolbarColorScheme(.dark, for: .navigationBar)
         .task { await refreshSystemStatus() }
+        .task { await loadTimezone() }
+    }
+
+    /// Loads the synced timezone for the row. Signed-in users read the
+    /// persisted `users.timezone`; guests (and any failure) fall back to the
+    /// live device identifier.
+    private func loadTimezone() async {
+        guard let uid = auth.currentUser?.id.uuidString else {
+            timezone = TimeZone.current.identifier
+            return
+        }
+        do {
+            let rows: [UserTimezoneRow] = try await SupabaseManager.shared.client
+                .from("users")
+                .select("timezone")
+                .eq("id", value: uid)
+                .limit(1)
+                .execute()
+                .value
+            if let tz = rows.first?.timezone, !tz.isEmpty {
+                timezone = tz
+            } else {
+                timezone = TimeZone.current.identifier
+            }
+        } catch {
+            timezone = TimeZone.current.identifier
+        }
     }
 
     private var deniedBanner: some View {
@@ -1016,6 +1051,46 @@ struct NotificationsSettingsView: View {
         if let url = URL(string: UIApplication.openSettingsURLString) {
             UIApplication.shared.open(url)
         }
+    }
+}
+
+/// Minimal row decoder for the `users.timezone` column.
+private struct UserTimezoneRow: Decodable {
+    let timezone: String?
+}
+
+/// Read-only row showing the currently-synced timezone. Matches the
+/// `ProfileRow` layout (icon tile + title) but renders a static value label
+/// instead of a chevron, so it reads as informational rather than tappable.
+private struct TimezoneInfoRow: View {
+    let value: String
+
+    var body: some View {
+        HStack(spacing: 14) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(Color.white.opacity(0.07))
+                Image(systemName: "globe")
+                    .scaledFont(size: 16, weight: .semibold)
+                    .foregroundStyle(Color.textSecondary)
+            }
+            .frame(width: 36, height: 36)
+
+            Text("Your timezone")
+                .scaledFont(size: 16, weight: .semibold)
+                .foregroundStyle(.white)
+                .lineLimit(1)
+
+            Spacer(minLength: 8)
+
+            Text(value)
+                .scaledFont(size: 14)
+                .foregroundStyle(Color.textSecondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
     }
 }
 

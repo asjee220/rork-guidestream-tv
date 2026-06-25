@@ -61,6 +61,10 @@ struct TrailerItem: Identifiable, Hashable {
     let identityCode: String
     let gradeColor: Color
     let isSponsored: Bool
+    /// Whether the underlying TMDB title is a TV show (vs. a movie). Used to
+    /// record `media_type` on `title_likes`. Defaults to `true` for entries
+    /// without a TMDB identity (e.g. sponsored reels), which are never liked.
+    var isTV: Bool = true
 
     static func == (lhs: TrailerItem, rhs: TrailerItem) -> Bool { lhs.id == rhs.id }
     func hash(into hasher: inout Hasher) { hasher.combine(id) }
@@ -429,7 +433,8 @@ final class ReelsViewModel {
                         tab: tab,
                         identityCode: identity,
                         gradeColor: plat.grade,
-                        isSponsored: false
+                        isSponsored: false,
+                        isTV: r.isTV
                     )
                 }
             }
@@ -577,7 +582,9 @@ private func makeRakutenAdReels() -> [TrailerItem] {
         guard !trailer.isSponsored, trailer.tmdbId > 0 else { return }
         let titleId = String(trailer.tmdbId)
         let wasLiked = SocialViewModel.shared.isLiked(titleId)
-        Task { await SocialViewModel.shared.toggleLike(titleId: titleId) }
+        let mediaType = trailer.isTV ? "tv" : "movie"
+        let likeTmdbId = trailer.tmdbId
+        Task { await SocialViewModel.shared.toggleLike(titleId: titleId, mediaType: mediaType, tmdbId: likeTmdbId) }
         if !wasLiked {
             WatchIntentLogger.shared.log(
                 eventType: .trailerLiked,

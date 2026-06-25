@@ -74,6 +74,11 @@ struct ContentView: View {
             // their current selections.
             DeviceSessionService.shared.incrementSessionAndUpsert()
 
+            // Capture the device timezone on every launch so episode
+            // notifications stay timezone-aware. Writes to users.timezone
+            // for signed-in users, device_sessions.timezone for guests.
+            auth.setUserTimezone()
+
             // Warm up the reels feed in the background so the tab opens instantly
             // when the user first taps it. Network calls and trailer-key lookups
             // would otherwise add a 2–3s spinner on first reveal.
