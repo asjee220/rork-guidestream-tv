@@ -98,7 +98,7 @@ private struct WatchListContent: View {
         .fullScreenCover(isPresented: $showFollowCreators) {
             FollowCreatorsView()
         }
-        .fullScreenCover(item: $creatorDetailTarget) { target in
+        .sheet(item: $creatorDetailTarget) { target in
             CreatorDetailView(
                 titleId: target.titleId,
                 initialEpisode: target.initialEpisode,

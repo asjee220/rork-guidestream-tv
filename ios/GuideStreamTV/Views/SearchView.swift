@@ -331,7 +331,7 @@ struct SearchView: View {
             syncFollowed()
             Task { await vm.loadPopular() }
         }
-        .fullScreenCover(item: $creatorDetailTarget) { target in
+        .sheet(item: $creatorDetailTarget) { target in
             CreatorDetailView(
                 titleId: target.titleId,
                 initialEpisode: target.initialEpisode,
