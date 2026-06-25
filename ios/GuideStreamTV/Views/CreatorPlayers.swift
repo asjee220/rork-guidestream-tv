@@ -17,71 +17,155 @@ import AVKit
 // MARK: - YouTube embed player (iOS only)
 
 #if os(iOS)
-struct YouTubeEmbedPlayer: UIViewRepresentable {
+/// Embedded YouTube player that gracefully falls back to an "Open in YouTube"
+/// CTA when the IFrame player reports an embed restriction (errors 150/152/153)
+/// or fails to load — instead of showing YouTube's raw grey error card.
+struct YouTubeEmbedPlayer: View {
     let videoId: String
 
-    func makeCoordinator() -> Coordinator { Coordinator() }
+    @State private var didError: Bool = false
+    @Environment(\.openURL) private var openURL
+
+    private var watchURL: URL? {
+        URL(string: "https://www.youtube.com/watch?v=\(videoId)")
+    }
+
+    var body: some View {
+        ZStack {
+            Color.black
+            if didError {
+                fallbackOverlay
+            } else {
+                YouTubeWebView(videoId: videoId) {
+                    didError = true
+                }
+            }
+        }
+        .onChange(of: videoId) { _, _ in
+            didError = false
+        }
+    }
+
+    private var fallbackOverlay: some View {
+        VStack(spacing: 14) {
+            Image(systemName: "play.rectangle.fill")
+                .scaledFont(size: 40, weight: .semibold)
+                .foregroundStyle(Color(red: 0xFF/255, green: 0x00/255, blue: 0x00/255))
+            Text("This video can't play here")
+                .scaledFont(size: 15, weight: .semibold)
+                .foregroundStyle(.white)
+            Text("The owner has restricted embedded playback.")
+                .scaledFont(size: 12)
+                .foregroundStyle(Color.textSecondary)
+                .multilineTextAlignment(.center)
+            Button {
+                if let watchURL { openURL(watchURL) }
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "arrow.up.forward.square.fill")
+                        .scaledFont(size: 15, weight: .semibold)
+                    Text("Open in YouTube")
+                        .scaledFont(size: 14, weight: .semibold)
+                }
+                .foregroundStyle(.white)
+                .padding(.horizontal, 20)
+                .frame(height: 44)
+                .background(Capsule().fill(Color(red: 0xFF/255, green: 0x00/255, blue: 0x00/255)))
+            }
+            .buttonStyle(.plain)
+            .padding(.top, 4)
+        }
+        .padding(24)
+    }
+}
+
+/// Internal IFrame Player API web view that signals embed/playback errors back
+/// to SwiftUI via the `onError` closure.
+private struct YouTubeWebView: UIViewRepresentable {
+    let videoId: String
+    let onError: () -> Void
+
+    func makeCoordinator() -> Coordinator { Coordinator(onError: onError) }
+
+    private func html(for videoId: String) -> String {
+        """
+        <!DOCTYPE html>
+        <html>
+        <head>
+        <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+        <style>
+        body{margin:0;background:#000;height:100vh;}
+        #player{width:100%;height:100%;}
+        </style>
+        </head>
+        <body>
+        <div id="player"></div>
+        <script src="https://www.youtube.com/iframe_api"></script>
+        <script>
+        function notifyError(){
+          if(window.webkit&&window.webkit.messageHandlers&&window.webkit.messageHandlers.ytError){
+            window.webkit.messageHandlers.ytError.postMessage(1);
+          }
+        }
+        function onYouTubeIframeAPIReady(){
+          new YT.Player('player',{
+            width:'100%',height:'100%',videoId:'\(videoId)',
+            playerVars:{playsinline:1,rel:0,modestbranding:1},
+            events:{ 'onError': notifyError }
+          });
+        }
+        </script>
+        </body>
+        </html>
+        """
+    }
 
     func makeUIView(context: Context) -> WKWebView {
+        let contentController = WKUserContentController()
+        contentController.add(context.coordinator, name: "ytError")
+
         let config = WKWebViewConfiguration()
         config.allowsInlineMediaPlayback = true
         config.mediaTypesRequiringUserActionForPlayback = []
+        config.userContentController = contentController
 
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.backgroundColor = .black
         webView.isOpaque = false
         webView.scrollView.isScrollEnabled = false
         webView.navigationDelegate = context.coordinator
-
-        let html = """
-        <!DOCTYPE html>
-        <html>
-        <head>
-        <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
-        <style>
-        body{margin:0;background:#000;display:flex;align-items:center;justify-content:center;height:100vh;}
-        iframe{width:100%;height:100%;border:0;}
-        </style>
-        </head>
-        <body>
-        <iframe
-          src="https://www.youtube.com/embed/\(videoId)?playsinline=1&rel=0&modestbranding=1"
-          allow="autoplay;encrypted-media;picture-in-picture"
-          allowfullscreen>
-        </iframe>
-        </body>
-        </html>
-        """
-        webView.loadHTMLString(html, baseURL: URL(string: "https://www.youtube.com"))
+        webView.loadHTMLString(html(for: videoId), baseURL: URL(string: "https://www.youtube.com"))
+        context.coordinator.loadedVideoId = videoId
         return webView
     }
 
     func updateUIView(_ uiView: WKWebView, context: Context) {
-        let newHtml = """
-        <!DOCTYPE html>
-        <html>
-        <head>
-        <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
-        <style>
-        body{margin:0;background:#000;display:flex;align-items:center;justify-content:center;height:100vh;}
-        iframe{width:100%;height:100%;border:0;}
-        </style>
-        </head>
-        <body>
-        <iframe
-          src="https://www.youtube.com/embed/\(videoId)?playsinline=1&rel=0&modestbranding=1"
-          allow="autoplay;encrypted-media;picture-in-picture"
-          allowfullscreen>
-        </iframe>
-        </body>
-        </html>
-        """
-        uiView.loadHTMLString(newHtml, baseURL: URL(string: "https://www.youtube.com"))
+        guard context.coordinator.loadedVideoId != videoId else { return }
+        context.coordinator.loadedVideoId = videoId
+        uiView.loadHTMLString(html(for: videoId), baseURL: URL(string: "https://www.youtube.com"))
     }
 
-    class Coordinator: NSObject, WKNavigationDelegate {
+    static func dismantleUIView(_ uiView: WKWebView, coordinator: Coordinator) {
+        uiView.configuration.userContentController.removeScriptMessageHandler(forName: "ytError")
+    }
+
+    class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
+        let onError: () -> Void
+        var loadedVideoId: String?
+
+        init(onError: @escaping () -> Void) {
+            self.onError = onError
+        }
+
+        func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+            guard message.name == "ytError" else { return }
+            print("[YouTubeEmbedPlayer] IFrame player reported an embed error")
+            onError()
+        }
+
         func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
             print("[YouTubeEmbedPlayer] navigation failed: \(error.localizedDescription)")
+            onError()
         }
     }
 }
