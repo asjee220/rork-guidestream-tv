@@ -111,7 +111,7 @@ final class StreamsViewModel {
             // every session state.
             var query = SupabaseManager.shared.client
                 .from("user_streams")
-                .select("title_id")
+                .select()
             if let uid = currentUserId?.uuidString {
                 query = query.or("user_id.eq.\(uid),device_id.eq.\(deviceId)")
             } else {
