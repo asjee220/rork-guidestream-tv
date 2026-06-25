@@ -8,6 +8,7 @@
 //
 
 import SwiftUI
+import Supabase
 #if os(iOS)
 import WebKit
 import AVFoundation
@@ -53,10 +54,14 @@ struct CreatorDetailView: View {
     @State private var currentDeepLinkUrl: String? = nil
     @State private var isPlayerReady: Bool = false
 
-    // Channel statistics + bio loaded from YouTube Data API (channels.list).
+    // Channel statistics + bio loaded via the `youtube_channel_meta` edge function.
     @State private var channelMeta: ChannelMeta? = nil
+    // Recent uploads loaded from the same edge function (YouTube only).
+    @State private var channelUploads: [ChannelMetaResponse.Upload] = []
+    // True while the channel-meta edge function call is in flight.
+    @State private var isLoadingMeta: Bool = false
 
-    // Per-creator upload-alert preference (device-local stub — see toggle).
+    // Per-creator upload-alert preference (synced to creator_notification_preferences).
     @State private var uploadAlertsOn: Bool = false
 
     // Social (likes / comments) — keyed off the creator's titleId
@@ -202,8 +207,18 @@ struct CreatorDetailView: View {
                         .padding(.horizontal, 20)
                         .padding(.top, 24)
 
-                        // MARK: 8. Recent uploads (YouTube & Podcast)
-                        if (kind == .youtube || kind == .podcast), !episodes.isEmpty {
+                        // MARK: 8. Recent uploads (YouTube via edge function, Podcast via episodes)
+                        if kind == .youtube {
+                            if isLoadingMeta && channelUploads.isEmpty {
+                                uploadsLoadingPlaceholder
+                                    .padding(.horizontal, 20)
+                                    .padding(.top, 26)
+                            } else if !channelUploads.isEmpty {
+                                youtubeUploadsSection(source: source)
+                                    .padding(.horizontal, 20)
+                                    .padding(.top, 26)
+                            }
+                        } else if kind == .podcast, !episodes.isEmpty {
                             recentUploadsSection(source: source)
                                 .padding(.horizontal, 20)
                                 .padding(.top, 26)
@@ -568,11 +583,14 @@ struct CreatorDetailView: View {
         .padding(.vertical, 16)
         .frame(maxWidth: .infinity)
         .glassCard()
+        .redacted(reason: (isLoadingMeta && channelMeta == nil) ? .placeholder : [])
     }
 
     private func statColumn(value: Int?, label: String) -> some View {
         VStack(spacing: 4) {
-            Text(value.map { formatStat($0) } ?? "—")
+            // While the edge function is in flight we show a redacted placeholder
+            // figure (a shimmer bar); once settled, real numbers or "—" (pending/error).
+            Text(value.map { formatStat($0) } ?? (isLoadingMeta ? "0.0M" : "—"))
                 .scaledFont(size: 18, weight: .heavy)
                 .foregroundStyle(.white)
             Text(label.uppercased())
@@ -755,42 +773,311 @@ struct CreatorDetailView: View {
         return "\(minutes) min"
     }
 
-    // MARK: - Upload-alert preference (device-local stub)
+    // MARK: - Upload-alert preference (creator_notification_preferences)
 
+    /// Local cache key so the bell reflects the last known value instantly on
+    /// cold open, before the table read settles.
     private var uploadAlertsKey: String { "gs.creator.uploadAlerts.\(titleId)" }
 
-    private func loadUploadAlertsPref() {
+    /// Loads the per-creator upload-alert preference. Uses the UserDefaults
+    /// cache for an instant UI value, then reconciles against
+    /// `creator_notification_preferences` (the source of truth) using the same
+    /// dual-ownership resolution as the like/watchlist code.
+    private func loadUploadAlertsPref() async {
         uploadAlertsOn = UserDefaults.standard.bool(forKey: uploadAlertsKey)
+        let deviceId = DeviceIdentity.shared.deviceId
+        let userId = AuthViewModel.shared.currentUser?.id.uuidString
+        do {
+            var query = SupabaseManager.shared.client
+                .from("creator_notification_preferences")
+                .select("notify_uploads")
+                .eq("title_id", value: titleId)
+            if let userId {
+                query = query.or("user_id.eq.\(userId),device_id.eq.\(deviceId)")
+            } else {
+                query = query.eq("device_id", value: deviceId)
+            }
+            let rows: [CreatorNotifPrefRow] = try await query.limit(1).execute().value
+            if let pref = rows.first?.notify_uploads {
+                uploadAlertsOn = pref
+                UserDefaults.standard.set(pref, forKey: uploadAlertsKey)
+            }
+        } catch {
+            print("[Creator] upload-alert pref load failed: \(error.localizedDescription)")
+        }
     }
 
-    /// Persists the per-creator upload-alert toggle locally.
-    /// TODO(schema): There is no per-creator notification-preference table yet,
-    /// so this is device-local only via UserDefaults. When a
-    /// `creator_notification_preferences` (user_id/device_id + title_id) table
-    /// exists, mirror the title_likes dual-ownership pattern to sync it.
+    /// Flips the per-creator upload-alert toggle. Local state + cache update
+    /// immediately for a responsive UI; the table write is best-effort and
+    /// upserts on the matching unique index (user_id+title_id signed-in,
+    /// device_id+title_id guest).
     private func toggleUploadAlerts() {
 #if os(iOS)
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
 #endif
         uploadAlertsOn.toggle()
-        UserDefaults.standard.set(uploadAlertsOn, forKey: uploadAlertsKey)
+        let newValue = uploadAlertsOn
+        UserDefaults.standard.set(newValue, forKey: uploadAlertsKey)
         WatchIntentLogger.shared.log(
             eventType: .cardTapped,
             titleId: titleId,
-            metadata: ["source": "creator_detail", "action": "upload_alerts", "enabled": uploadAlertsOn]
+            metadata: ["source": "creator_detail", "action": "upload_alerts", "enabled": newValue]
+        )
+        Task { await persistUploadAlerts(newValue) }
+    }
+
+    private func persistUploadAlerts(_ enabled: Bool) async {
+        let deviceId = DeviceIdentity.shared.deviceId
+        let userId = AuthViewModel.shared.currentUser?.id.uuidString
+        var payload: [String: AnyJSON] = [
+            "title_id": .string(titleId),
+            "device_id": .string(deviceId),
+            "notify_uploads": .bool(enabled)
+        ]
+        if let userId { payload["user_id"] = .string(userId) }
+        let onConflict = userId != nil ? "user_id,title_id" : "device_id,title_id"
+        do {
+            try await SupabaseManager.shared.client
+                .from("creator_notification_preferences")
+                .upsert(payload, onConflict: onConflict)
+                .execute()
+        } catch {
+            print("[Creator] upload-alert pref upsert failed: \(error.localizedDescription)")
+        }
+    }
+
+    // MARK: - Channel meta loader (youtube_channel_meta edge function)
+
+    /// Loads channel statistics, bio, and recent uploads via the deployed
+    /// `youtube_channel_meta` Supabase edge function. The function proxies the
+    /// YouTube Data API server-side, so no API key ships in the client.
+    ///
+    /// Behaviour:
+    /// - `ok:false` or a thrown error → keep whatever the header already shows,
+    ///   render the stat row as "—", and leave uploads empty (never crash, never
+    ///   show fake numbers).
+    /// - `pending:true` → channel id not yet resolved server-side: enrich the
+    ///   header + bio from `channel`, show stats as "—", uploads empty.
+    /// - otherwise → populate stats, bio, and the recent-uploads list.
+    private func loadChannelMeta() async {
+        isLoadingMeta = true
+        defer { isLoadingMeta = false }
+        do {
+            let response: ChannelMetaResponse = try await SupabaseManager.shared.client.functions
+                .invoke(
+                    "youtube_channel_meta",
+                    options: FunctionInvokeOptions(body: ["title_id": titleId])
+                )
+            guard response.ok else { return }
+
+            // Header enrichment — prefer the channel name/avatar from the API,
+            // falling back to whatever the sheet was already showing.
+            if let channel = response.channel {
+                applyChannelToSource(channel)
+            }
+
+            // Stats are null while pending; render "—" in that case.
+            channelMeta = ChannelMeta(
+                subscribers: response.stats.map { Int($0.subscribers) },
+                videoCount: response.stats.map { Int($0.videos) },
+                viewCount: response.stats.map { Int($0.views) },
+                description: response.channel?.description
+            )
+
+            channelUploads = response.uploads
+
+            // Default the inline player to the most recent upload when nothing
+            // was explicitly routed (e.g. from the New Episodes rail).
+            if currentEpisodeId == nil, initialEpisode == nil, let first = response.uploads.first {
+                currentEpisodeId = first.videoId
+                currentDeepLinkUrl = first.deepLink
+            }
+        } catch {
+            print("[Creator] channel meta load failed: \(error.localizedDescription)")
+        }
+    }
+
+    /// Merges the edge function's channel name/avatar/description into the
+    /// loaded `ContentSource` so the header + bio prefer the live values.
+    private func applyChannelToSource(_ channel: ChannelMetaResponse.Channel) {
+        guard let existing = source else { return }
+        let name = (channel.name?.trimmingCharacters(in: .whitespacesAndNewlines)).flatMap { $0.isEmpty ? nil : $0 }
+        let avatar = (channel.avatar?.trimmingCharacters(in: .whitespacesAndNewlines)).flatMap { $0.isEmpty ? nil : $0 }
+        let desc = (channel.description?.trimmingCharacters(in: .whitespacesAndNewlines)).flatMap { $0.isEmpty ? nil : $0 }
+        let link = (channel.channelUrl?.trimmingCharacters(in: .whitespacesAndNewlines)).flatMap { $0.isEmpty ? nil : $0 }
+        source = ContentSource(
+            titleId: existing.titleId,
+            sourceType: existing.sourceType,
+            displayName: name ?? existing.displayName,
+            handle: existing.handle,
+            imageUrl: avatar ?? existing.imageUrl,
+            externalId: existing.externalId,
+            feedUrl: existing.feedUrl,
+            channelUrl: existing.channelUrl ?? link,
+            websubTopic: existing.websubTopic,
+            category: existing.category,
+            description: desc ?? existing.description,
+            createdAt: existing.createdAt,
+            updatedAt: existing.updatedAt
         )
     }
 
-    // MARK: - Channel meta loader (stub)
+    // MARK: - YouTube recent uploads (edge function)
 
-    /// Loads channel statistics + bio from the YouTube Data API
-    /// `channels.list` endpoint (parts: snippet,statistics).
-    /// TODO(edge-function): Route this through a Supabase edge function (e.g.
-    /// "youtube-channel-meta") so YOUTUBE_API_KEY stays server-side. That
-    /// function does not exist yet, so this returns placeholders (nil), and the
-    /// stat row renders "—" until it is built.
-    private func loadChannelMeta() async -> ChannelMeta? {
-        return nil
+    private var uploadsLoadingPlaceholder: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Recent uploads")
+                .scaledFont(size: 17, weight: .semibold)
+                .foregroundStyle(.white)
+            HStack(spacing: 10) {
+                ProgressView().tint(Color.white.opacity(0.6))
+                Text("Loading uploads…")
+                    .scaledFont(size: 13)
+                    .foregroundStyle(Color.textTertiary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.vertical, 8)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func youtubeUploadsSection(source: ContentSource) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("Recent uploads")
+                    .scaledFont(size: 17, weight: .semibold)
+                    .foregroundStyle(.white)
+                Spacer(minLength: 8)
+#if os(iOS)
+                if let openUrl = externalChannelUrl(source: source) {
+                    Button {
+                        UIApplication.shared.open(openUrl)
+                    } label: {
+                        Text("See all")
+                            .scaledFont(size: 13, weight: .semibold)
+                            .foregroundStyle(Color.orange)
+                    }
+                    .buttonStyle(.plain)
+                }
+#endif
+            }
+
+            ForEach(channelUploads) { upload in
+                Button {
+                    selectUpload(upload)
+                } label: {
+                    youtubeUploadRow(upload)
+                }
+                .buttonStyle(.plain)
+                if upload.id != channelUploads.last?.id {
+                    Divider().overlay(Color.white.opacity(0.05))
+                }
+            }
+        }
+    }
+
+    private func youtubeUploadRow(_ upload: ChannelMetaResponse.Upload) -> some View {
+        let isActive = currentEpisodeId == upload.videoId
+        return HStack(spacing: 12) {
+            Color(.sRGB, white: 0.1, opacity: 1)
+                .frame(width: 120, height: 68)
+                .overlay {
+                    if let thumb = upload.thumbnail {
+                        RemoteImage(urlString: thumb, contentMode: .fill, fallbackColors: [sourceColor, sourceColor.opacity(0.4)])
+                            .allowsHitTesting(false)
+                    } else {
+                        Image(systemName: "play.rectangle.fill")
+                            .scaledFont(size: 20, weight: .semibold)
+                            .foregroundStyle(sourceColor.opacity(0.5))
+                    }
+                }
+                .clipShape(.rect(cornerRadius: 8))
+                .overlay(alignment: .bottomTrailing) {
+                    let badge = durationBadge(seconds: upload.durationSeconds)
+                    if !badge.isEmpty {
+                        Text(badge)
+                            .scaledFont(size: 10, weight: .bold)
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 2)
+                            .background(RoundedRectangle(cornerRadius: 4).fill(Color.black.opacity(0.75)))
+                            .padding(5)
+                    }
+                }
+                .overlay(alignment: .center) {
+                    if isActive {
+                        Image(systemName: "play.circle.fill")
+                            .scaledFont(size: 22, weight: .bold)
+                            .foregroundStyle(.white)
+                            .shadow(radius: 4)
+                    }
+                }
+
+            VStack(alignment: .leading, spacing: 5) {
+                Text(upload.title.isEmpty ? "Video" : upload.title)
+                    .scaledFont(size: 14, weight: isActive ? .bold : .semibold)
+                    .foregroundStyle(isActive ? sourceColor : Color.textPrimary)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+                let meta = uploadMetaLine(upload)
+                if !meta.isEmpty {
+                    Text(meta)
+                        .scaledFont(size: 12)
+                        .foregroundStyle(Color.textTertiary)
+                        .lineLimit(1)
+                }
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(.vertical, 6)
+        .contentShape(Rectangle())
+    }
+
+    /// Opens an upload through the existing inline YouTube player path by
+    /// selecting its video id (the same mechanism episode rows use). No raw
+    /// stream URL is extracted.
+    private func selectUpload(_ upload: ChannelMetaResponse.Upload) {
+        WatchIntentLogger.shared.log(
+            eventType: .cardTapped,
+            titleId: titleId,
+            metadata: ["section": "creator_detail", "kind": kind.sourceType, "action": "select_upload", "video_id": upload.videoId]
+        )
+        currentEpisodeId = upload.videoId
+        currentDeepLinkUrl = upload.deepLink
+    }
+
+    /// "mm:ss" (or "h:mm:ss") duration badge from a raw seconds count.
+    private func durationBadge(seconds: Int) -> String {
+        guard seconds > 0 else { return "" }
+        let h = seconds / 3600
+        let m = (seconds % 3600) / 60
+        let s = seconds % 60
+        if h > 0 { return String(format: "%d:%02d:%02d", h, m, s) }
+        return String(format: "%d:%02d", m, s)
+    }
+
+    /// "3 days ago · 1.4M views" — relative date from `published_at` plus a
+    /// compact view count. Either part is omitted when unavailable.
+    private func uploadMetaLine(_ upload: ChannelMetaResponse.Upload) -> String {
+        var parts: [String] = []
+        if let date = parseISODate(upload.publishedAt) {
+            parts.append(episodeDateFormatter.localizedString(for: date, relativeTo: Date()))
+        }
+        if upload.views > 0 {
+            parts.append("\(formatStat(Int(upload.views))) views")
+        }
+        return parts.joined(separator: " · ")
+    }
+
+    private func parseISODate(_ raw: String?) -> Date? {
+        guard let raw, !raw.isEmpty else { return nil }
+        let withFractional = ISO8601DateFormatter()
+        withFractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let d = withFractional.date(from: raw) { return d }
+        let plain = ISO8601DateFormatter()
+        plain.formatOptions = [.withInternetDateTime]
+        return plain.date(from: raw)
     }
 
     // MARK: - Media area
@@ -1097,11 +1384,7 @@ struct CreatorDetailView: View {
     private func load() async {
         isLoading = true
         defer { isLoading = false }
-        loadUploadAlertsPref()
-        // Channel statistics + bio (pending edge function — returns nil for now).
-        if kind == .youtube {
-            channelMeta = await loadChannelMeta()
-        }
+        await loadUploadAlertsPref()
         do {
             let sources = try await ContentSourcesService.shared.fetchSources()
             source = sources.first { $0.titleId == titleId } ?? fallbackSource()
@@ -1110,17 +1393,19 @@ struct CreatorDetailView: View {
                 liveStatus = statuses?.first
             }
 
-            // Fetch episodes for YouTube / Podcast creators
-            if kind == .youtube || kind == .podcast {
+            // Honor a specific episode routed from the New Episodes rail so the
+            // inline player opens straight to it (YouTube + Podcast).
+            if let initial = initialEpisode {
+                currentEpisodeId = initial.episodeId
+                currentDeepLinkUrl = initial.deepLinkUrl
+            }
+
+            // Podcasts still source their recent episodes from new_episodes;
+            // YouTube uploads now come from the youtube_channel_meta edge function.
+            if kind == .podcast {
                 if let fetched = try? await ContentSourcesService.shared.fetchEpisodes(forTitleId: titleId) {
                     episodes = fetched
-                    // Determine current episode
-                    if let initial = initialEpisode {
-                        // Route to the specific episode tapped
-                        currentEpisodeId = initial.episodeId
-                        currentDeepLinkUrl = initial.deepLinkUrl
-                    } else if let first = fetched.first {
-                        // Default to most recent
+                    if initialEpisode == nil, let first = fetched.first {
                         currentEpisodeId = first.episodeId
                         currentDeepLinkUrl = first.deepLinkUrl
                     }
@@ -1131,6 +1416,13 @@ struct CreatorDetailView: View {
             // Network/db failure shouldn't dead-end a creator the user already
             // saved — fall back to the watch-list entry so the screen still opens.
             source = fallbackSource()
+        }
+
+        // Channel statistics, bio, and recent uploads via the edge function
+        // (YouTube only). Runs after `source` is set so the header can be
+        // enriched with the live channel name/avatar.
+        if kind == .youtube {
+            await loadChannelMeta()
         }
     }
 
