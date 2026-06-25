@@ -69,7 +69,7 @@ struct CreatorDetailView: View {
                                 Circle()
                                     .fill(sourceColor.opacity(0.15))
                                     .frame(width: 88, height: 88)
-                                if let url = source.imageUrl {
+                                if let url = CreatorImageOverrides.resolve(titleId: titleId, stored: source.imageUrl) {
                                     RemoteImage(urlString: url, contentMode: .fill, fallbackColors: [sourceColor, sourceColor.opacity(0.5)])
                                         .frame(width: 88, height: 88)
                                         .clipShape(Circle())

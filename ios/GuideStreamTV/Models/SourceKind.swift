@@ -15,6 +15,27 @@ extension Notification.Name {
     static let guideStreamOpenTitle = Notification.Name("GuideStreamOpenTitle")
 }
 
+/// Curated avatar overrides for seed creators whose stored `image_url` /
+/// `poster_url` points at a placeholder default YouTube letter-avatar (because
+/// the seed data referenced the wrong channel) rather than the real channel
+/// photo. Keyed by the prefixed title_id. When an override exists it takes
+/// precedence over any stored URL so cards always show a real image.
+enum CreatorImageOverrides {
+    static let map: [String: String] = [
+        // "Mat Armstrong" (Automotive / BMX) — real channel photo.
+        "yt:UCmat": "https://yt3.googleusercontent.com/ytc/AIdro_llPlK76qJ3vTfaeS0kmTk8L_1a-Ux7kWoMopedNGwzEK4=s800-c-k-c0x00ffffff-no-rj",
+        // "Gil's Arena" (NBA debate show) — real channel photo.
+        "yt:UCgil": "https://yt3.googleusercontent.com/OFBs63C5LsEv-FScjEAFg432Wisv6xRneRq2dV7LJ-gOhv0TnA1WRn_OHOCw-kZnrkEt0XGu=s800-c-k-c0x00ffffff-no-rj"
+    ]
+
+    /// Returns the best image URL for a title_id: the curated override when one
+    /// exists, otherwise the supplied stored value.
+    static func resolve(titleId: String, stored: String?) -> String? {
+        if let override = map[titleId] { return override }
+        return stored
+    }
+}
+
 /// The kind of source a title_id represents, derived from its prefix.
 enum SourceKind: String, CaseIterable, Sendable {
     case tmdb

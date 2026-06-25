@@ -157,7 +157,7 @@ private struct WatchListContent: View {
                                 isLive: liveStatusMap[item.titleId]?.isLive ?? false,
                                 isStreamer: SourceKind.from(titleId: item.titleId).isLivestream,
                                 streamTitle: liveStatusMap[item.titleId]?.streamTitle,
-                                effectivePosterUrl: item.posterUrl ?? sourceImageMap[item.titleId]
+                                effectivePosterUrl: CreatorImageOverrides.resolve(titleId: item.titleId, stored: item.posterUrl ?? sourceImageMap[item.titleId])
                             )
                         }
                         .buttonStyle(.plain)

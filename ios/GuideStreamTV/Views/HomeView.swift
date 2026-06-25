@@ -1450,7 +1450,7 @@ struct HomeView: View {
                 isNew: false,
                 posterColors: kind.isNonTMDB ? [sourceKindColor(kind), sourceKindColor(kind).opacity(0.5)] : HomeFallback.posterColors,
                 symbol: kind == .podcast ? "mic.fill" : "bookmark.fill",
-                posterUrl: row.posterUrl ?? sourceImageMap[row.titleId],
+                posterUrl: CreatorImageOverrides.resolve(titleId: row.titleId, stored: row.posterUrl ?? sourceImageMap[row.titleId]),
                 tmdbId: kind == .tmdb ? Int(row.titleId) : nil,
                 titleId: row.titleId
             )
@@ -1525,7 +1525,7 @@ struct HomeView: View {
                     isNew: row.isNew ?? true,
                     posterColors: [platformColor, platformColor.opacity(0.5)],
                     symbol: kind == .podcast ? "mic.fill" : "play.rectangle.fill",
-                    posterUrl: row.posterUrl ?? row.thumbnailUrl ?? sourceImageMap[row.titleId],
+                    posterUrl: CreatorImageOverrides.resolve(titleId: row.titleId, stored: row.posterUrl ?? row.thumbnailUrl ?? sourceImageMap[row.titleId]),
                     tmdbId: nil,
                     titleId: row.titleId,
                     episodeId: row.episodeId,

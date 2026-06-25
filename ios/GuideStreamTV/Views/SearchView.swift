@@ -464,7 +464,7 @@ private struct CreatorSearchRow: View {
                     Circle()
                         .fill(sourceColor.opacity(0.15))
                         .frame(width: 44, height: 44)
-                    if let url = creator.avatarUrl {
+                    if let url = CreatorImageOverrides.resolve(titleId: creator.titleId, stored: creator.avatarUrl) {
                         RemoteImage(urlString: url, contentMode: .fill, fallbackColors: [sourceColor, sourceColor.opacity(0.5)])
                             .frame(width: 44, height: 44)
                             .clipShape(Circle())
