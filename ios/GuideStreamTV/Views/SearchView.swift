@@ -335,6 +335,7 @@ struct SearchView: View {
             CreatorDetailView(
                 titleId: target.titleId,
                 initialEpisode: target.initialEpisode,
+                fallbackCreator: target.fallbackCreator,
                 onBack: { creatorDetailTarget = nil }
             )
         }
@@ -430,7 +431,7 @@ struct SearchView: View {
 
     private func openCreator(_ creator: DiscoverableCreator) {
         WatchIntentLogger.shared.log(eventType: .cardTapped, titleId: creator.titleId, platformId: creator.sourceType, metadata: ["section": "search", "kind": creator.sourceType])
-        creatorDetailTarget = CreatorDetailTarget(titleId: creator.titleId, initialEpisode: nil)
+        creatorDetailTarget = CreatorDetailTarget(titleId: creator.titleId, initialEpisode: nil, fallbackCreator: creator)
     }
 
     private func openTMDB(_ result: SearchResult) {

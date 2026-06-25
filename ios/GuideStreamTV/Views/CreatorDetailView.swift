@@ -30,12 +30,16 @@ struct CreatorInitialEpisode: Hashable {
 struct CreatorDetailTarget: Identifiable, Hashable {
     let titleId: String
     let initialEpisode: CreatorInitialEpisode?
+    /// Creator metadata captured at tap time (e.g. from live search) so the
+    /// detail screen can render even when no `content_sources` row exists yet.
+    var fallbackCreator: DiscoverableCreator? = nil
     var id: String { titleId }
 }
 
 struct CreatorDetailView: View {
     let titleId: String
     var initialEpisode: CreatorInitialEpisode? = nil
+    var fallbackCreator: DiscoverableCreator? = nil
     let onBack: () -> Void
 
     @State private var source: ContentSource?
@@ -63,77 +67,8 @@ struct CreatorDetailView: View {
                         // MARK: Media area
                         mediaArea(source: source)
 
-                        // MARK: Header
-                        VStack(spacing: 16) {
-                            ZStack {
-                                Circle()
-                                    .fill(sourceColor.opacity(0.15))
-                                    .frame(width: 88, height: 88)
-                                if let url = CreatorImageOverrides.resolve(titleId: titleId, stored: source.imageUrl) {
-                                    RemoteImage(urlString: url, contentMode: .fill, fallbackColors: [sourceColor, sourceColor.opacity(0.5)])
-                                        .frame(width: 88, height: 88)
-                                        .clipShape(Circle())
-                                        .allowsHitTesting(false)
-                                } else {
-                                    Image(systemName: kindIcon)
-                                        .scaledFont(size: 36, weight: .semibold)
-                                        .foregroundStyle(sourceColor)
-                                }
-                            }
-
-                            Text(source.displayName)
-                                .scaledFont(size: 24, weight: .bold)
-                                .foregroundStyle(.white)
-                                .multilineTextAlignment(.center)
-
-                            HStack(spacing: 8) {
-                                SourceTypeBadge(kind: kind)
-                                if let handle = source.handle {
-                                    let cleanHandle = handle.hasPrefix("@") ? String(handle.dropFirst()) : handle
-                                    Text("@\(cleanHandle)")
-                                        .scaledFont(size: 14)
-                                        .foregroundStyle(Color.textSecondary)
-                                }
-                            }
-
-                            if let liveStatus, liveStatus.isLive {
-                                HStack(spacing: 8) {
-                                    LivePill()
-                                    Text("Live now")
-                                        .scaledFont(size: 14, weight: .semibold)
-                                        .foregroundStyle(Color.textSecondary)
-                                    if let viewers = liveStatus.viewerCount {
-                                        Text("·")
-                                        Text(formatViewers(viewers))
-                                            .scaledFont(size: 13)
-                                            .foregroundStyle(Color.textTertiary)
-                                    }
-                                }
-                            }
-
-                            // Follow button
-                            Button {
-                                toggleFollow()
-                            } label: {
-                                HStack(spacing: 6) {
-                                    Image(systemName: isFollowed ? "checkmark" : "plus")
-                                        .scaledFont(size: 14, weight: .bold)
-                                    Text(isFollowed ? "Following" : "Follow")
-                                        .scaledFont(size: 15, weight: .bold)
-                                }
-                                .foregroundStyle(isFollowed ? Color.textSecondary : .white)
-                                .frame(maxWidth: .infinity)
-                                .frame(height: 48)
-                                .background(
-                                    Capsule()
-                                        .fill(isFollowed ? Color.white.opacity(0.10) : Color.orange)
-                                )
-                            }
-                            .buttonStyle(.plain)
-                            .padding(.horizontal, 40)
-                        }
-                        .padding(.top, 20)
-                        .padding(.bottom, 28)
+                        // MARK: Header (show-detail style hero)
+                        creatorHeader(source: source)
 
                         Divider().overlay(Color.white.opacity(0.08)).padding(.horizontal, 20)
 
@@ -278,6 +213,149 @@ struct CreatorDetailView: View {
 #endif
         .task { await load() }
     }
+
+    // MARK: - Header
+
+    @ViewBuilder
+    private func creatorHeader(source: ContentSource) -> some View {
+        let avatarUrl = CreatorImageOverrides.resolve(titleId: titleId, stored: source.imageUrl)
+
+        VStack(spacing: 0) {
+            ZStack(alignment: .bottom) {
+                // Blurred backdrop built from the creator's avatar for depth
+                if let avatarUrl {
+                    RemoteImage(urlString: avatarUrl, contentMode: .fill, fallbackColors: [sourceColor, sourceColor.opacity(0.4)])
+                        .frame(height: 180)
+                        .frame(maxWidth: .infinity)
+                        .clipped()
+                        .blur(radius: 32)
+                        .opacity(0.55)
+                        .allowsHitTesting(false)
+                } else {
+                    LinearGradient(
+                        colors: [sourceColor.opacity(0.45), sourceColor.opacity(0.08)],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                    .frame(height: 180)
+                }
+
+                LinearGradient(colors: [.clear, Color.navy], startPoint: .top, endPoint: .bottom)
+                    .frame(height: 180)
+                    .allowsHitTesting(false)
+
+                // Avatar ring sitting on the backdrop
+                ZStack {
+                    Circle()
+                        .fill(Color.navy)
+                        .frame(width: 104, height: 104)
+                    Circle()
+                        .fill(sourceColor.opacity(0.15))
+                        .frame(width: 96, height: 96)
+                    if let avatarUrl {
+                        RemoteImage(urlString: avatarUrl, contentMode: .fill, fallbackColors: [sourceColor, sourceColor.opacity(0.5)])
+                            .frame(width: 96, height: 96)
+                            .clipShape(Circle())
+                            .allowsHitTesting(false)
+                    } else {
+                        Image(systemName: kindIcon)
+                            .scaledFont(size: 38, weight: .semibold)
+                            .foregroundStyle(sourceColor)
+                    }
+                }
+                .overlay(
+                    Circle().stroke(Color.white.opacity(0.12), lineWidth: 1)
+                        .frame(width: 96, height: 96)
+                )
+                .offset(y: 30)
+            }
+            .frame(height: 180)
+            .padding(.bottom, 30)
+
+            VStack(spacing: 12) {
+                Text(source.displayName)
+                    .scaledFont(size: 25, weight: .bold)
+                    .foregroundStyle(.white)
+                    .multilineTextAlignment(.center)
+
+                HStack(spacing: 8) {
+                    SourceTypeBadge(kind: kind)
+                    if let handle = source.handle {
+                        let cleanHandle = handle.hasPrefix("@") ? String(handle.dropFirst()) : handle
+                        Text("@\(cleanHandle)")
+                            .scaledFont(size: 14)
+                            .foregroundStyle(Color.textSecondary)
+                    }
+                }
+
+                if let liveStatus, liveStatus.isLive {
+                    HStack(spacing: 8) {
+                        LivePill()
+                        Text("Live now")
+                            .scaledFont(size: 14, weight: .semibold)
+                            .foregroundStyle(Color.textSecondary)
+                        if let viewers = liveStatus.viewerCount {
+                            Text("·")
+                            Text(formatViewers(viewers))
+                                .scaledFont(size: 13)
+                                .foregroundStyle(Color.textTertiary)
+                        }
+                    }
+                }
+
+                // Action row: Follow + open-channel CTA
+                HStack(spacing: 10) {
+                    Button {
+                        toggleFollow()
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: isFollowed ? "checkmark" : "plus")
+                                .scaledFont(size: 14, weight: .bold)
+                            Text(isFollowed ? "Following" : "Follow")
+                                .scaledFont(size: 15, weight: .bold)
+                        }
+                        .foregroundStyle(isFollowed ? Color.textSecondary : .white)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 48)
+                        .background(
+                            Capsule()
+                                .fill(isFollowed ? Color.white.opacity(0.10) : Color.orange)
+                        )
+                    }
+                    .buttonStyle(.plain)
+
+#if os(iOS)
+                    if let openUrl = externalChannelUrl(source: source) {
+                        Button {
+                            UIApplication.shared.open(openUrl)
+                        } label: {
+                            Image(systemName: "arrow.up.right.square")
+                                .scaledFont(size: 18, weight: .semibold)
+                                .foregroundStyle(.white)
+                                .frame(width: 48, height: 48)
+                                .background(Circle().fill(Color.white.opacity(0.08)))
+                                .overlay(Circle().stroke(Color.white.opacity(0.14), lineWidth: 1))
+                        }
+                        .buttonStyle(.plain)
+                    }
+#endif
+                }
+                .padding(.horizontal, 24)
+                .padding(.top, 4)
+            }
+            .padding(.bottom, 28)
+        }
+    }
+
+#if os(iOS)
+    /// Best external URL to open the creator's channel/page in its native app or web.
+    private func externalChannelUrl(source: ContentSource) -> URL? {
+        if let url = source.channelUrl ?? source.feedUrl, let u = URL(string: url) {
+            return u
+        }
+        return nil
+    }
+#endif
 
     // MARK: - Media area
 
@@ -676,10 +754,29 @@ struct CreatorDetailView: View {
         }
     }
 
-    /// Builds a minimal ContentSource from the user's saved watch-list entry so
-    /// creators discovered via live search (whose content_sources upsert may not
-    /// have persisted) still open instead of showing "Creator not found".
+    /// Builds a minimal ContentSource so creators discovered via live search
+    /// (whose content_sources upsert may not have persisted) still open instead
+    /// of showing "Creator not found". Prefers the metadata captured at tap time
+    /// (search/discovery), then falls back to the user's saved watch-list entry.
     private func fallbackSource() -> ContentSource? {
+        if let creator = fallbackCreator {
+            let cleanName = creator.displayName.isEmpty ? kind.displayLabel : creator.displayName
+            return ContentSource(
+                titleId: titleId,
+                sourceType: creator.sourceType,
+                displayName: cleanName,
+                handle: creator.handle,
+                imageUrl: creator.imageUrl,
+                externalId: nil,
+                feedUrl: nil,
+                channelUrl: nil,
+                websubTopic: nil,
+                category: creator.category,
+                description: creator.description,
+                createdAt: nil,
+                updatedAt: nil
+            )
+        }
         guard let saved = streams.userStreams.first(where: { $0.titleId == titleId }) else {
             return nil
         }
