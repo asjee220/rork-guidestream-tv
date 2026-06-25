@@ -5,6 +5,7 @@
 
 import SwiftUI
 import UserNotifications
+import Supabase
 
 // MARK: - Home Models
 
@@ -59,8 +60,11 @@ struct Episode: Identifiable, Hashable {
     let symbol: String
     let posterUrl: String?
     let tmdbId: Int?
+    /// Prefixed title_id for non-TMDB entities (e.g. "yt:...", "tw:...").
+    /// Used to resolve live status and route to CreatorDetailView.
+    var titleId: String?
 
-    init(title: String, season: String, duration: String, platform: Platform, isNew: Bool = false, progress: Double = 0, posterColors: [Color], symbol: String, posterUrl: String? = nil, tmdbId: Int? = nil) {
+    init(title: String, season: String, duration: String, platform: Platform, isNew: Bool = false, progress: Double = 0, posterColors: [Color], symbol: String, posterUrl: String? = nil, tmdbId: Int? = nil, titleId: String? = nil) {
         self.title = title
         self.season = season
         self.duration = duration
@@ -72,6 +76,7 @@ struct Episode: Identifiable, Hashable {
         self.symbol = symbol
         self.posterUrl = posterUrl
         self.tmdbId = tmdbId
+        self.titleId = titleId
     }
 }
 
@@ -155,6 +160,10 @@ struct HomeView: View {
     @State private var genreHighlighted: Bool = false
     @State private var becauseYouWatchHighlighted: Bool = false
     @State private var comingToStreaming: [ComingToStreamingItem] = []
+    /// Maps prefixed title_ids to their live status for watchlist live indicators.
+    @State private var liveStatusMap: [String: LiveStatus] = [:]
+    /// Full-screen detail for non-TMDB creator / podcast entities.
+    @State private var creatorDetailId: IdentifiableString?
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -189,7 +198,7 @@ struct HomeView: View {
                                 Image(systemName: "magnifyingglass")
                                     .font(.system(size: 15, weight: .medium))
                                     .foregroundStyle(Color.white.opacity(0.4))
-                                Text("Search shows, movies, sports…")
+                                Text("Search shows, creators, podcasts…")
                                     .font(.system(size: 14))
                                     .foregroundStyle(Color.white.opacity(0.3))
                                 Spacer()
@@ -250,6 +259,7 @@ struct HomeView: View {
                         WatchListSection(
                             items: watchListEpisodes,
                             isAuthenticated: auth.isAuthenticated,
+                            liveStatusMap: liveStatusMap,
                             onSeeAll: {
                                 WatchIntentLogger.shared.log(
                                     eventType: .cardTapped,
@@ -260,11 +270,15 @@ struct HomeView: View {
                             onOpen: { ep in
                                 WatchIntentLogger.shared.log(
                                     eventType: .cardTapped,
-                                    titleId: WatchIntentLogger.titleSlug(ep.title),
+                                    titleId: ep.titleId ?? WatchIntentLogger.titleSlug(ep.title),
                                     platformId: ep.platform.lowercased(),
                                     metadata: ["section": "watch_list"]
                                 )
-                                detailSubject = .episode(ep)
+                                if let tid = ep.titleId, SourceKind.from(titleId: tid).isNonTMDB {
+                                    creatorDetailId = IdentifiableString(tid)
+                                } else {
+                                    detailSubject = .episode(ep)
+                                }
                             }
                         )
                         .padding(.horizontal, 20)
@@ -803,6 +817,9 @@ struct HomeView: View {
                     onBack: { searchResultForDetail = nil }
                 )
             }
+            .fullScreenCover(item: $creatorDetailId) { id in
+                CreatorDetailView(titleId: id.value, onBack: { creatorDetailId = nil })
+            }
             .sheet(isPresented: $showServicesSheet) {
                 ServicesBottomSheet()
             }
@@ -817,6 +834,7 @@ struct HomeView: View {
             await streams.refreshAll()
             await loadTrendingIfNeeded()
             await loadComingToStreaming()
+            await subscribeToLiveStatus()
         }
         .refreshable {
             await streams.refreshAll()
@@ -836,6 +854,47 @@ struct HomeView: View {
     private func clearBadgeAndMarkSeen() async {
         try? await UNUserNotificationCenter.current().setBadgeCount(0)
         await streams.markStaleEpisodesSeen()
+    }
+
+    /// Subscribe to live_status changes via Supabase Realtime so the watchlist
+    /// live indicators update without a manual refresh.
+    private func subscribeToLiveStatus() async {
+        // Populate initial live state from saved creator/streamer title IDs.
+        let creatorIds = streams.userStreams
+            .filter { SourceKind.from(titleId: $0.titleId).isLivestream }
+            .map { $0.titleId }
+        if !creatorIds.isEmpty {
+            if let statuses = try? await ContentSourcesService.shared.fetchLiveStatus(for: creatorIds) {
+                var map: [String: LiveStatus] = [:]
+                for s in statuses { map[s.titleId] = s }
+                await MainActor.run { liveStatusMap = map }
+            }
+        }
+
+        // Background realtime subscription — updates the map on any change.
+        Task {
+            let client = SupabaseManager.shared.client
+            let channel = client.channel("live-status-home")
+            let changes = channel.postgresChange(
+                AnyAction.self,
+                schema: "public",
+                table: "live_status"
+            )
+            await channel.subscribe()
+            for await _ in changes {
+                // Re-fetch live status for our saved creator items.
+                let creatorIds = await MainActor.run {
+                    streams.userStreams
+                        .filter { SourceKind.from(titleId: $0.titleId).isLivestream }
+                        .map { $0.titleId }
+                }
+                if creatorIds.isEmpty { continue }
+                guard let statuses = try? await ContentSourcesService.shared.fetchLiveStatus(for: creatorIds) else { continue }
+                var map: [String: LiveStatus] = [:]
+                for s in statuses { map[s.titleId] = s }
+                await MainActor.run { liveStatusMap = map }
+            }
+        }
     }
 
     /// Selected service ids in catalogue order — keeps the pill's stacked icons
@@ -1265,8 +1324,11 @@ struct HomeView: View {
     /// platform badge entirely (empty string) when the saved row's platform
     /// is missing or a generic placeholder — the detail sheet's Watchmode
     /// lookup will fill in the real service when the user taps in.
+    /// Creator/streamer items (prefixed title_ids) are rendered with their
+    /// source-type styling and sorted to the front when live.
     var watchListEpisodes: [Episode] {
         streams.userStreams.map { row in
+            let kind = SourceKind.from(titleId: row.titleId)
             let raw = (row.platform ?? "").trimmingCharacters(in: .whitespaces)
             let platformName = raw.uppercased()
             let lowerRaw = raw.lowercased()
@@ -1287,21 +1349,36 @@ struct HomeView: View {
             case "CRUNCHYROLL": platform = .crunchyroll
             case "YOUTUBE": platform = .youtube
             default:
-                // Empty name means the rendering layer hides the chip
-                // entirely — better than the old "STREAM" placeholder.
-                platform = Platform(name: isGenericPlaceholder ? "" : platformName, color: Color.orange)
+                // For non-TMDB items, use source-type branded platform
+                if kind.isNonTMDB {
+                    platform = Platform(name: kind.displayLabel.uppercased(), color: sourceKindColor(kind))
+                } else {
+                    platform = Platform(name: isGenericPlaceholder ? "" : platformName, color: Color.orange)
+                }
             }
             return Episode(
                 title: row.title ?? "Untitled",
-                season: "Watch List",
+                season: kind.isNonTMDB ? kind.displayLabel : "Watch List",
                 duration: "",
                 platform: platform,
                 isNew: false,
-                posterColors: HomeFallback.posterColors,
-                symbol: "bookmark.fill",
+                posterColors: kind.isNonTMDB ? [sourceKindColor(kind), sourceKindColor(kind).opacity(0.5)] : HomeFallback.posterColors,
+                symbol: kind == .podcast ? "mic.fill" : "bookmark.fill",
                 posterUrl: row.posterUrl,
-                tmdbId: Int(row.titleId)
+                tmdbId: kind == .tmdb ? Int(row.titleId) : nil,
+                titleId: row.titleId
             )
+        }
+    }
+
+    /// Color for a SourceKind badge — used in watchlist cards for creator items.
+    private func sourceKindColor(_ kind: SourceKind) -> Color {
+        switch kind {
+        case .youtube: return Color(red: 0xFF/255, green: 0x00/255, blue: 0x00/255)
+        case .podcast: return Color(red: 0x7C/255, green: 0x3A/255, blue: 0xED/255)
+        case .twitch: return Color(red: 0x91/255, green: 0x46/255, blue: 0xFF/255)
+        case .kick: return Color(red: 0x53/255, green: 0xFC/255, blue: 0x18/255)
+        case .tmdb: return Color.orange
         }
     }
 
@@ -1769,21 +1846,72 @@ private struct TopPicksSection: View {
 private struct WatchListSection: View {
     let items: [Episode]
     let isAuthenticated: Bool
+    let liveStatusMap: [String: LiveStatus]
     let onSeeAll: () -> Void
     let onOpen: (Episode) -> Void
+
+    /// Count of live items in this section.
+    private var liveCount: Int {
+        items.filter { ep in
+            guard let tid = ep.titleId else { return false }
+            return liveStatusMap[tid]?.isLive ?? false
+        }.count
+    }
+
+    /// Items sorted with live ones first.
+    private var sortedItems: [Episode] {
+        items.sorted { a, b in
+            let aLive: Bool = {
+                guard let tid = a.titleId else { return false }
+                return liveStatusMap[tid]?.isLive ?? false
+            }()
+            let bLive: Bool = {
+                guard let tid = b.titleId else { return false }
+                return liveStatusMap[tid]?.isLive ?? false
+            }()
+            if aLive != bLive { return aLive }
+            return false
+        }
+    }
 
     var body: some View {
         SectionGlassCard(
             title: "My Watch List",
             onSeeAll: items.isEmpty ? nil : onSeeAll
         ) {
+            HStack(spacing: 4) {
+                if liveCount > 0 {
+                    HStack(spacing: 4) {
+                        Circle()
+                            .fill(Color.red)
+                            .frame(width: 6, height: 6)
+                            .scaleEffect(pulseLive ? 1.3 : 0.7)
+                            .opacity(pulseLive ? 1.0 : 0.4)
+                        Text("\(liveCount) LIVE")
+                            .scaledFont(size: 12, weight: .bold)
+                            .foregroundStyle(.white)
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Capsule().fill(Color.red.opacity(0.85)))
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.bottom, 4)
             if items.isEmpty {
                 emptyState
             } else {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 10) {
-                        ForEach(items) { ep in
-                            EpisodeThumbCard(episode: ep, onTap: { onOpen(ep) })
+                        ForEach(sortedItems) { ep in
+                            EpisodeThumbCard(
+                                episode: ep,
+                                isLive: {
+                                    guard let tid = ep.titleId else { return false }
+                                    return liveStatusMap[tid]?.isLive ?? false
+                                }(),
+                                onTap: { onOpen(ep) }
+                            )
                         }
                     }
                     .padding(.horizontal, 16)
@@ -1791,6 +1919,22 @@ private struct WatchListSection: View {
                 }
             }
         }
+        .overlay(liveCount > 0 ? redGlowOverlay : nil)
+    }
+
+    @State private var pulseLive: Bool = false
+
+    @ViewBuilder
+    private var redGlowOverlay: some View {
+        RoundedRectangle(cornerRadius: 14, style: .continuous)
+            .stroke(Color.red.opacity(0.25), lineWidth: 1.5)
+            .shadow(color: Color.red.opacity(0.15), radius: 8)
+            .allowsHitTesting(false)
+            .onAppear {
+                withAnimation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true)) {
+                    pulseLive = true
+                }
+            }
     }
 
     private var emptyState: some View {
@@ -2071,13 +2215,14 @@ private struct PlayingOnBanner: View {
 
 private struct EpisodeThumbCard: View {
     let episode: Episode
+    var isLive: Bool = false
     let onTap: () -> Void
 
     var body: some View {
         Button(action: onTap) {
             VStack(alignment: .leading, spacing: 8) {
                 Color.black
-                    .frame(width: 148, height: 88)
+                    .frame(width: 150, height: 225)
                     .overlay {
                         LinearGradient(
                             colors: episode.posterColors,
@@ -2092,7 +2237,7 @@ private struct EpisodeThumbCard: View {
                             contentMode: .fill,
                             fallbackColors: episode.posterColors
                         )
-                        .frame(width: 148, height: 88)
+                        .frame(width: 150, height: 225)
                         .clipped()
                         .allowsHitTesting(false)
                     }
@@ -2109,10 +2254,11 @@ private struct EpisodeThumbCard: View {
                             .allowsHitTesting(false)
                     }
                     .overlay(alignment: .bottomLeading) {
-                        // Only render the platform chip when we have a real,
-                        // recognised streaming service — empty / "STREAM" /
-                        // "Streaming" placeholders are never shown.
-                        if !episode.platform.isEmpty,
+                        if isLive {
+                            LiveCornerBadge()
+                                .padding(6)
+                                .allowsHitTesting(false)
+                        } else if !episode.platform.isEmpty,
                            episode.platform.uppercased() != "STREAM",
                            episode.platform.lowercased() != "streaming" {
                             Text(episode.platform)
@@ -2173,7 +2319,7 @@ private struct EpisodeThumbCard: View {
                         .foregroundStyle(Color.textTertiary)
                         .lineLimit(1)
                 }
-                .frame(width: 148, alignment: .leading)
+                .frame(width: 150, alignment: .leading)
             }
         }
         .buttonStyle(.plain)

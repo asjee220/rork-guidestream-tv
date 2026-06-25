@@ -4,9 +4,9 @@
 //
 //  Two surfaces that share the same content view (`WatchListContent`):
 //
-//  * `WatchListBottomSheet` \u2014 modal sheet presented from the home feed's
+//  * `WatchListBottomSheet` — modal sheet presented from the home feed's
 //    "See all" link on the Watch List section.
-//  * `WatchListView` \u2014 pushed onto the Profile stack so users can manage
+//  * `WatchListView` — pushed onto the Profile stack so users can manage
 //    their saved titles from the Profile tab as well.
 //
 //  Both surfaces pull the same `user_streams` Supabase rows, support
@@ -53,19 +53,22 @@ struct WatchListView: View {
 
 // MARK: - Shared content
 
-/// Renders the watch list itself \u2014 list, empty state, or guest prompt \u2014 plus
+/// Renders the watch list itself — list, empty state, or guest prompt — plus
 /// background atmosphere and the detail-sheet plumbing. Wrap this view in
 /// whatever navigation chrome the surface needs (sheet vs. push).
 private struct WatchListContent: View {
     @State private var streams = StreamsViewModel.shared
     @State private var auth = AuthViewModel.shared
     @State private var detailSubject: DetailSubject?
+    @State private var showFollowCreators: Bool = false
+    /// Full-screen detail for non-TMDB creator/ podcast entities.
+    @State private var creatorDetailId: IdentifiableString?
 
     var body: some View {
         ZStack {
             BrandBackground()
 
-            // Atmosphere \u2014 keeps the surface feeling like the rest of the app.
+            // Atmosphere — keeps the surface feeling like the rest of the app.
             GeometryReader { geo in
                 Circle()
                     .fill(Color.blue.opacity(0.14))
@@ -86,6 +89,12 @@ private struct WatchListContent: View {
         .sheet(item: $detailSubject) { subject in
             EpisodeDetailSheet(subject: subject)
         }
+        .fullScreenCover(isPresented: $showFollowCreators) {
+            FollowCreatorsView()
+        }
+        .fullScreenCover(item: $creatorDetailId) { wrapper in
+            CreatorDetailView(titleId: wrapper.value, onBack: { creatorDetailId = nil })
+        }
         .task {
             await streams.fetchUserStreams()
         }
@@ -97,7 +106,12 @@ private struct WatchListContent: View {
     @ViewBuilder
     private var content: some View {
         if streams.userStreams.isEmpty {
-            emptyState
+            VStack(spacing: 16) {
+                followCreatorsEntryCard
+                    .padding(.horizontal, 16)
+                    .padding(.top, 8)
+                emptyState
+            }
         } else {
             VStack(spacing: 0) {
                 if !auth.isAuthenticated {
@@ -105,11 +119,21 @@ private struct WatchListContent: View {
                         .padding(.horizontal, 16)
                         .padding(.top, 8)
                 }
+                // Follow creators entry card — pinned above the saved list
+                followCreatorsEntryCard
+                    .padding(.horizontal, 16)
+                    .padding(.top, 8)
+                    .padding(.bottom, 4)
                 List {
                     ForEach(streams.userStreams) { item in
                         Button {
                             UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                            detailSubject = .show(posterShow(from: item))
+                            let kind = SourceKind.from(titleId: item.titleId)
+                            if kind.isNonTMDB {
+                                creatorDetailId = IdentifiableString(item.titleId)
+                            } else {
+                                detailSubject = .show(posterShow(from: item))
+                            }
                         } label: {
                             WatchListRow(item: item)
                         }
@@ -131,6 +155,53 @@ private struct WatchListContent: View {
         }
     }
 
+    /// Entry card styled with orange-tinted glass that opens the Follow Creators
+    /// discovery screen on tap.
+    private var followCreatorsEntryCard: some View {
+        Button {
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            WatchIntentLogger.shared.log(
+                eventType: .cardTapped,
+                metadata: ["section": "follow_creators_entry", "source": "watch_list"]
+            )
+            showFollowCreators = true
+        } label: {
+            HStack(spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(Color.orange.opacity(0.14))
+                        .frame(width: 44, height: 44)
+                    Image(systemName: "person.2.badge.plus")
+                        .scaledFont(size: 18, weight: .semibold)
+                        .foregroundStyle(Color.orange)
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Follow creators & podcasts")
+                        .scaledFont(size: 14, weight: .semibold)
+                        .foregroundStyle(Color.textPrimary)
+                    Text("YouTube, Twitch, Kick, and more")
+                        .scaledFont(size: 12)
+                        .foregroundStyle(Color.textSecondary)
+                }
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right")
+                    .scaledFont(size: 13, weight: .semibold)
+                    .foregroundStyle(Color.textTertiary)
+            }
+            .padding(12)
+            .background(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(Color.orange.opacity(0.08))
+                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(Color.orange.opacity(0.18), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
     private var emptyState: some View {
         VStack(spacing: 14) {
             ZStack {
@@ -144,7 +215,7 @@ private struct WatchListContent: View {
             Text("Your watch list is empty")
                 .scaledFont(size: 17, weight: .bold)
                 .foregroundStyle(.white)
-            Text("Tap the + button on any show, movie, or game to save it here. We'll keep them ready for tonight.")
+            Text("Tap the + on any show, movie, or creator to save it here. We'll keep them ready for tonight.")
                 .scaledFont(size: 13)
                 .foregroundStyle(Color.textSecondary)
                 .multilineTextAlignment(.center)
@@ -292,6 +363,9 @@ private struct WatchListRow: View {
         if key.contains("showtime") { return Color(red: 0xD8/255, green: 0x00/255, blue: 0x00/255) }
         if key.contains("starz") { return Color(white: 0.08) }
         if key.contains("youtube") { return Color(red: 0xFF/255, green: 0x00/255, blue: 0x00/255) }
+        if key.contains("twitch") { return Color(red: 0x91/255, green: 0x46/255, blue: 0xFF/255) }
+        if key.contains("kick") { return Color(red: 0x53/255, green: 0xFC/255, blue: 0x18/255) }
+        if key.contains("podcast") { return Color(red: 0x7C/255, green: 0x3A/255, blue: 0xED/255) }
         return Color(red: 0x6A/255, green: 0x3F/255, blue: 0xE0/255)
     }
 }
