@@ -23,6 +23,7 @@
 //
 
 import Foundation
+import Supabase
 
 /// One title surfaced inside an agent reply. Carries enough to render a
 /// poster card AND tap through to the existing detail sheet via the
@@ -99,7 +100,7 @@ final class StreamAgentService {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { throw AgentError.emptyResponse }
 
-        let answer = try await callPerplexity(query: trimmed, connectedServices: connectedServices)
+        let answer = try await callAskStream(query: trimmed, connectedServices: connectedServices)
         let matches = await resolveTitleMatches(in: answer)
 
         // Remember the turn for follow-up context.
@@ -109,59 +110,46 @@ final class StreamAgentService {
         return AgentResponse(answer: answer, matches: matches)
     }
 
-    // MARK: - Perplexity call
+    // MARK: - AskStream call
 
-    private func callPerplexity(query: String, connectedServices: [String]) async throws -> String {
-        let toolkitURL = Config.EXPO_PUBLIC_TOOLKIT_URL.trimmingCharacters(in: .whitespaces)
-        let secret = Config.EXPO_PUBLIC_RORK_TOOLKIT_SECRET_KEY.trimmingCharacters(in: .whitespaces)
-        guard !toolkitURL.isEmpty, !secret.isEmpty else {
-            throw AgentError.missingSecret
-        }
-        guard let url = URL(string: "\(toolkitURL)/v2/vercel/v1/chat/completions") else {
+    /// Calls the app's own Claude-powered Supabase edge function (`askstream`),
+    /// which applies auth, rate limiting, a topical gate, a scoped system
+    /// prompt, and grounding on the user's follows, then returns a plain-text
+    /// answer. All soft blocks (off-topic, rate-limited, at-capacity, etc.)
+    /// come back as HTTP 200 with a friendly `reply`, so we simply surface it.
+    private func callAskStream(query: String, connectedServices: [String]) async throws -> String {
+        let base = SupabaseConfig.url.trimmingCharacters(in: .whitespaces)
+        guard let url = URL(string: "\(base)/functions/v1/askstream") else {
             throw AgentError.networkError
         }
 
-        let locale = DeviceLocale.current()
-        let region = locale.regionDisplayName
+        // Prefer the signed-in user's access token so the function can scope
+        // grounding + rate limits to the real user; fall back to the anon key
+        // (with device_id) for guests.
+        let accessToken = (try? await SupabaseManager.shared.client.auth.session)?.accessToken
+        let bearer = accessToken ?? SupabaseConfig.anonKey
 
-        let services: String = {
-            if connectedServices.isEmpty { return "the user hasn't connected any services yet" }
-            return connectedServices.map { $0.capitalized }.joined(separator: ", ")
-        }()
-
-        let systemPrompt = """
-        You are Stream Agent, the AI co-pilot inside GuideStream TV — a streaming guide app. Your job is to recommend movies and TV shows that the user can actually watch RIGHT NOW on a real streaming service.
-
-        Rules you MUST follow:
-        1. Only recommend titles that are currently available on a major streaming service (Netflix, Max/HBO, Hulu, Disney+, Apple TV+, Amazon Prime Video, Paramount+, Peacock, Crunchyroll, YouTube TV, etc.). NEVER say "available on streaming services" — name the specific service.
-        2. The user is in \(region). Prioritize services and titles available in that region.
-        3. The user's connected streaming services: \(services). PREFER titles available on those services and call it out when a recommendation requires a service the user hasn't connected.
-        4. Format each recommended title as **Title (Year)** on a line of its own, followed by a one-sentence pitch and the streaming service. Example:
-           **The Bear (2022)** — A chaotic, electric kitchen drama. Streaming on Hulu.
-        5. Limit to 3-6 recommendations per response. Quality over quantity.
-        6. If the user asks a non-recommendation question (a fact about a show, a release date, etc.), answer it directly with one or two sentences and a source URL in parentheses.
-        7. Never use [1] [2] citation markers. If you cite a source, write the full https:// URL inline.
-        8. Be conversational and concise. No filler. No bullet points unless the user asked for a list.
-        """
-
-        var messages: [[String: String]] = [["role": "system", "content": systemPrompt]]
-        // Replay last 4 turns of memory so follow-ups have context.
+        // Recent conversation window, then the current query as the final turn
+        // so the last message is always the user's.
+        var messages: [[String: String]] = []
         for m in transcript.suffix(8) {
             messages.append(["role": m.role, "content": m.content])
         }
         messages.append(["role": "user", "content": query])
 
-        let body: [String: Any] = [
-            "model": "perplexity/sonar-pro",
+        var body: [String: Any] = [
             "messages": messages,
-            "search_recency_filter": "month"
+            "device_id": DeviceIdentity.shared.deviceId
         ]
+        if !connectedServices.isEmpty {
+            body["connected_services"] = connectedServices
+        }
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("Bearer \(secret)", forHTTPHeaderField: "Authorization")
-        request.timeoutInterval = 30
+        request.setValue(SupabaseConfig.anonKey, forHTTPHeaderField: "apikey")
+        request.setValue("Bearer \(bearer)", forHTTPHeaderField: "Authorization")
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
         let (data, response): (Data, URLResponse)
@@ -175,20 +163,20 @@ final class StreamAgentService {
         switch http.statusCode {
         case 200: break
         case 401: throw AgentError.authError
-        case 402: throw AgentError.insufficientBalance
         case 429: throw AgentError.rateLimited
+        case 500...599: throw AgentError.serverError(http.statusCode)
         default:
             #if DEBUG
             let bodyStr = String(data: data, encoding: .utf8) ?? "<binary>"
-            print("[StreamAgent] HTTP \(http.statusCode): \(bodyStr.prefix(400))")
+            print("[AskStream] HTTP \(http.statusCode): \(bodyStr.prefix(400))")
             #endif
-            throw AgentError.serverError(http.statusCode)
+            throw AgentError.networkError
         }
 
-        let decoded = try JSONDecoder().decode(ChatResponse.self, from: data)
-        let content = decoded.choices.first?.message.content?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        guard !content.isEmpty else { throw AgentError.emptyResponse }
-        return content
+        let decoded = try JSONDecoder().decode(AskStreamResponse.self, from: data)
+        let reply = (decoded.reply ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !reply.isEmpty else { throw AgentError.emptyResponse }
+        return reply
     }
 
     // MARK: - Title extraction + TMDB resolution
@@ -284,11 +272,13 @@ final class StreamAgentService {
 
     // MARK: - Response decoding
 
-    private struct ChatResponse: Decodable {
-        struct Choice: Decodable {
-            struct Message: Decodable { let content: String? }
-            let message: Message
-        }
-        let choices: [Choice]
+    /// Shape returned by the `askstream` edge function. All soft blocks come
+    /// back as HTTP 200 with a friendly `reply`; the other flags are advisory.
+    private struct AskStreamResponse: Decodable {
+        let reply: String?
+        let blocked: Bool?
+        let reason: String?
+        let error: Bool?
+        let configured: Bool?
     }
 }
