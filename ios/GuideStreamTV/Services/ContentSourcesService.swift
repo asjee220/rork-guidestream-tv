@@ -115,6 +115,23 @@ final class ContentSourcesService {
         }
     }
 
+    // MARK: - Per-title episode fetch
+
+    /// Returns new_episodes rows for a single creator title_id, ordered by
+    /// released_at descending, limited to 30 rows. Used by CreatorDetailView
+    /// to populate the "Recent uploads" / "Recent episodes" list.
+    func fetchEpisodes(forTitleId titleId: String) async throws -> [NewEpisodeRow] {
+        let rows: [NewEpisodeRow] = try await client
+            .from("new_episodes")
+            .select()
+            .eq("title_id", value: titleId)
+            .order("released_at", ascending: false)
+            .limit(30)
+            .execute()
+            .value
+        return rows
+    }
+
     // MARK: - Realtime subscription for live_status
 
     /// Subscribe to live_status changes via Supabase Realtime using AnyAction.

@@ -36,6 +36,10 @@ nonisolated struct NewEpisodeRow: Codable, Identifiable, Hashable, Sendable {
     let posterUrl: String?
     let isNew: Bool?
     let releasedAt: Date?
+    /// YouTube video id or podcast episode GUID/permalink.
+    let episodeId: String?
+    /// YouTube watch URL or podcast direct audio .mp3 URL.
+    let deepLinkUrl: String?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -48,6 +52,8 @@ nonisolated struct NewEpisodeRow: Codable, Identifiable, Hashable, Sendable {
         case posterUrl = "poster_url"
         case isNew = "is_new"
         case releasedAt = "released_at"
+        case episodeId = "episode_id"
+        case deepLinkUrl = "deep_link_url"
     }
 }
 

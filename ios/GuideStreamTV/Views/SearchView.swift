@@ -207,7 +207,7 @@ struct SearchView: View {
     @State private var vm = SearchViewModel()
     @State private var followedIds: Set<String> = []
     @State private var streams = StreamsViewModel.shared
-    @State private var creatorDetailId: IdentifiableString?
+    @State private var creatorDetailTarget: CreatorDetailTarget?
     @FocusState private var focused: Bool
 
     var body: some View {
@@ -310,8 +310,12 @@ struct SearchView: View {
             syncFollowed()
             Task { await vm.loadPopular() }
         }
-        .fullScreenCover(item: $creatorDetailId) { wrapper in
-            CreatorDetailView(titleId: wrapper.value, onBack: { creatorDetailId = nil })
+        .fullScreenCover(item: $creatorDetailTarget) { target in
+            CreatorDetailView(
+                titleId: target.titleId,
+                initialEpisode: target.initialEpisode,
+                onBack: { creatorDetailTarget = nil }
+            )
         }
     }
 
@@ -405,7 +409,7 @@ struct SearchView: View {
 
     private func openCreator(_ creator: DiscoverableCreator) {
         WatchIntentLogger.shared.log(eventType: .cardTapped, titleId: creator.titleId, platformId: creator.sourceType, metadata: ["section": "search", "kind": creator.sourceType])
-        creatorDetailId = IdentifiableString(creator.titleId)
+        creatorDetailTarget = CreatorDetailTarget(titleId: creator.titleId, initialEpisode: nil)
     }
 
     private func openTMDB(_ result: SearchResult) {

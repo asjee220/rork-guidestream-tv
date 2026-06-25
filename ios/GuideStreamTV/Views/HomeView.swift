@@ -63,8 +63,12 @@ struct Episode: Identifiable, Hashable {
     /// Prefixed title_id for non-TMDB entities (e.g. "yt:...", "tw:...").
     /// Used to resolve live status and route to CreatorDetailView.
     var titleId: String?
+    /// YouTube video id or podcast episode GUID — playable handle.
+    var episodeId: String?
+    /// YouTube watch URL or podcast audio .mp3 enclosure URL.
+    var deepLinkUrl: String?
 
-    init(title: String, season: String, duration: String, platform: Platform, isNew: Bool = false, progress: Double = 0, posterColors: [Color], symbol: String, posterUrl: String? = nil, tmdbId: Int? = nil, titleId: String? = nil) {
+    init(title: String, season: String, duration: String, platform: Platform, isNew: Bool = false, progress: Double = 0, posterColors: [Color], symbol: String, posterUrl: String? = nil, tmdbId: Int? = nil, titleId: String? = nil, episodeId: String? = nil, deepLinkUrl: String? = nil) {
         self.title = title
         self.season = season
         self.duration = duration
@@ -77,6 +81,8 @@ struct Episode: Identifiable, Hashable {
         self.posterUrl = posterUrl
         self.tmdbId = tmdbId
         self.titleId = titleId
+        self.episodeId = episodeId
+        self.deepLinkUrl = deepLinkUrl
     }
 }
 
@@ -163,7 +169,7 @@ struct HomeView: View {
     /// Maps prefixed title_ids to their live status for watchlist live indicators.
     @State private var liveStatusMap: [String: LiveStatus] = [:]
     /// Full-screen detail for non-TMDB creator / podcast entities.
-    @State private var creatorDetailId: IdentifiableString?
+    @State private var creatorDetailTarget: CreatorDetailTarget?
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -275,7 +281,7 @@ struct HomeView: View {
                                     metadata: ["section": "watch_list"]
                                 )
                                 if let tid = ep.titleId, SourceKind.from(titleId: tid).isNonTMDB {
-                                    creatorDetailId = IdentifiableString(tid)
+                                    creatorDetailTarget = CreatorDetailTarget(titleId: tid, initialEpisode: nil)
                                 } else {
                                     detailSubject = .episode(ep)
                                 }
@@ -300,7 +306,15 @@ struct HomeView: View {
                                     platformId: ep.platform.lowercased()
                                 )
                                 if let tid = ep.titleId, SourceKind.from(titleId: tid).isNonTMDB {
-                                    creatorDetailId = IdentifiableString(tid)
+                                    creatorDetailTarget = CreatorDetailTarget(
+                                        titleId: tid,
+                                        initialEpisode: CreatorInitialEpisode(
+                                            episodeId: ep.episodeId,
+                                            deepLinkUrl: ep.deepLinkUrl,
+                                            title: ep.title,
+                                            posterUrl: ep.posterUrl
+                                        )
+                                    )
                                 } else {
                                     detailSubject = .episode(ep)
                                 }
@@ -740,7 +754,15 @@ struct HomeView: View {
                         episodes: liveNewEpisodes,
                         onSelect: { ep in
                             if let tid = ep.titleId, SourceKind.from(titleId: tid).isNonTMDB {
-                                creatorDetailId = IdentifiableString(tid)
+                                creatorDetailTarget = CreatorDetailTarget(
+                                    titleId: tid,
+                                    initialEpisode: CreatorInitialEpisode(
+                                        episodeId: ep.episodeId,
+                                        deepLinkUrl: ep.deepLinkUrl,
+                                        title: ep.title,
+                                        posterUrl: ep.posterUrl
+                                    )
+                                )
                             } else {
                                 detailSubject = .episode(ep)
                             }
@@ -827,8 +849,12 @@ struct HomeView: View {
                     onBack: { searchResultForDetail = nil }
                 )
             }
-            .fullScreenCover(item: $creatorDetailId) { id in
-                CreatorDetailView(titleId: id.value, onBack: { creatorDetailId = nil })
+            .fullScreenCover(item: $creatorDetailTarget) { target in
+                CreatorDetailView(
+                    titleId: target.titleId,
+                    initialEpisode: target.initialEpisode,
+                    onBack: { creatorDetailTarget = nil }
+                )
             }
             .sheet(isPresented: $showServicesSheet) {
                 ServicesBottomSheet()
@@ -849,7 +875,7 @@ struct HomeView: View {
                     platformId: kind.sourceType,
                     metadata: ["source": "push_notification", "kind": "went_live"]
                 )
-                creatorDetailId = IdentifiableString(titleId)
+                creatorDetailTarget = CreatorDetailTarget(titleId: titleId, initialEpisode: nil)
             } else if let tmdbId = Int(titleId) {
                 WatchIntentLogger.shared.log(
                     eventType: .deeplinkFired,
@@ -1479,7 +1505,9 @@ struct HomeView: View {
                     symbol: kind == .podcast ? "mic.fill" : "play.rectangle.fill",
                     posterUrl: row.posterUrl,
                     tmdbId: nil,
-                    titleId: row.titleId
+                    titleId: row.titleId,
+                    episodeId: row.episodeId,
+                    deepLinkUrl: row.deepLinkUrl
                 )
             }
 

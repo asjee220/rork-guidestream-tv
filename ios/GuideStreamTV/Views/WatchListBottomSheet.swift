@@ -63,7 +63,7 @@ private struct WatchListContent: View {
     @State private var detailSubject: DetailSubject?
     @State private var showFollowCreators: Bool = false
     /// Full-screen detail for non-TMDB creator/ podcast entities.
-    @State private var creatorDetailId: IdentifiableString?
+    @State private var creatorDetailTarget: CreatorDetailTarget?
     /// Maps prefixed title_ids to their live status for in-list LIVE/OFFLINE pills.
     @State private var liveStatusMap: [String: LiveStatus] = [:]
 
@@ -95,8 +95,12 @@ private struct WatchListContent: View {
         .fullScreenCover(isPresented: $showFollowCreators) {
             FollowCreatorsView()
         }
-        .fullScreenCover(item: $creatorDetailId) { wrapper in
-            CreatorDetailView(titleId: wrapper.value, onBack: { creatorDetailId = nil })
+        .fullScreenCover(item: $creatorDetailTarget) { target in
+            CreatorDetailView(
+                titleId: target.titleId,
+                initialEpisode: target.initialEpisode,
+                onBack: { creatorDetailTarget = nil }
+            )
         }
         .task {
             await streams.fetchUserStreams()
@@ -138,7 +142,7 @@ private struct WatchListContent: View {
                             UIImpactFeedbackGenerator(style: .light).impactOccurred()
                             let kind = SourceKind.from(titleId: item.titleId)
                             if kind.isNonTMDB {
-                                creatorDetailId = IdentifiableString(item.titleId)
+                                creatorDetailTarget = CreatorDetailTarget(titleId: item.titleId, initialEpisode: nil)
                             } else {
                                 detailSubject = .show(posterShow(from: item))
                             }
