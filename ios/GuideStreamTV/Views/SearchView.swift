@@ -150,7 +150,28 @@ final class SearchViewModel {
                 default: return nil
                 }
             }()
-            let sources = try await ContentSourcesService.shared.searchSources(query: q, sourceType: st)
+            let localSources = try await ContentSourcesService.shared.searchSources(query: q, sourceType: st)
+
+            // Live search across YouTube + Twitch via the backend worker.
+            // Skip for the podcasts scope (no live podcast search backend).
+            let liveType: String? = {
+                switch scope {
+                case .podcasts: return nil
+                case .creators, .all, .live: return "all"
+                default: return "all"
+                }
+            }()
+            var liveSources: [ContentSource] = []
+            if let lt = liveType {
+                liveSources = await ContentSourcesService.shared.searchCreatorsLive(query: q, type: lt)
+            }
+
+            // Merge: local DB rows take precedence, live results fill the gaps.
+            var mergedById: [String: ContentSource] = [:]
+            for s in liveSources { mergedById[s.titleId] = s }
+            for s in localSources { mergedById[s.titleId] = s }
+            let sources = Array(mergedById.values)
+
             // Filter client-side for scope
             let filtered: [ContentSource] = {
                 if scope == .creators {

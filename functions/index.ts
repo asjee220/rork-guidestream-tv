@@ -21,12 +21,19 @@ import {
   debugStatus,
 } from "./_lib/supabase";
 import { sendBatchPush } from "./_lib/apns";
+import {
+  searchCreators,
+  type CreatorSearchType,
+} from "./_lib/creators";
 
 interface Env {
   APPLE_APNS_PRIVATE_KEY: string;
   APPLE_BUNDLE_ID: string;
   APPLE_KEY_ID: string;
   APPLE_TEAM_ID: string;
+  YOUTUBE_API_KEY?: string;
+  TWITCH_CLIENT_ID?: string;
+  TWITCH_CLIENT_SECRET?: string;
 }
 
 const CORS = {
@@ -66,6 +73,32 @@ export default {
       } catch (err) {
         return Response.json(
           { ok: false, error: (err as Error).message },
+          { status: 500, headers: CORS },
+        );
+      }
+    }
+
+    // Live creator search across YouTube + Twitch
+    if (url.pathname === "/search/creators") {
+      const q = url.searchParams.get("q")?.trim() ?? "";
+      const typeParam = (url.searchParams.get("type") ?? "all").toLowerCase();
+      const type: CreatorSearchType =
+        typeParam === "youtube" || typeParam === "twitch"
+          ? (typeParam as CreatorSearchType)
+          : "all";
+      if (!q) {
+        return Response.json(
+          { ok: true, results: [] },
+          { headers: CORS },
+        );
+      }
+      try {
+        const results = await searchCreators(q, type, env);
+        return Response.json({ ok: true, results }, { headers: CORS });
+      } catch (err) {
+        console.error("[search/creators] error:", (err as Error).message);
+        return Response.json(
+          { ok: false, error: (err as Error).message, results: [] },
           { status: 500, headers: CORS },
         );
       }

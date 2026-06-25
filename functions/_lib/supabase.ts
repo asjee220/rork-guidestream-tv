@@ -90,6 +90,36 @@ async function supabaseDelete(
   }
 }
 
+/**
+ * Upsert rows into a table, resolving conflicts on the given column(s).
+ * Uses Prefer: resolution=merge-duplicates so existing rows are updated.
+ */
+export async function supabaseUpsert(
+  path: string,
+  rows: unknown[],
+  onConflict: string,
+): Promise<void> {
+  if (rows.length === 0) return;
+  const url = new URL(`${SUPABASE_URL}/rest/v1/${path}`);
+  url.searchParams.set("on_conflict", onConflict);
+  const response = await fetch(url.toString(), {
+    method: "POST",
+    headers: {
+      apikey: SUPABASE_ANON_KEY,
+      authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+      "content-type": "application/json",
+      prefer: "resolution=merge-duplicates,return=minimal",
+    },
+    body: JSON.stringify(rows),
+  });
+  if (!response.ok) {
+    const text = await response.text().catch(() => "???");
+    throw new Error(
+      `Supabase UPSERT ${path} failed: ${response.status} ${text.slice(0, 200)}`,
+    );
+  }
+}
+
 // ── Row types ──────────────────────────────────────────────────────────
 
 export interface NewEpisode {

@@ -50,6 +50,46 @@ final class ContentSourcesService {
         return rows
     }
 
+    // MARK: - Live creator search (YouTube + Twitch via Functions worker)
+
+    /// Response wrapper from the `/search/creators` worker endpoint.
+    private struct CreatorSearchResponse: Decodable {
+        let ok: Bool
+        let results: [ContentSource]
+    }
+
+    /// Searches YouTube and/or Twitch live via the backend worker, which also
+    /// persists discovered creators into content_sources. Returns normalized
+    /// ContentSource rows. Returns [] (never throws) when the functions URL is
+    /// unconfigured or the request fails, so the UI degrades to local results.
+    /// - Parameter type: "all", "youtube", or "twitch".
+    func searchCreatorsLive(query: String, type: String = "all") async -> [ContentSource] {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return [] }
+
+        let base = Config.EXPO_PUBLIC_RORK_FUNCTIONS_URL.trimmingCharacters(in: .whitespaces)
+        guard !base.isEmpty,
+              var components = URLComponents(string: base.hasSuffix("/") ? base + "search/creators" : base + "/search/creators")
+        else { return [] }
+        components.queryItems = [
+            URLQueryItem(name: "q", value: trimmed),
+            URLQueryItem(name: "type", value: type)
+        ]
+        guard let url = components.url else { return [] }
+
+        do {
+            var request = URLRequest(url: url)
+            request.timeoutInterval = 12
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let http = response as? HTTPURLResponse, http.statusCode == 200 else { return [] }
+            let decoded = try JSONDecoder().decode(CreatorSearchResponse.self, from: data)
+            return decoded.results
+        } catch {
+            print("[ContentSources] live search failed: \(error.localizedDescription)")
+            return []
+        }
+    }
+
     // MARK: - Fetch live status
 
     /// Returns live_status rows for the given title_ids.
