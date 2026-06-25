@@ -927,6 +927,17 @@ struct NotificationsSettingsView: View {
                         .onChange(of: smsOn) { _, newValue in
                             auth.setNotificationPreferences(push: pushOn, sms: newValue)
                         }
+
+                        ProfileRowDivider()
+
+                        NotificationToggleRow(
+                            icon: "film",
+                            iconTint: Color.orange,
+                            title: "Movie release alerts",
+                            subtitle: "Get notified when saved movies drop on your services",
+                            isOn: $auth.notifyMovieReleasesEnabled,
+                            tint: Color.orange
+                        )
                     }
 
                     ProfileCard {
@@ -961,6 +972,7 @@ struct NotificationsSettingsView: View {
         .toolbarColorScheme(.dark, for: .navigationBar)
         .task { await refreshSystemStatus() }
         .task { await loadTimezone() }
+        .task { await auth.loadMovieReleasePreference() }
     }
 
     /// Loads the synced timezone for the row. Signed-in users read the

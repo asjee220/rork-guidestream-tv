@@ -93,6 +93,11 @@ nonisolated struct UserProfileNameRow: Decodable, Sendable {
     let last_name: String?
 }
 
+/// Minimal row decoder for the `users.notify_movie_releases` column.
+nonisolated struct UserMovieReleaseRow: Decodable, Sendable {
+    let notify_movie_releases: Bool?
+}
+
 /// Row shape used by the Devices screen when listing a user's installs.
 /// Mirrors the `device_sessions` schema documented in `DeviceSessionService`.
 nonisolated struct DeviceSessionRow: Decodable, Sendable, Identifiable, Hashable {

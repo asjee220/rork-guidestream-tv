@@ -646,7 +646,7 @@ struct CreatorDetailView: View {
         defer { isLoading = false }
         do {
             let sources = try await ContentSourcesService.shared.fetchSources()
-            source = sources.first { $0.titleId == titleId }
+            source = sources.first { $0.titleId == titleId } ?? fallbackSource()
             if let src = source, kind.isLivestream {
                 let statuses = try? await ContentSourcesService.shared.fetchLiveStatus(for: [titleId])
                 liveStatus = statuses?.first
@@ -670,8 +670,35 @@ struct CreatorDetailView: View {
                 }
             }
         } catch {
-            source = nil
+            // Network/db failure shouldn't dead-end a creator the user already
+            // saved — fall back to the watch-list entry so the screen still opens.
+            source = fallbackSource()
         }
+    }
+
+    /// Builds a minimal ContentSource from the user's saved watch-list entry so
+    /// creators discovered via live search (whose content_sources upsert may not
+    /// have persisted) still open instead of showing "Creator not found".
+    private func fallbackSource() -> ContentSource? {
+        guard let saved = streams.userStreams.first(where: { $0.titleId == titleId }) else {
+            return nil
+        }
+        let cleanName = (saved.title?.isEmpty ?? true) ? kind.displayLabel : (saved.title ?? kind.displayLabel)
+        return ContentSource(
+            titleId: titleId,
+            sourceType: kind.sourceType,
+            displayName: cleanName,
+            handle: nil,
+            imageUrl: saved.posterUrl,
+            externalId: nil,
+            feedUrl: nil,
+            channelUrl: nil,
+            websubTopic: nil,
+            category: nil,
+            description: nil,
+            createdAt: nil,
+            updatedAt: nil
+        )
     }
 
     private func toggleFollow() {

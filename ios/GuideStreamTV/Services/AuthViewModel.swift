@@ -33,6 +33,20 @@ final class AuthViewModel {
     var selectedServices: Set<String> = Set(UserDefaults.standard.stringArray(forKey: "gs.selectedServices") ?? [])
     var notifyPushEnabled: Bool = UserDefaults.standard.bool(forKey: "gs.notifyPush")
     var notifySMSEnabled: Bool = UserDefaults.standard.bool(forKey: "gs.notifySMS")
+    /// Whether the user wants a push alert when a saved *movie* becomes
+    /// available on one of their connected services. Backed by
+    /// `users.notify_movie_releases` (defaults true server-side). Changing it
+    /// caches locally and upserts to Supabase for the signed-in user.
+    var notifyMovieReleasesEnabled: Bool = (UserDefaults.standard.object(forKey: "gs.notifyMovieReleases") as? Bool) ?? true {
+        didSet {
+            guard !isApplyingMovieReleasePref else { return }
+            UserDefaults.standard.set(notifyMovieReleasesEnabled, forKey: "gs.notifyMovieReleases")
+            syncMovieReleasePreference()
+        }
+    }
+    /// Guards `notifyMovieReleasesEnabled.didSet` so loading the persisted
+    /// value from Supabase doesn't trigger a redundant write-back.
+    private var isApplyingMovieReleasePref = false
     /// True after the user has completed at least one successful email sign-up.
     /// First-time visits to the email auth screen show the create-account flow;
     /// every visit afterwards defaults to the sign-in flow.
@@ -243,6 +257,52 @@ final class AuthViewModel {
                     print("[Auth ERROR] device_sessions timezone upsert failed: \(error.localizedDescription)")
                 }
             }
+        }
+    }
+
+    /// Upserts the movie-release notification preference to
+    /// `users.notify_movie_releases` for the signed-in user. Guests have no
+    /// `users` row (it FKs `auth.users`), so this is a no-op for them — their
+    /// choice stays cached locally until they sign in.
+    private func syncMovieReleasePreference() {
+        guard let userId = currentUser?.id.uuidString else { return }
+        let enabled = notifyMovieReleasesEnabled
+        Task {
+            do {
+                try await SupabaseManager.shared.client
+                    .from("users")
+                    .update(["notify_movie_releases": enabled])
+                    .eq("id", value: userId)
+                    .execute()
+                print("[Auth] notify_movie_releases \(enabled) saved for user \(userId)")
+            } catch {
+                print("[Auth ERROR] notify_movie_releases update failed: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    /// Loads `users.notify_movie_releases` into `notifyMovieReleasesEnabled`
+    /// for the signed-in user without re-triggering the upsert. Guests keep
+    /// their locally-cached value.
+    func loadMovieReleasePreference() async {
+        guard let uid = currentUser?.id.uuidString else { return }
+        do {
+            let rows: [UserMovieReleaseRow] = try await SupabaseManager.shared.client
+                .from("users")
+                .select("notify_movie_releases")
+                .eq("id", value: uid)
+                .limit(1)
+                .execute()
+                .value
+            if let value = rows.first?.notify_movie_releases {
+                isApplyingMovieReleasePref = true
+                notifyMovieReleasesEnabled = value
+                isApplyingMovieReleasePref = false
+                UserDefaults.standard.set(value, forKey: "gs.notifyMovieReleases")
+            }
+        } catch {
+            // Column may be missing on older projects — keep the cached value.
+            print("[Auth] loadMovieReleasePreference failed: \(error.localizedDescription)")
         }
     }
 
