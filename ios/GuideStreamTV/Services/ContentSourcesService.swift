@@ -194,6 +194,25 @@ final class ContentSourcesService {
         return rows
     }
 
+    // MARK: - Follow-scoped upload fetch
+
+    /// Returns recent uploads from new_episodes for the given followed creator
+    /// title_ids, ordered by released_at descending. Returns [] when titleIds
+    /// is empty. Used by the hero carousel to surface only content from creators
+    /// the signed-in customer follows.
+    func fetchRecentUploads(forTitleIds titleIds: [String], limit: Int = 12) async throws -> [NewEpisodeRow] {
+        guard !titleIds.isEmpty else { return [] }
+        let rows: [NewEpisodeRow] = try await client
+            .from("new_episodes")
+            .select()
+            .in("title_id", values: titleIds)
+            .order("released_at", ascending: false)
+            .limit(limit)
+            .execute()
+            .value
+        return rows
+    }
+
     // MARK: - Per-title episode fetch
 
     /// Returns new_episodes rows for a single creator title_id, ordered by

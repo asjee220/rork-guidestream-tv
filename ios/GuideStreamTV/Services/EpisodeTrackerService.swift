@@ -40,6 +40,10 @@ final class EpisodeTrackerService {
     private let lastScanKey = "gs.episodeTracker.lastScan"
     private var inFlight: Task<Void, Never>?
 
+    /// Cooldown key for the YouTube upload scan.
+    private let lastYouTubeScanKey = "gs.episodeTracker.lastYouTubeScan"
+    private var youTubeScanInFlight: Task<Void, Never>?
+
     /// Trigger a scan. Coalesces concurrent calls and respects the
     /// cooldown unless `force` is true. Safe to call from anywhere
     /// (HomeView.task, watch-list add, app foreground) without spamming
@@ -56,6 +60,137 @@ final class EpisodeTrackerService {
             defer { inFlight = nil }
             await performScan()
             UserDefaults.standard.set(Date(), forKey: lastScanKey)
+        }
+    }
+
+    // MARK: - YouTube upload scanner
+
+    /// Scans followed YouTube channels for recent uploads via the
+    /// `youtube_channel_meta` Supabase edge function and inserts them into
+    /// `new_episodes` so the Home "New Episodes" rail surfaces creator content.
+    /// Respects a cooldown (same 6h window) to avoid hammering the edge function.
+    func scanYouTubeIfNeeded(force: Bool = false) {
+        if let youTubeScanInFlight, !youTubeScanInFlight.isCancelled { return }
+        let now = Date()
+        if !force,
+           let last = UserDefaults.standard.object(forKey: lastYouTubeScanKey) as? Date,
+           now.timeIntervalSince(last) < Self.scanCooldown {
+            return
+        }
+        youTubeScanInFlight = Task { @MainActor in
+            defer { youTubeScanInFlight = nil }
+            await performYouTubeScan()
+            UserDefaults.standard.set(Date(), forKey: lastYouTubeScanKey)
+        }
+    }
+
+    /// Fetches recent uploads for every followed YouTube creator via the
+    /// `youtube_channel_meta` edge function and inserts them into `new_episodes`.
+    /// Each upload is keyed by `(title_id, episode_id)` to avoid duplicates.
+    private func performYouTubeScan() async {
+        let streams = StreamsViewModel.shared.userStreams
+        let youtubeIds = streams
+            .filter { SourceKind.from(titleId: $0.titleId) == .youtube }
+            .map { $0.titleId }
+        guard !youtubeIds.isEmpty else {
+            #if DEBUG
+            print("[EpisodeTracker] no followed YouTube channels; skipping YouTube scan")
+            #endif
+            return
+        }
+
+        // Process serially (one edge-function call at a time) to stay well
+        // under rate limits. Each call returns up to ~50 recent uploads.
+        var allInserts: [YouTubeEpisodeInsert] = []
+        for titleId in youtubeIds {
+            guard let uploads = await fetchYouTubeUploads(titleId: titleId),
+                  !uploads.isEmpty else { continue }
+            for upload in uploads {
+                allInserts.append(YouTubeEpisodeInsert(
+                    titleId: titleId,
+                    episodeId: upload.videoId,
+                    title: upload.title,
+                    posterUrl: upload.thumbnail,
+                    deepLinkUrl: upload.deepLink,
+                    episodeTitle: upload.title,
+                    thumbnailUrl: upload.thumbnail,
+                    releasedAt: upload.publishedAt ?? ISO8601DateFormatter().string(from: Date()),
+                    platform: "youtube"
+                ))
+            }
+        }
+
+        guard !allInserts.isEmpty else { return }
+
+        // Insert in small batches so one bad row doesn't fail the whole set.
+        for insert in allInserts {
+            await insertYouTubeEpisode(insert)
+        }
+
+        // Refresh the in-memory cache so the Home rail picks up the new rows.
+        await StreamsViewModel.shared.fetchNewEpisodes()
+    }
+
+    /// Calls the `youtube_channel_meta` Supabase edge function for one channel
+    /// and returns its recent uploads. Returns nil on any failure (network,
+    /// edge-function error, or an `ok: false` response).
+    private func fetchYouTubeUploads(titleId: String) async -> [ChannelMetaResponse.Upload]? {
+        do {
+            let response: ChannelMetaResponse = try await SupabaseManager.shared.client.functions
+                .invoke(
+                    "youtube_channel_meta",
+                    options: FunctionInvokeOptions(body: ["title_id": titleId])
+                )
+            guard response.ok else { return nil }
+            return response.uploads
+        } catch {
+            #if DEBUG
+            print("[EpisodeTracker] youtube_channel_meta failed for \(titleId): \(error.localizedDescription)")
+            #endif
+            return nil
+        }
+    }
+
+    /// Inserts one YouTube upload row into `new_episodes`. Uses a dictionary
+    /// payload so optional / drifted columns can be dropped at insert time.
+    /// Duplicate-key errors (same title_id + episode_id) are silently swallowed.
+    private func insertYouTubeEpisode(_ ep: YouTubeEpisodeInsert) async {
+        var payload: [String: AnyJSON] = [
+            "title_id": .string(ep.titleId),
+            "episode_id": .string(ep.episodeId),
+            "title": .string(ep.title),
+            "is_new": .bool(true),
+            "released_at": .string(ep.releasedAt),
+            "platform": .string(ep.platform)
+        ]
+        if let poster = ep.posterUrl { payload["poster_url"] = .string(poster) }
+        if let deepLink = ep.deepLinkUrl { payload["deep_link_url"] = .string(deepLink) }
+        if let episodeTitle = ep.episodeTitle { payload["episode_title"] = .string(episodeTitle) }
+        if let thumb = ep.thumbnailUrl { payload["thumbnail_url"] = .string(thumb) }
+
+        for attempt in 0..<4 {
+            do {
+                try await SupabaseManager.shared.client
+                    .from("new_episodes")
+                    .insert(payload)
+                    .execute()
+                return
+            } catch {
+                let message = error.localizedDescription
+                let lowered = message.lowercased()
+                if lowered.contains("duplicate") || lowered.contains("23505") {
+                    return
+                }
+                if attempt < 3,
+                   let dropped = Self.dropMissingColumn(from: payload, error: message) {
+                    payload = dropped
+                    continue
+                }
+                #if DEBUG
+                print("[EpisodeTracker] youtube insert failed: \(message)")
+                #endif
+                return
+            }
         }
     }
 
@@ -258,4 +393,18 @@ private nonisolated struct NewEpisodeInsert: Sendable {
     let platform: String?
     let posterUrl: String?
     let releasedAt: String
+}
+
+/// Payload for a YouTube upload row going into `new_episodes`.
+/// Keyed by `(title_id, episode_id)` to avoid duplicate inserts.
+private nonisolated struct YouTubeEpisodeInsert: Sendable {
+    let titleId: String
+    let episodeId: String
+    let title: String
+    let posterUrl: String?
+    let deepLinkUrl: String?
+    let episodeTitle: String?
+    let thumbnailUrl: String?
+    let releasedAt: String
+    let platform: String
 }

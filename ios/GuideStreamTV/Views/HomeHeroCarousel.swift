@@ -16,6 +16,21 @@
 import SwiftUI
 import UIKit
 
+/// Lightweight value type for a followed creator who is currently live.
+/// Built from the customer's own user_streams rows joined with live_status,
+/// so only creators the signed-in customer follows can appear in the hero rail.
+struct HeroLiveCreator: Identifiable, Hashable {
+    let titleId: String
+    let displayName: String
+    let avatarUrl: String?
+    let streamTitle: String?
+    let category: String?
+    let viewerCount: Int?
+    let startedAt: Date?
+    let kind: SourceKind
+    var id: String { titleId }
+}
+
 /// Heterogeneous item used by the hero carousel. Media items carry an
 /// optional pre-resolved streaming platform so the badge can show the real
 /// service (Netflix, HBO, etc.) without a per-card network call.
@@ -23,7 +38,7 @@ enum HeroItem: Identifiable {
     case media(TMDBResult, Platform?)
     case game(SportsGame)
     case news(NewsStream)
-    case liveCreator(DiscoverableCreator)
+    case liveCreator(HeroLiveCreator)
     case creatorUpload(NewEpisodeRow)
 
     var id: String {
@@ -63,7 +78,7 @@ struct HomeHeroCarousel: View {
     let onSelectMedia: (TMDBResult, Platform?) -> Void
     let onSelectGame: (SportsGame) -> Void
     let onSelectNews: (NewsStream) -> Void
-    let onSelectLiveCreator: (DiscoverableCreator) -> Void
+    let onSelectLiveCreator: (HeroLiveCreator) -> Void
     let onSelectCreatorUpload: (NewEpisodeRow) -> Void
 
     var body: some View {
@@ -162,7 +177,7 @@ private struct HeroCarouselCard: View {
         }
     }
 
-    private func brandColor(for creator: DiscoverableCreator) -> Color {
+    private func brandColor(for creator: HeroLiveCreator) -> Color {
         Color(hex: creator.kind.brandColor) ?? Color.red
     }
 
@@ -182,7 +197,7 @@ private struct HeroCarouselCard: View {
         }
     }
 
-    private func liveCreatorBackdrop(_ creator: DiscoverableCreator) -> some View {
+    private func liveCreatorBackdrop(_ creator: HeroLiveCreator) -> some View {
         let c = brandColor(for: creator)
         return Color.black
             .overlay {
@@ -504,7 +519,7 @@ private struct HeroCarouselCard: View {
 
     // MARK: - Creator live content
 
-    private func liveCreatorContent(_ creator: DiscoverableCreator) -> some View {
+    private func liveCreatorContent(_ creator: HeroLiveCreator) -> some View {
         let c = brandColor(for: creator)
         return VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 8) {
@@ -545,13 +560,13 @@ private struct HeroCarouselCard: View {
         .background(Capsule().fill(Color(red: 0xE5/255, green: 0x09/255, blue: 0x14/255)))
     }
 
-    private func liveCreatorMetaRow(_ creator: DiscoverableCreator) -> some View {
+    private func liveCreatorMetaRow(_ creator: HeroLiveCreator) -> some View {
         HStack(spacing: 8) {
             Text(creator.displayName)
                 .scaledFont(size: 12, weight: .semibold)
                 .foregroundStyle(Color.white.opacity(0.85))
                 .lineLimit(1)
-            if let cat = creator.liveCategory, !cat.isEmpty {
+            if let cat = creator.category, !cat.isEmpty {
                 metaDot
                 Text(cat)
                     .scaledFont(size: 12, weight: .medium)

@@ -59,6 +59,9 @@ final class StreamsViewModel {
         // the next fetch. The tracker has its own 6h cooldown so calling
         // it on every refresh is safe.
         EpisodeTrackerService.shared.scanIfNeeded()
+        // Also scan followed YouTube creators for recent uploads so their
+        // videos populate the New Episodes rail.
+        EpisodeTrackerService.shared.scanYouTubeIfNeeded()
         // Keep the widget in sync with the latest counts.
         WidgetDataService.shared.pushCounts(
             watchlistCount: userStreams.count,
@@ -123,16 +126,52 @@ final class StreamsViewModel {
                 newEpisodes = []
                 return
             }
-            let rows: [NewEpisodeRow] = try await SupabaseManager.shared.client
-                .from("new_episodes")
-                .select()
-                .in("title_id", values: titleIds)
-                .eq("is_new", value: true)
-                .order("released_at", ascending: false)
-                .limit(20)
-                .execute()
-                .value
-            self.newEpisodes = rows
+
+            // Split title IDs: TMDB (numeric) vs non-TMDB (prefixed like yt:, tw:, kick:, pod:).
+            // TMDB titles only surface episodes marked is_new = true (freshly aired),
+            // while non-TMDB creators surface all recent uploads regardless of push state
+            // because YouTube/Twitch uploads are not gated by an is_new lifecycle.
+            let tmdbIds = titleIds.filter { Int($0.trimmingCharacters(in: .whitespaces)) != nil }
+            let nonTmdbIds = titleIds.filter { !tmdbIds.contains($0) }
+
+            var allRows: [NewEpisodeRow] = []
+
+            // TMDB: only fresh (is_new = true) episodes.
+            if !tmdbIds.isEmpty {
+                let tmdbRows: [NewEpisodeRow] = try await SupabaseManager.shared.client
+                    .from("new_episodes")
+                    .select()
+                    .in("title_id", values: tmdbIds)
+                    .eq("is_new", value: true)
+                    .order("released_at", ascending: false)
+                    .limit(20)
+                    .execute()
+                    .value
+                allRows.append(contentsOf: tmdbRows)
+            }
+
+            // Non-TMDB creators: all recent uploads, regardless of is_new.
+            // The push-notification cron flips is_new → false for TMDB episodes,
+            // but YouTube/Twitch creator uploads live outside that lifecycle.
+            if !nonTmdbIds.isEmpty {
+                let nonTmdbRows: [NewEpisodeRow] = try await SupabaseManager.shared.client
+                    .from("new_episodes")
+                    .select()
+                    .in("title_id", values: nonTmdbIds)
+                    .order("released_at", ascending: false)
+                    .limit(20)
+                    .execute()
+                    .value
+                allRows.append(contentsOf: nonTmdbRows)
+            }
+
+            // Sort merged rows by released_at descending, then cap.
+            let sorted = allRows.sorted { a, b in
+                let da = a.releasedAt ?? Date.distantPast
+                let db = b.releasedAt ?? Date.distantPast
+                return da > db
+            }
+            self.newEpisodes = Array(sorted.prefix(20))
         } catch {
             self.lastError = error.localizedDescription
             print("[Streams] fetchNewEpisodes failed: \(error.localizedDescription)")

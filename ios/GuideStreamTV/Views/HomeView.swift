@@ -173,10 +173,13 @@ struct HomeView: View {
     /// Maps prefixed title_ids to their content_sources.image_url, used as a
     /// poster fallback so every creator/podcast/streamer always shows an image.
     @State private var sourceImageMap: [String: String] = [:]
-    /// Live creators (Twitch/Kick) for the hero carousel.
-    @State private var liveCreators: [DiscoverableCreator] = []
-    /// Recent YouTube uploads for the hero carousel.
+    /// Live creators (Twitch/Kick) for the hero carousel — follow-scoped only.
+    @State private var liveCreators: [HeroLiveCreator] = []
+    /// Recent YouTube uploads for the hero carousel — follow-scoped only.
     @State private var creatorUploads: [NewEpisodeRow] = []
+    /// Stable, pre-sorted hero rail — built once after data settles so the
+    /// carousel never visibly reorders or pops as partial loads arrive.
+    @State private var heroRailItems: [HeroItem] = []
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -228,9 +231,9 @@ struct HomeView: View {
                         .buttonStyle(.plain)
                         .padding(.horizontal, 16)
 
-                        if !heroItems.isEmpty {
+                        if !heroRailItems.isEmpty {
                             HomeHeroCarousel(
-                                items: heroItems,
+                                items: heroRailItems,
                                 onSelectMedia: { result, platform in
                                     WatchIntentLogger.shared.log(
                                         eventType: .cardTapped,
@@ -326,38 +329,39 @@ struct HomeView: View {
                         )
                         .padding(.horizontal, 20)
 
-                        NewEpisodesSection(
-                            sectionTitle: (streams.userStreams.isEmpty && !trending.isEmpty) ? "Trending This Week" : "New Episodes",
-                            episodes: liveNewEpisodes,
-                            onSeeAll: {
-                                WatchIntentLogger.shared.log(
-                                    eventType: .cardTapped,
-                                    metadata: ["section": "new_episodes_see_all"]
-                                )
-                                path.append(.newEpisodes)
-                            },
-                            onOpen: { ep in
-                                WatchIntentLogger.shared.log(
-                                    eventType: .cardTapped,
-                                    titleId: ep.titleId ?? WatchIntentLogger.titleSlug(ep.title),
-                                    platformId: ep.platform.lowercased()
-                                )
-                                if let tid = ep.titleId, SourceKind.from(titleId: tid).isNonTMDB {
-                                    creatorDetailTarget = CreatorDetailTarget(
-                                        titleId: tid,
-                                        initialEpisode: CreatorInitialEpisode(
-                                            episodeId: ep.episodeId,
-                                            deepLinkUrl: ep.deepLinkUrl,
-                                            title: ep.title,
-                                            posterUrl: ep.posterUrl
-                                        )
-                                    )
-                                } else {
-                                    detailSubject = .episode(ep)
-                                }
-                            }
-                        )
-                        .padding(.horizontal, 20)
+                        // FIXME: Temporarily disabled — re-enable when new episodes are populated
+                        // NewEpisodesSection(
+                        //     sectionTitle: (streams.userStreams.isEmpty && !trending.isEmpty) ? "Trending This Week" : "New Episodes",
+                        //     episodes: liveNewEpisodes,
+                        //     onSeeAll: {
+                        //         WatchIntentLogger.shared.log(
+                        //             eventType: .cardTapped,
+                        //             metadata: ["section": "new_episodes_see_all"]
+                        //         )
+                        //         path.append(.newEpisodes)
+                        //     },
+                        //     onOpen: { ep in
+                        //         WatchIntentLogger.shared.log(
+                        //             eventType: .cardTapped,
+                        //             titleId: ep.titleId ?? WatchIntentLogger.titleSlug(ep.title),
+                        //             platformId: ep.platform.lowercased()
+                        //         )
+                        //         if let tid = ep.titleId, SourceKind.from(titleId: tid).isNonTMDB {
+                        //             creatorDetailTarget = CreatorDetailTarget(
+                        //                 titleId: tid,
+                        //                 initialEpisode: CreatorInitialEpisode(
+                        //                     episodeId: ep.episodeId,
+                        //                     deepLinkUrl: ep.deepLinkUrl,
+                        //                     title: ep.title,
+                        //                     posterUrl: ep.posterUrl
+                        //                 )
+                        //             )
+                        //         } else {
+                        //             detailSubject = .episode(ep)
+                        //         }
+                        //     }
+                        // )
+                        // .padding(.horizontal, 20)
 
                         if !comingToStreaming.isEmpty {
                             ComingToStreamingSection(
@@ -923,17 +927,19 @@ struct HomeView: View {
             await streams.refreshAll()
             await loadTrendingIfNeeded()
             await loadComingToStreaming()
-            await loadLiveCreators()
-            await loadCreatorUploads()
             await subscribeToLiveStatus()
+            buildLiveCreators()
+            await loadCreatorUploads()
+            rebuildHeroRail()
             await hydrateSourceImages()
         }
         .refreshable {
             await streams.refreshAll()
             await loadTrendingIfNeeded()
             await loadComingToStreaming()
-            await loadLiveCreators()
+            buildLiveCreators()
             await loadCreatorUploads()
+            rebuildHeroRail()
             await hydrateSourceImages()
             // Push updated widget data on pull-to-refresh.
             WidgetDataService.shared.push(
@@ -987,22 +993,50 @@ struct HomeView: View {
                 guard let statuses = try? await ContentSourcesService.shared.fetchLiveStatus(for: creatorIds) else { continue }
                 var map: [String: LiveStatus] = [:]
                 for s in statuses { map[s.titleId] = s }
-                await MainActor.run { liveStatusMap = map }
-                // When a creator goes live, refresh the hero rail.
-                await loadLiveCreators()
+                await MainActor.run {
+                    liveStatusMap = map
+                    buildLiveCreators()
+                    rebuildHeroRail()
+                }
             }
         }
     }
 
-    /// Fetches all discoverable creators and filters to only those currently live.
-    private func loadLiveCreators() async {
-        let creators = (try? await ContentSourcesService.shared.fetchDiscoverable()) ?? []
-        liveCreators = creators.filter { $0.isLive }
+    /// Builds HeroLiveCreator values from the current customer's own follows
+    /// only. Iterates user_streams for livestream platforms, keeps those whose
+    /// liveStatusMap entry says they're live, and maps each to a lightweight
+    /// HeroLiveCreator using the live_status detail fields.
+    private func buildLiveCreators() {
+        liveCreators = streams.userStreams
+            .filter { SourceKind.from(titleId: $0.titleId).isLivestream }
+            .filter { liveStatusMap[$0.titleId]?.isLive == true }
+            .map { stream in
+                let status = liveStatusMap[stream.titleId]
+                return HeroLiveCreator(
+                    titleId: stream.titleId,
+                    displayName: stream.title ?? stream.titleId,
+                    avatarUrl: stream.posterUrl,
+                    streamTitle: status?.streamTitle,
+                    category: status?.category,
+                    viewerCount: status?.viewerCount,
+                    startedAt: status?.startedAt,
+                    kind: SourceKind.from(titleId: stream.titleId)
+                )
+            }
     }
 
-    /// Fetches recent YouTube uploads from new_episodes for the hero carousel.
+    /// Fetches recent YouTube uploads for only the YouTube creators the current
+    /// customer follows. Returns early with an empty array when there are no
+    /// followed YouTube ids, so an unfollowed user sees no creator content.
     private func loadCreatorUploads() async {
-        let uploads = (try? await ContentSourcesService.shared.fetchRecentYouTubeUploads(limit: 12)) ?? []
+        let ids = streams.userStreams
+            .filter { SourceKind.from(titleId: $0.titleId) == .youtube }
+            .map(\.titleId)
+        guard !ids.isEmpty else {
+            creatorUploads = []
+            return
+        }
+        let uploads = (try? await ContentSourcesService.shared.fetchRecentUploads(forTitleIds: ids, limit: 12)) ?? []
         creatorUploads = uploads
     }
 
@@ -1215,13 +1249,12 @@ struct HomeView: View {
 
     // MARK: - Derived content
 
-    /// Builds the heterogeneous hero carousel. Gathers every candidate —
-    /// live sports, news, live creators, YouTube uploads, and trending media —
-    /// then sorts every tile strictly by its most-recent timestamp so the
-    /// rail always shows what's newest first. Items without provider info are
-    /// skipped so the rail never advertises a service we can't actually
-    /// deeplink to. Capped at 24 tiles.
-    private var heroItems: [HeroItem] {
+    /// Assembles the heterogeneous hero carousel from every candidate source —
+    /// live sports, news, followed live creators, followed YouTube uploads, and
+    /// trending media — then sorts strictly by most-recent timestamp and writes
+    /// the result into heroRailItems inside a transaction with animations
+    /// disabled so the rail never visibly reorders or pops as data arrives.
+    private func rebuildHeroRail() {
         var items: [HeroItem] = []
 
         // Live sports (up to 2)
@@ -1234,12 +1267,12 @@ struct HomeView: View {
             items.append(.news(n))
         }
 
-        // Live creators (Twitch/Kick)
+        // Live creators (Twitch/Kick) — follow-scoped
         for c in liveCreators {
             items.append(.liveCreator(c))
         }
 
-        // YouTube uploads (up to 8)
+        // YouTube uploads (up to 8) — follow-scoped
         for u in creatorUploads.prefix(8) {
             items.append(.creatorUpload(u))
         }
@@ -1262,8 +1295,15 @@ struct HomeView: View {
             items.append(.game(nextUp))
         }
 
-        // Sort by most-recent timestamp descending, cap at 24
-        return items.sorted { $0.sortDate > $1.sortDate }.prefix(24).map { $0 }
+        // Sort by most-recent timestamp descending, cap at 24, assign without
+        // animation so the rail builds in place rather than animating reorders.
+        let sorted = items.sorted { $0.sortDate > $1.sortDate }
+        let capped = Array(sorted.prefix(24))
+        var t = Transaction()
+        t.disablesAnimations = true
+        withTransaction(t) {
+            heroRailItems = capped
+        }
     }
 
     /// Opens a news article in Safari. News items come from NewsAPI —
