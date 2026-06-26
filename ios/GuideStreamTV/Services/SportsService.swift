@@ -53,6 +53,7 @@ final class SportsService {
         Endpoint(sport: "NBA",    path: "basketball/nba/scoreboard"),
         Endpoint(sport: "NFL",    path: "football/nfl/scoreboard"),
         Endpoint(sport: "Soccer", path: "soccer/eng.1/scoreboard"),
+        Endpoint(sport: "Soccer", path: "soccer/fifa.world/scoreboard"),
         Endpoint(sport: "MLB",    path: "baseball/mlb/scoreboard"),
         Endpoint(sport: "UFC",    path: "mma/ufc/scoreboard")
     ]

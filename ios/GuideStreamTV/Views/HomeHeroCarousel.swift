@@ -302,7 +302,16 @@ private struct HeroCarouselCard: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 8) {
                 breakingNewsBadge
-                badgePill(news.outlet.uppercased(), bg: Color.white.opacity(0.20))
+                Text(news.outlet.uppercased())
+                    .scaledFont(size: 10, weight: .black)
+                    .tracking(0.8)
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .frame(maxWidth: 150)
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 5)
+                    .background(Capsule().fill(Color.white.opacity(0.20)))
                 Spacer(minLength: 0)
             }
 
@@ -336,6 +345,8 @@ private struct HeroCarouselCard: View {
             Text("BREAKING")
                 .scaledFont(size: 10, weight: .black)
                 .tracking(0.8)
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
         }
         .foregroundStyle(.white)
         .padding(.horizontal, 9)
@@ -505,6 +516,8 @@ private struct HeroCarouselCard: View {
                 Text("LIVE")
                     .scaledFont(size: 10, weight: .black)
                     .tracking(0.8)
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
             }
             .foregroundStyle(.white)
             .padding(.horizontal, 9)
@@ -553,6 +566,8 @@ private struct HeroCarouselCard: View {
             Text("LIVE")
                 .scaledFont(size: 10, weight: .black)
                 .tracking(0.8)
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
         }
         .foregroundStyle(.white)
         .padding(.horizontal, 9)
@@ -566,12 +581,16 @@ private struct HeroCarouselCard: View {
                 .scaledFont(size: 12, weight: .semibold)
                 .foregroundStyle(Color.white.opacity(0.85))
                 .lineLimit(1)
+                .truncationMode(.tail)
+                .frame(maxWidth: 150)
             if let cat = creator.category, !cat.isEmpty {
                 metaDot
                 Text(cat)
                     .scaledFont(size: 12, weight: .medium)
                     .foregroundStyle(Color.white.opacity(0.75))
                     .lineLimit(1)
+                    .truncationMode(.tail)
+                    .frame(maxWidth: 120)
             }
             if let viewers = creator.viewerCount, viewers > 0 {
                 metaDot
@@ -625,6 +644,8 @@ private struct HeroCarouselCard: View {
                 .scaledFont(size: 12, weight: .semibold)
                 .foregroundStyle(Color.white.opacity(0.85))
                 .lineLimit(1)
+                .truncationMode(.tail)
+                .frame(maxWidth: 150)
             if let date = upload.releasedAt {
                 metaDot
                 Text(Self.relativeDate(date))
@@ -643,6 +664,8 @@ private struct HeroCarouselCard: View {
             Text(kind.displayLabel.uppercased())
                 .scaledFont(size: 7, weight: .black)
                 .tracking(0.6)
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
         }
         .foregroundStyle(.white)
         .padding(.horizontal, 7)
@@ -699,6 +722,8 @@ private struct HeroCarouselCard: View {
             .scaledFont(size: 10, weight: .black)
             .tracking(0.8)
             .foregroundStyle(.white)
+            .lineLimit(1)
+            .fixedSize(horizontal: true, vertical: false)
             .padding(.horizontal, 9)
             .padding(.vertical, 5)
             .background(Capsule().fill(bg))

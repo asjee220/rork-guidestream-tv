@@ -1250,15 +1250,39 @@ struct HomeView: View {
     // MARK: - Derived content
 
     /// Assembles the heterogeneous hero carousel from every candidate source —
-    /// live sports, news, followed live creators, followed YouTube uploads, and
-    /// trending media — then sorts strictly by most-recent timestamp and writes
-    /// the result into heroRailItems inside a transaction with animations
-    /// disabled so the rail never visibly reorders or pops as data arrives.
+    /// live sports (up to 3), upcoming games (2), recent finals (2), news (up to 4),
+    /// followed live creators (up to 2), followed YouTube uploads (one per channel,
+    /// capped at 4), and trending media (up to 15) — then sorts strictly by
+    /// most-recent timestamp with a deterministic id tie-break and writes the
+    /// result into heroRailItems inside a transaction with animations disabled so
+    /// the rail never visibly reorders or pops as data arrives.
     private func rebuildHeroRail() {
         var items: [HeroItem] = []
 
-        // Live sports (up to 2)
-        for g in sportsGames.filter({ $0.state == .live }).prefix(2) {
+        // Live sports (up to 3, newest first)
+        for g in sportsGames
+            .filter({ $0.state == .live })
+            .sorted(by: { $0.startDate > $1.startDate })
+            .prefix(3)
+        {
+            items.append(.game(g))
+        }
+
+        // Upcoming games (2 soonest, sorted ascending by start time)
+        for g in sportsGames
+            .filter({ $0.state == .pre })
+            .sorted(by: { $0.startDate < $1.startDate })
+            .prefix(2)
+        {
+            items.append(.game(g))
+        }
+
+        // Recent finals (2 most recent, sorted descending by start time)
+        for g in sportsGames
+            .filter({ $0.state == .post })
+            .sorted(by: { $0.startDate > $1.startDate })
+            .prefix(2)
+        {
             items.append(.game(g))
         }
 
@@ -1267,14 +1291,22 @@ struct HomeView: View {
             items.append(.news(n))
         }
 
-        // Live creators (Twitch/Kick) — follow-scoped
-        for c in liveCreators {
+        // Live creators (up to 2) — follow-scoped only
+        for c in liveCreators.prefix(2) {
             items.append(.liveCreator(c))
         }
 
-        // YouTube uploads (up to 8) — follow-scoped
-        for u in creatorUploads.prefix(8) {
+        // YouTube uploads — single newest per followed channel, capped at 4 total.
+        // The fetch is already released_at-descending so the first per titleId is
+        // the newest upload for that channel.
+        var seenTitles: Set<String> = []
+        var uploadCount = 0
+        for u in creatorUploads {
+            if seenTitles.contains(u.titleId) { continue }
+            seenTitles.insert(u.titleId)
             items.append(.creatorUpload(u))
+            uploadCount += 1
+            if uploadCount >= 4 { break }
         }
 
         // Trending media (up to 15) — same deduped pool + provider gate
@@ -1290,14 +1322,14 @@ struct HomeView: View {
             if mediaCount >= 15 { break }
         }
 
-        // Thin-rail filler: one upcoming game when count is below 8
-        if items.count < 8, let nextUp = sportsGames.first(where: { $0.state == .pre }) {
-            items.append(.game(nextUp))
+        // Sort by most-recent timestamp descending with a deterministic
+        // id tie-break so equal-time items never reshuffle between rebuilds.
+        // Then cap at 24 and assign without animation so the rail builds
+        // in place rather than animating reorders.
+        let sorted = items.sorted { a, b in
+            if a.sortDate == b.sortDate { return a.id < b.id }
+            return a.sortDate > b.sortDate
         }
-
-        // Sort by most-recent timestamp descending, cap at 24, assign without
-        // animation so the rail builds in place rather than animating reorders.
-        let sorted = items.sorted { $0.sortDate > $1.sortDate }
         let capped = Array(sorted.prefix(24))
         var t = Transaction()
         t.disablesAnimations = true

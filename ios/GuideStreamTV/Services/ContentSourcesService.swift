@@ -178,22 +178,6 @@ final class ContentSourcesService {
         return map
     }
 
-    // MARK: - YouTube upload fetch
-
-    /// Returns recent YouTube uploads from new_episodes, ordered by released_at
-    /// descending. Used by the hero carousel to surface creator content.
-    func fetchRecentYouTubeUploads(limit: Int = 12) async throws -> [NewEpisodeRow] {
-        let rows: [NewEpisodeRow] = try await client
-            .from("new_episodes")
-            .select()
-            .eq("platform", value: "youtube")
-            .order("released_at", ascending: false)
-            .limit(limit)
-            .execute()
-            .value
-        return rows
-    }
-
     // MARK: - Follow-scoped upload fetch
 
     /// Returns recent uploads from new_episodes for the given followed creator
