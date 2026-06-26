@@ -1489,50 +1489,60 @@ private struct ReelView: View {
                 .padding(.bottom, bottomInset + 14)
             }
 
-            // Layer 21 — media controls overlay (play/pause + mute).
-            if isCurrent && (showControls || !isPlaying) {
-                ZStack {
-                    // Center play/pause button
-                    Button {
+            // Full-screen tap target for play/pause toggle.
+            // Only active when the controls overlay is hidden, so the
+            // play/pause and mute buttons always receive taps first.
+            if isCurrent {
+                Color.clear
+                    .contentShape(Rectangle())
+                    .onTapGesture {
                         onTogglePlay()
                         flashControls()
-                    } label: {
-                        ZStack {
-                            Circle()
-                                .fill(Color.black.opacity(0.5))
-                                .background(.ultraThinMaterial, in: Circle())
-                                .overlay(Circle().stroke(Color.white.opacity(0.25), lineWidth: 1))
-                            Image(systemName: isPlaying ? "pause.fill" : "play.fill")
-                                .scaledFont(size: 28, weight: .bold)
-                                .foregroundStyle(.white)
-                        }
-                        .frame(width: 68, height: 68)
-                        .shadow(color: .black.opacity(0.4), radius: 16)
                     }
-                    .buttonStyle(.plain)
-                    .position(x: size.width / 2, y: size.height / 2)
+                    .allowsHitTesting(!showControls && isPlaying)
+            }
 
-                    // Mute button — bottom-leading
-                    Button {
-                        onToggleMute()
-                        flashControls()
-                    } label: {
-                        ZStack {
-                            Circle()
-                                .fill(Color.black.opacity(0.45))
-                                .background(.ultraThinMaterial, in: Circle())
-                                .overlay(Circle().stroke(Color.white.opacity(0.18), lineWidth: 1))
-                            Image(systemName: isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
-                                .scaledFont(size: 16, weight: .semibold)
-                                .foregroundStyle(.white)
-                        }
-                        .frame(width: 40, height: 40)
-                        .shadow(color: .black.opacity(0.35), radius: 10)
+            // Layer 21 — media controls overlay (play/pause + mute).
+            if isCurrent && (showControls || !isPlaying) {
+                // Center play/pause button
+                Button {
+                    onTogglePlay()
+                    flashControls()
+                } label: {
+                    ZStack {
+                        Circle()
+                            .fill(Color.black.opacity(0.5))
+                            .background(.ultraThinMaterial, in: Circle())
+                            .overlay(Circle().stroke(Color.white.opacity(0.25), lineWidth: 1))
+                        Image(systemName: isPlaying ? "pause.fill" : "play.fill")
+                            .scaledFont(size: 28, weight: .bold)
+                            .foregroundStyle(.white)
                     }
-                    .buttonStyle(.plain)
-                    .position(x: 38, y: size.height - bottomInset - 64)
+                    .frame(width: 68, height: 68)
+                    .shadow(color: .black.opacity(0.4), radius: 16)
                 }
-                .transition(.opacity)
+                .buttonStyle(.plain)
+                .position(x: size.width / 2, y: size.height / 2)
+
+                // Mute button — bottom-leading
+                Button {
+                    onToggleMute()
+                    flashControls()
+                } label: {
+                    ZStack {
+                        Circle()
+                            .fill(Color.black.opacity(0.45))
+                            .background(.ultraThinMaterial, in: Circle())
+                            .overlay(Circle().stroke(Color.white.opacity(0.18), lineWidth: 1))
+                        Image(systemName: isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                            .scaledFont(size: 16, weight: .semibold)
+                            .foregroundStyle(.white)
+                    }
+                    .frame(width: 40, height: 40)
+                    .shadow(color: .black.opacity(0.35), radius: 10)
+                }
+                .buttonStyle(.plain)
+                .position(x: 38, y: size.height - bottomInset - 64)
             }
         }
         .clipped()
@@ -1547,11 +1557,6 @@ private struct ReelView: View {
         }
         .onDisappear {
             glassAdFadeTask?.cancel()
-        }
-        .contentShape(Rectangle())
-        .onTapGesture {
-            onTogglePlay()
-            flashControls()
         }
     }
 

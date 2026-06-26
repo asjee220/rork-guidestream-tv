@@ -184,6 +184,10 @@ struct HomeView: View {
     /// to true inside an ease-out animation after the first rail assembly so
     /// subsequent rebuilds update instantly with no visible movement.
     @State private var heroRailReady = false
+    /// Tracks whether the main content batch (trending, sports, news, etc.) has
+    /// finished loading. While false, section containers render immediately with
+    /// shimmer placeholders; flipping to true transitions real content in smoothly.
+    @State private var homeContentReady = false
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -369,7 +373,10 @@ struct HomeView: View {
                         // )
                         // .padding(.horizontal, 20)
 
-                        if !comingToStreaming.isEmpty {
+                        if !homeContentReady {
+                            HomeShimmerSection(title: "Coming to Streaming")
+                                .padding(.horizontal, 20)
+                        } else if !comingToStreaming.isEmpty {
                             ComingToStreamingSection(
                                 items: comingToStreaming,
                                 onOpen: { item in
@@ -384,7 +391,10 @@ struct HomeView: View {
                             .padding(.horizontal, 20)
                         }
 
-                        if !whatsNewTodayShows.isEmpty {
+                        if !homeContentReady {
+                            HomeShimmerSection(title: "What's New Today")
+                                .padding(.horizontal, 20)
+                        } else if !whatsNewTodayShows.isEmpty {
                             WhatsNewTodaySection(
                                 shows: whatsNewTodayShows,
                                 onSeeAll: {
@@ -406,7 +416,10 @@ struct HomeView: View {
                             .padding(.horizontal, 20)
                         }
 
-                        if !topPicksShows.isEmpty {
+                        if !homeContentReady {
+                            HomeShimmerSection(title: "Top Picks for You")
+                                .padding(.horizontal, 20)
+                        } else if !topPicksShows.isEmpty {
                             TopPicksSection(
                                 shows: topPicksShows,
                                 onSeeAll: {
@@ -428,7 +441,10 @@ struct HomeView: View {
                             .padding(.horizontal, 20)
                         }
 
-                        if !trendingRankedShows.isEmpty {
+                        if !homeContentReady {
+                            HomeShimmerSection(title: "Trending This Week")
+                                .padding(.horizontal, 20)
+                        } else if !trendingRankedShows.isEmpty {
                             TrendingRankedSection(
                                 shows: trendingRankedShows,
                                 onSeeAll: {
@@ -450,7 +466,10 @@ struct HomeView: View {
                             .padding(.horizontal, 20)
                         }
 
-                        if !leavingSoonShows.isEmpty {
+                        if !homeContentReady {
+                            HomeShimmerSection(title: "Leaving Soon")
+                                .padding(.horizontal, 20)
+                        } else if !leavingSoonShows.isEmpty {
                             LeavingSoonSection(
                                 shows: leavingSoonShows,
                                 onSeeAll: {
@@ -472,27 +491,59 @@ struct HomeView: View {
                             .padding(.horizontal, 20)
                         }
 
-                        ForEach(StreamingCatalog.ordered(from: auth.selectedServices), id: \.id) { service in
-                            if let results = popularOnServiceResults[service.id], !results.isEmpty {
-                                let shows = results.map { r in
-                                    PosterShow(
-                                        title: r.displayName,
-                                        meta: r.year.map { "\($0)" } ?? (r.isTV ? "Series" : "Movie"),
-                                        posterColors: [service.glow.opacity(0.85), service.bg],
-                                        symbol: "play.fill",
-                                        posterUrl: r.posterUrl,
-                                        tmdbId: r.id
+                        if !homeContentReady {
+                            ForEach(StreamingCatalog.ordered(from: auth.selectedServices), id: \.id) { service in
+                                HomeShimmerSection(title: "Popular on \(service.name)")
+                                    .padding(.horizontal, 20)
+                            }
+                        } else {
+                            ForEach(StreamingCatalog.ordered(from: auth.selectedServices), id: \.id) { service in
+                                if let results = popularOnServiceResults[service.id], !results.isEmpty {
+                                    let shows = results.map { r in
+                                        PosterShow(
+                                            title: r.displayName,
+                                            meta: r.year.map { "\($0)" } ?? (r.isTV ? "Series" : "Movie"),
+                                            posterColors: [service.glow.opacity(0.85), service.bg],
+                                            symbol: "play.fill",
+                                            posterUrl: r.posterUrl,
+                                            tmdbId: r.id
+                                        )
+                                    }
+                                    PopularOnServiceSection(
+                                        serviceName: service.name,
+                                        accentColor: service.glow,
+                                        shows: shows,
+                                        onOpen: { show in
+                                            WatchIntentLogger.shared.log(
+                                                eventType: .cardTapped,
+                                                titleId: WatchIntentLogger.titleSlug(show.title),
+                                                metadata: ["section": "popular_on_\(service.id)"]
+                                            )
+                                            detailSubject = .show(show)
+                                        }
                                     )
+                                    .padding(.horizontal, 20)
                                 }
-                                PopularOnServiceSection(
-                                    serviceName: service.name,
-                                    accentColor: service.glow,
-                                    shows: shows,
+                            }
+                        }
+
+                        if !homeContentReady {
+                            ForEach(StreamingCatalog.ordered(from: auth.selectedServices).prefix(3), id: \.id) { svc in
+                                HomeShimmerSection(title: "Popular on \(svc.name)")
+                                    .padding(.horizontal, 20)
+                            }
+                        } else {
+                            ForEach(showsBySelectedPlatform, id: \.name) { row in
+                                PlatformRow(
+                                    platformName: row.name,
+                                    platformColor: row.color,
+                                    shows: row.shows,
                                     onOpen: { show in
                                         WatchIntentLogger.shared.log(
                                             eventType: .cardTapped,
                                             titleId: WatchIntentLogger.titleSlug(show.title),
-                                            metadata: ["section": "popular_on_\(service.id)"]
+                                            platformId: row.name.lowercased(),
+                                            metadata: ["section": "platform_row"]
                                         )
                                         detailSubject = .show(show)
                                     }
@@ -501,25 +552,10 @@ struct HomeView: View {
                             }
                         }
 
-                        ForEach(showsBySelectedPlatform, id: \.name) { row in
-                            PlatformRow(
-                                platformName: row.name,
-                                platformColor: row.color,
-                                shows: row.shows,
-                                onOpen: { show in
-                                    WatchIntentLogger.shared.log(
-                                        eventType: .cardTapped,
-                                        titleId: WatchIntentLogger.titleSlug(show.title),
-                                        platformId: row.name.lowercased(),
-                                        metadata: ["section": "platform_row"]
-                                    )
-                                    detailSubject = .show(show)
-                                }
-                            )
-                            .padding(.horizontal, 20)
-                        }
-
-                        if !trendingRanked.isEmpty {
+                        if !homeContentReady {
+                            HomeShimmerSection(title: "Trending This Week")
+                                .padding(.horizontal, 20)
+                        } else if !trendingRanked.isEmpty {
                             TrendingRankedSection(
                                 shows: trendingRanked,
                                 onSeeAll: nil,
@@ -583,7 +619,10 @@ struct HomeView: View {
                         .id("browseByGenre")
                         .padding(.horizontal, 20)
 
-                        if !recommendedShows.isEmpty {
+                        if !homeContentReady {
+                            HomeShimmerSection(title: "Because you watch \(selectedGenreName)")
+                                .padding(.horizontal, 20)
+                        } else if !recommendedShows.isEmpty {
                             let recShows = recommendedShows
                                 .filter { providerByTmdb[$0.id] != nil }
                                 .prefix(12)
@@ -613,7 +652,10 @@ struct HomeView: View {
                             }
                         }
 
-                        if !topRatedShows.isEmpty {
+                        if !homeContentReady {
+                            HomeShimmerSection(title: "Top rated right now")
+                                .padding(.horizontal, 20)
+                        } else if !topRatedShows.isEmpty {
                             TopRatedSection(
                                 shows: topRatedShows,
                                 onOpen: { show in
@@ -628,7 +670,10 @@ struct HomeView: View {
                             .padding(.horizontal, 20)
                         }
 
-                        if !newSeasonsYouKnow.isEmpty {
+                        if !homeContentReady {
+                            HomeShimmerSection(title: "New seasons — shows you follow")
+                                .padding(.horizontal, 20)
+                        } else if !newSeasonsYouKnow.isEmpty {
                             NewSeasonsSection(
                                 results: newSeasonsYouKnow,
                                 providerByTmdb: providerByTmdb,
@@ -645,7 +690,10 @@ struct HomeView: View {
                             .padding(.horizontal, 20)
                         }
 
-                        if !tvdbUpcomingItems.isEmpty {
+                        if !homeContentReady {
+                            HomeShimmerSection(title: "Upcoming Episodes")
+                                .padding(.horizontal, 20)
+                        } else if !tvdbUpcomingItems.isEmpty {
                             UpcomingEpisodesRow(
                                 items: tvdbUpcomingItems,
                                 onOpen: { item in
@@ -681,7 +729,10 @@ struct HomeView: View {
 
                         // Continue Watching is intentionally hidden when the user hasn't watched anything yet —
                         // showing fake "continue watching" entries for shows the user never opened is worse than nothing.
-                        if !continueWatchingEpisodes.isEmpty {
+                        if !homeContentReady {
+                            HomeShimmerSection(title: "Continue Watching")
+                                .padding(.horizontal, 20)
+                        } else if !continueWatchingEpisodes.isEmpty {
                             ContinueWatchingSection(
                                 episodes: continueWatchingEpisodes,
                                 onSeeAll: {
@@ -703,7 +754,10 @@ struct HomeView: View {
                             .padding(.horizontal, 20)
                         }
 
-                        if !bingeReadyShows.isEmpty {
+                        if !homeContentReady {
+                            HomeShimmerSection(title: "Binge Worthy")
+                                .padding(.horizontal, 20)
+                        } else if !bingeReadyShows.isEmpty {
                             BingeReadySection(
                                 sectionTitle: bingeReadyTitle,
                                 tag: bingeReadyTag,
@@ -727,7 +781,10 @@ struct HomeView: View {
                             .padding(.horizontal, 20)
                         }
 
-                        if !newsStreams.isEmpty {
+                        if !homeContentReady {
+                            HomeShimmerSection(title: "News")
+                                .padding(.horizontal, 20)
+                        } else if !newsStreams.isEmpty {
                             NewsSection(
                                 items: newsStreams,
                                 onSeeAll: {
@@ -938,6 +995,14 @@ struct HomeView: View {
             await loadCreatorUploads()
             rebuildHeroRail()
             await hydrateSourceImages()
+            // Once the main data batch settles, transition all section
+            // containers from shimmer placeholders to real content with a
+            // smooth staggered fade-in.
+            await MainActor.run {
+                withAnimation(.easeOut(duration: 0.35).delay(0.1)) {
+                    homeContentReady = true
+                }
+            }
         }
         .refreshable {
             await streams.refreshAll()
@@ -1885,6 +1950,44 @@ private struct PageBar: View {
 }
 
 // MARK: - Sections
+
+/// A placeholder section card shown while the main content batch is loading.
+/// Renders the section frame with a shimmer horizontal row so the page feels
+/// populated immediately.
+private struct HomeShimmerSection: View {
+    let title: String
+
+    var body: some View {
+        SectionGlassCard(title: title, onSeeAll: nil) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    ForEach(0..<5, id: \.self) { i in
+                        RoundedRectangle(cornerRadius: 10)
+                            .fill(Color.white.opacity(0.06))
+                            .frame(width: 110, height: 155)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 10)
+                                    .fill(
+                                        LinearGradient(
+                                            colors: [
+                                                Color.white.opacity(0.0),
+                                                Color.white.opacity(0.06),
+                                                Color.white.opacity(0.0)
+                                            ],
+                                            startPoint: UnitPoint(x: CGFloat(i) * 0.35 - 1.2, y: 0.5),
+                                            endPoint: UnitPoint(x: CGFloat(i) * 0.35 - 0.2, y: 0.5)
+                                        )
+                                    )
+                            )
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 6)
+            }
+            .disabled(true)
+        }
+    }
+}
 
 private struct SectionGlassCard<Content: View>: View {
     let title: String
