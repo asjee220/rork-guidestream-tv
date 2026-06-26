@@ -64,6 +64,9 @@ struct CreatorDetailView: View {
     // Per-creator upload-alert preference (synced to creator_notification_preferences).
     @State private var uploadAlertsOn: Bool = false
 
+    // Dismiss state for the sponsored affiliate banner.
+    @State private var adDismissed: Bool = false
+
     // Social (likes / comments) — keyed off the creator's titleId
     @State private var social = SocialViewModel.shared
     @State private var showComments: Bool = false
@@ -117,8 +120,8 @@ struct CreatorDetailView: View {
 
                         Divider().overlay(Color.white.opacity(0.08)).padding(.horizontal, 20)
 
-                        // MARK: 6. Tile ad slot
-                        adTileSlot
+                        // MARK: 6. Sponsored affiliate banner (live Rakuten card)
+                        affiliateBanner
                             .padding(.top, 18)
 
                         // MARK: 7–8. Info + recent uploads
@@ -614,43 +617,112 @@ struct CreatorDetailView: View {
         return "\(n)"
     }
 
-    // MARK: - 6. Tile ad slot
+    // MARK: - 6. Sponsored affiliate banner
 
-    /// ~320×90 tile ad with an "AD" compliance label, guarded for the cloud
-    /// simulator exactly like the Reels banner. The real banner integration
-    /// (AdManager's GADBannerView) is currently a no-op stub, so this renders
-    /// a labelled placeholder that keeps the layout intact on device.
+    /// Live "Stream more on …" affiliate card, identical to the one shown in
+    /// the show/episode detail sheet. Drives the Rakuten affiliate link path
+    /// and is dismissable. Picks a streaming service the user doesn't already
+    /// own from the pool. iOS only (the affiliate/Rakuten stack is iOS-bound).
     @ViewBuilder
-    private var adTileSlot: some View {
-#if targetEnvironment(simulator)
-        EmptyView()
-#else
-        // TODO(ads): Replace this placeholder with the shared banner view once
-        // AdManager's Google Mobile Ads SDK is restored for device builds.
-        ZStack {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(Color.white.opacity(0.05))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .stroke(Color.white.opacity(0.08), lineWidth: 1)
+    private var affiliateBanner: some View {
+#if os(iOS)
+        if !adDismissed, let ad = affiliateAdData,
+           let service = StreamingCatalog.all.first(where: { $0.id == ad.serviceId }) {
+            Button {
+                RakutenManager.shared.openAffiliateLink(
+                    serviceId: ad.serviceId,
+                    metadata: [
+                        "source": "creator_detail_sheet",
+                        "title": source?.displayName ?? titleId
+                    ]
                 )
-            Text("Advertisement")
-                .scaledFont(size: 12, weight: .medium)
-                .foregroundStyle(Color.textTertiary)
+            } label: {
+                HStack(spacing: 12) {
+                    ServiceMiniIcon(service: service, size: 40)
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(ad.headline)
+                            .scaledFont(size: 13, weight: .semibold)
+                            .foregroundStyle(.white)
+                            .lineLimit(1)
+                        Text(ad.subtext)
+                            .scaledFont(size: 11)
+                            .foregroundStyle(Color.white.opacity(0.50))
+                        Text("Sponsored")
+                            .scaledFont(size: 9)
+                            .foregroundStyle(Color.white.opacity(0.25))
+                    }
+
+                    Spacer(minLength: 0)
+
+                    Image(systemName: "arrow.up.right")
+                        .scaledFont(size: 13, weight: .semibold)
+                        .foregroundStyle(Color.white.opacity(0.35))
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 12)
+                .background(
+                    RoundedRectangle(cornerRadius: 14)
+                        .fill(Color.white.opacity(0.05))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 14)
+                                .stroke(Color.white.opacity(0.10), lineWidth: 0.5)
+                        )
+                )
+                .padding(.horizontal, 20)
+            }
+            .buttonStyle(.plain)
+            .overlay(alignment: .topTrailing) {
+                Button {
+                    withAnimation(.easeOut(duration: 0.2)) { adDismissed = true }
+                } label: {
+                    Image(systemName: "xmark")
+                        .scaledFont(size: 12, weight: .semibold)
+                        .foregroundStyle(Color.white.opacity(0.35))
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .offset(x: -8, y: -8)
+            }
         }
-        .frame(maxWidth: 320)
-        .frame(height: 90)
-        .overlay(alignment: .topLeading) {
-            Text("AD")
-                .scaledFont(size: 8, weight: .heavy)
-                .foregroundStyle(Color.white.opacity(0.7))
-                .padding(.horizontal, 5)
-                .padding(.vertical, 2)
-                .background(RoundedRectangle(cornerRadius: 3).fill(Color.white.opacity(0.12)))
-                .padding(6)
-        }
-        .frame(maxWidth: .infinity)
+#else
+        EmptyView()
 #endif
+    }
+
+    /// Chooses the first streaming service from the pool that the user doesn't
+    /// already own so the affiliate prompt is for something new.
+    private var affiliateAdData: (serviceId: String, headline: String, subtext: String)? {
+        let owned = AuthViewModel.shared.selectedServices.map { normalisedServiceKey($0) }
+        let pool: [(String, String, String)] = [
+            ("netflix", "Stream more on Netflix", "Unlimited shows & movies · Try free"),
+            ("hbo", "Watch more on Max", "HBO, Max Originals & more · Try free"),
+            ("hulu", "Live TV + streaming on Hulu", "Starting at $7.99/mo · Try free"),
+            ("disney", "Disney+, Hulu & ESPN+ bundle", "Disney Bundle · Try free"),
+            ("appletv", "Award-winning originals", "Apple TV+ · First month free"),
+            ("prime", "Included with Prime", "Prime Video · Try free"),
+            ("paramount", "NFL on CBS & live sports", "Paramount+ · Try free"),
+            ("peacock", "Stream free on Peacock", "NBC shows & live sports · Free tier")
+        ]
+        if let preferred = pool.first(where: { !owned.contains($0.0) }) {
+            return (preferred.0, preferred.1, preferred.2)
+        }
+        return pool.first.map { ($0.0, $0.1, $0.2) }
+    }
+
+    private func normalisedServiceKey(_ raw: String) -> String {
+        let k = raw.lowercased()
+        if k.contains("netflix") { return "netflix" }
+        if k.contains("max") || k.contains("hbo") { return "hbo" }
+        if k.contains("hulu") { return "hulu" }
+        if k.contains("disney") { return "disney" }
+        if k.contains("apple") { return "appletv" }
+        if k.contains("prime") || k.contains("amazon") { return "prime" }
+        if k.contains("paramount") { return "paramount" }
+        if k.contains("peacock") { return "peacock" }
+        return k
     }
 
     // MARK: - 7. Bio
@@ -1045,6 +1117,12 @@ struct CreatorDetailView: View {
         )
         currentEpisodeId = upload.videoId
         currentDeepLinkUrl = upload.deepLink
+#if os(iOS)
+        // Open the tapped upload straight in YouTube — no inline embed.
+        if let u = URL(string: upload.deepLink) {
+            UIApplication.shared.open(u)
+        }
+#endif
     }
 
     /// "mm:ss" (or "h:mm:ss") duration badge from a raw seconds count.
@@ -1100,58 +1178,71 @@ struct CreatorDetailView: View {
 
     // MARK: - YouTube section
 
+    /// "Watch on YOUTUBE" CTA (mirroring the show-detail watch button). We no
+    /// longer embed the player inline — embedded playback is widely restricted
+    /// by channel owners, so we deep-link straight into the YouTube app/site
+    /// for the currently-selected upload (or the channel when none is chosen).
     @ViewBuilder
     private func youtubePlayerSection(source: ContentSource) -> some View {
+        watchOnButton(chip: "YouTube", chipColor: sourceColor) {
 #if os(iOS)
-        if let videoId = currentEpisodeId {
-            // Player
-            ZStack {
-                Color.black
-                YouTubeEmbedPlayer(videoId: videoId)
-            }
-            .aspectRatio(16/9, contentMode: .fit)
-            .clipShape(RoundedRectangle(cornerRadius: 0))
-            .padding(.top, 0)
-        } else if !episodes.isEmpty {
-            // Fallback: no video loaded but episodes exist — show most recent
-            Color.black
-                .frame(height: 220)
-                .overlay {
-                    VStack(spacing: 12) {
-                        ProgressView().tint(Color.white)
-                        Text("Loading player…")
-                            .scaledFont(size: 13)
-                            .foregroundStyle(Color.textSecondary)
-                    }
-                }
-        } else {
-            // No episodes at all — show metadata only
-            Color.clear.frame(height: 0)
-        }
-#else
-        // tvOS fallback
-        if let videoId = currentEpisodeId {
-            Button {
-                // Fallback: open externally via the app delegate or nothing
-            } label: {
-                HStack {
-                    Image(systemName: "play.rectangle.fill")
-                        .scaledFont(size: 16, weight: .semibold)
-                    Text("Watch on YouTube")
-                        .scaledFont(size: 15, weight: .semibold)
-                }
-                .foregroundStyle(.white)
-                .frame(maxWidth: .infinity)
-                .frame(height: 48)
-                .background(Capsule().fill(Color(red: 0xFF/255, green: 0x00/255, blue: 0x00/255)))
-            }
-            .padding(.horizontal, 20)
-            .padding(.top, 16)
-        } else {
-            EmptyView()
-        }
+            openYouTube()
 #endif
+        }
+        .padding(.horizontal, 20)
+        .padding(.top, 16)
     }
+
+    // MARK: - Shared "Watch on [chip]" CTA
+
+    /// Orange capsule + branded service chip, matching the show-detail sheet's
+    /// primary watch button. Used by every external creator platform so the
+    /// call-to-action reads consistently across the app.
+    private func watchOnButton(chip: String, chipColor: Color, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                Image(systemName: "play.fill")
+                    .scaledFont(size: 15, weight: .bold)
+                Text("Watch on")
+                    .scaledFont(size: 16, weight: .bold)
+                    .lineLimit(1)
+                Text(chip.uppercased())
+                    .scaledFont(size: 10, weight: .heavy)
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 3)
+                    .background(
+                        RoundedRectangle(cornerRadius: 4, style: .continuous).fill(chipColor)
+                    )
+            }
+            .foregroundStyle(.white)
+            .frame(maxWidth: .infinity)
+            .frame(height: 52)
+            .background(Capsule().fill(Color.orange))
+            .shadow(color: Color.orange.opacity(0.35), radius: 14, y: 6)
+        }
+        .buttonStyle(.plain)
+    }
+
+#if os(iOS)
+    /// Deep-links into YouTube for the currently-selected upload, falling back
+    /// to the channel page. iOS routes the https URL into the YouTube app via
+    /// universal links. No raw stream URL is extracted (YouTube ToS).
+    private func openYouTube() {
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        if let deep = currentDeepLinkUrl, let u = URL(string: deep) {
+            UIApplication.shared.open(u)
+            return
+        }
+        if let videoId = currentEpisodeId, let u = URL(string: "https://www.youtube.com/watch?v=\(videoId)") {
+            UIApplication.shared.open(u)
+            return
+        }
+        if let ch = source?.channelUrl ?? source?.feedUrl, let u = URL(string: ch) {
+            UIApplication.shared.open(u)
+        }
+    }
+#endif
 
     // MARK: - Podcast section
 
@@ -1211,77 +1302,26 @@ struct CreatorDetailView: View {
                 .padding(.horizontal, 20)
             }
 
-            watchOnTwitchButton
-                .padding(.horizontal, 20)
+            watchOnButton(chip: "Twitch", chipColor: sourceColor) {
+#if os(iOS)
+                openTwitch()
+#endif
+            }
+            .padding(.horizontal, 20)
         }
         .padding(.top, 16)
-    }
-
-    private var watchOnTwitchButton: some View {
-#if os(iOS)
-        Button {
-            openTwitch()
-        } label: {
-            HStack(spacing: 8) {
-                Image(systemName: "play.rectangle.fill")
-                    .scaledFont(size: 16, weight: .semibold)
-                Text("Watch on Twitch")
-                    .scaledFont(size: 16, weight: .bold)
-            }
-            .foregroundStyle(.white)
-            .frame(maxWidth: .infinity)
-            .frame(height: 52)
-            .background(
-                Capsule()
-                    .fill(Color(red: 0x91/255, green: 0x46/255, blue: 0xFF/255))
-            )
-            .shadow(color: Color(red: 0x91/255, green: 0x46/255, blue: 0xFF/255).opacity(0.35), radius: 16)
-        }
-        .buttonStyle(.plain)
-#else
-        Button {} label: {
-            HStack(spacing: 8) {
-                Image(systemName: "play.rectangle.fill")
-                    .scaledFont(size: 16, weight: .semibold)
-                Text("Watch on Twitch")
-                    .scaledFont(size: 16, weight: .bold)
-            }
-            .foregroundStyle(.white)
-            .frame(maxWidth: .infinity)
-            .frame(height: 52)
-            .background(Capsule().fill(Color(red: 0x91/255, green: 0x46/255, blue: 0xFF/255)))
-        }
-#endif
     }
 
     // MARK: - Kick section
 
     private var kickSection: some View {
+        watchOnButton(chip: "Kick", chipColor: sourceColor) {
 #if os(iOS)
-        Button {
             openKick()
-        } label: {
-            HStack(spacing: 8) {
-                Image(systemName: "bolt.fill")
-                    .scaledFont(size: 16, weight: .semibold)
-                Text("Watch on Kick")
-                    .scaledFont(size: 16, weight: .bold)
-            }
-            .foregroundStyle(Color(red: 0.05, green: 0.05, blue: 0.05))
-            .frame(maxWidth: .infinity)
-            .frame(height: 52)
-            .background(
-                Capsule()
-                    .fill(Color(red: 0x53/255, green: 0xFC/255, blue: 0x18/255))
-            )
-            .shadow(color: Color(red: 0x53/255, green: 0xFC/255, blue: 0x18/255).opacity(0.3), radius: 16)
+#endif
         }
-        .buttonStyle(.plain)
         .padding(.horizontal, 20)
         .padding(.top, 16)
-#else
-        Color.clear.frame(height: 0)
-#endif
     }
 
     // MARK: - Episode helpers
