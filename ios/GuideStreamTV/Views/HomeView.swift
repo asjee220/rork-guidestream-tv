@@ -1450,7 +1450,17 @@ struct HomeView: View {
                 isNew: false,
                 posterColors: kind.isNonTMDB ? [sourceKindColor(kind), sourceKindColor(kind).opacity(0.5)] : HomeFallback.posterColors,
                 symbol: kind == .podcast ? "mic.fill" : "bookmark.fill",
-                posterUrl: CreatorImageOverrides.resolve(titleId: row.titleId, stored: row.posterUrl ?? sourceImageMap[row.titleId]),
+                // Non-TMDB creators: prefer the canonical content_sources profile
+                // image (a portrait/square avatar — the same one shown on Follow
+                // Creators) so the 2:3 poster crop reads as a clean portrait,
+                // identical in look to movie/show posters. Fall back to any
+                // stored poster_url only when no profile image exists.
+                posterUrl: CreatorImageOverrides.resolve(
+                    titleId: row.titleId,
+                    stored: kind.isNonTMDB
+                        ? (sourceImageMap[row.titleId] ?? row.posterUrl)
+                        : (row.posterUrl ?? sourceImageMap[row.titleId])
+                ),
                 tmdbId: kind == .tmdb ? Int(row.titleId) : nil,
                 titleId: row.titleId
             )
