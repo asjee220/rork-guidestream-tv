@@ -43,6 +43,17 @@ struct FollowCreatorsView: View {
         }
     }
 
+    /// Maps the selected filter to the live-search worker `type` param.
+    /// Podcasts are not searchable via the live worker, so they fall back to local-only.
+    private var liveSearchType: String {
+        switch selectedFilter {
+        case .all, .live: return "all"
+        case .youtube: return "youtube"
+        case .streamers: return "twitch"
+        case .podcasts: return "all"
+        }
+    }
+
     var body: some View {
         NavigationStack {
             ZStack {
@@ -199,7 +210,14 @@ struct FollowCreatorsView: View {
         do {
             let st = selectedFilter.sourceType
             if !searchText.isEmpty {
-                let sources = try await ContentSourcesService.shared.searchSources(query: searchText, sourceType: st)
+                let query = searchText
+                // Local cached results + live worker results (YouTube/Twitch), merged & de-duped.
+                async let localSources = ContentSourcesService.shared.searchSources(query: query, sourceType: st)
+                async let remoteSources = ContentSourcesService.shared.searchCreatorsLive(query: query, type: liveSearchType)
+                var byId: [String: ContentSource] = [:]
+                for source in try await localSources { byId[source.titleId] = source }
+                for source in await remoteSources where byId[source.titleId] == nil { byId[source.titleId] = source }
+                let sources = Array(byId.values)
                 let liveIds = sources.filter { SourceKind.from(titleId: $0.titleId).isLivestream }.map { $0.titleId }
                 let liveMap = liveIds.isEmpty ? [:] : Dictionary(
                     uniqueKeysWithValues: (try? await ContentSourcesService.shared.fetchLiveStatus(for: liveIds))?.map { ($0.titleId, $0) } ?? []

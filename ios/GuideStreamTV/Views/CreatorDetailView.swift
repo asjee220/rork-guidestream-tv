@@ -72,6 +72,10 @@ struct CreatorDetailView: View {
     @State private var showComments: Bool = false
     @State private var isTogglingLike: Bool = false
 
+    // Sticky compact header offset + share-sheet presentation.
+    @State private var scrollOffset: CGFloat = 0
+    @State private var showShareSheet: Bool = false
+
     private var kind: SourceKind { SourceKind.from(titleId: titleId) }
 
     /// Channel statistics + bio sourced from the YouTube Data API
@@ -84,7 +88,7 @@ struct CreatorDetailView: View {
     }
 
     var body: some View {
-        ZStack {
+        ZStack(alignment: .top) {
             BrandBackground()
 
             if isLoading {
@@ -92,144 +96,88 @@ struct CreatorDetailView: View {
             } else if let source {
                 ScrollView(showsIndicators: false) {
                     VStack(alignment: .leading, spacing: 0) {
-                        // MARK: 1–2. Header (banner + avatar + name + badge)
-                        creatorHeader(source: source)
+                        // MARK: Hero (full-bleed, matching ShowDetailScreen)
+                        DetailHeroHeader(
+                            heroImageUrl: CreatorImageOverrides.resolve(titleId: titleId, stored: source.imageUrl),
+                            title: source.displayName,
+                            metadata: { creatorMetadata(source: source) },
+                            onBack: onBack,
+                            onShare: { triggerShare() }
+                        )
 
-                        // MARK: 3. Primary action row (Follow + upload-alert bell)
-                        primaryActionRow(source: source)
-                            .padding(.horizontal, 20)
-                            .padding(.top, 4)
-
-                        // MARK: 4. Channel stat row (subs / videos / views)
-                        if kind == .youtube {
-                            channelStatRow
-                                .padding(.horizontal, 20)
-                                .padding(.top, 22)
-                        }
-
-                        // MARK: Inline media player (kept for playback)
-                        mediaArea(source: source)
-                            .padding(.top, 16)
-
-                        // MARK: 5. Social action bar (like / comment / share)
-                        Divider().overlay(Color.white.opacity(0.08)).padding(.horizontal, 20).padding(.top, 20)
-
-                        socialActionsRow(source: source)
-                            .padding(.horizontal, 20)
-                            .padding(.vertical, 18)
-
-                        Divider().overlay(Color.white.opacity(0.08)).padding(.horizontal, 20)
-
-                        // MARK: 6. Sponsored affiliate banner (live Rakuten card)
-                        affiliateBanner
-                            .padding(.top, 18)
-
-                        // MARK: 7–8. Info + recent uploads
-                        VStack(alignment: .leading, spacing: 20) {
-                            if let desc = bioText(source: source) {
-                                VStack(alignment: .leading, spacing: 8) {
-                                    Text("ABOUT")
-                                        .scaledFont(size: 12, weight: .heavy)
-                                        .tracking(1.4)
-                                        .foregroundStyle(Color.white.opacity(0.45))
-                                    Text(desc)
-                                        .scaledFont(size: 15)
-                                        .foregroundStyle(Color.white.opacity(0.85))
-                                        .lineSpacing(4)
-                                        .lineLimit(4)
-                                }
-                            }
-
-                            if let liveStatus, liveStatus.isLive, let streamTitle = liveStatus.streamTitle {
-                                VStack(alignment: .leading, spacing: 8) {
-                                    Text("CURRENTLY STREAMING")
-                                        .scaledFont(size: 12, weight: .heavy)
-                                        .tracking(1.4)
-                                        .foregroundStyle(Color.white.opacity(0.45))
-                                    HStack(spacing: 6) {
-                                        Circle()
-                                            .fill(Color.red)
-                                            .frame(width: 8, height: 8)
-                                        Text(streamTitle)
-                                            .scaledFont(size: 16, weight: .semibold)
-                                            .foregroundStyle(.white)
-                                    }
-                                    if let cat = liveStatus.category {
-                                        Text(cat)
-                                            .scaledFont(size: 13)
-                                            .foregroundStyle(Color.textSecondary)
-                                    }
-                                }
-                            }
-
-                            if let url = source.channelUrl ?? source.feedUrl {
-                                VStack(alignment: .leading, spacing: 8) {
-                                    Text("LINK")
-                                        .scaledFont(size: 12, weight: .heavy)
-                                        .tracking(1.4)
-                                        .foregroundStyle(Color.white.opacity(0.45))
-#if os(iOS)
-                                    Button {
-                                        if let u = URL(string: url) {
-                                            UIApplication.shared.open(u)
-                                        }
-                                    } label: {
-                                        HStack(spacing: 4) {
-                                            Text(url)
-                                                .scaledFont(size: 13)
-                                                .foregroundStyle(Color.orange)
-                                                .lineLimit(1)
-                                            Image(systemName: "arrow.up.right")
-                                                .scaledFont(size: 11, weight: .semibold)
-                                                .foregroundStyle(Color.orange)
-                                        }
-                                    }
-                                    .buttonStyle(.plain)
-#else
-                                    Text(url)
-                                        .scaledFont(size: 13)
-                                        .foregroundStyle(Color.textSecondary)
-                                        .lineLimit(1)
-#endif
-                                }
-                            }
-
-                            if let cat = source.category {
-                                VStack(alignment: .leading, spacing: 8) {
-                                    Text("CATEGORY")
-                                        .scaledFont(size: 12, weight: .heavy)
-                                        .tracking(1.4)
-                                        .foregroundStyle(Color.white.opacity(0.45))
-                                    Text(cat)
-                                        .scaledFont(size: 14)
-                                        .foregroundStyle(Color.textSecondary)
-                                }
-                            }
-
-                        }
+                        // MARK: Fan Activity card (like / comment / save / notify)
+                        FanActivityCard(
+                            liked: social.isLiked(titleId),
+                            likeLabel: social.likes(titleId) > 0 ? formatSocialCount(social.likes(titleId)) : "Like",
+                            onLike: { toggleLikeAction() },
+                            commentLabel: social.commentTotal(titleId) > 0 ? formatSocialCount(social.commentTotal(titleId)) : "Comment",
+                            onComment: { openComments() },
+                            isSaved: isFollowed,
+                            saveLabel: isFollowed ? "Following" : "Follow",
+                            onSave: { toggleFollow() },
+                            notifyOn: uploadAlertsOn,
+                            onNotify: { toggleUploadAlerts() }
+                        )
                         .padding(.horizontal, 20)
                         .padding(.top, 24)
 
-                        // MARK: 8. Recent uploads (YouTube via edge function, Podcast via episodes)
-                        if kind == .youtube {
-                            if isLoadingMeta && channelUploads.isEmpty {
-                                uploadsLoadingPlaceholder
-                                    .padding(.horizontal, 20)
-                                    .padding(.top, 26)
-                            } else if !channelUploads.isEmpty {
-                                youtubeUploadsSection(source: source)
-                                    .padding(.horizontal, 20)
-                                    .padding(.top, 26)
-                            }
-                        } else if kind == .podcast, !episodes.isEmpty {
-                            recentUploadsSection(source: source)
-                                .padding(.horizontal, 20)
-                                .padding(.top, 26)
-                        }
+                        // MARK: Currently streaming + About
+                        creatorInfoSection(source: source)
 
-                        Color.clear.frame(height: 60)
+                        // MARK: Inline media (podcast audio on iOS; all kinds on tvOS)
+#if os(tvOS)
+                        mediaArea(source: source)
+                            .padding(.top, 16)
+#else
+                        if kind == .podcast {
+                            mediaArea(source: source)
+                                .padding(.top, 16)
+                        }
+#endif
+
+                        // MARK: Recent uploads
+                        recentUploadsContainer(source: source)
+
+                        // MARK: Sponsored affiliate banner (live Rakuten card)
+                        affiliateBanner
+                            .padding(.top, 24)
+
+                        Color.clear.frame(height: 140)
                     }
+                    .background(
+                        GeometryReader { geo in
+                            Color.clear.preference(
+                                key: ScrollOffsetKey.self,
+                                value: -geo.frame(in: .named("creatorDetailScroll")).minY
+                            )
+                        }
+                    )
                 }
+                .coordinateSpace(name: "creatorDetailScroll")
+                .onPreferenceChange(ScrollOffsetKey.self) { scrollOffset = $0 }
+
+#if os(iOS)
+                DetailCompactHeader(title: source.displayName, onBack: onBack) {
+                    Button { triggerShare() } label: {
+                        Image(systemName: "square.and.arrow.up")
+                            .scaledFont(size: 14, weight: .semibold)
+                            .foregroundStyle(.white)
+                            .frame(width: 32, height: 32)
+                            .background(Circle().fill(Color.white.opacity(0.08)))
+                    }
+                    .buttonStyle(.plain)
+                }
+                .opacity(scrollOffset > 220 ? 1 : 0)
+                .offset(y: scrollOffset > 220 ? 0 : -8)
+                .animation(.easeOut(duration: 0.18), value: scrollOffset > 220)
+                .allowsHitTesting(scrollOffset > 220)
+
+                if kind != .podcast {
+                    creatorBottomBar(source: source)
+                        .frame(maxHeight: .infinity, alignment: .bottom)
+                        .ignoresSafeArea(edges: .bottom)
+                }
+#endif
             } else {
                 VStack(spacing: 12) {
                     Image(systemName: "questionmark.circle")
@@ -244,7 +192,7 @@ struct CreatorDetailView: View {
         .preferredColorScheme(.dark)
 #if os(iOS)
         .presentationDetents([.large])
-        .presentationDragIndicator(.visible)
+        .presentationDragIndicator(.hidden)
         .presentationContentInteraction(.scrolls)
         .sheet(isPresented: $showComments) {
             if let source {
@@ -256,6 +204,11 @@ struct CreatorDetailView: View {
                     posterColors: [sourceColor, sourceColor.opacity(0.5)],
                     accent: Color.orange
                 )
+            }
+        }
+        .sheet(isPresented: $showShareSheet) {
+            if let source {
+                CreatorShareSheet(items: [shareURL(source: source)])
             }
         }
 #endif
@@ -280,97 +233,41 @@ struct CreatorDetailView: View {
         .task(id: titleId) { await social.refreshCounts(titleId: titleId) }
     }
 
-    // MARK: - Social actions row
+    // MARK: - Like / comment actions (wired into FanActivityCard)
 
-    @ViewBuilder
-    private func socialActionsRow(source: ContentSource) -> some View {
-        let isLiked = social.isLiked(titleId)
-        HStack(spacing: 0) {
-            socialCircleAction(
-                icon: isLiked ? "heart.fill" : "heart",
-                label: "Like",
-                count: social.likes(titleId),
-                tint: isLiked ? Color.orange : .white
-            ) {
+    /// Toggles the creator like via `SocialViewModel.shared`, guarding against
+    /// double-taps while the network round-trip is in flight.
+    private func toggleLikeAction() {
 #if os(iOS)
-                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
 #endif
-                guard !isTogglingLike else { return }
-                isTogglingLike = true
-                Task {
-                    await social.toggleLike(titleId: titleId)
-                    await MainActor.run { isTogglingLike = false }
-                }
-            }
-            .frame(maxWidth: .infinity)
-
-            socialCircleAction(
-                icon: "bubble.left.fill",
-                label: "Comments",
-                count: social.commentTotal(titleId),
-                tint: .white
-            ) {
-#if os(iOS)
-                UIImpactFeedbackGenerator(style: .light).impactOccurred()
-#endif
-                showComments = true
-                WatchIntentLogger.shared.log(
-                    eventType: .commentsOpened,
-                    titleId: titleId,
-                    metadata: ["source": "creator_detail"]
-                )
-            }
-            .frame(maxWidth: .infinity)
-
-#if os(iOS)
-            ShareLink(
-                item: shareURL(source: source),
-                subject: Text(source.displayName),
-                message: Text("Follow \(source.displayName) on GuideStream TV")
-            ) {
-                VStack(spacing: 8) {
-                    ZStack {
-                        Circle()
-                            .fill(Color.white.opacity(0.08))
-                            .frame(width: 54, height: 54)
-                        Image(systemName: "square.and.arrow.up")
-                            .scaledFont(size: 22, weight: .regular)
-                            .foregroundStyle(.white)
-                    }
-                    Text("Share")
-                        .scaledFont(size: 13)
-                        .foregroundStyle(Color.white.opacity(0.7))
-                }
-            }
-            .frame(maxWidth: .infinity)
-#endif
+        guard !isTogglingLike else { return }
+        isTogglingLike = true
+        Task {
+            await social.toggleLike(titleId: titleId)
+            await MainActor.run { isTogglingLike = false }
         }
     }
 
-    private func socialCircleAction(
-        icon: String,
-        label: String,
-        count: Int,
-        tint: Color,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            VStack(spacing: 8) {
-                ZStack {
-                    Circle()
-                        .fill(Color.white.opacity(0.08))
-                        .frame(width: 54, height: 54)
-                    Image(systemName: icon)
-                        .scaledFont(size: 22, weight: .regular)
-                        .foregroundStyle(tint)
-                }
-                Text(count > 0 ? "\(formatSocialCount(count)) \(label)" : label)
-                    .scaledFont(size: 13)
-                    .foregroundStyle(Color.white.opacity(0.7))
-                    .lineLimit(1)
-            }
-        }
-        .buttonStyle(.plain)
+    /// Opens the existing comment composer/viewer sheet for this creator.
+    private func openComments() {
+#if os(iOS)
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+#endif
+        showComments = true
+        WatchIntentLogger.shared.log(
+            eventType: .commentsOpened,
+            titleId: titleId,
+            metadata: ["source": "creator_detail"]
+        )
+    }
+
+    /// Triggers the system share sheet (presented from `body`).
+    private func triggerShare() {
+#if os(iOS)
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        showShareSheet = true
+#endif
     }
 
     private func formatSocialCount(_ n: Int) -> String {
@@ -388,114 +285,103 @@ struct CreatorDetailView: View {
     }
 #endif
 
-    // MARK: - Header
+    // MARK: - Hero metadata slot
+
+    /// Hero metadata line: the platform badge followed by compact subscriber /
+    /// video counts for YouTube ("—" while pending), or the @handle otherwise.
+    @ViewBuilder
+    private func creatorMetadata(source: ContentSource) -> some View {
+        HStack(spacing: 8) {
+            SourceTypeBadge(kind: kind)
+            if kind == .youtube {
+                Text("· \(statText(channelMeta?.subscribers)) subscribers · \(statText(channelMeta?.videoCount)) videos")
+                    .scaledFont(size: 13)
+                    .foregroundStyle(Color.textSecondary)
+                    .lineLimit(1)
+            } else if let handle = source.handle {
+                let cleanHandle = handle.hasPrefix("@") ? String(handle.dropFirst()) : handle
+                Text("@\(cleanHandle)")
+                    .scaledFont(size: 14)
+                    .foregroundStyle(Color.textSecondary)
+            }
+            if let liveStatus, liveStatus.isLive {
+                LivePill()
+            }
+        }
+    }
+
+    /// Compact-formatted stat figure, or "—" when the value is unavailable
+    /// (stats pending server-side or the edge call failed).
+    private func statText(_ value: Int?) -> String {
+        value.map { formatStat($0) } ?? "—"
+    }
+
+    // MARK: - Currently streaming + About
 
     @ViewBuilder
-    private func creatorHeader(source: ContentSource) -> some View {
-        let avatarUrl = CreatorImageOverrides.resolve(titleId: titleId, stored: source.imageUrl)
-
-        VStack(spacing: 0) {
-            ZStack(alignment: .bottom) {
-                // Blurred backdrop built from the creator's avatar for depth
-                if let avatarUrl {
-                    RemoteImage(urlString: avatarUrl, contentMode: .fill, fallbackColors: [sourceColor, sourceColor.opacity(0.4)])
-                        .frame(height: 180)
-                        .frame(maxWidth: .infinity)
-                        .clipped()
-                        .blur(radius: 32)
-                        .opacity(0.55)
-                        .allowsHitTesting(false)
-                } else {
-                    LinearGradient(
-                        colors: [sourceColor.opacity(0.45), sourceColor.opacity(0.08)],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                    .frame(height: 180)
-                }
-
-                LinearGradient(colors: [.clear, Color.navy], startPoint: .top, endPoint: .bottom)
-                    .frame(height: 180)
-                    .allowsHitTesting(false)
-
-                // Avatar ring sitting on the backdrop
-                ZStack {
-                    Circle()
-                        .fill(Color.navy)
-                        .frame(width: 104, height: 104)
-                    Circle()
-                        .fill(sourceColor.opacity(0.15))
-                        .frame(width: 96, height: 96)
-                    if let avatarUrl {
-                        RemoteImage(urlString: avatarUrl, contentMode: .fill, fallbackColors: [sourceColor, sourceColor.opacity(0.5)])
-                            .frame(width: 96, height: 96)
-                            .clipShape(Circle())
-                            .allowsHitTesting(false)
-                    } else {
-                        Image(systemName: kindIcon)
-                            .scaledFont(size: 38, weight: .semibold)
-                            .foregroundStyle(sourceColor)
-                    }
-                }
-                .overlay(
-                    Circle().stroke(Color.white.opacity(0.12), lineWidth: 1)
-                        .frame(width: 96, height: 96)
-                )
-                .offset(y: 30)
-            }
-            .frame(height: 180)
-            // Close (top-left) + share (top-right) chrome over the banner.
-            .overlay(alignment: .top) {
-                HStack {
-                    glassCircleButton(symbol: "xmark", action: onBack)
-#if os(iOS)
-                    Spacer()
-                    ShareLink(
-                        item: shareURL(source: source),
-                        subject: Text(source.displayName),
-                        message: Text("Follow \(source.displayName) on GuideStream TV")
-                    ) {
-                        glassCircleLabel(symbol: "square.and.arrow.up")
-                    }
-#endif
-                }
-                .padding(.horizontal, 16)
-                .padding(.top, 14)
-            }
-            .padding(.bottom, 30)
-
-            VStack(spacing: 12) {
-                Text(source.displayName)
-                    .scaledFont(size: 25, weight: .bold)
-                    .foregroundStyle(.white)
-                    .multilineTextAlignment(.center)
-
-                HStack(spacing: 8) {
-                    SourceTypeBadge(kind: kind)
-                    if let handle = source.handle {
-                        let cleanHandle = handle.hasPrefix("@") ? String(handle.dropFirst()) : handle
-                        Text("@\(cleanHandle)")
-                            .scaledFont(size: 14)
-                            .foregroundStyle(Color.textSecondary)
-                    }
-                }
-
-                if let liveStatus, liveStatus.isLive {
-                    HStack(spacing: 8) {
-                        LivePill()
-                        Text("Live now")
-                            .scaledFont(size: 14, weight: .semibold)
-                            .foregroundStyle(Color.textSecondary)
-                        if let viewers = liveStatus.viewerCount {
-                            Text("·")
-                            Text(formatViewers(viewers))
+    private func creatorInfoSection(source: ContentSource) -> some View {
+        let bio = bioText(source: source)
+        let liveTitle: String? = (liveStatus?.isLive ?? false) ? liveStatus?.streamTitle : nil
+        if bio != nil || liveTitle != nil {
+            VStack(alignment: .leading, spacing: 18) {
+                if let liveTitle {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("CURRENTLY STREAMING")
+                            .scaledFont(size: 12, weight: .heavy)
+                            .tracking(1.4)
+                            .foregroundStyle(Color.white.opacity(0.45))
+                        HStack(spacing: 6) {
+                            Circle()
+                                .fill(Color.red)
+                                .frame(width: 8, height: 8)
+                            Text(liveTitle)
+                                .scaledFont(size: 16, weight: .semibold)
+                                .foregroundStyle(.white)
+                        }
+                        if let cat = liveStatus?.category {
+                            Text(cat)
                                 .scaledFont(size: 13)
-                                .foregroundStyle(Color.textTertiary)
+                                .foregroundStyle(Color.textSecondary)
                         }
                     }
                 }
+
+                if let bio {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("About")
+                            .scaledFont(size: 17, weight: .semibold)
+                            .foregroundStyle(.white)
+                        Text(bio)
+                            .scaledFont(size: 14)
+                            .foregroundStyle(Color.textSecondary)
+                            .lineSpacing(4)
+                            .lineLimit(6)
+                    }
+                }
             }
-            .padding(.bottom, 4)
+            .padding(.horizontal, 20)
+            .padding(.top, 24)
+        }
+    }
+
+    // MARK: - Recent uploads container
+
+    @ViewBuilder
+    private func recentUploadsContainer(source: ContentSource) -> some View {
+        if kind == .youtube {
+            if isLoadingMeta && channelUploads.isEmpty {
+                uploadsLoadingPlaceholder
+                    .padding(.horizontal, 20)
+                    .padding(.top, 26)
+            } else if !channelUploads.isEmpty {
+                youtubeUploadsSection(source: source)
+                    .padding(.horizontal, 20)
+                    .padding(.top, 26)
+            }
+        } else if kind == .podcast, !episodes.isEmpty {
+            recentUploadsSection(source: source)
+                .padding(.horizontal, 20)
+                .padding(.top, 26)
         }
     }
 
@@ -508,107 +394,6 @@ struct CreatorDetailView: View {
         return nil
     }
 #endif
-
-    // MARK: - Glass chrome buttons
-
-    private func glassCircleButton(symbol: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            glassCircleLabel(symbol: symbol)
-        }
-        .buttonStyle(.plain)
-    }
-
-    private func glassCircleLabel(symbol: String) -> some View {
-        ZStack {
-            Circle()
-                .fill(Color.navy.opacity(0.55))
-                .background(.ultraThinMaterial, in: Circle())
-            Image(systemName: symbol)
-                .scaledFont(size: 14, weight: .bold)
-                .foregroundStyle(.white)
-        }
-        .frame(width: 38, height: 38)
-        .overlay(Circle().stroke(Color.white.opacity(0.14), lineWidth: 1))
-    }
-
-    // MARK: - 3. Primary action row (Follow + upload-alert bell)
-
-    @ViewBuilder
-    private func primaryActionRow(source: ContentSource) -> some View {
-        HStack(spacing: 10) {
-            Button {
-                toggleFollow()
-            } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: isFollowed ? "checkmark" : "plus")
-                        .scaledFont(size: 14, weight: .bold)
-                    Text(isFollowed ? "Following" : "Follow")
-                        .scaledFont(size: 15, weight: .bold)
-                }
-                .foregroundStyle(.white)
-                .frame(maxWidth: .infinity)
-                .frame(height: 48)
-                .background(
-                    Capsule()
-                        .fill(isFollowed ? Color.blue.opacity(0.35) : Color.blue)
-                )
-                .overlay(
-                    Capsule().stroke(isFollowed ? Color.blue.opacity(0.6) : .clear, lineWidth: 1)
-                )
-            }
-            .buttonStyle(.plain)
-
-            // Per-creator upload-alert bell.
-            Button {
-                toggleUploadAlerts()
-            } label: {
-                Image(systemName: uploadAlertsOn ? "bell.fill" : "bell")
-                    .scaledFont(size: 18, weight: .semibold)
-                    .foregroundStyle(uploadAlertsOn ? Color.orange : .white)
-                    .frame(width: 48, height: 48)
-                    .background(Circle().fill(Color.white.opacity(0.08)))
-                    .overlay(Circle().stroke(uploadAlertsOn ? Color.orange.opacity(0.6) : Color.white.opacity(0.14), lineWidth: 1))
-            }
-            .buttonStyle(.plain)
-        }
-    }
-
-    // MARK: - 4. Channel stat row
-
-    private var channelStatRow: some View {
-        HStack(spacing: 0) {
-            statColumn(value: channelMeta?.subscribers, label: "Subscribers")
-            statDivider
-            statColumn(value: channelMeta?.videoCount, label: "Videos")
-            statDivider
-            statColumn(value: channelMeta?.viewCount, label: "Views")
-        }
-        .padding(.vertical, 16)
-        .frame(maxWidth: .infinity)
-        .glassCard()
-        .redacted(reason: (isLoadingMeta && channelMeta == nil) ? .placeholder : [])
-    }
-
-    private func statColumn(value: Int?, label: String) -> some View {
-        VStack(spacing: 4) {
-            // While the edge function is in flight we show a redacted placeholder
-            // figure (a shimmer bar); once settled, real numbers or "—" (pending/error).
-            Text(value.map { formatStat($0) } ?? (isLoadingMeta ? "0.0M" : "—"))
-                .scaledFont(size: 18, weight: .heavy)
-                .foregroundStyle(.white)
-            Text(label.uppercased())
-                .scaledFont(size: 10, weight: .heavy)
-                .tracking(0.8)
-                .foregroundStyle(Color.white.opacity(0.45))
-        }
-        .frame(maxWidth: .infinity)
-    }
-
-    private var statDivider: some View {
-        Rectangle()
-            .fill(Color.white.opacity(0.08))
-            .frame(width: 1, height: 30)
-    }
 
     private func formatStat(_ n: Int) -> String {
         if n >= 1_000_000_000 { return String(format: "%.1fB", Double(n) / 1_000_000_000) }
@@ -1244,6 +1029,123 @@ struct CreatorDetailView: View {
     }
 #endif
 
+#if os(iOS)
+    // MARK: - Bottom action bar (matches ShowDetailScreen)
+
+    /// Bottom bar mirroring the show-detail screen: a "most recent upload" strip
+    /// (YouTube only) above the orange "Watch on <CHIP>" capsule and a circular
+    /// follow toggle, over a navy ultraThinMaterial background.
+    @ViewBuilder
+    private func creatorBottomBar(source: ContentSource) -> some View {
+        VStack(spacing: 0) {
+            Rectangle()
+                .fill(Color.white.opacity(0.07))
+                .frame(height: 1)
+
+            VStack(spacing: 10) {
+                if kind == .youtube, let latest = channelUploads.first {
+                    latestUploadStrip(latest)
+                }
+
+                HStack(spacing: 8) {
+                    watchOnButton(chip: watchChipName, chipColor: sourceColor) {
+                        openExternalWatch()
+                    }
+
+                    Button(action: toggleFollow) {
+                        Image(systemName: isFollowed ? "checkmark" : "plus")
+                            .scaledFont(size: 20, weight: .bold)
+                            .foregroundStyle(.white)
+                            .frame(width: 52, height: 52)
+                            .background(Circle().fill(isFollowed ? Color.orange.opacity(0.20) : Color.white.opacity(0.08)))
+                            .overlay(Circle().stroke(isFollowed ? Color.orange : Color.white.opacity(0.14), lineWidth: 1))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 12)
+            .padding(.bottom, 24)
+            .background(
+                Color.navy.opacity(0.90)
+                    .background(.ultraThinMaterial)
+                    .ignoresSafeArea(edges: .bottom)
+            )
+        }
+    }
+
+    private func latestUploadStrip(_ upload: ChannelMetaResponse.Upload) -> some View {
+        HStack(spacing: 8) {
+            Color.white.opacity(0.08)
+                .frame(width: 38, height: 26)
+                .overlay {
+                    if let thumb = upload.thumbnail {
+                        RemoteImage(urlString: thumb, contentMode: .fill, fallbackColors: [sourceColor, sourceColor.opacity(0.4)])
+                            .allowsHitTesting(false)
+                    } else {
+                        Image(systemName: "play.fill")
+                            .scaledFont(size: 8, weight: .bold)
+                            .foregroundStyle(Color.white.opacity(0.45))
+                    }
+                }
+                .clipShape(.rect(cornerRadius: 5))
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Latest upload")
+                    .scaledFont(size: 9, weight: .semibold)
+                    .foregroundStyle(Color.white.opacity(0.38))
+                Text(upload.title.isEmpty ? "New video" : upload.title)
+                    .scaledFont(size: 11, weight: .semibold)
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: 0)
+
+            Text("NEW")
+                .scaledFont(size: 7, weight: .heavy)
+                .foregroundStyle(.white)
+                .padding(.horizontal, 5)
+                .padding(.vertical, 2)
+                .background(
+                    RoundedRectangle(cornerRadius: 3, style: .continuous)
+                        .fill(Color.orange)
+                )
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color.white.opacity(0.05))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .stroke(Color.white.opacity(0.09), lineWidth: 1)
+                )
+        )
+    }
+
+    /// Branded chip label inside the bottom "Watch on" capsule, per platform.
+    private var watchChipName: String {
+        switch kind {
+        case .youtube: return "YouTube"
+        case .twitch: return "Twitch"
+        case .kick: return "Kick"
+        case .podcast: return "Podcast"
+        case .tmdb: return "TV"
+        }
+    }
+
+    /// Routes the bottom CTA to the correct external-app deep link for the kind.
+    private func openExternalWatch() {
+        switch kind {
+        case .youtube: openYouTube()
+        case .twitch: openTwitch()
+        case .kick: openKick()
+        default: break
+        }
+    }
+#endif
+
     // MARK: - Podcast section
 
     @ViewBuilder
@@ -1409,16 +1311,6 @@ struct CreatorDetailView: View {
         }
     }
 
-    private var kindIcon: String {
-        switch kind {
-        case .youtube: return "play.rectangle.fill"
-        case .podcast: return "mic.fill"
-        case .twitch: return "gamecontroller.fill"
-        case .kick: return "bolt.fill"
-        case .tmdb: return "tv.fill"
-        }
-    }
-
     // MARK: - Data loading
 
     private func load() async {
@@ -1537,3 +1429,20 @@ struct CreatorDetailView: View {
         return f
     }()
 }
+
+#if os(iOS)
+// MARK: - System share sheet
+
+/// Lightweight wrapper around `UIActivityViewController` so the hero / compact
+/// header share buttons can present the system share sheet via a state-driven
+/// `.sheet` (instead of an inline `ShareLink`).
+private struct CreatorShareSheet: UIViewControllerRepresentable {
+    let items: [Any]
+
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        UIActivityViewController(activityItems: items, applicationActivities: nil)
+    }
+
+    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
+}
+#endif
