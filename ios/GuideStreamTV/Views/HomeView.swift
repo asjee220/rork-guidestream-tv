@@ -742,22 +742,27 @@ struct HomeView: View {
                     }
                 }
                 .background(.ultraThinMaterial)
-                .opacity(0.75)
+                .opacity(showSearchBottomSheet ? 0 : 0.75)
                 .overlay(alignment: .bottom) {
                     Rectangle()
                         .fill(Color.white.opacity(0.05))
                         .frame(height: 0.5)
                 }
-                .allowsHitTesting(true)
+                .allowsHitTesting(!showSearchBottomSheet)
                 .animation(.spring(response: 0.4, dampingFraction: 0.82), value: castPlayback.current?.id)
+                .animation(.easeOut(duration: 0.2), value: showSearchBottomSheet)
 
             // MARK: Search detail bottom sheet
             if let result = searchResultForSheet {
                 PlayOnBottomSheet(
                     isOpen: showSearchBottomSheet,
                     onClose: {
-                        showSearchBottomSheet = false
-                        searchResultForSheet = nil
+                        withAnimation(.interpolatingSpring(stiffness: 280, damping: 26)) {
+                            showSearchBottomSheet = false
+                        }
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.55) {
+                            searchResultForSheet = nil
+                        }
                     },
                     showTitle: result.title,
                     showSubtitle: result.isTV ? "TV Series" : "Movie",
@@ -861,7 +866,11 @@ struct HomeView: View {
                     showSearch = false
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
                         searchResultForSheet = result
-                        showSearchBottomSheet = true
+                        DispatchQueue.main.async {
+                            withAnimation(.interpolatingSpring(stiffness: 280, damping: 26)) {
+                                showSearchBottomSheet = true
+                            }
+                        }
                     }
                 }
             }
