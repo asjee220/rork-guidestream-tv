@@ -37,14 +37,16 @@ struct DeepDivesView: View {
                     Image("youtube_attribution_icon")
                         .resizable()
                         .aspectRatio(contentMode: .fit)
-                        .frame(height: 15)
+                        .frame(height: 22)
                 }
                 .accessibilityLabel("Open YouTube")
             }
+            .padding(.horizontal, 20)
 
             Text("Video essays & theories about this show")
                 .scaledFont(size: 12)
                 .foregroundStyle(Color.textSecondary)
+                .padding(.horizontal, 20)
 
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 10) {
@@ -60,7 +62,6 @@ struct DeepDivesView: View {
             }
         }
         .padding(.top, 18)
-        .padding(.horizontal, 20)
     }
 
     // MARK: - YouTube attribution
@@ -128,24 +129,30 @@ struct CreatorChannelCard: View {
             Button {
                 openChannel()
             } label: {
-                Text("View")
-                    .scaledFont(size: 10, weight: .semibold)
-                    .foregroundStyle(.white)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 24)
-                    .background(
-                        RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            .fill(Color.clear)
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            .stroke(Color.white.opacity(0.3), lineWidth: 0.5)
-                    )
+                HStack(spacing: 4) {
+                    Image("youtube_play_icon")
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(height: 12)
+                    Text("View")
+                        .scaledFont(size: 10, weight: .semibold)
+                        .foregroundStyle(.white)
+                }
+                .frame(maxWidth: .infinity)
+                .frame(height: 24)
+                .background(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .fill(Color.clear)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .stroke(Color.white.opacity(0.3), lineWidth: 0.5)
+                )
             }
             .buttonStyle(.plain)
         }
         .padding(10)
-        .frame(width: 130)
+        .frame(width: 150)
         .background(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .fill(Color.white.opacity(0.05))
@@ -216,7 +223,7 @@ private struct OverflowCard: View {
                     .frame(height: 28)
             }
             .padding(10)
-            .frame(width: 130)
+            .frame(width: 150)
             .background(
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .fill(Color.white.opacity(0.04))
