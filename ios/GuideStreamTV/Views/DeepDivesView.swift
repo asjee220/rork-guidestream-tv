@@ -37,7 +37,7 @@ struct DeepDivesView: View {
                     Image("youtube_attribution_icon")
                         .resizable()
                         .aspectRatio(contentMode: .fit)
-                        .frame(height: 22)
+                        .frame(height: 28)
                 }
                 .accessibilityLabel("Open YouTube")
             }
@@ -133,7 +133,7 @@ struct CreatorChannelCard: View {
                     Image("youtube_play_icon")
                         .resizable()
                         .aspectRatio(contentMode: .fit)
-                        .frame(height: 12)
+                        .frame(height: 16)
                     Text("View")
                         .scaledFont(size: 10, weight: .semibold)
                         .foregroundStyle(.white)
