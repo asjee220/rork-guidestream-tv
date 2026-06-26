@@ -26,9 +26,24 @@ struct DeepDivesView: View {
         let overflow = creators.count - visible.count
 
         VStack(alignment: .leading, spacing: 10) {
-            Text("Deep Dives")
-                .scaledFont(size: 17, weight: .semibold)
-                .foregroundStyle(.white)
+            // YouTube attribution icon: drop the official YouTube icon PNG
+            // (from https://www.youtube.com/yt/brand/downloads.html) into
+            // Assets.xcassets / youtube_attribution_icon.imageset before release.
+            HStack(spacing: 6) {
+                Text("Deep Dives")
+                    .scaledFont(size: 17, weight: .semibold)
+                    .foregroundStyle(.white)
+
+                Button {
+                    openYouTube()
+                } label: {
+                    Image("youtube_attribution_icon")
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(height: 15)
+                }
+                .accessibilityLabel("Open YouTube")
+            }
 
             Text("Video essays & theories about this show")
                 .scaledFont(size: 12)
@@ -49,6 +64,23 @@ struct DeepDivesView: View {
         }
         .padding(.top, 18)
         .padding(.horizontal, 20)
+    }
+
+    // MARK: - YouTube attribution
+
+    private func openYouTube() {
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        if let appURL = URL(string: "youtube://") {
+            UIApplication.shared.open(appURL, options: [:]) { ok in
+                if !ok {
+                    if let webURL = URL(string: "https://www.youtube.com") {
+                        UIApplication.shared.open(webURL, options: [:])
+                    }
+                }
+            }
+        } else if let webURL = URL(string: "https://www.youtube.com") {
+            UIApplication.shared.open(webURL, options: [:])
+        }
     }
 }
 

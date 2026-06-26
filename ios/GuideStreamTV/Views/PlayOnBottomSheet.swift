@@ -36,12 +36,20 @@ struct PlayOnBottomSheet: View {
     var initialSelectedDevice: String = "living-room"
     let onDeviceSelected: (String) -> Void
 
-    // Illustrative metadata used until the live Watchmode lookup resolves
-    // (or as a fallback when the API is unavailable). Anything tied to the
-    // streaming service — platform name, color, deeplink — is replaced with
-    // the real source as soon as we have it.
-    private let yearsLabel: String = "2018–2023 · 4 Seasons · TV-MA"
-    private let genreLabel: String = "Drama"
+    /// Optional overrides for metadata shown in the header. When nil the
+    /// hardcoded fallback values are used (backward-compatible with the
+    /// Play On flow from ShowDetailScreen).
+    var metadataLine: String? = nil
+    var genreLine: String? = nil
+    /// When non-nil the "View Full Details" button calls this instead of
+    /// `onClose`, letting callers navigate to the full ShowDetailScreen.
+    var onViewFullDetails: (() -> Void)? = nil
+
+    // Illustrative fallback metadata used until the live Watchmode lookup
+    // resolves (or as a fallback when the API is unavailable). Overridden
+    // by `metadataLine` / `genreLine` when those are set.
+    private var yearsLabel: String { metadataLine ?? "2018–2023 · 4 Seasons · TV-MA" }
+    private var genreLabel: String { genreLine ?? "Drama" }
     private let rating: Double = 9.6
     private let likeCount: String = "2.4K"
     private let commentCount: String = "183"
@@ -578,7 +586,13 @@ struct PlayOnBottomSheet: View {
     }
 
     private var viewFullDetailsButton: some View {
-        Button(action: close) {
+        Button {
+            if let onViewFullDetails {
+                onViewFullDetails()
+            } else {
+                close()
+            }
+        } label: {
             HStack(spacing: 6) {
                 Text("View Full Details")
                     .scaledFont(size: 15, weight: .semibold)

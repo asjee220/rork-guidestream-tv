@@ -138,6 +138,8 @@ struct HomeView: View {
     @State private var detailSubject: DetailSubject?
     @State private var showSearch: Bool = false
     @State private var searchResultForDetail: SearchResult?
+    @State private var showSearchBottomSheet: Bool = false
+    @State private var searchResultForSheet: SearchResult?
     @State private var showServicesSheet: Bool = false
     @State private var showWatchListSheet: Bool = false
     @State private var auth = AuthViewModel.shared
@@ -748,6 +750,37 @@ struct HomeView: View {
                 }
                 .allowsHitTesting(true)
                 .animation(.spring(response: 0.4, dampingFraction: 0.82), value: castPlayback.current?.id)
+
+            // MARK: Search detail bottom sheet
+            if let result = searchResultForSheet {
+                PlayOnBottomSheet(
+                    isOpen: showSearchBottomSheet,
+                    onClose: {
+                        showSearchBottomSheet = false
+                        searchResultForSheet = nil
+                    },
+                    showTitle: result.title,
+                    showSubtitle: result.isTV ? "TV Series" : "Movie",
+                    thumbnailUrl: result.posterUrl,
+                    tmdbId: result.id,
+                    isTV: result.isTV,
+                    onDeviceSelected: { _ in
+                        showSearchBottomSheet = false
+                        searchResultForSheet = nil
+                    },
+                    metadataLine: metadata(for: result),
+                    genreLine: result.genreNames.first,
+                    onViewFullDetails: {
+                        let captured = result
+                        showSearchBottomSheet = false
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                            searchResultForDetail = captured
+                        }
+                    }
+                )
+                .allowsHitTesting(showSearchBottomSheet)
+                .zIndex(100)
+            }
             }
             .background(BrandBackground())
             .navigationDestination(for: HomeRoute.self) { route in
@@ -827,18 +860,8 @@ struct HomeView: View {
                 SearchView(isPresented: $showSearch) { result in
                     showSearch = false
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
-                        if result.isTV {
-                            searchResultForDetail = result
-                        } else {
-                            detailSubject = .show(PosterShow(
-                                title: result.title,
-                                meta: "Movie",
-                                posterColors: HomeFallback.posterColors,
-                                symbol: "play.fill",
-                                posterUrl: result.posterUrl,
-                                tmdbId: result.id
-                            ))
-                        }
+                        searchResultForSheet = result
+                        showSearchBottomSheet = true
                     }
                 }
             }
@@ -848,7 +871,7 @@ struct HomeView: View {
                     title: result.title,
                     posterUrl: result.posterUrl,
                     backdropUrl: result.backdropUrl,
-                    isTV: true,
+                    isTV: result.isTV,
                     onBack: { searchResultForDetail = nil }
                 )
             }
@@ -1215,6 +1238,15 @@ struct HomeView: View {
 
     /// Opens a news article in Safari. News items come from NewsAPI —
     /// they're publisher articles, not TMDB titles, so there's no
+    /// Builds a compact metadata line from a search result (e.g. "2024 · Movie"
+    /// or "2020 · TV Series") for the PlayOnBottomSheet header.
+    private func metadata(for result: SearchResult) -> String {
+        let yearPart = result.year.map { "\($0)" } ?? ""
+        let typePart = result.isTV ? "TV Series" : "Movie"
+        if yearPart.isEmpty { return typePart }
+        return "\(yearPart) · \(typePart)"
+    }
+
     /// streaming service to resolve. The article URL (or the outlet's
     /// live-stream fallback) takes the user to the original story.
     private func openNewsArticle(_ news: NewsStream) {
