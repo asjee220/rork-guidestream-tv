@@ -1250,38 +1250,20 @@ struct HomeView: View {
     // MARK: - Derived content
 
     /// Assembles the heterogeneous hero carousel from every candidate source —
-    /// live sports (up to 3), upcoming games (2), recent finals (2), news (up to 4),
-    /// followed live creators (up to 2), followed YouTube uploads (one per channel,
-    /// capped at 4), and trending media (up to 15) — then sorts strictly by
-    /// most-recent timestamp with a deterministic id tie-break and writes the
-    /// result into heroRailItems inside a transaction with animations disabled so
-    /// the rail never visibly reorders or pops as data arrives.
+    /// live sports (up to 4), news (up to 4), followed live creators (up to 2),
+    /// followed YouTube uploads (one per channel, capped at 4), and trending
+    /// media (up to 15) — then sorts strictly by most-recent timestamp with a
+    /// deterministic id tie-break and writes the result into heroRailItems inside
+    /// a transaction with animations disabled so the rail never visibly reorders
+    /// or pops as data arrives.
     private func rebuildHeroRail() {
         var items: [HeroItem] = []
 
-        // Live sports (up to 3, newest first)
+        // Live sports only (up to 4, newest first)
         for g in sportsGames
             .filter({ $0.state == .live })
             .sorted(by: { $0.startDate > $1.startDate })
-            .prefix(3)
-        {
-            items.append(.game(g))
-        }
-
-        // Upcoming games (2 soonest, sorted ascending by start time)
-        for g in sportsGames
-            .filter({ $0.state == .pre })
-            .sorted(by: { $0.startDate < $1.startDate })
-            .prefix(2)
-        {
-            items.append(.game(g))
-        }
-
-        // Recent finals (2 most recent, sorted descending by start time)
-        for g in sportsGames
-            .filter({ $0.state == .post })
-            .sorted(by: { $0.startDate > $1.startDate })
-            .prefix(2)
+            .prefix(4)
         {
             items.append(.game(g))
         }

@@ -131,7 +131,7 @@ final class SportsService {
             leagueShort: leagueShort,
             state: state,
             statusDetail: detail,
-            startDate: parseDate(ev.date) ?? Date(),
+            startDate: parseDate(ev.date) ?? .distantPast,
             home: makeTeam(from: homeRaw),
             away: makeTeam(from: awayRaw),
             broadcasts: broadcasts
@@ -155,10 +155,38 @@ final class SportsService {
 
     private static func parseDate(_ s: String?) -> Date? {
         guard let s else { return nil }
-        let f = ISO8601DateFormatter()
-        f.formatOptions = [.withInternetDateTime]
-        f.timeZone = TimeZone.current
-        return f.date(from: s)
+
+        // ESPN scoreboard dates come in several variants:
+        //   2026-06-27T00:00:00.000Z  (fractional seconds)
+        //   2026-06-27T00:00:00Z     (with seconds)
+        //   2026-06-27T00:00Z        (no seconds — most common)
+        // Try strict ISO8601 first, then fall back to custom formats.
+
+        let isoFractional = ISO8601DateFormatter()
+        isoFractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let d = isoFractional.date(from: s) { return d }
+
+        let iso = ISO8601DateFormatter()
+        iso.formatOptions = [.withInternetDateTime]
+        if let d = iso.date(from: s) { return d }
+
+        let withSeconds: DateFormatter = {
+            let f = DateFormatter()
+            f.locale = Locale(identifier: "en_US_POSIX")
+            f.dateFormat = "yyyy-MM-dd'T'HH:mm:ssXXXXX"
+            return f
+        }()
+        if let d = withSeconds.date(from: s) { return d }
+
+        let withoutSeconds: DateFormatter = {
+            let f = DateFormatter()
+            f.locale = Locale(identifier: "en_US_POSIX")
+            f.dateFormat = "yyyy-MM-dd'T'HH:mmXXXXX"
+            return f
+        }()
+        if let d = withoutSeconds.date(from: s) { return d }
+
+        return nil
     }
 }
 
