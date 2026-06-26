@@ -82,6 +82,7 @@ nonisolated struct DiscoverableCreator: Identifiable, Hashable, Sendable {
     let streamTitle: String?
     let liveCategory: String?
     let viewerCount: Int?
+    let startedAt: Date?
 
     var id: String { titleId }
 

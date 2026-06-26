@@ -137,9 +137,7 @@ struct HomeView: View {
     @State private var path: [HomeRoute] = []
     @State private var detailSubject: DetailSubject?
     @State private var showSearch: Bool = false
-    @State private var searchResultForDetail: SearchResult?
-    @State private var showSearchBottomSheet: Bool = false
-    @State private var searchResultForSheet: SearchResult?
+
     @State private var showServicesSheet: Bool = false
     @State private var showWatchListSheet: Bool = false
     @State private var auth = AuthViewModel.shared
@@ -175,6 +173,10 @@ struct HomeView: View {
     /// Maps prefixed title_ids to their content_sources.image_url, used as a
     /// poster fallback so every creator/podcast/streamer always shows an image.
     @State private var sourceImageMap: [String: String] = [:]
+    /// Live creators (Twitch/Kick) for the hero carousel.
+    @State private var liveCreators: [DiscoverableCreator] = []
+    /// Recent YouTube uploads for the hero carousel.
+    @State private var creatorUploads: [NewEpisodeRow] = []
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -263,6 +265,36 @@ struct HomeView: View {
                                         ]
                                     )
                                     openNewsArticle(news)
+                                },
+                                onSelectLiveCreator: { creator in
+                                    WatchIntentLogger.shared.log(
+                                        eventType: .cardTapped,
+                                        titleId: creator.titleId,
+                                        platformId: creator.kind.sourceType,
+                                        metadata: [
+                                            "section": "hero_carousel",
+                                            "kind": "creator_live"
+                                        ]
+                                    )
+                                    creatorDetailTarget = CreatorDetailTarget(
+                                        titleId: creator.titleId,
+                                        initialEpisode: nil
+                                    )
+                                },
+                                onSelectCreatorUpload: { upload in
+                                    WatchIntentLogger.shared.log(
+                                        eventType: .cardTapped,
+                                        titleId: upload.titleId,
+                                        platformId: "youtube",
+                                        metadata: [
+                                            "section": "hero_carousel",
+                                            "kind": "creator_upload"
+                                        ]
+                                    )
+                                    creatorDetailTarget = CreatorDetailTarget(
+                                        titleId: upload.titleId,
+                                        initialEpisode: nil
+                                    )
                                 }
                             )
                         }
@@ -742,50 +774,14 @@ struct HomeView: View {
                     }
                 }
                 .background(.ultraThinMaterial)
-                .opacity(showSearchBottomSheet ? 0 : 0.75)
                 .overlay(alignment: .bottom) {
                     Rectangle()
                         .fill(Color.white.opacity(0.05))
                         .frame(height: 0.5)
                 }
-                .allowsHitTesting(!showSearchBottomSheet)
                 .animation(.spring(response: 0.4, dampingFraction: 0.82), value: castPlayback.current?.id)
-                .animation(.easeOut(duration: 0.2), value: showSearchBottomSheet)
 
-            // MARK: Search detail bottom sheet
-            if let result = searchResultForSheet {
-                PlayOnBottomSheet(
-                    isOpen: showSearchBottomSheet,
-                    onClose: {
-                        withAnimation(.interpolatingSpring(stiffness: 280, damping: 26)) {
-                            showSearchBottomSheet = false
-                        }
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.55) {
-                            searchResultForSheet = nil
-                        }
-                    },
-                    showTitle: result.title,
-                    showSubtitle: result.isTV ? "TV Series" : "Movie",
-                    thumbnailUrl: result.posterUrl,
-                    tmdbId: result.id,
-                    isTV: result.isTV,
-                    onDeviceSelected: { _ in
-                        showSearchBottomSheet = false
-                        searchResultForSheet = nil
-                    },
-                    metadataLine: metadata(for: result),
-                    genreLine: result.genreNames.first,
-                    onViewFullDetails: {
-                        let captured = result
-                        showSearchBottomSheet = false
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
-                            searchResultForDetail = captured
-                        }
-                    }
-                )
-                .allowsHitTesting(showSearchBottomSheet)
-                .zIndex(100)
-            }
+
             }
             .background(BrandBackground())
             .navigationDestination(for: HomeRoute.self) { route in
@@ -865,25 +861,19 @@ struct HomeView: View {
                 SearchView(isPresented: $showSearch) { result in
                     showSearch = false
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
-                        searchResultForSheet = result
-                        DispatchQueue.main.async {
-                            withAnimation(.interpolatingSpring(stiffness: 280, damping: 26)) {
-                                showSearchBottomSheet = true
-                            }
-                        }
+                        let show = PosterShow(
+                            title: result.title,
+                            meta: metadata(for: result),
+                            posterColors: [result.serviceColor, result.serviceColor.opacity(0.7)],
+                            symbol: result.isTV ? "tv.fill" : "film.fill",
+                            posterUrl: result.posterUrl,
+                            tmdbId: result.id
+                        )
+                        detailSubject = .show(show)
                     }
                 }
             }
-            .fullScreenCover(item: $searchResultForDetail) { result in
-                ShowDetailScreen(
-                    titleId: String(result.id),
-                    title: result.title,
-                    posterUrl: result.posterUrl,
-                    backdropUrl: result.backdropUrl,
-                    isTV: result.isTV,
-                    onBack: { searchResultForDetail = nil }
-                )
-            }
+
             .sheet(item: $creatorDetailTarget) { target in
                 CreatorDetailView(
                     titleId: target.titleId,
@@ -933,6 +923,8 @@ struct HomeView: View {
             await streams.refreshAll()
             await loadTrendingIfNeeded()
             await loadComingToStreaming()
+            await loadLiveCreators()
+            await loadCreatorUploads()
             await subscribeToLiveStatus()
             await hydrateSourceImages()
         }
@@ -940,6 +932,8 @@ struct HomeView: View {
             await streams.refreshAll()
             await loadTrendingIfNeeded()
             await loadComingToStreaming()
+            await loadLiveCreators()
+            await loadCreatorUploads()
             await hydrateSourceImages()
             // Push updated widget data on pull-to-refresh.
             WidgetDataService.shared.push(
@@ -994,8 +988,22 @@ struct HomeView: View {
                 var map: [String: LiveStatus] = [:]
                 for s in statuses { map[s.titleId] = s }
                 await MainActor.run { liveStatusMap = map }
+                // When a creator goes live, refresh the hero rail.
+                await loadLiveCreators()
             }
         }
+    }
+
+    /// Fetches all discoverable creators and filters to only those currently live.
+    private func loadLiveCreators() async {
+        let creators = (try? await ContentSourcesService.shared.fetchDiscoverable()) ?? []
+        liveCreators = creators.filter { $0.isLive }
+    }
+
+    /// Fetches recent YouTube uploads from new_episodes for the hero carousel.
+    private func loadCreatorUploads() async {
+        let uploads = (try? await ContentSourcesService.shared.fetchRecentYouTubeUploads(limit: 12)) ?? []
+        creatorUploads = uploads
     }
 
     /// Gathers non-TMDB title_ids from user_streams and new_episodes, fetches
@@ -1207,42 +1215,55 @@ struct HomeView: View {
 
     // MARK: - Derived content
 
-    /// Builds the heterogeneous hero carousel. Leads with up to two live
-    /// sports broadcasts, then injects up to 2 news tiles right after the
-    /// sports block (always slotted before the entertainment titles so
-    /// breaking-news content sits front-and-center), then fills the rest
-    /// with up to 15 trending titles that have a confirmed streaming
-    /// provider, and finally one upcoming sports event when the rail is
-    /// still thin. Titles without provider info are skipped so the rail
-    /// never advertises a service we can't actually deeplink to.
+    /// Builds the heterogeneous hero carousel. Gathers every candidate —
+    /// live sports, news, live creators, YouTube uploads, and trending media —
+    /// then sorts every tile strictly by its most-recent timestamp so the
+    /// rail always shows what's newest first. Items without provider info are
+    /// skipped so the rail never advertises a service we can't actually
+    /// deeplink to. Capped at 24 tiles.
     private var heroItems: [HeroItem] {
         var items: [HeroItem] = []
 
-        let liveGames = sportsGames.filter { $0.state == .live }.prefix(2)
-        for g in liveGames { items.append(.game(g)) }
-
-        // Insert up to 2 news tiles immediately after the sports block so
-        // news rides the high-priority real estate at the start of the rail.
-        for news in newsStreams.prefix(2) {
-            items.append(.news(news))
+        // Live sports (up to 2)
+        for g in sportsGames.filter({ $0.state == .live }).prefix(2) {
+            items.append(.game(g))
         }
 
+        // News (up to 4)
+        for n in newsStreams.prefix(4) {
+            items.append(.news(n))
+        }
+
+        // Live creators (Twitch/Kick)
+        for c in liveCreators {
+            items.append(.liveCreator(c))
+        }
+
+        // YouTube uploads (up to 8)
+        for u in creatorUploads.prefix(8) {
+            items.append(.creatorUpload(u))
+        }
+
+        // Trending media (up to 15) — same deduped pool + provider gate
         let mediaPool = trending + onAir + bingeFallback
         var seen: Set<Int> = []
-        var media: [HeroItem] = []
+        var mediaCount = 0
         for r in mediaPool {
             if seen.contains(r.id) { continue }
             seen.insert(r.id)
             guard let platform = providerByTmdb[r.id] else { continue }
-            media.append(.media(r, platform))
-            if media.count >= 15 { break }
+            items.append(.media(r, platform))
+            mediaCount += 1
+            if mediaCount >= 15 { break }
         }
-        items.append(contentsOf: media)
 
+        // Thin-rail filler: one upcoming game when count is below 8
         if items.count < 8, let nextUp = sportsGames.first(where: { $0.state == .pre }) {
             items.append(.game(nextUp))
         }
-        return items
+
+        // Sort by most-recent timestamp descending, cap at 24
+        return items.sorted { $0.sortDate > $1.sortDate }.prefix(24).map { $0 }
     }
 
     /// Opens a news article in Safari. News items come from NewsAPI —

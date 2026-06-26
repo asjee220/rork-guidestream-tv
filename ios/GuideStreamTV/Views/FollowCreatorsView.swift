@@ -230,7 +230,8 @@ struct FollowCreatorsView: View {
                         imageUrl: source.imageUrl, category: source.category,
                         description: source.description,
                         isLive: status?.isLive ?? false, streamTitle: status?.streamTitle,
-                        liveCategory: status?.category, viewerCount: status?.viewerCount
+                        liveCategory: status?.category, viewerCount: status?.viewerCount,
+                        startedAt: status?.startedAt
                     )
                 }
                 // Sort: live first

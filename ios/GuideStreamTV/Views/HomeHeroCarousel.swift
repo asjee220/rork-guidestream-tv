@@ -23,12 +23,37 @@ enum HeroItem: Identifiable {
     case media(TMDBResult, Platform?)
     case game(SportsGame)
     case news(NewsStream)
+    case liveCreator(DiscoverableCreator)
+    case creatorUpload(NewEpisodeRow)
 
     var id: String {
         switch self {
         case .media(let r, _): return "media-\(r.id)"
         case .game(let g): return "game-\(g.id)"
         case .news(let n): return "news-\(n.id)"
+        case .liveCreator(let c): return "live-\(c.titleId)"
+        case .creatorUpload(let u): return "upload-\(u.id)"
+        }
+    }
+
+    /// Returns the most-recent timestamp for sorting every tile newest-first.
+    var sortDate: Date {
+        switch self {
+        case .media(let r, _):
+            let raw = r.firstAirDate ?? r.releaseDate
+            guard let raw, !raw.isEmpty else { return .distantPast }
+            let fmt = DateFormatter()
+            fmt.dateFormat = "yyyy-MM-dd"
+            fmt.locale = Locale(identifier: "en_US_POSIX")
+            return fmt.date(from: raw) ?? .distantPast
+        case .game(let g):
+            return g.startDate
+        case .news(let n):
+            return n.publishedAt ?? .distantPast
+        case .liveCreator(let c):
+            return c.startedAt ?? Date()
+        case .creatorUpload(let u):
+            return u.releasedAt ?? .distantPast
         }
     }
 }
@@ -38,6 +63,8 @@ struct HomeHeroCarousel: View {
     let onSelectMedia: (TMDBResult, Platform?) -> Void
     let onSelectGame: (SportsGame) -> Void
     let onSelectNews: (NewsStream) -> Void
+    let onSelectLiveCreator: (DiscoverableCreator) -> Void
+    let onSelectCreatorUpload: (NewEpisodeRow) -> Void
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
@@ -52,6 +79,10 @@ struct HomeHeroCarousel: View {
                             onSelectGame(game)
                         case .news(let news):
                             onSelectNews(news)
+                        case .liveCreator(let creator):
+                            onSelectLiveCreator(creator)
+                        case .creatorUpload(let upload):
+                            onSelectCreatorUpload(upload)
                         }
                     }
                     .containerRelativeFrame(.horizontal) { length, _ in
@@ -115,10 +146,9 @@ private struct HeroCarouselCard: View {
         switch item {
         case .media: return Color.orange.opacity(0.30)
         case .game: return Color.blue.opacity(0.40)
-        // News stroke matches the CTA tint, the same way media uses orange
-        // and sports uses blue — the rim glow is what carries the rail's
-        // semantic color, not the backdrop itself.
         case .news: return Color.newsGreen.opacity(0.45)
+        case .liveCreator(let c): return brandColor(for: c).opacity(0.45)
+        case .creatorUpload(let u): return uploadBrandColor(for: u).opacity(0.45)
         }
     }
 
@@ -127,7 +157,18 @@ private struct HeroCarouselCard: View {
         case .media: return Color.orange.opacity(0.18)
         case .game: return Color.blue.opacity(0.24)
         case .news: return Color.newsGreen.opacity(0.30)
+        case .liveCreator(let c): return brandColor(for: c).opacity(0.30)
+        case .creatorUpload(let u): return uploadBrandColor(for: u).opacity(0.30)
         }
+    }
+
+    private func brandColor(for creator: DiscoverableCreator) -> Color {
+        Color(hex: creator.kind.brandColor) ?? Color.red
+    }
+
+    private func uploadBrandColor(for upload: NewEpisodeRow) -> Color {
+        let kind = SourceKind.from(titleId: upload.titleId)
+        return Color(hex: kind.brandColor) ?? Color.red
     }
 
     @ViewBuilder
@@ -136,7 +177,35 @@ private struct HeroCarouselCard: View {
         case .media(let result, _): mediaBackdrop(result)
         case .game(let game): sportsBackdrop(game)
         case .news(let news): newsBackdrop(news)
+        case .liveCreator(let creator): liveCreatorBackdrop(creator)
+        case .creatorUpload(let upload): creatorUploadBackdrop(upload)
         }
+    }
+
+    private func liveCreatorBackdrop(_ creator: DiscoverableCreator) -> some View {
+        let c = brandColor(for: creator)
+        return Color.black
+            .overlay {
+                RemoteImage(
+                    urlString: creator.avatarUrl,
+                    contentMode: .fill,
+                    fallbackColors: [c.opacity(0.85), c.opacity(0.30)]
+                )
+                .allowsHitTesting(false)
+            }
+    }
+
+    private func creatorUploadBackdrop(_ upload: NewEpisodeRow) -> some View {
+        let c = uploadBrandColor(for: upload)
+        return Color.black
+            .overlay {
+                RemoteImage(
+                    urlString: upload.thumbnailUrl ?? upload.posterUrl,
+                    contentMode: .fill,
+                    fallbackColors: [c.opacity(0.85), c.opacity(0.30)]
+                )
+                .allowsHitTesting(false)
+            }
     }
 
     /// News tile backdrop — matches the media tile's full-bleed image
@@ -207,6 +276,8 @@ private struct HeroCarouselCard: View {
         case .media(let result, let platform): mediaContent(result, platform)
         case .game(let game): gameContent(game)
         case .news(let news): newsContent(news)
+        case .liveCreator(let creator): liveCreatorContent(creator)
+        case .creatorUpload(let upload): creatorUploadContent(upload)
         }
     }
 
@@ -431,6 +502,175 @@ private struct HeroCarouselCard: View {
         }
     }
 
+    // MARK: - Creator live content
+
+    private func liveCreatorContent(_ creator: DiscoverableCreator) -> some View {
+        let c = brandColor(for: creator)
+        return VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 8) {
+                livePill
+                platformBadge(kind: creator.kind, color: c)
+                Spacer(minLength: 0)
+            }
+
+            Spacer(minLength: 0)
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text(creator.streamTitle ?? creator.displayName)
+                    .scaledFont(size: 22, weight: .bold)
+                    .foregroundStyle(.white)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+                    .shadow(color: Color.black.opacity(0.45), radius: 8, y: 2)
+
+                liveCreatorMetaRow(creator)
+
+                ctaPill(label: "Watch live", tint: c)
+                    .padding(.top, 8)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var livePill: some View {
+        HStack(spacing: 5) {
+            Circle().fill(.white).frame(width: 6, height: 6)
+            Text("LIVE")
+                .scaledFont(size: 10, weight: .black)
+                .tracking(0.8)
+        }
+        .foregroundStyle(.white)
+        .padding(.horizontal, 9)
+        .padding(.vertical, 5)
+        .background(Capsule().fill(Color(red: 0xE5/255, green: 0x09/255, blue: 0x14/255)))
+    }
+
+    private func liveCreatorMetaRow(_ creator: DiscoverableCreator) -> some View {
+        HStack(spacing: 8) {
+            Text(creator.displayName)
+                .scaledFont(size: 12, weight: .semibold)
+                .foregroundStyle(Color.white.opacity(0.85))
+                .lineLimit(1)
+            if let cat = creator.liveCategory, !cat.isEmpty {
+                metaDot
+                Text(cat)
+                    .scaledFont(size: 12, weight: .medium)
+                    .foregroundStyle(Color.white.opacity(0.75))
+                    .lineLimit(1)
+            }
+            if let viewers = creator.viewerCount, viewers > 0 {
+                metaDot
+                Text(compactViewerCount(viewers))
+                    .scaledFont(size: 12, weight: .semibold)
+                    .foregroundStyle(.white)
+            }
+            Spacer(minLength: 0)
+        }
+    }
+
+    private func compactViewerCount(_ n: Int) -> String {
+        if n >= 1_000_000 { return String(format: "%.1fM watching", Double(n) / 1_000_000.0) }
+        if n >= 1_000 { return String(format: "%.1fK watching", Double(n) / 1_000.0) }
+        return "\(n) watching"
+    }
+
+    // MARK: - Creator upload content
+
+    private func creatorUploadContent(_ upload: NewEpisodeRow) -> some View {
+        let c = uploadBrandColor(for: upload)
+        let kind = SourceKind.from(titleId: upload.titleId)
+        return VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 8) {
+                platformBadge(kind: kind, color: c)
+                Spacer(minLength: 0)
+            }
+
+            Spacer(minLength: 0)
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text(upload.episodeTitle ?? upload.title ?? "")
+                    .scaledFont(size: 22, weight: .bold)
+                    .foregroundStyle(.white)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+                    .shadow(color: Color.black.opacity(0.45), radius: 8, y: 2)
+
+                creatorUploadMetaRow(upload)
+
+                ctaPill(label: "Watch", tint: c)
+                    .padding(.top, 8)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func creatorUploadMetaRow(_ upload: NewEpisodeRow) -> some View {
+        HStack(spacing: 8) {
+            Text(upload.title ?? "")
+                .scaledFont(size: 12, weight: .semibold)
+                .foregroundStyle(Color.white.opacity(0.85))
+                .lineLimit(1)
+            if let date = upload.releasedAt {
+                metaDot
+                Text(Self.relativeDate(date))
+                    .scaledFont(size: 12, weight: .medium)
+                    .foregroundStyle(Color.white.opacity(0.85))
+            }
+            Spacer(minLength: 0)
+        }
+    }
+
+    // MARK: - Platform badges (in-code vector, no asset dependency)
+
+    private func platformBadge(kind: SourceKind, color: Color) -> some View {
+        HStack(spacing: 4) {
+            platformLogoMark(kind: kind, size: 10)
+            Text(kind.displayLabel.uppercased())
+                .scaledFont(size: 7, weight: .black)
+                .tracking(0.6)
+        }
+        .foregroundStyle(.white)
+        .padding(.horizontal, 7)
+        .padding(.vertical, 4)
+        .background(Capsule().fill(color))
+    }
+
+    @ViewBuilder
+    private func platformLogoMark(kind: SourceKind, size: CGFloat) -> some View {
+        switch kind {
+        case .youtube:
+            // Red rounded rectangle with centered white play triangle — the
+            // recognizable YouTube icon shape rendered in code so no asset
+            // catalog entry is needed.
+            ZStack {
+                RoundedRectangle(cornerRadius: 2, style: .continuous)
+                    .fill(Color(red: 0xFF/255, green: 0x00/255, blue: 0x00/255))
+                    .frame(width: size * 1.45, height: size)
+                Triangle()
+                    .fill(.white)
+                    .frame(width: size * 0.38, height: size * 0.42)
+            }
+        case .twitch:
+            // Simplified Twitch glitch/speech-bubble mark — a rounded-top
+            // rectangle with a notched bottom-left and two short vertical bars.
+            TwitchMark()
+                .fill(Color(red: 0x91/255, green: 0x46/255, blue: 0xFF/255))
+                .frame(width: size, height: size)
+        case .kick:
+            // Bold "K" in a rounded square — Kick's distinctive glyph.
+            ZStack {
+                RoundedRectangle(cornerRadius: 2, style: .continuous)
+                    .fill(Color(red: 0x53/255, green: 0xFC/255, blue: 0x18/255))
+                    .frame(width: size, height: size)
+                Text("K")
+                    .scaledFont(size: size * 0.65, weight: .black)
+                    .foregroundStyle(Color(red: 0.02, green: 0.02, blue: 0.04))
+            }
+        default:
+            EmptyView()
+        }
+    }
+
     // MARK: - Building blocks
 
     private var metaDot: some View {
@@ -470,6 +710,52 @@ private struct HeroCarouselCard: View {
             Capsule().stroke(tint, lineWidth: 1.5)
         )
         .shadow(color: tint.opacity(0.30), radius: 12, y: 4)
+    }
+}
+
+// MARK: - Platform logo shapes (in-code vectors, no asset dependency)
+
+/// Simple right-pointing play triangle used in the in-code YouTube mark.
+private struct Triangle: Shape {
+    func path(in rect: CGRect) -> Path {
+        var p = Path()
+        p.move(to: CGPoint(x: rect.minX, y: rect.minY))
+        p.addLine(to: CGPoint(x: rect.maxX, y: rect.midY))
+        p.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
+        p.closeSubpath()
+        return p
+    }
+}
+
+/// Simplified Twitch "glitch" / speech-bubble mark rendered as a SwiftUI
+/// Shape so the brand logo never depends on an asset catalog image.
+private struct TwitchMark: Shape {
+    func path(in rect: CGRect) -> Path {
+        let w = rect.width
+        let h = rect.height
+        var p = Path()
+        // Rounded-top square body
+        p.move(to: CGPoint(x: w * 0.05, y: h * 0.15))
+        p.addLine(to: CGPoint(x: w * 0.05, y: h * 0.90))
+        p.addLine(to: CGPoint(x: w * 0.30, y: h * 0.90))
+        // Stepped bottom-left notch
+        p.addLine(to: CGPoint(x: w * 0.25, y: h * 0.72))
+        p.addLine(to: CGPoint(x: w * 0.08, y: h * 0.72))
+        p.addLine(to: CGPoint(x: w * 0.08, y: h * 0.15))
+        p.closeSubpath()
+        // First short vertical bar
+        p.move(to: CGPoint(x: w * 0.38, y: h * 0.22))
+        p.addLine(to: CGPoint(x: w * 0.38, y: h * 0.52))
+        p.addLine(to: CGPoint(x: w * 0.48, y: h * 0.52))
+        p.addLine(to: CGPoint(x: w * 0.48, y: h * 0.22))
+        p.closeSubpath()
+        // Second short vertical bar
+        p.move(to: CGPoint(x: w * 0.55, y: h * 0.22))
+        p.addLine(to: CGPoint(x: w * 0.55, y: h * 0.52))
+        p.addLine(to: CGPoint(x: w * 0.65, y: h * 0.52))
+        p.addLine(to: CGPoint(x: w * 0.65, y: h * 0.22))
+        p.closeSubpath()
+        return p
     }
 }
 

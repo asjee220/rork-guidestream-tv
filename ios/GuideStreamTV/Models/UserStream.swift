@@ -42,6 +42,8 @@ nonisolated struct NewEpisodeRow: Codable, Identifiable, Hashable, Sendable {
     let deepLinkUrl: String?
     /// Alternative thumbnail image URL — used as a fallback when poster_url is null.
     let thumbnailUrl: String?
+    /// YouTube video title or podcast episode name — distinct from the channel-level title.
+    let episodeTitle: String?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -57,6 +59,7 @@ nonisolated struct NewEpisodeRow: Codable, Identifiable, Hashable, Sendable {
         case episodeId = "episode_id"
         case deepLinkUrl = "deep_link_url"
         case thumbnailUrl = "thumbnail_url"
+        case episodeTitle = "episode_title"
     }
 }
 
