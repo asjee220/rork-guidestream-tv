@@ -4,9 +4,11 @@
 //
 
 import SwiftUI
+import UIKit
 
 struct SportsGameDetailView: View {
     let game: SportsGame
+    @State private var favorites = TeamFavoritesService.shared
 
     var body: some View {
         ScrollView {
@@ -20,9 +22,12 @@ struct SportsGameDetailView: View {
                 // Scoreline
                 HStack(spacing: 0) {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(game.away.shortName)
-                            .scaledFont(size: 22, weight: .bold)
-                            .foregroundStyle(game.away.isWinner ? .white : Color.white.opacity(0.55))
+                        HStack(spacing: 8) {
+                            Text(game.away.shortName)
+                                .scaledFont(size: 22, weight: .bold)
+                                .foregroundStyle(game.away.isWinner ? .white : Color.white.opacity(0.55))
+                            favoriteStar(team: game.away)
+                        }
                         Text(game.away.score)
                             .scaledFont(size: 36, weight: .black)
                             .foregroundStyle(game.away.isWinner ? .white : Color.white.opacity(0.55))
@@ -36,9 +41,12 @@ struct SportsGameDetailView: View {
                         .background(Capsule().fill(Color.white.opacity(0.08)))
                     Spacer()
                     VStack(alignment: .trailing, spacing: 4) {
-                        Text(game.home.shortName)
-                            .scaledFont(size: 22, weight: .bold)
-                            .foregroundStyle(game.home.isWinner ? .white : Color.white.opacity(0.55))
+                        HStack(spacing: 8) {
+                            favoriteStar(team: game.home)
+                            Text(game.home.shortName)
+                                .scaledFont(size: 22, weight: .bold)
+                                .foregroundStyle(game.home.isWinner ? .white : Color.white.opacity(0.55))
+                        }
                         Text(game.home.score)
                             .scaledFont(size: 36, weight: .black)
                             .foregroundStyle(game.home.isWinner ? .white : Color.white.opacity(0.55))
@@ -77,6 +85,30 @@ struct SportsGameDetailView: View {
         .navigationBarTitleDisplayMode(.large)
         .toolbarBackground(Color(hex: "04090F"), for: .navigationBar)
         .toolbarColorScheme(.dark, for: .navigationBar)
+        .task {
+            await favorites.load()
+        }
+    }
+
+    // MARK: - Favorite star
+
+    private func favoriteStar(team: GameTeam) -> some View {
+        let isFav = favorites.isFavorite(team.uid)
+        return Button {
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            Task {
+                await favorites.toggle(
+                    team: team,
+                    league: game.leagueShort,
+                    sport: game.sport
+                )
+            }
+        } label: {
+            Image(systemName: isFav ? "star.fill" : "star")
+                .scaledFont(size: 16, weight: .regular)
+                .foregroundStyle(isFav ? Color.orange : Color.white.opacity(0.35))
+        }
+        .buttonStyle(.plain)
     }
 
     private var formattedStartDate: String {

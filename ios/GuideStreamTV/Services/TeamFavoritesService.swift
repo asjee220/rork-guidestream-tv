@@ -20,7 +20,8 @@ final class TeamFavoritesService {
     private(set) var favoritedUids: Set<String> = []
 
     /// Loaded rows from the team_favorites table, keyed by team_uid.
-    private var rows: [String: TeamFavoriteRow] = [:]
+    /// Public so SportsView can read team_abbr/team_name/league/sport for chip rendering.
+    private(set) var rows: [String: TeamFavoriteRow] = [:]
 
     /// Cached UserDefaults key for offline/guest survival.
     private let localCacheKey = "gs.teamFavorites.localCache.v1"
@@ -76,6 +77,11 @@ final class TeamFavoritesService {
         return favoritedUids.contains(uid)
     }
 
+    /// Returns the current set of favorited team uids.
+    func favoriteUids() -> Set<String> {
+        favoritedUids
+    }
+
     // MARK: - Toggle
 
     /// Optimistically adds or removes a team favorite, then persists to Supabase.
@@ -129,6 +135,12 @@ final class TeamFavoritesService {
                     .insert(payload)
                     .execute()
             }
+            // When favoriting a team, ensure the user is set up for push notifications
+            // via the existing PushTokenManager path so the backend can deliver
+            // starting-soon, going-live, and final-score alerts.
+            if !wasFavorited {
+                await PushTokenManager.shared.resaveCachedToken()
+            }
         } catch {
             let message = error.localizedDescription.lowercased()
             // Duplicate row → not really an error.
@@ -136,15 +148,8 @@ final class TeamFavoritesService {
                 // Already saved — no-op.
             } else {
                 print("[TeamFavorites] toggle persist failed: \(error.localizedDescription)")
-                // On failure, revert the optimistic update so local state
-                // matches what actually exists on the server.
-                if wasFavorited {
-                    favoritedUids.insert(uid)
-                } else {
-                    favoritedUids.remove(uid)
-                    rows.removeValue(forKey: uid)
-                }
-                saveLocalCache(favoritedUids)
+                // Keep the optimistic local state — failures are logged but never
+                // undo what the user sees, matching the StreamsViewModel pattern.
             }
         }
     }

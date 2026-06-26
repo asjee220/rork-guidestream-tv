@@ -54,6 +54,8 @@ struct SportsView: View {
     @State private var selectedGame: SportsGame?
     @State private var showServicesSheet: Bool = false
     @State private var auth = AuthViewModel.shared
+    @State private var favorites = TeamFavoritesService.shared
+    @State private var isEditingTeams: Bool = false
 
     private let sports: [String] = ["All", "NBA", "NFL", "Soccer", "MLB", "UFC"]
 
@@ -63,6 +65,7 @@ struct SportsView: View {
         let color: Color
         let next: String
         let isLive: Bool
+        let teamUid: String
     }
 
     private var filteredGames: [SportsGame] {
@@ -73,40 +76,56 @@ struct SportsView: View {
     private var upcomingGames: [SportsGame] { filteredGames.filter { $0.state == .pre } }
     private var finalGames: [SportsGame] { filteredGames.filter { $0.state == .post } }
 
-    /// Real "My Teams" derived from the day's live + upcoming games. Unique
-    /// teams ordered by live > today > later; capped at 5 chips so the rail
-    /// stays compact. The "Edit" affordance is a stub — a real favorites
-    /// store would replace this derivation.
-    private var derivedTeams: [TeamChip] {
-        let cal = Calendar.current
-        let pool = (liveGames + upcomingGames).filter {
-            $0.state == .live || cal.isDateInToday($0.startDate) || $0.startDate.timeIntervalSinceNow < 60 * 60 * 24 * 7
+    /// Real "My Teams" built from the user's persisted favorites via
+    /// TeamFavoritesService. Each chip shows the stored team_abbr/team_name,
+    /// finds its most relevant game in the already-loaded sports data, and
+    /// displays a live/upcoming/final status label.
+    private var favoriteTeams: [TeamChip] {
+        return favorites.favoriteUids().compactMap { uid -> TeamChip? in
+            guard let row = favorites.rows[uid] else { return nil }
+            let game = findGameForFavorite(teamUid: uid, teamAbbr: row.team_abbr)
+            let color: Color = {
+                if let game {
+                    if game.away.uid == uid, let hex = game.away.primaryHex { return Color(hex: hex) }
+                    if game.home.uid == uid, let hex = game.home.primaryHex { return Color(hex: hex) }
+                }
+                return Color.white.opacity(0.15)
+            }()
+            let label = statusLabel(for: game)
+            return TeamChip(
+                abbrev: row.team_abbr ?? String((row.team_name ?? uid).prefix(3)).uppercased(),
+                name: row.team_name ?? row.team_abbr ?? "",
+                color: color,
+                next: label,
+                isLive: game?.state == .live,
+                teamUid: uid
+            )
         }
-        var seen = Set<String>()
-        var chips: [TeamChip] = []
-        for game in pool {
-            for team in [game.away, game.home] {
-                guard !team.abbreviation.isEmpty, team.abbreviation != "—" else { continue }
-                if seen.contains(team.abbreviation) { continue }
-                seen.insert(team.abbreviation)
-                let color = team.primaryHex.map { Color(hex: $0) } ?? Color.white.opacity(0.15)
-                let label = nextLabel(for: game, cal: cal)
-                chips.append(TeamChip(
-                    abbrev: team.abbreviation,
-                    name: team.shortName,
-                    color: color,
-                    next: label,
-                    isLive: game.state == .live
-                ))
-                if chips.count >= 5 { break }
-            }
-            if chips.count >= 5 { break }
-        }
-        return chips
     }
 
-    private func nextLabel(for game: SportsGame, cal: Calendar) -> String {
+    /// Finds the most relevant game for a favorited team: prefers a live game,
+    /// then the soonest upcoming, then the most recent final. Matches by
+    /// team_uid first, falling back to abbreviation if uid is nil.
+    private func findGameForFavorite(teamUid: String, teamAbbr: String?) -> SportsGame? {
+        func matches(_ game: SportsGame) -> Bool {
+            if game.away.uid == teamUid || game.home.uid == teamUid { return true }
+            if let abbr = teamAbbr {
+                return game.away.abbreviation == abbr || game.home.abbreviation == abbr
+            }
+            return false
+        }
+        if let live = games.first(where: { $0.state == .live && matches($0) }) { return live }
+        let upcoming = games.filter { $0.state == .pre && matches($0) }.sorted { a, b in a.startDate < b.startDate }
+        if let next = upcoming.first { return next }
+        let finals = games.filter { $0.state == .post && matches($0) }.sorted { a, b in a.startDate > b.startDate }
+        if let recent = finals.first { return recent }
+        return nil
+    }
+
+    private func statusLabel(for game: SportsGame?) -> String {
+        guard let game else { return "No game scheduled" }
         if game.state == .live { return "LIVE" }
+        let cal = Calendar.current
         let f = DateFormatter()
         if cal.isDateInToday(game.startDate) {
             f.dateFormat = "h:mm a"
@@ -125,11 +144,13 @@ struct SportsView: View {
                     LazyVStack(alignment: .leading, spacing: 16) {
                         header
                         sportPills
-                        if !derivedTeams.isEmpty {
+                        if !favoriteTeams.isEmpty {
                             myTeamsSection
                             Rectangle()
                                 .fill(Color.white.opacity(0.06))
                                 .frame(height: 1)
+                        } else {
+                            noFavoritesPrompt
                         }
 
                         if isLoading && games.isEmpty {
@@ -175,7 +196,10 @@ struct SportsView: View {
                 ServicesBottomSheet()
             }
         }
-        .task { await load() }
+        .task {
+            await favorites.load()
+            await load()
+        }
         .onChange(of: router.pendingSportsRoute) { _, route in
             if let route {
                 path.append(route)
@@ -187,6 +211,7 @@ struct SportsView: View {
                 path.append(route)
                 router.pendingSportsRoute = nil
             }
+            Task { await favorites.load() }
         }
     }
 
@@ -275,7 +300,7 @@ struct SportsView: View {
         }
     }
 
-    // MARK: - My Teams (derived from real games)
+    // MARK: - My Teams (from real favorites)
 
     private var myTeamsSection: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -284,40 +309,97 @@ struct SportsView: View {
                     .scaledFont(size: 16, weight: .bold)
                     .foregroundStyle(.white)
                 Spacer()
-                Text("Edit")
-                    .scaledFont(size: 13, weight: .medium)
-                    .foregroundStyle(Color(hex: "1A6FE8"))
+                Button {
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    withAnimation(.easeOut(duration: 0.2)) {
+                        isEditingTeams.toggle()
+                    }
+                } label: {
+                    Text(isEditingTeams ? "Done" : "Edit")
+                        .scaledFont(size: 13, weight: .medium)
+                        .foregroundStyle(Color(hex: "1A6FE8"))
+                }
+                .buttonStyle(.plain)
             }
 
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 10) {
-                    ForEach(derivedTeams, id: \.abbrev) { team in
-                        Button {
-                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                            if let game = teamGame(for: team) {
-                                selectedGame = game
-                            }
-                        } label: {
-                            teamChip(team)
-                        }
-                        .buttonStyle(.plain)
+                    ForEach(favoriteTeams, id: \.teamUid) { team in
+                        teamChipView(team)
                     }
-                    addTeamChip
                 }
             }
         }
     }
 
-    /// Finds the next game involving `team` so tapping a chip opens that
-    /// game's sheet rather than a dead-end.
-    private func teamGame(for team: TeamChip) -> SportsGame? {
-        let abbr = team.abbrev
-        return (liveGames + upcomingGames).first { game in
-            game.away.abbreviation == abbr || game.home.abbreviation == abbr
+    /// Renders a single team chip. In edit mode, shows an unfavorite (x)
+    /// affordance; tapping the chip body opens the matched game.
+    private func teamChipView(_ team: TeamChip) -> some View {
+        ZStack(alignment: .topTrailing) {
+            Button {
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                if let game = findGameForFavorite(teamUid: team.teamUid, teamAbbr: team.abbrev) {
+                    selectedGame = game
+                }
+            } label: {
+                teamChipContent(team)
+            }
+            .buttonStyle(.plain)
+
+            if isEditingTeams {
+                Button {
+                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                    Task {
+                        let row = favorites.rows[team.teamUid]
+                        let dummyTeam = GameTeam(
+                            id: nil,
+                            uid: team.teamUid,
+                            abbreviation: team.abbrev,
+                            displayName: team.name,
+                            shortName: team.name,
+                            score: "0",
+                            primaryHex: nil,
+                            isWinner: false
+                        )
+                        await favorites.toggle(
+                            team: dummyTeam,
+                            league: row?.league,
+                            sport: row?.sport
+                        )
+                    }
+                } label: {
+                    Image(systemName: "xmark")
+                        .scaledFont(size: 10, weight: .bold)
+                        .foregroundStyle(.white)
+                        .frame(width: 22, height: 22)
+                        .background(Circle().fill(Color(hex: "E50914")))
+                }
+                .buttonStyle(.plain)
+                .offset(x: 6, y: -6)
+            }
         }
     }
 
-    private func teamChip(_ team: TeamChip) -> some View {
+    /// Prompt shown when the user has no favorited teams yet.
+    private var noFavoritesPrompt: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("My Teams")
+                .scaledFont(size: 16, weight: .bold)
+                .foregroundStyle(.white)
+            HStack(spacing: 8) {
+                Image(systemName: "star")
+                    .scaledFont(size: 14)
+                    .foregroundStyle(Color.orange.opacity(0.7))
+                Text("Tap the star on any game to favorite a team and see it here.")
+                    .scaledFont(size: 13, weight: .medium)
+                    .foregroundStyle(Color.white.opacity(0.45))
+                    .lineLimit(2)
+            }
+            .padding(.vertical, 8)
+        }
+    }
+
+    private func teamChipContent(_ team: TeamChip) -> some View {
         VStack(spacing: 3) {
             RoundedRectangle(cornerRadius: 7)
                 .fill(team.color)
@@ -344,32 +426,6 @@ struct SportsView: View {
             RoundedRectangle(cornerRadius: 12)
                 .stroke(team.isLive ? Color(hex: "E50914").opacity(0.35) : Color.white.opacity(0.07), lineWidth: 1)
         )
-    }
-
-    private var addTeamChip: some View {
-        Button {
-            // Placeholder — real favorites flow lives in Profile.
-        } label: {
-            VStack(spacing: 3) {
-                Text("+")
-                    .scaledFont(size: 18, weight: .bold)
-                    .foregroundStyle(Color.white.opacity(0.2))
-                    .frame(width: 26, height: 26)
-                Text("Add")
-                    .scaledFont(size: 9, weight: .semibold)
-                    .foregroundStyle(Color.white.opacity(0.4))
-                Text(" ")
-                    .scaledFont(size: 8, weight: .bold)
-            }
-            .padding(8)
-            .frame(minWidth: 58)
-            .overlay(
-                RoundedRectangle(cornerRadius: 12)
-                    .stroke(style: StrokeStyle(lineWidth: 1, dash: [4]))
-                    .foregroundStyle(Color.white.opacity(0.15))
-            )
-        }
-        .buttonStyle(.plain)
     }
 
     // MARK: - Helper for tappable card wrapper
