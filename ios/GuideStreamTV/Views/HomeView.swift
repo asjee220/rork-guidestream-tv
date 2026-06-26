@@ -239,7 +239,9 @@ struct HomeView: View {
                         .buttonStyle(.plain)
                         .padding(.horizontal, 16)
 
-                        if !heroRailItems.isEmpty {
+                        if !homeContentReady {
+                            HomeHeroCarouselShimmer()
+                        } else if !heroRailItems.isEmpty {
                             HomeHeroCarousel(
                                 items: heroRailItems,
                                 onSelectMedia: { result, platform in
@@ -1950,6 +1952,44 @@ private struct PageBar: View {
 }
 
 // MARK: - Sections
+
+/// A placeholder hero carousel shown while the main content batch is loading.
+/// Matches the real carousel's size and card shape so the page feels
+/// populated immediately, then crossfades to the real carousel once data arrives.
+private struct HomeHeroCarouselShimmer: View {
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 14) {
+                ForEach(0..<3, id: \.self) { i in
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .fill(Color.white.opacity(0.05))
+                        .frame(width: 280, height: 250)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                .fill(
+                                    LinearGradient(
+                                        colors: [
+                                            Color.white.opacity(0.0),
+                                            Color.white.opacity(0.05),
+                                            Color.white.opacity(0.0)
+                                        ],
+                                        startPoint: UnitPoint(x: CGFloat(i) * 0.4 - 1.4, y: 0.5),
+                                        endPoint: UnitPoint(x: CGFloat(i) * 0.4 - 0.4, y: 0.5)
+                                    )
+                                )
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                        )
+                }
+            }
+            .padding(.horizontal, 20)
+        }
+        .disabled(true)
+        .frame(height: 250)
+    }
+}
 
 /// A placeholder section card shown while the main content batch is loading.
 /// Renders the section frame with a shimmer horizontal row so the page feels

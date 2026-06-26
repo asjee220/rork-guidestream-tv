@@ -144,11 +144,11 @@ final class WatchIntentLogger {
                         await self?.recordSuccess()
                         return
                     } catch {
-                        await self?.recordError(event: event, error: error)
+                        self?.recordError(event: event, error: error)
                         return
                     }
                 }
-                await self?.recordError(event: event, error: error)
+                self?.recordError(event: event, error: error)
             }
         }
     }

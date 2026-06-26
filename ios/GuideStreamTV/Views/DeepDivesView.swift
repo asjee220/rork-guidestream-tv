@@ -284,88 +284,118 @@ private struct AllCreatorsRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            // Avatar
-            Group {
-                if let avatarUrl = creator.avatarUrl, let url = URL(string: avatarUrl) {
-                    RemoteImage(url: url, contentMode: .fill)
-                        .frame(width: 40, height: 40)
-                        .clipShape(Circle())
-                } else {
-                    Circle()
-                        .fill(Color.white.opacity(0.08))
-                        .frame(width: 40, height: 40)
-                        .overlay {
-                            Text(creator.name.prefix(1).uppercased())
-                                .scaledFont(size: 16, weight: .semibold)
-                                .foregroundStyle(.white)
-                        }
-                }
-            }
-
-            // Name + subscriber label
-            VStack(alignment: .leading, spacing: 3) {
-                Text(creator.name)
-                    .scaledFont(size: 14, weight: .semibold)
-                    .foregroundStyle(.white)
-                    .lineLimit(1)
-
-                if let label = creator.subscriberLabel {
-                    Text("\(label) subscribers")
-                        .scaledFont(size: 11)
-                        .foregroundStyle(Color.textSecondary)
-                }
-            }
-
+            avatarView
+            nameLabel
             Spacer(minLength: 0)
-
-            // Follow toggle
-            Button {
-                toggleFollow()
-            } label: {
-                Image(systemName: isFollowed ? "checkmark" : "plus")
-                    .scaledFont(size: 12, weight: .bold)
-                    .foregroundStyle(isFollowed ? Color.orange : Color.white.opacity(0.7))
-                    .frame(width: 32, height: 32)
-                    .background(
-                        Circle()
-                            .fill(isFollowed ? Color.orange.opacity(0.15) : Color.white.opacity(0.06))
-                    )
-                    .overlay(
-                        Circle()
-                            .stroke(isFollowed ? Color.orange.opacity(0.3) : Color.white.opacity(0.1), lineWidth: 1)
-                    )
-            }
-            .buttonStyle(.plain)
-
-            // View button
-            Button {
-                openChannel()
-            } label: {
-                Text("View")
-                    .scaledFont(size: 12, weight: .semibold)
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 14)
-                    .frame(height: 32)
-                    .background(
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .fill(Color.clear)
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .stroke(Color.white.opacity(0.25), lineWidth: 0.5)
-                    )
-            }
-            .buttonStyle(.plain)
+            followButton
+            viewChannelButton
         }
         .padding(12)
-        .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(Color.white.opacity(0.04))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .stroke(Color.white.opacity(0.08), lineWidth: 1)
-        )
+        .background(rowBackground)
+        .overlay(rowBorder)
+    }
+
+    // MARK: - Subviews
+
+    private var avatarView: some View {
+        Group {
+            if let avatarUrl = creator.avatarUrl, let url = URL(string: avatarUrl) {
+                RemoteImage(url: url, contentMode: .fill)
+                    .frame(width: 40, height: 40)
+                    .clipShape(Circle())
+            } else {
+                Circle()
+                    .fill(Color.white.opacity(0.08))
+                    .frame(width: 40, height: 40)
+                    .overlay {
+                        Text(creator.name.prefix(1).uppercased())
+                            .scaledFont(size: 16, weight: .semibold)
+                            .foregroundStyle(.white)
+                    }
+            }
+        }
+    }
+
+    private var nameLabel: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(creator.name)
+                .scaledFont(size: 14, weight: .semibold)
+                .foregroundStyle(.white)
+                .lineLimit(1)
+
+            if let label = creator.subscriberLabel {
+                Text("\(label) subscribers")
+                    .scaledFont(size: 11)
+                    .foregroundStyle(Color.textSecondary)
+            }
+        }
+    }
+
+    private var followIconName: String {
+        isFollowed ? "checkmark" : "plus"
+    }
+
+    private var followIconColor: Color {
+        isFollowed ? Color.orange : Color.white.opacity(0.7)
+    }
+
+    private var followCircleFill: some View {
+        Circle()
+            .fill(isFollowed ? Color.orange.opacity(0.15) : Color.white.opacity(0.06))
+    }
+
+    private var followCircleStroke: some View {
+        Circle()
+            .stroke(isFollowed ? Color.orange.opacity(0.3) : Color.white.opacity(0.1), lineWidth: 1)
+    }
+
+    private var followButton: some View {
+        Button {
+            toggleFollow()
+        } label: {
+            Image(systemName: followIconName)
+                .scaledFont(size: 12, weight: .bold)
+                .foregroundStyle(followIconColor)
+                .frame(width: 32, height: 32)
+                .background(followCircleFill)
+                .overlay(followCircleStroke)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var viewChannelButton: some View {
+        Button {
+            openChannel()
+        } label: {
+            Text("View")
+                .scaledFont(size: 12, weight: .semibold)
+                .foregroundStyle(.white)
+                .padding(.horizontal, 14)
+                .frame(height: 32)
+                .background(viewButtonBackground)
+                .overlay(viewButtonBorder)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var viewButtonBackground: some View {
+        RoundedRectangle(cornerRadius: 8, style: .continuous)
+            .fill(Color.clear)
+    }
+
+    private var viewButtonBorder: some View {
+        RoundedRectangle(cornerRadius: 8, style: .continuous)
+            .stroke(Color.white.opacity(0.25), lineWidth: 0.5)
+    }
+
+    private var rowBackground: some View {
+        RoundedRectangle(cornerRadius: 12, style: .continuous)
+            .fill(Color.white.opacity(0.04))
+    }
+
+    private var rowBorder: some View {
+        RoundedRectangle(cornerRadius: 12, style: .continuous)
+            .stroke(Color.white.opacity(0.08), lineWidth: 1)
     }
 
     private func toggleFollow() {

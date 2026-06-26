@@ -108,7 +108,7 @@ nonisolated struct WatchmodeService {
                         else { continue }
                         let days = calendar.dateComponents([.day], from: now, to: endDate).day ?? 999
                         if days >= 0 && days <= 30 {
-                            return (tmdbId, detail.title ?? "Unknown", days, source.name)
+                            return (tmdbId, detail.title, days, source.name)
                         }
                     }
                     return nil
