@@ -1072,9 +1072,9 @@ private struct ReelView: View {
     @State private var likeBounce: CGFloat = 1.0
     @State private var embedFailed: Bool = false
     @State private var playbackProgress: Double = 0
-    @State private var showTapIndicator: Bool = false
-    @State private var tapIndicatorIcon: String = "speaker.slash.fill"
-    @State private var tapIndicatorTask: Task<Void, Never>?
+    @State private var showControls: Bool = false
+    @State private var controlsFadeTask: Task<Void, Never>?
+    @State private var seekToFraction: Double = -1
     @State private var glassAdDismissed: Bool = false
     @State private var glassAdTarget: (serviceId: String, name: String, color: Color)? = nil
     @State private var glassAdVisible: Bool = false
@@ -1286,6 +1286,7 @@ private struct ReelView: View {
                             isMuted: isMuted,
                             isPlaying: isPlaying,
                             progress: $playbackProgress,
+                            seekToFraction: $seekToFraction,
                             onEmbedError: { embedFailed = true },
                             onEnded: onEnded
                         )
@@ -1459,40 +1460,79 @@ private struct ReelView: View {
 
             glassAdOverlay
 
-            // Layer 19 — horizontal video scrubber, anchored just above the floating nav.
+            // Layer 19 — interactive video scrubber.
             VStack {
                 Spacer()
-                ZStack(alignment: .leading) {
-                    Capsule()
-                        .fill(Color.white.opacity(0.18))
-                        .frame(height: 3)
-                    GeometryReader { barGeo in
+                GeometryReader { barGeo in
+                    ZStack(alignment: .leading) {
+                        Capsule()
+                            .fill(Color.white.opacity(0.18))
+                            .frame(height: 6)
                         Capsule()
                             .fill(Color(hex: "F5821F"))
-                            .frame(width: max(0, min(1, playbackProgress)) * barGeo.size.width, height: 3)
+                            .frame(width: max(0, min(1, playbackProgress)) * barGeo.size.width, height: 6)
+                        // Invisible wider hit target for dragging.
+                        Color.clear
+                            .frame(height: 32)
+                            .contentShape(Rectangle())
+                            .gesture(
+                                DragGesture(minimumDistance: 0)
+                                    .onChanged { value in
+                                        let fraction = max(0, min(1, value.location.x / max(barGeo.size.width, 1)))
+                                        seekToFraction = fraction
+                                    }
+                            )
                     }
-                    .frame(height: 3)
                 }
+                .frame(height: 6)
                 .padding(.horizontal, 22)
                 .padding(.bottom, bottomInset + 14)
             }
-            .allowsHitTesting(false)
 
-            // Layer 21 — transient tap indicator (fades in then out after each tap)
-            if showTapIndicator {
+            // Layer 21 — media controls overlay (play/pause + mute).
+            if isCurrent && (showControls || !isPlaying) {
                 ZStack {
-                    Circle()
-                        .fill(Color.black.opacity(0.45))
-                        .background(.ultraThinMaterial, in: Circle())
-                        .overlay(Circle().stroke(Color.white.opacity(0.30), lineWidth: 1))
-                    Image(systemName: tapIndicatorIcon)
-                        .scaledFont(size: 32, weight: .black)
-                        .foregroundStyle(.white)
+                    // Center play/pause button
+                    Button {
+                        onTogglePlay()
+                        flashControls()
+                    } label: {
+                        ZStack {
+                            Circle()
+                                .fill(Color.black.opacity(0.5))
+                                .background(.ultraThinMaterial, in: Circle())
+                                .overlay(Circle().stroke(Color.white.opacity(0.25), lineWidth: 1))
+                            Image(systemName: isPlaying ? "pause.fill" : "play.fill")
+                                .scaledFont(size: 28, weight: .bold)
+                                .foregroundStyle(.white)
+                        }
+                        .frame(width: 68, height: 68)
+                        .shadow(color: .black.opacity(0.4), radius: 16)
+                    }
+                    .buttonStyle(.plain)
+                    .position(x: size.width / 2, y: size.height / 2)
+
+                    // Mute button — bottom-leading
+                    Button {
+                        onToggleMute()
+                        flashControls()
+                    } label: {
+                        ZStack {
+                            Circle()
+                                .fill(Color.black.opacity(0.45))
+                                .background(.ultraThinMaterial, in: Circle())
+                                .overlay(Circle().stroke(Color.white.opacity(0.18), lineWidth: 1))
+                            Image(systemName: isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                                .scaledFont(size: 16, weight: .semibold)
+                                .foregroundStyle(.white)
+                        }
+                        .frame(width: 40, height: 40)
+                        .shadow(color: .black.opacity(0.35), radius: 10)
+                    }
+                    .buttonStyle(.plain)
+                    .position(x: 38, y: size.height - bottomInset - 64)
                 }
-                .frame(width: 88, height: 88)
-                .shadow(color: .black.opacity(0.35), radius: 18)
-                .transition(.scale(scale: 0.7).combined(with: .opacity))
-                .allowsHitTesting(false)
+                .transition(.opacity)
             }
         }
         .clipped()
@@ -1510,16 +1550,9 @@ private struct ReelView: View {
         }
         .contentShape(Rectangle())
         .onTapGesture {
-            // Tap anywhere on the reel toggles mute/unmute. We deliberately do
-            // NOT navigate the user out of the app — every tap is a soft,
-            // in-app interaction with a transient indicator that fades on its
-            // own. (Play/pause still happens automatically when scrolling away
-            // from a reel; tapping no longer pauses.)
-            let willBeMuted = !isMuted
-            onToggleMute()
-            triggerTapIndicator(muted: willBeMuted)
+            onTogglePlay()
+            flashControls()
         }
-        .animation(.easeOut(duration: 0.15), value: isMuted)
     }
 
     private func armGlassAdFade() {
@@ -1536,17 +1569,16 @@ private struct ReelView: View {
         }
     }
 
-    private func triggerTapIndicator(muted: Bool) {
-        tapIndicatorTask?.cancel()
-        tapIndicatorIcon = muted ? "speaker.slash.fill" : "speaker.wave.2.fill"
-        withAnimation(.spring(response: 0.32, dampingFraction: 0.72)) {
-            showTapIndicator = true
+    private func flashControls() {
+        controlsFadeTask?.cancel()
+        withAnimation(.easeOut(duration: 0.2)) {
+            showControls = true
         }
-        tapIndicatorTask = Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(550))
+        controlsFadeTask = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(2.5))
             guard !Task.isCancelled else { return }
-            withAnimation(.easeOut(duration: 0.28)) {
-                showTapIndicator = false
+            withAnimation(.easeOut(duration: 0.4)) {
+                showControls = false
             }
         }
     }
@@ -1839,6 +1871,7 @@ private struct YouTubePlayerView: UIViewRepresentable {
     let isMuted: Bool
     let isPlaying: Bool
     var progress: Binding<Double>? = nil
+    var seekToFraction: Binding<Double>
     var onEmbedError: (() -> Void)? = nil
     var onEnded: (() -> Void)? = nil
 
@@ -1898,22 +1931,10 @@ private struct YouTubePlayerView: UIViewRepresentable {
             return
         }
 
-        // Mute toggle — the official youtube-ios-player-helper does not expose
-        // mute/unMute as public Swift methods, so we fall back to reloading the
-        // video with the updated mute playerVar. This causes a brief restart but
-        // is the only available path without the private API.
+        // Mute toggle via the YouTube IFrame API — no reload, no restart.
         if context.coordinator.lastMuted != isMuted {
-            let playerVars: [String: Any] = [
-                "playsinline": 1,
-                "autoplay": 1,
-                "controls": 0,
-                "rel": 0,
-                "modestbranding": 1,
-                "fs": 0,
-                "iv_load_policy": 3,
-                "mute": isMuted ? 1 : 0
-            ]
-            playerView.load(withVideoId: videoId, playerVars: playerVars)
+            let js = isMuted ? "player.mute();" : "player.unMute();"
+            playerView.webView?.evaluateJavaScript(js)
             context.coordinator.lastMuted = isMuted
         }
 
@@ -1925,6 +1946,19 @@ private struct YouTubePlayerView: UIViewRepresentable {
                 playerView.pauseVideo()
             }
             context.coordinator.lastPlaying = isPlaying
+        }
+
+        // Seek to a fraction when the scrubber is dragged.
+        let fraction = seekToFraction.wrappedValue
+        if fraction >= 0,
+           context.coordinator.cachedDuration > 0,
+           fraction != context.coordinator.lastSeekFraction {
+            context.coordinator.lastSeekFraction = fraction
+            let seconds = Float(fraction * context.coordinator.cachedDuration)
+            playerView.seek(toSeconds: seconds, allowSeekAhead: true)
+            Task { @MainActor in
+                seekToFraction.wrappedValue = -1
+            }
         }
     }
 
@@ -1942,6 +1976,7 @@ private struct YouTubePlayerView: UIViewRepresentable {
         var onEmbedError: (() -> Void)?
         var onEnded: (() -> Void)?
         var progress: Binding<Double>?
+        var lastSeekFraction: Double = -1
         var cachedDuration: Double = 0
 
         func playerViewDidBecomeReady(_ playerView: YTPlayerView) {
@@ -2164,6 +2199,7 @@ private struct AdMobReelCard: View {
                     isMuted: true,
                     isPlaying: isPlaying,
                     progress: $playbackProgress,
+                    seekToFraction: .constant(-1),
                     onEmbedError: { }
                 )
                 .allowsHitTesting(false)
