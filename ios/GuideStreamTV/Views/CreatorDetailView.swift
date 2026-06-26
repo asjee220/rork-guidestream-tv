@@ -298,6 +298,11 @@ struct CreatorDetailView: View {
                     .scaledFont(size: 13)
                     .foregroundStyle(Color.textSecondary)
                     .lineLimit(1)
+            } else if kind == .twitch {
+                Text("· \(statText(channelMeta?.subscribers)) followers · \(statText(channelMeta?.videoCount)) VODs")
+                    .scaledFont(size: 13)
+                    .foregroundStyle(Color.textSecondary)
+                    .lineLimit(1)
             } else if let handle = source.handle {
                 let cleanHandle = handle.hasPrefix("@") ? String(handle.dropFirst()) : handle
                 Text("@\(cleanHandle)")
@@ -368,7 +373,7 @@ struct CreatorDetailView: View {
 
     @ViewBuilder
     private func recentUploadsContainer(source: ContentSource) -> some View {
-        if kind == .youtube {
+        if kind == .youtube || kind == .twitch {
             if isLoadingMeta && channelUploads.isEmpty {
                 uploadsLoadingPlaceholder
                     .padding(.horizontal, 20)
@@ -706,8 +711,10 @@ struct CreatorDetailView: View {
     // MARK: - Channel meta loader (youtube_channel_meta edge function)
 
     /// Loads channel statistics, bio, and recent uploads via the deployed
-    /// `youtube_channel_meta` Supabase edge function. The function proxies the
-    /// YouTube Data API server-side, so no API key ships in the client.
+    /// `youtube_channel_meta` or `twitch_channel_meta` Supabase edge function.
+    /// The correct function is selected by the creator's title_id prefix
+    /// (`yt:` → YouTube, `tw:` → Twitch). Both functions return the identical
+    /// `ChannelMetaResponse` shape, so no rendering changes are needed.
     ///
     /// Behaviour:
     /// - `ok:false` or a thrown error → keep whatever the header already shows,
@@ -720,9 +727,10 @@ struct CreatorDetailView: View {
         isLoadingMeta = true
         defer { isLoadingMeta = false }
         do {
+            let functionName: String = titleId.hasPrefix("tw:") ? "twitch_channel_meta" : "youtube_channel_meta"
             let response: ChannelMetaResponse = try await SupabaseManager.shared.client.functions
                 .invoke(
-                    "youtube_channel_meta",
+                    functionName,
                     options: FunctionInvokeOptions(body: ["title_id": titleId])
                 )
             guard response.ok else { return }
@@ -1043,7 +1051,7 @@ struct CreatorDetailView: View {
                 .frame(height: 1)
 
             VStack(spacing: 10) {
-                if kind == .youtube, let latest = channelUploads.first {
+                if (kind == .youtube || kind == .twitch), let latest = channelUploads.first {
                     latestUploadStrip(latest)
                 }
 
@@ -1351,9 +1359,10 @@ struct CreatorDetailView: View {
         }
 
         // Channel statistics, bio, and recent uploads via the edge function
-        // (YouTube only). Runs after `source` is set so the header can be
-        // enriched with the live channel name/avatar.
-        if kind == .youtube {
+        // (YouTube + Twitch, selected by title_id prefix inside the loader).
+        // Runs after `source` is set so the header can be enriched with the
+        // live channel name/avatar.
+        if kind == .youtube || kind == .twitch {
             await loadChannelMeta()
         }
     }

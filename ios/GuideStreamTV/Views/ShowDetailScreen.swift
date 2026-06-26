@@ -247,6 +247,7 @@ struct ShowDetailScreen: View {
     @State private var playOnOpen: Bool = false
     @State private var showMoreEpisodes: Bool = false
     @State private var vm = ShowDetailViewModel()
+    @State private var deepDivesVM = DeepDivesViewModel()
 
     private let platformId = "hbo"
     private let fallbackSynopsis = "The Roy family is known for controlling the biggest media and entertainment company in the world. However, their world changes when their father steps back from the company. As power shifts and alliances fracture, each sibling jockeys for control in a ruthless game of legacy, loyalty, and survival."
@@ -351,6 +352,7 @@ struct ShowDetailScreen: View {
                     whereToWatchSection
                     fanActivitySection
                     synopsisSection
+                    deepDivesSection
                     episodesSection
                     Color.clear.frame(height: 140)
                 }
@@ -408,6 +410,10 @@ struct ShowDetailScreen: View {
             if let n {
                 selectedSeason = "Season \(n)"
             }
+        }
+        .onChange(of: vm.tmdb?.name) { _, name in
+            guard let name, !name.isEmpty, let tmdbId = resolvedTmdbId else { return }
+            Task { await deepDivesVM.load(tmdbId: tmdbId, mediaType: isTV ? "tv" : "movie", showTitle: name) }
         }
     }
 
@@ -713,6 +719,13 @@ struct ShowDetailScreen: View {
         }
         .padding(.horizontal, 20)
         .padding(.top, 18)
+    }
+
+    // MARK: Deep Dives
+
+    @ViewBuilder
+    private var deepDivesSection: some View {
+        DeepDivesView(creators: deepDivesVM.creators)
     }
 
     // MARK: Episodes
