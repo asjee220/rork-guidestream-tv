@@ -180,6 +180,10 @@ struct HomeView: View {
     /// Stable, pre-sorted hero rail — built once after data settles so the
     /// carousel never visibly reorders or pops as partial loads arrive.
     @State private var heroRailItems: [HeroItem] = []
+    /// Gates the one-time fade-and-rise reveal of the hero carousel. Flipped
+    /// to true inside an ease-out animation after the first rail assembly so
+    /// subsequent rebuilds update instantly with no visible movement.
+    @State private var heroRailReady = false
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -300,6 +304,8 @@ struct HomeView: View {
                                     )
                                 }
                             )
+                            .opacity(heroRailReady ? 1 : 0)
+                            .offset(y: heroRailReady ? 0 : 12)
                         }
 
                         WatchListSection(
@@ -1317,6 +1323,15 @@ struct HomeView: View {
         t.disablesAnimations = true
         withTransaction(t) {
             heroRailItems = capped
+        }
+        // One-time graceful reveal: after the first rail is assembled,
+        // fade + gently rise the carousel into view. Later rebuilds skip
+        // this so reorders never animate and only the initial appearance
+        // has a soft entrance.
+        if !capped.isEmpty, !heroRailReady {
+            withAnimation(.easeOut(duration: 0.45)) {
+                heroRailReady = true
+            }
         }
     }
 

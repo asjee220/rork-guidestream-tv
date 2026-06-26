@@ -638,8 +638,8 @@ struct SportsWatchSheet: View {
             state: .live,
             statusDetail: "3rd Qtr · 8:42",
             startDate: Date(),
-            home: GameTeam(abbreviation: "MIA", displayName: "Miami Heat", shortName: "Heat", score: "82", primaryHex: "CE1141", isWinner: false),
-            away: GameTeam(abbreviation: "NYK", displayName: "New York Knicks", shortName: "Knicks", score: "87", primaryHex: "006BB6", isWinner: true),
+            home: GameTeam(id: nil, uid: nil, abbreviation: "MIA", displayName: "Miami Heat", shortName: "Heat", score: "82", primaryHex: "CE1141", isWinner: false),
+            away: GameTeam(id: nil, uid: nil, abbreviation: "NYK", displayName: "New York Knicks", shortName: "Knicks", score: "87", primaryHex: "006BB6", isWinner: true),
             broadcasts: ["ESPN", "TNT"]
         )
     )

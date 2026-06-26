@@ -16,8 +16,8 @@ struct SportsWatchSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(AppRouter.self) private var router
 
-    @State private var isReminderSet: Bool = false
     @State private var showCastSheet: Bool = false
+    @State private var favorites = TeamFavoritesService.shared
     @State private var streams = StreamsViewModel.shared
     @State private var social = SocialViewModel.shared
     @State private var isToggleSaving: Bool = false
@@ -191,6 +191,9 @@ struct SportsWatchSheet: View {
                 tmdbId: nil,
                 isTV: false
             )
+        }
+        .task {
+            await favorites.load()
         }
         .onAppear {
             adDismissed = false
@@ -435,17 +438,6 @@ struct SportsWatchSheet: View {
         let likeCount = social.likes(key)
         return HStack(spacing: 0) {
             circleAction(
-                icon: isReminderSet ? "bell.badge.fill" : "alarm",
-                label: "Remind me",
-                tint: isReminderSet ? Color.orange : .white,
-                showDot: isReminderSet
-            ) {
-                UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) { isReminderSet.toggle() }
-            }
-            .frame(maxWidth: .infinity)
-
-            circleAction(
                 icon: isLiked ? "heart.fill" : "heart",
                 label: "Like",
                 tint: isLiked ? Color.orange : .white,
@@ -460,6 +452,12 @@ struct SportsWatchSheet: View {
                 }
             }
             .frame(maxWidth: .infinity)
+
+            // ── Favorite teams ────────────────────────────────────────
+            favoriteTeamButton(team: game.away, label: game.away.abbreviation)
+                .frame(maxWidth: .infinity)
+            favoriteTeamButton(team: game.home, label: game.home.abbreviation)
+                .frame(maxWidth: .infinity)
 
             ShareLink(
                 item: URL(string: "https://guidestream.tv")!,
@@ -493,6 +491,38 @@ struct SportsWatchSheet: View {
             }
             .frame(maxWidth: .infinity)
         }
+    }
+
+    // MARK: - Favorite team button
+
+    private func favoriteTeamButton(team: GameTeam, label: String) -> some View {
+        let isFav = favorites.isFavorite(team.uid)
+        return Button {
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            Task {
+                await favorites.toggle(
+                    team: team,
+                    league: game.leagueShort,
+                    sport: game.sport
+                )
+            }
+        } label: {
+            VStack(spacing: 8) {
+                ZStack {
+                    Circle()
+                        .fill(Color.white.opacity(0.08))
+                        .frame(width: 54, height: 54)
+                    Image(systemName: isFav ? "star.fill" : "star")
+                        .scaledFont(size: 22, weight: .regular)
+                        .foregroundStyle(isFav ? Color.orange : .white)
+                }
+                Text(label)
+                    .scaledFont(size: 13)
+                    .foregroundStyle(Color.white.opacity(0.7))
+                    .lineLimit(1)
+            }
+        }
+        .buttonStyle(.plain)
     }
 
     private func circleAction(
@@ -793,8 +823,8 @@ struct SportsWatchSheet: View {
             state: .live,
             statusDetail: "3rd Qtr · 8:42",
             startDate: Date(),
-            home: GameTeam(abbreviation: "MIA", displayName: "Miami Heat", shortName: "Heat", score: "82", primaryHex: "CE1141", isWinner: false),
-            away: GameTeam(abbreviation: "NYK", displayName: "New York Knicks", shortName: "Knicks", score: "87", primaryHex: "006BB6", isWinner: true),
+            home: GameTeam(id: nil, uid: nil, abbreviation: "MIA", displayName: "Miami Heat", shortName: "Heat", score: "82", primaryHex: "CE1141", isWinner: false),
+            away: GameTeam(id: nil, uid: nil, abbreviation: "NYK", displayName: "New York Knicks", shortName: "Knicks", score: "87", primaryHex: "006BB6", isWinner: true),
             broadcasts: ["ESPN", "TNT"]
         )
     )
