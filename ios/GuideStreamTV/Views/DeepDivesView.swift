@@ -48,7 +48,7 @@ struct DeepDivesView: View {
             }
         }
         .padding(.top, 18)
-        .padding(.horizontal, 0)
+        .padding(.horizontal, 20)
     }
 }
 
@@ -57,28 +57,21 @@ struct DeepDivesView: View {
 struct CreatorChannelCard: View {
     let creator: CreatorChannel
 
-    @State private var showAllSheet: Bool = false
-    @State private var streams = StreamsViewModel.shared
-
-    private var isFollowed: Bool {
-        streams.userStreams.contains { $0.titleId == creator.titleId }
-    }
-
     var body: some View {
         VStack(spacing: 8) {
             // Avatar
             Group {
                 if let avatarUrl = creator.avatarUrl, let url = URL(string: avatarUrl) {
                     RemoteImage(url: url, contentMode: .fill)
-                        .frame(width: 36, height: 36)
+                        .frame(width: 48, height: 48)
                         .clipShape(Circle())
                 } else {
                     Circle()
                         .fill(Color.white.opacity(0.08))
-                        .frame(width: 36, height: 36)
+                        .frame(width: 48, height: 48)
                         .overlay {
                             Text(creator.name.prefix(1).uppercased())
-                                .scaledFont(size: 14, weight: .semibold)
+                                .scaledFont(size: 18, weight: .semibold)
                                 .foregroundStyle(.white)
                         }
                 }
@@ -102,46 +95,28 @@ struct CreatorChannelCard: View {
 
             Spacer(minLength: 0)
 
-            // Action row: follow toggle + View button
-            HStack(spacing: 4) {
-                // Follow toggle
-                Button {
-                    toggleFollow()
-                } label: {
-                    Image(systemName: isFollowed ? "checkmark" : "plus")
-                        .scaledFont(size: 10, weight: .bold)
-                        .foregroundStyle(isFollowed ? Color.orange : Color.white.opacity(0.7))
-                        .frame(width: 24, height: 24)
-                        .background(
-                            Circle()
-                                .fill(isFollowed ? Color.orange.opacity(0.15) : Color.white.opacity(0.06))
-                        )
-                }
-                .buttonStyle(.plain)
-
-                // View button
-                Button {
-                    openChannel()
-                } label: {
-                    Text("View")
-                        .scaledFont(size: 10, weight: .semibold)
-                        .foregroundStyle(.white)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 24)
-                        .background(
-                            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                .fill(Color.clear)
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                .stroke(Color.white.opacity(0.3), lineWidth: 0.5)
-                        )
-                }
-                .buttonStyle(.plain)
+            // View button (full width)
+            Button {
+                openChannel()
+            } label: {
+                Text("View")
+                    .scaledFont(size: 10, weight: .semibold)
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 24)
+                    .background(
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .fill(Color.clear)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .stroke(Color.white.opacity(0.3), lineWidth: 0.5)
+                    )
             }
+            .buttonStyle(.plain)
         }
         .padding(10)
-        .frame(width: 100)
+        .frame(width: 130)
         .background(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .fill(Color.white.opacity(0.05))
@@ -153,22 +128,6 @@ struct CreatorChannelCard: View {
         .contentShape(Rectangle())
         .onTapGesture {
             openChannel()
-        }
-    }
-
-    private func toggleFollow() {
-        UIImpactFeedbackGenerator(style: .light).impactOccurred()
-        Task {
-            if isFollowed {
-                await streams.removeFromMyStreams(titleId: creator.titleId)
-            } else {
-                await streams.addToMyStreams(
-                    titleId: creator.titleId,
-                    title: creator.name,
-                    posterUrl: creator.avatarUrl,
-                    platform: "youtube"
-                )
-            }
         }
     }
 
@@ -210,7 +169,7 @@ private struct OverflowCard: View {
                 ZStack {
                     Circle()
                         .fill(Color.white.opacity(0.06))
-                        .frame(width: 36, height: 36)
+                        .frame(width: 48, height: 48)
 
                     Image(systemName: "plus")
                         .scaledFont(size: 16, weight: .semibold)
@@ -228,7 +187,7 @@ private struct OverflowCard: View {
                     .frame(height: 28)
             }
             .padding(10)
-            .frame(width: 100)
+            .frame(width: 130)
             .background(
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .fill(Color.white.opacity(0.04))
