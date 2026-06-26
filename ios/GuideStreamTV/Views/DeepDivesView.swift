@@ -26,9 +26,6 @@ struct DeepDivesView: View {
         let overflow = creators.count - visible.count
 
         VStack(alignment: .leading, spacing: 10) {
-            // YouTube attribution icon: drop the official YouTube icon PNG
-            // (from https://www.youtube.com/yt/brand/downloads.html) into
-            // Assets.xcassets / youtube_attribution_icon.imageset before release.
             HStack(spacing: 6) {
                 Text("Deep Dives")
                     .scaledFont(size: 17, weight: .semibold)
