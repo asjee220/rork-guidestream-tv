@@ -360,12 +360,37 @@ struct MoreEpisodesScreen: View {
                 // Primary Play Next button
                 Button(action: {
                     UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                    if let svc = vm.primaryService {
+                        if let url = vm.primaryDeeplink {
+                            StreamingDeepLinker.openResolvedURL(
+                                url, platform: svc.name, title: title,
+                                tmdbId: Int(titleId)
+                            )
+                        } else {
+                            StreamingDeepLinker.open(
+                                platform: svc.name, title: title,
+                                tmdbId: Int(titleId), isTV: isTV
+                            )
+                        }
+                    }
                 }) {
                     HStack(spacing: 8) {
                         Image(systemName: "play.fill")
                             .scaledFont(size: 14, weight: .bold)
-                        Text("Play Next — S:\(activeSeason) EP:\(nextEpisodeNumber)")
+                        Text("Watch S:\(activeSeason) EP:\(nextEpisodeNumber)")
                             .scaledFont(size: 14, weight: .bold)
+                            .lineLimit(1)
+                        if let svc = vm.primaryService {
+                            Text(shortName(svc.name))
+                                .scaledFont(size: 9, weight: .heavy)
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 7)
+                                .padding(.vertical, 3)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                        .fill(svc.color)
+                                )
+                        }
                     }
                     .foregroundStyle(.white)
                     .frame(maxWidth: .infinity)

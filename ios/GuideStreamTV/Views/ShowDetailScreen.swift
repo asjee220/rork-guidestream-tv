@@ -389,7 +389,9 @@ struct ShowDetailScreen: View {
                 onDeviceSelected: { _ in
                     playOnOpen = false
                     onPlayOn()
-                }
+                },
+                watchSeasonNum: latestEpisode?.seasonNum,
+                watchEpisodeNum: latestEpisode?.episodeNum
             )
             .allowsHitTesting(playOnOpen)
         }
@@ -891,9 +893,15 @@ struct ShowDetailScreen: View {
                             Image(systemName: "play.fill")
                                 .scaledFont(size: 15, weight: .bold)
 
-                            Text("Watch on")
-                                .scaledFont(size: 15, weight: .bold)
-                                .lineLimit(1)
+                            if let ep = latestEpisode {
+                                Text("Watch S:\(ep.seasonNum) EP:\(ep.episodeNum)")
+                                    .scaledFont(size: 15, weight: .bold)
+                                    .lineLimit(1)
+                            } else {
+                                Text("Watch on")
+                                    .scaledFont(size: 15, weight: .bold)
+                                    .lineLimit(1)
+                            }
 
                             if let badge = primaryServiceShortName {
                                 Text(badge.uppercased())

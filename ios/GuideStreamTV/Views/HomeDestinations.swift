@@ -53,6 +53,9 @@ struct EpisodeDetailSheet: View {
     @State private var isResolvingSource: Bool = false
     @State private var adDismissed: Bool = false
     @State private var showFullDetail: Bool = false
+    /// Latest episode (season, episode) pulled from TMDB when the subject is a
+    /// show. Drives the "Watch S:1 EP:10 on Paramount+" button label.
+    @State private var showLatestEpisode: (seasonNum: Int, episodeNum: Int)? = nil
 
     private var platformColor: Color {
         if let name = resolvedSource?.name { return brandColor(for: name) }
@@ -136,8 +139,8 @@ struct EpisodeDetailSheet: View {
     }
 
     private var platformName: String {
-        if let name = resolvedSource?.name { return name.uppercased() }
-        if let p = resolvedProviderName, !p.isEmpty { return p.uppercased() }
+        if let name = resolvedSource?.name { return gsDisplayName(for: name).uppercased() }
+        if let p = resolvedProviderName, !p.isEmpty { return gsDisplayName(for: p).uppercased() }
         switch subject {
         case .episode(let e) where !e.platform.isEmpty && e.platform.uppercased() != "STREAM":
             return e.platform
@@ -147,8 +150,8 @@ struct EpisodeDetailSheet: View {
     }
 
     private var whereToWatchLabel: String {
-        if let name = resolvedSource?.name { return name }
-        if let p = resolvedProviderName, !p.isEmpty { return p }
+        if let name = resolvedSource?.name { return gsDisplayName(for: name) }
+        if let p = resolvedProviderName, !p.isEmpty { return gsDisplayName(for: p) }
         switch subject {
         case .episode(let e) where !e.platform.isEmpty && e.platform.uppercased() != "STREAM":
             return e.platform.capitalized
@@ -263,6 +266,17 @@ struct EpisodeDetailSheet: View {
         .task(id: tmdbId ?? -1) {
             adDismissed = false
             await resolveStreamingSource()
+            // For shows, pull the latest-aired episode from TMDB so the
+            // watch button can include "S:1 EP:10" context.
+            if case .show = subject, let tid = tmdbId, isTV {
+                if let detail = try? await TMDBService.shared.getTVDetail(tmdbId: tid),
+                   let last = detail.lastEpisodeToAir,
+                   let sn = last.seasonNumber, let en = last.episodeNumber {
+                    await MainActor.run {
+                        self.showLatestEpisode = (sn, en)
+                    }
+                }
+            }
         }
         .fullScreenCover(isPresented: $showFullDetail) {
             ShowDetailScreen(
@@ -790,6 +804,50 @@ struct EpisodeDetailSheet: View {
         }
     }
 
+    /// Season/episode numbers for the current detail subject. When we're
+    /// viewing an episode the numbers come from the episode model; when
+    /// viewing a show we pull `last_episode_to_air` from TMDB so the watch
+    /// button can read "Watch S:4 EP:7 on Max" instead of "Watch on Max".
+    private var episodeContext: (seasonNum: Int, episodeNum: Int)? {
+        switch subject {
+        case .episode(let e):
+            let parts = e.season.components(separatedBy: CharacterSet.decimalDigits.inverted).filter { !$0.isEmpty }
+            if parts.count >= 2,
+               let s = Int(parts[0]), let ep = Int(parts[1]) {
+                return (s, ep)
+            }
+            return nil
+        case .show:
+            return showLatestEpisode
+        }
+    }
+
+    /// Builds an episode-specific deeplink URL by appending season/episode path
+    /// segments to the show-level web_url. Falls back to the original URL when
+    /// the show-level URL doesn't contain a known show path.
+    private func episodeDeeplinkURL(from base: URL, season: Int, episode: Int) -> URL {
+        let baseStr = base.absoluteString
+        let episodePath = "/season/\(season)/episode/\(episode)"
+        // Paramount+ uses opaque video IDs — season/episode path segments are
+        // ignored. Skip the episode path so we land on the show page instead
+        // of the first episode.
+        if baseStr.contains("peacocktv.com") || baseStr.contains("peacock") {
+            let stripped = baseStr.hasSuffix("/") ? String(baseStr.dropLast()) : baseStr
+            return URL(string: stripped + episodePath) ?? base
+        }
+        // Amazon uses query params: ?season=<s>&episode=<e>
+        if baseStr.contains("amazon.com") || baseStr.contains("primevideo.com") || baseStr.contains("amazon") {
+            return URL(string: baseStr + "?season=\(season)&episode=\(episode)") ?? base
+        }
+        if baseStr.contains("hulu.com") {
+            let stripped = baseStr.hasSuffix("/") ? String(baseStr.dropLast()) : baseStr
+            return URL(string: stripped + episodePath) ?? base
+        }
+        // Paramount+, Netflix, Apple TV+, Max, Disney+ use opaque IDs —
+        // return the show-level URL as a best-effort fallback.
+        return base
+    }
+
     private var watchButton: some View {
         Button {
             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
@@ -800,8 +858,14 @@ struct EpisodeDetailSheet: View {
             // closes a race where iOS dropped the foreground request
             // because the sheet started dismissing before open() ran.
             if let pre = preResolvedDeepLinkURL {
+                let finalURL: URL = {
+                    if let ctx = episodeContext {
+                        return episodeDeeplinkURL(from: pre, season: ctx.seasonNum, episode: ctx.episodeNum)
+                    }
+                    return pre
+                }()
                 StreamingDeepLinker.openResolvedURL(
-                    pre,
+                    finalURL,
                     platform: whereToWatchLabel,
                     title: title,
                     tmdbId: tmdbId
@@ -828,13 +892,19 @@ struct EpisodeDetailSheet: View {
                         .controlSize(.small)
                         .tint(.white)
                 }
-                Text(resolvedSource == nil && isResolvingSource
-                     ? "Finding service…"
-                     : "Watch on")
-                    .scaledFont(size: 17, weight: .semibold)
-                    .lineLimit(1)
+                if let ctx = episodeContext {
+                    Text("Watch S:\(ctx.seasonNum) EP:\(ctx.episodeNum)")
+                        .scaledFont(size: 15, weight: .semibold)
+                        .lineLimit(1)
+                } else {
+                    Text(resolvedSource == nil && isResolvingSource
+                         ? "Finding service…"
+                         : "Watch on")
+                        .scaledFont(size: 17, weight: .semibold)
+                        .lineLimit(1)
+                }
                 if hasResolvedPlatform, !whereToWatchLabel.isEmpty {
-                    Text(whereToWatchLabel.uppercased())
+                    Text(whereToWatchLabel)
                         .scaledFont(size: 11, weight: .bold)
                         .foregroundStyle(.white)
                         .padding(.horizontal, 8)

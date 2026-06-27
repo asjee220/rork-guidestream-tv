@@ -140,9 +140,15 @@ func buildEpisodeAvailRows(
  let color = gsBrandColor(for: src.name)
  let userHas = userServiceNames.contains(where: { gsSourceMatches(sourceName: src.name, platform: $0) })
  let deeplink: URL? = {
+ // Build episode-specific URL from the show-level Watchmode URL by
+ // appending season/episode path segments where the platform supports it.
+ let baseURL: URL? = {
  if let ios = src.iosUrl, ios.hasPrefix("http"), let u = URL(string: ios) { return u }
  if let web = src.webUrl, web.hasPrefix("http"), let u = URL(string: web) { return u }
  return nil
+ }()
+ guard let base = baseURL else { return nil }
+ return episodeDeeplinkURL(from: base, season: seasonNumber, episode: ep.episodeNumber)
  }()
  let state: EpisodeAvailState = userHas
  ? .available(serviceName: displayName, serviceColor: color, deeplink: deeplink)
@@ -155,6 +161,33 @@ func buildEpisodeAvailRows(
  state: state
  )
  }
+}
+
+/// Builds an episode-specific deeplink URL by appending season/episode path
+/// segments to the show-level web_url. Falls back to the original URL when
+/// the platform doesn't use a path-based show structure.
+func episodeDeeplinkURL(from base: URL, season: Int, episode: Int) -> URL {
+ let baseStr = base.absoluteString
+ let episodePath = "/season/\(season)/episode/\(episode)"
+ // Paramount+ uses opaque video IDs (e.g. /shows/name/video/ID) —
+ // season/episode path segments are ignored and the app falls back
+ // to the show home. Skip the episode path so we at least land on
+ // the correct show page instead of the first episode.
+ if baseStr.contains("peacocktv.com") || baseStr.contains("peacock") {
+ let stripped = baseStr.hasSuffix("/") ? String(baseStr.dropLast()) : baseStr
+ return URL(string: stripped + episodePath) ?? base
+ }
+ if baseStr.contains("amazon.com") || baseStr.contains("primevideo.com") || baseStr.contains("amazon") {
+ return URL(string: baseStr + "?season=\(season)&episode=\(episode)") ?? base
+ }
+ if baseStr.contains("hulu.com") {
+ let stripped = baseStr.hasSuffix("/") ? String(baseStr.dropLast()) : baseStr
+ return URL(string: stripped + episodePath) ?? base
+ }
+ // Paramount+, Netflix, Apple TV+, Max, Disney+, etc. use opaque show IDs —
+ // appending season/episode doesn't produce a valid deep link. Return the
+ // original show-level URL as a best-effort fallback.
+ return base
 }
 
 /// Builds SeasonCoverage array from show-level Watchmode sources.

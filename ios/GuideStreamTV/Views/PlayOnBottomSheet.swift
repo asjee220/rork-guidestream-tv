@@ -45,6 +45,12 @@ struct PlayOnBottomSheet: View {
     /// `onClose`, letting callers navigate to the full ShowDetailScreen.
     var onViewFullDetails: (() -> Void)? = nil
 
+    /// When non-nil the watch button label changes from "Watch on <service>"
+    /// to "Watch S:4 EP:7 on <service>", and the deep link URL is extended
+    /// with season/episode path segments where the platform supports it.
+    var watchSeasonNum: Int? = nil
+    var watchEpisodeNum: Int? = nil
+
     // Illustrative fallback metadata used until the live Watchmode lookup
     // resolves (or as a fallback when the API is unavailable). Overridden
     // by `metadataLine` / `genreLine` when those are set.
@@ -515,6 +521,31 @@ struct PlayOnBottomSheet: View {
         }
     }
 
+    /// Builds an episode-specific deeplink URL by appending season/episode path
+    /// segments to the show-level web_url. Falls back to the original URL when
+    /// the show-level URL doesn't contain a known show path.
+    private func episodeDeeplinkURL(from base: URL, season: Int, episode: Int) -> URL {
+        let baseStr = base.absoluteString
+        let episodePath = "/season/\(season)/episode/\(episode)"
+        // Paramount+ uses opaque video IDs — season/episode path segments are
+        // ignored. Skip the episode path so we land on the show page instead
+        // of the first episode.
+        if baseStr.contains("peacocktv.com") || baseStr.contains("peacock") {
+            let stripped = baseStr.hasSuffix("/") ? String(baseStr.dropLast()) : baseStr
+            return URL(string: stripped + episodePath) ?? base
+        }
+        if baseStr.contains("amazon.com") || baseStr.contains("primevideo.com") || baseStr.contains("amazon") {
+            return URL(string: baseStr + "?season=\(season)&episode=\(episode)") ?? base
+        }
+        if baseStr.contains("hulu.com") {
+            let stripped = baseStr.hasSuffix("/") ? String(baseStr.dropLast()) : baseStr
+            return URL(string: stripped + episodePath) ?? base
+        }
+        // Paramount+, Netflix, Apple TV+, Max, Disney+ use opaque IDs —
+        // return the show-level URL as a best-effort fallback.
+        return base
+    }
+
     private var actualWatchButton: some View {
         Button {
             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
@@ -530,8 +561,14 @@ struct PlayOnBottomSheet: View {
             // race where iOS dropped the open because the sheet started
             // animating away before UIApplication.open ran.
             if let pre = preResolvedDeepLinkURL {
+                let finalURL: URL = {
+                    if let s = watchSeasonNum, let e = watchEpisodeNum {
+                        return episodeDeeplinkURL(from: pre, season: s, episode: e)
+                    }
+                    return pre
+                }()
                 StreamingDeepLinker.openResolvedURL(
-                    pre,
+                    finalURL,
                     platform: whereToWatchLabel,
                     title: showTitle,
                     tmdbId: tmdbId
@@ -559,13 +596,19 @@ struct PlayOnBottomSheet: View {
                         .controlSize(.small)
                         .tint(.white)
                 }
-                Text(resolvedSource == nil && isResolvingSource
-                     ? "Finding service…"
-                     : "Watch on")
-                    .scaledFont(size: 17, weight: .semibold)
-                    .lineLimit(1)
+                if let s = watchSeasonNum, let e = watchEpisodeNum {
+                    Text("Watch S:\(s) EP:\(e)")
+                        .scaledFont(size: 15, weight: .semibold)
+                        .lineLimit(1)
+                } else {
+                    Text(resolvedSource == nil && isResolvingSource
+                         ? "Finding service…"
+                         : "Watch on")
+                        .scaledFont(size: 17, weight: .semibold)
+                        .lineLimit(1)
+                }
                 if hasResolvedPlatform, !whereToWatchLabel.isEmpty {
-                    Text(whereToWatchLabel.uppercased())
+                    Text(whereToWatchLabel)
                         .scaledFont(size: 11, weight: .bold)
                         .foregroundStyle(.white)
                         .padding(.horizontal, 8)
