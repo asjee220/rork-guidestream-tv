@@ -71,6 +71,10 @@ struct PlayOnBottomSheet: View {
     @State private var resolvedSource: WatchmodeSource?
     @State private var resolvedOverview: String?
     @State private var isResolvingSource: Bool = false
+    /// Per-episode deep link URL resolved from Watchmode's episode-level
+    /// sources endpoint. When non-nil, the watch button opens this URL
+    /// so the streaming app lands on the exact episode.
+    @State private var episodeDeepLinkURL: URL?
 
     private var resolvedPlatformName: String {
         let raw = resolvedSource?.name ?? (isResolvingSource ? "…" : "")
@@ -127,6 +131,26 @@ struct PlayOnBottomSheet: View {
     /// yet — caller falls back to the async lookup path.
     private var preResolvedDeepLinkURL: URL? {
         guard let src = resolvedSource else { return nil }
+        if let s = src.iosUrl, Self.isRealDeepLinkURL(s), let u = URL(string: s) { return u }
+        if let s = src.webUrl, Self.isRealDeepLinkURL(s), let u = URL(string: s) { return u }
+        return nil
+    }
+
+    /// Picks the best URL from a set of episode-level Watchmode sources
+    /// that matches the already-resolved title-level source by `sourceId`.
+    /// Prefers `ios_url` when it's a real deep link; falls back to `web_url`.
+    private static func episodeSourceURL(
+        from episodeSources: [WatchmodeSource],
+        resolvedSource: WatchmodeSource?
+    ) -> URL? {
+        let match: WatchmodeSource?
+        if let rs = resolvedSource {
+            match = episodeSources.first(where: { $0.sourceId == rs.sourceId })
+                ?? episodeSources.first
+        } else {
+            match = episodeSources.first
+        }
+        guard let src = match else { return nil }
         if let s = src.iosUrl, Self.isRealDeepLinkURL(s), let u = URL(string: s) { return u }
         if let s = src.webUrl, Self.isRealDeepLinkURL(s), let u = URL(string: s) { return u }
         return nil
@@ -189,6 +213,21 @@ struct PlayOnBottomSheet: View {
         await MainActor.run {
             self.resolvedSource = r.primarySource
             self.resolvedOverview = r.overview
+        }
+
+        // Resolve per-episode deep link when season/episode info is
+        // available, so the watch button opens the exact episode.
+        // (tmdbId is already unwrapped by the guard let at the top of
+        // this function, so it's a non-optional Int here.)
+        if let s = watchSeasonNum, let e = watchEpisodeNum, resolvedIsTV {
+            if let epSources = await WatchmodeService.shared.episodeSources(
+                tmdbId: tmdbId, isTV: true, season: s, episode: e
+            ) {
+                let url = Self.episodeSourceURL(
+                    from: epSources, resolvedSource: resolvedSource
+                )
+                await MainActor.run { self.episodeDeepLinkURL = url }
+            }
         }
     }
 
@@ -557,12 +596,16 @@ struct PlayOnBottomSheet: View {
                 metadata: ["device_id": "watch-on-platform", "platform": whereToWatchLabel]
             )
 
-            // Fast path: when the sheet has already resolved a Watchmode
-            // source, fire the deep link synchronously from the captured
-            // URL. Avoids a second Watchmode round-trip AND removes the
-            // race where iOS dropped the open because the sheet started
-            // animating away before UIApplication.open ran.
-            if let pre = preResolvedDeepLinkURL {
+            // Best path: Watchmode episode-level sources gave us a
+            // URL that deep-links directly to the exact episode.
+            if let epURL = episodeDeepLinkURL {
+                StreamingDeepLinker.openResolvedURL(
+                    epURL,
+                    platform: whereToWatchLabel,
+                    title: showTitle,
+                    tmdbId: tmdbId
+                )
+            } else if let pre = preResolvedDeepLinkURL {
                 let finalURL: URL = {
                     if let s = watchSeasonNum, let e = watchEpisodeNum {
                         return episodeDeeplinkURL(from: pre, season: s, episode: e)

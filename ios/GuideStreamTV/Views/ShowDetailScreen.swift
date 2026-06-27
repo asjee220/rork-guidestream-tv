@@ -248,6 +248,10 @@ struct ShowDetailScreen: View {
     @State private var showMoreEpisodes: Bool = false
     @State private var vm = ShowDetailViewModel()
     @State private var deepDivesVM = DeepDivesViewModel()
+    /// Per-episode deep link URL resolved from Watchmode's episode-level
+    /// sources endpoint. When non-nil, the watch button opens this URL
+    /// so the streaming app lands on the exact episode.
+    @State private var episodeDeepLinkURL: URL?
 
     private let platformId = "hbo"
     private let fallbackSynopsis = "The Roy family is known for controlling the biggest media and entertainment company in the world. However, their world changes when their father steps back from the company. As power shifts and alliances fracture, each sibling jockeys for control in a ruthless game of legacy, loyalty, and survival."
@@ -407,6 +411,28 @@ struct ShowDetailScreen: View {
         }
         .task(id: titleId) {
             vm.startLoad(titleId: titleId, isTV: isTV)
+            // Resolve per-episode deep link from Watchmode so the watch
+            // button opens the exact episode in the streaming app.
+            if let tid = resolvedTmdbId, isTV,
+               let ep = latestEpisode {
+                if let epSources = await WatchmodeService.shared.episodeSources(
+                    tmdbId: tid, isTV: true,
+                    season: ep.seasonNum, episode: ep.episodeNum
+                ) {
+                    // Use the primary service's source_id to find the
+                    // matching episode source.
+                    let resolvedSrc: WatchmodeSource? = {
+                        guard let svc = vm.primaryService else { return nil }
+                        return vm.resolved.usSources.first(where: {
+                            $0.name == svc.name
+                        })
+                    }()
+                    let url = Self.episodeSourceURL(
+                        from: epSources, resolvedSource: resolvedSrc
+                    )
+                    await MainActor.run { self.episodeDeepLinkURL = url }
+                }
+            }
         }
         .onChange(of: vm.tmdb?.numberOfSeasons) { _, n in
             if let n {
@@ -476,6 +502,25 @@ struct ShowDetailScreen: View {
         guard let svc = match else { return nil }
         if let s = svc.iosUrl, Self.isRealDeepLinkURL(s), let u = URL(string: s) { return u }
         if let s = svc.webUrl, Self.isRealDeepLinkURL(s), let u = URL(string: s) { return u }
+        return nil
+    }
+
+    /// Picks the best URL from a set of episode-level Watchmode sources
+    /// that matches the already-resolved title-level source by `sourceId`.
+    private static func episodeSourceURL(
+        from episodeSources: [WatchmodeSource],
+        resolvedSource: WatchmodeSource?
+    ) -> URL? {
+        let match: WatchmodeSource?
+        if let rs = resolvedSource {
+            match = episodeSources.first(where: { $0.sourceId == rs.sourceId })
+                ?? episodeSources.first
+        } else {
+            match = episodeSources.first
+        }
+        guard let src = match else { return nil }
+        if let s = src.iosUrl, Self.isRealDeepLinkURL(s), let u = URL(string: s) { return u }
+        if let s = src.webUrl, Self.isRealDeepLinkURL(s), let u = URL(string: s) { return u }
         return nil
     }
 
@@ -904,10 +949,17 @@ struct ShowDetailScreen: View {
                     Button(action: {
                         if let svc = vm.primaryService {
                             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                            // When we know the season/episode, build an
-                            // episode-specific URL so the streaming app
-                            // lands on the correct episode (not S1E1).
-                            if let ep = latestEpisode,
+                            // Best path: Watchmode episode-level sources
+                            // gave us a URL that deep-links directly to
+                            // the exact episode.
+                            if let epURL = episodeDeepLinkURL {
+                                StreamingDeepLinker.openResolvedURL(
+                                    epURL,
+                                    platform: gsDisplayName(for: svc.name),
+                                    title: displayTitle,
+                                    tmdbId: resolvedTmdbId
+                                )
+                            } else if let ep = latestEpisode,
                                let url = preResolvedURL(forService: svc.name) {
                                 let finalURL = episodeDeeplinkURL(from: url, season: ep.seasonNum, episode: ep.episodeNum)
                                 StreamingDeepLinker.openResolvedURL(

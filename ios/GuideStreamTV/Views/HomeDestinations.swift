@@ -56,6 +56,11 @@ struct EpisodeDetailSheet: View {
     /// Latest episode (season, episode) pulled from TMDB when the subject is a
     /// show. Drives the "Watch S:1 EP:10 on Paramount+" button label.
     @State private var showLatestEpisode: (seasonNum: Int, episodeNum: Int)? = nil
+    /// Per-episode deep link URL resolved from Watchmode's episode-level
+    /// sources endpoint. When non-nil, the watch button opens this URL
+    /// instead of `episodeDeeplinkURL` so that Paramount+ and other
+    /// services land on the exact episode rather than the show home.
+    @State private var episodeDeepLinkURL: URL?
 
     private var platformColor: Color {
         if let name = resolvedSource?.name { return brandColor(for: name) }
@@ -229,6 +234,12 @@ struct EpisodeDetailSheet: View {
                     .padding(.horizontal, 20)
                     .padding(.top, 22)
 
+                // DEBUG_ROKU_PROBE_START
+                rokuDebugPanel
+                    .padding(.horizontal, 20)
+                    .padding(.top, 14)
+                // DEBUG_ROKU_PROBE_END
+
                 secondaryPillRow
                     .padding(.horizontal, 20)
                     .padding(.top, 16)
@@ -275,6 +286,20 @@ struct EpisodeDetailSheet: View {
                     await MainActor.run {
                         self.showLatestEpisode = (sn, en)
                     }
+                }
+            }
+            // Resolve per-episode deep link from Watchmode's episode-level
+            // sources so the watch button opens the exact episode in the
+            // streaming app (not just the show home page).
+            if let tid = tmdbId, isTV, let ctx = episodeContext {
+                if let epSources = await WatchmodeService.shared.episodeSources(
+                    tmdbId: tid, isTV: true,
+                    season: ctx.seasonNum, episode: ctx.episodeNum
+                ) {
+                    let url = Self.episodeSourceURL(
+                        from: epSources, resolvedSource: resolvedSource
+                    )
+                    await MainActor.run { self.episodeDeepLinkURL = url }
                 }
             }
         }
@@ -854,12 +879,16 @@ struct EpisodeDetailSheet: View {
         Button {
             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
 
-            // Fast path: when the sheet already resolved a Watchmode
-            // source, fire the deep link from the captured URL. This
-            // avoids a second ~500–1500ms Watchmode round-trip AND
-            // closes a race where iOS dropped the foreground request
-            // because the sheet started dismissing before open() ran.
-            if let pre = preResolvedDeepLinkURL {
+            // Best path: Watchmode episode-level sources gave us a
+            // URL that deep-links directly to the exact episode.
+            if let epURL = episodeDeepLinkURL {
+                StreamingDeepLinker.openResolvedURL(
+                    epURL,
+                    platform: whereToWatchLabel,
+                    title: title,
+                    tmdbId: tmdbId
+                )
+            } else if let pre = preResolvedDeepLinkURL {
                 let finalURL: URL = {
                     if let ctx = episodeContext {
                         return episodeDeeplinkURL(from: pre, season: ctx.seasonNum, episode: ctx.episodeNum)
@@ -972,6 +1001,42 @@ struct EpisodeDetailSheet: View {
         .accessibilityLabel(isSaved ? "Saved to watch list. Tap to remove." : "Add to watch list")
     }
 
+    // MARK: - Debug probe (temporary)
+
+    // DEBUG_ROKU_PROBE_START
+    /// Temporary debug panel that surfaces Watchmode's Roku / tvOS deep-link
+    /// fields so they can be read and copied during TestFlight testing.
+    /// Remove the call site and this property together when the probe is done.
+    @ViewBuilder
+    private var rokuDebugPanel: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("DEBUG · Roku TV-links probe")
+                .scaledFont(size: 11, weight: .bold)
+                .foregroundStyle(Color.orange)
+
+            Group {
+                Text("name: \(resolvedSource?.name ?? "—")")
+                Text("source_id: \(resolvedSource.map { String($0.sourceId) } ?? "—")")
+                Text("web_url: \(resolvedSource?.webUrl ?? "nil")")
+                Text("roku_url: \(resolvedSource?.rokuUrl ?? "nil")")
+                Text("tvos_url: \(resolvedSource?.tvosUrl ?? "nil")")
+            }
+            .scaledFont(size: 10, design: .monospaced)
+            .foregroundStyle(Color.white.opacity(0.45))
+            .textSelection(.enabled)
+        }
+        .padding(10)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(Color.white.opacity(0.04))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(Color.orange.opacity(0.25), lineWidth: 0.5)
+        )
+    }
+    // DEBUG_ROKU_PROBE_END
+
     /// True when this title's id is already present in the Supabase-backed
     /// `user_streams` list.
     private var isSaved: Bool {
@@ -1050,6 +1115,30 @@ struct EpisodeDetailSheet: View {
     /// yet — caller falls back to the async lookup.
     private var preResolvedDeepLinkURL: URL? {
         guard let src = resolvedSource else { return nil }
+        if let s = src.iosUrl, Self.isRealDeepLinkURL(s), let u = URL(string: s) { return u }
+        if let s = src.webUrl, Self.isRealDeepLinkURL(s), let u = URL(string: s) { return u }
+        return nil
+    }
+
+    /// Picks the best URL from a set of episode-level Watchmode sources
+    /// that matches the already-resolved title-level source by `sourceId`.
+    /// Prefers `ios_url` when it's a real deep link; falls back to `web_url`.
+    /// Returns `nil` when no matching source is found or all URLs are
+    /// free-tier placeholders.
+    private static func episodeSourceURL(
+        from episodeSources: [WatchmodeSource],
+        resolvedSource: WatchmodeSource?
+    ) -> URL? {
+        // Find the episode source whose source_id matches the resolved
+        // title-level source. Fall back to the first usable episode source.
+        let match: WatchmodeSource?
+        if let rs = resolvedSource {
+            match = episodeSources.first(where: { $0.sourceId == rs.sourceId })
+                ?? episodeSources.first
+        } else {
+            match = episodeSources.first
+        }
+        guard let src = match else { return nil }
         if let s = src.iosUrl, Self.isRealDeepLinkURL(s), let u = URL(string: s) { return u }
         if let s = src.webUrl, Self.isRealDeepLinkURL(s), let u = URL(string: s) { return u }
         return nil

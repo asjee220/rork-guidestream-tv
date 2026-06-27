@@ -27,6 +27,9 @@ nonisolated struct WatchmodeSource: Decodable, Hashable, Sendable, Identifiable 
     let webUrl: String?
     let format: String?
     let endDate: String?
+    let rokuUrl: String?
+    let tvosUrl: String?
+    let androidTvUrl: String?
 
     var id: String { "\(sourceId)-\(format ?? "")-\(region ?? "")" }
 
@@ -37,6 +40,9 @@ nonisolated struct WatchmodeSource: Decodable, Hashable, Sendable, Identifiable 
         case androidUrl = "android_url"
         case webUrl = "web_url"
         case endDate = "end_date"
+        case rokuUrl = "roku_url"
+        case tvosUrl = "tvos_url"
+        case androidTvUrl = "android_tv_url"
     }
 }
 
@@ -192,6 +198,89 @@ nonisolated struct WatchmodeService {
                 imageUrl: $0.imageUrl
             )
         }
+    }
+}
+
+// MARK: - Episode-level sources
+
+nonisolated struct WatchmodeEpisode: Decodable, Sendable {
+    let seasonNumber: Int?
+    let episodeNumber: Int?
+    let sources: [WatchmodeSource]?
+
+    enum CodingKeys: String, CodingKey {
+        case seasonNumber = "season_number"
+        case episodeNumber = "episode_number"
+        case sources
+    }
+}
+
+nonisolated struct WatchmodeEpisodesEnvelope: Decodable, Sendable {
+    let episodes: [WatchmodeEpisode]?
+}
+
+nonisolated extension WatchmodeService {
+    /// In-memory cache for episode-level sources so reopening the same
+    /// title spends no additional Watchmode credits.
+    private static let episodeSourcesCache = NSCache<NSString, NSArray>()
+
+    /// Fetches per-episode streaming sources from Watchmode for a specific
+    /// season/episode of a show. Uses the paid-plan endpoint that returns
+    /// real deep-link URLs capable of opening the exact episode in the
+    /// streaming app (not just the show home page).
+    ///
+    /// - Returns: The sources array for the matching episode, or `nil` if
+    ///   Watchmode doesn't know the show, the episode, or returns only
+    ///   free-tier placeholder data.
+    func episodeSources(
+        tmdbId: Int,
+        isTV: Bool,
+        season: Int,
+        episode: Int,
+        region: String = "US"
+    ) async -> [WatchmodeSource]? {
+        guard let wmId = try? await watchmodeId(forTMDBId: tmdbId, isTV: isTV),
+              !wmId.isEmpty
+        else { return nil }
+
+        let cacheKey = "\(tmdbId)-\(season)-\(episode)" as NSString
+        if let cached = Self.episodeSourcesCache.object(forKey: cacheKey) as? [WatchmodeSource] {
+            return cached
+        }
+
+        let urlString = "https://api.watchmode.com/v1/title/\(wmId)/episodes/?apiKey=\(apiKey)&regions=\(region)"
+        guard let url = URL(string: urlString) else { return nil }
+
+        var req = URLRequest(url: url)
+        req.timeoutInterval = 12
+
+        guard let (data, response) = try? await URLSession.shared.data(for: req),
+              let http = response as? HTTPURLResponse,
+              (200..<300).contains(http.statusCode)
+        else { return nil }
+
+        let episodes: [WatchmodeEpisode]?
+        // Defensive decode: the endpoint may return a bare array or an
+        // object wrapping an "episodes" array.
+        if let arr = try? JSONDecoder().decode([WatchmodeEpisode].self, from: data) {
+            episodes = arr
+        } else if let envelope = try? JSONDecoder().decode(WatchmodeEpisodesEnvelope.self, from: data) {
+            episodes = envelope.episodes
+        } else {
+            return nil
+        }
+
+        guard let episodes else { return nil }
+
+        let match = episodes.first { ep in
+            ep.seasonNumber == season && ep.episodeNumber == episode
+        }
+
+        let result = match?.sources
+        if let result {
+            Self.episodeSourcesCache.setObject(result as NSArray, forKey: cacheKey)
+        }
+        return result
     }
 }
 
