@@ -246,7 +246,8 @@ struct EpisodeDetailSheet: View {
                 showTitle: title,
                 platform: whereToWatchLabel,
                 tmdbId: tmdbId,
-                isTV: isTV
+                isTV: isTV,
+                watchmodeSource: resolvedSource
             )
         }
         .sheet(isPresented: $showComments) {
