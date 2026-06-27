@@ -647,6 +647,7 @@
 					_googlecast._tcp,
 					"_amzn-wplay._tcp",
 				);
+				INFOPLIST_KEY_NSAppTransportSecurity_NSAllowsLocalNetworking = YES;
 				INFOPLIST_KEY_NSAppTransportSecurity_NSExceptionDomains_newsapi.org_NSExceptionAllowsInsecureHTTPLoads = NO;
 				INFOPLIST_KEY_NSAppTransportSecurity_NSExceptionDomains_newsapi.org_NSIncludesSubdomains = YES;
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "GuideStream uses your local network to find streaming devices (Apple TV, Roku, Google TV, Fire TV, Samsung) so you can send shows to them.";
@@ -736,6 +737,7 @@
 					_googlecast._tcp,
 					"_amzn-wplay._tcp",
 				);
+				INFOPLIST_KEY_NSAppTransportSecurity_NSAllowsLocalNetworking = YES;
 				INFOPLIST_KEY_NSAppTransportSecurity_NSExceptionDomains_newsapi.org_NSExceptionAllowsInsecureHTTPLoads = NO;
 				INFOPLIST_KEY_NSAppTransportSecurity_NSExceptionDomains_newsapi.org_NSIncludesSubdomains = YES;
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "GuideStream uses your local network to find streaming devices (Apple TV, Roku, Google TV, Fire TV, Samsung) so you can send shows to them.";

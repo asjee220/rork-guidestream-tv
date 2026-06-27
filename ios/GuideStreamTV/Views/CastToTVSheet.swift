@@ -39,6 +39,7 @@ struct CastToTVSheet: View {
     @State private var playingOn: PlayingOnState? = nil
     @State private var limitedModeHelp: LimitedModeHelp? = nil
     @State private var rokuLimitedModeDevice: DiscoveredTVDevice? = nil
+    @State private var samsungPairingDevice: DiscoveredTVDevice? = nil
     @State private var showPermissionPrompt: Bool = false
     @State private var permissionCheckTask: Task<Void, Never>? = nil
     @State private var isManualEntryExpanded: Bool = false
@@ -49,6 +50,8 @@ struct CastToTVSheet: View {
     var body: some View {
         if rokuLimitedModeDevice != nil {
             rokuLimitedModeView
+        } else if samsungPairingDevice != nil {
+            samsungPairingView
         } else {
             VStack(spacing: 0) {
                 header
@@ -717,6 +720,59 @@ struct CastToTVSheet: View {
             return
         }
 
+        // Samsung Tizen TV — WebSocket launch with pairing flow.
+        if device.kind == .samsungTV {
+            Task { @MainActor in
+                sendingDeviceId = device.id
+                let resolved = await discovery.resolveHostIfNeeded(for: device)
+                guard let host = resolved.host else {
+                    sendingDeviceId = nil
+                    showToast(ToastState(message: "Couldn't reach \(device.name)", icon: "exclamationmark.triangle.fill"))
+                    return
+                }
+                let result = await TizenLaunchClient.launch(host: host, deviceId: device.id, platform: platform)
+                sendingDeviceId = nil
+                switch result {
+                case .ok:
+                    UINotificationFeedbackGenerator().notificationOccurred(.success)
+                    showToast(ToastState(
+                        message: PlaybackSupport.statusLabel(
+                            platform: platform,
+                            title: showTitle,
+                            room: device.name,
+                            contentURL: nil
+                        ),
+                        icon: "checkmark.circle.fill"
+                    ))
+                    showPlayingOnBanner(PlayingOnState(
+                        deviceName: device.name,
+                        deviceKind: device.kind,
+                        hint: handoffHint(for: device.kind)
+                    ))
+                    CastPlaybackState.shared.start(
+                        title: showTitle,
+                        platform: platform,
+                        deviceName: device.name,
+                        deviceKind: device.kind,
+                        host: host,
+                        port: device.port
+                    )
+                case .needsApproval:
+                    samsungPairingDevice = device
+                case .denied:
+                    UINotificationFeedbackGenerator().notificationOccurred(.error)
+                    showToast(ToastState(message: "Connection declined on the TV", icon: "exclamationmark.triangle.fill"))
+                case .unsupported:
+                    UINotificationFeedbackGenerator().notificationOccurred(.error)
+                    showToast(ToastState(message: "\(platformShortName) can't be opened on this TV", icon: "exclamationmark.triangle.fill"))
+                case .unreachable:
+                    UINotificationFeedbackGenerator().notificationOccurred(.error)
+                    showToast(ToastState(message: "Couldn't reach \(device.name)", icon: "exclamationmark.triangle.fill"))
+                }
+            }
+            return
+        }
+
         // Non-Roku devices — existing flow unchanged.
         sendingDeviceId = device.id
         Task {
@@ -1200,6 +1256,90 @@ struct CastToTVSheet: View {
                     .font(.system(size: 12))
                     .foregroundStyle(Color(red: 0x1A/255, green: 0x6F/255, blue: 0xE8/255))
                     .padding(.bottom, 32)
+            }
+            .frame(maxWidth: .infinity)
+            .background(Color(red: 0x0A/255, green: 0x10/255, blue: 0x1E/255))
+        }
+    }
+
+    // MARK: - Samsung pairing inline view
+
+    /// Shown inline (replaces the device list) when the Samsung TV is waiting
+    /// for the user to choose Allow on the TV screen. Mirrors the Roku limited
+    /// mode UX with Samsung-specific copy and a Try again button.
+    @ViewBuilder
+    private var samsungPairingView: some View {
+        if let device = samsungPairingDevice {
+            VStack(spacing: 0) {
+                // Device row (non-tappable, shows which device triggered this)
+                HStack(spacing: 14) {
+                    ZStack {
+                        Circle()
+                            .fill(Color(red: 0x03/255, green: 0x78/255, blue: 0xFF/255).opacity(0.35))
+                            .frame(width: 46, height: 46)
+                        Image(systemName: "tv.inset.filled")
+                            .font(.system(size: 20))
+                            .foregroundStyle(.white)
+                    }
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(device.name)
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(.white)
+                        Text("Samsung Smart TV")
+                            .font(.system(size: 12))
+                            .foregroundStyle(Color.white.opacity(0.55))
+                    }
+                    Spacer()
+                }
+                .padding(.horizontal, 20)
+                .padding(.top, 22)
+                .padding(.bottom, 24)
+
+                Divider().background(Color.white.opacity(0.10))
+
+                // Instructions
+                VStack(alignment: .leading, spacing: 16) {
+                    Text("Allow GuideStream on your TV")
+                        .font(.system(size: 20, weight: .bold))
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .padding(.top, 24)
+
+                    Text("To play on your Samsung TV:")
+                        .font(.system(size: 15))
+                        .foregroundStyle(Color.white.opacity(0.75))
+                        .frame(maxWidth: .infinity, alignment: .center)
+
+                    VStack(alignment: .leading, spacing: 12) {
+                        rokuLimitedStep(number: "1", text: "A connection request from GuideStream should appear on your TV — choose **Allow**")
+                        rokuLimitedStep(number: "2", text: "If you don't see it, make sure the TV is on and on the same Wi-Fi network")
+                        rokuLimitedStep(number: "3", text: "On newer Samsung TVs, set **Device Connection Manager → Access Notification** to **First Time Only** so it won't ask again")
+                        rokuLimitedStep(number: "4", text: "Tap **Try again** below")
+                    }
+                    .padding(.horizontal, 4)
+                }
+                .padding(.horizontal, 20)
+
+                Spacer(minLength: 24)
+
+                // Try again button
+                Button {
+                    samsungPairingDevice = nil
+                    handleSelect(device)
+                } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: "arrow.clockwise")
+                        Text("Try again")
+                            .font(.system(size: 16, weight: .semibold))
+                    }
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 52)
+                    .background(Color(red: 0x1A/255, green: 0x6F/255, blue: 0xE8/255))
+                    .clipShape(RoundedRectangle(cornerRadius: 14))
+                }
+                .padding(.horizontal, 20)
+                .padding(.bottom, 32)
             }
             .frame(maxWidth: .infinity)
             .background(Color(red: 0x0A/255, green: 0x10/255, blue: 0x1E/255))
