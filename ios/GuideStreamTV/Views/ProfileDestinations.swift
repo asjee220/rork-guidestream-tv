@@ -890,6 +890,7 @@ struct NotificationsSettingsView: View {
     /// live device identifier and is replaced with the persisted value from
     /// `users.timezone` once `loadTimezone()` resolves for signed-in users.
     @State private var timezone: String = TimeZone.current.identifier
+    @State private var phoneDraft: String = AuthViewModel.formatUSPhoneDisplay(AuthViewModel.shared.phoneNumber ?? "")
 
     var body: some View {
         ZStack {
@@ -925,7 +926,80 @@ struct NotificationsSettingsView: View {
                             tint: Color.blue
                         )
                         .onChange(of: smsOn) { _, newValue in
-                            auth.setNotificationPreferences(push: pushOn, sms: newValue)
+                            withAnimation(.easeInOut(duration: 0.28)) {
+                                auth.setNotificationPreferences(push: pushOn, sms: newValue)
+                            }
+                        }
+
+                        if smsOn {
+                            VStack(alignment: .leading, spacing: 10) {
+                                Text("Mobile number")
+                                    .scaledFont(size: 11, weight: .semibold)
+                                    .tracking(0.8)
+                                    .foregroundStyle(Color.textTertiary)
+
+                                HStack(spacing: 0) {
+                                    Text("+1")
+                                        .scaledFont(size: 15, weight: .medium)
+                                        .foregroundStyle(Color.textSecondary)
+                                        .padding(.leading, 14)
+                                    TextField("", text: $phoneDraft)
+                                        .keyboardType(.phonePad)
+                                        .textContentType(.telephoneNumber)
+                                        .textInputAutocapitalization(.never)
+                                        .scaledFont(size: 15, weight: .medium)
+                                        .foregroundStyle(.white)
+                                        .tint(Color.orange)
+                                        .padding(.leading, 4)
+                                        .padding(.vertical, 12)
+                                }
+                                .background(
+                                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                        .fill(Color.white.opacity(0.05))
+                                )
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                        .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                                )
+                                .onChange(of: phoneDraft) { _, newValue in
+                                    phoneDraft = AuthViewModel.formatUSPhoneDisplay(newValue)
+                                }
+
+                                if !phoneDraft.isEmpty && AuthViewModel.normalizeUSPhone(phoneDraft) == nil {
+                                    Text("Enter a valid 10-digit US mobile number.")
+                                        .scaledFont(size: 11)
+                                        .foregroundStyle(Color(red: 0.96, green: 0.32, blue: 0.32))
+                                }
+
+                                Text("We'll text recaps to this number. Reply STOP to opt out; msg & data rates may apply.")
+                                    .scaledFont(size: 11)
+                                    .foregroundStyle(Color.textTertiary)
+                                    .fixedSize(horizontal: false, vertical: true)
+
+                                Button(action: {
+                                    Task {
+                                        let ok = await auth.updatePhoneNumber(phoneDraft)
+                                        if ok {
+                                            UINotificationFeedbackGenerator().notificationOccurred(.success)
+                                        }
+                                    }
+                                }) {
+                                    Text("Save number")
+                                        .scaledFont(size: 13, weight: .semibold)
+                                        .foregroundStyle(.white)
+                                        .frame(maxWidth: .infinity)
+                                        .frame(height: 40)
+                                        .background(
+                                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                                .fill(AuthViewModel.normalizeUSPhone(phoneDraft) != nil ? Color.blue : Color.blue.opacity(0.35))
+                                        )
+                                }
+                                .buttonStyle(.plain)
+                                .disabled(AuthViewModel.normalizeUSPhone(phoneDraft) == nil)
+                            }
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 14)
+                            .transition(.opacity.combined(with: .move(edge: .top)))
                         }
 
                         ProfileRowDivider()

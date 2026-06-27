@@ -24,6 +24,9 @@ final class AuthViewModel {
     /// `loadDisplayName()` and persisted to `UserDefaults` so the Profile
     /// avatar/name renders instantly on cold launch.
     var displayName: String? = UserDefaults.standard.string(forKey: "gs.displayName")
+    /// Cached phone number (formatted display value) for the user. Lazy-loaded
+    /// by `loadDisplayName()` and persisted to `UserDefaults`.
+    var phoneNumber: String? = UserDefaults.standard.string(forKey: "gs.phoneNumber")
     /// First name captured from Apple/Google/email signup. Persisted so the
     /// Profile avatar can use first+last initials on cold launch.
     var firstName: String? = UserDefaults.standard.string(forKey: "gs.firstName")
@@ -75,13 +78,14 @@ final class AuthViewModel {
         }
     }
 
-    /// Fetches the `display_name`, `first_name`, and `last_name` columns from
+    /// Fetches the `display_name`, `first_name`, `last_name`, and `phone` columns from
     /// the `users` table for the current Supabase user. Silently falls back
     /// to display_name only when the optional columns don't exist on older
-    /// installations.
+    /// installations. After loading, persists any locally-cached phone number
+    /// (from a guest session) to the users table.
     func loadDisplayName() async {
         guard let uid = currentUser?.id.uuidString else { return }
-        let select = "display_name, first_name, last_name"
+        let select = "display_name, first_name, last_name, phone"
         let fallbackSelect = "display_name"
         do {
             let rows: [UserProfileNameRow] = try await SupabaseManager.shared.client
@@ -108,6 +112,11 @@ final class AuthViewModel {
                 print("[Auth] loadDisplayName failed: \(error.localizedDescription)")
             }
         }
+        // Persist a locally-cached phone number entered during a guest session
+        // so it is written to the users table after sign-in.
+        if let cachedPhone = UserDefaults.standard.string(forKey: "gs.phoneNumber"), !cachedPhone.isEmpty {
+            let _ = await updatePhoneNumber(cachedPhone)
+        }
     }
 
     /// Merges the loaded row into the cached name state and writes it back
@@ -127,6 +136,11 @@ final class AuthViewModel {
         } else if let composed = composedFullName() {
             self.displayName = composed
             UserDefaults.standard.set(composed, forKey: "gs.displayName")
+        }
+        if let phone = row?.phone, !phone.isEmpty {
+            let display = Self.formatUSPhoneDisplay(phone)
+            self.phoneNumber = display
+            UserDefaults.standard.set(display, forKey: "gs.phoneNumber")
         }
     }
 
@@ -470,6 +484,7 @@ final class AuthViewModel {
         self.currentUser = nil
         self.isGuest = false
         self.displayName = nil
+        self.phoneNumber = nil
         self.firstName = nil
         self.lastName = nil
         self.hasCompletedOnboarding = false
@@ -483,6 +498,7 @@ final class AuthViewModel {
         for key in [
             "gs.isGuest",
             "gs.displayName",
+            "gs.phoneNumber",
             "gs.firstName",
             "gs.lastName",
             "gs.onboardingComplete",
@@ -817,6 +833,83 @@ final class AuthViewModel {
         if ok {
             print("[Auth] users row upserted for \(userId)")
         }
+    }
+
+    // MARK: - Phone
+
+    /// Validates and normalises a raw US phone string to canonical E.164
+    /// (`+1XXXXXXXXXX`). Returns `nil` when the input cannot form a valid
+    /// 10-digit North American number. Enforces NANP numbering rules:
+    /// area-code and exchange first digits must each be 2–9.
+    static func normalizeUSPhone(_ raw: String) -> String? {
+        let digits = raw.filter { $0.isNumber }
+        var cleaned: String
+        if digits.count == 11, digits.hasPrefix("1") {
+            cleaned = String(digits.dropFirst())
+        } else {
+            cleaned = digits
+        }
+        guard cleaned.count == 10 else { return nil }
+        // Area-code first digit (index 0) must be 2–9.
+        guard let aFirst = Int(String(cleaned[cleaned.startIndex])), (2...9).contains(aFirst) else { return nil }
+        // Exchange first digit (index 3) must be 2–9.
+        let exIdx = cleaned.index(cleaned.startIndex, offsetBy: 3)
+        guard let eFirst = Int(String(cleaned[exIdx])), (2...9).contains(eFirst) else { return nil }
+        return "+1\(cleaned)"
+    }
+
+    /// Formats a raw phone string into a progressive `(XXX) XXX-XXXX` display
+    /// value suitable for live typing. Strips non-digits, drops a leading `1`
+    /// when 11 digits, and caps at 10 digits.
+    static func formatUSPhoneDisplay(_ raw: String) -> String {
+        let digits = raw.filter { $0.isNumber }
+        let cleaned: String = {
+            if digits.count == 11, digits.hasPrefix("1") {
+                return String(digits.dropFirst())
+            }
+            return digits
+        }()
+        let capped = String(cleaned.prefix(10))
+        var result = ""
+        for (i, ch) in capped.enumerated() {
+            if i == 0 { result += "(" }
+            result.append(ch)
+            if i == 2 { result += ") " }
+            if i == 5 { result += "-" }
+        }
+        return result
+    }
+
+    /// Validates, caches, and persists a US phone number. Returns `true` on
+    /// success (including guest mode where only local caching happens).
+    @discardableResult
+    func updatePhoneNumber(_ raw: String) async -> Bool {
+        guard let e164 = Self.normalizeUSPhone(raw) else { return false }
+        self.notifySMSEnabled = true
+        let display = Self.formatUSPhoneDisplay(raw)
+        self.phoneNumber = display
+        UserDefaults.standard.set(display, forKey: "gs.phoneNumber")
+        // Persist to Supabase for authenticated users.
+        if let uid = currentUser?.id.uuidString {
+            let payload = PhoneUpsert(
+                id: uid,
+                phone: e164,
+                sms_consent_at: ISO8601DateFormatter().string(from: Date()),
+                notify_sms: true
+            )
+            do {
+                try await SupabaseManager.shared.client
+                    .from("users")
+                    .upsert(payload, onConflict: "id")
+                    .execute()
+                return true
+            } catch {
+                print("[Auth] phone upsert failed: \(error.localizedDescription)")
+                return false
+            }
+        }
+        // Guest — cached locally, considered success.
+        return true
     }
 
     // MARK: - Helpers

@@ -94,6 +94,15 @@ nonisolated struct UserProfileNameRow: Decodable, Sendable {
     let display_name: String?
     let first_name: String?
     let last_name: String?
+    let phone: String?
+}
+
+/// Small payload for upserting phone and SMS consent into the `users` table.
+nonisolated struct PhoneUpsert: Encodable, Sendable {
+    let id: String
+    let phone: String
+    let sms_consent_at: String
+    let notify_sms: Bool
 }
 
 /// Minimal row decoder for the `users.notify_movie_releases` column.
