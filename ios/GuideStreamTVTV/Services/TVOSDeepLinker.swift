@@ -81,6 +81,23 @@ enum TVOSDeepLinker {
     /// https://www.netflix.com/watch/81587873); we convert it to the tvOS
     /// PLAY scheme where one is known.
     static func resolve(platform: String, title: String, contentURL: URL?) -> TVTarget {
+        // When the iPhone already supplied a native tvOS deep-link scheme
+        // (e.g. hulu://, paramountplus://, nflx://, peacock://), use it
+        // directly as the playURL. The existing per-platform branches are
+        // consulted without contentURL so the home/search fallback tiers
+        // are still available if the scheme isn't handled by the OS.
+        if let contentURL,
+           let scheme = contentURL.scheme?.lowercased(),
+           scheme != "http", scheme != "https" {
+            let fallback = resolve(platform: platform, title: title, contentURL: nil)
+            return TVTarget(
+                playURL: contentURL,
+                appHomeURL: fallback.appHomeURL,
+                searchURL: fallback.searchURL,
+                confidence: fallback.confidence
+            )
+        }
+
         let key = platform.lowercased()
         let q = title.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
         let contentId = extractContentId(from: contentURL)

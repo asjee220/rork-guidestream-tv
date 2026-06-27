@@ -874,10 +874,26 @@ struct CastToTVSheet: View {
             platform: platform
         )
 
+        // Prefer Watchmode's tvos_url when it is a real native-scheme deep
+        // link (hulu://, paramountplus://, nflx://, etc.). The tvOS companion
+        // app opens it directly via UIApplication.shared.open, bypassing the
+        // per-platform URL reconstruction. Fall back to the resolved web URL
+        // when the tvos_url is nil, empty, or a Watchmode placeholder.
+        let castURL: String = {
+            if let tvos = watchmodeSource?.tvosUrl,
+               !tvos.isEmpty,
+               tvos.contains("://"),
+               !tvos.lowercased().contains("deeplinks available"),
+               !tvos.lowercased().contains("paid plan") {
+                return tvos
+            }
+            return resolvedURL?.absoluteString ?? ""
+        }()
+
         let payload = PlayCommandOutgoing(
             platform: platform,
             title: showTitle,
-            contentURL: resolvedURL?.absoluteString ?? "",
+            contentURL: castURL,
             target_name: device.name
         )
 

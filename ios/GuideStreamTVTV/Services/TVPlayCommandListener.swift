@@ -88,6 +88,22 @@ final class TVPlayCommandListener {
         print("[TVPlayCommand] subscribed status=\(ch.status)")
         #endif
 
+        // DEBUG_TV_SUB_START
+        Task { @MainActor in
+            let subPayload: [String: AnyJSON] = [
+                "event": .string("tv_listener_subscribed"),
+                "user_id": .string(userId),
+                "device_id": .string(deviceId),
+                "device_name": .string(UIDevice.current.name),
+                "target_name": .string("play-commands:\(userId)")
+            ]
+            try? await TVSupabaseManager.shared.client
+                .from("debug_logs")
+                .insert(subPayload)
+                .execute()
+        }
+        // DEBUG_TV_SUB_END
+
         // Run the channel status monitor in a detached task so it never
         // blocks the main listening loop.
         Task { @MainActor in
