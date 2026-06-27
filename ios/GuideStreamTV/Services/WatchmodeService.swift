@@ -135,7 +135,7 @@ nonisolated struct WatchmodeService {
     /// inlines the per-streaming-service URLs we need to open the right title
     /// inside Netflix / Max / Prime / etc.
     func titleDetail(titleId: String) async throws -> WatchmodeTitleDetail {
-        let urlString = "https://api.watchmode.com/v1/title/\(titleId)/details/?apiKey=\(apiKey)&append_to_response=sources"
+        let urlString = "https://api.watchmode.com/v1/title/\(titleId)/details/?apiKey=\(apiKey)&append_to_response=sources&include_links=true"
         guard let url = URL(string: urlString) else { throw URLError(.badURL) }
         var req = URLRequest(url: url)
         req.timeoutInterval = 12
@@ -248,7 +248,7 @@ nonisolated extension WatchmodeService {
             return cached
         }
 
-        let urlString = "https://api.watchmode.com/v1/title/\(wmId)/episodes/?apiKey=\(apiKey)&regions=\(region)"
+        let urlString = "https://api.watchmode.com/v1/title/\(wmId)/episodes/?apiKey=\(apiKey)&regions=\(region)&include_links=true"
         guard let url = URL(string: urlString) else { return nil }
 
         var req = URLRequest(url: url)

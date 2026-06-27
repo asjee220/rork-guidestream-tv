@@ -27,6 +27,11 @@ struct CastToTVSheet: View {
     /// the TMDB id to playback.
     var isTV: Bool = true
     var watchmodeSource: WatchmodeSource? = nil
+    /// Per-episode Roku ECP launch path from Watchmode's `roku_url` field.
+    /// When non-nil, the `.roku` case prefers this over extracting a
+    /// contentId from the title-level `webUrl`. Supplied by callers that
+    /// resolve episode-level Watchmode sources (e.g. EpisodeDetailSheet).
+    var episodeRokuURL: String? = nil
 
     @State private var discovery: TVCastDiscovery = TVCastDiscovery()
     @State private var sendingDeviceId: String? = nil
@@ -769,6 +774,29 @@ struct CastToTVSheet: View {
                 #endif
                 return false
             }
+            // Best path: Watchmode's `roku_url` (per-episode or title-level)
+            // contains the exact ECP launch path the Roku channel needs.
+            let rokuDeepLinkPath: String? = {
+                if let ep = episodeRokuURL, !ep.isEmpty, ep.contains("launch/"),
+                   !ep.lowercased().contains("deeplinks available"),
+                   !ep.lowercased().contains("paid plan") {
+                    return ep
+                }
+                if let ru = watchmodeSource?.rokuUrl, !ru.isEmpty, ru.contains("launch/"),
+                   !ru.lowercased().contains("deeplinks available"),
+                   !ru.lowercased().contains("paid plan") {
+                    return ru
+                }
+                return nil
+            }()
+            if let rokuPath = rokuDeepLinkPath {
+                #if DEBUG
+                print("[CastToTVSheet] Roku Watchmode path → host:\(host) port:\(port) path:\(rokuPath) platform:\(platform)")
+                #endif
+                let result = await RokuECPClient.launch(host: host, port: port, rokuURLPath: rokuPath)
+                return result.isSuccess
+            }
+
             guard let channelId = RokuChannel.id(for: platform) else {
                 #if DEBUG
                 print("[CastToTVSheet] Roku launch failed — no channel ID for platform '\(platform)'")

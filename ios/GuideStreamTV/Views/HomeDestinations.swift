@@ -61,6 +61,10 @@ struct EpisodeDetailSheet: View {
     /// instead of `episodeDeeplinkURL` so that Paramount+ and other
     /// services land on the exact episode rather than the show home.
     @State private var episodeDeepLinkURL: URL?
+    /// Per-episode Roku ECP launch path from Watchmode's `roku_url` field.
+    /// When non-nil, passed to `CastToTVSheet` so the Roku launch can use
+    /// the exact channel+contentID path instead of the webUrl fallback.
+    @State private var episodeRokuURL: String? = nil
 
     private var platformColor: Color {
         if let name = resolvedSource?.name { return brandColor(for: name) }
@@ -234,11 +238,6 @@ struct EpisodeDetailSheet: View {
                     .padding(.horizontal, 20)
                     .padding(.top, 22)
 
-                // DEBUG_ROKU_PROBE_START
-                rokuDebugPanel
-                    .padding(.horizontal, 20)
-                    .padding(.top, 14)
-                // DEBUG_ROKU_PROBE_END
 
                 secondaryPillRow
                     .padding(.horizontal, 20)
@@ -261,7 +260,8 @@ struct EpisodeDetailSheet: View {
                 platform: whereToWatchLabel,
                 tmdbId: tmdbId,
                 isTV: isTV,
-                watchmodeSource: resolvedSource
+                watchmodeSource: resolvedSource,
+                episodeRokuURL: episodeRokuURL
             )
         }
         .sheet(isPresented: $showComments) {
@@ -299,7 +299,13 @@ struct EpisodeDetailSheet: View {
                     let url = Self.episodeSourceURL(
                         from: epSources, resolvedSource: resolvedSource
                     )
-                    await MainActor.run { self.episodeDeepLinkURL = url }
+                    let rokuPath = Self.episodeRokuPath(
+                        from: epSources, resolvedSource: resolvedSource
+                    )
+                    await MainActor.run {
+                        self.episodeDeepLinkURL = url
+                        self.episodeRokuURL = rokuPath
+                    }
                 }
             }
         }
@@ -1003,39 +1009,7 @@ struct EpisodeDetailSheet: View {
 
     // MARK: - Debug probe (temporary)
 
-    // DEBUG_ROKU_PROBE_START
-    /// Temporary debug panel that surfaces Watchmode's Roku / tvOS deep-link
-    /// fields so they can be read and copied during TestFlight testing.
-    /// Remove the call site and this property together when the probe is done.
-    @ViewBuilder
-    private var rokuDebugPanel: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("DEBUG · Roku TV-links probe")
-                .scaledFont(size: 11, weight: .bold)
-                .foregroundStyle(Color.orange)
 
-            Group {
-                Text("name: \(resolvedSource?.name ?? "—")")
-                Text("source_id: \(resolvedSource.map { String($0.sourceId) } ?? "—")")
-                Text("web_url: \(resolvedSource?.webUrl ?? "nil")")
-                Text("roku_url: \(resolvedSource?.rokuUrl ?? "nil")")
-                Text("tvos_url: \(resolvedSource?.tvosUrl ?? "nil")")
-            }
-            .scaledFont(size: 10, design: .monospaced)
-            .foregroundStyle(Color.white.opacity(0.45))
-            .textSelection(.enabled)
-        }
-        .padding(10)
-        .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(Color.white.opacity(0.04))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 8)
-                .stroke(Color.orange.opacity(0.25), lineWidth: 0.5)
-        )
-    }
-    // DEBUG_ROKU_PROBE_END
 
     /// True when this title's id is already present in the Supabase-backed
     /// `user_streams` list.
@@ -1142,6 +1116,33 @@ struct EpisodeDetailSheet: View {
         if let s = src.iosUrl, Self.isRealDeepLinkURL(s), let u = URL(string: s) { return u }
         if let s = src.webUrl, Self.isRealDeepLinkURL(s), let u = URL(string: s) { return u }
         return nil
+    }
+
+    /// Picks the `roku_url` from episode-level Watchmode sources that matches
+    /// the already-resolved title-level source by `sourceId`. Returns the
+    /// `rokuUrl` when it is non-nil, non-empty, and contains "launch/".
+    /// Returns `nil` when no matching source is found or the field is unusable.
+    /// Mirrors `episodeSourceURL` but returns the raw Roku ECP path string
+    /// instead of a full HTTP URL.
+    private static func episodeRokuPath(
+        from episodeSources: [WatchmodeSource],
+        resolvedSource: WatchmodeSource?
+    ) -> String? {
+        let match: WatchmodeSource?
+        if let rs = resolvedSource {
+            match = episodeSources.first(where: { $0.sourceId == rs.sourceId })
+                ?? episodeSources.first
+        } else {
+            match = episodeSources.first
+        }
+        guard let src = match,
+              let rokuUrl = src.rokuUrl,
+              !rokuUrl.isEmpty,
+              rokuUrl.contains("launch/") else { return nil }
+        // Reject Watchmode free-tier placeholders.
+        let lower = rokuUrl.lowercased()
+        if lower.contains("deeplinks available") || lower.contains("paid plan") { return nil }
+        return rokuUrl
     }
 
     /// Rejects Watchmode's free-tier placeholder string

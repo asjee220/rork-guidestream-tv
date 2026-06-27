@@ -188,6 +188,67 @@ enum RokuECPClient {
     /// the Home keypress returns 403, but that's harmless — the launch still
     /// proceeds and either succeeds (channel opens over whatever was on
     /// screen) or returns `.limitedMode`.
+    /// Launches a Roku channel using a Watchmode `roku_url` path — a relative
+    /// ECP launch string of the form `launch/{channelId}?contentID={contentId}`.
+    /// Watchmode resolves these per-source on its paid plan; on the free plan
+    /// the field is `nil` and callers should fall back to `launch(host:port:channelId:contentId:mediaType:)`.
+    ///
+    /// Normalisation handles both bare relative paths and full URLs that happen
+    /// to contain a `launch/` segment (e.g. `https://therokuchannel.roku.com/...launch/2285?...`).
+    /// If the input can't be reduced to a usable ECP path, the method returns
+    /// `.unreachable` without making any request so the caller can fall back.
+    nonisolated static func launch(
+        host: String,
+        port: UInt16,
+        rokuURLPath rawPath: String
+    ) async -> RokuLaunchResult {
+        // Normalise the input — strip schemes, keep only the ECP path portion.
+        var normalized = rawPath.trimmingCharacters(in: .whitespacesAndNewlines)
+        if normalized.contains("://"),
+           let launchRange = normalized.range(of: "launch/") {
+            normalized = String(normalized[launchRange.lowerBound...])
+        }
+        if normalized.hasPrefix("/") {
+            normalized = String(normalized.dropFirst())
+        }
+        guard normalized.contains("launch/") else {
+            return .unreachable
+        }
+
+        // Send Home first so the channel always launches from a known state.
+        _ = await rawHTTPPost(host: host, port: port, path: "/keypress/Home", timeout: 2.0)
+        try? await Task.sleep(for: .milliseconds(1200))
+
+        let outcome = await rawHTTPPost(host: host, port: port, path: "/" + normalized, timeout: 4.0)
+        switch outcome {
+        case .status(let code):
+            if (200..<300).contains(code) {
+                return .ok
+            }
+            if code == 401 || code == 403 {
+                return .limitedMode
+            }
+            // Bare-launch fallback: parse the channel ID between "launch/" and
+            // the first "?" (or end of string) and open the channel home.
+            let channelPart = normalized
+                .replacingOccurrences(of: "launch/", with: "")
+            let channelId = channelPart.components(separatedBy: "?").first ?? channelPart
+            let fallbackOutcome = await rawHTTPPost(
+                host: host, port: port,
+                path: "/launch/\(channelId)", timeout: 4.0
+            )
+            if case .status(let fbCode) = fallbackOutcome, (200..<300).contains(fbCode) {
+                return .ok
+            }
+            if case .status(let fbCode) = fallbackOutcome {
+                return .rejected(fbCode)
+            }
+            return .rejected(code)
+        case .timeout, .socketFailure:
+            return .unreachable
+        }
+    }
+
     nonisolated static func launch(
         host: String,
         port: UInt16,
