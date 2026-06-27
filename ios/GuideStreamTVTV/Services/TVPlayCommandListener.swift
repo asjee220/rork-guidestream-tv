@@ -88,22 +88,6 @@ final class TVPlayCommandListener {
         print("[TVPlayCommand] subscribed status=\(ch.status)")
         #endif
 
-        // DEBUG_TV_SUB_START
-        Task { @MainActor in
-            let subPayload: [String: AnyJSON] = [
-                "event": .string("tv_listener_subscribed"),
-                "user_id": .string(userId),
-                "device_id": .string(deviceId),
-                "device_name": .string(UIDevice.current.name),
-                "target_name": .string("play-commands:\(userId)")
-            ]
-            try? await TVSupabaseManager.shared.client
-                .from("debug_logs")
-                .insert(subPayload)
-                .execute()
-        }
-        // DEBUG_TV_SUB_END
-
         // Run the channel status monitor in a detached task so it never
         // blocks the main listening loop.
         Task { @MainActor in
@@ -145,26 +129,15 @@ final class TVPlayCommandListener {
 
         let myName = UIDevice.current.name.trimmingCharacters(in: .whitespacesAndNewlines)
         let targetName = payload.targetName.trimmingCharacters(in: .whitespacesAndNewlines)
-
-        // Case-insensitive name comparison so "Living Room" == "living room".
-        guard myName.caseInsensitiveCompare(targetName) == .orderedSame else {
-            #if DEBUG
-            print("[TVPlayCommand] ignoring command for '\(targetName)' (we are '\(myName)')")
-            #endif
-            // Log the filtered event to debug_logs so mismatches are visible.
-            Task { @MainActor in
-                await logFilteredEvent(targetName: targetName, myName: myName, payload: payload)
-            }
-            return
-        }
+        let nameMatched = myName.caseInsensitiveCompare(targetName) == .orderedSame
 
         #if DEBUG
-        print("[TVPlayCommand] received: platform=\(payload.platform) title=\(payload.title) contentURL=\(payload.contentURL ?? "nil")")
+        print("[TVPlayCommand] received: platform=\(payload.platform) title=\(payload.title) contentURL=\(payload.contentURL ?? "nil") matched=\(nameMatched)")
         #endif
 
-        // Log the successful match.
+        // Log every received command — matched flag is informational only.
         Task { @MainActor in
-            await logReceivedEvent(payload: payload, matched: true)
+            await logReceivedEvent(payload: payload, matched: nameMatched)
         }
 
         let contentURL: URL? = {
