@@ -301,7 +301,7 @@ struct MoreEpisodesScreen: View {
 
                         // Info
                         VStack(alignment: .leading, spacing: 3) {
-                            Text("S\(activeSeason) · E\(ep.episodeNumber)")
+                            Text("S:\(activeSeason) EP:\(ep.episodeNumber)")
                                 .scaledFont(size: 9, weight: .semibold)
                                 .foregroundStyle(Color.textTertiary)
 
@@ -364,7 +364,7 @@ struct MoreEpisodesScreen: View {
                     HStack(spacing: 8) {
                         Image(systemName: "play.fill")
                             .scaledFont(size: 14, weight: .bold)
-                        Text("Play Next — S\(activeSeason) E\(nextEpisodeNumber)")
+                        Text("Play Next — S:\(activeSeason) EP:\(nextEpisodeNumber)")
                             .scaledFont(size: 14, weight: .bold)
                     }
                     .foregroundStyle(.white)

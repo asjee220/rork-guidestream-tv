@@ -9,7 +9,7 @@ import SwiftUI
 
 struct ShowDetailEpisode: Identifiable, Hashable {
     let id = UUID()
-    let code: String          // "S4 E7"
+    let code: String          // "S:4 EP:7"
     let title: String
     let duration: String      // "64 min"
     let status: EpStatus
@@ -334,10 +334,10 @@ struct ShowDetailScreen: View {
     }
 
     private let episodes: [ShowDetailEpisode] = [
-        .init(code: "S4 E7", title: "Tailgate Party", duration: "64 min", status: .continueWatching, progress: 0.45),
-        .init(code: "S4 E8", title: "America Decides", duration: "67 min", status: .new, progress: 0),
-        .init(code: "S4 E9", title: "Church and State", duration: "72 min", status: .none, progress: 0),
-        .init(code: "S4 E10", title: "With Open Eyes", duration: "88 min", status: .none, progress: 0)
+        .init(code: "S:4 EP:7", title: "Tailgate Party", duration: "64 min", status: .continueWatching, progress: 0.45),
+        .init(code: "S:4 EP:8", title: "America Decides", duration: "67 min", status: .new, progress: 0),
+        .init(code: "S:4 EP:9", title: "Church and State", duration: "72 min", status: .none, progress: 0),
+        .init(code: "S:4 EP:10", title: "With Open Eyes", duration: "88 min", status: .none, progress: 0)
     ]
 
     var body: some View {
@@ -382,7 +382,7 @@ struct ShowDetailScreen: View {
                 isOpen: playOnOpen,
                 onClose: { playOnOpen = false },
                 showTitle: displayTitle,
-                showSubtitle: latestEpisode.map { "Season \($0.seasonNum) \u{00B7} Episode \($0.episodeNum) \u{00B7} \($0.name)" } ?? "Season 1 \u{00B7} Episode 1",
+                showSubtitle: latestEpisode.map { "S:\($0.seasonNum) EP:\($0.episodeNum) \u{00B7} \($0.name)" } ?? "S:1 EP:1",
                 thumbnailUrl: posterUrl,
                 tmdbId: resolvedTmdbId,
                 isTV: isTV,
@@ -507,18 +507,24 @@ struct ShowDetailScreen: View {
         playOnOpen = true
     }
 
-    /// Parses "S4 E7" into the integer season number.
+    /// Parses "S:4 EP:7" into the integer season number.
     private func parseSeason(_ code: String) -> Int {
         let parts = code.split(separator: " ")
         guard let s = parts.first, s.hasPrefix("S") else { return 0 }
-        return Int(s.dropFirst()) ?? 0
+        // Handle both "S:4" (new format) and "S4" (legacy format)
+        let numPart = s.dropFirst()
+        return Int(numPart.hasPrefix(":") ? numPart.dropFirst() : numPart) ?? 0
     }
 
-    /// Parses "S4 E7" into the integer episode number.
+    /// Parses "S:4 EP:7" into the integer episode number.
     private func parseEpisode(_ code: String) -> Int {
         let parts = code.split(separator: " ")
-        guard parts.count >= 2, parts[1].hasPrefix("E") else { return 0 }
-        return Int(parts[1].dropFirst()) ?? 0
+        guard parts.count >= 2 else { return 0 }
+        let epPart = parts[1]
+        // Handle both "EP:7" (new format) and "E7" (legacy format)
+        if epPart.hasPrefix("EP:") { return Int(epPart.dropFirst(3)) ?? 0 }
+        if epPart.hasPrefix("E") { return Int(epPart.dropFirst()) ?? 0 }
+        return 0
     }
 
     private var stickyOpacity: Double { scrollOffset > 220 ? 1 : 0 }

@@ -123,7 +123,9 @@ func buildEpisodeAvailRows(
  userServiceNames: [String]
 ) -> [EpisodeAvailRow] {
  let ranked = sources.sorted { gsSourceRank($0) < gsSourceRank($1) }
- return tmdbEpisodes.map { ep in
+ // Show most recent episodes first (reverse episode-number order)
+ let sorted = tmdbEpisodes.sorted { $0.episodeNumber > $1.episodeNumber }
+ return sorted.map { ep in
  let best = ranked.first
  guard let src = best else {
  return EpisodeAvailRow(
@@ -378,7 +380,7 @@ struct EpisodeAvailabilitySection: View {
  if idx < rows.count - 1 {
  Divider()
  .overlay(Color.white.opacity(0.05))
- .padding(.leading, 60)
+ .padding(.leading, 76)
  }
  }
  }
@@ -397,14 +399,16 @@ struct EpisodeAvailabilitySection: View {
  }
 
  return HStack(spacing: 12) {
- // Episode number badge
+ // Episode number badge — S:1 EP:3 format
  ZStack {
  RoundedRectangle(cornerRadius: 8)
  .fill(isAvail ? svcColor.opacity(0.18) : isLocked ? svcColor.opacity(0.08) : Color.white.opacity(0.05))
- .frame(width: 36, height: 36)
- Text("\(row.episodeNumber)")
- .font(.system(size: 13, weight: .bold))
+ .frame(width: 52, height: 36)
+ Text("S\(row.seasonNumber) EP\(row.episodeNumber)")
+ .font(.system(size: 9, weight: .bold))
  .foregroundStyle(isAvail ? svcColor : Color.white.opacity(isLocked ? 0.22 : 0.18))
+ .lineLimit(1)
+ .minimumScaleFactor(0.8)
  }
 
  // Title + meta

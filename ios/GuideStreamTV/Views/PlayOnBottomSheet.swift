@@ -612,7 +612,7 @@ struct PlayOnBottomSheet: View {
             isOpen: true,
             onClose: {},
             showTitle: "Succession",
-            showSubtitle: "S4 E7 · Tailgate Party",
+            showSubtitle: "S:4 EP:7 · Tailgate Party",
             thumbnailUrl: nil,
             onDeviceSelected: { _ in }
         )

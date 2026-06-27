@@ -1466,7 +1466,7 @@ struct WidgetSetupView: View {
                             Text("Stranger Things")
                                 .scaledFont(size: 18, weight: .bold)
                                 .foregroundStyle(.white)
-                            Text("S5 E1 · 64min")
+                            Text("S:5 EP:1 · 64min")
                                 .scaledFont(size: 12)
                                 .foregroundStyle(.white.opacity(0.8))
                         }
