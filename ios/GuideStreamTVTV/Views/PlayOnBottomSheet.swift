@@ -89,7 +89,7 @@ struct PlayOnBottomSheet: View {
 
     private var whereToWatchLabel: String {
         if let name = resolvedSource?.name { return gsDisplayName(for: name) }
-        return isResolvingSource ? "Finding service\u2026" : "Open streaming app"
+        return isResolvingSource ? "Finding service…" : "Open streaming app"
     }
 
     private var platformColor: Color { brandColor(for: resolvedPlatformName) }
