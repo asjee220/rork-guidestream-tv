@@ -898,7 +898,7 @@ struct CastToTVSheet: View {
         )
 
         do {
-            let ch = SupabaseManager.shared.client.realtimeV2.channel("play-commands:\(userId)")
+            let ch = SupabaseManager.shared.client.realtimeV2.channel("play-commands:\(userId)") { config in config.isPrivate = true }
             await ch.subscribe()
             try await ch.broadcast(event: "play-command", message: payload)
             #if DEBUG
@@ -926,7 +926,7 @@ struct CastToTVSheet: View {
             "platform": .string(platform),
             "title": .string(showTitle),
             "content_url": .string(resolvedURL?.absoluteString ?? ""),
-            "device_name": .string("STAMP-A tvos=\(watchmodeSource?.tvosUrl ?? "nil") roku=\(watchmodeSource?.rokuUrl ?? "nil")")
+            "device_name": .string("STAMP-B tvos=\(watchmodeSource?.tvosUrl ?? "nil") roku=\(watchmodeSource?.rokuUrl ?? "nil")")
         ]
         try? await SupabaseManager.shared.client
             .from("debug_logs")

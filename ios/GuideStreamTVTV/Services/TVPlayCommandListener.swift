@@ -74,7 +74,7 @@ final class TVPlayCommandListener {
             userId = "guest"
         }
 
-        let ch = client.realtimeV2.channel("play-commands:\(userId)")
+        let ch = client.realtimeV2.channel("play-commands:\(userId)") { config in config.isPrivate = true }
         self.channel = ch
 
         #if DEBUG
@@ -90,7 +90,7 @@ final class TVPlayCommandListener {
             .insert([
                 "event": .string("tv_listener_subscribed"),
                 "user_id": .string(userId),
-                "device_name": .string("STAMP-A"),
+                "device_name": .string("STAMP-B"),
                 "target_name": .string("play-commands:\(userId)")
             ] as [String: AnyJSON])
             .execute()
