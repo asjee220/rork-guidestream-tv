@@ -84,6 +84,18 @@ final class TVPlayCommandListener {
         let stream = ch.broadcastStream(event: "play-command")
         await ch.subscribe()
 
+        // STAMP_A_START
+        try? await TVSupabaseManager.shared.client
+            .from("debug_logs")
+            .insert([
+                "event": .string("tv_listener_subscribed"),
+                "user_id": .string(userId),
+                "device_name": .string("STAMP-A"),
+                "target_name": .string("play-commands:\(userId)")
+            ] as [String: AnyJSON])
+            .execute()
+        // STAMP_A_END
+
         #if DEBUG
         print("[TVPlayCommand] subscribed status=\(ch.status)")
         #endif

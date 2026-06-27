@@ -899,12 +899,14 @@ struct CastToTVSheet: View {
 
         do {
             let ch = SupabaseManager.shared.client.realtimeV2.channel("play-commands:\(userId)")
+            await ch.subscribe()
             try await ch.broadcast(event: "play-command", message: payload)
             #if DEBUG
             print("[CastToTV] broadcast ok → play-commands:\(userId) target_name=\(device.name) platform=\(platform)")
             #endif
             // Log the outbound command to debug_logs.
             await logPlayCommandSent(device: device, userId: userId, resolvedURL: resolvedURL)
+            await ch.unsubscribe()
         } catch {
             #if DEBUG
             print("[CastToTV] broadcast failed: \(error.localizedDescription)")
@@ -923,7 +925,8 @@ struct CastToTVSheet: View {
             "device_kind": .string(device.kind.rawValue),
             "platform": .string(platform),
             "title": .string(showTitle),
-            "content_url": .string(resolvedURL?.absoluteString ?? "")
+            "content_url": .string(resolvedURL?.absoluteString ?? ""),
+            "device_name": .string("STAMP-A tvos=\(watchmodeSource?.tvosUrl ?? "nil") roku=\(watchmodeSource?.rokuUrl ?? "nil")")
         ]
         try? await SupabaseManager.shared.client
             .from("debug_logs")
