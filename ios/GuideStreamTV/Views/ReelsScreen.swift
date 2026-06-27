@@ -1305,6 +1305,19 @@ private struct ReelView: View {
                 #endif
             }
 
+            // Full-screen tap target for play/pause toggle.
+            // Rendered beneath interactive overlays so the right rail,
+            // glass ad chip, and scrubber always receive taps first.
+            if isCurrent {
+                Color.clear
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        onTogglePlay()
+                        flashControls()
+                    }
+                    .allowsHitTesting(!showControls && isPlaying)
+            }
+
             // Layer 11 — top scrim
             VStack {
                 LinearGradient(
@@ -1487,19 +1500,6 @@ private struct ReelView: View {
                 .frame(height: 6)
                 .padding(.horizontal, 22)
                 .padding(.bottom, bottomInset + 14)
-            }
-
-            // Full-screen tap target for play/pause toggle.
-            // Only active when the controls overlay is hidden, so the
-            // play/pause and mute buttons always receive taps first.
-            if isCurrent {
-                Color.clear
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        onTogglePlay()
-                        flashControls()
-                    }
-                    .allowsHitTesting(!showControls && isPlaying)
             }
 
             // Layer 21 — media controls overlay (play/pause + mute).
@@ -1887,6 +1887,7 @@ private struct YouTubePlayerView: UIViewRepresentable {
         playerView.webView?.backgroundColor = .clear
         playerView.webView?.isOpaque = false
         playerView.webView?.scrollView.isScrollEnabled = false
+        playerView.webView?.scrollView.contentInsetAdjustmentBehavior = .never
         playerView.isUserInteractionEnabled = false
 
         context.coordinator.onEmbedError = onEmbedError
@@ -1985,6 +1986,9 @@ private struct YouTubePlayerView: UIViewRepresentable {
         var cachedDuration: Double = 0
 
         func playerViewDidBecomeReady(_ playerView: YTPlayerView) {
+            // Re-assert contentInsetAdjustmentBehavior because the helper
+            // may recreate its web view when the video loads.
+            playerView.webView?.scrollView.contentInsetAdjustmentBehavior = .never
             // Kick off playback after the player is fully loaded.
             playerView.playVideo()
         }
