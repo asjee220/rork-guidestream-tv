@@ -527,21 +527,23 @@ struct PlayOnBottomSheet: View {
     private func episodeDeeplinkURL(from base: URL, season: Int, episode: Int) -> URL {
         let baseStr = base.absoluteString
         let episodePath = "/season/\(season)/episode/\(episode)"
-        // Paramount+ uses opaque video IDs — season/episode path segments are
-        // ignored. Skip the episode path so we land on the show page instead
-        // of the first episode.
+        // Services that support path-based season/episode deep links.
+        if baseStr.contains("paramountplus.com") || baseStr.contains("paramount") {
+            let stripped = baseStr.hasSuffix("/") ? String(baseStr.dropLast()) : baseStr
+            return URL(string: stripped + episodePath) ?? base
+        }
         if baseStr.contains("peacocktv.com") || baseStr.contains("peacock") {
+            let stripped = baseStr.hasSuffix("/") ? String(baseStr.dropLast()) : baseStr
+            return URL(string: stripped + episodePath) ?? base
+        }
+        if baseStr.contains("hulu.com") {
             let stripped = baseStr.hasSuffix("/") ? String(baseStr.dropLast()) : baseStr
             return URL(string: stripped + episodePath) ?? base
         }
         if baseStr.contains("amazon.com") || baseStr.contains("primevideo.com") || baseStr.contains("amazon") {
             return URL(string: baseStr + "?season=\(season)&episode=\(episode)") ?? base
         }
-        if baseStr.contains("hulu.com") {
-            let stripped = baseStr.hasSuffix("/") ? String(baseStr.dropLast()) : baseStr
-            return URL(string: stripped + episodePath) ?? base
-        }
-        // Paramount+, Netflix, Apple TV+, Max, Disney+ use opaque IDs —
+        // Netflix, Apple TV+, Max, Disney+ use opaque IDs —
         // return the show-level URL as a best-effort fallback.
         return base
     }

@@ -509,6 +509,30 @@ struct ShowDetailScreen: View {
         playOnOpen = true
     }
 
+    /// Builds an episode-specific deeplink URL by appending season/episode path
+    /// segments to the show-level web_url. Falls back to the original URL when
+    /// the platform doesn't use a path-based show structure.
+    private func episodeDeeplinkURL(from base: URL, season: Int, episode: Int) -> URL {
+        let baseStr = base.absoluteString
+        let episodePath = "/season/\(season)/episode/\(episode)"
+        if baseStr.contains("paramountplus.com") || baseStr.contains("paramount") {
+            let stripped = baseStr.hasSuffix("/") ? String(baseStr.dropLast()) : baseStr
+            return URL(string: stripped + episodePath) ?? base
+        }
+        if baseStr.contains("peacocktv.com") || baseStr.contains("peacock") {
+            let stripped = baseStr.hasSuffix("/") ? String(baseStr.dropLast()) : baseStr
+            return URL(string: stripped + episodePath) ?? base
+        }
+        if baseStr.contains("hulu.com") {
+            let stripped = baseStr.hasSuffix("/") ? String(baseStr.dropLast()) : baseStr
+            return URL(string: stripped + episodePath) ?? base
+        }
+        if baseStr.contains("amazon.com") || baseStr.contains("primevideo.com") || baseStr.contains("amazon") {
+            return URL(string: baseStr + "?season=\(season)&episode=\(episode)") ?? base
+        }
+        return base
+    }
+
     /// Parses "S:4 EP:7" into the integer season number.
     private func parseSeason(_ code: String) -> Int {
         let parts = code.split(separator: " ")
@@ -879,7 +903,22 @@ struct ShowDetailScreen: View {
                 HStack(spacing: 8) {
                     Button(action: {
                         if let svc = vm.primaryService {
-                            openDeeplink(serviceName: svc.name)
+                            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                            // When we know the season/episode, build an
+                            // episode-specific URL so the streaming app
+                            // lands on the correct episode (not S1E1).
+                            if let ep = latestEpisode,
+                               let url = preResolvedURL(forService: svc.name) {
+                                let finalURL = episodeDeeplinkURL(from: url, season: ep.seasonNum, episode: ep.episodeNum)
+                                StreamingDeepLinker.openResolvedURL(
+                                    finalURL,
+                                    platform: gsDisplayName(for: svc.name),
+                                    title: displayTitle,
+                                    tmdbId: resolvedTmdbId
+                                )
+                            } else {
+                                openDeeplink(serviceName: svc.name)
+                            }
                         } else {
                             WatchIntentLogger.shared.log(
                                 eventType: .deeplinkFired,

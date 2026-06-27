@@ -39,7 +39,7 @@ struct MoreEpisodesScreen: View {
     private var episodes: [TMDBEpisode] { vm.season?.episodes ?? [] }
 
     private var nextEpisodeNumber: Int {
-        episodes.first?.episodeNumber ?? 1
+        episodes.last?.episodeNumber ?? episodes.first?.episodeNumber ?? 1
     }
 
     var body: some View {
@@ -362,8 +362,9 @@ struct MoreEpisodesScreen: View {
                     UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                     if let svc = vm.primaryService {
                         if let url = vm.primaryDeeplink {
+                            let finalURL = episodeDeeplinkURL(from: url, season: activeSeason, episode: nextEpisodeNumber)
                             StreamingDeepLinker.openResolvedURL(
-                                url, platform: svc.name, title: title,
+                                finalURL, platform: svc.name, title: title,
                                 tmdbId: Int(titleId)
                             )
                         } else {
@@ -447,6 +448,29 @@ struct MoreEpisodesScreen: View {
     }
 
     // MARK: - Helpers
+
+    /// Builds an episode-specific deeplink URL by appending season/episode path
+    /// segments to the show-level web_url.
+    private func episodeDeeplinkURL(from base: URL, season: Int, episode: Int) -> URL {
+        let baseStr = base.absoluteString
+        let episodePath = "/season/\(season)/episode/\(episode)"
+        if baseStr.contains("paramountplus.com") || baseStr.contains("paramount") {
+            let stripped = baseStr.hasSuffix("/") ? String(baseStr.dropLast()) : baseStr
+            return URL(string: stripped + episodePath) ?? base
+        }
+        if baseStr.contains("peacocktv.com") || baseStr.contains("peacock") {
+            let stripped = baseStr.hasSuffix("/") ? String(baseStr.dropLast()) : baseStr
+            return URL(string: stripped + episodePath) ?? base
+        }
+        if baseStr.contains("hulu.com") {
+            let stripped = baseStr.hasSuffix("/") ? String(baseStr.dropLast()) : baseStr
+            return URL(string: stripped + episodePath) ?? base
+        }
+        if baseStr.contains("amazon.com") || baseStr.contains("primevideo.com") || baseStr.contains("amazon") {
+            return URL(string: baseStr + "?season=\(season)&episode=\(episode)") ?? base
+        }
+        return base
+    }
 
     private func shortName(_ name: String) -> String {
         let key = name.lowercased()

@@ -169,24 +169,28 @@ func buildEpisodeAvailRows(
 func episodeDeeplinkURL(from base: URL, season: Int, episode: Int) -> URL {
  let baseStr = base.absoluteString
  let episodePath = "/season/\(season)/episode/\(episode)"
- // Paramount+ uses opaque video IDs (e.g. /shows/name/video/ID) —
- // season/episode path segments are ignored and the app falls back
- // to the show home. Skip the episode path so we at least land on
- // the correct show page instead of the first episode.
- if baseStr.contains("peacocktv.com") || baseStr.contains("peacock") {
+ // Services that support path-based season/episode deep links.
+ // Paramount+, Peacock, and Hulu URLs follow the /shows/<name>/ pattern
+ // and accept /season/X/episode/Y appended directly.
+ if baseStr.contains("paramountplus.com") || baseStr.contains("paramount") {
  let stripped = baseStr.hasSuffix("/") ? String(baseStr.dropLast()) : baseStr
  return URL(string: stripped + episodePath) ?? base
  }
- if baseStr.contains("amazon.com") || baseStr.contains("primevideo.com") || baseStr.contains("amazon") {
- return URL(string: baseStr + "?season=\(season)&episode=\(episode)") ?? base
+ if baseStr.contains("peacocktv.com") || baseStr.contains("peacock") {
+ let stripped = baseStr.hasSuffix("/") ? String(baseStr.dropLast()) : baseStr
+ return URL(string: stripped + episodePath) ?? base
  }
  if baseStr.contains("hulu.com") {
  let stripped = baseStr.hasSuffix("/") ? String(baseStr.dropLast()) : baseStr
  return URL(string: stripped + episodePath) ?? base
  }
- // Paramount+, Netflix, Apple TV+, Max, Disney+, etc. use opaque show IDs —
- // appending season/episode doesn't produce a valid deep link. Return the
- // original show-level URL as a best-effort fallback.
+ // Amazon uses query params instead of path segments.
+ if baseStr.contains("amazon.com") || baseStr.contains("primevideo.com") || baseStr.contains("amazon") {
+ return URL(string: baseStr + "?season=\(season)&episode=\(episode)") ?? base
+ }
+ // Netflix, Apple TV+, Max, Disney+ use opaque video/content IDs —
+ // appending season/episode doesn't produce a valid deep link. Return
+ // the show-level URL as a best-effort fallback to the show page.
  return base
 }
 
