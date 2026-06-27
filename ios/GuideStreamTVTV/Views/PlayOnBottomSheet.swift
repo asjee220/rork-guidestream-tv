@@ -63,11 +63,33 @@ struct PlayOnBottomSheet: View {
         return raw == "…" || raw == "Streaming" ? raw : gsDisplayName(for: raw)
     }
 
+    /// Maps Watchmode's raw source names to the user-facing brand labels
+    /// used everywhere else in the app. Mirrors the iOS `EpisodeAvailabilitySection`
+    /// helper so this tvOS-only file doesn't depend on iOS source files.
+    private func gsDisplayName(for raw: String) -> String {
+        let k = raw.lowercased()
+        if k.contains("paramount") {
+            if k.contains("plus") || k.contains("+") { return "Paramount+" }
+            return "Paramount+"
+        }
+        if k.contains("disney") {
+            if k.contains("plus") || k.contains("+") { return "Disney+" }
+            return "Disney+"
+        }
+        if k.contains("apple") && (k.contains("tv") || k.contains("+")) { return "Apple TV+" }
+        if k.contains("max") || (k.contains("hbo") && k.contains("max")) { return "Max" }
+        if k.contains("prime") || (k.contains("amazon") && k.contains("prime")) { return "Prime Video" }
+        if k.contains("peacock") { return "Peacock" }
+        if k.contains("crunchyroll") { return "Crunchyroll" }
+        if k.contains("showtime") { return "Showtime" }
+        return raw
+    }
+
     private var platformLabel: String { resolvedPlatformName.uppercased() }
 
     private var whereToWatchLabel: String {
         if let name = resolvedSource?.name { return gsDisplayName(for: name) }
-        return isResolvingSource ? "Finding service…" : "Open streaming app"
+        return isResolvingSource ? "Finding service\u2026" : "Open streaming app"
     }
 
     private var platformColor: Color { brandColor(for: resolvedPlatformName) }

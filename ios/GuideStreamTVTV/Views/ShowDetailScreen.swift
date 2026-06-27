@@ -91,20 +91,12 @@ final class ShowDetailViewModel {
                         endDate: nil
                     )
                     self.detail = WatchmodeTitleDetail(
-                        id: self.detail?.id ?? tmdbId,
+                        id: self.detail?.id ?? String(tmdbId),
                         title: self.detail?.title ?? self.tmdb?.name ?? titleId,
                         year: self.detail?.year,
                         userRating: self.detail?.userRating,
                         plotOverview: self.detail?.plotOverview,
-                        genreNames: self.detail?.genreNames,
-                        trailer: self.detail?.trailer,
-                        posterUrl: self.detail?.posterUrl,
-                        backdrop: self.detail?.backdrop,
-                        releaseDate: self.detail?.releaseDate,
-                        endYear: self.detail?.endYear,
-                        runtimeMinutes: self.detail?.runtimeMinutes,
-                        usRating: self.detail?.usRating,
-                        type: self.detail?.type,
+                        genreNames: self.detail?.genreNames ?? [],
                         sources: [source]
                     )
                 }

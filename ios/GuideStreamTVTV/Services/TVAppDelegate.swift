@@ -50,7 +50,8 @@ final class TVAppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCe
         return [.banner, .badge, .sound, .list]
     }
 
-    /// Handle taps on a notification — open deep link.
+#if !os(tvOS)
+    /// Handle taps on a notification — open deep link. (iOS only — tvOS lacks UNNotificationResponse.)
     func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         didReceive response: UNNotificationResponse
@@ -63,4 +64,5 @@ final class TVAppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCe
             }
         }
     }
+#endif
 }
