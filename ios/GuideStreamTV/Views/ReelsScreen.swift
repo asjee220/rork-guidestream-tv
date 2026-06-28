@@ -531,6 +531,33 @@ final class ReelsViewModel {
             for await item in group {
                 if let item { out.append(item) }
             }
+            // TEMP DIAG: log the filter funnel before returning
+            let inputCount = releases.count
+            let eligibleCount = eligible.count
+            let dedupedCount = deduped.count
+            let finalCount = out.count
+            let sampleStr: String
+            if let first = releases.first {
+                sampleStr = "type=\(first.type ?? "nil")|date=\(first.sourceReleaseDate ?? "nil")|tmdb=\(first.tmdbId.map(String.init) ?? "nil")"
+            } else {
+                sampleStr = "none"
+            }
+            Task {
+                let deviceId = DeviceIdentity.shared.deviceId
+                let userId = AuthViewModel.shared.currentUser?.id.uuidString
+                var payload: [String: AnyJSON] = [
+                    "event": .string("cs_funnel"),
+                    "target_name": .string("input=\(inputCount) eligible=\(eligibleCount) deduped=\(dedupedCount) final=\(finalCount)"),
+                    "title": .string("coming_soon_funnel"),
+                    "content_url": .string(sampleStr),
+                    "device_id": .string(deviceId),
+                    "device_name": .string(UIDevice.current.name),
+                    "device_kind": .string("phone"),
+                    "platform": .string("ios"),
+                ]
+                if let userId { payload["user_id"] = .string(userId) }
+                _ = try? await SupabaseManager.shared.client.from("debug_logs").insert(payload).execute()
+            }
             return out
         }
     }

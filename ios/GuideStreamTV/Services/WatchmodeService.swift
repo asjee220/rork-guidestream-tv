@@ -4,6 +4,8 @@
 //
 
 import Foundation
+import UIKit
+import Supabase
 
 nonisolated struct WatchmodeResult: Identifiable, Hashable, Sendable {
     let id: Int
@@ -248,14 +250,57 @@ nonisolated extension WatchmodeService {
         var req = URLRequest(url: url)
         req.timeoutInterval = 12
         let (data, response) = try await URLSession.shared.data(for: req)
-        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+        let statusCode = (response as? HTTPURLResponse)?.statusCode ?? -1
+        guard (200..<300).contains(statusCode) else {
             #if DEBUG
             let body = String(data: data, encoding: .utf8) ?? "<binary>"
-            print("[Watchmode] upcomingStreamingReleases HTTP \((response as? HTTPURLResponse)?.statusCode ?? -1): \(body.prefix(200))")
+            print("[Watchmode] upcomingStreamingReleases HTTP \(statusCode): \(body.prefix(200))")
             #endif
+            // TEMP DIAG: log non-2xx outcome before throwing
+            Task { @MainActor in
+                let deviceId = DeviceIdentity.shared.deviceId
+                let userId = AuthViewModel.shared.currentUser?.id.uuidString
+                let bodyStr = String(data: data, encoding: .utf8) ?? "<binary>"
+                var payload: [String: AnyJSON] = [
+                    "event": .string("cs_watchmode"),
+                    "target_name": .string("http=\(statusCode) raw=-1"),
+                    "title": .string(String(bodyStr.prefix(200))),
+                    "content_url": .string("none"),
+                    "device_id": .string(deviceId),
+                    "device_name": .string(UIDevice.current.name),
+                    "device_kind": .string("phone"),
+                    "platform": .string("ios"),
+                ]
+                if let userId { payload["user_id"] = .string(userId) }
+                _ = try? await SupabaseManager.shared.client.from("debug_logs").insert(payload).execute()
+            }
             throw URLError(.badServerResponse)
         }
         let envelope = try JSONDecoder().decode(WatchmodeReleasesEnvelope.self, from: data)
+        let rawCount = envelope.releases?.count ?? 0
+        // TEMP DIAG: log 2xx outcome before returning
+        Task { @MainActor in
+            let deviceId = DeviceIdentity.shared.deviceId
+            let userId = AuthViewModel.shared.currentUser?.id.uuidString
+            let sampleStr: String
+            if let first = envelope.releases?.first {
+                sampleStr = "type=\(first.type ?? "nil")|date=\(first.sourceReleaseDate ?? "nil")|tmdb=\(first.tmdbId.map(String.init) ?? "nil")|src=\(first.sourceName ?? "nil")"
+            } else {
+                sampleStr = "none"
+            }
+            var payload: [String: AnyJSON] = [
+                "event": .string("cs_watchmode"),
+                "target_name": .string("http=\(statusCode) raw=\(rawCount)"),
+                "title": .string("ok"),
+                "content_url": .string(sampleStr),
+                "device_id": .string(deviceId),
+                "device_name": .string(UIDevice.current.name),
+                "device_kind": .string("phone"),
+                "platform": .string("ios"),
+            ]
+            if let userId { payload["user_id"] = .string(userId) }
+            _ = try? await SupabaseManager.shared.client.from("debug_logs").insert(payload).execute()
+        }
         return envelope.releases ?? []
     }
 }
