@@ -107,6 +107,7 @@ private struct WatchListContent: View {
         }
         .task {
             await streams.fetchUserStreams()
+            await streams.fetchLatestContentDates()
             await hydrateLiveStatus()
             await hydrateSourceImages()
         }
@@ -115,6 +116,7 @@ private struct WatchListContent: View {
         }
         .refreshable {
             await streams.fetchUserStreams()
+            await streams.fetchLatestContentDates()
             await hydrateLiveStatus()
             await hydrateSourceImages()
         }
@@ -278,15 +280,25 @@ private struct WatchListContent: View {
         )
     }
 
-    /// User streams sorted with live items first, then by added date.
+    /// User streams sorted with live items first, then by recency
+    /// (newest content first, falling back to date-added order).
     private var sortedStreams: [UserStream] {
-        streams.userStreams.sorted { a, b in
+        let recencyMap = streams.latestContentAt
+        return streams.userStreams.sorted { a, b in
             let aLive = liveStatusMap[a.titleId]?.isLive ?? false
             let bLive = liveStatusMap[b.titleId]?.isLive ?? false
             if aLive != bLive { return aLive }
-            let aDate = a.addedAt ?? Date.distantPast
-            let bDate = b.addedAt ?? Date.distantPast
-            return aDate > bDate
+            let aDate = recencyMap[a.titleId]
+            let bDate = recencyMap[b.titleId]
+            if let aD = aDate, let bD = bDate, aD != bD {
+                return aD > bD
+            }
+            // Titles with a recency entry come before those without.
+            if aDate != nil && bDate == nil { return true }
+            if aDate == nil && bDate != nil { return false }
+            let aAdded = a.addedAt ?? Date.distantPast
+            let bAdded = b.addedAt ?? Date.distantPast
+            return aAdded > bAdded
         }
     }
 

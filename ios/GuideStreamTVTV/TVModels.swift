@@ -156,6 +156,18 @@ struct TVGameTeam: Hashable {
     let isWinner: Bool
 }
 
+// MARK: - Title recency (Supabase `title_recency`)
+
+nonisolated struct TVTitleRecencyRow: Decodable, Sendable {
+    let titleId: String
+    let lastContentAt: Date?
+
+    enum CodingKeys: String, CodingKey {
+        case titleId = "title_id"
+        case lastContentAt = "last_content_at"
+    }
+}
+
 // MARK: - Type aliases for iOS-compatible naming
 
 typealias SportsGame = TVSportsGame

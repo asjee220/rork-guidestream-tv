@@ -318,6 +318,7 @@ struct HomeView: View {
                             items: watchListEpisodes,
                             isAuthenticated: auth.isAuthenticated,
                             liveStatusMap: liveStatusMap,
+                            latestContentMap: streams.latestContentAt,
                             onSeeAll: {
                                 WatchIntentLogger.shared.log(
                                     eventType: .cardTapped,
@@ -2241,6 +2242,7 @@ private struct WatchListSection: View {
     let items: [Episode]
     let isAuthenticated: Bool
     let liveStatusMap: [String: LiveStatus]
+    let latestContentMap: [String: Date]
     let onSeeAll: () -> Void
     let onOpen: (Episode) -> Void
 
@@ -2252,9 +2254,19 @@ private struct WatchListSection: View {
         }.count
     }
 
-    /// Items sorted with live ones first.
+    /// Items sorted live-first, then by recency (newest content first),
+    /// then preserving incoming order for titles without a recency row.
     private var sortedItems: [Episode] {
-        items.sorted { a, b in
+        // Precompute each title's position in the incoming array so ties
+        // fall back to the caller's order (which is already added_at desc).
+        let indexByTitleId: [String: Int] = {
+            var m: [String: Int] = [:]
+            for (i, ep) in items.enumerated() {
+                if let tid = ep.titleId { m[tid] = i }
+            }
+            return m
+        }()
+        return items.sorted { a, b in
             let aLive: Bool = {
                 guard let tid = a.titleId else { return false }
                 return liveStatusMap[tid]?.isLive ?? false
@@ -2264,7 +2276,16 @@ private struct WatchListSection: View {
                 return liveStatusMap[tid]?.isLive ?? false
             }()
             if aLive != bLive { return aLive }
-            return false
+            let aDate: Date? = a.titleId.flatMap { latestContentMap[$0] }
+            let bDate: Date? = b.titleId.flatMap { latestContentMap[$0] }
+            if let aD = aDate, let bD = bDate, aD != bD {
+                return aD > bD
+            }
+            if aDate != nil && bDate == nil { return true }
+            if aDate == nil && bDate != nil { return false }
+            let aIdx: Int = a.titleId.flatMap { indexByTitleId[$0] } ?? items.count
+            let bIdx: Int = b.titleId.flatMap { indexByTitleId[$0] } ?? items.count
+            return aIdx < bIdx
         }
     }
 

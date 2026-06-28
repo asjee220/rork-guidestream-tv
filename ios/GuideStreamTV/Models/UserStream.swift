@@ -110,6 +110,18 @@ nonisolated struct UserMovieReleaseRow: Decodable, Sendable {
     let notify_movie_releases: Bool?
 }
 
+/// Minimal decoder for the `title_recency` table — reads the most-recent
+/// content timestamp per title (last aired episode, release date, latest upload).
+nonisolated struct TitleRecencyRow: Decodable, Sendable {
+    let titleId: String
+    let lastContentAt: Date?
+
+    enum CodingKeys: String, CodingKey {
+        case titleId = "title_id"
+        case lastContentAt = "last_content_at"
+    }
+}
+
 /// Row shape used by the Devices screen when listing a user's installs.
 /// Mirrors the `device_sessions` schema documented in `DeviceSessionService`.
 nonisolated struct DeviceSessionRow: Decodable, Sendable, Identifiable, Hashable {

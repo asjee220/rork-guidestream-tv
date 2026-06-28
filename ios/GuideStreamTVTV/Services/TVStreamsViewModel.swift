@@ -23,6 +23,9 @@ final class TVStreamsViewModel {
     static let shared = TVStreamsViewModel()
 
     var userStreams: [TVUserStream] = []
+    /// Maps title_id → most-recent content timestamp from `title_recency`.
+    /// Populated by `fetchLatestContentDates()` so sorters can rank by recency.
+    var latestContentAt: [String: Date] = [:]
     var isLoading: Bool = false
     var lastError: String?
 
@@ -208,6 +211,35 @@ final class TVStreamsViewModel {
     /// no-op on tvOS so this just delegates to `fetchUserStreams`.
     func refreshAll() async {
         await fetchUserStreams()
+        await fetchLatestContentDates()
+    }
+
+    /// Fetches the most-recent content timestamp for each saved title from
+    /// the `title_recency` table so sorters can promote freshly updated titles.
+    /// Titles without a row keep their existing date-added position.
+    func fetchLatestContentDates() async {
+        let titleIds = self.userStreams.map { $0.titleId }
+        guard !titleIds.isEmpty else {
+            latestContentAt = [:]
+            return
+        }
+        do {
+            let rows: [TVTitleRecencyRow] = try await TVSupabaseManager.shared.client
+                .from("title_recency")
+                .select("title_id,last_content_at")
+                .in("title_id", values: titleIds)
+                .execute()
+                .value
+            var map: [String: Date] = [:]
+            for row in rows {
+                if let date = row.lastContentAt {
+                    map[row.titleId] = date
+                }
+            }
+            self.latestContentAt = map
+        } catch {
+            print("[TVStreams] fetchLatestContentDates failed: \(error.localizedDescription)")
+        }
     }
 
     /// No-op stub: tvOS does not run the iOS episode tracker. Kept so views

@@ -24,6 +24,9 @@ final class StreamsViewModel {
 
     var userStreams: [UserStream] = []
     var newEpisodes: [NewEpisodeRow] = []
+    /// Maps title_id → most-recent content timestamp from `title_recency`.
+    /// Populated by `fetchLatestContentDates()` so sorters can rank by recency.
+    var latestContentAt: [String: Date] = [:]
     var isLoadingStreams: Bool = false
     var isLoadingEpisodes: Bool = false
     var lastError: String?
@@ -54,6 +57,7 @@ final class StreamsViewModel {
         async let a: () = fetchUserStreams()
         async let b: () = fetchNewEpisodes()
         _ = await (a, b)
+        await fetchLatestContentDates()
         // After we have a fresh watch list, kick off the episode tracker
         // so any titles that aired a new episode show up in the rail on
         // the next fetch. The tracker has its own 6h cooldown so calling
@@ -175,6 +179,34 @@ final class StreamsViewModel {
         } catch {
             self.lastError = error.localizedDescription
             print("[Streams] fetchNewEpisodes failed: \(error.localizedDescription)")
+        }
+    }
+
+    /// Fetches the most-recent content timestamp for each saved title from
+    /// the `title_recency` table so sorters can promote freshly updated titles.
+    /// Titles without a row keep their existing date-added position.
+    func fetchLatestContentDates() async {
+        let titleIds = self.userStreams.map { $0.titleId }
+        guard !titleIds.isEmpty else {
+            latestContentAt = [:]
+            return
+        }
+        do {
+            let rows: [TitleRecencyRow] = try await SupabaseManager.shared.client
+                .from("title_recency")
+                .select("title_id,last_content_at")
+                .in("title_id", values: titleIds)
+                .execute()
+                .value
+            var map: [String: Date] = [:]
+            for row in rows {
+                if let date = row.lastContentAt {
+                    map[row.titleId] = date
+                }
+            }
+            self.latestContentAt = map
+        } catch {
+            print("[Streams] fetchLatestContentDates failed: \(error.localizedDescription)")
         }
     }
 

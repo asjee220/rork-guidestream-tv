@@ -32,7 +32,7 @@ struct TVWatchListView: View {
                             .padding(.top, 24)
 
                         LazyVGrid(columns: columns, alignment: .leading, spacing: 48) {
-                            ForEach(streams.userStreams) { row in
+                            ForEach(sortedStreams) { row in
                                 TVPosterCard(
                                     title: row.title ?? row.titleId,
                                     subtitle: row.platform,
@@ -60,11 +60,32 @@ struct TVWatchListView: View {
                 }
             }
         }
-        .task { await streams.fetchUserStreams() }
+        .task {
+            await streams.fetchUserStreams()
+            await streams.fetchLatestContentDates()
+        }
         .sheet(item: $pendingDetail) { detail in
             TVTitleSheet(detail: detail) { _ in
                 pendingDetail = nil
             }
+        }
+    }
+
+    /// User streams sorted by recency (newest content first), then by
+    /// date-added for titles without a `title_recency` row.
+    private var sortedStreams: [TVUserStream] {
+        let recencyMap = streams.latestContentAt
+        return streams.userStreams.sorted { a, b in
+            let aDate = recencyMap[a.titleId]
+            let bDate = recencyMap[b.titleId]
+            if let aD = aDate, let bD = bDate, aD != bD {
+                return aD > bD
+            }
+            if aDate != nil && bDate == nil { return true }
+            if aDate == nil && bDate != nil { return false }
+            let aAdded = a.addedAt ?? Date.distantPast
+            let bAdded = b.addedAt ?? Date.distantPast
+            return aAdded > bAdded
         }
     }
 
