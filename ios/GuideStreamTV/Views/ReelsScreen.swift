@@ -12,35 +12,11 @@ import SwiftUI
 import UIKit
 import YouTubeiOSPlayerHelper
 import Supabase
-import os
 
 private extension Array {
     subscript(safe index: Int) -> Element? {
         indices.contains(index) ? self[index] : nil
     }
-}
-
-// MARK: - TEMP DEBUG: Crash-safe memory helpers
-
-/// Returns the app's resident memory footprint in megabytes, or -1 on failure.
-/// Uses `task_info` with `TASK_VM_INFO` to read `phys_footprint`.
-private func reelsFootprintMB() -> Double {
-    var info = task_vm_info_data_t()
-    var count = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<integer_t>.size)
-    let result = withUnsafeMutablePointer(to: &info) { ptr in
-        ptr.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { rebased in
-            task_info(mach_task_self_, task_flavor_t(TASK_VM_INFO), rebased, &count)
-        }
-    }
-    guard result == KERN_SUCCESS else { return -1 }
-    return Double(info.phys_footprint) / 1024 / 1024
-}
-
-/// Returns the available memory headroom in megabytes, or -1 when the call returns 0.
-private func reelsAvailableMB() -> Double {
-    let bytes = os_proc_available_memory()
-    guard bytes > 0 else { return -1 }
-    return Double(bytes) / 1024 / 1024
 }
 
 // MARK: - Model
@@ -863,39 +839,8 @@ struct ReelsScreen: View {
                         }
                         _ = prev
                         refreshSocialCounts(around: newValue)
-                        // TEMP DEBUG: write breadcrumb on each swipe
-                        Task.detached { [vm] in
-                            await ReelsScreen.writeBreadcrumb(vm: vm)
-                        }
                     }
                 }
-
-                // TEMP DEBUG: on-screen memory HUD
-                VStack {
-                    HStack {
-                        VStack(alignment: .leading, spacing: 2) {
-                            let fp = reelsFootprintMB()
-                            let avail = reelsAvailableMB()
-                            Text("fp \(String(format: "%.0f", fp))MB")
-                                .font(.caption.monospaced())
-                                .foregroundStyle(.white)
-                            Text("avail \(avail > 0 ? String(format: "%.0f", avail) : "n/a")MB")
-                                .font(.caption.monospaced())
-                                .foregroundStyle(.white)
-                            Text("#\(vm.currentIndex + 1)/\(vm.allTrailers.count)")
-                                .font(.caption.monospaced())
-                                .foregroundStyle(.white)
-                        }
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
-                        .background(Color.black.opacity(0.6), in: RoundedRectangle(cornerRadius: 8))
-                        Spacer()
-                    }
-                    .padding(.leading, 14)
-                    .padding(.top, max(topInset, 6) + 46)
-                    Spacer()
-                }
-                .allowsHitTesting(false)
 
                 // Top-left dismiss chevron. Sits above all reel content with a
                 // glassy background so it stays legible over any backdrop.
@@ -955,10 +900,6 @@ struct ReelsScreen: View {
             prefetchNeighbors(around: vm.currentIndex)
             // Refresh social counts for the first visible reel and its neighbours.
             refreshSocialCounts(around: vm.currentIndex)
-            // TEMP DEBUG: write breadcrumb for the initial reel
-            Task.detached { [vm] in
-                await Self.writeBreadcrumb(vm: vm)
-            }
         }
         .onAppear { tabBarVisibility.hide() }
         .onDisappear { tabBarVisibility.show() }
@@ -1207,35 +1148,7 @@ struct ReelsScreen: View {
         }
     }
 
-    // TEMP DEBUG: Write one breadcrumb row to debug_logs per swipe / first appearance.
-    // Fire-and-forget — never affects the UI, silent on failure.
-    private static func writeBreadcrumb(vm: ReelsViewModel) async {
-        guard let trailer = vm.allTrailers[safe: vm.currentIndex] else { return }
-        let fpMB = Int(reelsFootprintMB())
-        let availMB = Int(reelsAvailableMB())
-        let target = "idx=\(vm.currentIndex) count=\(vm.allTrailers.count) tab=\(trailer.tab.rawValue) plat=\(trailer.platformId) tmdb=\(trailer.tmdbId) fpMB=\(fpMB) availMB=\(availMB)"
-        var payload: [String: AnyJSON] = [
-            "event": .string("reels_breadcrumb"),
-            "title": .string(trailer.showName),
-            "content_url": .string(trailer.trailerKey),
-            "target_name": .string(target),
-            "device_id": .string(DeviceIdentity.shared.deviceId),
-            "device_name": .string(UIDevice.current.name),
-            "device_kind": .string("phone"),
-            "platform": .string("ios"),
-        ]
-        if let uid = AuthViewModel.shared.currentUser?.id.uuidString {
-            payload["user_id"] = .string(uid)
-        }
-        do {
-            _ = try await SupabaseManager.shared.client
-                .from("debug_logs")
-                .insert(AnyJSON.object(payload))
-                .execute()
-        } catch {
-            print("[ReelsScreen breadcrumb] insert failed: \(error)")
-        }
-    }
+
 }
 
 // MARK: - Single Reel
@@ -2209,7 +2122,7 @@ private struct YouTubePlayerView: UIViewRepresentable {
     static func dismantleUIView(_ playerView: YTPlayerView, coordinator: Coordinator) {
         // Stop playback so no audio or video continues in the background.
         playerView.stopVideo()
-        // TEMP DEBUG: fully release the web view to stop leaking WebKit memory across swipes.
+        // Fully release the web view to stop leaking WebKit memory across swipes.
         if let web = playerView.webView {
             web.stopLoading()
             web.navigationDelegate = nil
