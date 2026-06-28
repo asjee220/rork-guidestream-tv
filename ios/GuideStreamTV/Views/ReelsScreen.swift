@@ -531,33 +531,6 @@ final class ReelsViewModel {
             for await item in group {
                 if let item { out.append(item) }
             }
-            // TEMP DIAG: log the filter funnel before returning
-            let inputCount = releases.count
-            let eligibleCount = eligible.count
-            let dedupedCount = deduped.count
-            let finalCount = out.count
-            let sampleStr: String
-            if let first = releases.first {
-                sampleStr = "type=\(first.type ?? "nil")|date=\(first.sourceReleaseDate ?? "nil")|tmdb=\(first.tmdbId.map(String.init) ?? "nil")"
-            } else {
-                sampleStr = "none"
-            }
-            Task {
-                let deviceId = DeviceIdentity.shared.deviceId
-                let userId = AuthViewModel.shared.currentUser?.id.uuidString
-                var payload: [String: AnyJSON] = [
-                    "event": .string("cs_funnel"),
-                    "target_name": .string("input=\(inputCount) eligible=\(eligibleCount) deduped=\(dedupedCount) final=\(finalCount)"),
-                    "title": .string("coming_soon_funnel"),
-                    "content_url": .string(sampleStr),
-                    "device_id": .string(deviceId),
-                    "device_name": .string(UIDevice.current.name),
-                    "device_kind": .string("phone"),
-                    "platform": .string("ios"),
-                ]
-                if let userId { payload["user_id"] = .string(userId) }
-                _ = try? await SupabaseManager.shared.client.from("debug_logs").insert(payload).execute()
-            }
             return out
         }
     }
@@ -869,9 +842,9 @@ struct ReelsScreen: View {
                     }
                 }
 
-                // Top-left dismiss chevron. Sits above all reel content with a
-                // glassy background so it stays legible over any backdrop.
-                VStack {
+                // Top-left dismiss chevron + tab pills. Sits above all reel
+                // content with a glassy background so it stays legible.
+                VStack(spacing: 0) {
                     HStack {
                         Button(action: handleDismiss) {
                             Image(systemName: "chevron.left")
@@ -888,9 +861,33 @@ struct ReelsScreen: View {
                         }
                         .buttonStyle(.plain)
                         .padding(.leading, 14)
-                        .padding(.top, max(topInset - 10, 6))
+
                         Spacer()
+
+                        // Tab pills — tap to jump to the first reel of each section.
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 18) {
+                                ForEach(ReelTab.allCases, id: \.self) { tab in
+                                    TabPill(
+                                        tab: tab,
+                                        active: currentTrailer?.tab == tab,
+                                        action: {
+                                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                            if let idx = vm.allTrailers.firstIndex(where: { $0.tab == tab }) {
+                                                withAnimation(.spring(response: 0.45, dampingFraction: 0.86)) {
+                                                    scrolledID = idx
+                                                }
+                                            }
+                                        }
+                                    )
+                                }
+                            }
+                            .padding(.horizontal, 8)
+                        }
+                        .allowsHitTesting(true)
+                        .frame(maxWidth: .infinity)
                     }
+                    .padding(.top, max(topInset - 10, 6))
                     Spacer()
                 }
             }
@@ -2025,17 +2022,7 @@ private struct SimulatorTrailerPoster: View {
                         fallbackColors: [trailer.platformColor.opacity(0.7), Color(hex: "04090F")])
             LinearGradient(colors: [.black.opacity(0.15), .black.opacity(0.55)],
                            startPoint: .top, endPoint: .bottom)
-            #if targetEnvironment(simulator)
-            VStack(spacing: 10) {
-                Image(systemName: "play.circle.fill")
-                    .scaledFont(size: 56, weight: .bold)
-                    .foregroundStyle(.white)
-                    .shadow(color: .black.opacity(0.4), radius: 8)
-                Text("Video playback unavailable in simulator")
-                    .scaledFont(size: 10, weight: .medium)
-                    .foregroundStyle(Color.white.opacity(0.55))
-            }
-            #endif
+
         }
         .clipped()
         // Poster is purely decorative — taps must fall through to the reel's
