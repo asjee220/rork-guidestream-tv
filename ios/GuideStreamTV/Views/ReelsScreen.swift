@@ -218,7 +218,7 @@ final class ReelsViewModel {
         let trendingItems = await buildItems(from: Array(trending.prefix(50)), tab: .trending)
         let newItems = await buildItems(from: Array(onAir.prefix(50)), tab: .new)
         let popularTVItems = await buildItems(from: Array(popularTV.prefix(50)), tab: .forYou)
-        let comingSoonItems = await buildItems(from: Array(nowPlaying.prefix(50)), tab: .comingSoon)
+        let comingSoonItems = await buildComingSoonItems(from: Array(nowPlaying.prefix(50)))
         let streamingMovieItems = await buildItems(from: Array(streamingMovies.prefix(50)), tab: .forYou)
 
         print("[REELS] Built items: forYou=\(forYouItems.count) trending=\(trendingItems.count) new=\(newItems.count) popularTV=\(popularTVItems.count) comingSoon=\(comingSoonItems.count) streamingMovies=\(streamingMovieItems.count)")
@@ -444,6 +444,87 @@ final class ReelsViewModel {
         }
     }
 
+    /// Builds Coming Soon reels for in-theater movies that are not yet
+    /// available on a recognised US streaming service. Does NOT filter by
+    /// streaming provider — the whole point is to surface movies heading to
+    /// streaming, so we only exclude titles that are already streaming today.
+    private func buildComingSoonItems(from results: [TMDBResult]) async -> [TrailerItem] {
+        await withTaskGroup(of: TrailerItem?.self) { group in
+            for r in results {
+                group.addTask { [tmdb] in
+                    async let keyTask: String? = try? tmdb.getMovieTrailerKey(tmdbId: r.id)
+                    async let providerTask: TMDBWatchProvider? = try? tmdb.getTopWatchProvider(tmdbId: r.id, isTV: false)
+                    async let releaseTask: (date: Date, note: String?)? = try? tmdb.getUSDigitalReleaseDate(movieId: r.id)
+                    let (key, provider, release) = await (keyTask, providerTask, releaseTask)
+                    guard let key, !key.isEmpty else { return nil }
+
+                    // Skip movies that are already available on a recognised
+                    // streaming service — they belong in the For You feed, not
+                    // in Coming Soon.
+                    if let provider, ReelPlatform.recognizedKey(for: provider.providerName) != nil {
+                        return nil
+                    }
+
+                    let name = r.displayName
+                    let overview = r.overview ?? ""
+                    let year = r.year
+                    let genreName = "DRAMA"
+
+                    // Build the badge text: "STREAMING AUG 5" when a digital
+                    // release date is known, otherwise "IN THEATERS".
+                    let badgeText: String
+                    if let releaseDate = release?.date {
+                        let fmt = DateFormatter()
+                        fmt.dateFormat = "MMM d"
+                        fmt.locale = Locale(identifier: "en_US_POSIX")
+                        badgeText = "STREAMING \(fmt.string(from: releaseDate).uppercased())"
+                    } else {
+                        badgeText = "IN THEATERS"
+                    }
+
+                    let runtimeText: String = "Movie"
+                    let backdrop = TMDBImage.url(r.backdropPath, size: .backdrop1280).flatMap { URL(string: $0) }
+                    let poster = TMDBImage.url(r.posterPath, size: .poster342).flatMap { URL(string: $0) }
+                    let thumb = URL(string: "https://img.youtube.com/vi/\(key)/maxresdefault.jpg")
+                    let embed: URL? = URL(string: "https://www.youtube.com/watch?v=\(key)")
+                    let identity = String(name.prefix(3)).uppercased()
+
+                    return TrailerItem(
+                        id: key,
+                        tmdbId: r.id,
+                        showName: name,
+                        synopsis: overview,
+                        genre: "MOVIE\(year.map { " · \($0)" } ?? "")",
+                        runtime: runtimeText,
+                        platformId: "in_theaters",
+                        platformName: badgeText,
+                        platformColor: Color.navy,
+                        platformTextColor: .white,
+                        backdropURL: backdrop,
+                        posterURL: poster,
+                        trailerKey: key,
+                        thumbnailURL: thumb,
+                        youtubeURL: embed,
+                        deepLinkURL: nil,
+                        voteAverage: r.voteAverage ?? 0,
+                        likes: 0,
+                        comments: 0,
+                        tab: .comingSoon,
+                        identityCode: identity,
+                        gradeColor: Color.navy.opacity(0.15),
+                        isSponsored: false,
+                        isTV: false
+                    )
+                }
+            }
+            var out: [TrailerItem] = []
+            for await item in group {
+                if let item { out.append(item) }
+            }
+            return out
+        }
+    }
+
 private func makeRakutenAdReels() -> [TrailerItem] {
         let selected = AuthViewModel.shared.selectedServices
             .map { $0.lowercased() }
@@ -575,6 +656,19 @@ private func makeRakutenAdReels() -> [TrailerItem] {
     }
 
     // MARK: - Mutations
+
+    func isReminded(_ trailer: TrailerItem) -> Bool {
+        guard trailer.tmdbId > 0, !trailer.isSponsored else { return false }
+        return ReleaseReminderService.shared.isReminded(String(trailer.tmdbId))
+    }
+
+    func toggleReminder(_ trailer: TrailerItem) async {
+        guard trailer.tmdbId > 0, !trailer.isSponsored else { return }
+        await ReleaseReminderService.shared.toggleReminder(
+            titleId: String(trailer.tmdbId),
+            tmdbId: trailer.tmdbId
+        )
+    }
 
     func toggleLike(_ trailer: TrailerItem) {
         guard !trailer.isSponsored, trailer.tmdbId > 0 else { return }
@@ -919,6 +1013,7 @@ struct ReelsScreen: View {
                             scrolledID = index + 1
                         }
                     },
+                isReminded: vm.isReminded(trailer),
                 onTogglePlay: { isPlaying.toggle() },
                 onToggleMute: {
                     UIImpactFeedbackGenerator(style: .soft).impactOccurred()
@@ -979,6 +1074,10 @@ struct ReelsScreen: View {
                         platformId: trailer.platformId,
                         metadata: ["source": "reels_play_pill"]
                     )
+                },
+                onNotify: {
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    Task { await vm.toggleReminder(trailer) }
                 }
             )
             .frame(width: size.width, height: size.height)
@@ -998,8 +1097,12 @@ struct ReelsScreen: View {
             guard let trailer = vm.allTrailers[safe: i],
                   !trailer.isSponsored,
                   trailer.tmdbId > 0 else { continue }
+            let titleId = String(trailer.tmdbId)
             Task {
-                await SocialViewModel.shared.refreshCounts(titleId: String(trailer.tmdbId))
+                await SocialViewModel.shared.refreshCounts(titleId: titleId)
+            }
+            Task {
+                await ReleaseReminderService.shared.refreshReminded(titleId: titleId)
             }
         }
     }
@@ -1056,6 +1159,7 @@ private struct ReelView: View {
     let totalCount: Int
     var onEnded: (() -> Void)? = nil
 
+    let isReminded: Bool
     let onTogglePlay: () -> Void
     let onToggleMute: () -> Void
     let onLike: () -> Void
@@ -1065,6 +1169,7 @@ private struct ReelView: View {
     let onTabSelect: (ReelTab) -> Void
     let onSponsorCTA: () -> Void
     let onShowDetail: () -> Void
+    let onNotify: () -> Void
 
     @State private var contentOpacity: Double = 0.4
     @State private var likeBounce: CGFloat = 1.0
@@ -1343,8 +1448,7 @@ private struct ReelView: View {
                     Spacer()
                     VStack(spacing: 28) {
                         if !trailer.isSponsored {
-                            if trailer.tab != .comingSoon {
-                                RailButton(
+                            RailButton(
                                     icon: isLiked ? "heart.fill" : "heart",
                                     label: formatCount(likeCount),
                                     tint: isLiked ? Color(hex: "FF3B5C") : .white,
@@ -1357,7 +1461,6 @@ private struct ReelView: View {
                                     }
                                 )
                                 .scaleEffect(likeBounce)
-                            }
 
                             RailButton(icon: "message", label: formatCount(commentCount), tint: .white, action: onComments)
                         }
@@ -1458,7 +1561,7 @@ private struct ReelView: View {
                                     .padding(.bottom, 2)
                                 }
                         } else if trailer.tab == .comingSoon {
-                            NotifyMePill(enrolled: isLiked, action: onLike)
+                            NotifyMePill(enrolled: isReminded, action: onNotify)
                         } else {
                             PlayOnPill(action: onShowDetail)
                         }
@@ -1780,7 +1883,7 @@ private struct NotifyMePill: View {
             HStack(spacing: 8) {
                 Image(systemName: enrolled ? "bell.badge.fill" : "bell.fill")
                     .scaledFont(size: 14, weight: .bold)
-                Text(enrolled ? "Notifying" : "Notify Me")
+                Text(enrolled ? "Reminder Set" : "Notify Me")
                     .scaledFont(size: 15, weight: .bold)
             }
             .foregroundStyle(.white)
