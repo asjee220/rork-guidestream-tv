@@ -12,11 +12,35 @@ import SwiftUI
 import UIKit
 import YouTubeiOSPlayerHelper
 import Supabase
+import os
 
 private extension Array {
     subscript(safe index: Int) -> Element? {
         indices.contains(index) ? self[index] : nil
     }
+}
+
+// MARK: - TEMP DEBUG: Crash-safe memory helpers
+
+/// Returns the app's resident memory footprint in megabytes, or -1 on failure.
+/// Uses `task_info` with `TASK_VM_INFO` to read `phys_footprint`.
+private func reelsFootprintMB() -> Double {
+    var info = task_vm_info_data_t()
+    var count = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<integer_t>.size)
+    let result = withUnsafeMutablePointer(to: &info) { ptr in
+        ptr.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { rebased in
+            task_info(mach_task_self_, task_flavor_t(TASK_VM_INFO), rebased, &count)
+        }
+    }
+    guard result == KERN_SUCCESS else { return -1 }
+    return Double(info.phys_footprint) / 1024 / 1024
+}
+
+/// Returns the available memory headroom in megabytes, or -1 when the call returns 0.
+private func reelsAvailableMB() -> Double {
+    let bytes = os_proc_available_memory()
+    guard bytes > 0 else { return -1 }
+    return Double(bytes) / 1024 / 1024
 }
 
 // MARK: - Model
@@ -204,13 +228,14 @@ final class ReelsViewModel {
         async let trendingTask: [TMDBResult] = (try? tmdb.getTrending()) ?? []
         async let onAirTask: [TMDBResult] = (try? tmdb.getOnTheAir()) ?? []
         async let myStreamsTask: [UserStream] = fetchMyStreams()
-        async let nowPlayingTask: [TMDBResult] = (try? tmdb.getNowPlayingMovies()) ?? []
         async let popularTVTask: [TMDBResult] = (try? tmdb.getPopularTV()) ?? []
         async let streamingMoviesTask: [TMDBResult] = fetchStreamingMovies()
 
-        let (trending, onAir, mine, nowPlaying, popularTV, streamingMovies) = await (trendingTask, onAirTask, myStreamsTask, nowPlayingTask, popularTVTask, streamingMoviesTask)
+        let (trending, onAir, mine, popularTV, streamingMovies) = await (trendingTask, onAirTask, myStreamsTask, popularTVTask, streamingMoviesTask)
 
-        print("[REELS] Fetched sources: trending=\(trending.count) onAir=\(onAir.count) mine=\(mine.count) nowPlaying=\(nowPlaying.count) popularTV=\(popularTV.count) streamingMovies=\(streamingMovies.count)")
+        let comingSoonReleases = (try? await WatchmodeService.shared.upcomingStreamingReleases()) ?? []
+
+        print("[REELS] Fetched sources: trending=\(trending.count) onAir=\(onAir.count) mine=\(mine.count) popularTV=\(popularTV.count) streamingMovies=\(streamingMovies.count) comingSoonReleases=\(comingSoonReleases.count)")
 
         // For each show, fetch its YouTube trailer key + TMDB detail.
         // Keep the work parallel but capped to avoid hammering TMDB.
@@ -218,7 +243,7 @@ final class ReelsViewModel {
         let trendingItems = await buildItems(from: Array(trending.prefix(50)), tab: .trending)
         let newItems = await buildItems(from: Array(onAir.prefix(50)), tab: .new)
         let popularTVItems = await buildItems(from: Array(popularTV.prefix(50)), tab: .forYou)
-        let comingSoonItems = await buildComingSoonItems(from: Array(nowPlaying.prefix(50)))
+        let comingSoonItems = await buildComingSoonItems(from: comingSoonReleases)
         let streamingMovieItems = await buildItems(from: Array(streamingMovies.prefix(50)), tab: .forYou)
 
         print("[REELS] Built items: forYou=\(forYouItems.count) trending=\(trendingItems.count) new=\(newItems.count) popularTV=\(popularTVItems.count) comingSoon=\(comingSoonItems.count) streamingMovies=\(streamingMovieItems.count)")
@@ -444,69 +469,78 @@ final class ReelsViewModel {
         }
     }
 
-    /// Builds Coming Soon reels for in-theater movies that are not yet
-    /// available on a recognised US streaming service. Does NOT filter by
-    /// streaming provider — the whole point is to surface movies heading to
-    /// streaming, so we only exclude titles that are already streaming today.
-    private func buildComingSoonItems(from results: [TMDBResult]) async -> [TrailerItem] {
-        await withTaskGroup(of: TrailerItem?.self) { group in
-            for r in results {
+    /// Builds Coming Soon reels from Watchmode's upcoming streaming releases.
+    /// Filters to movie-type entries with a valid TMDB id and a source release
+    /// date on or after today, deduplicates by tmdbId keeping the earliest
+    /// date, fetches the YouTube trailer key, and assembles TrailerItems with
+    /// a STREAMING <date> badge.
+    private func buildComingSoonItems(from releases: [WatchmodeRelease]) async -> [TrailerItem] {
+        // Parse and filter releases.
+        let inDF = DateFormatter()
+        inDF.dateFormat = "yyyy-MM-dd"
+        inDF.locale = Locale(identifier: "en_US_POSIX")
+        let today = Calendar.current.startOfDay(for: Date())
+
+        let eligible: [(release: WatchmodeRelease, date: Date)] = releases.compactMap { r in
+            guard r.type == "movie",
+                  let tmdbId = r.tmdbId,
+                  let dateStr = r.sourceReleaseDate,
+                  let date = inDF.date(from: dateStr),
+                  date >= today
+            else { return nil }
+            return (r, date)
+        }
+
+        // Deduplicate by tmdbId, keeping the earliest sourceReleaseDate.
+        var bestByTmdb: [Int: (release: WatchmodeRelease, date: Date)] = [:]
+        for entry in eligible {
+            let tid = entry.release.tmdbId!
+            if let existing = bestByTmdb[tid] {
+                if entry.date < existing.date { bestByTmdb[tid] = entry }
+            } else {
+                bestByTmdb[tid] = entry
+            }
+        }
+        let deduped = Array(bestByTmdb.values)
+
+        let outDF = DateFormatter()
+        outDF.dateFormat = "MMM d"
+        outDF.locale = Locale(identifier: "en_US_POSIX")
+
+        return await withTaskGroup(of: TrailerItem?.self) { group in
+            for entry in deduped {
+                let release = entry.release
+                let releaseDate = entry.date
+                let tmdbId = release.tmdbId!
                 group.addTask { [tmdb] in
-                    async let keyTask: String? = try? tmdb.getMovieTrailerKey(tmdbId: r.id)
-                    async let providerTask: TMDBWatchProvider? = try? tmdb.getTopWatchProvider(tmdbId: r.id, isTV: false)
-                    async let releaseTask: (date: Date, note: String?)? = try? tmdb.getUSDigitalReleaseDate(movieId: r.id)
-                    let (key, provider, release) = await (keyTask, providerTask, releaseTask)
-                    guard let key, !key.isEmpty else { return nil }
+                    guard let key = try? await tmdb.getMovieTrailerKey(tmdbId: tmdbId),
+                          !key.isEmpty
+                    else { return nil }
 
-                    // Skip movies that are already available on a recognised
-                    // streaming service — they belong in the For You feed, not
-                    // in Coming Soon.
-                    if let provider, ReelPlatform.recognizedKey(for: provider.providerName) != nil {
-                        return nil
-                    }
-
-                    let name = r.displayName
-                    let overview = r.overview ?? ""
-                    let year = r.year
-                    let genreName = "DRAMA"
-
-                    // Build the badge text: "STREAMING AUG 5" when a digital
-                    // release date is known, otherwise "IN THEATERS".
-                    let badgeText: String
-                    if let releaseDate = release?.date {
-                        let fmt = DateFormatter()
-                        fmt.dateFormat = "MMM d"
-                        fmt.locale = Locale(identifier: "en_US_POSIX")
-                        badgeText = "STREAMING \(fmt.string(from: releaseDate).uppercased())"
-                    } else {
-                        badgeText = "IN THEATERS"
-                    }
-
-                    let runtimeText: String = "Movie"
-                    let backdrop = TMDBImage.url(r.backdropPath, size: .backdrop1280).flatMap { URL(string: $0) }
-                    let poster = TMDBImage.url(r.posterPath, size: .poster342).flatMap { URL(string: $0) }
+                    let name = release.title ?? ""
+                    let badgeText = "STREAMING \(outDF.string(from: releaseDate).uppercased())"
                     let thumb = URL(string: "https://img.youtube.com/vi/\(key)/maxresdefault.jpg")
                     let embed: URL? = URL(string: "https://www.youtube.com/watch?v=\(key)")
                     let identity = String(name.prefix(3)).uppercased()
 
                     return TrailerItem(
                         id: key,
-                        tmdbId: r.id,
+                        tmdbId: tmdbId,
                         showName: name,
-                        synopsis: overview,
-                        genre: "MOVIE\(year.map { " · \($0)" } ?? "")",
-                        runtime: runtimeText,
-                        platformId: "in_theaters",
+                        synopsis: "",
+                        genre: "MOVIE",
+                        runtime: "Movie",
+                        platformId: "coming_soon",
                         platformName: badgeText,
                         platformColor: Color.navy,
                         platformTextColor: .white,
-                        backdropURL: backdrop,
-                        posterURL: poster,
+                        backdropURL: thumb,
+                        posterURL: thumb,
                         trailerKey: key,
                         thumbnailURL: thumb,
                         youtubeURL: embed,
                         deepLinkURL: nil,
-                        voteAverage: r.voteAverage ?? 0,
+                        voteAverage: 0,
                         likes: 0,
                         comments: 0,
                         tab: .comingSoon,
@@ -829,8 +863,39 @@ struct ReelsScreen: View {
                         }
                         _ = prev
                         refreshSocialCounts(around: newValue)
+                        // TEMP DEBUG: write breadcrumb on each swipe
+                        Task.detached { [vm] in
+                            await ReelsScreen.writeBreadcrumb(vm: vm)
+                        }
                     }
                 }
+
+                // TEMP DEBUG: on-screen memory HUD
+                VStack {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            let fp = reelsFootprintMB()
+                            let avail = reelsAvailableMB()
+                            Text("fp \(String(format: "%.0f", fp))MB")
+                                .font(.caption.monospaced())
+                                .foregroundStyle(.white)
+                            Text("avail \(avail > 0 ? String(format: "%.0f", avail) : "n/a")MB")
+                                .font(.caption.monospaced())
+                                .foregroundStyle(.white)
+                            Text("#\(vm.currentIndex + 1)/\(vm.allTrailers.count)")
+                                .font(.caption.monospaced())
+                                .foregroundStyle(.white)
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(Color.black.opacity(0.6), in: RoundedRectangle(cornerRadius: 8))
+                        Spacer()
+                    }
+                    .padding(.leading, 14)
+                    .padding(.top, max(topInset, 6) + 46)
+                    Spacer()
+                }
+                .allowsHitTesting(false)
 
                 // Top-left dismiss chevron. Sits above all reel content with a
                 // glassy background so it stays legible over any backdrop.
@@ -890,6 +955,10 @@ struct ReelsScreen: View {
             prefetchNeighbors(around: vm.currentIndex)
             // Refresh social counts for the first visible reel and its neighbours.
             refreshSocialCounts(around: vm.currentIndex)
+            // TEMP DEBUG: write breadcrumb for the initial reel
+            Task.detached { [vm] in
+                await Self.writeBreadcrumb(vm: vm)
+            }
         }
         .onAppear { tabBarVisibility.hide() }
         .onDisappear { tabBarVisibility.show() }
@@ -1135,6 +1204,36 @@ struct ReelsScreen: View {
                     "tab": trailer.tab.rawValue
                 ]
             )
+        }
+    }
+
+    // TEMP DEBUG: Write one breadcrumb row to debug_logs per swipe / first appearance.
+    // Fire-and-forget — never affects the UI, silent on failure.
+    private static func writeBreadcrumb(vm: ReelsViewModel) async {
+        guard let trailer = vm.allTrailers[safe: vm.currentIndex] else { return }
+        let fpMB = Int(reelsFootprintMB())
+        let availMB = Int(reelsAvailableMB())
+        let target = "idx=\(vm.currentIndex) count=\(vm.allTrailers.count) tab=\(trailer.tab.rawValue) plat=\(trailer.platformId) tmdb=\(trailer.tmdbId) fpMB=\(fpMB) availMB=\(availMB)"
+        var payload: [String: AnyJSON] = [
+            "event": .string("reels_breadcrumb"),
+            "title": .string(trailer.showName),
+            "content_url": .string(trailer.trailerKey),
+            "target_name": .string(target),
+            "device_id": .string(DeviceIdentity.shared.deviceId),
+            "device_name": .string(UIDevice.current.name),
+            "device_kind": .string("phone"),
+            "platform": .string("ios"),
+        ]
+        if let uid = AuthViewModel.shared.currentUser?.id.uuidString {
+            payload["user_id"] = .string(uid)
+        }
+        do {
+            _ = try await SupabaseManager.shared.client
+                .from("debug_logs")
+                .insert(AnyJSON.object(payload))
+                .execute()
+        } catch {
+            print("[ReelsScreen breadcrumb] insert failed: \(error)")
         }
     }
 }
@@ -2110,6 +2209,20 @@ private struct YouTubePlayerView: UIViewRepresentable {
     static func dismantleUIView(_ playerView: YTPlayerView, coordinator: Coordinator) {
         // Stop playback so no audio or video continues in the background.
         playerView.stopVideo()
+        // TEMP DEBUG: fully release the web view to stop leaking WebKit memory across swipes.
+        if let web = playerView.webView {
+            web.stopLoading()
+            web.navigationDelegate = nil
+            web.uiDelegate = nil
+            web.configuration.userContentController.removeAllUserScripts()
+            web.loadHTMLString("", baseURL: nil)
+            web.removeFromSuperview()
+        }
+        playerView.delegate = nil
+        playerView.removeFromSuperview()
+        coordinator.onEmbedError = nil
+        coordinator.onEnded = nil
+        coordinator.progress = nil
     }
 
     func makeCoordinator() -> Coordinator { Coordinator() }

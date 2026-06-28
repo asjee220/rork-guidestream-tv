@@ -201,6 +201,65 @@ nonisolated struct WatchmodeService {
     }
 }
 
+// MARK: - Releases (upcoming-to-streaming)
+
+nonisolated struct WatchmodeRelease: Decodable, Sendable {
+    let id: Int?
+    let title: String?
+    let type: String?
+    let tmdbId: Int?
+    let tmdbType: String?
+    let posterUrl: String?
+    let sourceReleaseDate: String?
+    let sourceId: Int?
+    let sourceName: String?
+    let isOriginal: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case id, title, type
+        case tmdbId = "tmdb_id"
+        case tmdbType = "tmdb_type"
+        case posterUrl = "poster_url"
+        case sourceReleaseDate = "source_release_date"
+        case sourceId = "source_id"
+        case sourceName = "source_name"
+        case isOriginal = "is_original"
+    }
+}
+
+nonisolated struct WatchmodeReleasesEnvelope: Decodable, Sendable {
+    let releases: [WatchmodeRelease]?
+}
+
+nonisolated extension WatchmodeService {
+    /// Fetches upcoming streaming releases from Watchmode's releases endpoint.
+    /// Returns movies with a known TMDB id and a streaming release date on or
+    /// after today, up to `daysAhead` in the future.
+    func upcomingStreamingReleases(daysAhead: Int = 30, limit: Int = 250) async throws -> [WatchmodeRelease] {
+        let df = DateFormatter()
+        df.dateFormat = "yyyyMMdd"
+        df.locale = Locale(identifier: "en_US_POSIX")
+        let start = df.string(from: Date())
+        let endDate = Calendar.current.date(byAdding: .day, value: daysAhead, to: Date()) ?? Date()
+        let end = df.string(from: endDate)
+
+        let urlString = "https://api.watchmode.com/v1/releases/?apiKey=\(apiKey)&start_date=\(start)&end_date=\(end)&limit=\(limit)"
+        guard let url = URL(string: urlString) else { throw URLError(.badURL) }
+        var req = URLRequest(url: url)
+        req.timeoutInterval = 12
+        let (data, response) = try await URLSession.shared.data(for: req)
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            #if DEBUG
+            let body = String(data: data, encoding: .utf8) ?? "<binary>"
+            print("[Watchmode] upcomingStreamingReleases HTTP \((response as? HTTPURLResponse)?.statusCode ?? -1): \(body.prefix(200))")
+            #endif
+            throw URLError(.badServerResponse)
+        }
+        let envelope = try JSONDecoder().decode(WatchmodeReleasesEnvelope.self, from: data)
+        return envelope.releases ?? []
+    }
+}
+
 // MARK: - Episode-level sources
 
 nonisolated struct WatchmodeEpisode: Decodable, Sendable {
