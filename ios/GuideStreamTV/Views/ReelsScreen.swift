@@ -206,24 +206,22 @@ final class ReelsViewModel {
         async let myStreamsTask: [UserStream] = fetchMyStreams()
         async let nowPlayingTask: [TMDBResult] = (try? tmdb.getNowPlayingMovies()) ?? []
         async let popularTVTask: [TMDBResult] = (try? tmdb.getPopularTV()) ?? []
-        async let upcomingTask: [TMDBResult] = (try? tmdb.getUpcomingMovies()) ?? []
         async let streamingMoviesTask: [TMDBResult] = fetchStreamingMovies()
 
-        let (trending, onAir, mine, nowPlaying, popularTV, upcoming, streamingMovies) = await (trendingTask, onAirTask, myStreamsTask, nowPlayingTask, popularTVTask, upcomingTask, streamingMoviesTask)
+        let (trending, onAir, mine, nowPlaying, popularTV, streamingMovies) = await (trendingTask, onAirTask, myStreamsTask, nowPlayingTask, popularTVTask, streamingMoviesTask)
 
-        print("[REELS] Fetched sources: trending=\(trending.count) onAir=\(onAir.count) mine=\(mine.count) nowPlaying=\(nowPlaying.count) popularTV=\(popularTV.count) upcoming=\(upcoming.count) streamingMovies=\(streamingMovies.count)")
+        print("[REELS] Fetched sources: trending=\(trending.count) onAir=\(onAir.count) mine=\(mine.count) nowPlaying=\(nowPlaying.count) popularTV=\(popularTV.count) streamingMovies=\(streamingMovies.count)")
 
         // For each show, fetch its YouTube trailer key + TMDB detail.
         // Keep the work parallel but capped to avoid hammering TMDB.
         let forYouItems = await buildItems(from: mineResults(mine), tab: .forYou)
         let trendingItems = await buildItems(from: Array(trending.prefix(50)), tab: .trending)
         let newItems = await buildItems(from: Array(onAir.prefix(50)), tab: .new)
-        let nowPlayingItems = await buildItems(from: Array(nowPlaying.prefix(50)), tab: .new)
         let popularTVItems = await buildItems(from: Array(popularTV.prefix(50)), tab: .forYou)
-        let comingSoonItems = await buildItems(from: Array(upcoming.prefix(50)), tab: .comingSoon)
+        let comingSoonItems = await buildItems(from: Array(nowPlaying.prefix(50)), tab: .comingSoon)
         let streamingMovieItems = await buildItems(from: Array(streamingMovies.prefix(50)), tab: .forYou)
 
-        print("[REELS] Built items: forYou=\(forYouItems.count) trending=\(trendingItems.count) new=\(newItems.count) nowPlaying=\(nowPlayingItems.count) popularTV=\(popularTVItems.count) comingSoon=\(comingSoonItems.count) streamingMovies=\(streamingMovieItems.count)")
+        print("[REELS] Built items: forYou=\(forYouItems.count) trending=\(trendingItems.count) new=\(newItems.count) popularTV=\(popularTVItems.count) comingSoon=\(comingSoonItems.count) streamingMovies=\(streamingMovieItems.count)")
 
         // Backfill For You feed with trending when the account has a light watchlist.
         var forYouCombined = forYouItems + popularTVItems
@@ -244,7 +242,7 @@ final class ReelsViewModel {
             if i < forYouCombined.count { combined.append(forYouCombined[i]) }
             if i < streamingMovieItems.count { combined.append(streamingMovieItems[i]) }
         }
-        combined += trendingItems + newItems + nowPlayingItems + comingSoonItems
+        combined += trendingItems + newItems + comingSoonItems
 
         // Deduplicate by trailer key so the same video doesn't appear twice.
         var seen = Set<String>()
@@ -1345,19 +1343,21 @@ private struct ReelView: View {
                     Spacer()
                     VStack(spacing: 28) {
                         if !trailer.isSponsored {
-                            RailButton(
-                                icon: isLiked ? "heart.fill" : "heart",
-                                label: formatCount(likeCount),
-                                tint: isLiked ? Color(hex: "FF3B5C") : .white,
-                                action: {
-                                    likeBounce = 1.4
-                                    withAnimation(.spring(response: 0.3, dampingFraction: 0.55)) {
-                                        likeBounce = 1.0
+                            if trailer.tab != .comingSoon {
+                                RailButton(
+                                    icon: isLiked ? "heart.fill" : "heart",
+                                    label: formatCount(likeCount),
+                                    tint: isLiked ? Color(hex: "FF3B5C") : .white,
+                                    action: {
+                                        likeBounce = 1.4
+                                        withAnimation(.spring(response: 0.3, dampingFraction: 0.55)) {
+                                            likeBounce = 1.0
+                                        }
+                                        onLike()
                                     }
-                                    onLike()
-                                }
-                            )
-                            .scaleEffect(likeBounce)
+                                )
+                                .scaleEffect(likeBounce)
+                            }
 
                             RailButton(icon: "message", label: formatCount(commentCount), tint: .white, action: onComments)
                         }
@@ -1457,6 +1457,8 @@ private struct ReelView: View {
                                     }
                                     .padding(.bottom, 2)
                                 }
+                        } else if trailer.tab == .comingSoon {
+                            NotifyMePill(enrolled: isLiked, action: onLike)
                         } else {
                             PlayOnPill(action: onShowDetail)
                         }
@@ -1760,6 +1762,40 @@ private struct WatchListButton: View {
             sponsored
                 ? "Learn more"
                 : (saved ? "Saved to watch list. Tap to remove." : "Add to watch list")
+        )
+    }
+}
+
+/// Notify-me CTA shown on Coming Soon reels. Mirrors PlayOnPill styling
+/// but toggles a title_likes enrollment (bell icon) instead of opening the
+/// detail sheet. The enrollment is consumed by existing send_movie_releases
+/// and check_watchlist_availability edge functions — no new backend wiring.
+private struct NotifyMePill: View {
+    let enrolled: Bool
+    let action: () -> Void
+    @State private var isPressed: Bool = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                Image(systemName: enrolled ? "bell.badge.fill" : "bell.fill")
+                    .scaledFont(size: 14, weight: .bold)
+                Text(enrolled ? "Notifying" : "Notify Me")
+                    .scaledFont(size: 15, weight: .bold)
+            }
+            .foregroundStyle(.white)
+            .padding(.horizontal, 22)
+            .frame(height: 52)
+            .background(Capsule().fill(Color(hex: "F5821F")))
+            .shadow(color: Color(hex: "F5821F").opacity(0.55), radius: 14, y: 6)
+            .scaleEffect(isPressed ? 0.96 : 1.0)
+            .animation(.spring(response: 0.28, dampingFraction: 0.7), value: isPressed)
+        }
+        .buttonStyle(.plain)
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 0)
+                .onChanged { _ in isPressed = true }
+                .onEnded { _ in isPressed = false }
         )
     }
 }
