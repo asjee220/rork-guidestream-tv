@@ -27,6 +27,9 @@ final class TVTrailerPlayer {
 
     private(set) var isReady: Bool = false
     private(set) var isPlaying: Bool = false
+    /// True when the active trailer key exists but no playable stream could be
+    /// resolved (region/age-gated, removed, or YouTube returned nothing).
+    private(set) var resolveFailed: Bool = false
     var isMuted: Bool = true {
         didSet { player.isMuted = isMuted }
     }
@@ -38,6 +41,8 @@ final class TVTrailerPlayer {
     private var endObserver: NSObjectProtocol?
     /// Session cache of resolved stream URLs to avoid re-hitting the resolver.
     private var urlCache: [String: URL] = [:]
+    /// Keys currently being prefetched, so we don't fire duplicate resolves.
+    private var prefetching: Set<String> = []
 
     init() {
         player.isMuted = true
@@ -55,6 +60,7 @@ final class TVTrailerPlayer {
 
         isReady = false
         isPlaying = false
+        resolveFailed = false
         teardownItem()
 
         guard let key, !key.isEmpty else { return }
@@ -67,9 +73,26 @@ final class TVTrailerPlayer {
         Task {
             let resolved = await TVTrailerResolver.shared.streamURL(for: key)
             guard token == loadToken else { return }   // a newer reel took over
-            guard let resolved else { return }          // no playable stream
+            guard let resolved else {                   // no playable stream
+                resolveFailed = true
+                return
+            }
             urlCache[key] = resolved
             startPlayback(url: resolved, token: token)
+        }
+    }
+
+    /// Resolves + caches a trailer's stream URL ahead of time without touching
+    /// playback, so swiping to it starts instantly. Safe to call repeatedly.
+    func prefetch(key: String?) {
+        guard let key, !key.isEmpty else { return }
+        guard urlCache[key] == nil, !prefetching.contains(key) else { return }
+        prefetching.insert(key)
+        Task {
+            let resolved = await TVTrailerResolver.shared.streamURL(for: key)
+            prefetching.remove(key)
+            guard let resolved else { return }
+            urlCache[key] = resolved
         }
     }
 

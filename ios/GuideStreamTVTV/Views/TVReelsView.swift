@@ -457,19 +457,7 @@ struct TVReelsView: View {
                         .padding(.vertical, 8)
                         .background(.white.opacity(0.12), in: Capsule())
                         .overlay(Capsule().stroke(.white.opacity(0.18), lineWidth: 1))
-                    if reel.trailerKey != nil {
-                        HStack(spacing: 8) {
-                            Image(systemName: "film.fill")
-                                .font(.system(size: 16, weight: .bold))
-                            Text("TRAILER")
-                                .font(.system(size: 16, weight: .heavy))
-                                .tracking(1)
-                        }
-                        .foregroundStyle(.white.opacity(0.9))
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 8)
-                        .background(.white.opacity(0.10), in: Capsule())
-                    }
+                    trailerBadge(reel)
                 }
 
                 Text(reel.title)
@@ -499,6 +487,39 @@ struct TVReelsView: View {
             .padding(.horizontal, 80)
             .padding(.bottom, 80)
             .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    /// Shows the trailer status pill: "TRAILER" when one is available, or a
+    /// muted "Trailer unavailable" affordance when none exists or the stream
+    /// could not be resolved for this reel.
+    @ViewBuilder
+    private func trailerBadge(_ reel: TVReelItem) -> some View {
+        if reel.trailerKey == nil || trailer.resolveFailed {
+            HStack(spacing: 8) {
+                Image(systemName: "film.slash")
+                    .font(.system(size: 16, weight: .bold))
+                Text("TRAILER UNAVAILABLE")
+                    .font(.system(size: 16, weight: .heavy))
+                    .tracking(1)
+            }
+            .foregroundStyle(.white.opacity(0.6))
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .background(.white.opacity(0.06), in: Capsule())
+            .overlay(Capsule().stroke(.white.opacity(0.12), lineWidth: 1))
+        } else {
+            HStack(spacing: 8) {
+                Image(systemName: "film.fill")
+                    .font(.system(size: 16, weight: .bold))
+                Text("TRAILER")
+                    .font(.system(size: 16, weight: .heavy))
+                    .tracking(1)
+            }
+            .foregroundStyle(.white.opacity(0.9))
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .background(.white.opacity(0.10), in: Capsule())
         }
     }
 
@@ -675,9 +696,21 @@ struct TVReelsView: View {
         withAnimation { index = target }
     }
 
-    /// Resolves + plays the current reel's trailer inline.
+    /// Resolves + plays the current reel's trailer inline, then warms up the
+    /// neighbouring reels' trailers so swiping starts playback instantly.
     private func loadCurrentTrailer() {
         trailer.load(key: current?.trailerKey)
+        prefetchNeighbors()
+    }
+
+    /// Pre-resolves the next two reels (and the previous one) so fast scrolling
+    /// down the feed still hits warm, instantly-playable trailers.
+    private func prefetchNeighbors() {
+        for offset in [1, 2, -1] {
+            let neighbor = index + offset
+            guard vm.reels.indices.contains(neighbor) else { continue }
+            trailer.prefetch(key: vm.reels[neighbor].trailerKey)
+        }
     }
 
     private func openActions() {
