@@ -239,7 +239,22 @@ final class ContentSourcesService {
             cat.components(separatedBy: CharacterSet(charactersIn: ",/|")).map { $0.trimmingCharacters(in: .whitespaces).lowercased() }.filter { !$0.isEmpty }
         })
 
-        guard !followedTags.isEmpty else { return [] }
+        // Collect source types from content_sources rows.  When a followed
+        // creator has no row in the table (e.g. a seed creator whose title_id
+        // hasn't been inserted yet), derive the source type from the title_id
+        // prefix instead so the fallback path still works.
+        var followedSourceTypes = Set(followedSources.map { $0.sourceType })
+        if followedSourceTypes.isEmpty {
+            for id in followedIds {
+                switch SourceKind.from(titleId: id) {
+                case .youtube: followedSourceTypes.insert("youtube")
+                case .podcast: followedSourceTypes.insert("podcast")
+                case .twitch:  followedSourceTypes.insert("twitch")
+                case .kick:    followedSourceTypes.insert("kick")
+                case .tmdb:    break
+                }
+            }
+        }
 
         // Fetch all creators (all source types — YouTube, podcast, Twitch, Kick).
         let allSources: [ContentSource] = try await client
@@ -253,25 +268,34 @@ final class ContentSourcesService {
 
         let followedSet = Set(followedIds)
 
-        // Score each non-followed creator by category overlap.
+        // Score each non-followed creator.
+        // When followedTags is non-empty we use category-overlap scoring (72–98%).
+        // When followedTags is empty (creators have no categories) we fall back
+        // to source-type matching: other creators of the same type get 72%.
+        let hasCategories = !followedTags.isEmpty
         var scored: [(titleId: String, displayName: String, imageUrl: String?, sourceType: String, category: String?, matchPercentage: Int)] = []
         for source in allSources {
             guard !followedSet.contains(source.titleId) else { continue }
-            let cat = source.category ?? ""
-            let tags = cat.components(separatedBy: CharacterSet(charactersIn: ",/|")).map { $0.trimmingCharacters(in: .whitespaces).lowercased() }.filter { !$0.isEmpty }
-            let overlap = tags.filter { followedTags.contains($0) }.count
-            // Base score: how many followed categories does this creator share?
-            // Map to 72–98% range using the same clamping as Top Picks.
-            let overlapRatio = Double(overlap) / Double(max(1, followedTags.count))
-            let rawScore = Int(overlapRatio * 100)
-            let clamped = max(72, min(98, rawScore))
+            let matchPct: Int
+            if hasCategories {
+                let cat = source.category ?? ""
+                let tags = cat.components(separatedBy: CharacterSet(charactersIn: ",/|")).map { $0.trimmingCharacters(in: .whitespaces).lowercased() }.filter { !$0.isEmpty }
+                let overlap = tags.filter { followedTags.contains($0) }.count
+                let overlapRatio = Double(overlap) / Double(max(1, followedTags.count))
+                let rawScore = Int(overlapRatio * 100)
+                matchPct = max(72, min(98, rawScore))
+            } else {
+                // Fallback: same source_type → 72%, different type → skip entirely.
+                guard followedSourceTypes.contains(source.sourceType) else { continue }
+                matchPct = 72
+            }
             scored.append((
                 titleId: source.titleId,
                 displayName: source.displayName,
                 imageUrl: source.imageUrl,
                 sourceType: source.sourceType,
                 category: source.category,
-                matchPercentage: clamped
+                matchPercentage: matchPct
             ))
         }
 
