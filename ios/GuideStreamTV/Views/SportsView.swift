@@ -180,18 +180,17 @@ struct SportsView: View {
                 VStack(spacing: 0) {
                     HStack(spacing: 10) {
                         BrandWordmark(wordmarkSize: .nav)
-                        if !orderedSelectedServiceIds.isEmpty {
-                            ServicesPill(
-                                serviceIds: orderedSelectedServiceIds,
-                                onTap: { showServicesSheet = true }
-                            )
-                            .padding(.leading, 4)
-                        }
                         Spacer()
                         if isLoading && !games.isEmpty {
                             ProgressView()
                                 .tint(Color(hex: "F5821F"))
                                 .scaleEffect(0.8)
+                        }
+                        if !orderedSelectedServiceIds.isEmpty {
+                            ServicesPill(
+                                serviceIds: orderedSelectedServiceIds,
+                                onTap: { showServicesSheet = true }
+                            )
                         }
                     }
                     .frame(height: 56)
@@ -199,9 +198,10 @@ struct SportsView: View {
                 }
                 .background {
                     ZStack {
-                        Rectangle().fill(.ultraThinMaterial).opacity(0.09)
-                        Rectangle().fill(Color(red: 8/255, green: 14/255, blue: 24/255).opacity(0.03))
+                        Rectangle().fill(.ultraThinMaterial).opacity(0.61)
+                        Rectangle().fill(Color(red: 8/255, green: 14/255, blue: 24/255).opacity(0.18))
                     }
+                    .ignoresSafeArea(edges: .top)
                 }
                 .overlay(alignment: .bottom) {
                     Rectangle()

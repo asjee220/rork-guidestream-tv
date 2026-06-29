@@ -926,9 +926,10 @@ struct HomeView: View {
                 }
                 .background {
                     ZStack {
-                        Rectangle().fill(.ultraThinMaterial).opacity(0.09)
-                        Rectangle().fill(Color(red: 8/255, green: 14/255, blue: 24/255).opacity(0.03))
+                        Rectangle().fill(.ultraThinMaterial).opacity(0.61)
+                        Rectangle().fill(Color(red: 8/255, green: 14/255, blue: 24/255).opacity(0.18))
                     }
+                    .ignoresSafeArea(edges: .top)
                 }
                 .overlay(alignment: .bottom) {
                     Rectangle()
