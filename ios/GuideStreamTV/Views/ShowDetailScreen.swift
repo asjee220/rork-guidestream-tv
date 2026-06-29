@@ -57,6 +57,10 @@ final class ShowDetailViewModel {
     var isLoading: Bool = false
     var errorMessage: String?
     var resolved: ResolvedStreaming = .empty
+    /// Cached last-aired episode from TMDB, stored separately so the UI
+    /// never falls through to the wrong season's last episode when
+    /// `last_episode_to_air` has nil sub-fields.
+    var storedLastAir: (seasonNum: Int, episodeNum: Int, name: String?, runtime: Int?)?
     private var loadedTitleId: String?
     private var loadTask: Task<Void, Never>? = nil
 
@@ -86,14 +90,24 @@ final class ShowDetailViewModel {
             async let tmdbCall: TMDBTVDetail? = try? TMDBService.shared.getTVDetail(tmdbId: tmdbId)
             let tmdbResult = await tmdbCall
             self.tmdb = tmdbResult
-            let seasonNum = max(1, tmdbResult?.numberOfSeasons ?? 1)
-            // DIAG: log to console so we can see in runtime logs
-            let ns = tmdbResult?.numberOfSeasons.map(String.init) ?? "nil"
-            let leaSeason = tmdbResult?.lastEpisodeToAir?.seasonNumber.map(String.init) ?? "nil"
-            let leaEpisode = tmdbResult?.lastEpisodeToAir?.episodeNumber.map(String.init) ?? "nil"
-            let leaName = tmdbResult?.lastEpisodeToAir?.name ?? "nil"
-            NSLog("[DETAIL_DIAG] titleId=%@ tmdbOk=%@ numberOfSeasons=%@ lastEpisodeToAir=(s=%@ e=%@ name=%@) currentSeasonNumber=%d",
-                  titleId, tmdbResult != nil ? "YES" : "NO", ns, leaSeason, leaEpisode, leaName, seasonNum)
+            let lea = tmdbResult?.lastEpisodeToAir
+            let seasonNum: Int
+            if let leaSeason = lea?.seasonNumber, leaSeason >= 1 {
+                seasonNum = leaSeason
+            } else {
+                seasonNum = max(1, tmdbResult?.numberOfSeasons ?? 1)
+            }
+            if let lea, let sn = lea.seasonNumber, let en = lea.episodeNumber {
+                self.storedLastAir = (sn, en, lea.name, lea.runtime)
+            } else {
+                self.storedLastAir = nil
+            }
+            NSLog("[DETAIL_DIAG] titleId=%@ tmdbOk=%@ numberOfSeasons=%@ storedLastAir=(s=%@ e=%@ name=%@) selectedSeason=%d",
+                  titleId, tmdbResult != nil ? "YES" : "NO",
+                  tmdbResult?.numberOfSeasons.map(String.init) ?? "nil",
+                  lea?.seasonNumber.map(String.init) ?? "nil",
+                  lea?.episodeNumber.map(String.init) ?? "nil",
+                  lea?.name ?? "nil", seasonNum)
             guard seasonNum >= 1 else {
                 errorMessage = "Invalid season number"
                 isLoading = false
@@ -304,30 +318,24 @@ struct ShowDetailScreen: View {
         if let known = knownLatestEpisode {
             let name = vm.tmdb?.lastEpisodeToAir?.name ?? "Latest Episode"
             let runtime = vm.tmdb?.lastEpisodeToAir?.runtime.map { "\($0) min" } ?? ""
-            NSLog("[DETAIL_DIAG] latestEpisode PATH=knownLatestEpisode S\(known.seasonNum):E\(known.episodeNum) name=\(name)")
             return (known.seasonNum, known.episodeNum, name, runtime)
         }
-        // 2. TMDB's last_episode_to_air from the detail screen's own fetch
-        if let last = vm.tmdb?.lastEpisodeToAir,
-           let sn = last.seasonNumber, let en = last.episodeNumber {
-            let runtime = last.runtime.map { "\($0) min" } ?? ""
-            NSLog("[DETAIL_DIAG] latestEpisode PATH=vmTMDBlastEpisodeToAir S\(sn):E\(en) name=\(last.name ?? "nil")")
-            return (sn, en, last.name ?? "Latest Episode", runtime)
+        // 2. ViewModel's cached last-aired episode (direct from loadIfNeeded)
+        if let stored = vm.storedLastAir {
+            let runtime = stored.runtime.map { "\($0) min" } ?? ""
+            return (stored.seasonNum, stored.episodeNum, stored.name ?? "Latest Episode", runtime)
         }
-        // 3. Last episode of the season we loaded
+        // 3. Last episode of the season we loaded (now uses lea season number)
         if let ep = tmdbEpisodes.last {
             let runtime = ep.runtime.map { "\($0) min" } ?? ""
-            NSLog("[DETAIL_DIAG] latestEpisode PATH=tmdbEpisodesLast currentSeason=\(vm.currentSeasonNumber) ep=\(ep.episodeNumber) name=\(ep.name ?? "nil")")
             return (vm.currentSeasonNumber, ep.episodeNumber, ep.name ?? "Latest Episode", runtime)
         }
         // 4. Hardcoded fallback
         if let ep = episodes.last {
             let season = parseSeason(ep.code)
             let epNum = parseEpisode(ep.code)
-            NSLog("[DETAIL_DIAG] latestEpisode PATH=hardcodedFallback S\(season):E\(epNum)")
             return (season, epNum, ep.title, ep.duration)
         }
-        NSLog("[DETAIL_DIAG] latestEpisode PATH=nil — no data available")
         return nil
     }
 
@@ -870,6 +878,38 @@ struct ShowDetailScreen: View {
         }
     }
 
+    /// True when the given service name matches one the user selected
+    /// during onboarding. Used to show a "Subscribed" badge on services
+    /// the user already pays for.
+    private func isSubscribedService(_ name: String) -> Bool {
+        let key = name.lowercased()
+        let owned = AuthViewModel.shared.selectedServices
+        return owned.contains { svc in
+            let s = svc.lowercased()
+            if key.contains("netflix") { return s.contains("netflix") }
+            if key.contains("hbo") || key.contains("max") { return s.contains("max") || s.contains("hbo") }
+            if key.contains("hulu") { return s.contains("hulu") }
+            if key.contains("disney") { return s.contains("disney") }
+            if key.contains("apple") { return s.contains("apple") }
+            if key.contains("prime") || key.contains("amazon") { return s.contains("amazon") || s.contains("prime") }
+            if key.contains("paramount") { return s.contains("paramount") }
+            if key.contains("peacock") { return s.contains("peacock") }
+            if key.contains("youtube") { return s.contains("youtube") }
+            return s.contains(key) || key.contains(s)
+        }
+    }
+
+    /// Sorts subscribed services first so the user sees their own
+    /// services highlighted at the front of the horizontal row.
+    private var sortedServices: [WhereToWatchService] {
+        vm.services.sorted { a, b in
+            let aSub = isSubscribedService(a.name)
+            let bSub = isSubscribedService(b.name)
+            if aSub != bSub { return aSub }
+            return false
+        }
+    }
+
     // MARK: Where to Watch
 
     private var whereToWatchSection: some View {
@@ -879,7 +919,7 @@ struct ShowDetailScreen: View {
                 .foregroundStyle(.white)
                 .padding(.horizontal, 20)
 
-            let services = vm.services
+            let services = sortedServices
             if services.isEmpty {
                 Text(vm.isLoading ? "Finding services…" : "No streaming sources found.")
                     .scaledFont(size: 13)
@@ -892,7 +932,7 @@ struct ShowDetailScreen: View {
                             Button {
                                 openDeeplink(serviceName: s.name)
                             } label: {
-                                ServiceBadge(service: s)
+                                ServiceBadge(service: s, isSubscribed: isSubscribedService(s.name))
                             }
                             .buttonStyle(.plain)
                         }
@@ -1337,6 +1377,7 @@ private struct TMDBEpisodeCardSmall: View {
 
 private struct ServiceBadge: View {
     let service: WhereToWatchService
+    var isSubscribed: Bool = false
 
     var body: some View {
         HStack(spacing: 8) {
@@ -1346,16 +1387,27 @@ private struct ServiceBadge: View {
             Text(gsDisplayName(for: service.name))
                 .scaledFont(size: 14, weight: .semibold)
                 .foregroundStyle(.white)
+            if isSubscribed {
+                Text("Subscribed")
+                    .scaledFont(size: 9, weight: .heavy)
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(
+                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                            .fill(Color.green.opacity(0.85))
+                    )
+            }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
         .background(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(service.color.opacity(0.18))
+                .fill(isSubscribed ? service.color.opacity(0.28) : service.color.opacity(0.18))
         )
         .overlay(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .stroke(service.color.opacity(0.45), lineWidth: 1)
+                .stroke(isSubscribed ? service.color.opacity(0.70) : service.color.opacity(0.45), lineWidth: 1)
         )
     }
 }

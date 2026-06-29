@@ -17,6 +17,9 @@ struct TVMainView: View {
             TVHomeView()
                 .tabItem { Label("Home", systemImage: "house.fill") }
 
+            TVReelsView()
+                .tabItem { Label("Reels", systemImage: "play.rectangle.fill") }
+
             TVWatchListView()
                 .tabItem { Label("Watch List", systemImage: "popcorn.fill") }
 

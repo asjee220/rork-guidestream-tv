@@ -24,6 +24,17 @@ private nonisolated struct TVTMDBProvidersEnvelope: Decodable, Sendable {
     let results: [String: TVTMDBProviderRegion]
 }
 
+private nonisolated struct TVTMDBVideo: Decodable, Sendable {
+    let key: String?
+    let site: String?
+    let type: String?
+    let official: Bool?
+}
+
+private nonisolated struct TVTMDBVideosEnvelope: Decodable, Sendable {
+    let results: [TVTMDBVideo]
+}
+
 nonisolated struct TVTMDBService {
     static let shared = TVTMDBService()
 
@@ -46,6 +57,27 @@ nonisolated struct TVTMDBService {
         let data = try await get(urlString)
         let env = try JSONDecoder().decode(TVTMDBSearchEnvelope.self, from: data)
         return env.results.map { stamp($0, mediaType: "tv") }
+    }
+
+    /// Returns the YouTube key of the best available trailer for a title, or
+    /// nil if none exists. Prefers official trailers, then any trailer, then
+    /// any teaser/clip so we still surface motion art when possible.
+    func getTrailerKey(tmdbId: Int, isTV: Bool) async throws -> String? {
+        let kind = isTV ? "tv" : "movie"
+        let urlString = "\(base)/\(kind)/\(tmdbId)/videos?api_key=\(apiKey)&language=en-US"
+        let data = try await get(urlString)
+        let env = try JSONDecoder().decode(TVTMDBVideosEnvelope.self, from: data)
+        let youtube = env.results.filter { ($0.site ?? "").lowercased() == "youtube" && !($0.key ?? "").isEmpty }
+        if let official = youtube.first(where: { ($0.type ?? "") == "Trailer" && ($0.official ?? false) }) {
+            return official.key
+        }
+        if let trailer = youtube.first(where: { ($0.type ?? "") == "Trailer" }) {
+            return trailer.key
+        }
+        if let teaser = youtube.first(where: { ($0.type ?? "") == "Teaser" }) {
+            return teaser.key
+        }
+        return youtube.first?.key
     }
 
     /// Returns the top US streaming provider for a title, or nil if no
