@@ -887,9 +887,10 @@ struct ReelsScreen: View {
                         .allowsHitTesting(true)
                         .frame(maxWidth: .infinity)
                     }
-                    .padding(.top, max(topInset - 10, 6))
+                    .padding(.top, topInset)
                     Spacer()
                 }
+                .ignoresSafeArea()
             }
             .offset(y: dismissDragOffset)
             // Swipe-down-to-dismiss. Runs *simultaneously* with the inner
