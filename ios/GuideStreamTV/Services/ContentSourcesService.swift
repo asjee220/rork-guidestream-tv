@@ -222,8 +222,17 @@ final class ContentSourcesService {
     /// Algorithm mirrors Top Picks for You: a match-percentage is computed from
     /// category similarity, clamped to 72–98%, and sorted highest-first.
     /// Already-followed creators are excluded. Returns at most 12 results.
+    ///
+    /// When a followed creator has no `category` in the database (common for
+    /// YouTube channels discovered via search), the algorithm extracts meaningful
+    /// keywords from their `description` field and uses those for matching
+    /// against other creators' descriptions and categories.
     func fetchRecommendedCreators(forFollowedIds followedIds: [String]) async throws -> [(titleId: String, displayName: String, imageUrl: String?, sourceType: String, category: String?, matchPercentage: Int)] {
-        guard !followedIds.isEmpty else { return [] }
+        guard !followedIds.isEmpty else {
+            print("[ContentSources] fetchRecommendedCreators: empty followedIds, returning []")
+            return []
+        }
+        print("[ContentSources] fetchRecommendedCreators: followedIds=\(followedIds)")
 
         // Get followed creators' categories from content_sources.
         let followedSources: [ContentSource] = try await client
@@ -232,12 +241,28 @@ final class ContentSourcesService {
             .in("title_id", values: followedIds)
             .execute()
             .value
+        print("[ContentSources] followedSources count=\(followedSources.count), ids=\(followedSources.map { $0.titleId })")
 
         let followedCategories = Set(followedSources.compactMap { $0.category }.filter { !$0.isEmpty })
         // Normalise: split on commas/slashes/pipes so "Gaming, Tech" → ["Gaming", "Tech"]
         let followedTags: Set<String> = Set(followedCategories.flatMap { cat in
             cat.components(separatedBy: CharacterSet(charactersIn: ",/|")).map { $0.trimmingCharacters(in: .whitespaces).lowercased() }.filter { !$0.isEmpty }
         })
+        print("[ContentSources] followedTags=\(followedTags)")
+
+        // When formal categories are absent, extract meaningful keywords from
+        // the followed creators' descriptions as pseudo-categories. This bridges
+        // the gap for YouTube channels discovered via search (which never have
+        // categories attached by the API).
+        let descriptionKeywords: Set<String> = {
+            guard followedTags.isEmpty else { return [] }
+            let allDescriptions = followedSources.compactMap { $0.description }.joined(separator: " ")
+            return Self.extractKeywords(from: allDescriptions)
+        }()
+        let hasKeywords = !descriptionKeywords.isEmpty
+        if hasKeywords {
+            print("[ContentSources] descriptionKeywords (\(descriptionKeywords.count)): \(descriptionKeywords.sorted().prefix(20))")
+        }
 
         // Collect source types from content_sources rows.  When a followed
         // creator has no row in the table (e.g. a seed creator whose title_id
@@ -255,6 +280,7 @@ final class ContentSourcesService {
                 }
             }
         }
+        print("[ContentSources] followedSourceTypes=\(followedSourceTypes)")
 
         // Fetch all creators (all source types — YouTube, podcast, Twitch, Kick).
         let allSources: [ContentSource] = try await client
@@ -265,29 +291,45 @@ final class ContentSourcesService {
             .limit(200)
             .execute()
             .value
+        print("[ContentSources] allSources count=\(allSources.count)")
 
         let followedSet = Set(followedIds)
 
-        // Score each non-followed creator.
-        // When followedTags is non-empty we use category-overlap scoring (72–98%).
-        // When followedTags is empty (creators have no categories) we fall back
-        // to source-type matching: other creators of the same type get 72%.
+        // Scoring tiers:
+        // 1. Category overlap (when followedTags is non-empty) — 72–98%
+        // 2. Description keyword overlap (when followedTags empty but descriptions exist) — 65–92%
+        // 3. Source-type fallback (when nothing else works) — 65–72%
         let hasCategories = !followedTags.isEmpty
         var scored: [(titleId: String, displayName: String, imageUrl: String?, sourceType: String, category: String?, matchPercentage: Int)] = []
         for source in allSources {
             guard !followedSet.contains(source.titleId) else { continue }
             let matchPct: Int
             if hasCategories {
+                // Tier 1: formal category overlap.
                 let cat = source.category ?? ""
                 let tags = cat.components(separatedBy: CharacterSet(charactersIn: ",/|")).map { $0.trimmingCharacters(in: .whitespaces).lowercased() }.filter { !$0.isEmpty }
                 let overlap = tags.filter { followedTags.contains($0) }.count
                 let overlapRatio = Double(overlap) / Double(max(1, followedTags.count))
                 let rawScore = Int(overlapRatio * 100)
                 matchPct = max(72, min(98, rawScore))
+            } else if hasKeywords {
+                // Tier 2: description keyword overlap — match against both the
+                // candidate's description AND its category to double the surface
+                // area for content-aware matching.
+                let candidateText = [source.description, source.category]
+                    .compactMap { $0 }
+                    .joined(separator: " ")
+                let candidateKeywords = Self.extractKeywords(from: candidateText)
+                let overlap = candidateKeywords.intersection(descriptionKeywords).count
+                let overlapRatio = Double(overlap) / Double(max(1, descriptionKeywords.count))
+                let rawScore = Int(overlapRatio * 100)
+                // Score floor is lower than category matching (65 vs 72) because
+                // keyword extraction is noisier, but the ceiling reflects strong
+                // description overlap.
+                matchPct = max(65, min(92, rawScore))
             } else {
-                // Fallback: same source_type → 72%, different type → skip entirely.
-                guard followedSourceTypes.contains(source.sourceType) else { continue }
-                matchPct = 72
+                // Tier 3: source-type only — same type → 72%, different → 65%.
+                matchPct = followedSourceTypes.contains(source.sourceType) ? 72 : 65
             }
             scored.append((
                 titleId: source.titleId,
@@ -304,7 +346,40 @@ final class ContentSourcesService {
             if a.matchPercentage != b.matchPercentage { return a.matchPercentage > b.matchPercentage }
             return a.displayName.localizedStandardCompare(b.displayName) == .orderedAscending
         }
+        print("[ContentSources] scored count=\(scored.count), returning top \(min(12, scored.count))")
         return Array(scored.prefix(12))
+    }
+
+    // MARK: - Keyword extraction from descriptions
+
+    /// Extracts meaningful content-signal keywords from a text blob (typically
+    /// a YouTube channel description).
+    ///
+    /// Filters out stop-words, short tokens, and common boilerplate. Returns a
+    /// lowercased set suitable for overlap matching against other descriptions.
+    static func extractKeywords(from text: String) -> Set<String> {
+        let stopWords: Set<String> = [
+            "the", "and", "for", "are", "but", "not", "you", "all", "can",
+            "had", "her", "was", "one", "our", "out", "has", "have", "from",
+            "they", "will", "with", "your", "that", "this", "than", "then",
+            "them", "what", "when", "were", "which", "their", "there", "about",
+            "also", "into", "just", "like", "make", "more", "most", "over",
+            "some", "such", "take", "very", "well", "much", "each", "been",
+            "would", "could", "should", "after", "before", "between", "through",
+            "subscribe", "channel", "video", "videos", "watch", "follow",
+            "please", "click", "link", "links", "here", "check", "new",
+            "content", "more", "get", "see", "don", "does", "did", "made"
+        ]
+        let words = text
+            .lowercased()
+            .components(separatedBy: CharacterSet.letters.inverted.union(.decimalDigits.inverted))
+            .map { $0.trimmingCharacters(in: CharacterSet(charactersIn: "'\"-*#")) }
+            .filter { word in
+                word.count >= 4
+                && !stopWords.contains(word)
+                && word.rangeOfCharacter(from: .letters) != nil
+            }
+        return Set(words)
     }
 
     // MARK: - Realtime subscription for live_status

@@ -484,23 +484,28 @@ struct HomeView: View {
                         if !homeContentReady {
                             HomeShimmerSection(title: "Creators/Podcasts for You")
                                 .padding(.horizontal, 20)
-                        } else if hasFollowedCreators, !recommendedCreators.isEmpty {
-                            CreatorsForYouSection(
-                                creators: recommendedCreators,
-                                onOpen: { creator in
-                                    WatchIntentLogger.shared.log(
-                                        eventType: .cardTapped,
-                                        titleId: creator.titleId,
-                                        platformId: creator.sourceType,
-                                        metadata: ["section": "creators_for_you"]
-                                    )
-                                    creatorDetailTarget = CreatorDetailTarget(
-                                        titleId: creator.titleId,
-                                        initialEpisode: nil
-                                    )
-                                }
-                            )
-                            .padding(.horizontal, 20)
+                        } else if hasFollowedCreators {
+                            if recommendedCreators.isEmpty {
+                                CreatorsForYouEmptyState()
+                                    .padding(.horizontal, 20)
+                            } else {
+                                CreatorsForYouSection(
+                                    creators: recommendedCreators,
+                                    onOpen: { creator in
+                                        WatchIntentLogger.shared.log(
+                                            eventType: .cardTapped,
+                                            titleId: creator.titleId,
+                                            platformId: creator.sourceType,
+                                            metadata: ["section": "creators_for_you"]
+                                        )
+                                        creatorDetailTarget = CreatorDetailTarget(
+                                            titleId: creator.titleId,
+                                            initialEpisode: nil
+                                        )
+                                    }
+                                )
+                                .padding(.horizontal, 20)
+                            }
                         }
 
                         if !homeContentReady {
@@ -1064,6 +1069,9 @@ struct HomeView: View {
             await liveStatusWork
             buildLiveCreators()
             await creatorWork
+            // Wait for creator recommendations BEFORE flipping homeContentReady
+            // so the "Creators for You" panel never renders in a stale/empty state.
+            await creatorRecs
             rebuildHeroRail()
             // Show the hero carousel and all sections that have data RIGHT NOW.
             // Non-hero sections (Coming Soon, platform rows, expiring) populate
@@ -1076,7 +1084,6 @@ struct HomeView: View {
             // Continue loading non-critical sections in the background.
             await loadComingToStreaming()
             await hydrateSourceImages()
-            await creatorRecs
         }
         .refreshable {
             await streams.refreshAll()
@@ -1194,14 +1201,18 @@ struct HomeView: View {
         let followedIds = streams.userStreams
             .filter { SourceKind.from(titleId: $0.titleId).isNonTMDB }
             .map { $0.titleId }
+        print("[HomeView] loadRecommendedCreators: followedIds=\(followedIds)")
         guard !followedIds.isEmpty else {
+            print("[HomeView] loadRecommendedCreators: no followed non-TMDB ids, bailing")
             recommendedCreators = []
             return
         }
         guard let recs = try? await ContentSourcesService.shared.fetchRecommendedCreators(forFollowedIds: followedIds) else {
+            print("[HomeView] loadRecommendedCreators: fetchRecommendedCreators threw, setting empty")
             recommendedCreators = []
             return
         }
+        print("[HomeView] loadRecommendedCreators: got \(recs.count) recommendations")
         recommendedCreators = recs.map { r in
             RecommendedCreator(
                 titleId: r.titleId,
@@ -2473,6 +2484,39 @@ private struct CreatorsForYouSection: View {
                 .padding(.horizontal, 16)
                 .padding(.vertical, 6)
             }
+        }
+    }
+}
+
+/// Shown when the user follows at least one creator/podcast but the recommendation
+/// engine couldn't surface any matches yet. Guides the user to follow more creators
+/// so the algorithm has enough data to work with.
+private struct CreatorsForYouEmptyState: View {
+    private static let mustardAccent = Color(red: 0xD4/255, green: 0xA0/255, blue: 0x17/255)
+
+    var body: some View {
+        SectionGlassCard(
+            title: "Creators/Podcasts for You",
+            accentColor: Self.mustardAccent,
+            onSeeAll: nil
+        ) {
+            HStack(spacing: 12) {
+                Image(systemName: "person.2.badge.plus")
+                    .font(.system(size: 22))
+                    .foregroundStyle(Self.mustardAccent.opacity(0.6))
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Follow more creators")
+                        .scaledFont(size: 14, weight: .semibold)
+                        .foregroundStyle(Color.textPrimary)
+                    Text("Add YouTube channels, Twitch streamers, or podcasts to your watchlist to get personalized recommendations.")
+                        .scaledFont(size: 12, weight: .regular)
+                        .foregroundStyle(Color.textSecondary)
+                        .lineLimit(2)
+                }
+                Spacer()
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 16)
         }
     }
 }
