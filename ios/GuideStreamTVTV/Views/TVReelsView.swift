@@ -219,15 +219,23 @@ final class TVReelsViewModel {
 
 // MARK: - Reels Screen
 
+/// Focusable destinations inside the actions overlay.
+private enum TVReelAction: Hashable {
+    case watch, sound, save, details
+}
+
 struct TVReelsView: View {
     @State private var vm = TVReelsViewModel.shared
     @State private var streams = TVStreamsViewModel.shared
+    @State private var trailer = TVTrailerPlayer()
     @State private var index: Int = 0
     /// Direction of the last navigation, used to pick the slide transition.
     @State private var goingDown: Bool = true
     @State private var pendingDetail: TVTitleDetail?
     @State private var savedFlash: Bool = false
+    @State private var showActions: Bool = false
     @FocusState private var feedFocused: Bool
+    @FocusState private var actionFocus: TVReelAction?
 
     private var current: TVReelItem? {
         vm.reels.indices.contains(index) ? vm.reels[index] : nil
@@ -246,31 +254,46 @@ struct TVReelsView: View {
             } else if let reel = current {
                 reelStage(reel)
             }
+
+            if showActions, let reel = current {
+                actionsOverlay(reel)
+            }
         }
         .background(TVTheme.backgroundGradient)
-        .focusable(true)
+        .focusable(!showActions)
         .focused($feedFocused)
         .onMoveCommand { direction in
+            guard !showActions else { return }
             handleMove(direction)
         }
         .onPlayPauseCommand {
-            toggleSave()
+            guard !showActions else { return }
+            trailer.togglePlayPause()
         }
         .onTapGesture {
-            openDetail()
+            openActions()
         }
         .task {
             await streams.fetchUserStreams()
             await vm.loadIfNeeded()
             feedFocused = true
+            loadCurrentTrailer()
         }
         .onChange(of: vm.reels.count) { _, count in
             if index >= count { index = max(0, count - 1) }
+            loadCurrentTrailer()
+        }
+        .onChange(of: index) { _, _ in
+            loadCurrentTrailer()
+        }
+        .onDisappear {
+            trailer.stop()
         }
         .sheet(item: $pendingDetail) { detail in
             TVTitleSheet(detail: detail) { _ in
                 pendingDetail = nil
                 feedFocused = true
+                trailer.resumeIfReady()
             }
         }
     }
@@ -292,6 +315,17 @@ struct TVReelsView: View {
                         removal: .opacity
                     )
                 )
+
+            // Inline trailer — crossfades in over the backdrop once the HLS
+            // stream resolves and starts playing.
+            if trailer.isReady, reel.trailerKey != nil {
+                TVInlineVideoPlayer(player: trailer.player)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .clipped()
+                    .ignoresSafeArea()
+                    .transition(.opacity)
+                    .allowsHitTesting(false)
+            }
 
             // Scrims for legibility.
             LinearGradient(
@@ -457,8 +491,8 @@ struct TVReelsView: View {
                 HStack(spacing: 28) {
                     hint(icon: "chevron.up.chevron.down", text: "Browse")
                     hint(icon: "chevron.left.chevron.right", text: "Sections")
-                    hint(icon: "playpause.fill", text: "Save")
-                    hint(icon: "circle.fill", text: "Details")
+                    hint(icon: "playpause.fill", text: trailer.isPlaying ? "Pause" : "Play")
+                    hint(icon: "circle.fill", text: "Actions")
                 }
                 .padding(.top, 6)
             }
@@ -515,6 +549,96 @@ struct TVReelsView: View {
         }
     }
 
+    // MARK: - Actions overlay
+
+    private func actionsOverlay(_ reel: TVReelItem) -> some View {
+        let saved = streams.contains(titleId: reel.canonicalTitleId)
+        return ZStack {
+            Color.black.opacity(0.6)
+                .ignoresSafeArea()
+
+            VStack(spacing: 28) {
+                VStack(spacing: 8) {
+                    Text(reel.title)
+                        .font(.system(size: 40, weight: .black))
+                        .foregroundStyle(.white)
+                        .lineLimit(1)
+                    Text(reel.meta)
+                        .font(.system(size: 20, weight: .semibold))
+                        .foregroundStyle(TVTheme.textSecondary)
+                }
+
+                HStack(spacing: 26) {
+                    actionTile(
+                        icon: "play.tv.fill",
+                        label: "Watch on\n\(reel.platformName.capitalized)",
+                        tint: reel.platformColor,
+                        focus: .watch,
+                        action: launchStreaming
+                    )
+                    actionTile(
+                        icon: trailer.isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill",
+                        label: trailer.isMuted ? "Unmute\nTrailer" : "Mute\nTrailer",
+                        tint: .white.opacity(0.14),
+                        focus: .sound,
+                        action: { trailer.isMuted.toggle() }
+                    )
+                    actionTile(
+                        icon: saved ? "checkmark.circle.fill" : "plus.circle.fill",
+                        label: saved ? "Saved" : "Save to\nWatch List",
+                        tint: saved ? TVTheme.newsGreen : .white.opacity(0.14),
+                        focus: .save,
+                        action: toggleSave
+                    )
+                    actionTile(
+                        icon: "info.circle.fill",
+                        label: "Full\nDetails",
+                        tint: .white.opacity(0.14),
+                        focus: .details,
+                        action: openDetail
+                    )
+                }
+            }
+            .padding(48)
+        }
+        .onExitCommand { closeActions() }
+        .transition(.opacity)
+    }
+
+    private func actionTile(
+        icon: String,
+        label: String,
+        tint: Color,
+        focus: TVReelAction,
+        action: @escaping () -> Void
+    ) -> some View {
+        let isFocused = actionFocus == focus
+        return Button(action: action) {
+            VStack(spacing: 16) {
+                Image(systemName: icon)
+                    .font(.system(size: 40, weight: .bold))
+                    .foregroundStyle(.white)
+                    .frame(width: 96, height: 96)
+                    .background(tint, in: Circle())
+                Text(label)
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+            }
+            .frame(width: 200, height: 200)
+            .background(.white.opacity(isFocused ? 0.16 : 0.06), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    .stroke(TVTheme.orange, lineWidth: isFocused ? 4 : 0)
+            )
+            .scaleEffect(isFocused ? 1.06 : 1.0)
+            .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isFocused)
+        }
+        .buttonStyle(.plain)
+        .focused($actionFocus, equals: focus)
+    }
+
     // MARK: - Interaction
 
     private func handleMove(_ direction: MoveCommandDirection) {
@@ -551,8 +675,32 @@ struct TVReelsView: View {
         withAnimation { index = target }
     }
 
+    /// Resolves + plays the current reel's trailer inline.
+    private func loadCurrentTrailer() {
+        trailer.load(key: current?.trailerKey)
+    }
+
+    private func openActions() {
+        guard current != nil else { return }
+        actionFocus = .watch
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) { showActions = true }
+    }
+
+    private func closeActions() {
+        withAnimation(.easeOut(duration: 0.2)) { showActions = false }
+        feedFocused = true
+    }
+
+    /// Opens the streaming app for the current reel on this Apple TV.
+    private func launchStreaming() {
+        guard let reel = current else { return }
+        TVOSDeepLinker.open(platform: reel.platformName, title: reel.title)
+        closeActions()
+    }
+
     private func openDetail() {
         guard let reel = current else { return }
+        closeActions()
         pendingDetail = TVTitleDetail(
             titleId: reel.canonicalTitleId,
             title: reel.title,
