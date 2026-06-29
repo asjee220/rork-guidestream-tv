@@ -272,18 +272,27 @@ struct EpisodeDetailSheet: View {
         }
         .task(id: tmdbId ?? -1) {
             adDismissed = false
-            await resolveStreamingSource()
-            // For shows, pull the latest-aired episode from TMDB so the
-            // watch button can include "S:1 EP:10" context.
-            if let tid = tmdbId, isTV {
-                if let detail = try? await TMDBService.shared.getTVDetail(tmdbId: tid),
-                   let last = detail.lastEpisodeToAir,
-                   let sn = last.seasonNumber, let en = last.episodeNumber {
-                    await MainActor.run {
-                        self.showLatestEpisode = (sn, en)
+            // Run source resolution and TMDB detail fetch in parallel
+            // so showLatestEpisode is ready before the user can tap
+            // "Full details" — otherwise knownLatestEpisode is nil and
+            // the detail screen falls to the wrong season/episode.
+            async let _source = resolveStreamingSource()
+            async let _episode: Void = {
+                if let tid = tmdbId, isTV {
+                    if let detail = try? await TMDBService.shared.getTVDetail(tmdbId: tid),
+                       let last = detail.lastEpisodeToAir,
+                       let sn = last.seasonNumber, let en = last.episodeNumber {
+                        await MainActor.run {
+                            self.showLatestEpisode = (sn, en)
+                            NSLog("[EP_SHEET_DIAG] tmdbId=\(tid) lastEpisodeToAir=S\(sn):E\(en) name=\(last.name ?? "nil")")
+                        }
+                    } else {
+                        NSLog("[EP_SHEET_DIAG] tmdbId=\(tid) lastEpisodeToAir=NIL — TMDB returned no last_episode_to_air")
                     }
                 }
-            }
+            }()
+            await _source
+            await _episode
             // Resolve per-episode deep link from Watchmode's episode-level
             // sources so the watch button opens the exact episode in the
             // streaming app (not just the show home page).

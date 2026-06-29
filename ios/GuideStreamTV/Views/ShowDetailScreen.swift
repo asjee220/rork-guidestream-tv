@@ -304,25 +304,30 @@ struct ShowDetailScreen: View {
         if let known = knownLatestEpisode {
             let name = vm.tmdb?.lastEpisodeToAir?.name ?? "Latest Episode"
             let runtime = vm.tmdb?.lastEpisodeToAir?.runtime.map { "\($0) min" } ?? ""
+            NSLog("[DETAIL_DIAG] latestEpisode PATH=knownLatestEpisode S\(known.seasonNum):E\(known.episodeNum) name=\(name)")
             return (known.seasonNum, known.episodeNum, name, runtime)
         }
         // 2. TMDB's last_episode_to_air from the detail screen's own fetch
         if let last = vm.tmdb?.lastEpisodeToAir,
            let sn = last.seasonNumber, let en = last.episodeNumber {
             let runtime = last.runtime.map { "\($0) min" } ?? ""
+            NSLog("[DETAIL_DIAG] latestEpisode PATH=vmTMDBlastEpisodeToAir S\(sn):E\(en) name=\(last.name ?? "nil")")
             return (sn, en, last.name ?? "Latest Episode", runtime)
         }
         // 3. Last episode of the season we loaded
         if let ep = tmdbEpisodes.last {
             let runtime = ep.runtime.map { "\($0) min" } ?? ""
+            NSLog("[DETAIL_DIAG] latestEpisode PATH=tmdbEpisodesLast currentSeason=\(vm.currentSeasonNumber) ep=\(ep.episodeNumber) name=\(ep.name ?? "nil")")
             return (vm.currentSeasonNumber, ep.episodeNumber, ep.name ?? "Latest Episode", runtime)
         }
         // 4. Hardcoded fallback
         if let ep = episodes.last {
             let season = parseSeason(ep.code)
             let epNum = parseEpisode(ep.code)
+            NSLog("[DETAIL_DIAG] latestEpisode PATH=hardcodedFallback S\(season):E\(epNum)")
             return (season, epNum, ep.title, ep.duration)
         }
+        NSLog("[DETAIL_DIAG] latestEpisode PATH=nil — no data available")
         return nil
     }
 
