@@ -312,6 +312,7 @@ struct EpisodeDetailSheet: View {
                 posterUrl: posterUrl,
                 backdropUrl: resolvedBackdrop,
                 isTV: isTV,
+                knownLatestEpisode: showLatestEpisode,
                 onBack: { showFullDetail = false }
             )
         }

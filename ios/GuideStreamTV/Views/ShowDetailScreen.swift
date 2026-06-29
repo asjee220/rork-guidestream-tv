@@ -87,25 +87,13 @@ final class ShowDetailViewModel {
             let tmdbResult = await tmdbCall
             self.tmdb = tmdbResult
             let seasonNum = max(1, tmdbResult?.numberOfSeasons ?? 1)
-            // TEMP DIAG: log TMDB detail outcome
-            Task { @MainActor [tmdbResult, titleId] in
-                let ns = tmdbResult?.numberOfSeasons.map(String.init) ?? "nil"
-                let leSeason = tmdbResult?.lastEpisodeToAir?.seasonNumber.map(String.init) ?? "nil"
-                let leEpisode = tmdbResult?.lastEpisodeToAir?.episodeNumber.map(String.init) ?? "nil"
-                let leName = tmdbResult?.lastEpisodeToAir?.name ?? "nil"
-                let target = "tmdb=\(tmdbResult != nil ? "ok" : "nil") seasons=\(ns) lea_s=\(leSeason) lea_e=\(leEpisode) lea_name=\(leName.prefix(30)) titleId=\(titleId)"
-                let payload: [String: AnyJSON] = [
-                    "event": .string("cs_detail_tmdb"),
-                    "target_name": .string(target),
-                    "title": .string(tmdbResult != nil ? "ok" : "nil"),
-                    "content_url": .string("loadIfNeeded"),
-                    "device_id": .string(DeviceIdentity.shared.deviceId),
-                    "device_name": .string(UIDevice.current.name),
-                    "device_kind": .string("phone"),
-                    "platform": .string("ios")
-                ]
-                try? await SupabaseManager.shared.client.from("debug_logs").insert(payload).execute()
-            }
+            // DIAG: log to console so we can see in runtime logs
+            let ns = tmdbResult?.numberOfSeasons.map(String.init) ?? "nil"
+            let leaSeason = tmdbResult?.lastEpisodeToAir?.seasonNumber.map(String.init) ?? "nil"
+            let leaEpisode = tmdbResult?.lastEpisodeToAir?.episodeNumber.map(String.init) ?? "nil"
+            let leaName = tmdbResult?.lastEpisodeToAir?.name ?? "nil"
+            NSLog("[DETAIL_DIAG] titleId=%@ tmdbOk=%@ numberOfSeasons=%@ lastEpisodeToAir=(s=%@ e=%@ name=%@) currentSeasonNumber=%d",
+                  titleId, tmdbResult != nil ? "YES" : "NO", ns, leaSeason, leaEpisode, leaName, seasonNum)
             guard seasonNum >= 1 else {
                 errorMessage = "Invalid season number"
                 isLoading = false
@@ -256,6 +244,7 @@ struct ShowDetailScreen: View {
     var posterUrl: String? = nil
     var backdropUrl: String? = nil
     var isTV: Bool = true
+    var knownLatestEpisode: (seasonNum: Int, episodeNum: Int)? = nil
     var onBack: () -> Void = {}
     var onPlayOn: () -> Void = {}
 
@@ -306,47 +295,35 @@ struct ShowDetailScreen: View {
     }
     private var tmdbEpisodes: [TMDBEpisode] { vm.season?.episodes ?? [] }
 
-    /// The most-recently-aired episode according to TMDB, or the last
-    /// episode of the loaded season as a fallback. Preferring
-    /// `lastEpisodeToAir` ensures the watch button matches reality
-    /// even when a show's last-aired episode is not from its final
-    /// season (e.g. a hiatus or mid-season return).
+    /// The most-recently-aired episode. Prefers `knownLatestEpisode` when
+    /// the caller already resolved it (e.g. the home screen's TMDB fetch).
+    /// Falls back to TMDB's `lastEpisodeToAir`, the loaded season's last
+    /// episode, or the hardcoded list in that order.
     private var latestEpisode: (seasonNum: Int, episodeNum: Int, name: String, runtime: String)? {
-        let result: (seasonNum: Int, episodeNum: Int, name: String, runtime: String)?
-        var branch: String = "none"
+        // 1. Caller-supplied episode context (already correct from home screen)
+        if let known = knownLatestEpisode {
+            let name = vm.tmdb?.lastEpisodeToAir?.name ?? "Latest Episode"
+            let runtime = vm.tmdb?.lastEpisodeToAir?.runtime.map { "\($0) min" } ?? ""
+            return (known.seasonNum, known.episodeNum, name, runtime)
+        }
+        // 2. TMDB's last_episode_to_air from the detail screen's own fetch
         if let last = vm.tmdb?.lastEpisodeToAir,
            let sn = last.seasonNumber, let en = last.episodeNumber {
             let runtime = last.runtime.map { "\($0) min" } ?? ""
-            result = (sn, en, last.name ?? "Latest Episode", runtime)
-            branch = "lastEpisodeToAir"
-        } else if let ep = tmdbEpisodes.last {
+            return (sn, en, last.name ?? "Latest Episode", runtime)
+        }
+        // 3. Last episode of the season we loaded
+        if let ep = tmdbEpisodes.last {
             let runtime = ep.runtime.map { "\($0) min" } ?? ""
-            result = (vm.currentSeasonNumber, ep.episodeNumber, ep.name ?? "Latest Episode", runtime)
-            branch = "tmdbEpisodes.last"
-        } else if let ep = episodes.last {
+            return (vm.currentSeasonNumber, ep.episodeNumber, ep.name ?? "Latest Episode", runtime)
+        }
+        // 4. Hardcoded fallback
+        if let ep = episodes.last {
             let season = parseSeason(ep.code)
             let epNum = parseEpisode(ep.code)
-            result = (season, epNum, ep.title, ep.duration)
-            branch = "hardcoded"
-        } else {
-            result = nil
+            return (season, epNum, ep.title, ep.duration)
         }
-        // TEMP DIAG: log which branch latestEpisode resolved to
-        Task { @MainActor [result, branch] in
-            let target = "branch=\(branch) seasons=\(vm.tmdb?.numberOfSeasons.map(String.init) ?? "nil") curSeason=\(vm.currentSeasonNumber) lea=\(vm.tmdb?.lastEpisodeToAir != nil ? "present" : "nil") epCount=\(tmdbEpisodes.count) out=\(result.map { "S\($0.seasonNum):E\($0.episodeNum)" } ?? "nil")"
-            let payload: [String: AnyJSON] = [
-                "event": .string("cs_detail_ep"),
-                "target_name": .string(target),
-                "title": .string(result.map { "S\($0.seasonNum):E\($0.episodeNum)" } ?? "nil"),
-                "content_url": .string("latestEpisode"),
-                "device_id": .string(DeviceIdentity.shared.deviceId),
-                "device_name": .string(UIDevice.current.name),
-                "device_kind": .string("phone"),
-                "platform": .string("ios")
-            ]
-            try? await SupabaseManager.shared.client.from("debug_logs").insert(payload).execute()
-        }
-        return result
+        return nil
     }
 
     /// Short service name for display inside the watch button badge.
