@@ -120,6 +120,30 @@ struct TVDBUpcomingItem: Identifiable {
     let platform: Platform?
 }
 
+/// A creator or podcast recommended for the current user based on their followed
+/// creators' categories. Used by the "Creators/Podcasts for You" home screen panel.
+struct RecommendedCreator: Identifiable {
+    let id: String
+    let titleId: String
+    let displayName: String
+    let imageUrl: String?
+    let sourceType: String
+    let category: String?
+    let matchPercentage: Int
+    let kind: SourceKind
+
+    init(titleId: String, displayName: String, imageUrl: String?, sourceType: String, category: String?, matchPercentage: Int) {
+        self.id = titleId
+        self.titleId = titleId
+        self.displayName = displayName
+        self.imageUrl = imageUrl
+        self.sourceType = sourceType
+        self.category = category
+        self.matchPercentage = matchPercentage
+        self.kind = SourceKind.from(titleId: titleId)
+    }
+}
+
 /// A movie in theaters heading to streaming — drives the "Coming to Streaming" rail.
 struct ComingToStreamingItem: Identifiable, Hashable {
     let id = UUID()
@@ -189,6 +213,13 @@ struct HomeView: View {
     /// finished loading. While false, section containers render immediately with
     /// shimmer placeholders; flipping to true transitions real content in smoothly.
     @State private var homeContentReady = false
+    /// Recommended creators/podcasts based on followed creators' categories.
+    /// Populated asynchronously; empty when the user has no followed creators.
+    @State private var recommendedCreators: [RecommendedCreator] = []
+    /// True when the user has at least one non-TMDB (creator/podcast) saved.
+    private var hasFollowedCreators: Bool {
+        streams.userStreams.contains { SourceKind.from(titleId: $0.titleId).isNonTMDB }
+    }
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -445,6 +476,28 @@ struct HomeView: View {
                                         metadata: ["section": "top_picks"]
                                     )
                                     detailSubject = .show(show)
+                                }
+                            )
+                            .padding(.horizontal, 20)
+                        }
+
+                        if !homeContentReady {
+                            HomeShimmerSection(title: "Creators/Podcasts for You")
+                                .padding(.horizontal, 20)
+                        } else if hasFollowedCreators, !recommendedCreators.isEmpty {
+                            CreatorsForYouSection(
+                                creators: recommendedCreators,
+                                onOpen: { creator in
+                                    WatchIntentLogger.shared.log(
+                                        eventType: .cardTapped,
+                                        titleId: creator.titleId,
+                                        platformId: creator.sourceType,
+                                        metadata: ["section": "creators_for_you"]
+                                    )
+                                    creatorDetailTarget = CreatorDetailTarget(
+                                        titleId: creator.titleId,
+                                        initialEpisode: nil
+                                    )
                                 }
                             )
                             .padding(.horizontal, 20)
@@ -998,6 +1051,9 @@ struct HomeView: View {
         .task {
             await clearBadgeAndMarkSeen()
             await streams.refreshAll()
+            // Kick off creator recommendations early so the panel populates
+            // alongside the rest of the home screen sections.
+            async let creatorRecs: Void = loadRecommendedCreators()
             // Hero-critical path: load the data the carousel needs and
             // render it immediately so the hero appears first, then fill
             // in non-critical sections asynchronously.
@@ -1020,6 +1076,7 @@ struct HomeView: View {
             // Continue loading non-critical sections in the background.
             await loadComingToStreaming()
             await hydrateSourceImages()
+            await creatorRecs
         }
         .refreshable {
             await streams.refreshAll()
@@ -1027,6 +1084,7 @@ struct HomeView: View {
             await loadComingToStreaming()
             buildLiveCreators()
             await loadCreatorUploads()
+            await loadRecommendedCreators()
             rebuildHeroRail()
             await hydrateSourceImages()
             // Push updated widget data on pull-to-refresh.
@@ -1126,6 +1184,34 @@ struct HomeView: View {
         }
         let uploads = (try? await ContentSourcesService.shared.fetchRecentUploads(forTitleIds: ids, limit: 12)) ?? []
         creatorUploads = uploads
+    }
+
+    /// Fetches recommended creators/podcasts based on the categories of creators
+    /// the user already follows. Uses the same matching algorithm as Top Picks
+    /// (category-overlap → 72–98% match range). Only fetches when the user has
+    /// followed at least one creator/podcast; returns empty otherwise.
+    private func loadRecommendedCreators() async {
+        let followedIds = streams.userStreams
+            .filter { SourceKind.from(titleId: $0.titleId).isNonTMDB }
+            .map { $0.titleId }
+        guard !followedIds.isEmpty else {
+            recommendedCreators = []
+            return
+        }
+        guard let recs = try? await ContentSourcesService.shared.fetchRecommendedCreators(forFollowedIds: followedIds) else {
+            recommendedCreators = []
+            return
+        }
+        recommendedCreators = recs.map { r in
+            RecommendedCreator(
+                titleId: r.titleId,
+                displayName: r.displayName,
+                imageUrl: r.imageUrl,
+                sourceType: r.sourceType,
+                category: r.category,
+                matchPercentage: r.matchPercentage
+            )
+        }
     }
 
     /// Gathers non-TMDB title_ids from user_streams and new_episodes, fetches
@@ -2270,6 +2356,111 @@ private struct TopPicksSection: View {
                                 .clipShape(.rect(cornerRadius: 10))
 
                                 Text(show.title)
+                                    .scaledFont(size: 12, weight: .semibold)
+                                    .foregroundStyle(Color.textPrimary)
+                                    .lineLimit(1)
+                                    .frame(width: 110, alignment: .leading)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 6)
+            }
+        }
+    }
+}
+
+// MARK: - Creators/Podcasts for You
+
+private struct CreatorsForYouSection: View {
+    let creators: [RecommendedCreator]
+    let onOpen: (RecommendedCreator) -> Void
+
+    /// Mustard/goldenrod accent for the section header and match chips.
+    private static let mustardAccent = Color(red: 0xD4/255, green: 0xA0/255, blue: 0x17/255)
+    /// Match-percentage chip background — translucent mustard.
+    private static let mustardChipBg = Color(red: 0xD4/255, green: 0xA0/255, blue: 0x17/255).opacity(0.88)
+
+    var body: some View {
+        SectionGlassCard(
+            title: "Creators/Podcasts for You",
+            accentColor: Self.mustardAccent,
+            onSeeAll: nil
+        ) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    ForEach(creators) { creator in
+                        Button {
+                            onOpen(creator)
+                        } label: {
+                            VStack(alignment: .leading, spacing: 4) {
+                                ZStack {
+                                    RoundedRectangle(cornerRadius: 10)
+                                        .fill(
+                                            LinearGradient(
+                                                colors: [
+                                                    creator.kind == .youtube ? Color(red: 0xFF/255, green: 0x00/255, blue: 0x00/255).opacity(0.5) :
+                                                    creator.kind == .podcast ? Color(red: 0x7C/255, green: 0x3A/255, blue: 0xED/255).opacity(0.5) :
+                                                    creator.kind == .twitch ? Color(red: 0x91/255, green: 0x46/255, blue: 0xFF/255).opacity(0.5) :
+                                                    creator.kind == .kick ? Color(red: 0x53/255, green: 0xFC/255, blue: 0x18/255).opacity(0.5) :
+                                                    Color.orange.opacity(0.5),
+                                                    Color(red: 0.04, green: 0.02, blue: 0.10)
+                                                ],
+                                                startPoint: .topLeading,
+                                                endPoint: .bottomTrailing
+                                            )
+                                        )
+                                        .frame(width: 110, height: 155)
+                                    RemoteImage(
+                                        urlString: creator.imageUrl,
+                                        contentMode: .fill,
+                                        fallbackColors: [Color(red: 0.20, green: 0.15, blue: 0.45), Color(red: 0.04, green: 0.02, blue: 0.10)]
+                                    )
+                                    .frame(width: 110, height: 155)
+                                    .clipShape(.rect(cornerRadius: 10))
+                                    .allowsHitTesting(false)
+                                }
+                                .overlay(alignment: .bottomLeading) {
+                                    // Platform badge (YouTube / Podcast / etc.)
+                                    HStack(spacing: 3) {
+                                        Image(systemName: creator.kind == .podcast ? "mic.fill" : "play.rectangle.fill")
+                                            .font(.system(size: 7, weight: .bold))
+                                        Text(creator.kind.displayLabel.uppercased())
+                                            .scaledFont(size: 7, weight: .bold)
+                                    }
+                                    .foregroundStyle(.white)
+                                    .padding(.horizontal, 4)
+                                    .padding(.vertical, 2)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 3)
+                                            .fill(creator.kind == .youtube ? Color(red: 0xFF/255, green: 0x00/255, blue: 0x00/255).opacity(0.8) :
+                                                  creator.kind == .podcast ? Color(red: 0x7C/255, green: 0x3A/255, blue: 0xED/255).opacity(0.8) :
+                                                  creator.kind == .twitch ? Color(red: 0x91/255, green: 0x46/255, blue: 0xFF/255).opacity(0.8) :
+                                                  creator.kind == .kick ? Color(red: 0x53/255, green: 0xFC/255, blue: 0x18/255).opacity(0.7) :
+                                                  Color.orange.opacity(0.8))
+                                    )
+                                    .padding(5)
+                                    .allowsHitTesting(false)
+                                }
+                                .overlay(alignment: .bottomTrailing) {
+                                    // Match percentage chip — mustard with white text
+                                    Text("\(creator.matchPercentage)% Match")
+                                        .scaledFont(size: 8, weight: .bold)
+                                        .foregroundStyle(Color.white)
+                                        .padding(.horizontal, 5)
+                                        .padding(.vertical, 3)
+                                        .background(
+                                            RoundedRectangle(cornerRadius: 5)
+                                                .fill(Self.mustardChipBg)
+                                        )
+                                        .padding(5)
+                                        .allowsHitTesting(false)
+                                }
+                                .clipShape(.rect(cornerRadius: 10))
+
+                                Text(creator.displayName)
                                     .scaledFont(size: 12, weight: .semibold)
                                     .foregroundStyle(Color.textPrimary)
                                     .lineLimit(1)

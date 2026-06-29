@@ -777,6 +777,9 @@ struct ReelsScreen: View {
     @State private var detailSubject: DetailSubject?
     @State private var scrolledID: Int? = 0
     @State private var pendingInterstitialAt: Int? = nil
+    /// Timestamp when the current reel became active. Used to compute
+    /// actual watch duration for the stats engine.
+    @State private var reelStartTime: Date = Date()
     /// Live translation while the user drags down to dismiss. Used to slide
     /// the whole feed down for visual feedback before commit.
     @State private var dismissDragOffset: CGFloat = 0
@@ -822,13 +825,20 @@ struct ReelsScreen: View {
                     .ignoresSafeArea()
                     .onChange(of: scrolledID) { oldValue, newValue in
                         guard let newValue, newValue != vm.currentIndex else { return }
-                        let prev = vm.currentIndex
+                        let prevIdx = vm.currentIndex
                         vm.currentIndex = newValue
                         vm.reelSwipeCount += 1
                         UIImpactFeedbackGenerator(style: .soft).impactOccurred()
-                        if let trailer = vm.allTrailers[safe: newValue] {
-                            logTrailerViewed(trailer)
+                        // Log the PREVIOUS reel with its actual watch duration.
+                        let elapsed = Date().timeIntervalSince(reelStartTime)
+                        if let prevTrailer = vm.allTrailers[safe: prevIdx] {
+                            logTrailerViewed(prevTrailer, elapsedSeconds: elapsed)
                         }
+                        // Log the NEW reel as started (no duration yet).
+                        if let trailer = vm.allTrailers[safe: newValue] {
+                            logTrailerViewed(trailer, elapsedSeconds: nil)
+                        }
+                        reelStartTime = Date()
                         prefetchNeighbors(around: newValue)
                         // Lazily enrich current + next reel with TVDB episode data.
                         if let trailer = vm.allTrailers[safe: newValue], trailer.tmdbId > 0, !trailer.isSponsored {
@@ -837,7 +847,7 @@ struct ReelsScreen: View {
                         if let nextTrailer = vm.allTrailers[safe: newValue + 1], nextTrailer.tmdbId > 0, !nextTrailer.isSponsored {
                             Task { await vm.enrichWithTVDB(tmdbId: nextTrailer.tmdbId) }
                         }
-                        _ = prev
+                        _ = prevIdx
                         refreshSocialCounts(around: newValue)
                     }
                 }
@@ -1153,12 +1163,13 @@ struct ReelsScreen: View {
         AdManager.shared.showInterstitial(from: root, completion: completion)
     }
 
-    private func logTrailerViewed(_ trailer: TrailerItem) {
+    private func logTrailerViewed(_ trailer: TrailerItem, elapsedSeconds: Double?) {
         if trailer.isSponsored {
             WatchIntentLogger.shared.log(
                 eventType: .sponsoredReelViewed,
                 platformId: trailer.platformId,
-                metadata: ["position": vm.currentIndex, "sponsor": trailer.platformName]
+                metadata: ["position": vm.currentIndex, "sponsor": trailer.platformName],
+                watchDurationSeconds: elapsedSeconds
             )
         } else {
             WatchIntentLogger.shared.log(
@@ -1168,7 +1179,8 @@ struct ReelsScreen: View {
                 metadata: [
                     "trailer_key": trailer.trailerKey,
                     "tab": trailer.tab.rawValue
-                ]
+                ],
+                watchDurationSeconds: elapsedSeconds
             )
         }
     }

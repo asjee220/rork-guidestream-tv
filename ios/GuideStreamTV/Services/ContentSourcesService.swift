@@ -214,6 +214,75 @@ final class ContentSourcesService {
         return rows
     }
 
+    // MARK: - Recommended creators based on follows
+
+    /// Returns creators (YouTube, podcasts, Twitch, Kick) recommended for the
+    /// current user based on category overlap with their followed creators.
+    ///
+    /// Algorithm mirrors Top Picks for You: a match-percentage is computed from
+    /// category similarity, clamped to 72–98%, and sorted highest-first.
+    /// Already-followed creators are excluded. Returns at most 12 results.
+    func fetchRecommendedCreators(forFollowedIds followedIds: [String]) async throws -> [(titleId: String, displayName: String, imageUrl: String?, sourceType: String, category: String?, matchPercentage: Int)] {
+        guard !followedIds.isEmpty else { return [] }
+
+        // Get followed creators' categories from content_sources.
+        let followedSources: [ContentSource] = try await client
+            .from("content_sources")
+            .select()
+            .in("title_id", values: followedIds)
+            .execute()
+            .value
+
+        let followedCategories = Set(followedSources.compactMap { $0.category }.filter { !$0.isEmpty })
+        // Normalise: split on commas/slashes/pipes so "Gaming, Tech" → ["Gaming", "Tech"]
+        let followedTags: Set<String> = Set(followedCategories.flatMap { cat in
+            cat.components(separatedBy: CharacterSet(charactersIn: ",/|")).map { $0.trimmingCharacters(in: .whitespaces).lowercased() }.filter { !$0.isEmpty }
+        })
+
+        guard !followedTags.isEmpty else { return [] }
+
+        // Fetch all creators (all source types — YouTube, podcast, Twitch, Kick).
+        let allSources: [ContentSource] = try await client
+            .from("content_sources")
+            .select()
+            .neq("source_type", value: "tmdb")
+            .order("created_at", ascending: false)
+            .limit(200)
+            .execute()
+            .value
+
+        let followedSet = Set(followedIds)
+
+        // Score each non-followed creator by category overlap.
+        var scored: [(titleId: String, displayName: String, imageUrl: String?, sourceType: String, category: String?, matchPercentage: Int)] = []
+        for source in allSources {
+            guard !followedSet.contains(source.titleId) else { continue }
+            let cat = source.category ?? ""
+            let tags = cat.components(separatedBy: CharacterSet(charactersIn: ",/|")).map { $0.trimmingCharacters(in: .whitespaces).lowercased() }.filter { !$0.isEmpty }
+            let overlap = tags.filter { followedTags.contains($0) }.count
+            // Base score: how many followed categories does this creator share?
+            // Map to 72–98% range using the same clamping as Top Picks.
+            let overlapRatio = Double(overlap) / Double(max(1, followedTags.count))
+            let rawScore = Int(overlapRatio * 100)
+            let clamped = max(72, min(98, rawScore))
+            scored.append((
+                titleId: source.titleId,
+                displayName: source.displayName,
+                imageUrl: source.imageUrl,
+                sourceType: source.sourceType,
+                category: source.category,
+                matchPercentage: clamped
+            ))
+        }
+
+        // Sort by match percentage descending, then by display name for ties.
+        scored.sort { a, b in
+            if a.matchPercentage != b.matchPercentage { return a.matchPercentage > b.matchPercentage }
+            return a.displayName.localizedStandardCompare(b.displayName) == .orderedAscending
+        }
+        return Array(scored.prefix(12))
+    }
+
     // MARK: - Realtime subscription for live_status
 
     /// Subscribe to live_status changes via Supabase Realtime using AnyAction.

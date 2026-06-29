@@ -86,7 +86,8 @@ final class WatchIntentLogger {
         eventType: IntentEventType,
         titleId: String? = nil,
         platformId: String? = nil,
-        metadata: [String: Any]? = nil
+        metadata: [String: Any]? = nil,
+        watchDurationSeconds: Double? = nil
     ) {
         // Snapshot state synchronously on the main actor before hopping to a
         // background Task — keeps everything Sendable.
@@ -103,6 +104,9 @@ final class WatchIntentLogger {
         mergedMeta["device_id"] = deviceId
         mergedMeta["is_guest"] = isGuest
         mergedMeta["is_authenticated"] = userId != nil
+        if let duration = watchDurationSeconds {
+            mergedMeta["watch_duration_seconds"] = duration
+        }
         let metadataJSON: AnyJSON? = Self.toAnyJSON(mergedMeta)
 
         totalAttempts += 1
@@ -123,6 +127,8 @@ final class WatchIntentLogger {
                     .insert(payload)
                     .execute()
                 await self?.recordSuccess()
+                // Notify observers so Profile stats refresh reactively.
+                await self?.postStatsNotification()
             } catch {
                 // If the table is missing a top-level `device_id` column,
                 // Postgres will reject the insert with a 400/column error.
@@ -142,6 +148,7 @@ final class WatchIntentLogger {
                             .insert(fallback)
                             .execute()
                         await self?.recordSuccess()
+                        await self?.postStatsNotification()
                         return
                     } catch {
                         self?.recordError(event: event, error: error)
@@ -155,6 +162,15 @@ final class WatchIntentLogger {
 
     private func recordSuccess() {
         totalSuccesses += 1
+    }
+
+    /// Posts a notification so `ProfileStatsService` knows new engagement
+    /// data is available and can refresh without a manual pull.
+    private func postStatsNotification() {
+        NotificationCenter.default.post(
+            name: Notification.Name("ProfileStatsNeedsRefresh"),
+            object: nil
+        )
     }
 
     private func recordError(event: String, error: Error) {
