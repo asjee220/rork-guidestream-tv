@@ -315,33 +315,38 @@ struct HomeView: View {
                             .offset(y: heroRailReady ? 0 : 12)
                         }
 
-                        WatchListSection(
-                            items: watchListEpisodes,
-                            isAuthenticated: auth.isAuthenticated,
-                            liveStatusMap: liveStatusMap,
-                            latestContentMap: streams.latestContentAt,
-                            onSeeAll: {
-                                WatchIntentLogger.shared.log(
-                                    eventType: .cardTapped,
-                                    metadata: ["section": "watch_list_see_all"]
-                                )
-                                showWatchListSheet = true
-                            },
-                            onOpen: { ep in
-                                WatchIntentLogger.shared.log(
-                                    eventType: .cardTapped,
-                                    titleId: ep.titleId ?? WatchIntentLogger.titleSlug(ep.title),
-                                    platformId: ep.platform.lowercased(),
-                                    metadata: ["section": "watch_list"]
-                                )
-                                if let tid = ep.titleId, SourceKind.from(titleId: tid).isNonTMDB {
-                                    creatorDetailTarget = CreatorDetailTarget(titleId: tid, initialEpisode: nil)
-                                } else {
-                                    detailSubject = .episode(ep)
+                        if !homeContentReady {
+                            HomeShimmerSection(title: "My Watch List")
+                                .padding(.horizontal, 20)
+                        } else {
+                            WatchListSection(
+                                items: watchListEpisodes,
+                                isAuthenticated: auth.isAuthenticated,
+                                liveStatusMap: liveStatusMap,
+                                latestContentMap: streams.latestContentAt,
+                                onSeeAll: {
+                                    WatchIntentLogger.shared.log(
+                                        eventType: .cardTapped,
+                                        metadata: ["section": "watch_list_see_all"]
+                                    )
+                                    showWatchListSheet = true
+                                },
+                                onOpen: { ep in
+                                    WatchIntentLogger.shared.log(
+                                        eventType: .cardTapped,
+                                        titleId: ep.titleId ?? WatchIntentLogger.titleSlug(ep.title),
+                                        platformId: ep.platform.lowercased(),
+                                        metadata: ["section": "watch_list"]
+                                    )
+                                    if let tid = ep.titleId, SourceKind.from(titleId: tid).isNonTMDB {
+                                        creatorDetailTarget = CreatorDetailTarget(titleId: tid, initialEpisode: nil)
+                                    } else {
+                                        detailSubject = .episode(ep)
+                                    }
                                 }
-                            }
-                        )
-                        .padding(.horizontal, 20)
+                            )
+                            .padding(.horizontal, 20)
+                        }
 
                         // FIXME: Temporarily disabled — re-enable when new episodes are populated
                         // NewEpisodesSection(

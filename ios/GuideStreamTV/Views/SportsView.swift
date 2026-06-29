@@ -233,19 +233,12 @@ struct SportsView: View {
 
     // MARK: - Header
 
+    /// Mirrors the home screen's PageBar — same BrandWordmark, same
+    /// ServicesPill with the same tap-to-edit-services behaviour, and
+    /// a trailing ProgressView when a background refresh is in flight.
     private var header: some View {
         HStack(spacing: 10) {
-            HStack(alignment: .firstTextBaseline, spacing: 0) {
-                Text("Guide")
-                    .scaledFont(size: 22, weight: .semibold)
-                    .foregroundStyle(.white)
-                Text("Stream")
-                    .scaledFont(size: 22, weight: .semibold)
-                    .foregroundStyle(Color(hex: "F5821F"))
-                Text(" TV")
-                    .scaledFont(size: 16, weight: .regular)
-                    .foregroundStyle(Color.white.opacity(0.45))
-            }
+            BrandWordmark(wordmarkSize: .nav)
             if !orderedSelectedServiceIds.isEmpty {
                 ServicesPill(
                     serviceIds: orderedSelectedServiceIds,
@@ -260,6 +253,7 @@ struct SportsView: View {
                     .scaleEffect(0.8)
             }
         }
+        .padding(.horizontal, 4)
         .padding(.top, 4)
     }
 
