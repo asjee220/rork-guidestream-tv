@@ -287,6 +287,7 @@ struct SearchView: View {
                     HStack(spacing: 8) {
                         ForEach(SearchScope.allCases, id: \.rawValue) { scope in
                             Button {
+                                focused = false
                                 withAnimation(.easeOut(duration: 0.2)) {
                                     vm.scope = scope
                                 }
