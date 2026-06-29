@@ -28,6 +28,11 @@ enum AskSheetState {
     case ai
 }
 
+private enum AskFocusField: Hashable {
+    case bar
+    case composer
+}
+
 struct AskChatMessage: Identifiable, Equatable {
     let id = UUID()
     let isUser: Bool
@@ -84,7 +89,7 @@ struct AskStreamSheet: View {
     @State private var selectedMatch: AgentTitleMatchModel? = nil
     @State private var auth = AuthViewModel.shared
     @State private var providerByResult: [Int: Platform] = [:]
-    @FocusState private var inputFocused: Bool
+    @FocusState private var inputFocus: AskFocusField?
 
     private let suggestions: [String] = [
         "What should I watch tonight?",
@@ -125,11 +130,11 @@ struct AskStreamSheet: View {
             if newValue {
                 sheetOffset = 0
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
-                    if isOpen { inputFocused = true }
+                    if isOpen { inputFocus = .composer }
                 }
             } else {
                 sheetOffset = 1200
-                inputFocused = false
+                inputFocus = nil
                 searchTask?.cancel()
                 aiTask?.cancel()
                 StreamAgentService.shared.reset()
@@ -301,6 +306,7 @@ struct AskStreamSheet: View {
                 .tint(Color.orange)
                 .submitLabel(.send)
                 .onSubmit(submitQuery)
+                .focused($inputFocus, equals: .bar)
 
             if query.isEmpty {
                 Button {
@@ -430,6 +436,7 @@ struct AskStreamSheet: View {
             }
             .padding(.top, 8)
         }
+        .scrollDismissesKeyboard(.interactively)
     }
 
     // MARK: - Search Content
@@ -547,6 +554,7 @@ struct AskStreamSheet: View {
                 Spacer(minLength: 16)
             }
         }
+        .scrollDismissesKeyboard(.interactively)
     }
 
     @ViewBuilder
@@ -636,6 +644,7 @@ struct AskStreamSheet: View {
                     }
                 }
             }
+            .scrollDismissesKeyboard(.interactively)
         }
     }
 
@@ -791,7 +800,7 @@ struct AskStreamSheet: View {
                     .foregroundColor(Color.white.opacity(0.35)))
                     .font(.guideBody(size: 13, weight: .regular))
                     .foregroundStyle(.white)
-                    .focused($inputFocused)
+                    .focused($inputFocus, equals: .composer)
                     .tint(Color.orange)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 10)
@@ -846,7 +855,7 @@ struct AskStreamSheet: View {
                 metadata: ["query": trimmed, "source": "tmdb"]
             )
             runSearch(trimmed)
-            inputFocused = false
+            inputFocus = nil
             return
         }
         sendUser(trimmed)
@@ -918,6 +927,7 @@ struct AskStreamSheet: View {
         messages.append(pending)
         let pendingId = pending.id
         query = ""
+        inputFocus = nil
 
         aiTask?.cancel()
         aiTask = Task { @MainActor in
@@ -956,7 +966,7 @@ struct AskStreamSheet: View {
 
     private func close() {
         haptic(.light)
-        inputFocused = false
+        inputFocus = nil
         onClose()
     }
 
