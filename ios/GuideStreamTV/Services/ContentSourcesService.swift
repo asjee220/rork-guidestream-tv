@@ -214,6 +214,35 @@ final class ContentSourcesService {
         return rows
     }
 
+    // MARK: - Enrich creators with YouTube topic categories
+
+    /// Calls the /enrich/creators backend endpoint to fetch YouTube channel
+    /// topicDetails and persist them as categories in content_sources.
+    /// Returns the count of creators successfully enriched.
+    func enrichCreatorCategories(for titleIds: [String]) async -> Int {
+        let ytIds = titleIds.filter { $0.hasPrefix("yt:") }
+        guard !ytIds.isEmpty else { return 0 }
+        let base = Config.EXPO_PUBLIC_RORK_FUNCTIONS_URL.trimmingCharacters(in: .whitespaces)
+        guard !base.isEmpty,
+              var components = URLComponents(string: base.hasSuffix("/") ? base + "enrich/creators" : base + "/enrich/creators")
+        else { return 0 }
+        components.queryItems = [URLQueryItem(name: "ids", value: ytIds.joined(separator: ","))]
+        guard let url = components.url else { return 0 }
+        do {
+            var request = URLRequest(url: url)
+            request.timeoutInterval = 10
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let http = response as? HTTPURLResponse, http.statusCode == 200 else { return 0 }
+            struct EnrichResponse: Decodable { let ok: Bool; let enriched: Int }
+            let decoded = try JSONDecoder().decode(EnrichResponse.self, from: data)
+            print("[ContentSources] enrichCreatorCategories: enriched \(decoded.enriched) of \(ytIds.count)")
+            return decoded.enriched
+        } catch {
+            print("[ContentSources] enrichCreatorCategories failed: \(error.localizedDescription)")
+            return 0
+        }
+    }
+
     // MARK: - Recommended creators based on follows
 
     /// Returns creators (YouTube, podcasts, Twitch, Kick) recommended for the
@@ -223,10 +252,10 @@ final class ContentSourcesService {
     /// category similarity, clamped to 72–98%, and sorted highest-first.
     /// Already-followed creators are excluded. Returns at most 12 results.
     ///
-    /// When a followed creator has no `category` in the database (common for
-    /// YouTube channels discovered via search), the algorithm extracts meaningful
-    /// keywords from their `description` field and uses those for matching
-    /// against other creators' descriptions and categories.
+    /// Before matching, any followed YouTube creator without a category is
+    /// enriched via the YouTube Data API (topicDetails) so the algorithm has
+    /// proper content-aware categories to match against. Falls back to
+    /// description keyword extraction only when enrichment returns nothing.
     func fetchRecommendedCreators(forFollowedIds followedIds: [String]) async throws -> [(titleId: String, displayName: String, imageUrl: String?, sourceType: String, category: String?, matchPercentage: Int)] {
         guard !followedIds.isEmpty else {
             print("[ContentSources] fetchRecommendedCreators: empty followedIds, returning []")
@@ -235,13 +264,34 @@ final class ContentSourcesService {
         print("[ContentSources] fetchRecommendedCreators: followedIds=\(followedIds)")
 
         // Get followed creators' categories from content_sources.
-        let followedSources: [ContentSource] = try await client
+        var followedSources: [ContentSource] = try await client
             .from("content_sources")
             .select()
             .in("title_id", values: followedIds)
             .execute()
             .value
         print("[ContentSources] followedSources count=\(followedSources.count), ids=\(followedSources.map { $0.titleId })")
+
+        // Enrich any followed YouTube creators that lack categories.
+        // This calls YouTube's channels.list API for topicDetails and persists
+        // the results so future queries benefit immediately.
+        let uncategorizedIds = followedSources
+            .filter { ($0.category ?? "").isEmpty && $0.sourceType == "youtube" }
+            .map { $0.titleId }
+        if !uncategorizedIds.isEmpty {
+            print("[ContentSources] enriching \(uncategorizedIds.count) uncategorized YouTube creators: \(uncategorizedIds)")
+            let enriched = await enrichCreatorCategories(for: uncategorizedIds)
+            if enriched > 0 {
+                // Re-query to pick up the freshly written categories.
+                followedSources = try await client
+                    .from("content_sources")
+                    .select()
+                    .in("title_id", values: followedIds)
+                    .execute()
+                    .value
+                print("[ContentSources] re-queried after enrichment, sources now=\(followedSources.count)")
+            }
+        }
 
         let followedCategories = Set(followedSources.compactMap { $0.category }.filter { !$0.isEmpty })
         // Normalise: split on commas/slashes/pipes so "Gaming, Tech" → ["Gaming", "Tech"]
@@ -250,10 +300,8 @@ final class ContentSourcesService {
         })
         print("[ContentSources] followedTags=\(followedTags)")
 
-        // When formal categories are absent, extract meaningful keywords from
-        // the followed creators' descriptions as pseudo-categories. This bridges
-        // the gap for YouTube channels discovered via search (which never have
-        // categories attached by the API).
+        // When formal categories are absent (even after enrichment), extract
+        // meaningful keywords from the followed creators' descriptions.
         let descriptionKeywords: Set<String> = {
             guard followedTags.isEmpty else { return [] }
             let allDescriptions = followedSources.compactMap { $0.description }.joined(separator: " ")
@@ -296,22 +344,29 @@ final class ContentSourcesService {
         let followedSet = Set(followedIds)
 
         // Scoring tiers:
-        // 1. Category overlap (when followedTags is non-empty) — 72–98%
-        // 2. Description keyword overlap (when followedTags empty but descriptions exist) — 65–92%
-        // 3. Source-type fallback (when nothing else works) — 65–72%
+        // 1. Jaccard category similarity (when followedTags is non-empty) — 65–98%
+        // 2. Description keyword overlap (when followedTags empty but descriptions exist) — 60–92%
+        // 3. Source-type fallback (when nothing else works) — 55–70%
         let hasCategories = !followedTags.isEmpty
         var scored: [(titleId: String, displayName: String, imageUrl: String?, sourceType: String, category: String?, matchPercentage: Int)] = []
         for source in allSources {
             guard !followedSet.contains(source.titleId) else { continue }
             let matchPct: Int
             if hasCategories {
-                // Tier 1: formal category overlap.
+                // Tier 1: Jaccard similarity — intersection over union of tag sets.
+                // This penalises candidates with many unrelated tags (e.g. a channel
+                // tagged "Automobile, Gaming, Vlog, Comedy" against followed tag
+                // "Automobile" gets a low Jaccard score instead of the old 100%).
                 let cat = source.category ?? ""
-                let tags = cat.components(separatedBy: CharacterSet(charactersIn: ",/|")).map { $0.trimmingCharacters(in: .whitespaces).lowercased() }.filter { !$0.isEmpty }
-                let overlap = tags.filter { followedTags.contains($0) }.count
-                let overlapRatio = Double(overlap) / Double(max(1, followedTags.count))
-                let rawScore = Int(overlapRatio * 100)
-                matchPct = max(72, min(98, rawScore))
+                let tags = Set(cat.components(separatedBy: CharacterSet(charactersIn: ",/|")).map { $0.trimmingCharacters(in: .whitespaces).lowercased() }.filter { !$0.isEmpty })
+                let intersection = tags.intersection(followedTags).count
+                let union = tags.union(followedTags).count
+                let jaccard = union > 0 ? Double(intersection) / Double(union) : 0
+                // Map Jaccard [0,1] → [65,98] range.
+                // Jaccard ≥ 0.5 signals strong topical alignment; score reflects that.
+                let rawScore = Int(jaccard * 100)
+                // Floor at 65 for same-platform fallback; cap at 98 for best matches.
+                matchPct = max(65, min(98, rawScore))
             } else if hasKeywords {
                 // Tier 2: description keyword overlap — match against both the
                 // candidate's description AND its category to double the surface
@@ -320,16 +375,14 @@ final class ContentSourcesService {
                     .compactMap { $0 }
                     .joined(separator: " ")
                 let candidateKeywords = Self.extractKeywords(from: candidateText)
-                let overlap = candidateKeywords.intersection(descriptionKeywords).count
-                let overlapRatio = Double(overlap) / Double(max(1, descriptionKeywords.count))
-                let rawScore = Int(overlapRatio * 100)
-                // Score floor is lower than category matching (65 vs 72) because
-                // keyword extraction is noisier, but the ceiling reflects strong
-                // description overlap.
-                matchPct = max(65, min(92, rawScore))
+                let intersection = candidateKeywords.intersection(descriptionKeywords).count
+                let union = candidateKeywords.union(descriptionKeywords).count
+                let jaccard = union > 0 ? Double(intersection) / Double(union) : 0
+                let rawScore = Int(jaccard * 100)
+                matchPct = max(60, min(92, rawScore))
             } else {
-                // Tier 3: source-type only — same type → 72%, different → 65%.
-                matchPct = followedSourceTypes.contains(source.sourceType) ? 72 : 65
+                // Tier 3: source-type only — same type → 70%, different → 55%.
+                matchPct = followedSourceTypes.contains(source.sourceType) ? 70 : 55
             }
             scored.append((
                 titleId: source.titleId,

@@ -64,9 +64,11 @@ async function searchYouTube(
   const items = json.items ?? [];
 
   const results: CreatorResult[] = [];
+  const channelIds: string[] = [];
   for (const item of items) {
     const channelId = item.id?.channelId;
     if (!channelId) continue;
+    channelIds.push(channelId);
     const snippet = item.snippet ?? {};
     const thumbs = snippet.thumbnails ?? {};
     const image =
@@ -83,7 +85,164 @@ async function searchYouTube(
       description: snippet.description ?? null,
     });
   }
+
+  // Enrich with channel topicDetails (YouTube's own categorization).
+  if (channelIds.length > 0) {
+    const topicsMap = await fetchYouTubeTopics(channelIds, apiKey);
+    for (const r of results) {
+      const externalId = r.external_id;
+      if (externalId && topicsMap.has(externalId)) {
+        r.category = topicsMap.get(externalId) ?? null;
+      }
+    }
+  }
+
   return results;
+}
+
+// ── YouTube Channel Topic Enrichment ───────────────────────────────────
+
+interface YouTubeChannelResponse {
+  items?: Array<{
+    id?: string;
+    topicDetails?: {
+      topicCategories?: string[];
+    };
+  }>;
+}
+
+/**
+ * Fetches topicDetails for a batch of channel IDs and maps Freebase/Wikipedia
+ * topic URLs to human-readable category strings (e.g. "Automobile, Vehicle").
+ */
+async function fetchYouTubeTopics(
+  channelIds: string[],
+  apiKey: string,
+): Promise<Map<string, string>> {
+  const result = new Map<string, string>();
+  try {
+    const url = new URL("https://www.googleapis.com/youtube/v3/channels");
+    url.searchParams.set("part", "topicDetails");
+    url.searchParams.set("id", channelIds.join(","));
+    url.searchParams.set("key", apiKey);
+
+    const res = await fetch(url.toString());
+    if (!res.ok) {
+      console.error(
+        `[youtube] channels.list failed: ${res.status}`,
+      );
+      return result;
+    }
+    const json = (await res.json()) as YouTubeChannelResponse;
+    for (const item of json.items ?? []) {
+      const id = item.id;
+      const topics = item.topicDetails?.topicCategories ?? [];
+      if (!id || topics.length === 0) continue;
+      const labels = topics
+        .map(topicUrlToLabel)
+        .filter((l): l is string => l !== null);
+      if (labels.length > 0) {
+        result.set(id, labels.join(", "));
+      }
+    }
+  } catch (err) {
+    console.error("[youtube] topic enrichment error:", (err as Error).message);
+  }
+  return result;
+}
+
+/**
+ * Converts a YouTube topic URL (Freebase → Wikipedia redirect) to a
+ * human-readable label. Returns null for overly generic or unparseable topics.
+ *
+ * Example: "https://en.wikipedia.org/wiki/Automobile" → "Automobile"
+ */
+function topicUrlToLabel(url: string): string | null {
+  // Extract the article title from a Wikipedia URL.
+  const match = url.match(/\/wiki\/(.+?)(?:#|$)/);
+  if (!match) return null;
+  let label = decodeURIComponent(match[1]).replace(/_/g, " ").trim();
+  // Skip overly broad / non-descriptive topics that add no content signal.
+  const skip: Set<string> = new Set([
+    "lifestyle (sociology)", "lifestyle",
+    "entertainment", "entertainment (culture)",
+    "society",
+    "culture",
+    "technology",
+    "music",
+    "sports",
+    "food",
+    "travel",
+    "film",
+    "television",
+    "video game culture",
+    "internet culture",
+    "hobby",
+    "do it yourself", "diy",
+    "how-to", "tutorial",
+    "vlog",
+    "review",
+    "unboxing",
+    "reaction",
+    "commentary",
+    "gaming",
+    "comedy",
+    "news",
+    "politics",
+    "education",
+    "science",
+    "health",
+    "fitness",
+    "cooking",
+    "fashion",
+    "beauty",
+    "art",
+    "photography",
+    "animals", "pets",
+    "kids", "family",
+    "business",
+    "finance",
+    "marketing",
+    "podcast",
+    "blog",
+    "social media",
+    "streaming",
+    "content creator",
+  ]);
+  if (skip.has(label.toLowerCase())) return null;
+  // Clean parenthetical disambiguation like "Automobile (Vehicle)" → "Automobile"
+  const parenIdx = label.indexOf(" (");
+  if (parenIdx > 0) label = label.slice(0, parenIdx);
+  return label.length >= 2 ? label : null;
+}
+
+/**
+ * Public entry point: enrich a batch of YouTube title_ids with categories
+ * from the YouTube Data API. Used by the /enrich/creators endpoint and called
+ * from the client when followed creators lack categories.
+ */
+export async function enrichYouTubeCategories(
+  titleIds: string[],
+  apiKey: string,
+): Promise<Map<string, string>> {
+  const channelIds: string[] = [];
+  const idMap = new Map<string, string>(); // channelId → titleId
+  for (const tid of titleIds) {
+    if (tid.startsWith("yt:")) {
+      const cid = tid.slice(3);
+      channelIds.push(cid);
+      idMap.set(cid, tid);
+    }
+  }
+  if (channelIds.length === 0) return new Map();
+
+  const topicsMap = await fetchYouTubeTopics(channelIds, apiKey);
+  const result = new Map<string, string>();
+  for (const [cid, category] of topicsMap) {
+    const tid = idMap.get(cid);
+    if (tid) result.set(tid, category);
+  }
+  return result;
 }
 
 // ── Twitch ──────────────────────────────────────────────────────────────

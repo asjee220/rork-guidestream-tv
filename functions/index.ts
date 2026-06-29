@@ -23,8 +23,10 @@ import {
 import { sendBatchPush } from "./_lib/apns";
 import {
   searchCreators,
+  enrichYouTubeCategories,
   type CreatorSearchType,
 } from "./_lib/creators";
+import { supabaseUpsert } from "./_lib/supabase";
 
 interface Env {
   APPLE_APNS_PRIVATE_KEY: string;
@@ -73,6 +75,41 @@ export default {
       } catch (err) {
         return Response.json(
           { ok: false, error: (err as Error).message },
+          { status: 500, headers: CORS },
+        );
+      }
+    }
+
+    // Enrich YouTube creators with topic category data.
+    // Called by the client when followed creators lack categories.
+    if (url.pathname === "/enrich/creators") {
+      const idsParam = url.searchParams.get("ids") ?? "";
+      const ids = idsParam.split(",").map((s) => s.trim()).filter(Boolean);
+      if (ids.length === 0) {
+        return Response.json({ ok: true, enriched: 0 }, { headers: CORS });
+      }
+      try {
+        const ytKey = env.YOUTUBE_API_KEY;
+        if (!ytKey) {
+          return Response.json({ ok: true, enriched: 0, note: "no YT key" }, { headers: CORS });
+        }
+        const categoriesMap = await enrichYouTubeCategories(ids, ytKey);
+        // Persist the enriched categories back to content_sources.
+        const rows: Array<{ title_id: string; category: string }> = [];
+        for (const [tid, cat] of categoriesMap) {
+          rows.push({ title_id: tid, category: cat });
+        }
+        if (rows.length > 0) {
+          await supabaseUpsert("content_sources", rows, "title_id");
+        }
+        console.log(
+          `[enrich/creators] enriched ${rows.length} of ${ids.length} ids`,
+        );
+        return Response.json({ ok: true, enriched: rows.length }, { headers: CORS });
+      } catch (err) {
+        console.error("[enrich/creators] error:", (err as Error).message);
+        return Response.json(
+          { ok: false, error: (err as Error).message, enriched: 0 },
           { status: 500, headers: CORS },
         );
       }
