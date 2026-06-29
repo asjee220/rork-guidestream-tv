@@ -96,6 +96,7 @@ struct PosterShow: Identifiable, Hashable {
     var tmdbId: Int? = nil
     var voteAverage: Double? = nil
     var seasonCount: Int? = nil
+    var isTV: Bool = true
 }
 
 /// Default gradient colors used as a tasteful fallback while TMDB images load or when they fail.
@@ -937,7 +938,8 @@ struct HomeView: View {
                             posterColors: [result.serviceColor, result.serviceColor.opacity(0.7)],
                             symbol: result.isTV ? "tv.fill" : "film.fill",
                             posterUrl: result.posterUrl,
-                            tmdbId: result.id
+                            tmdbId: result.id,
+                            isTV: result.isTV
                         )
                         detailSubject = .show(show)
                     }
@@ -991,21 +993,28 @@ struct HomeView: View {
         .task {
             await clearBadgeAndMarkSeen()
             await streams.refreshAll()
-            await loadTrendingIfNeeded()
-            await loadComingToStreaming()
-            await subscribeToLiveStatus()
+            // Hero-critical path: load the data the carousel needs and
+            // render it immediately so the hero appears first, then fill
+            // in non-critical sections asynchronously.
+            await loadTrendingIfNeeded(deferNonCritical: true)
+            // Live status + creator uploads can fetch concurrently.
+            async let liveStatusWork: Void = subscribeToLiveStatus()
+            async let creatorWork: Void = loadCreatorUploads()
+            await liveStatusWork
             buildLiveCreators()
-            await loadCreatorUploads()
+            await creatorWork
             rebuildHeroRail()
-            await hydrateSourceImages()
-            // Once the main data batch settles, transition all section
-            // containers from shimmer placeholders to real content with a
-            // smooth staggered fade-in.
+            // Show the hero carousel and all sections that have data RIGHT NOW.
+            // Non-hero sections (Coming Soon, platform rows, expiring) populate
+            // asynchronously as their deferred loads complete.
             await MainActor.run {
                 withAnimation(.easeOut(duration: 0.35).delay(0.1)) {
                     homeContentReady = true
                 }
             }
+            // Continue loading non-critical sections in the background.
+            await loadComingToStreaming()
+            await hydrateSourceImages()
         }
         .refreshable {
             await streams.refreshAll()
@@ -1137,7 +1146,7 @@ struct HomeView: View {
         StreamingCatalog.ordered(from: auth.selectedServices).map { $0.id }
     }
 
-    private func loadTrendingIfNeeded() async {
+    private func loadTrendingIfNeeded(deferNonCritical: Bool = false) async {
         // Always load TMDB content so the hero, new-episodes, and binge sections never fall back to a gradient-only state.
         async let trendingCall = try? TMDBService.shared.getTrending()
         async let onAirCall = try? TMDBService.shared.getOnTheAir()
@@ -1157,45 +1166,80 @@ struct HomeView: View {
         sportsGames = s
         newsStreams = news
         await hydrateProviders()
-        await loadPopularOnServices()
 
-        // TVDB enrichment fires after providers resolve so we can attach
-        // platform badges — non-blocking, silently ignored when TVDB is down.
-        Task { await fetchTVDBUpcoming() }
-
-        // Fetch expiring titles — prioritises watchlist IDs, falls back
-        // to trending + on-air so the section always has content.
-        let watchListIds = streams.userStreams.compactMap { Int($0.titleId) }
-        let trendingIds = trending.map { $0.id }
-        let onAirIds = onAir.map { $0.id }
-        // Deduplicate: watchlist first, then trending, then on-air
-        var seen = Set<Int>()
-        var poolIds: [Int] = []
-        for id in (watchListIds + trendingIds + onAirIds) where seen.insert(id).inserted {
-            poolIds.append(id)
-        }
-        if !poolIds.isEmpty {
-            expiringItems = await WatchmodeService.shared.getExpiringTitles(tmdbIds: poolIds)
-            await resolveExpiringPosters()
-        }
-
-        // Push fresh data to the widget via App Group UserDefaults.
-        WidgetDataService.shared.push(
-            expiringItems: expiringItems,
-            posterUrls: expiringPosterUrls,
-            watchlistCount: streams.userStreams.count,
-            newEpisodeCount: streams.newEpisodes.count
-        )
-
-        let topGenreId = topGenreFromWatchList()
-        if topGenreId.id != selectedGenreId {
-            selectedGenreId = topGenreId.id
-            selectedGenreName = topGenreId.name
-            if let rec = try? await TMDBService.shared.getDiscoverByGenre(topGenreId.id) {
-                recommendedShows = rec
+        // Defer non-hero work so the carousel can appear without
+        // waiting for platform rows, expiring titles, or genre
+        // enrichment. These run fire-and-forget and populate their
+        // sections asynchronously once the hero is visible.
+        // On refresh (deferNonCritical=false), run synchronously.
+        if deferNonCritical {
+            Task {
+                await loadPopularOnServices()
+                // TVDB enrichment — non-blocking, silently ignored when TVDB is down.
+                Task { await fetchTVDBUpcoming() }
+            // Fetch expiring titles — prioritises watchlist IDs, falls back
+            // to trending + on-air so the section always has content.
+            let watchListIds = streams.userStreams.compactMap { Int($0.titleId) }
+            let tIds = trending.map { $0.id }
+            let oaIds = onAir.map { $0.id }
+            var seen2 = Set<Int>()
+            var poolIds: [Int] = []
+            for id in (watchListIds + tIds + oaIds) where seen2.insert(id).inserted {
+                poolIds.append(id)
+            }
+            if !poolIds.isEmpty {
+                expiringItems = await WatchmodeService.shared.getExpiringTitles(tmdbIds: poolIds)
+                await resolveExpiringPosters()
+            }
+            // Push fresh data to the widget via App Group UserDefaults.
+            WidgetDataService.shared.push(
+                expiringItems: expiringItems,
+                posterUrls: expiringPosterUrls,
+                watchlistCount: streams.userStreams.count,
+                newEpisodeCount: streams.newEpisodes.count
+            )
+            let topGenreId = topGenreFromWatchList()
+            if topGenreId.id != selectedGenreId {
+                selectedGenreId = topGenreId.id
+                selectedGenreName = topGenreId.name
+                if let rec = try? await TMDBService.shared.getDiscoverByGenre(topGenreId.id) {
+                    recommendedShows = rec
+                }
+            } else {
+                recommendedShows = genreShows
+            }
             }
         } else {
-            recommendedShows = genreShows
+            await loadPopularOnServices()
+            Task { await fetchTVDBUpcoming() }
+            let watchListIds = streams.userStreams.compactMap { Int($0.titleId) }
+            let tIds = trending.map { $0.id }
+            let oaIds = onAir.map { $0.id }
+            var seen2 = Set<Int>()
+            var poolIds: [Int] = []
+            for id in (watchListIds + tIds + oaIds) where seen2.insert(id).inserted {
+                poolIds.append(id)
+            }
+            if !poolIds.isEmpty {
+                expiringItems = await WatchmodeService.shared.getExpiringTitles(tmdbIds: poolIds)
+                await resolveExpiringPosters()
+            }
+            WidgetDataService.shared.push(
+                expiringItems: expiringItems,
+                posterUrls: expiringPosterUrls,
+                watchlistCount: streams.userStreams.count,
+                newEpisodeCount: streams.newEpisodes.count
+            )
+            let topGenreId = topGenreFromWatchList()
+            if topGenreId.id != selectedGenreId {
+                selectedGenreId = topGenreId.id
+                selectedGenreName = topGenreId.name
+                if let rec = try? await TMDBService.shared.getDiscoverByGenre(topGenreId.id) {
+                    recommendedShows = rec
+                }
+            } else {
+                recommendedShows = genreShows
+            }
         }
     }
 
@@ -1428,10 +1472,11 @@ struct HomeView: View {
             title: r.displayName,
             meta: r.year.map { "\($0)" } ?? (r.isTV ? "Series" : "Movie"),
             posterColors: colors,
-            symbol: "play.tv.fill",
+            symbol: r.isTV ? "play.tv.fill" : "film.fill",
             posterUrl: r.posterUrl,
             tmdbId: r.id,
-            voteAverage: r.voteAverage
+            voteAverage: r.voteAverage,
+            isTV: r.isTV
         )
     }
 

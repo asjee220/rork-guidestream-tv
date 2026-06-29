@@ -110,7 +110,13 @@ final class ShowDetailViewModel {
             // silently ignored on failure so the sheet always renders.
             Task { await enrichWithTVDB(tmdbId: tmdbId) }
         } else {
-            self.resolved = .empty
+            // Movie — resolve streaming sources via TMDB id
+            if let tmdbId = Int(titleId) {
+                let r = await StreamingSourceResolver.shared.resolve(tmdbId: tmdbId, isTV: false)
+                self.resolved = r
+            } else {
+                self.resolved = .empty
+            }
             do {
                 let result = try await WatchmodeService.shared.titleDetail(titleId: titleId)
                 detail = result
@@ -357,7 +363,9 @@ struct ShowDetailScreen: View {
                     fanActivitySection
                     synopsisSection
                     deepDivesSection
-                    episodesSection
+                    if isTV {
+                        episodesSection
+                    }
                     Color.clear.frame(height: 140)
                 }
                 .background(
@@ -386,7 +394,7 @@ struct ShowDetailScreen: View {
                 isOpen: playOnOpen,
                 onClose: { playOnOpen = false },
                 showTitle: displayTitle,
-                showSubtitle: latestEpisode.map { "S:\($0.seasonNum) EP:\($0.episodeNum) \u{00B7} \($0.name)" } ?? "S:1 EP:1",
+                showSubtitle: isTV ? (latestEpisode.map { "S:\($0.seasonNum) EP:\($0.episodeNum) \u{00B7} \($0.name)" } ?? "S:1 EP:1") : (yearText + " \u{00B7} " + (vm.primaryService?.name ?? "Movie")),
                 thumbnailUrl: posterUrl,
                 tmdbId: resolvedTmdbId,
                 isTV: isTV,
@@ -897,8 +905,8 @@ struct ShowDetailScreen: View {
 
             VStack(spacing: 10) {
 
-                // Episode context strip
-                if let ep = latestEpisode {
+                // Episode context strip — TV only
+                if isTV, let ep = latestEpisode {
                     HStack(spacing: 8) {
                         RoundedRectangle(cornerRadius: 5, style: .continuous)
                             .fill(Color.white.opacity(0.08))
@@ -984,7 +992,7 @@ struct ShowDetailScreen: View {
                             Image(systemName: "play.fill")
                                 .scaledFont(size: 15, weight: .bold)
 
-                            if let ep = latestEpisode {
+                            if isTV, let ep = latestEpisode {
                                 Text("Watch S:\(ep.seasonNum) EP:\(ep.episodeNum)")
                                     .scaledFont(size: 15, weight: .bold)
                                     .lineLimit(1)
@@ -1029,13 +1037,24 @@ struct ShowDetailScreen: View {
                 HStack(spacing: 8) {
                     Button(action: {
                         UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                        showMoreEpisodes = true
+                        if isTV {
+                            showMoreEpisodes = true
+                        } else if let tid = resolvedTmdbId {
+                            Task {
+                                let key = try? await TMDBService.shared.getMovieTrailerKey(tmdbId: tid)
+                                await MainActor.run {
+                                    if let key {
+                                        UIApplication.shared.open(URL(string: "https://www.youtube.com/watch?v=\(key)")!)
+                                    }
+                                }
+                            }
+                        }
                     }) {
                         HStack(spacing: 5) {
-                            Image(systemName: "list.bullet")
+                            Image(systemName: isTV ? "list.bullet" : "film")
                                 .scaledFont(size: 12, weight: .semibold)
                                 .foregroundStyle(Color.white.opacity(0.55))
-                            Text("More episodes")
+                            Text(isTV ? "More episodes" : "Trailer")
                                 .scaledFont(size: 12, weight: .semibold)
                                 .foregroundStyle(.white)
                         }

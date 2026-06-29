@@ -179,11 +179,7 @@ struct EpisodeDetailSheet: View {
     /// the Roku ECP `MediaType` parameter ("series" vs "movie").
     private var isTV: Bool {
         if case .episode = subject { return true }
-        // For shows we default to TV; we refine this once Watchmode tells us
-        // the actual format. Most home-screen entries are series.
-        if let fmt = resolvedSource?.format?.lowercased() {
-            return fmt.contains("tv") || fmt.contains("series")
-        }
+        if case .show(let s) = subject { return s.isTV }
         return true
     }
 
