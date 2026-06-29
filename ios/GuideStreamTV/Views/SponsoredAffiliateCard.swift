@@ -2,7 +2,7 @@
 //  SponsoredAffiliateCard.swift
 //  GuideStreamTV
 //
-//  Shared frosted-glass affiliate banner. Renders a Rakuten "Stream more on…"
+//  Shared frosted-glass affiliate banner with thinned frost layer. Renders a Rakuten "Stream more on…"
 //  card with a branded service tile, headline, subtitle, "Sponsored · Rakuten"
 //  footer, and a top-trailing dismiss button — all on a see-through
 //  ultraThinMaterial + navy-tinted background so the playing video/content
@@ -47,10 +47,10 @@ struct SponsoredAffiliateCard: View {
                 .padding(.vertical, 10)
                 .background(
                     RoundedRectangle(cornerRadius: 14)
-                        .fill(.ultraThinMaterial)
+                        .fill(.ultraThinMaterial.opacity(0.27))
                         .overlay(
                             RoundedRectangle(cornerRadius: 14)
-                                .fill(Color(red: 8/255, green: 14/255, blue: 24/255).opacity(0.30))
+                                .fill(Color(red: 8/255, green: 14/255, blue: 24/255).opacity(0.06))
                         )
                         .overlay(
                             RoundedRectangle(cornerRadius: 14)

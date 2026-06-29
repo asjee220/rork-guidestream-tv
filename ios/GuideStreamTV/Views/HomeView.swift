@@ -879,6 +879,23 @@ struct HomeView: View {
                     .padding(.top, 4)
                 }
                 .tracksTabBarVisibility()
+                .refreshable {
+                    await streams.refreshAll()
+                    await loadTrendingIfNeeded()
+                    await loadComingToStreaming()
+                    buildLiveCreators()
+                    await loadCreatorUploads()
+                    await loadRecommendedCreators()
+                    rebuildHeroRail()
+                    await hydrateSourceImages()
+                    // Push updated widget data on pull-to-refresh.
+                    WidgetDataService.shared.push(
+                        expiringItems: expiringItems,
+                        posterUrls: expiringPosterUrls,
+                        watchlistCount: streams.userStreams.count,
+                        newEpisodeCount: streams.newEpisodes.count
+                    )
+                }
                 } // ScrollViewReader
 
                 VStack(spacing: 0) {
@@ -907,7 +924,12 @@ struct HomeView: View {
                         .transition(.move(edge: .top).combined(with: .opacity))
                     }
                 }
-                .background(.ultraThinMaterial)
+                .background {
+                    ZStack {
+                        Rectangle().fill(.ultraThinMaterial).opacity(0.09)
+                        Rectangle().fill(Color(red: 8/255, green: 14/255, blue: 24/255).opacity(0.03))
+                    }
+                }
                 .overlay(alignment: .bottom) {
                     Rectangle()
                         .fill(Color.white.opacity(0.05))
@@ -1085,23 +1107,7 @@ struct HomeView: View {
             await loadComingToStreaming()
             await hydrateSourceImages()
         }
-        .refreshable {
-            await streams.refreshAll()
-            await loadTrendingIfNeeded()
-            await loadComingToStreaming()
-            buildLiveCreators()
-            await loadCreatorUploads()
-            await loadRecommendedCreators()
-            rebuildHeroRail()
-            await hydrateSourceImages()
-            // Push updated widget data on pull-to-refresh.
-            WidgetDataService.shared.push(
-                expiringItems: expiringItems,
-                posterUrls: expiringPosterUrls,
-                watchlistCount: streams.userStreams.count,
-                newEpisodeCount: streams.newEpisodes.count
-            )
-        }
+
     }
 
     /// Clear the app icon badge and flag day-old new episodes as seen so the next launch doesn't re-pulse them.

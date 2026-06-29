@@ -137,12 +137,12 @@ struct SportsView: View {
 
     var body: some View {
         NavigationStack(path: $path) {
-            ZStack {
+            ZStack(alignment: .top) {
                 Color(hex: "04090F").ignoresSafeArea()
 
                 ScrollView(.vertical, showsIndicators: false) {
                     LazyVStack(alignment: .leading, spacing: 16) {
-                        header
+                        Color.clear.frame(height: 56)
                         sportPills
                         if !favoriteTeams.isEmpty {
                             myTeamsSection
@@ -175,6 +175,39 @@ struct SportsView: View {
                 }
                 .refreshable { await load() }
                 .tracksTabBarVisibility()
+
+                // Pinned glass header — mirrors the home screen's PageBar
+                VStack(spacing: 0) {
+                    HStack(spacing: 10) {
+                        BrandWordmark(wordmarkSize: .nav)
+                        if !orderedSelectedServiceIds.isEmpty {
+                            ServicesPill(
+                                serviceIds: orderedSelectedServiceIds,
+                                onTap: { showServicesSheet = true }
+                            )
+                            .padding(.leading, 4)
+                        }
+                        Spacer()
+                        if isLoading && !games.isEmpty {
+                            ProgressView()
+                                .tint(Color(hex: "F5821F"))
+                                .scaleEffect(0.8)
+                        }
+                    }
+                    .frame(height: 56)
+                    .padding(.horizontal, 20)
+                }
+                .background {
+                    ZStack {
+                        Rectangle().fill(.ultraThinMaterial).opacity(0.09)
+                        Rectangle().fill(Color(red: 8/255, green: 14/255, blue: 24/255).opacity(0.03))
+                    }
+                }
+                .overlay(alignment: .bottom) {
+                    Rectangle()
+                        .fill(Color.white.opacity(0.05))
+                        .frame(height: 0.5)
+                }
             }
             .navigationBarHidden(true)
             .navigationDestination(for: SportsRoute.self) { route in
