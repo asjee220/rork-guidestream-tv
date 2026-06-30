@@ -1015,21 +1015,34 @@ struct HomeView: View {
                 SportsWatchSheet(game: game)
             }
             .fullScreenCover(isPresented: $showSearch) {
-                SearchView(isPresented: $showSearch) { result in
-                    showSearch = false
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
-                        let show = PosterShow(
-                            title: result.title,
-                            meta: metadata(for: result),
-                            posterColors: [result.serviceColor, result.serviceColor.opacity(0.7)],
-                            symbol: result.isTV ? "tv.fill" : "film.fill",
-                            posterUrl: result.posterUrl,
-                            tmdbId: result.id,
-                            isTV: result.isTV
-                        )
-                        detailSubject = .show(show)
+                SearchView(
+                    isPresented: $showSearch,
+                    onSelectResult: { result in
+                        showSearch = false
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                            let show = PosterShow(
+                                title: result.title,
+                                meta: metadata(for: result),
+                                posterColors: [result.serviceColor, result.serviceColor.opacity(0.7)],
+                                symbol: result.isTV ? "tv.fill" : "film.fill",
+                                posterUrl: result.posterUrl,
+                                tmdbId: result.id,
+                                isTV: result.isTV
+                            )
+                            detailSubject = .show(show)
+                        }
+                    },
+                    onCreatorSelect: { creator in
+                        showSearch = false
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                            creatorDetailTarget = CreatorDetailTarget(
+                                titleId: creator.titleId,
+                                initialEpisode: nil,
+                                fallbackCreator: creator
+                            )
+                        }
                     }
-                }
+                )
             }
 
             .sheet(item: $creatorDetailTarget) { target in

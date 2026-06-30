@@ -233,11 +233,11 @@ final class SearchViewModel {
 struct SearchView: View {
     @Binding var isPresented: Bool
     var onSelectResult: ((SearchResult) -> Void)? = nil
+    var onCreatorSelect: ((DiscoverableCreator) -> Void)? = nil
 
     @State private var vm = SearchViewModel()
     @State private var followedIds: Set<String> = []
     @State private var streams = StreamsViewModel.shared
-    @State private var creatorDetailTarget: CreatorDetailTarget?
     @FocusState private var focused: Bool
 
     var body: some View {
@@ -341,14 +341,7 @@ struct SearchView: View {
             syncFollowed()
             Task { await vm.loadPopular() }
         }
-        .sheet(item: $creatorDetailTarget) { target in
-            CreatorDetailView(
-                titleId: target.titleId,
-                initialEpisode: target.initialEpisode,
-                fallbackCreator: target.fallbackCreator,
-                onBack: { creatorDetailTarget = nil }
-            )
-        }
+
     }
 
     // MARK: - Followed sync
@@ -441,7 +434,8 @@ struct SearchView: View {
 
     private func openCreator(_ creator: DiscoverableCreator) {
         WatchIntentLogger.shared.log(eventType: .cardTapped, titleId: creator.titleId, platformId: creator.sourceType, metadata: ["section": "search", "kind": creator.sourceType])
-        creatorDetailTarget = CreatorDetailTarget(titleId: creator.titleId, initialEpisode: nil, fallbackCreator: creator)
+        if let cb = onCreatorSelect { cb(creator); return }
+        isPresented = false
     }
 
     private func openTMDB(_ result: SearchResult) {
