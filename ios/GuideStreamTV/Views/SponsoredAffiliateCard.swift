@@ -47,10 +47,10 @@ struct SponsoredAffiliateCard: View {
                 .padding(.vertical, 10)
                 .background(
                     RoundedRectangle(cornerRadius: 14)
-                        .fill(.ultraThinMaterial.opacity(0.27))
+                        .fill(.ultraThinMaterial.opacity(0.67))
                         .overlay(
                             RoundedRectangle(cornerRadius: 14)
-                                .fill(Color(red: 8/255, green: 14/255, blue: 24/255).opacity(0.06))
+                                .fill(Color(red: 8/255, green: 14/255, blue: 24/255).opacity(0.19))
                         )
                         .overlay(
                             RoundedRectangle(cornerRadius: 14)

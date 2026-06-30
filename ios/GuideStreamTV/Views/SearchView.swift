@@ -156,7 +156,7 @@ final class SearchViewModel {
             // Skip for the podcasts scope (no live podcast search backend).
             let liveType: String? = {
                 switch scope {
-                case .podcasts: return nil
+                case .podcasts: return "podcast"
                 case .creators, .all, .live: return "all"
                 default: return "all"
                 }
@@ -167,8 +167,16 @@ final class SearchViewModel {
             }
 
             // Merge: local DB rows take precedence, live results fill the gaps.
+            // Also drop live rows whose display_name collides with a local row
+            // (case-insensitive, trimmed) even when title_id differs — prevents
+            // iTunes podcast results from duplicating seed podcasts.
+            let localNames = Set(localSources.map { $0.displayName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() })
             var mergedById: [String: ContentSource] = [:]
-            for s in liveSources { mergedById[s.titleId] = s }
+            for s in liveSources {
+                let liveName = s.displayName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                if localNames.contains(liveName) { continue }
+                mergedById[s.titleId] = s
+            }
             for s in localSources { mergedById[s.titleId] = s }
             let sources = Array(mergedById.values)
 

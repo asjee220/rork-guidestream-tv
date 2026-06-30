@@ -120,7 +120,7 @@ export default {
       const q = url.searchParams.get("q")?.trim() ?? "";
       const typeParam = (url.searchParams.get("type") ?? "all").toLowerCase();
       const type: CreatorSearchType =
-        typeParam === "youtube" || typeParam === "twitch"
+        typeParam === "youtube" || typeParam === "twitch" || typeParam === "podcast"
           ? (typeParam as CreatorSearchType)
           : "all";
       if (!q) {

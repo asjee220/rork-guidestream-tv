@@ -19,11 +19,12 @@ export interface CreatorSearchEnv {
 /** Normalized creator result — matches the client ContentSource shape. */
 export interface CreatorResult {
   title_id: string;
-  source_type: "youtube" | "twitch";
+  source_type: "youtube" | "twitch" | "podcast";
   display_name: string;
   handle: string | null;
   image_url: string | null;
   channel_url: string | null;
+  feed_url?: string | null;
   external_id: string | null;
   category: string | null;
   description: string | null;
@@ -333,9 +334,62 @@ async function searchTwitch(
   return results;
 }
 
+// ── Podcasts (Apple iTunes Search API) ─────────────────────────────────
+
+interface iTunesPodcastResult {
+  collectionId?: number;
+  collectionName?: string;
+  artworkUrl600?: string;
+  artworkUrl100?: string;
+  collectionViewUrl?: string;
+  feedUrl?: string;
+  primaryGenreName?: string;
+}
+
+async function searchPodcasts(query: string): Promise<CreatorResult[]> {
+  try {
+    const url = new URL("https://itunes.apple.com/search");
+    url.searchParams.set("media", "podcast");
+    url.searchParams.set("entity", "podcast");
+    url.searchParams.set("term", query);
+    url.searchParams.set("limit", "25");
+
+    const res = await fetch(url.toString());
+    if (!res.ok) {
+      console.error(`[podcast] iTunes search failed: ${res.status}`);
+      return [];
+    }
+    const json = (await res.json()) as { results?: iTunesPodcastResult[] };
+    const items = json.results ?? [];
+
+    const results: CreatorResult[] = [];
+    for (const item of items) {
+      const collectionId = item.collectionId;
+      const collectionName = item.collectionName;
+      if (!collectionId || !collectionName) continue;
+      results.push({
+        title_id: `pod:${String(collectionId)}`,
+        source_type: "podcast",
+        display_name: collectionName,
+        handle: null,
+        image_url: item.artworkUrl600 ?? item.artworkUrl100 ?? null,
+        channel_url: item.collectionViewUrl ?? null,
+        feed_url: item.feedUrl ?? null,
+        external_id: String(collectionId),
+        category: item.primaryGenreName ?? null,
+        description: null,
+      });
+    }
+    return results;
+  } catch (err) {
+    console.error("[podcast] search error:", (err as Error).message);
+    return [];
+  }
+}
+
 // ── Public entry point ──────────────────────────────────────────────────
 
-export type CreatorSearchType = "all" | "youtube" | "twitch";
+export type CreatorSearchType = "all" | "youtube" | "twitch" | "podcast";
 
 /**
  * Search YouTube and/or Twitch for creators matching `query`, persist the
@@ -375,6 +429,14 @@ export async function searchCreators(
       ),
     );
   }
+  if (type === "all" || type === "podcast") {
+    tasks.push(
+      searchPodcasts(trimmed).catch((err) => {
+        console.error("[search] podcast error:", (err as Error).message);
+        return [];
+      }),
+    );
+  }
 
   const settled = await Promise.all(tasks);
   const results = settled.flat();
@@ -396,6 +458,7 @@ async function persistCreators(results: CreatorResult[]): Promise<void> {
       image_url: r.image_url,
       external_id: r.external_id,
       channel_url: r.channel_url,
+      feed_url: r.feed_url ?? null,
       category: r.category,
       description: r.description,
     }));
