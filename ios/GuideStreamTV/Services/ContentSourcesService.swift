@@ -121,9 +121,45 @@ final class ContentSourcesService {
     /// Live streamers are sorted to the top.
     func fetchDiscoverable(sourceType: String? = nil) async throws -> [DiscoverableCreator] {
         let s = try await fetchSources(sourceType: sourceType)
+        return await enrichDiscoverable(s)
+    }
 
-        // Fetch live status only for streamer types (twitch, kick)
-        let liveIds = s.filter { SourceKind.from(titleId: $0.titleId).isLivestream }.map { $0.titleId }
+    /// Returns discoverable YouTube, Twitch, and Kick creators, excluding YouTube
+    /// channels tagged as video podcasts (format = "podcast"). Ordered by created_at
+    /// descending, then enriched with live status.
+    func fetchDiscoverableCreators() async throws -> [DiscoverableCreator] {
+        let rows: [ContentSource] = try await client
+            .from("content_sources")
+            .select()
+            .in("source_type", values: ["youtube", "twitch", "kick"])
+            .or("format.is.null,format.neq.podcast")
+            .order("created_at", ascending: false)
+            .execute()
+            .value
+        return await enrichDiscoverable(rows)
+    }
+
+    /// Returns discoverable podcasts — both audio podcasts (source_type = "podcast")
+    /// and YouTube channels tagged as video podcasts (format = "podcast"). Ordered
+    /// by created_at descending. No live-status fetch is needed for podcasts.
+    func fetchDiscoverablePodcasts() async throws -> [DiscoverableCreator] {
+        let rows: [ContentSource] = try await client
+            .from("content_sources")
+            .select()
+            .or("format.eq.podcast,source_type.eq.podcast")
+            .order("created_at", ascending: false)
+            .execute()
+            .value
+        return await enrichDiscoverable(rows)
+    }
+
+    // MARK: - Private: enrich sources with live status
+
+    /// Maps an array of ContentSource rows into DiscoverableCreator values,
+    /// enriching livestream sources (Twitch, Kick) with their current live status.
+    /// Results are sorted live-first, then alphabetically by display name.
+    private func enrichDiscoverable(_ sources: [ContentSource]) async -> [DiscoverableCreator] {
+        let liveIds = sources.filter { SourceKind.from(titleId: $0.titleId).isLivestream }.map { $0.titleId }
         var liveMap: [String: LiveStatus] = [:]
         if !liveIds.isEmpty {
             let statuses = (try? await fetchLiveStatus(for: liveIds)) ?? []
@@ -132,7 +168,7 @@ final class ContentSourcesService {
             }
         }
 
-        let results: [DiscoverableCreator] = s.map { source in
+        let results: [DiscoverableCreator] = sources.map { source in
             let status = liveMap[source.titleId]
             return DiscoverableCreator(
                 titleId: source.titleId,
@@ -150,7 +186,6 @@ final class ContentSourcesService {
                 startedAt: status?.startedAt
             )
         }
-        // Sort: live streamers first, then the rest by name
         return results.sorted { a, b in
             if a.isLive != b.isLive { return a.isLive }
             return a.displayName.localizedStandardCompare(b.displayName) == .orderedAscending

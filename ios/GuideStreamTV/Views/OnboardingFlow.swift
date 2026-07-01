@@ -22,6 +22,7 @@ struct OnboardingFlow: View {
     @State private var smsOn: Bool = AuthViewModel.shared.notifySMSEnabled
     @State private var showEmailAuth: Bool = false
     @State private var seedSelections: [UserStreamInsert] = []
+    @State private var showSeedSelections: [UserStreamInsert] = []
 
     var body: some View {
         ZStack {
@@ -58,11 +59,19 @@ struct OnboardingFlow: View {
                         onContinue: { advance() },
                         onSkip: { onFinish() }
                     )
-                default:
+                case 4:
                     WatchingNowView(
                         selectedServices: selectedServices,
                         onContinue: { inserts in
-                            seedSelections = inserts
+                            showSeedSelections = inserts
+                            advance()
+                        },
+                        onSkip: { onFinish() }
+                    )
+                default:
+                    FollowCreatorsOnboardingView(
+                        onContinue: { creatorInserts in
+                            seedSelections = showSeedSelections + creatorInserts
                             commitSeedSelections()
                         },
                         onSkip: { onFinish() }
