@@ -34,27 +34,32 @@ struct FloatingTabBar: View {
     @State private var isGlowExpanded: Bool = false
 
     var body: some View {
-        HStack(spacing: 0) {
-            tabItem(.home)
-            tabItem(.sports)
+        HStack(spacing: 8) {
+            // Glass pill with four tabs — Home, Reels, Sports, Profile
+            HStack(spacing: 0) {
+                tabItem(.home)
+                tabItem(.reels)
+                tabItem(.sports)
+                tabItem(.profile)
+            }
+            .padding(.horizontal, 6)
+            .frame(height: 64)
+            .frame(maxWidth: .infinity)
+            .background(
+                Capsule(style: .continuous)
+                    .fill(.ultraThinMaterial)
+            )
+            .overlay(
+                Capsule(style: .continuous)
+                    .stroke(Color.white.opacity(0.10), lineWidth: 1)
+            )
+            .shadow(color: .black.opacity(0.55), radius: 28, y: 16)
+
+            // Detached circular Ask FAB
             askButton
-            tabItem(.reels)
-            tabItem(.profile)
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 10)
-        .frame(height: 74)
-        .background(
-            Capsule(style: .continuous)
-                .fill(Theme.surface)
-        )
-        .overlay(
-            Capsule(style: .continuous)
-                .stroke(Color.white.opacity(0.10), lineWidth: 1)
-        )
-        .shadow(color: .black.opacity(0.55), radius: 28, y: 16)
-        .padding(.horizontal, 22)
-        .padding(.bottom, 6)
+        .padding(.horizontal, 8)
+        .padding(.bottom, 18)
         .onAppear {
             withAnimation(.easeInOut(duration: 1.55).repeatForever(autoreverses: true)) {
                 isGlowExpanded = true
@@ -72,7 +77,7 @@ struct FloatingTabBar: View {
         } label: {
             VStack(spacing: 4) {
                 Image(systemName: tab.symbol)
-                    .font(.guideBody(size: 17, weight: .semibold))
+                    .font(.guideBody(size: 22, weight: .semibold))
                     .foregroundStyle(selected ? Color(hex: "F5821F") : Color.white.opacity(0.35))
                     .symbolEffect(.bounce, value: selected)
                 Text(tab.title)
@@ -93,54 +98,40 @@ struct FloatingTabBar: View {
     }
 
     private var askButton: some View {
-        let selected = selection == .ask
-        return Button {
+        Button {
             withAnimation(.spring(response: 0.35, dampingFraction: 0.7)) {
                 selection = .ask
             }
         } label: {
-            VStack(spacing: 2) {
-                ZStack {
-                    Circle()
-                        .fill(Color.orange.opacity(isGlowExpanded ? 0.50 : 0.30))
-                        .frame(width: isGlowExpanded ? 84 : 62, height: isGlowExpanded ? 84 : 62)
-                        .blur(radius: isGlowExpanded ? 22 : 14)
-                    Circle()
-                        .stroke(Color.orange.opacity(isGlowExpanded ? 0.34 : 0.10), lineWidth: 1.5)
-                        .frame(width: isGlowExpanded ? 72 : 58, height: isGlowExpanded ? 72 : 58)
-                    Circle()
-                        .fill(
-                            LinearGradient(
-                                colors: [Color.orange, Color(red: 0.95, green: 0.42, blue: 0.05)],
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
-                        )
-                        .frame(width: 56, height: 56)
-                        .shadow(color: Color.orange.opacity(0.55), radius: 18, y: 8)
-                        .overlay(
-                            Circle()
-                                .stroke(Color.white.opacity(0.30), lineWidth: 1)
-                        )
-                    Image(systemName: "sparkles")
-                        .font(.guideHeading(size: 20, weight: .bold))
-                        .foregroundStyle(.white)
-                        .scaleEffect(selected ? 1.12 : 1.0)
-                        .symbolEffect(.pulse, value: selected)
-                }
-                .frame(width: 84, height: 60)
+            ZStack {
+                // Subtle pulsing glow behind the FAB
+                Circle()
+                    .fill(Color.orange.opacity(isGlowExpanded ? 0.24 : 0.08))
+                    .frame(width: isGlowExpanded ? 66 : 54, height: isGlowExpanded ? 66 : 54)
+                    .blur(radius: 9)
 
-                Text("Ask")
-                    .font(.guideBody(size: 10, weight: .bold))
-                    .foregroundStyle(.white.opacity(selected ? 1.0 : 0.72))
+                Circle()
+                    .fill(
+                        LinearGradient(
+                            colors: [Color.orange, Color(red: 0.95, green: 0.42, blue: 0.05)],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                    .frame(width: 54, height: 54)
+                    .overlay(
+                        Circle()
+                            .stroke(Color.white.opacity(0.30), lineWidth: 1)
+                    )
+
+                Image(systemName: "sparkles")
+                    .font(.guideHeading(size: 20, weight: .bold))
+                    .foregroundStyle(.white)
             }
-            .frame(maxWidth: .infinity)
-            .frame(height: 68)
-            .offset(y: -14)
-            .contentShape(Rectangle())
+            .frame(width: 54, height: 54)
+            .contentShape(Circle())
         }
         .buttonStyle(.plain)
-        .frame(maxWidth: .infinity)
         .accessibilityLabel("Ask Stream")
     }
 }
