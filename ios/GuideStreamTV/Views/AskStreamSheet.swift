@@ -111,11 +111,13 @@ struct AskStreamSheet: View {
                     .onTapGesture { close() }
                     .animation(.easeOut(duration: 0.2), value: isOpen)
 
-                sheetContent(height: geo.size.height * 0.80)
-                    .offset(y: sheetOffset)
-                    .animation(.spring(response: 0.55, dampingFraction: 0.82), value: sheetOffset)
-                    .padding(.bottom, keyboardHeight)
-                    .animation(.easeOut(duration: keyboardDuration), value: keyboardHeight)
+                VStack(spacing: 0) {
+                    sheetContent(height: geo.size.height * 0.80)
+                        .offset(y: sheetOffset)
+                        .animation(.spring(response: 0.55, dampingFraction: 0.82), value: sheetOffset)
+                    Color.clear.frame(height: keyboardHeight)
+                }
+                .animation(.easeOut(duration: keyboardDuration), value: keyboardHeight)
             }
         }
         .ignoresSafeArea(.container, edges: .bottom)
@@ -132,12 +134,14 @@ struct AskStreamSheet: View {
         .onChange(of: isOpen) { _, newValue in
             if newValue {
                 sheetOffset = 0
+                keyboardHeight = 0
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
                     if isOpen { inputFocus = .composer }
                 }
             } else {
                 sheetOffset = 1200
                 inputFocus = nil
+                keyboardHeight = 0
                 searchTask?.cancel()
                 aiTask?.cancel()
                 StreamAgentService.shared.reset()
@@ -155,7 +159,10 @@ struct AskStreamSheet: View {
             }
         }
         .onAppear {
-            if isOpen { sheetOffset = 0 }
+            if isOpen {
+                sheetOffset = 0
+                keyboardHeight = 0
+            }
         }
         .onReceive(
             NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification),
