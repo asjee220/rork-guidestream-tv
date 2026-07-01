@@ -60,6 +60,14 @@ struct FollowCreatorsOnboardingView: View {
             case .streamers: return "Streamers"
             }
         }
+
+        func matches(_ creator: DiscoverableCreator) -> Bool {
+            switch self {
+            case .all: return true
+            case .youtube: return creator.kind == .youtube
+            case .streamers: return creator.kind.isLivestream
+            }
+        }
     }
 
     private enum PodcastSubFilter: String, CaseIterable {
@@ -70,6 +78,14 @@ struct FollowCreatorsOnboardingView: View {
             case .all: return "All"
             case .video: return "Video"
             case .audio: return "Audio"
+            }
+        }
+
+        func matches(_ creator: DiscoverableCreator) -> Bool {
+            switch self {
+            case .all: return true
+            case .video: return creator.sourceType == "youtube"
+            case .audio: return creator.sourceType == "podcast"
             }
         }
     }
@@ -105,6 +121,23 @@ struct FollowCreatorsOnboardingView: View {
         }
     }
 
+    private var visibleCreatorSubFilters: [CreatorSubFilter] {
+        CreatorSubFilter.allCases.filter { f in creators.contains(where: f.matches) }
+    }
+
+    private var visiblePodcastSubFilters: [PodcastSubFilter] {
+        PodcastSubFilter.allCases.filter { f in podcasts.contains(where: f.matches) }
+    }
+
+    private var visibleLanes: [Lane] {
+        Lane.allCases.filter { l in
+            switch l {
+            case .creators: return loadingCreators || !creators.isEmpty
+            case .podcasts: return loadingPodcasts || !podcasts.isEmpty
+            }
+        }
+    }
+
     // MARK: - Body
 
     var body: some View {
@@ -128,10 +161,12 @@ struct FollowCreatorsOnboardingView: View {
                     .padding(.top, 20)
                     .padding(.bottom, 16)
 
-                    // Segmented control
-                    segmentedControl
-                        .padding(.horizontal, 20)
-                        .padding(.bottom, 14)
+                    // Segmented control (only when both lanes have content)
+                    if visibleLanes.count >= 2 {
+                        segmentedControl
+                            .padding(.horizontal, 20)
+                            .padding(.bottom, 14)
+                    }
 
                     // Sub-filter chips
                     subFilterChips
@@ -184,6 +219,21 @@ struct FollowCreatorsOnboardingView: View {
         .task {
             await loadCreators()
             await loadPodcasts()
+
+            // Redirect to non-empty lane if current lane loaded empty
+            if creators.isEmpty, !podcasts.isEmpty {
+                lane = .podcasts
+            } else if podcasts.isEmpty, !creators.isEmpty {
+                lane = .creators
+            }
+
+            // Reset sub-filters that match nothing
+            if creatorSubFilter != .all, !creators.contains(where: creatorSubFilter.matches) {
+                creatorSubFilter = .all
+            }
+            if podcastSubFilter != .all, !podcasts.contains(where: podcastSubFilter.matches) {
+                podcastSubFilter = .all
+            }
         }
     }
 
@@ -191,7 +241,7 @@ struct FollowCreatorsOnboardingView: View {
 
     private var segmentedControl: some View {
         HStack(spacing: 0) {
-            ForEach(Lane.allCases, id: \.rawValue) { l in
+            ForEach(visibleLanes, id: \.rawValue) { l in
                 Button {
                     withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
                         lane = l
@@ -227,36 +277,44 @@ struct FollowCreatorsOnboardingView: View {
 
     @ViewBuilder
     private var subFilterChips: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                switch lane {
-                case .creators:
-                    ForEach(CreatorSubFilter.allCases, id: \.rawValue) { filter in
-                        chipButton(
-                            label: filter.label,
-                            isSelected: creatorSubFilter == filter,
-                            action: {
-                                withAnimation(.easeOut(duration: 0.2)) {
-                                    creatorSubFilter = filter
+        let showChips: Bool = {
+            switch lane {
+            case .creators: return visibleCreatorSubFilters.count >= 2
+            case .podcasts: return visiblePodcastSubFilters.count >= 2
+            }
+        }()
+        if showChips {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    switch lane {
+                    case .creators:
+                        ForEach(visibleCreatorSubFilters, id: \.rawValue) { filter in
+                            chipButton(
+                                label: filter.label,
+                                isSelected: creatorSubFilter == filter,
+                                action: {
+                                    withAnimation(.easeOut(duration: 0.2)) {
+                                        creatorSubFilter = filter
+                                    }
                                 }
-                            }
-                        )
-                    }
-                case .podcasts:
-                    ForEach(PodcastSubFilter.allCases, id: \.rawValue) { filter in
-                        chipButton(
-                            label: filter.label,
-                            isSelected: podcastSubFilter == filter,
-                            action: {
-                                withAnimation(.easeOut(duration: 0.2)) {
-                                    podcastSubFilter = filter
+                            )
+                        }
+                    case .podcasts:
+                        ForEach(visiblePodcastSubFilters, id: \.rawValue) { filter in
+                            chipButton(
+                                label: filter.label,
+                                isSelected: podcastSubFilter == filter,
+                                action: {
+                                    withAnimation(.easeOut(duration: 0.2)) {
+                                        podcastSubFilter = filter
+                                    }
                                 }
-                            }
-                        )
+                            )
+                        }
                     }
                 }
+                .padding(.horizontal, 16)
             }
-            .padding(.horizontal, 16)
         }
     }
 
