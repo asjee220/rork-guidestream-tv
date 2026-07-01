@@ -22,6 +22,7 @@ nonisolated struct ContentSource: Codable, Identifiable, Hashable, Sendable {
     let websubTopic: String?
     let category: String?
     let description: String?
+    let format: String?
     let createdAt: Date?
     let updatedAt: Date?
 
@@ -39,6 +40,7 @@ nonisolated struct ContentSource: Codable, Identifiable, Hashable, Sendable {
         case websubTopic = "websub_topic"
         case category
         case description
+        case format
         case createdAt = "created_at"
         case updatedAt = "updated_at"
     }
@@ -78,6 +80,7 @@ nonisolated struct DiscoverableCreator: Identifiable, Hashable, Sendable {
     let imageUrl: String?
     let category: String?
     let description: String?
+    let format: String?
     let isLive: Bool
     let streamTitle: String?
     let liveCategory: String?

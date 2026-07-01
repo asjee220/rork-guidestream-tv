@@ -742,6 +742,7 @@ struct CreatorDetailView: View {
             websubTopic: existing.websubTopic,
             category: existing.category,
             description: desc ?? existing.description,
+            format: existing.format,
             createdAt: existing.createdAt,
             updatedAt: existing.updatedAt
         )
@@ -1346,6 +1347,7 @@ struct CreatorDetailView: View {
                 websubTopic: nil,
                 category: creator.category,
                 description: creator.description,
+                format: creator.format,
                 createdAt: nil,
                 updatedAt: nil
             )
@@ -1366,6 +1368,7 @@ struct CreatorDetailView: View {
             websubTopic: nil,
             category: nil,
             description: nil,
+            format: nil,
             createdAt: nil,
             updatedAt: nil
         )

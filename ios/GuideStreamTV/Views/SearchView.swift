@@ -202,6 +202,7 @@ final class SearchViewModel {
                         displayName: source.displayName, handle: source.handle,
                         imageUrl: source.imageUrl, category: source.category,
                         description: source.description,
+                        format: source.format,
                         isLive: status?.isLive ?? false, streamTitle: status?.streamTitle,
                         liveCategory: status?.category, viewerCount: status?.viewerCount,
                         startedAt: status?.startedAt
@@ -511,7 +512,7 @@ private struct CreatorSearchRow: View {
                         if creator.isLive { LivePill() }
                     }
                     HStack(spacing: 6) {
-                        SourceTypeBadge(kind: creator.kind)
+                        SourceTypeBadge(kind: creator.kind, format: creator.format)
                         if let handle = creator.handle {
                             let cleanHandle = handle.hasPrefix("@") ? String(handle.dropFirst()) : handle
                             Text("@\(cleanHandle)")

@@ -246,6 +246,7 @@ struct FollowCreatorsView: View {
                         displayName: source.displayName, handle: source.handle,
                         imageUrl: source.imageUrl, category: source.category,
                         description: source.description,
+                        format: source.format,
                         isLive: status?.isLive ?? false, streamTitle: status?.streamTitle,
                         liveCategory: status?.category, viewerCount: status?.viewerCount,
                         startedAt: status?.startedAt
@@ -343,7 +344,7 @@ private struct CreatorRow: View {
                     }
 
                     HStack(spacing: 6) {
-                        SourceTypeBadge(kind: creator.kind)
+                        SourceTypeBadge(kind: creator.kind, format: creator.format)
                         if let handle = creator.handle {
                             let cleanHandle = handle.hasPrefix("@") ? String(handle.dropFirst()) : handle
                             Text("@\(cleanHandle)")
@@ -423,8 +424,20 @@ private struct CreatorRow: View {
 /// A small colored badge showing the source type (YouTube, Podcast, Twitch, Kick).
 struct SourceTypeBadge: View {
     let kind: SourceKind
+    var format: String? = nil
 
     var body: some View {
+        if kind == .youtube, format == "podcast" {
+            HStack(spacing: 4) {
+                youtubePill
+                podcastPill
+            }
+        } else {
+            singlePill
+        }
+    }
+
+    private var singlePill: some View {
         Text(kind.displayLabel.uppercased())
             .scaledFont(size: 9, weight: .heavy)
             .tracking(0.5)
@@ -432,6 +445,26 @@ struct SourceTypeBadge: View {
             .padding(.horizontal, 6)
             .padding(.vertical, 3)
             .background(RoundedRectangle(cornerRadius: 4).fill(badgeColor))
+    }
+
+    private var youtubePill: some View {
+        Text("YOUTUBE")
+            .scaledFont(size: 9, weight: .heavy)
+            .tracking(0.5)
+            .foregroundStyle(.white)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 3)
+            .background(RoundedRectangle(cornerRadius: 4).fill(Color(red: 0xFF/255, green: 0x00/255, blue: 0x00/255)))
+    }
+
+    private var podcastPill: some View {
+        Text("PODCAST")
+            .scaledFont(size: 9, weight: .heavy)
+            .tracking(0.5)
+            .foregroundStyle(.white)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 3)
+            .background(RoundedRectangle(cornerRadius: 4).fill(Color(red: 0x7C/255, green: 0x3A/255, blue: 0xED/255)))
     }
 
     private var badgeColor: Color {

@@ -142,6 +142,7 @@ final class ContentSourcesService {
                 imageUrl: source.imageUrl,
                 category: source.category,
                 description: source.description,
+                format: source.format,
                 isLive: status?.isLive ?? false,
                 streamTitle: status?.streamTitle,
                 liveCategory: status?.category,
