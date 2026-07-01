@@ -118,17 +118,22 @@ final class TVReelsViewModel {
 
         async let trendingTask = (try? tmdb.getTrending()) ?? []
         async let onAirTask = (try? tmdb.getOnTheAir()) ?? []
-        let (trending, onAir) = await (trendingTask, onAirTask)
+        async let popularTask = (try? tmdb.getPopularTV()) ?? []
+        let (trending, onAir, popular) = await (trendingTask, onAirTask, popularTask)
 
         // For You is seeded from the user's saved titles, falling back to
         // trending so the section is never empty on a fresh account.
         let savedResults = savedTitleResults()
 
         async let forYouItems = buildItems(from: savedResults, tab: .forYou)
+        async let popularItems = buildItems(from: Array(popular.prefix(20)), tab: .forYou)
         async let trendingItems = buildItems(from: Array(trending.prefix(20)), tab: .trending)
         async let newItems = buildItems(from: Array(onAir.prefix(20)), tab: .new)
 
-        var (fy, tr, nw) = await (forYouItems, trendingItems, newItems)
+        var (fy, pop, tr, nw) = await (forYouItems, popularItems, trendingItems, newItems)
+
+        // Append popular TV to For You
+        fy.append(contentsOf: pop)
 
         if fy.count < 6 {
             // Backfill For You with trending titles not already shown.
@@ -175,7 +180,9 @@ final class TVReelsViewModel {
                 group.addTask { [tmdb] in
                     async let keyTask = try? tmdb.getTrailerKey(tmdbId: r.id, isTV: r.isTV)
                     async let providerTask = try? tmdb.getTopWatchProvider(tmdbId: r.id, isTV: r.isTV)
+                    async let genreTask: String? = r.isTV ? (try? tmdb.getTVGenre(tmdbId: r.id)) : nil
                     let (key, provider) = await (keyTask, providerTask)
+                    let resolvedGenre = await genreTask
 
                     // Only surface titles we can actually point at a service.
                     guard let provider,
@@ -184,8 +191,14 @@ final class TVReelsViewModel {
 
                     let plat = TVReelPlatform.info(for: provider.providerName)
                     let trailerKey = key ?? nil
-                    let genre = r.isTV ? "SERIES" : "MOVIE"
-                    let meta = "\(genre)\(r.year.map { " · \($0)" } ?? "")"
+                    let meta: String
+                    if r.isTV {
+                        let genreName = resolvedGenre ?? "DRAMA"
+                        let yearStr = r.year.map { " · \($0)" } ?? ""
+                        meta = "\(genreName.uppercased())\(yearStr)"
+                    } else {
+                        meta = "MOVIE\(r.year.map { " · \($0)" } ?? "")"
+                    }
                     let thumb = (trailerKey).flatMap {
                         URL(string: "https://img.youtube.com/vi/\($0)/maxresdefault.jpg")?.absoluteString
                     }
@@ -237,6 +250,11 @@ struct TVReelsView: View {
     @FocusState private var feedFocused: Bool
     @FocusState private var actionFocus: TVReelAction?
 
+    // Ad chip state
+    @State private var adTargets: [(serviceId: String, name: String, color: Color)] = []
+    @State private var adPage: Int = 0
+    @State private var rotationTimer: Task<Void, Never>?
+
     private var current: TVReelItem? {
         vm.reels.indices.contains(index) ? vm.reels[index] : nil
     }
@@ -278,16 +296,20 @@ struct TVReelsView: View {
             await vm.loadIfNeeded()
             feedFocused = true
             loadCurrentTrailer()
+            refreshAds()
         }
         .onChange(of: vm.reels.count) { _, count in
             if index >= count { index = max(0, count - 1) }
             loadCurrentTrailer()
+            refreshAds()
         }
         .onChange(of: index) { _, _ in
             loadCurrentTrailer()
+            refreshAds()
         }
         .onDisappear {
             trailer.stop()
+            rotationTimer?.cancel()
         }
         .sheet(item: $pendingDetail) { detail in
             TVTitleSheet(detail: detail) { _ in
@@ -350,6 +372,15 @@ struct TVReelsView: View {
 
             if savedFlash {
                 savedToast
+            }
+
+            // Ad chip — pinned bottom-right, never focusable
+            if !adTargets.isEmpty {
+                adChip(reel)
+                    .padding(.trailing, 80)
+                    .padding(.bottom, 80)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+                    .allowsHitTesting(false)
             }
         }
         .animation(.spring(response: 0.5, dampingFraction: 0.85), value: reel.id)
@@ -763,6 +794,149 @@ struct TVReelsView: View {
             Task {
                 try? await Task.sleep(for: .seconds(1.6))
                 withAnimation { savedFlash = false }
+            }
+        }
+    }
+
+    // MARK: - Ad chip
+
+    /// Resolves eligible affiliate services for the ad carousel, mirroring the
+    /// phone app's `resolveGlassAds`. Excludes the current platform and any
+    /// service the user already owns, with the same fallback tiers.
+    private func resolveReelAds(count: Int, tmdbId: Int, currentPlatformName: String) -> [(serviceId: String, name: String, color: Color)] {
+        let pool: [(serviceId: String, name: String, color: Color)] = [
+            ("netflix", "Netflix", Color(hex: "E50914")),
+            ("hbo", "Max", Color(hex: "001EE0")),
+            ("hulu", "Hulu", Color(hex: "1CE783")),
+            ("disney", "Disney+", Color(hex: "0E293F")),
+            ("apple", "Apple TV+", Color(hex: "000000")),
+            ("prime", "Prime Video", Color(hex: "1A202C")),
+            ("paramount", "Paramount+", Color(hex: "0064FF")),
+            ("peacock", "Peacock", Color(hex: "000000")),
+        ]
+        let currentKey = TVReelPlatform.recognizedKey(for: currentPlatformName)
+
+        // Preferred: exclude current platform AND services the user already owns.
+        var eligible = pool.filter { ad in
+            guard ad.serviceId != currentKey else { return false }
+            let lower = ad.serviceId.lowercased()
+            return !AuthViewModel.shared.selectedServices.contains(where: { $0.lowercased() == lower })
+        }
+        // Secondary: exclude only current platform.
+        if eligible.isEmpty {
+            eligible = pool.filter { $0.serviceId != currentKey }
+        }
+        // Full pool fallback.
+        if eligible.isEmpty {
+            eligible = pool
+        }
+
+        let rotation = abs(tmdbId) % eligible.count
+        let rotated = Array(eligible[rotation...] + eligible[..<rotation])
+        return Array(rotated.prefix(count))
+    }
+
+    private func refreshAds() {
+        rotationTimer?.cancel()
+        guard let reel = current else { return }
+        adTargets = resolveReelAds(count: 5, tmdbId: reel.tmdbId, currentPlatformName: reel.platformName)
+        adPage = 0
+
+        // Log initial impression.
+        if let first = adTargets.first {
+            WatchIntentLogger.shared.log(
+                eventType: .adImpression,
+                platformId: first.serviceId,
+                metadata: ["source": "reel_ad_carousel", "position": 0, "show_platform": reel.platformName]
+            )
+        }
+
+        guard adTargets.count > 1 else { return }
+        rotationTimer = Task {
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(5.5))
+                guard !Task.isCancelled else { break }
+                let targets = adTargets
+                let page = adPage
+                guard targets.count > 1 else { continue }
+                let next = (page + 1) % targets.count
+                withAnimation {
+                    adPage = next
+                }
+                if targets.indices.contains(next) {
+                    let ad = targets[next]
+                    WatchIntentLogger.shared.log(
+                        eventType: .adImpression,
+                        platformId: ad.serviceId,
+                        metadata: ["source": "reel_ad_carousel", "position": next, "show_platform": reel.platformName]
+                    )
+                }
+            }
+        }
+    }
+
+    private func adInitials(_ name: String) -> String {
+        let parts = name.components(separatedBy: .whitespaces).filter { !$0.isEmpty }
+        if parts.count >= 2 {
+            return String(parts[0].prefix(1) + parts[1].prefix(1)).uppercased()
+        }
+        return String(name.prefix(1)).uppercased()
+    }
+
+    @ViewBuilder
+    private func adChip(_ reel: TVReelItem) -> some View {
+        VStack(spacing: 9) {
+            // Chip
+            if let ad = adTargets.indices.contains(adPage) ? adTargets[adPage] : nil {
+                HStack(spacing: 10) {
+                    // Brand tile
+                    RoundedRectangle(cornerRadius: 9)
+                        .fill(ad.color)
+                        .frame(width: 36, height: 36)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 9)
+                                .stroke(.white.opacity(0.14), lineWidth: 1)
+                        )
+                        .overlay(
+                            Text(adInitials(ad.name))
+                                .font(.system(size: 14, weight: .heavy))
+                                .foregroundStyle(.white)
+                        )
+
+                    Text("Stream on \(ad.name)")
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(.white)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+                .frame(height: 56)
+                .padding(.horizontal, 14)
+                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14))
+                .background(TVTheme.bg.opacity(0.3), in: RoundedRectangle(cornerRadius: 14))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 14)
+                        .stroke(.white.opacity(0.12), lineWidth: 1)
+                )
+                .overlay(alignment: .topLeading) {
+                    Text("AD")
+                        .font(.system(size: 9, weight: .heavy))
+                        .foregroundStyle(.white.opacity(0.6))
+                        .padding(.horizontal, 4)
+                        .padding(.vertical, 1)
+                        .background(.black.opacity(0.4), in: RoundedRectangle(cornerRadius: 4))
+                        .padding(.leading, 4)
+                        .padding(.top, 4)
+                        .allowsHitTesting(false)
+                }
+            }
+
+            // Dots
+            HStack(spacing: 6) {
+                ForEach(0..<adTargets.count, id: \.self) { i in
+                    Circle()
+                        .fill(i == adPage ? TVTheme.orange : .white.opacity(0.3))
+                        .frame(width: 5, height: 5)
+                }
             }
         }
     }

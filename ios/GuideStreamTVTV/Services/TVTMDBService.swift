@@ -35,6 +35,14 @@ private nonisolated struct TVTMDBVideosEnvelope: Decodable, Sendable {
     let results: [TVTMDBVideo]
 }
 
+private nonisolated struct TVTMDBGenre: Decodable, Sendable {
+    let name: String
+}
+
+private nonisolated struct TVTMDBTVDetailEnvelope: Decodable, Sendable {
+    let genres: [TVTMDBGenre]?
+}
+
 nonisolated struct TVTMDBService {
     static let shared = TVTMDBService()
 
@@ -54,6 +62,22 @@ nonisolated struct TVTMDBService {
     /// Currently-airing TV — used for the "New Episodes" rail.
     func getOnTheAir() async throws -> [TVTMDBResult] {
         let urlString = "\(base)/tv/on_the_air?api_key=\(apiKey)&language=en-US&page=1"
+        let data = try await get(urlString)
+        let env = try JSONDecoder().decode(TVTMDBSearchEnvelope.self, from: data)
+        return env.results.map { stamp($0, mediaType: "tv") }
+    }
+
+    /// Returns the first genre name for a TV show, or nil.
+    func getTVGenre(tmdbId: Int) async throws -> String? {
+        let urlString = "\(base)/tv/\(tmdbId)?api_key=\(apiKey)&language=en-US"
+        let data = try await get(urlString)
+        let env = try JSONDecoder().decode(TVTMDBTVDetailEnvelope.self, from: data)
+        return env.genres?.first?.name
+    }
+
+    /// Popular TV — used as a secondary feed source for For You.
+    func getPopularTV() async throws -> [TVTMDBResult] {
+        let urlString = "\(base)/tv/popular?api_key=\(apiKey)&language=en-US&page=1"
         let data = try await get(urlString)
         let env = try JSONDecoder().decode(TVTMDBSearchEnvelope.self, from: data)
         return env.results.map { stamp($0, mediaType: "tv") }
