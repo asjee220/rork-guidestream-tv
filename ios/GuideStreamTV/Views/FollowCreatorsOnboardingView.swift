@@ -172,11 +172,16 @@ struct FollowCreatorsOnboardingView: View {
                     subFilterChips
                         .padding(.bottom, 12)
 
-                    // List
+                    // Grid
                     if isLoadingCurrentLane {
-                        VStack(spacing: 0) {
-                            ForEach(0..<5, id: \.self) { _ in
-                                skeletonRow
+                        LazyVGrid(
+                            columns: [GridItem(.flexible(), spacing: 12),
+                                      GridItem(.flexible(), spacing: 12),
+                                      GridItem(.flexible(), spacing: 12)],
+                            spacing: 12
+                        ) {
+                            ForEach(0..<6, id: \.self) { _ in
+                                skeletonGridCard
                             }
                         }
                         .padding(.horizontal, 16)
@@ -191,25 +196,25 @@ struct FollowCreatorsOnboardingView: View {
                         }
                         .padding(.top, 40)
                     } else {
-                        LazyVStack(spacing: 2) {
+                        LazyVGrid(
+                            columns: [GridItem(.flexible(), spacing: 12),
+                                      GridItem(.flexible(), spacing: 12),
+                                      GridItem(.flexible(), spacing: 12)],
+                            spacing: 12
+                        ) {
                             ForEach(currentList) { item in
-                                OnboardingCreatorRow(
+                                OnboardingCreatorCard(
                                     creator: item,
                                     isSelected: selectedIds.contains(item.titleId),
                                     onToggle: { toggleSelection(item) }
                                 )
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 10)
-                                Divider()
-                                    .overlay(Color.white.opacity(0.06))
-                                    .padding(.leading, 16)
                             }
                         }
-                        .padding(.bottom, 40)
+                        .padding(.horizontal, 16)
                     }
 
                     // Bottom spacer
-                    Color.clear.frame(height: 90)
+                    Color.clear.frame(height: 120)
                 }
             }
 
@@ -450,107 +455,96 @@ struct FollowCreatorsOnboardingView: View {
 
     // MARK: - Skeleton
 
-    private var skeletonRow: some View {
-        HStack(spacing: 12) {
-            Circle()
-                .fill(Color.white.opacity(0.08))
-                .frame(width: 48, height: 48)
-            VStack(alignment: .leading, spacing: 4) {
-                RoundedRectangle(cornerRadius: 4)
-                    .fill(Color.white.opacity(0.08))
-                    .frame(width: 120, height: 14)
-                RoundedRectangle(cornerRadius: 4)
-                    .fill(Color.white.opacity(0.05))
-                    .frame(width: 80, height: 10)
-            }
-            Spacer()
-            Capsule()
-                .fill(Color.white.opacity(0.06))
-                .frame(width: 72, height: 32)
-        }
-        .padding(.vertical, 10)
+    private var skeletonGridCard: some View {
+        RoundedRectangle(cornerRadius: 16, style: .continuous)
+            .fill(Color.white.opacity(0.06))
+            .aspectRatio(1, contentMode: .fit)
     }
 }
 
-// MARK: - Onboarding Creator Row
+// MARK: - Onboarding Creator Card
 
-/// Reuses the FollowCreatorsView row layout — 48pt circular avatar, name,
-/// badge/meta line, and a trailing selection pill that toggles inclusion.
-private struct OnboardingCreatorRow: View {
+/// Three-column avatar card with selection ring and checkmark.
+/// Mirrors the show-seed grid treatment so this step feels consistent.
+private struct OnboardingCreatorCard: View {
     let creator: DiscoverableCreator
     let isSelected: Bool
     let onToggle: () -> Void
 
     var body: some View {
-        HStack(spacing: 12) {
-            // Avatar
+        Button(action: onToggle) {
             ZStack {
-                Circle()
-                    .fill(sourceColor.opacity(0.15))
-                    .frame(width: 48, height: 48)
-                if let url = CreatorImageOverrides.resolve(titleId: creator.titleId, stored: creator.avatarUrl) {
-                    RemoteImage(urlString: url, contentMode: .fill, fallbackColors: [sourceColor, sourceColor.opacity(0.5)])
-                        .frame(width: 48, height: 48)
-                        .clipShape(Circle())
-                        .allowsHitTesting(false)
-                } else {
-                    Image(systemName: creator.kind == .podcast ? "mic.fill" : "play.rectangle.fill")
-                        .scaledFont(size: 20, weight: .semibold)
-                        .foregroundStyle(sourceColor)
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(Color.white.opacity(0.05))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .stroke(isSelected ? Color.orange : Color.white.opacity(0.08), lineWidth: isSelected ? 2 : 1)
+                    )
+                    .shadow(color: isSelected ? Color.orange.opacity(0.35) : .clear, radius: isSelected ? 16 : 0)
+
+                VStack(spacing: 8) {
+                    // Avatar
+                    ZStack {
+                        Circle()
+                            .fill(sourceColor.opacity(0.15))
+                            .frame(width: 56, height: 56)
+                        if let url = CreatorImageOverrides.resolve(titleId: creator.titleId, stored: creator.avatarUrl) {
+                            RemoteImage(urlString: url, contentMode: .fill, fallbackColors: [sourceColor, sourceColor.opacity(0.5)])
+                                .frame(width: 56, height: 56)
+                                .clipShape(Circle())
+                                .allowsHitTesting(false)
+                        } else {
+                            Image(systemName: creator.kind == .podcast ? "mic.fill" : "play.rectangle.fill")
+                                .scaledFont(size: 22, weight: .semibold)
+                                .foregroundStyle(sourceColor)
+                        }
+                    }
+
+                    // Name
+                    Text(creator.displayName)
+                        .scaledFont(size: 12, weight: .semibold)
+                        .foregroundStyle(Color.textPrimary)
+                        .multilineTextAlignment(.center)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.85)
+                        .padding(.horizontal, 6)
                 }
-            }
 
-            // Info
-            VStack(alignment: .leading, spacing: 3) {
-                Text(creator.displayName)
-                    .scaledFont(size: 15, weight: .semibold)
-                    .foregroundStyle(Color.textPrimary)
-                    .lineLimit(1)
-
-                HStack(spacing: 6) {
+                // Top-leading badges
+                VStack(alignment: .leading, spacing: 3) {
                     SourceTypeBadge(kind: creator.kind)
                     if creator.kind == .youtube, creator.format == "podcast" {
                         PodcastBadge()
-                    }
-                    if let category = creator.category, !category.isEmpty {
-                        Text(category)
-                            .scaledFont(size: 11)
-                            .foregroundStyle(Color.textTertiary)
-                            .lineLimit(1)
-                    }
-                    if let handle = creator.handle {
-                        let cleanHandle = handle.hasPrefix("@") ? String(handle.dropFirst()) : handle
-                        Text("@\(cleanHandle)")
-                            .scaledFont(size: 12)
-                            .foregroundStyle(Color.textTertiary)
-                            .lineLimit(1)
                     }
                     if creator.isLive {
                         LivePill()
                     }
                 }
-            }
+                .padding(8)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
 
-            Spacer(minLength: 8)
-
-            // Selection pill
-            Button(action: onToggle) {
-                Text(isSelected ? "Following" : "Follow")
-                    .scaledFont(size: 12, weight: .bold)
-                    .foregroundStyle(isSelected ? Color.textSecondary : .white)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
-                    .background(
-                        Capsule()
-                            .fill(isSelected ? Color.white.opacity(0.10) : Color.orange)
-                    )
-                    .overlay(
-                        Capsule()
-                            .stroke(isSelected ? Color.white.opacity(0.20) : Color.clear, lineWidth: 1)
-                    )
+                // Top-right selection check
+                if isSelected {
+                    VStack {
+                        HStack {
+                            Spacer()
+                            Circle()
+                                .fill(Color.orange)
+                                .frame(width: 22, height: 22)
+                                .overlay(
+                                    Image(systemName: "checkmark")
+                                        .scaledFont(size: 12, weight: .bold)
+                                        .foregroundStyle(.white)
+                                )
+                        }
+                        Spacer()
+                    }
+                    .padding(8)
+                }
             }
-            .buttonStyle(.plain)
+            .aspectRatio(1, contentMode: .fit)
         }
+        .buttonStyle(.plain)
         .contentShape(Rectangle())
     }
 
