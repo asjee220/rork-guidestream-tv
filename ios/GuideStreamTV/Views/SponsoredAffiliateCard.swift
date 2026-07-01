@@ -139,8 +139,29 @@ struct SponsoredAffiliateCard: View {
                 .padding(.trailing, 8)
             }
             .clipShape(RoundedRectangle(cornerRadius: 14))
+            .overlay(alignment: .topLeading) {
+                adMarker
+            }
         }
         .buttonStyle(.plain)
+    }
+
+    // MARK: - AD marker (compact only)
+
+    private var adMarker: some View {
+        Text("AD")
+            .scaledFont(size: 7, weight: .heavy)
+            .tracking(0.5)
+            .foregroundStyle(Color.white.opacity(0.55))
+            .padding(.horizontal, 4)
+            .padding(.vertical, 1)
+            .background(
+                RoundedRectangle(cornerRadius: 4)
+                    .fill(Color.black.opacity(0.35))
+            )
+            .padding(.top, 3)
+            .padding(.leading, 3)
+            .allowsHitTesting(false)
     }
 
     // MARK: - Brand tile (full)
