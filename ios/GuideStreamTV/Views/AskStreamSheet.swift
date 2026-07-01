@@ -112,8 +112,10 @@ struct AskStreamSheet: View {
                     .animation(.easeOut(duration: 0.2), value: isOpen)
 
                 sheetContent(height: geo.size.height * 0.80)
-                    .offset(y: sheetOffset - keyboardHeight)
+                    .offset(y: sheetOffset)
                     .animation(.spring(response: 0.55, dampingFraction: 0.82), value: sheetOffset)
+                    .padding(.bottom, keyboardHeight)
+                    .animation(.easeOut(duration: keyboardDuration), value: keyboardHeight)
             }
         }
         .ignoresSafeArea(.container, edges: .bottom)
