@@ -150,12 +150,9 @@ struct FollowCreatorsOnboardingView: View {
                             Image(systemName: lane == .creators ? "person.2.slash" : "waveform.slash")
                                 .scaledFont(size: 36, weight: .regular)
                                 .foregroundStyle(Color.textTertiary)
-                            Text("Nothing here yet")
+                            Text("Nothing here yet — check back soon.")
                                 .scaledFont(size: 16, weight: .semibold)
                                 .foregroundStyle(Color.textSecondary)
-                            Text("We'll add more soon.")
-                                .scaledFont(size: 13)
-                                .foregroundStyle(Color.textTertiary)
                         }
                         .padding(.top, 40)
                     } else {
@@ -312,7 +309,7 @@ struct FollowCreatorsOnboardingView: View {
                         radius: 24, x: 0, y: 0)
             }
             .buttonStyle(.plain)
-            .disabled(selectedIds.isEmpty)
+
 
             Button(action: onSkip) {
                 Text("Skip for now")
@@ -453,13 +450,25 @@ private struct OnboardingCreatorRow: View {
                     .lineLimit(1)
 
                 HStack(spacing: 6) {
-                    SourceTypeBadge(kind: creator.kind, format: creator.format)
+                    SourceTypeBadge(kind: creator.kind)
+                    if creator.kind == .youtube, creator.format == "podcast" {
+                        PodcastBadge()
+                    }
+                    if let category = creator.category, !category.isEmpty {
+                        Text(category)
+                            .scaledFont(size: 11)
+                            .foregroundStyle(Color.textTertiary)
+                            .lineLimit(1)
+                    }
                     if let handle = creator.handle {
                         let cleanHandle = handle.hasPrefix("@") ? String(handle.dropFirst()) : handle
                         Text("@\(cleanHandle)")
                             .scaledFont(size: 12)
                             .foregroundStyle(Color.textTertiary)
                             .lineLimit(1)
+                    }
+                    if creator.isLive {
+                        LivePill()
                     }
                 }
             }
@@ -468,7 +477,7 @@ private struct OnboardingCreatorRow: View {
 
             // Selection pill
             Button(action: onToggle) {
-                Text(isSelected ? "Added" : "Add")
+                Text(isSelected ? "Following" : "Follow")
                     .scaledFont(size: 12, weight: .bold)
                     .foregroundStyle(isSelected ? Color.textSecondary : .white)
                     .padding(.horizontal, 16)
@@ -495,6 +504,21 @@ private struct OnboardingCreatorRow: View {
         case .kick: return Color(red: 0x53/255, green: 0xFC/255, blue: 0x18/255)
         case .tmdb: return Color.orange
         }
+    }
+}
+
+// MARK: - Podcast Badge
+
+/// Purple PODCAST pill shown next to the YouTube badge for video podcasts.
+private struct PodcastBadge: View {
+    var body: some View {
+        Text("PODCAST")
+            .scaledFont(size: 9, weight: .heavy)
+            .tracking(0.5)
+            .foregroundStyle(.white)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 3)
+            .background(RoundedRectangle(cornerRadius: 4).fill(Color(red: 0x7C/255, green: 0x3A/255, blue: 0xED/255)))
     }
 }
 

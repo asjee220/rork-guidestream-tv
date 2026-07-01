@@ -21,8 +21,7 @@ struct OnboardingFlow: View {
     @State private var pushOn: Bool = AuthViewModel.shared.notifyPushEnabled
     @State private var smsOn: Bool = AuthViewModel.shared.notifySMSEnabled
     @State private var showEmailAuth: Bool = false
-    @State private var seedSelections: [UserStreamInsert] = []
-    @State private var showSeedSelections: [UserStreamInsert] = []
+
 
     var body: some View {
         ZStack {
@@ -63,16 +62,14 @@ struct OnboardingFlow: View {
                     WatchingNowView(
                         selectedServices: selectedServices,
                         onContinue: { inserts in
-                            showSeedSelections = inserts
-                            advance()
+                            commitInserts(inserts) { advance() }
                         },
-                        onSkip: { onFinish() }
+                        onSkip: { advance() }
                     )
                 default:
                     FollowCreatorsOnboardingView(
-                        onContinue: { creatorInserts in
-                            seedSelections = showSeedSelections + creatorInserts
-                            commitSeedSelections()
+                        onContinue: { inserts in
+                            commitInserts(inserts) { onFinish() }
                         },
                         onSkip: { onFinish() }
                     )
@@ -110,9 +107,8 @@ struct OnboardingFlow: View {
         }
     }
 
-    private func commitSeedSelections() {
-        let inserts = seedSelections
-        guard !inserts.isEmpty else { onFinish(); return }
+    private func commitInserts(_ inserts: [UserStreamInsert], completion: @escaping () -> Void) {
+        guard !inserts.isEmpty else { completion(); return }
         Task {
             do {
                 try await SupabaseManager.shared.client
@@ -122,7 +118,7 @@ struct OnboardingFlow: View {
             } catch {
                 print("[GuideStream] seed upsert failed: \(error)")
             }
-            await MainActor.run { onFinish() }
+            await MainActor.run { completion() }
         }
     }
 }
