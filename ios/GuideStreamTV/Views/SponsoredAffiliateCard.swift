@@ -21,8 +21,19 @@ struct SponsoredAffiliateCard: View {
     let subtitle: String
     let onTap: () -> Void
     let onDismiss: () -> Void
+    var compact: Bool = false
 
     var body: some View {
+        if compact {
+            compactBody
+        } else {
+            fullBody
+        }
+    }
+
+    // MARK: - Full card (existing layout, unchanged)
+
+    private var fullBody: some View {
         Button(action: onTap) {
             ZStack(alignment: .topTrailing) {
                 HStack(spacing: 10) {
@@ -80,7 +91,59 @@ struct SponsoredAffiliateCard: View {
         .buttonStyle(.plain)
     }
 
-    // MARK: - Brand tile
+    // MARK: - Compact chip (single-row, 60pt tall, fills container width)
+
+    private var compactBody: some View {
+        Button(action: onTap) {
+            ZStack(alignment: .topTrailing) {
+                HStack(spacing: 8) {
+                    compactBrandTile
+                    Text(headline)
+                        .scaledFont(size: 10, weight: .heavy)
+                        .foregroundStyle(.white)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+                .frame(height: 60)
+                .frame(maxWidth: .infinity)
+                .background(
+                    RoundedRectangle(cornerRadius: 14)
+                        .fill(.ultraThinMaterial.opacity(0.67))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 14)
+                                .fill(Color(red: 8/255, green: 14/255, blue: 24/255).opacity(0.19))
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 14)
+                                .stroke(Color.white.opacity(0.11), lineWidth: 0.5)
+                        )
+                        .shadow(color: Color.black.opacity(0.35), radius: 14, y: 4)
+                )
+
+                Button {
+                    withAnimation(.easeOut(duration: 0.2)) {
+                        onDismiss()
+                    }
+                } label: {
+                    Image(systemName: "xmark")
+                        .scaledFont(size: 12, weight: .semibold)
+                        .foregroundStyle(Color.white.opacity(0.40))
+                        .frame(width: 28, height: 28)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .padding(.top, 8)
+                .padding(.trailing, 8)
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 14))
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: - Brand tile (full)
 
     private var brandTile: some View {
         ZStack {
@@ -104,5 +167,31 @@ struct SponsoredAffiliateCard: View {
             }
         }
         .frame(width: 40, height: 40)
+    }
+
+    // MARK: - Brand tile (compact)
+
+    private var compactBrandTile: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 8)
+                .fill(service?.bg ?? Color.white.opacity(0.10))
+                .frame(width: 36, height: 36)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(Color.white.opacity(0.12), lineWidth: 0.5)
+                )
+            if let service {
+                ServiceBrandContent(
+                    display: service.display,
+                    size: .mini(28)
+                )
+                .frame(width: 28, height: 28)
+            } else {
+                Text(String(fallbackName.prefix(3)).uppercased())
+                    .scaledFont(size: 10, weight: .black)
+                    .foregroundStyle(fallbackColor)
+            }
+        }
+        .frame(width: 36, height: 36)
     }
 }

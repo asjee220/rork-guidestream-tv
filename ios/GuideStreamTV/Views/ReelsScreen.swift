@@ -1228,11 +1228,13 @@ private struct ReelView: View {
     @State private var controlsFadeTask: Task<Void, Never>?
     @State private var seekToFraction: Double = -1
     @State private var glassAdDismissed: Bool = false
-    @State private var glassAdTarget: (serviceId: String, name: String, color: Color)? = nil
+    @State private var glassAdTargets: [(serviceId: String, name: String, color: Color)] = []
+    @State private var adPage: Int = 0
     @State private var glassAdVisible: Bool = false
     @State private var glassAdFadeTask: Task<Void, Never>? = nil
+    @State private var adAdvanceTask: Task<Void, Never>? = nil
 
-    private func resolveGlassAd() -> (serviceId: String, name: String, color: Color)? {
+    private func resolveGlassAds(count: Int) -> [(serviceId: String, name: String, color: Color)] {
         let current = trailer.platformId.lowercased()
         let selected = AuthViewModel.shared.selectedServices
             .map { $0.lowercased() }
@@ -1258,54 +1260,14 @@ private struct ReelView: View {
         if !preferred.isEmpty { eligible = preferred }
         else if !secondary.isEmpty { eligible = secondary }
         else { eligible = pool }
-        guard !eligible.isEmpty else { return nil }
-        // Use tmdbId to deterministically pick different services
-        // for different shows, giving variety across the feed.
-        let index = abs(trailer.tmdbId) % eligible.count
-        let entry = eligible[index]
-        return (entry.0, entry.1, entry.2)
+        guard !eligible.isEmpty else { return [] }
+        // Rotate so different shows lead with different services.
+        let shift = abs(trailer.tmdbId) % eligible.count
+        let rotated = Array(eligible[shift...] + eligible[..<shift])
+        return Array(rotated.prefix(count))
     }
 
-    @ViewBuilder
-    private var glassAdOverlay: some View {
-        if !trailer.isSponsored,
-           !glassAdDismissed,
-           let target = glassAdTarget {
-            VStack {
-                Spacer()
-                SponsoredAffiliateCard(
-                    service: StreamingCatalog.all.first(where: { $0.id == target.serviceId }),
-                    fallbackName: target.name,
-                    fallbackColor: target.color,
-                    headline: "Stream more on \(target.name)",
-                    subtitle: "Tap to start your free trial",
-                    onTap: {
-                        RakutenManager.shared.openAffiliateLink(
-                            serviceId: target.serviceId,
-                            metadata: [
-                                "source": "glass_overlay",
-                                "reel_platform": trailer.platformId,
-                                "show": trailer.showName
-                            ]
-                        )
-                        WatchIntentLogger.shared.log(
-                            eventType: .affiliateLinkTapped,
-                            platformId: target.serviceId,
-                            metadata: [
-                                "source": "reel_glass_overlay",
-                                "show_platform": trailer.platformId
-                            ]
-                        )
-                    },
-                    onDismiss: { glassAdDismissed = true }
-                )
-                .opacity(glassAdVisible ? 1 : 0)
-                .allowsHitTesting(glassAdVisible)
-                .padding(.horizontal, 28)
-                .padding(.bottom, bottomInset + 150)
-            }
-        }
-    }
+
 
     var body: some View {
         ZStack {
@@ -1496,6 +1458,7 @@ private struct ReelView: View {
                             .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.white.opacity(trailer.isSponsored ? 0.10 : 0.20)))
                             .clipShape(.rect(cornerRadius: 6))
                     }
+                    .padding(.trailing, 90)
                     .padding(.bottom, 8)
 
                     Text(trailer.showName)
@@ -1503,6 +1466,7 @@ private struct ReelView: View {
                         .tracking(-0.8)
                         .foregroundStyle(.white)
                         .lineLimit(2)
+                        .padding(.trailing, 90)
                         .padding(.bottom, 10)
 
                     if !trailer.synopsis.isEmpty {
@@ -1510,21 +1474,24 @@ private struct ReelView: View {
                             .scaledFont(size: 14)
                             .foregroundStyle(Color.white.opacity(0.80))
                             .lineLimit(2)
+                            .padding(.trailing, 90)
                             .padding(.bottom, 8)
                     }
 
                     Text(trailer.runtime)
                         .scaledFont(size: 12, weight: .medium)
                         .foregroundStyle(Color.white.opacity(0.55))
+                        .padding(.trailing, 90)
                         .padding(.bottom, 14)
 
                     // TVDB next-episode air-date banner
                     if let tvdb = tvdbInfo, let code = tvdb.episodeCode {
                         tvdbNextEpisodeRow(tvdb: tvdb)
+                            .padding(.trailing, 90)
                             .padding(.bottom, 12)
                     }
 
-                    HStack(spacing: 12) {
+                    HStack(alignment: .top, spacing: 6) {
                         if trailer.isSponsored {
                             // Make the whole bottom content area a tap target.
                             // The explicit button is removed — tapping anywhere
@@ -1549,19 +1516,22 @@ private struct ReelView: View {
                             NotifyMePill(enrolled: isReminded, action: onNotify)
                         } else {
                             PlayOnPill(action: onShowDetail)
+                            if !glassAdDismissed, !glassAdTargets.isEmpty {
+                                adCarousel
+                                    .opacity(glassAdVisible ? 1 : 0)
+                                    .allowsHitTesting(glassAdVisible)
+                            }
                         }
                     }
+                    .padding(.trailing, 16)
                 }
                 .padding(.leading, 22)
-                .padding(.trailing, 90)
                 .padding(.bottom, bottomInset + 38)
                 .opacity(contentOpacity)
                 .onAppear {
                     withAnimation(.easeOut(duration: 0.6)) { contentOpacity = 1.0 }
                 }
             }
-
-            glassAdOverlay
 
             // Layer 19 — interactive video scrubber.
             VStack {
@@ -1642,17 +1612,82 @@ private struct ReelView: View {
                 armGlassAdFade()
             } else {
                 glassAdFadeTask?.cancel()
+                adAdvanceTask?.cancel()
                 glassAdVisible = false
             }
         }
+        .onChange(of: adPage) { _, page in
+            guard page < glassAdTargets.count else { return }
+            let ad = glassAdTargets[page]
+            WatchIntentLogger.shared.log(
+                eventType: .adImpression,
+                platformId: ad.serviceId,
+                metadata: ["source": "reel_ad_carousel", "position": page, "show_platform": trailer.platformId]
+            )
+        }
         .onDisappear {
             glassAdFadeTask?.cancel()
+            adAdvanceTask?.cancel()
+        }
+    }
+
+    @ViewBuilder
+    private var adCarousel: some View {
+        VStack(spacing: 0) {
+            TabView(selection: $adPage) {
+                ForEach(Array(glassAdTargets.enumerated()), id: \.offset) { idx, ad in
+                    SponsoredAffiliateCard(
+                        service: StreamingCatalog.all.first(where: { $0.id == ad.serviceId }),
+                        fallbackName: ad.name,
+                        fallbackColor: ad.color,
+                        headline: "Stream on \(ad.name)",
+                        subtitle: "",
+                        onTap: {
+                            RakutenManager.shared.openAffiliateLink(
+                                serviceId: ad.serviceId,
+                                metadata: [
+                                    "source": "reel_ad_carousel",
+                                    "reel_platform": trailer.platformId,
+                                    "show": trailer.showName
+                                ]
+                            )
+                            WatchIntentLogger.shared.log(
+                                eventType: .affiliateLinkTapped,
+                                platformId: ad.serviceId,
+                                metadata: [
+                                    "source": "reel_ad_carousel",
+                                    "show_platform": trailer.platformId
+                                ]
+                            )
+                        },
+                        onDismiss: { glassAdDismissed = true },
+                        compact: true
+                    )
+                    .tag(idx)
+                }
+            }
+            .tabViewStyle(.page(indexDisplayMode: .never))
+            .frame(height: 60)
+
+            HStack(spacing: 6) {
+                ForEach(0..<glassAdTargets.count, id: \.self) { dotIdx in
+                    Circle()
+                        .fill(dotIdx == adPage ? Color(hex: "F5821F") : Color.white.opacity(0.28))
+                        .frame(width: 5, height: 5)
+                        .onTapGesture {
+                            withAnimation(.easeInOut(duration: 0.25)) { adPage = dotIdx }
+                        }
+                }
+            }
+            .padding(.top, 8)
         }
     }
 
     private func armGlassAdFade() {
         glassAdFadeTask?.cancel()
-        glassAdTarget = resolveGlassAd()
+        adAdvanceTask?.cancel()
+        glassAdTargets = resolveGlassAds(count: 5)
+        adPage = 0
         glassAdDismissed = false
         glassAdVisible = false
         glassAdFadeTask = Task { @MainActor in
@@ -1660,6 +1695,33 @@ private struct ReelView: View {
             guard !Task.isCancelled, isCurrent, !glassAdDismissed else { return }
             withAnimation(.easeIn(duration: 0.45)) {
                 glassAdVisible = true
+            }
+            // Log initial impression for the first ad in the carousel.
+            if !glassAdTargets.isEmpty {
+                let ad = glassAdTargets[0]
+                WatchIntentLogger.shared.log(
+                    eventType: .adImpression,
+                    platformId: ad.serviceId,
+                    metadata: ["source": "reel_ad_carousel", "position": 0, "show_platform": trailer.platformId]
+                )
+            }
+            // Start auto-advance after the fade-in completes.
+            if glassAdTargets.count > 1 {
+                startAdAutoAdvance()
+            }
+        }
+    }
+
+    private func startAdAutoAdvance() {
+        adAdvanceTask?.cancel()
+        guard glassAdTargets.count > 1 else { return }
+        adAdvanceTask = Task { @MainActor in
+            while !Task.isCancelled, isCurrent, glassAdVisible, !glassAdDismissed {
+                try? await Task.sleep(for: .seconds(5.5))
+                guard !Task.isCancelled, isCurrent, glassAdVisible, !glassAdDismissed else { break }
+                withAnimation(.easeInOut(duration: 0.3)) {
+                    adPage = (adPage + 1) % glassAdTargets.count
+                }
             }
         }
     }
