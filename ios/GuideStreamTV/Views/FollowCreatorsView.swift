@@ -19,6 +19,7 @@ struct FollowCreatorsView: View {
     @State private var selectedFilter: CreatorFilter = .all
     @State private var followedIds: Set<String> = []
     @State private var streams = StreamsViewModel.shared
+    @State private var creatorDetailTarget: CreatorDetailTarget?
 
     enum CreatorFilter: String, CaseIterable {
         case all, live, youtube, podcasts, streamers
@@ -140,9 +141,18 @@ struct FollowCreatorsView: View {
                         ScrollView(showsIndicators: false) {
                             LazyVStack(spacing: 2) {
                                 ForEach(filteredCreators) { creator in
-                                    CreatorRow(creator: creator, isFollowed: followedIds.contains(creator.titleId)) {
+                                    CreatorRow(creator: creator, isFollowed: followedIds.contains(creator.titleId), onToggle: {
                                         toggleFollow(creator)
-                                    }
+                                    }, onTap: {
+                                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                        WatchIntentLogger.shared.log(
+                                            eventType: .cardTapped,
+                                            titleId: creator.titleId,
+                                            platformId: creator.sourceType,
+                                            metadata: ["section": "follow_creators", "kind": creator.sourceType]
+                                        )
+                                        creatorDetailTarget = CreatorDetailTarget(titleId: creator.titleId, initialEpisode: nil)
+                                    })
                                     .padding(.horizontal, 16)
                                     .padding(.vertical, 10)
                                     Divider()
@@ -166,6 +176,13 @@ struct FollowCreatorsView: View {
             .toolbarBackground(.hidden, for: .navigationBar)
         }
         .preferredColorScheme(.dark)
+        .sheet(item: $creatorDetailTarget) { target in
+            CreatorDetailView(
+                titleId: target.titleId,
+                initialEpisode: target.initialEpisode,
+                onBack: { creatorDetailTarget = nil }
+            )
+        }
         .task { await loadCreators() }
         .onChange(of: searchText) { _, _ in
             Task { await loadCreators() }
@@ -290,16 +307,10 @@ private struct CreatorRow: View {
     let creator: DiscoverableCreator
     let isFollowed: Bool
     let onToggle: () -> Void
+    let onTap: () -> Void
 
     var body: some View {
-        Button {
-            WatchIntentLogger.shared.log(
-                eventType: .cardTapped,
-                titleId: creator.titleId,
-                platformId: creator.sourceType,
-                metadata: ["section": "follow_creators", "kind": creator.sourceType]
-            )
-        } label: {
+        Button(action: onTap) {
             HStack(spacing: 12) {
                 // Avatar
                 ZStack {

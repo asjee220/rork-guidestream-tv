@@ -47,9 +47,40 @@ final class AuthViewModel {
             syncMovieReleasePreference()
         }
     }
+    var notifyNewEpisodesEnabled: Bool = (UserDefaults.standard.object(forKey: "gs.notifyNewEpisodes") as? Bool) ?? true {
+        didSet {
+            guard !isApplyingCategoryPrefs else { return }
+            UserDefaults.standard.set(notifyNewEpisodesEnabled, forKey: "gs.notifyNewEpisodes")
+            syncNewEpisodesPreference()
+        }
+    }
+    var notifyWatchlistEnabled: Bool = (UserDefaults.standard.object(forKey: "gs.notifyWatchlist") as? Bool) ?? true {
+        didSet {
+            guard !isApplyingCategoryPrefs else { return }
+            UserDefaults.standard.set(notifyWatchlistEnabled, forKey: "gs.notifyWatchlist")
+            syncWatchlistPreference()
+        }
+    }
+    var notifyLiveEnabled: Bool = (UserDefaults.standard.object(forKey: "gs.notifyLive") as? Bool) ?? true {
+        didSet {
+            guard !isApplyingCategoryPrefs else { return }
+            UserDefaults.standard.set(notifyLiveEnabled, forKey: "gs.notifyLive")
+            syncLivePreference()
+        }
+    }
+    var notifySportsEnabled: Bool = (UserDefaults.standard.object(forKey: "gs.notifySports") as? Bool) ?? true {
+        didSet {
+            guard !isApplyingCategoryPrefs else { return }
+            UserDefaults.standard.set(notifySportsEnabled, forKey: "gs.notifySports")
+            syncSportsPreference()
+        }
+    }
     /// Guards `notifyMovieReleasesEnabled.didSet` so loading the persisted
     /// value from Supabase doesn't trigger a redundant write-back.
     private var isApplyingMovieReleasePref = false
+    /// Guards the four new category preference `didSet`s so loading persisted
+    /// values from Supabase doesn't trigger redundant write-backs.
+    private var isApplyingCategoryPrefs = false
     /// True after the user has completed at least one successful email sign-up.
     /// First-time visits to the email auth screen show the create-account flow;
     /// every visit afterwards defaults to the sign-in flow.
@@ -289,8 +320,81 @@ final class AuthViewModel {
                     .eq("id", value: userId)
                     .execute()
                 print("[Auth] notify_movie_releases \(enabled) saved for user \(userId)")
+                DeviceSessionService.shared.upsert(reason: "notifications_changed")
             } catch {
                 print("[Auth ERROR] notify_movie_releases update failed: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    private func syncNewEpisodesPreference() {
+        guard let userId = currentUser?.id.uuidString else { return }
+        let enabled = notifyNewEpisodesEnabled
+        Task {
+            do {
+                try await SupabaseManager.shared.client
+                    .from("users")
+                    .update(["notify_new_episodes": enabled])
+                    .eq("id", value: userId)
+                    .execute()
+                print("[Auth] notify_new_episodes \(enabled) saved for user \(userId)")
+                DeviceSessionService.shared.upsert(reason: "notifications_changed")
+            } catch {
+                print("[Auth ERROR] notify_new_episodes update failed: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    private func syncWatchlistPreference() {
+        guard let userId = currentUser?.id.uuidString else { return }
+        let enabled = notifyWatchlistEnabled
+        Task {
+            do {
+                try await SupabaseManager.shared.client
+                    .from("users")
+                    .update(["notify_watchlist": enabled])
+                    .eq("id", value: userId)
+                    .execute()
+                print("[Auth] notify_watchlist \(enabled) saved for user \(userId)")
+                DeviceSessionService.shared.upsert(reason: "notifications_changed")
+            } catch {
+                print("[Auth ERROR] notify_watchlist update failed: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    private func syncLivePreference() {
+        guard let userId = currentUser?.id.uuidString else { return }
+        let enabled = notifyLiveEnabled
+        Task {
+            do {
+                try await SupabaseManager.shared.client
+                    .from("users")
+                    .update(["notify_live": enabled])
+                    .eq("id", value: userId)
+                    .execute()
+                print("[Auth] notify_live \(enabled) saved for user \(userId)")
+                DeviceSessionService.shared.upsert(reason: "notifications_changed")
+            } catch {
+                print("[Auth ERROR] notify_live update failed: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    private func syncSportsPreference() {
+        guard let userId = currentUser?.id.uuidString else { return }
+        let enabled = notifySportsEnabled
+        Task {
+            do {
+                try await SupabaseManager.shared.client
+                    .from("users")
+                    .update(["notify_sports": enabled])
+                    .eq("id", value: userId)
+                    .execute()
+                print("[Auth] notify_sports \(enabled) saved for user \(userId)")
+                DeviceSessionService.shared.upsert(reason: "notifications_changed")
+            } catch {
+                print("[Auth ERROR] notify_sports update failed: \(error.localizedDescription)")
             }
         }
     }
@@ -317,6 +421,39 @@ final class AuthViewModel {
         } catch {
             // Column may be missing on older projects — keep the cached value.
             print("[Auth] loadMovieReleasePreference failed: \(error.localizedDescription)")
+        }
+    }
+
+    /// Loads all five category notification preferences from `users` for the
+    /// signed-in user without re-triggering any upserts. Guests keep their
+    /// locally-cached values. Older projects missing columns fall back
+    /// gracefully to the locally-cached defaults.
+    func loadNotificationCategoryPreferences() async {
+        guard let uid = currentUser?.id.uuidString else { return }
+        do {
+            let rows: [NotificationCategoryRow] = try await SupabaseManager.shared.client
+                .from("users")
+                .select("notify_new_episodes, notify_watchlist, notify_live, notify_sports, notify_movie_releases")
+                .eq("id", value: uid)
+                .limit(1)
+                .execute()
+                .value
+            guard let prefs = rows.first else { return }
+            isApplyingCategoryPrefs = true
+            if let v = prefs.notify_new_episodes { notifyNewEpisodesEnabled = v; UserDefaults.standard.set(v, forKey: "gs.notifyNewEpisodes") }
+            if let v = prefs.notify_watchlist { notifyWatchlistEnabled = v; UserDefaults.standard.set(v, forKey: "gs.notifyWatchlist") }
+            if let v = prefs.notify_live { notifyLiveEnabled = v; UserDefaults.standard.set(v, forKey: "gs.notifyLive") }
+            if let v = prefs.notify_sports { notifySportsEnabled = v; UserDefaults.standard.set(v, forKey: "gs.notifySports") }
+            isApplyingCategoryPrefs = false
+            if let v = prefs.notify_movie_releases {
+                isApplyingMovieReleasePref = true
+                notifyMovieReleasesEnabled = v
+                isApplyingMovieReleasePref = false
+                UserDefaults.standard.set(v, forKey: "gs.notifyMovieReleases")
+            }
+        } catch {
+            // Columns may be missing on older projects — keep cached values.
+            print("[Auth] loadNotificationCategoryPreferences failed: \(error.localizedDescription)")
         }
     }
 
@@ -505,6 +642,11 @@ final class AuthViewModel {
             "gs.selectedServices",
             "gs.notifyPush",
             "gs.notifySMS",
+            "gs.notifyNewEpisodes",
+            "gs.notifyWatchlist",
+            "gs.notifyLive",
+            "gs.notifySports",
+            "gs.notifyMovieReleases",
             "gs.hasUsedEmailAuth"
         ] {
             UserDefaults.standard.removeObject(forKey: key)
@@ -945,4 +1087,15 @@ final class AuthViewModel {
         let hash = SHA256.hash(data: data)
         return hash.map { String(format: "%02x", $0) }.joined()
     }
+}
+
+/// Row decoder for bulk-loading notification category preferences from
+/// `users`. Every field is optional so older projects missing columns
+/// still decode cleanly.
+nonisolated struct NotificationCategoryRow: Decodable, Sendable {
+    let notify_new_episodes: Bool?
+    let notify_watchlist: Bool?
+    let notify_live: Bool?
+    let notify_sports: Bool?
+    let notify_movie_releases: Bool?
 }
