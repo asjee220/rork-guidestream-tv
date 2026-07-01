@@ -81,6 +81,7 @@ struct AskStreamSheet: View {
     @State private var activeFilter: String = "All"
     @State private var messages: [AskChatMessage] = []
     @State private var sheetOffset: CGFloat = 1200
+    @State private var keyboardHeight: CGFloat = 0
     @State private var searchResults: [TMDBResult] = []
     @State private var isSearching: Bool = false
     @State private var searchError: String? = nil
@@ -111,7 +112,7 @@ struct AskStreamSheet: View {
                     .animation(.easeOut(duration: 0.2), value: isOpen)
 
                 sheetContent(height: geo.size.height * 0.80)
-                    .offset(y: sheetOffset)
+                    .offset(y: sheetOffset - keyboardHeight)
                     .animation(.spring(response: 0.55, dampingFraction: 0.82), value: sheetOffset)
             }
         }
@@ -153,6 +154,33 @@ struct AskStreamSheet: View {
         }
         .onAppear {
             if isOpen { sheetOffset = 0 }
+        }
+        .onReceive(
+            NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification),
+            perform: handleKeyboardShow
+        )
+        .onReceive(
+            NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification),
+            perform: handleKeyboardHide
+        )
+    }
+
+    // MARK: - Keyboard avoidance
+
+    private var keyboardDuration: TimeInterval { 0.25 }
+
+    private func handleKeyboardShow(_ notification: Notification) {
+        guard let frame = notification.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect else { return }
+        let duration = (notification.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey] as? TimeInterval) ?? keyboardDuration
+        withAnimation(.easeOut(duration: duration)) {
+            keyboardHeight = frame.height
+        }
+    }
+
+    private func handleKeyboardHide(_ notification: Notification) {
+        let duration = (notification.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey] as? TimeInterval) ?? keyboardDuration
+        withAnimation(.easeOut(duration: duration)) {
+            keyboardHeight = 0
         }
     }
 
