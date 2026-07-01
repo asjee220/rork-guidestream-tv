@@ -885,19 +885,74 @@ struct NotificationsSettingsView: View {
 
                     ProfileCard {
                         NotificationToggleRow(
-                            icon: "bell.fill",
+                            icon: "bell.badge.fill",
                             iconTint: Color.orange,
-                            title: "New episode alerts",
-                            subtitle: "Push notification when shows you follow drop new episodes",
+                            title: "Push notifications",
+                            subtitle: "Allow GuideStream to send you alerts",
                             isOn: $pushOn,
                             tint: Color.orange
                         )
                         .onChange(of: pushOn) { _, newValue in
                             handlePushToggle(newValue)
                         }
+                    }
+
+                    ProfileCard {
+                        NotificationToggleRow(
+                            icon: "tv.fill",
+                            iconTint: Color.orange,
+                            title: "New episodes",
+                            subtitle: "When shows you follow drop a new episode",
+                            isOn: $auth.notifyNewEpisodesEnabled,
+                            tint: Color.orange
+                        )
 
                         ProfileRowDivider()
 
+                        NotificationToggleRow(
+                            icon: "bookmark.fill",
+                            iconTint: Color.blue,
+                            title: "Watchlist availability",
+                            subtitle: "When a saved title lands on a service you have",
+                            isOn: $auth.notifyWatchlistEnabled,
+                            tint: Color.blue
+                        )
+
+                        ProfileRowDivider()
+
+                        NotificationToggleRow(
+                            icon: "dot.radiowaves.left.and.right",
+                            iconTint: Color(red: 0.96, green: 0.32, blue: 0.32),
+                            title: "Live creators",
+                            subtitle: "When a creator you follow goes live",
+                            isOn: $auth.notifyLiveEnabled,
+                            tint: Color(red: 0.96, green: 0.32, blue: 0.32)
+                        )
+
+                        ProfileRowDivider()
+
+                        NotificationToggleRow(
+                            icon: "sportscourt.fill",
+                            iconTint: Color.green,
+                            title: "Sports",
+                            subtitle: "Game start, live, and final scores for your teams",
+                            isOn: $auth.notifySportsEnabled,
+                            tint: Color.green
+                        )
+
+                        ProfileRowDivider()
+
+                        NotificationToggleRow(
+                            icon: "film",
+                            iconTint: Color.orange,
+                            title: "Movie release alerts",
+                            subtitle: "When saved movies drop on your services",
+                            isOn: $auth.notifyMovieReleasesEnabled,
+                            tint: Color.orange
+                        )
+                    }
+
+                    ProfileCard {
                         NotificationToggleRow(
                             icon: "message.fill",
                             iconTint: Color.blue,
@@ -935,6 +990,7 @@ struct NotificationsSettingsView: View {
         }
         .navigationTitle("Notifications")
         .task { await refreshSystemStatus() }
+        .task { await auth.loadNotificationCategoryPreferences() }
     }
 
     private var deniedBanner: some View {
