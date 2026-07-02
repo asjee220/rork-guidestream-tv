@@ -75,6 +75,8 @@ struct PlayOnBottomSheet: View {
     /// sources endpoint. When non-nil, the watch button opens this URL
     /// so the streaming app lands on the exact episode.
     @State private var episodeDeepLinkURL: URL?
+    @State private var episodeSourceUnavailable: Bool = false
+    @State private var isResolvingEpisodeSources: Bool = false
 
     private var resolvedPlatformName: String {
         let raw = resolvedSource?.name ?? (isResolvingSource ? "…" : "")
@@ -136,21 +138,62 @@ struct PlayOnBottomSheet: View {
         return nil
     }
 
+    /// Replicates `StreamingSourceResolver.sourceRank` locally (that
+    /// helper is private). sub ranks best, then free, then tve.
+    /// rent/purchase/buy are excluded by the caller.
+    private static func episodeSourceRank(_ s: WatchmodeSource) -> Int {
+        switch s.type.lowercased() {
+        case "sub": return 0
+        case "free": return 1
+        case "tve": return 2
+        default: return 3
+        }
+    }
+
+    /// Selects the best episode-level source: first by matching the
+    /// resolved title-level source's `sourceId` (requiring a real deep
+    /// link), otherwise re-picking using sub > free > tve ranking
+    /// (excluding rent/purchase/buy), preferring non-resellers, and
+    /// requiring a real deep-link URL. Returns nil when no usable
+    /// source survives the filter.
+    private static func bestEpisodeSource(
+        from episodeSources: [WatchmodeSource],
+        resolvedSource: WatchmodeSource?
+    ) -> WatchmodeSource? {
+        if let rs = resolvedSource,
+           let match = episodeSources.first(where: { $0.sourceId == rs.sourceId }) {
+            if let s = match.iosUrl, Self.isRealDeepLinkURL(s) { return match }
+            if let s = match.webUrl, Self.isRealDeepLinkURL(s) { return match }
+        }
+        let eligible = episodeSources.filter { src in
+            let t = src.type.lowercased()
+            guard t == "sub" || t == "free" || t == "tve" else { return false }
+            let iosOk = src.iosUrl.flatMap { Self.isRealDeepLinkURL($0) } ?? false
+            let webOk = src.webUrl.flatMap { Self.isRealDeepLinkURL($0) } ?? false
+            return iosOk || webOk
+        }
+        guard !eligible.isEmpty else { return nil }
+        let ranked = eligible.sorted { a, b in
+            let ra = Self.episodeSourceRank(a)
+            let rb = Self.episodeSourceRank(b)
+            if ra != rb { return ra < rb }
+            let aReseller = a.name.lowercased().contains("(via ")
+            let bReseller = b.name.lowercased().contains("(via ")
+            if aReseller != bReseller { return !aReseller }
+            return false
+        }
+        return ranked.first
+    }
+
     /// Picks the best URL from a set of episode-level Watchmode sources
-    /// that matches the already-resolved title-level source by `sourceId`.
+    /// that matches the (possibly re-picked) resolved source by `sourceId`.
     /// Prefers `ios_url` when it's a real deep link; falls back to `web_url`.
     private static func episodeSourceURL(
         from episodeSources: [WatchmodeSource],
         resolvedSource: WatchmodeSource?
     ) -> URL? {
-        let match: WatchmodeSource?
-        if let rs = resolvedSource {
-            match = episodeSources.first(where: { $0.sourceId == rs.sourceId })
-                ?? episodeSources.first
-        } else {
-            match = episodeSources.first
-        }
-        guard let src = match else { return nil }
+        guard let rs = resolvedSource,
+              let src = episodeSources.first(where: { $0.sourceId == rs.sourceId }) else { return nil }
         if let s = src.iosUrl, Self.isRealDeepLinkURL(s), let u = URL(string: s) { return u }
         if let s = src.webUrl, Self.isRealDeepLinkURL(s), let u = URL(string: s) { return u }
         return nil
@@ -191,6 +234,8 @@ struct PlayOnBottomSheet: View {
             )
         }
         .task(id: tmdbId ?? -1) {
+            episodeSourceUnavailable = false
+            isResolvingEpisodeSources = false
             await resolveStreamingSource()
         }
     }
@@ -220,13 +265,23 @@ struct PlayOnBottomSheet: View {
         // (tmdbId is already unwrapped by the guard let at the top of
         // this function, so it's a non-optional Int here.)
         if let s = watchSeasonNum, let e = watchEpisodeNum, resolvedIsTV {
-            if let epSources = await WatchmodeService.shared.episodeSources(
+            await MainActor.run { self.isResolvingEpisodeSources = true }
+            defer { Task { @MainActor in self.isResolvingEpisodeSources = false } }
+
+            let epSources = await WatchmodeService.shared.episodeSources(
                 tmdbId: tmdbId, isTV: true, season: s, episode: e
-            ) {
-                let url = Self.episodeSourceURL(
-                    from: epSources, resolvedSource: resolvedSource
-                )
-                await MainActor.run { self.episodeDeepLinkURL = url }
+            )
+            let best: WatchmodeSource? = epSources.flatMap {
+                Self.bestEpisodeSource(from: $0, resolvedSource: resolvedSource)
+            }
+            let url: URL? = epSources.flatMap {
+                Self.episodeSourceURL(from: $0, resolvedSource: best)
+            }
+            await MainActor.run {
+                if let best { self.resolvedSource = best }
+                self.episodeDeepLinkURL = url
+                self.episodeSourceUnavailable = (best == nil)
+                self.isResolvingEpisodeSources = false
             }
         }
     }
@@ -448,8 +503,10 @@ struct PlayOnBottomSheet: View {
                 icon: "tv",
                 label: "Send to TV",
                 tint: .white,
-                showDot: false
+                showDot: false,
+                isLoading: isResolvingEpisodeSources
             ) {
+                guard !isResolvingEpisodeSources else { return }
                 UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                 showCastSheet = true
             }
@@ -457,17 +514,23 @@ struct PlayOnBottomSheet: View {
         }
     }
 
-    private func actionButton(icon: String, label: String, tint: Color, showDot: Bool, action: @escaping () -> Void) -> some View {
+    private func actionButton(icon: String, label: String, tint: Color, showDot: Bool, isLoading: Bool = false, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             VStack(spacing: 10) {
                 ZStack {
                     Circle()
                         .fill(Color.white.opacity(0.08))
                         .frame(width: 54, height: 54)
-                    Image(systemName: icon)
-                        .scaledFont(size: 22, weight: .regular)
-                        .foregroundStyle(tint)
-                    if showDot {
+                    if isLoading {
+                        ProgressView()
+                            .controlSize(.small)
+                            .tint(.white)
+                    } else {
+                        Image(systemName: icon)
+                            .scaledFont(size: 22, weight: .regular)
+                            .foregroundStyle(tint)
+                    }
+                    if showDot && !isLoading {
                         Circle()
                             .fill(Color(red: 0x3D/255, green: 0xE0/255, blue: 0x6A/255))
                             .frame(width: 10, height: 10)
@@ -636,12 +699,12 @@ struct PlayOnBottomSheet: View {
             }
         } label: {
             HStack(spacing: 8) {
-                if isResolvingSource && resolvedSource == nil {
+                if (isResolvingSource && resolvedSource == nil) || isResolvingEpisodeSources {
                     ProgressView()
                         .controlSize(.small)
                         .tint(.white)
                 }
-                if let s = watchSeasonNum, let e = watchEpisodeNum {
+                if let s = watchSeasonNum, let e = watchEpisodeNum, !episodeSourceUnavailable {
                     Text("Watch S:\(s) EP:\(e)")
                         .scaledFont(size: 15, weight: .semibold)
                         .lineLimit(1)
@@ -670,7 +733,7 @@ struct PlayOnBottomSheet: View {
             .shadow(color: watchCTAColor.opacity(0.55), radius: 22, y: 0)
         }
         .buttonStyle(.plain)
-        .disabled(tmdbId == nil)
+        .disabled(tmdbId == nil || isResolvingEpisodeSources)
     }
 
     private var viewFullDetailsButton: some View {

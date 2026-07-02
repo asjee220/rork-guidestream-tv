@@ -65,6 +65,8 @@ struct EpisodeDetailSheet: View {
     /// When non-nil, passed to `CastToTVSheet` so the Roku launch can use
     /// the exact channel+contentID path instead of the webUrl fallback.
     @State private var episodeRokuURL: String? = nil
+    @State private var episodeSourceUnavailable: Bool = false
+    @State private var isResolvingEpisodeSources: Bool = false
 
     private var platformColor: Color {
         if let name = resolvedSource?.name { return brandColor(for: name) }
@@ -272,6 +274,8 @@ struct EpisodeDetailSheet: View {
         }
         .task(id: tmdbId ?? -1) {
             adDismissed = false
+            episodeSourceUnavailable = false
+            isResolvingEpisodeSources = false
             // Run source resolution and TMDB detail fetch in parallel
             // so showLatestEpisode is ready before the user can tap
             // "Full details" — otherwise knownLatestEpisode is nil and
@@ -297,20 +301,28 @@ struct EpisodeDetailSheet: View {
             // sources so the watch button opens the exact episode in the
             // streaming app (not just the show home page).
             if let tid = tmdbId, isTV, let ctx = episodeContext {
-                if let epSources = await WatchmodeService.shared.episodeSources(
+                await MainActor.run { self.isResolvingEpisodeSources = true }
+                defer { Task { @MainActor in self.isResolvingEpisodeSources = false } }
+
+                let epSources = await WatchmodeService.shared.episodeSources(
                     tmdbId: tid, isTV: true,
                     season: ctx.seasonNum, episode: ctx.episodeNum
-                ) {
-                    let url = Self.episodeSourceURL(
-                        from: epSources, resolvedSource: resolvedSource
-                    )
-                    let rokuPath = Self.episodeRokuPath(
-                        from: epSources, resolvedSource: resolvedSource
-                    )
-                    await MainActor.run {
-                        self.episodeDeepLinkURL = url
-                        self.episodeRokuURL = rokuPath
-                    }
+                )
+                let best: WatchmodeSource? = epSources.flatMap {
+                    Self.bestEpisodeSource(from: $0, resolvedSource: resolvedSource)
+                }
+                let url: URL? = epSources.flatMap {
+                    Self.episodeSourceURL(from: $0, resolvedSource: best)
+                }
+                let rokuPath: String? = epSources.flatMap {
+                    Self.episodeRokuPath(from: $0, resolvedSource: best)
+                }
+                await MainActor.run {
+                    if let best { self.resolvedSource = best }
+                    self.episodeDeepLinkURL = url
+                    self.episodeRokuURL = rokuPath
+                    self.episodeSourceUnavailable = (best == nil)
+                    self.isResolvingEpisodeSources = false
                 }
             }
         }
@@ -575,8 +587,10 @@ struct EpisodeDetailSheet: View {
                 icon: "tv",
                 label: "Send to TV",
                 tint: .white,
-                showDot: false
+                showDot: false,
+                isLoading: isResolvingEpisodeSources
             ) {
+                guard !isResolvingEpisodeSources else { return }
                 UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                 showCastSheet = true
             }
@@ -589,6 +603,7 @@ struct EpisodeDetailSheet: View {
         label: String,
         tint: Color,
         showDot: Bool,
+        isLoading: Bool = false,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
@@ -597,10 +612,16 @@ struct EpisodeDetailSheet: View {
                     Circle()
                         .fill(Color.white.opacity(0.08))
                         .frame(width: 54, height: 54)
-                    Image(systemName: icon)
-                        .scaledFont(size: 22, weight: .regular)
-                        .foregroundStyle(tint)
-                    if showDot {
+                    if isLoading {
+                        ProgressView()
+                            .controlSize(.small)
+                            .tint(.white)
+                    } else {
+                        Image(systemName: icon)
+                            .scaledFont(size: 22, weight: .regular)
+                            .foregroundStyle(tint)
+                    }
+                    if showDot && !isLoading {
                         Circle()
                             .fill(Color(red: 0x3D/255, green: 0xE0/255, blue: 0x6A/255))
                             .frame(width: 10, height: 10)
@@ -888,12 +909,12 @@ struct EpisodeDetailSheet: View {
             }
         } label: {
             HStack(spacing: 8) {
-                if isResolvingSource && resolvedSource == nil {
+                if (isResolvingSource && resolvedSource == nil) || isResolvingEpisodeSources {
                     ProgressView()
                         .controlSize(.small)
                         .tint(.white)
                 }
-                if let ctx = episodeContext {
+                if let ctx = episodeContext, !episodeSourceUnavailable {
                     Text("Watch S:\(ctx.seasonNum) EP:\(ctx.episodeNum)")
                         .scaledFont(size: 15, weight: .semibold)
                         .lineLimit(1)
@@ -920,7 +941,7 @@ struct EpisodeDetailSheet: View {
             .shadow(color: Color.orange.opacity(0.55), radius: 22, y: 0)
         }
         .buttonStyle(.plain)
-        .disabled(tmdbId == nil)
+        .disabled(tmdbId == nil || isResolvingEpisodeSources)
     }
 
     /// Circular + watchlist button shown next to the main Watch CTA. Visual
@@ -1058,8 +1079,55 @@ struct EpisodeDetailSheet: View {
         return nil
     }
 
+    /// Replicates `StreamingSourceResolver.sourceRank` locally (that
+    /// helper is private). sub ranks best, then free, then tve.
+    /// rent/purchase/buy are excluded by the caller.
+    private static func episodeSourceRank(_ s: WatchmodeSource) -> Int {
+        switch s.type.lowercased() {
+        case "sub": return 0
+        case "free": return 1
+        case "tve": return 2
+        default: return 3
+        }
+    }
+
+    /// Selects the best episode-level source: first by matching the
+    /// resolved title-level source's `sourceId` (requiring a real deep
+    /// link), otherwise re-picking using sub > free > tve ranking
+    /// (excluding rent/purchase/buy), preferring non-resellers, and
+    /// requiring a real deep-link URL. Returns nil when no usable
+    /// source survives the filter.
+    private static func bestEpisodeSource(
+        from episodeSources: [WatchmodeSource],
+        resolvedSource: WatchmodeSource?
+    ) -> WatchmodeSource? {
+        if let rs = resolvedSource,
+           let match = episodeSources.first(where: { $0.sourceId == rs.sourceId }) {
+            if let s = match.iosUrl, Self.isRealDeepLinkURL(s) { return match }
+            if let s = match.webUrl, Self.isRealDeepLinkURL(s) { return match }
+        }
+        let eligible = episodeSources.filter { src in
+            let t = src.type.lowercased()
+            guard t == "sub" || t == "free" || t == "tve" else { return false }
+            let iosOk = src.iosUrl.flatMap { Self.isRealDeepLinkURL($0) } ?? false
+            let webOk = src.webUrl.flatMap { Self.isRealDeepLinkURL($0) } ?? false
+            return iosOk || webOk
+        }
+        guard !eligible.isEmpty else { return nil }
+        let ranked = eligible.sorted { a, b in
+            let ra = Self.episodeSourceRank(a)
+            let rb = Self.episodeSourceRank(b)
+            if ra != rb { return ra < rb }
+            let aReseller = a.name.lowercased().contains("(via ")
+            let bReseller = b.name.lowercased().contains("(via ")
+            if aReseller != bReseller { return !aReseller }
+            return false
+        }
+        return ranked.first
+    }
+
     /// Picks the best URL from a set of episode-level Watchmode sources
-    /// that matches the already-resolved title-level source by `sourceId`.
+    /// that matches the (possibly re-picked) resolved source by `sourceId`.
     /// Prefers `ios_url` when it's a real deep link; falls back to `web_url`.
     /// Returns `nil` when no matching source is found or all URLs are
     /// free-tier placeholders.
@@ -1067,39 +1135,25 @@ struct EpisodeDetailSheet: View {
         from episodeSources: [WatchmodeSource],
         resolvedSource: WatchmodeSource?
     ) -> URL? {
-        // Find the episode source whose source_id matches the resolved
-        // title-level source. Fall back to the first usable episode source.
-        let match: WatchmodeSource?
-        if let rs = resolvedSource {
-            match = episodeSources.first(where: { $0.sourceId == rs.sourceId })
-                ?? episodeSources.first
-        } else {
-            match = episodeSources.first
-        }
-        guard let src = match else { return nil }
+        guard let rs = resolvedSource,
+              let src = episodeSources.first(where: { $0.sourceId == rs.sourceId }) else { return nil }
         if let s = src.iosUrl, Self.isRealDeepLinkURL(s), let u = URL(string: s) { return u }
         if let s = src.webUrl, Self.isRealDeepLinkURL(s), let u = URL(string: s) { return u }
         return nil
     }
 
-    /// Picks the `roku_url` from episode-level Watchmode sources that matches
-    /// the already-resolved title-level source by `sourceId`. Returns the
-    /// `rokuUrl` when it is non-nil, non-empty, and contains "launch/".
-    /// Returns `nil` when no matching source is found or the field is unusable.
-    /// Mirrors `episodeSourceURL` but returns the raw Roku ECP path string
-    /// instead of a full HTTP URL.
+    /// Picks the `roku_url` from episode-level Watchmode sources that
+    /// matches the (possibly re-picked) resolved source by `sourceId`.
+    /// Returns the `rokuUrl` when it is non-nil, non-empty, and contains
+    /// "launch/". Returns `nil` when no matching source is found or the
+    /// field is unusable. Mirrors `episodeSourceURL` but returns the raw
+    /// Roku ECP path string instead of a full HTTP URL.
     private static func episodeRokuPath(
         from episodeSources: [WatchmodeSource],
         resolvedSource: WatchmodeSource?
     ) -> String? {
-        let match: WatchmodeSource?
-        if let rs = resolvedSource {
-            match = episodeSources.first(where: { $0.sourceId == rs.sourceId })
-                ?? episodeSources.first
-        } else {
-            match = episodeSources.first
-        }
-        guard let src = match,
+        guard let rs = resolvedSource,
+              let src = episodeSources.first(where: { $0.sourceId == rs.sourceId }),
               let rokuUrl = src.rokuUrl,
               !rokuUrl.isEmpty,
               rokuUrl.contains("launch/") else { return nil }
