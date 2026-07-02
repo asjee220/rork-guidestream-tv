@@ -482,6 +482,64 @@ struct StayNotifiedView: View {
         }
     }
 
+    private func savePhoneNumber() {
+        Task {
+            isSavingPhone = true
+            defer { isSavingPhone = false }
+            let ok = await AuthViewModel.shared.updatePhoneNumber(phoneDraft)
+            if ok {
+                UINotificationFeedbackGenerator().notificationOccurred(.success)
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                    phoneSaved = true
+                    phoneSaveFailed = false
+                }
+                try? await Task.sleep(for: .seconds(1.6))
+                withAnimation(.easeOut(duration: 0.25)) { phoneSaved = false }
+            } else {
+                UINotificationFeedbackGenerator().notificationOccurred(.error)
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                    phoneSaveFailed = true
+                    phoneSaved = false
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var saveFeedbackBanners: some View {
+        if phoneSaved {
+            HStack(spacing: 8) {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.custom("SF Pro Text", size: 13).weight(.semibold))
+                Text("Saved")
+                    .font(.custom("SF Pro Text", size: 13).weight(.semibold))
+            }
+            .foregroundStyle(Color.green)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .background(
+                Capsule().fill(Color.green.opacity(0.12))
+            )
+            .transition(.opacity)
+        }
+
+        if phoneSaveFailed {
+            HStack(spacing: 8) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.custom("SF Pro Text", size: 13).weight(.semibold))
+                Text("Couldn't save — check your connection")
+                    .font(.custom("SF Pro Text", size: 13).weight(.semibold))
+            }
+            .foregroundStyle(Color.red.opacity(0.9))
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .background(
+                Capsule().fill(Color.red.opacity(0.12))
+            )
+            .transition(.opacity)
+        }
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             OnboardingHeader(progress: 1.0)
@@ -596,28 +654,7 @@ struct StayNotifiedView: View {
                             .foregroundStyle(Color.textTertiary)
                             .fixedSize(horizontal: false, vertical: true)
 
-                        Button(action: {
-                            Task {
-                                isSavingPhone = true
-                                defer { isSavingPhone = false }
-                                let ok = await AuthViewModel.shared.updatePhoneNumber(phoneDraft)
-                                if ok {
-                                    UINotificationFeedbackGenerator().notificationOccurred(.success)
-                                    withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                                        phoneSaved = true
-                                        phoneSaveFailed = false
-                                    }
-                                    try? await Task.sleep(for: .seconds(1.6))
-                                    withAnimation(.easeOut(duration: 0.25)) { phoneSaved = false }
-                                } else {
-                                    UINotificationFeedbackGenerator().notificationOccurred(.error)
-                                    withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                                        phoneSaveFailed = true
-                                        phoneSaved = false
-                                    }
-                                }
-                            }
-                        }) {
+                        Button(action: savePhoneNumber) {
                             HStack(spacing: 6) {
                                 if isSavingPhone {
                                     ProgressView()
@@ -638,37 +675,7 @@ struct StayNotifiedView: View {
                         .buttonStyle(.plain)
                         .disabled(AuthViewModel.normalizeUSPhone(phoneDraft) == nil || isSavingPhone)
 
-                        if phoneSaved {
-                            HStack(spacing: 8) {
-                                Image(systemName: "checkmark.circle.fill")
-                                    .font(.custom("SF Pro Text", size: 13).weight(.semibold))
-                                Text("Saved")
-                                    .font(.custom("SF Pro Text", size: 13).weight(.semibold))
-                            }
-                            .foregroundStyle(Color.green)
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 8)
-                            .background(
-                                Capsule().fill(Color.green.opacity(0.12))
-                            )
-                            .transition(.opacity)
-                        }
-
-                        if phoneSaveFailed {
-                            HStack(spacing: 8) {
-                                Image(systemName: "exclamationmark.triangle.fill")
-                                    .font(.custom("SF Pro Text", size: 13).weight(.semibold))
-                                Text("Couldn't save — check your connection")
-                                    .font(.custom("SF Pro Text", size: 13).weight(.semibold))
-                            }
-                            .foregroundStyle(Color.red.opacity(0.9))
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 8)
-                            .background(
-                                Capsule().fill(Color.red.opacity(0.12))
-                            )
-                            .transition(.opacity)
-                        }
+                        saveFeedbackBanners
                     }
                     .padding(.horizontal, 16)
                     .padding(.vertical, 14)
