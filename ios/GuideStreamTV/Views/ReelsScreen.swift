@@ -1514,6 +1514,11 @@ private struct ReelView: View {
                                 }
                         } else if trailer.tab == .comingSoon {
                             NotifyMePill(enrolled: isReminded, action: onNotify)
+                            if !glassAdDismissed, !glassAdTargets.isEmpty {
+                                adCarousel
+                                    .opacity(glassAdVisible ? 1 : 0)
+                                    .allowsHitTesting(glassAdVisible)
+                            }
                         } else {
                             PlayOnPill(action: onShowDetail)
                             if !glassAdDismissed, !glassAdTargets.isEmpty {
@@ -1525,6 +1530,7 @@ private struct ReelView: View {
                     }
                     .padding(.trailing, 16)
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.leading, 22)
                 .padding(.bottom, bottomInset + 38)
                 .opacity(contentOpacity)
