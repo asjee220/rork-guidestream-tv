@@ -91,23 +91,32 @@ struct SponsoredAffiliateCard: View {
         .buttonStyle(.plain)
     }
 
-    // MARK: - Compact chip (single-row, 60pt tall, fills container width)
+    // MARK: - Compact chip (120pt tall, fills container width)
 
     private var compactBody: some View {
         Button(action: onTap) {
             ZStack(alignment: .topTrailing) {
-                HStack(spacing: 8) {
+                HStack(spacing: 10) {
                     compactBrandTile
-                    Text(headline)
-                        .scaledFont(size: 10, weight: .heavy)
-                        .foregroundStyle(.white)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(headline)
+                            .scaledFont(size: 13, weight: .heavy)
+                            .foregroundStyle(.white)
+                            .lineLimit(2)
+                            .truncationMode(.tail)
+                        if !subtitle.isEmpty {
+                            Text(subtitle)
+                                .scaledFont(size: 10)
+                                .foregroundStyle(Color.white.opacity(0.62))
+                                .lineLimit(3)
+                                .truncationMode(.tail)
+                        }
+                    }
                     Spacer(minLength: 0)
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 10)
-                .frame(height: 60)
+                .frame(height: 120)
                 .frame(maxWidth: .infinity)
                 .background(
                     RoundedRectangle(cornerRadius: 14)
@@ -196,7 +205,7 @@ struct SponsoredAffiliateCard: View {
         ZStack {
             RoundedRectangle(cornerRadius: 8)
                 .fill(service?.bg ?? Color.white.opacity(0.10))
-                .frame(width: 36, height: 36)
+                .frame(width: 56, height: 56)
                 .overlay(
                     RoundedRectangle(cornerRadius: 8)
                         .stroke(Color.white.opacity(0.12), lineWidth: 0.5)
@@ -204,15 +213,15 @@ struct SponsoredAffiliateCard: View {
             if let service {
                 ServiceBrandContent(
                     display: service.display,
-                    size: .mini(28)
+                    size: .mini(44)
                 )
-                .frame(width: 28, height: 28)
+                .frame(width: 44, height: 44)
             } else {
                 Text(String(fallbackName.prefix(3)).uppercased())
-                    .scaledFont(size: 10, weight: .black)
+                    .scaledFont(size: 14, weight: .black)
                     .foregroundStyle(fallbackColor)
             }
         }
-        .frame(width: 36, height: 36)
+        .frame(width: 56, height: 56)
     }
 }

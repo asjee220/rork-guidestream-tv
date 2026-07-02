@@ -1228,25 +1228,25 @@ private struct ReelView: View {
     @State private var controlsFadeTask: Task<Void, Never>?
     @State private var seekToFraction: Double = -1
     @State private var glassAdDismissed: Bool = false
-    @State private var glassAdTargets: [(serviceId: String, name: String, color: Color)] = []
+    @State private var glassAdTargets: [(serviceId: String, name: String, color: Color, tagline: String)] = []
     @State private var adPage: Int = 0
     @State private var glassAdVisible: Bool = false
     @State private var glassAdFadeTask: Task<Void, Never>? = nil
     @State private var adAdvanceTask: Task<Void, Never>? = nil
 
-    private func resolveGlassAds(count: Int) -> [(serviceId: String, name: String, color: Color)] {
+    private func resolveGlassAds(count: Int) -> [(serviceId: String, name: String, color: Color, tagline: String)] {
         let current = trailer.platformId.lowercased()
         let selected = AuthViewModel.shared.selectedServices
             .map { $0.lowercased() }
-        let pool: [(String, String, Color)] = [
-            ("netflix", "Netflix", Color(red:0xE5/255, green:0x09/255, blue:0x14/255)),
-            ("hbo", "Max", Color(red:0x00/255, green:0x1E/255, blue:0xE0/255)),
-            ("hulu", "Hulu", Color(red:0x1C/255, green:0xE7/255, blue:0x83/255)),
-            ("disney", "Disney+", Color(red:0x0E/255, green:0x29/255, blue:0x3F/255)),
-            ("appletv", "Apple TV+", Color.black),
-            ("prime", "Prime Video", Color(red:0x1A/255, green:0x20/255, blue:0x2C/255)),
-            ("paramount","Paramount+", Color(red:0x00/255, green:0x64/255, blue:0xFF/255)),
-            ("peacock", "Peacock", Color.black)
+        let pool: [(String, String, Color, String)] = [
+            ("netflix", "Netflix", Color(red:0xE5/255, green:0x09/255, blue:0x14/255), "Unlimited movies, TV and more. Cancel anytime."),
+            ("hbo", "Max", Color(red:0x00/255, green:0x1E/255, blue:0xE0/255), "The greatest shows, movies and Max Originals."),
+            ("hulu", "Hulu", Color(red:0x1C/255, green:0xE7/255, blue:0x83/255), "Watch TV, movies, Hulu Originals and live sports."),
+            ("disney", "Disney+", Color(red:0x0E/255, green:0x29/255, blue:0x3F/255), "Infinite worlds of entertainment for the family."),
+            ("appletv", "Apple TV+", Color.black, "Critically acclaimed shows. New every month."),
+            ("prime", "Prime Video", Color(red:0x1A/255, green:0x20/255, blue:0x2C/255), "Thursday Night Football and Amazon Originals."),
+            ("paramount","Paramount+", Color(red:0x00/255, green:0x64/255, blue:0xFF/255), "Stream Paramount+ with Showtime available."),
+            ("peacock", "Peacock", Color.black, "NFL, Premier League, WWE and NBC hits.")
         ]
         // Prefer services the user doesn't already own AND aren't the
         // current platform. If everything is owned, drop the owned filter so
@@ -1256,7 +1256,7 @@ private struct ReelView: View {
             entry.0 != current && !selected.contains(entry.0)
         }
         let secondary = pool.filter { $0.0 != current }
-        let eligible: [(String, String, Color)]
+        let eligible: [(String, String, Color, String)]
         if !preferred.isEmpty { eligible = preferred }
         else if !secondary.isEmpty { eligible = secondary }
         else { eligible = pool }
@@ -1491,7 +1491,7 @@ private struct ReelView: View {
                             .padding(.bottom, 12)
                     }
 
-                    HStack(alignment: .top, spacing: 6) {
+                    HStack(alignment: .center, spacing: 6) {
                         if trailer.isSponsored {
                             // Make the whole bottom content area a tap target.
                             // The explicit button is removed — tapping anywhere
@@ -1647,7 +1647,7 @@ private struct ReelView: View {
                         fallbackName: ad.name,
                         fallbackColor: ad.color,
                         headline: "Stream on \(ad.name)",
-                        subtitle: "",
+                        subtitle: ad.tagline,
                         onTap: {
                             RakutenManager.shared.openAffiliateLink(
                                 serviceId: ad.serviceId,
@@ -1673,7 +1673,7 @@ private struct ReelView: View {
                 }
             }
             .tabViewStyle(.page(indexDisplayMode: .never))
-            .frame(height: 60)
+            .frame(height: 120)
 
             HStack(spacing: 6) {
                 ForEach(0..<glassAdTargets.count, id: \.self) { dotIdx in
