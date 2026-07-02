@@ -41,17 +41,21 @@ enum TVOSDeepLinker {
     }
 
     /// Opens the best available destination for the title on this Apple TV.
-    /// Walks PLAY → HOME → SEARCH, falling through whenever `open` reports the
-    /// previous URL couldn't be handled (app not installed, scheme rejected).
+    /// Walks tvosDeepLink (tier 0) → PLAY → HOME → SEARCH, falling through
+    /// whenever `open` reports the previous URL couldn't be handled (app not
+    /// installed, scheme rejected).
     @MainActor
     static func open(
         platform: String,
         title: String,
         contentURL: URL? = nil,
+        tvosDeepLink: URL? = nil,
         completion: ((Bool) -> Void)? = nil
     ) {
         let target = resolve(platform: platform, title: title, contentURL: contentURL)
-        let chain = [target.playURL, target.appHomeURL, target.searchURL].compactMap { $0 }
+        var chain: [URL] = []
+        if let tvosDeepLink { chain.append(tvosDeepLink) }
+        chain.append(contentsOf: [target.playURL, target.appHomeURL, target.searchURL].compactMap { $0 })
 
         #if DEBUG
         print("[tvOS Deeplink] \(platform) confidence=\(target.confidence) chain=\(chain.map(\.absoluteString))")

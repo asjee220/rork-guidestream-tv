@@ -57,10 +57,8 @@ nonisolated struct TitleComment: Identifiable, Hashable, Sendable {
     let createdAt: Date?
 }
 
-/// No-op social store. Likes and comments require the Supabase social
-/// tables, which we don't wire up on tvOS — views read zero counts and
-/// never display the "you liked this" state. The mutable fields exposed
-/// here mirror the iOS API surface so shared views compile cleanly.
+/// Social store wired to Supabase `title_likes` table. Likes are persisted
+/// server-side so the tvOS sheet matches the iOS like state.
 @MainActor
 @Observable
 final class SocialViewModel {
@@ -73,6 +71,11 @@ final class SocialViewModel {
     var loadingComments: Set<String> = []
     var postingComment: Set<String> = []
 
+    nonisolated private struct LikeRow: Decodable {
+        let titleId: String
+        enum CodingKeys: String, CodingKey { case titleId = "title_id" }
+    }
+
     private init() {}
 
     func likes(_ titleId: String) -> Int { likeCounts[titleId] ?? 0 }
@@ -80,21 +83,103 @@ final class SocialViewModel {
     func commentTotal(_ titleId: String) -> Int { commentCounts[titleId] ?? 0 }
     func thread(_ titleId: String) -> [TitleComment] { commentThreads[titleId] ?? [] }
 
-    /// True while the comment thread for `titleId` is being fetched. Method
-    /// wrapper around `loadingComments` so views can read the state without
-    /// directly touching the `@Observable`-synthesized stored property
-    /// (which trips up Swift's key-path resolution in some build contexts).
     func isLoadingComments(_ titleId: String) -> Bool {
         loadingComments.contains(titleId)
     }
 
-    /// True while a comment post for `titleId` is in flight.
     func isPostingComment(_ titleId: String) -> Bool {
         postingComment.contains(titleId)
     }
 
-    func refreshCounts(titleId: String) async {}
-    func toggleLike(titleId: String) async {}
+    // MARK: - Likes
+
+    /// Queries `title_likes` for the current owner and sets `likedByMe`.
+    func refreshCounts(titleId: String) async {
+        let deviceId = TVDeviceIdentity.shared.deviceId
+        let userId = TVAuthViewModel.shared.currentUser?.id.uuidString
+
+        var query = TVSupabaseManager.shared.client
+            .from("title_likes")
+            .select("title_id")
+            .eq("title_id", value: titleId)
+
+        if let userId {
+            query = query.or("user_id.eq.\(userId),device_id.eq.\(deviceId)")
+        } else {
+            query = query.eq("device_id", value: deviceId)
+        }
+
+        do {
+            let rows: [LikeRow] = try await query.execute().value
+            if rows.isEmpty {
+                likedByMe.remove(titleId)
+            } else {
+                likedByMe.insert(titleId)
+            }
+        } catch {
+            // Silently keep current state on failure.
+        }
+    }
+
+    /// Optimistically flips local state, then writes through to Supabase
+    /// best-effort. Failures never revert the optimistic flip.
+    func toggleLike(titleId: String, mediaType: String? = nil, tmdbId: Int? = nil) async {
+        let wasLiked = likedByMe.contains(titleId)
+
+        // Optimistic flip
+        if wasLiked {
+            likedByMe.remove(titleId)
+        } else {
+            likedByMe.insert(titleId)
+        }
+
+        let deviceId = TVDeviceIdentity.shared.deviceId
+        let userId = TVAuthViewModel.shared.currentUser?.id.uuidString
+
+        do {
+            if wasLiked {
+                // Unlike — delete the row
+                var query = TVSupabaseManager.shared.client
+                    .from("title_likes")
+                    .delete()
+                    .eq("title_id", value: titleId)
+                if let userId {
+                    query = query.eq("user_id", value: userId)
+                } else {
+                    query = query.eq("device_id", value: deviceId)
+                }
+                _ = try await query.execute()
+            } else {
+                // Like — insert a row
+                var payload: [String: any Encodable] = [
+                    "title_id": titleId,
+                    "device_id": deviceId
+                ]
+                if let userId {
+                    payload["user_id"] = userId
+                }
+                if let mediaType {
+                    payload["media_type"] = mediaType
+                }
+                if let tmdbId {
+                    payload["tmdb_id"] = tmdbId
+                }
+                _ = try await TVSupabaseManager.shared.client
+                    .from("title_likes")
+                    .insert(payload)
+                    .execute()
+            }
+        } catch {
+            // Swallow — optimistic state wins.
+        }
+
+        // Log the intent
+        WatchIntentLogger.shared.log(
+            eventType: .trailerLiked,
+            titleId: titleId
+        )
+    }
+
     func loadComments(titleId: String) async {}
     func postComment(titleId: String, body: String) async -> Bool { false }
 
