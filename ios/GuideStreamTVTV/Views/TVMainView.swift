@@ -2,9 +2,8 @@
 //  TVMainView.swift
 //  GuideStreamTVTV
 //
-//  Tab bar shell. tvOS renders TabView as a top focus bar, which is
-//  exactly the layout we want — three clear destinations: Home, Watch
-//  List, Account.
+//  Tab bar shell. tvOS renders TabView as a top focus bar.
+//  Reels tab withheld for launch; code preserved in TVReelsView.swift.
 //
 
 import SwiftUI
@@ -16,9 +15,6 @@ struct TVMainView: View {
         TabView {
             TVHomeView()
                 .tabItem { Label("Home", systemImage: "house.fill") }
-
-            TVReelsView()
-                .tabItem { Label("Reels", systemImage: "play.rectangle.fill") }
 
             TVWatchListView()
                 .tabItem { Label("Watch List", systemImage: "popcorn.fill") }
