@@ -204,6 +204,17 @@ final class SupabaseSchemaProbe {
             } catch {
                 let (state, message) = classify(error)
                 let lowered = message.lowercased()
+                // Duplicate key (23505) — a previous probe row is still
+                // present (the cleanup delete never finished). A unique-
+                // violation proves the table exists and the write path is
+                // functional, so treat it as ok and delete the stale row so
+                // the next run starts clean. Cleanup failure is non-fatal,
+                // matching the existing best-effort contract.
+                if lowered.contains("23505") || lowered.contains("duplicate key value") {
+                    checks[index].write = .ok
+                    await cleanupProbe(table: table, probeTitleId: probeTitleId)
+                    return
+                }
                 // Missing column we send → drop it and retry.
                 if attempt < 4, lowered.contains("pgrst204") || (lowered.contains("could not find") && lowered.contains("column")),
                    let dropped = Self.dropMissingColumn(from: payload, error: message) {
