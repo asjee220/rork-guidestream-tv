@@ -1049,6 +1049,7 @@ struct HomeView: View {
                 CreatorDetailView(
                     titleId: target.titleId,
                     initialEpisode: target.initialEpisode,
+                    fallbackCreator: target.fallbackCreator,
                     onBack: { creatorDetailTarget = nil }
                 )
             }

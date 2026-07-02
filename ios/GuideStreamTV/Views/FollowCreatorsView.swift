@@ -151,7 +151,7 @@ struct FollowCreatorsView: View {
                                             platformId: creator.sourceType,
                                             metadata: ["section": "follow_creators", "kind": creator.sourceType]
                                         )
-                                        creatorDetailTarget = CreatorDetailTarget(titleId: creator.titleId, initialEpisode: nil)
+                                        creatorDetailTarget = CreatorDetailTarget(titleId: creator.titleId, initialEpisode: nil, fallbackCreator: creator)
                                     })
                                     .padding(.horizontal, 16)
                                     .padding(.vertical, 10)
@@ -180,6 +180,7 @@ struct FollowCreatorsView: View {
             CreatorDetailView(
                 titleId: target.titleId,
                 initialEpisode: target.initialEpisode,
+                fallbackCreator: target.fallbackCreator,
                 onBack: { creatorDetailTarget = nil }
             )
         }
