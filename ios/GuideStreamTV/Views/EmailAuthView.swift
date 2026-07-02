@@ -110,12 +110,6 @@ struct EmailAuthView: View {
         .sheet(isPresented: $showForgotPassword) {
             ForgotPasswordSheet(prefilledEmail: email)
         }
-        .onChange(of: mode) { _, _ in
-            // Clear stale messages when the user flips modes.
-            auth.lastError = nil
-            auth.lastInfo = nil
-            pendingConfirmation = false
-        }
     }
 
     // MARK: - Sections
@@ -336,6 +330,10 @@ struct EmailAuthView: View {
                 .font(.custom("SF Pro Text", size: 13))
                 .foregroundStyle(Color.textSecondary)
             Button {
+                // Clear stale messages when the user manually flips modes.
+                auth.lastError = nil
+                auth.lastInfo = nil
+                pendingConfirmation = false
                 withAnimation(.easeInOut(duration: 0.2)) {
                     mode = (mode == .signUp) ? .signIn : .signUp
                 }
