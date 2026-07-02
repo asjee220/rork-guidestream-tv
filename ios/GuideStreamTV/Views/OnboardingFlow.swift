@@ -461,6 +461,9 @@ struct StayNotifiedView: View {
     var onContinue: () -> Void
     var onWidgetSettings: () -> Void
     @State private var phoneDraft: String = AuthViewModel.formatUSPhoneDisplay(AuthViewModel.shared.phoneNumber ?? "")
+    @State private var isSavingPhone: Bool = false
+    @State private var phoneSaved: Bool = false
+    @State private var phoneSaveFailed: Bool = false
 
     private func handlePushToggle(_ newValue: Bool) {
         guard newValue else { return }
@@ -578,6 +581,8 @@ struct StayNotifiedView: View {
                         )
                         .onChange(of: phoneDraft) { _, newValue in
                             phoneDraft = AuthViewModel.formatUSPhoneDisplay(newValue)
+                            phoneSaved = false
+                            phoneSaveFailed = false
                         }
 
                         if !phoneDraft.isEmpty && AuthViewModel.normalizeUSPhone(phoneDraft) == nil {
@@ -593,24 +598,77 @@ struct StayNotifiedView: View {
 
                         Button(action: {
                             Task {
+                                isSavingPhone = true
+                                defer { isSavingPhone = false }
                                 let ok = await AuthViewModel.shared.updatePhoneNumber(phoneDraft)
                                 if ok {
                                     UINotificationFeedbackGenerator().notificationOccurred(.success)
+                                    withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                                        phoneSaved = true
+                                        phoneSaveFailed = false
+                                    }
+                                    try? await Task.sleep(for: .seconds(1.6))
+                                    withAnimation(.easeOut(duration: 0.25)) { phoneSaved = false }
+                                } else {
+                                    UINotificationFeedbackGenerator().notificationOccurred(.error)
+                                    withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                                        phoneSaveFailed = true
+                                        phoneSaved = false
+                                    }
                                 }
                             }
                         }) {
-                            Text("Save number")
-                                .font(.custom("SF Pro Text", size: 13).weight(.semibold))
-                                .foregroundStyle(.white)
-                                .frame(maxWidth: .infinity)
-                                .frame(height: 40)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                        .fill(AuthViewModel.normalizeUSPhone(phoneDraft) != nil ? Color.blue : Color.blue.opacity(0.35))
-                                )
+                            HStack(spacing: 6) {
+                                if isSavingPhone {
+                                    ProgressView()
+                                        .progressViewStyle(.circular)
+                                        .tint(.white)
+                                }
+                                Text("Save number")
+                                    .font(.custom("SF Pro Text", size: 13).weight(.semibold))
+                            }
+                            .foregroundStyle(.white)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 40)
+                            .background(
+                                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                    .fill(AuthViewModel.normalizeUSPhone(phoneDraft) != nil ? Color.blue : Color.blue.opacity(0.35))
+                            )
                         }
                         .buttonStyle(.plain)
-                        .disabled(AuthViewModel.normalizeUSPhone(phoneDraft) == nil)
+                        .disabled(AuthViewModel.normalizeUSPhone(phoneDraft) == nil || isSavingPhone)
+
+                        if phoneSaved {
+                            HStack(spacing: 8) {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .font(.custom("SF Pro Text", size: 13).weight(.semibold))
+                                Text("Saved")
+                                    .font(.custom("SF Pro Text", size: 13).weight(.semibold))
+                            }
+                            .foregroundStyle(Color.green)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 8)
+                            .background(
+                                Capsule().fill(Color.green.opacity(0.12))
+                            )
+                            .transition(.opacity)
+                        }
+
+                        if phoneSaveFailed {
+                            HStack(spacing: 8) {
+                                Image(systemName: "exclamationmark.triangle.fill")
+                                    .font(.custom("SF Pro Text", size: 13).weight(.semibold))
+                                Text("Couldn't save — check your connection")
+                                    .font(.custom("SF Pro Text", size: 13).weight(.semibold))
+                            }
+                            .foregroundStyle(Color.red.opacity(0.9))
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 8)
+                            .background(
+                                Capsule().fill(Color.red.opacity(0.12))
+                            )
+                            .transition(.opacity)
+                        }
                     }
                     .padding(.horizontal, 16)
                     .padding(.vertical, 14)
