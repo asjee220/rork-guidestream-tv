@@ -12,6 +12,7 @@
 //
 
 import Foundation
+import UIKit
 import SwiftUI
 import AuthenticationServices
 import CryptoKit
@@ -289,6 +290,9 @@ private final class AppleSignInControllerDelegate: NSObject,
     }
 
     func presentationAnchor(for controller: ASAuthorizationController) -> ASPresentationAnchor {
-        UIApplication.shared.windows.first ?? UIWindow()
+        UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .first?.windows
+            .first ?? UIWindow()
     }
 }

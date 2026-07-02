@@ -76,6 +76,16 @@ final class SocialViewModel {
         enum CodingKeys: String, CodingKey { case titleId = "title_id" }
     }
 
+    /// Concrete `Encodable` payload for inserting a like row. Using a struct
+    /// avoids the `any Encodable` existential issue with dictionary literals.
+    private struct LikeInsertPayload: Encodable {
+        let title_id: String
+        let device_id: String
+        let user_id: String?
+        let media_type: String?
+        let tmdb_id: Int?
+    }
+
     private init() {}
 
     func likes(_ titleId: String) -> Int { likeCounts[titleId] ?? 0 }
@@ -151,19 +161,13 @@ final class SocialViewModel {
                 _ = try await query.execute()
             } else {
                 // Like — insert a row
-                var payload: [String: any Encodable] = [
-                    "title_id": titleId,
-                    "device_id": deviceId
-                ]
-                if let userId {
-                    payload["user_id"] = userId
-                }
-                if let mediaType {
-                    payload["media_type"] = mediaType
-                }
-                if let tmdbId {
-                    payload["tmdb_id"] = tmdbId
-                }
+                let payload = LikeInsertPayload(
+                    title_id: titleId,
+                    device_id: deviceId,
+                    user_id: userId,
+                    media_type: mediaType,
+                    tmdb_id: tmdbId
+                )
                 _ = try await TVSupabaseManager.shared.client
                     .from("title_likes")
                     .insert(payload)

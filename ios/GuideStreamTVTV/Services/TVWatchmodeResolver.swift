@@ -79,11 +79,10 @@ final class TVWatchmodeResolver {
         )
 
         do {
-            let data = try await TVSupabaseManager.shared.client.functions.invoke(
+            let result: TVResolvedStreaming = try await TVSupabaseManager.shared.client.functions.invoke(
                 "watchmode_resolve",
                 options: FunctionInvokeOptions(body: body)
             )
-            let result = try JSONDecoder().decode(TVResolvedStreaming.self, from: data)
             cache[cacheKey] = result
             return result
         } catch {
