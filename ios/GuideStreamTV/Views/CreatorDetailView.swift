@@ -418,7 +418,7 @@ struct CreatorDetailView: View {
 #if os(iOS)
         if !adDismissed, let ad = affiliateAdData,
            let service = StreamingCatalog.all.first(where: { $0.id == ad.serviceId }) {
-            SponsoredAffiliateCard(
+            SponsoredSlotView(
                 service: service,
                 fallbackName: ad.headline,
                 fallbackColor: .white,
@@ -433,7 +433,8 @@ struct CreatorDetailView: View {
                         ]
                     )
                 },
-                onDismiss: { adDismissed = true }
+                onDismiss: { adDismissed = true },
+                adSource: "creator_detail_sheet"
             )
             .padding(.horizontal, 20)
         }

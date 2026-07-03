@@ -220,7 +220,7 @@ struct SportsWatchSheet: View {
         if !adDismissed, let ad = sportsAdData,
            let service = StreamingCatalog.all
             .first(where: { $0.id == ad.serviceId }) {
-            SponsoredAffiliateCard(
+            SponsoredSlotView(
                 service: service,
                 fallbackName: ad.headline,
                 fallbackColor: .white,
@@ -237,7 +237,8 @@ struct SportsWatchSheet: View {
                         ]
                     )
                 },
-                onDismiss: { adDismissed = true }
+                onDismiss: { adDismissed = true },
+                adSource: "sports_watch_sheet"
             )
             .padding(.horizontal, 20)
         }

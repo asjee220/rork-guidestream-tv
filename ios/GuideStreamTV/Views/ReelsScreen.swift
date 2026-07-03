@@ -299,11 +299,11 @@ final class ReelsViewModel {
 
     }
 
-    /// Weaves Rakuten and AdMob reels into a batch of content reels using the
-    /// persistent counters, preserving the launch cadence: an ad slot after
-    /// every third content reel, odd slots Rakuten (cycling the pool), even
-    /// slots AdMob. On the initial load only, inserts one Rakuten reel near
-    /// the top when none landed at all.
+    /// Weaves Rakuten reels into a batch of content reels using the persistent
+    /// counters, preserving the cadence: an ad slot after every third content
+    /// reel. On the initial load only, inserts one Rakuten reel near the top
+    /// when none landed at all. (The even-slot AdMob reel was removed — real
+    /// interstitials now fire on a swipe cadence instead.)
     private func weaveAds(into batch: [TrailerItem], isInitialLoad: Bool) -> [TrailerItem] {
         let rakutenReels = makeRakutenAdReels()
         var out: [TrailerItem] = []
@@ -323,9 +323,6 @@ final class ReelsViewModel {
                         )
                         rakutenIndex += 1
                     }
-                } else {
-                    // Even ad slots (after reels 6, 12, 18...) → AdMob
-                    out.append(makeAdMobReel(slot: adSlotCount))
                 }
             }
         }
@@ -333,9 +330,7 @@ final class ReelsViewModel {
         // Safety net (initial feed only): if the feed was too short to insert
         // any Rakuten reel at all, insert one now so it always appears.
         if isInitialLoad {
-            let hasRakuten = out.contains {
-                $0.isSponsored && $0.platformId != "admob"
-            }
+            let hasRakuten = out.contains { $0.isSponsored }
             if !hasRakuten, let first = rakutenReels.first {
                 let insertAt = min(2, out.count)
                 out.insert(first, at: insertAt)
@@ -755,57 +750,6 @@ private func makeRakutenAdReels() -> [TrailerItem] {
         }
     }
 
-    private func makeAdMobReel(slot: Int) -> TrailerItem {
-        let placeholders: [(String,String,String,String,String)] = [
-            ("Stream smarter. Watch everything.",
-             "GuideStream TV — every show, every service, one app.",
-             "Watch now",
-             "https://image.tmdb.org/t/p/w1280/etj8E2o0Bud0HkONVQPjyCkIvpv.jpg",
-             "dQw4w9WgXcQ"),
-            ("Upgrade your home theater",
-             "TCL 4K QLED TV. Stunning picture, incredible sound.",
-             "Shop now",
-             "https://image.tmdb.org/t/p/w1280/zSWIOsYEWCBPEFrmVCBZAbMKFtA.jpg",
-             "M7lc1UVf-VE"),
-            ("Game Pass. 100+ games included.",
-             "Xbox Game Pass Ultimate — play on console and mobile.",
-             "Try free",
-             "https://image.tmdb.org/t/p/w1280/9yBVqNruk6Ykrwc32qDbHTE0z5o.jpg",
-             "sPbJ4oyIrXA"),
-            ("Order dinner. Keep watching.",
-             "DoorDash — get food delivered to your door tonight.",
-             "Order now",
-             "https://image.tmdb.org/t/p/w1280/1Rr5SrvHxMXHu5RjKpaMba8VTzi.jpg",
-             "dQw4w9WgXcQ")
-        ]
-        let p = placeholders[slot % placeholders.count]
-        return TrailerItem(
-            id: "admob-\(slot)-\(Int.random(in:1000...9999))",
-            tmdbId: -2,
-            showName: p.0,
-            synopsis: p.1,
-            genre: "AD · \(p.2.uppercased())",
-            runtime: p.2,
-            platformId: "admob",
-            platformName: "AD",
-            platformColor: Color(hex: "1A6FE8"),
-            platformTextColor: .white,
-            backdropURL: URL(string: p.3),
-            posterURL: URL(string: p.3),
-            trailerKey: p.4,
-            thumbnailURL: URL(string: p.3),
-            youtubeURL: nil,
-            deepLinkURL: nil,
-            voteAverage: 0,
-            likes: 0,
-            comments: 0,
-            tab: .forYou,
-            identityCode: "AD",
-            gradeColor: Color(hex: "1A6FE8").opacity(0.15),
-            isSponsored: true
-        )
-    }
-
     // MARK: - Mutations
 
     func isReminded(_ trailer: TrailerItem) -> Bool {
@@ -918,6 +862,9 @@ struct ReelsScreen: View {
     @State private var detailSubject: DetailSubject?
     @State private var scrolledID: Int? = 0
     @State private var pendingInterstitialAt: Int? = nil
+    /// Timestamp of the last interstitial presentation; used with the swipe
+    /// count to enforce the 6-swipe / 90-second cadence.
+    @State private var lastInterstitialDate: Date = .distantPast
     /// Timestamp when the current reel became active. Used to compute
     /// actual watch duration for the stats engine.
     @State private var reelStartTime: Date = Date()
@@ -994,6 +941,18 @@ struct ReelsScreen: View {
                         // user is within six reels of the end.
                         if newValue >= vm.allTrailers.count - 6 {
                             Task { await vm.loadMoreTrailers() }
+                        }
+                        // Interstitial cadence: fire only after at least 8
+                        // total swipes, 6 swipes since the last interstitial,
+                        // and 90 seconds of wall-clock since the last one —
+                        // and only when an ad is actually preloaded.
+                        if vm.reelSwipeCount >= 8,
+                           vm.reelSwipeCount - (pendingInterstitialAt ?? 0) >= 6,
+                           Date().timeIntervalSince(lastInterstitialDate) >= 90,
+                           AdManager.shared.hasInterstitial {
+                            pendingInterstitialAt = vm.reelSwipeCount
+                            lastInterstitialDate = Date()
+                            showInterstitial { }
                         }
                     }
                 }
@@ -1074,6 +1033,9 @@ struct ReelsScreen: View {
             )
         }
         .task {
+            // Initialise the ad SDK so interstitials and native ads begin
+            // preloading. No-op on the cloud simulator.
+            AdManager.shared.start()
             // Hide the floating tab bar so the reel fills the entire screen.
             tabBarVisibility.hide()
             await vm.loadIfNeeded()
@@ -1150,37 +1112,7 @@ struct ReelsScreen: View {
     @ViewBuilder
     private func reelCell(trailer: TrailerItem, index: Int, size: CGSize, topInset: CGFloat, bottomInset: CGFloat) -> some View {
         let isCurrent = index == vm.currentIndex
-        if trailer.platformId == "admob" {
-            AdMobReelCard(
-                headline: trailer.showName,
-                bodyText: trailer.synopsis,
-                ctaText: trailer.runtime,
-                advertiser: trailer.genre
-                    .replacingOccurrences(of: "AD · ", with: "")
-                    .capitalized,
-                imageURL: trailer.backdropURL,
-                trailerKey: trailer.trailerKey,
-                isPlaying: isCurrent && isPlaying,
-                isMuted: isMuted,
-                playbackProgress: .constant(0),
-                size: size,
-                topInset: topInset,
-                bottomInset: bottomInset,
-                onTap: {
-                    WatchIntentLogger.shared.log(
-                        eventType: .adImpression,
-                        metadata: [
-                            "ad_type": "native_reel",
-                            "position": index,
-                            "slot": index / 5
-                        ]
-                    )
-                }
-            )
-            .frame(width: size.width, height: size.height)
-            .id(index)
-        } else {
-            ReelView(
+        ReelView(
                 trailer: trailer,
                 tvdbInfo: vm.tvdbCache[trailer.tmdbId],
                 size: size,
@@ -1249,12 +1181,6 @@ struct ReelsScreen: View {
                     }
                 },
                 onSponsorCTA: {
-                    if trailer.platformId == "admob" {
-                        WatchIntentLogger.shared.log(
-                            eventType: .adImpression,
-                            metadata: ["ad_type":"native_cta","position":index]
-                        )
-                    } else {
                         RakutenManager.shared.openAffiliateLink(
                             serviceId: trailer.platformId,
                             metadata: [
@@ -1267,7 +1193,6 @@ struct ReelsScreen: View {
                             platformId: trailer.platformId,
                             metadata: ["position": index]
                         )
-                    }
                 },
                 onShowDetail: {
                     guard !trailer.isSponsored, trailer.tmdbId > 0 else { return }
@@ -1287,7 +1212,6 @@ struct ReelsScreen: View {
             )
             .frame(width: size.width, height: size.height)
             .id(index)
-        }
     }
 
     private func prefetchNeighbors(around index: Int) {}
@@ -2525,210 +2449,5 @@ extension UIApplication {
         }
         if let presented = root?.presentedViewController { return topViewController(base: presented) }
         return root
-    }
-}
-
-// MARK: - AdMob Full-Screen Reel Card
-
-private struct AdMobReelCard: View {
-    let headline: String
-    let bodyText: String
-    let ctaText: String
-    let advertiser: String
-    let imageURL: URL?
-    let trailerKey: String
-    let isPlaying: Bool
-    let isMuted: Bool
-    @Binding var playbackProgress: Double
-    let size: CGSize
-    let topInset: CGFloat
-    let bottomInset: CGFloat
-    let onTap: () -> Void
-
-    var body: some View {
-        ZStack {
-            RemoteImage(
-                url: imageURL,
-                contentMode: .fill,
-                fallbackColors: [
-                    Color(hex: "0B1828"),
-                    Color(hex: "04090F")
-                ]
-            )
-            .frame(width: size.width, height: size.height)
-            .clipped()
-
-            if !trailerKey.isEmpty && isPlaying {
-                YouTubePlayerView(
-                    videoId: trailerKey,
-                    isMuted: true,
-                    isPlaying: isPlaying,
-                    progress: $playbackProgress,
-                    seekToFraction: .constant(-1),
-                    onEmbedError: { }
-                )
-                .allowsHitTesting(false)
-                .frame(width: size.height * 16 / 9, height: size.height)
-                .clipped()
-                .position(x: size.width / 2, y: size.height / 2)
-            }
-
-            // Colour grade
-            Color(hex: "1A6FE8").opacity(0.12)
-                .ignoresSafeArea()
-                .allowsHitTesting(false)
-
-            // Identity letterforms
-            Text("AD")
-                .scaledFont(size: 240, weight: .black)
-                .foregroundStyle(Color.white.opacity(0.04))
-                .tracking(-9.6)
-                .offset(y: -80)
-                .allowsHitTesting(false)
-
-            // Top scrim
-            VStack {
-                LinearGradient(
-                    colors: [Color.navy.opacity(0.75),
-                             Color.navy.opacity(0.30), .clear],
-                    startPoint: .top, endPoint: .bottom)
-                    .frame(height: 130)
-                Spacer()
-            }
-            .allowsHitTesting(false)
-
-            // Bottom scrim
-            VStack {
-                Spacer()
-                LinearGradient(
-                    colors: [.clear,
-                             Color.navy.opacity(0.55),
-                             Color.navy.opacity(0.92),
-                             Color.navy],
-                    startPoint: .top, endPoint: .bottom)
-                    .frame(height: 440)
-            }
-            .allowsHitTesting(false)
-
-            // Sponsored + advertiser name row
-            VStack {
-                HStack {
-                    Text("Sponsored")
-                        .scaledFont(size: 10, weight: .semibold)
-                        .foregroundStyle(Color.white.opacity(0.60))
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(Color.white.opacity(0.20))
-                        .clipShape(.rect(cornerRadius: 4))
-                        .padding(.leading, 14)
-                        .padding(.top, topInset + 14)
-                    Spacer()
-                    Text(advertiser)
-                        .scaledFont(size: 10, weight: .medium)
-                        .foregroundStyle(Color.white.opacity(0.45))
-                        .padding(.trailing, 14)
-                        .padding(.top, topInset + 14)
-                }
-                Spacer()
-            }
-
-            // Right rail — dimmed, no actions on ad reels
-            VStack {
-                Spacer().frame(height: size.height * 0.30)
-                HStack {
-                    Spacer()
-                    VStack(spacing: 28) {
-                        ForEach(["heart", "message",
-                                 "arrowshape.turn.up.right"],
-                                id: \.self) { icon in
-                            VStack(spacing: 4) {
-                                ZStack {
-                                    Circle()
-                                        .fill(Color.black.opacity(0.30))
-                                        .overlay(Circle()
-                                            .stroke(Color.white.opacity(0.08),
-                                                    lineWidth: 1))
-                                    Image(systemName: icon)
-                                        .scaledFont(size: 20, weight: .semibold)
-                                        .foregroundStyle(
-                                            Color.white.opacity(0.20))
-                                }
-                                .frame(width: 52, height: 52)
-                            }
-                        }
-                    }
-                    .padding(.trailing, 18)
-                }
-                Spacer()
-            }
-            .allowsHitTesting(false)
-
-            // Bottom content
-            VStack {
-                Spacer()
-                VStack(alignment: .leading, spacing: 0) {
-                    // Ad pill
-                    Text("Ad")
-                        .scaledFont(size: 11, weight: .bold)
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 5)
-                        .background(Color(hex: "F5821F"))
-                        .clipShape(.rect(cornerRadius: 6))
-                        .padding(.bottom, 8)
-
-                    Text(headline)
-                        .scaledFont(size: 28, weight: .bold)
-                        .tracking(-0.8)
-                        .foregroundStyle(.white)
-                        .lineLimit(2)
-                        .padding(.bottom, 10)
-
-                    Text(bodyText)
-                        .scaledFont(size: 14)
-                        .foregroundStyle(Color.white.opacity(0.78))
-                        .lineLimit(2)
-                        .padding(.bottom, 14)
-
-                    Button(action: onTap) {
-                        HStack(spacing: 8) {
-                            Image(systemName: "arrow.up.right")
-                                .scaledFont(size: 13, weight: .bold)
-                            Text(ctaText)
-                                .scaledFont(size: 15, weight: .bold)
-                        }
-                        .foregroundStyle(.white)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 52)
-                        .background(Color(hex: "F5821F"))
-                        .clipShape(Capsule())
-                    }
-                    .buttonStyle(.plain)
-                }
-                .padding(.leading, 22)
-                .padding(.trailing, 90)
-                .padding(.bottom, bottomInset + 38)
-            }
-
-            // AdChoices badge — required for AdMob compliance
-            VStack {
-                Spacer()
-                HStack {
-                    Spacer()
-                    ZStack {
-                        Circle()
-                            .stroke(Color.white.opacity(0.20),
-                                    lineWidth: 1)
-                        Text("i")
-                            .scaledFont(size: 9, weight: .medium)
-                            .foregroundStyle(Color.white.opacity(0.35))
-                    }
-                    .frame(width: 16, height: 16)
-                    .padding(.trailing, 14)
-                    .padding(.bottom, bottomInset + 44)
-                }
-            }
-            .allowsHitTesting(false)
-        }
     }
 }
