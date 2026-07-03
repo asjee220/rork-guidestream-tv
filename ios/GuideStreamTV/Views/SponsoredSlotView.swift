@@ -35,7 +35,7 @@ struct SponsoredSlotView: View {
     /// two-line headline, body, advertiser, CTA, Ad badge, AdChoices, and
     /// dismiss control without clipping, while staying close to the full
     /// SponsoredAffiliateCard height so the fallback→native upgrade is seamless.
-    private static let nativeCardHeight: CGFloat = 96
+    private static let nativeCardHeight: CGFloat = 80
 
     /// Native ad pulled from the pool on appear. nil → Rakuten fallback.
     @State private var currentNativeAd: AnyObject? = nil

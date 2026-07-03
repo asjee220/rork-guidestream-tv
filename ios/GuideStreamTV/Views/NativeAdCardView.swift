@@ -43,8 +43,8 @@ final class NativeAdContainer: UIView {
     private let adView = NativeAdView()
     private let bgEffect = UIVisualEffectView(effect: UIBlurEffect(style: .systemUltraThinMaterial))
     private let navyOverlay = UIView()
-    private let iconTile = UIView()
-    private let iconImageView = UIImageView()
+    private let mediaView = MediaView()
+    private let textStack = UIStackView()
     private let headlineLabel = UILabel()
     private let bodyLabel = UILabel()
     private let ctaButton = UIButton(type: .system)
@@ -76,57 +76,65 @@ final class NativeAdContainer: UIView {
         layer.borderColor = UIColor.white.withAlphaComponent(0.11).cgColor
         clipsToBounds = true
 
-        // GADNativeAdView — contains the clickable asset views
+        // GADNativeAdView — fills the card edge-to-edge so every registered
+        // asset view lies fully inside the native ad view (validator requirement).
         adView.translatesAutoresizingMaskIntoConstraints = false
         addSubview(adView)
 
-        // Icon tile (52pt rounded square)
-        iconTile.translatesAutoresizingMaskIntoConstraints = false
-        iconTile.backgroundColor = UIColor.white.withAlphaComponent(0.10)
-        iconTile.layer.cornerRadius = 8
-        iconTile.layer.borderWidth = 0.5
-        iconTile.layer.borderColor = UIColor.white.withAlphaComponent(0.12).cgColor
-        iconTile.clipsToBounds = true
-        adView.addSubview(iconTile)
+        // Media view (56pt square) — shows the ad's main image/video and is
+        // registered as adView.mediaView. Replaces the old icon tile.
+        mediaView.translatesAutoresizingMaskIntoConstraints = false
+        mediaView.backgroundColor = UIColor.white.withAlphaComponent(0.10)
+        mediaView.contentMode = .scaleAspectFill
+        mediaView.layer.cornerRadius = 8
+        mediaView.layer.borderWidth = 0.5
+        mediaView.layer.borderColor = UIColor.white.withAlphaComponent(0.12).cgColor
+        mediaView.clipsToBounds = true
+        adView.addSubview(mediaView)
 
-        iconImageView.translatesAutoresizingMaskIntoConstraints = false
-        iconImageView.contentMode = .scaleAspectFit
-        iconImageView.clipsToBounds = true
-        iconTile.addSubview(iconImageView)
-
-        // Headline (11pt heavy, white, 2 lines)
-        headlineLabel.font = .systemFont(ofSize: 11, weight: .heavy)
+        // Headline (12pt heavy, white, 2 lines)
+        headlineLabel.font = .systemFont(ofSize: 12, weight: .heavy)
         headlineLabel.textColor = .white
         headlineLabel.numberOfLines = 2
         headlineLabel.lineBreakMode = .byTruncatingTail
-        headlineLabel.translatesAutoresizingMaskIntoConstraints = false
-        adView.addSubview(headlineLabel)
+        headlineLabel.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
 
-        // Body (10pt regular, 62% white, 3 lines)
+        // Body (10pt regular, 62% white, 2 lines)
         bodyLabel.font = .systemFont(ofSize: 10, weight: .regular)
         bodyLabel.textColor = UIColor.white.withAlphaComponent(0.62)
-        bodyLabel.numberOfLines = 3
+        bodyLabel.numberOfLines = 2
         bodyLabel.lineBreakMode = .byTruncatingTail
-        bodyLabel.translatesAutoresizingMaskIntoConstraints = false
-        adView.addSubview(bodyLabel)
+        bodyLabel.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
 
-        // CTA button (orange pill)
+        // Advertiser (9pt, 45% white)
+        advertiserLabel.font = .systemFont(ofSize: 9, weight: .regular)
+        advertiserLabel.textColor = UIColor.white.withAlphaComponent(0.45)
+        advertiserLabel.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
+
+        // Text column — vertically centered between media and CTA
+        textStack.axis = .vertical
+        textStack.spacing = 2
+        textStack.alignment = .fill
+        textStack.translatesAutoresizingMaskIntoConstraints = false
+        textStack.addArrangedSubview(headlineLabel)
+        textStack.addArrangedSubview(bodyLabel)
+        textStack.addArrangedSubview(advertiserLabel)
+        adView.addSubview(textStack)
+
+        // CTA button (orange pill) — trailing edge, vertically centered
         ctaButton.translatesAutoresizingMaskIntoConstraints = false
         ctaButton.titleLabel?.font = .systemFont(ofSize: 10, weight: .bold)
         ctaButton.setTitleColor(.white, for: .normal)
         ctaButton.backgroundColor = UIColor(red: 0xF5/255, green: 0x82/255, blue: 0x1F/255, alpha: 1)
         ctaButton.layer.cornerRadius = 4
+        ctaButton.clipsToBounds = true
         ctaButton.isUserInteractionEnabled = false
         ctaButton.contentEdgeInsets = UIEdgeInsets(top: 4, left: 8, bottom: 4, right: 8)
+        ctaButton.setContentCompressionResistancePriority(.required, for: .horizontal)
+        ctaButton.setContentHuggingPriority(.required, for: .horizontal)
         adView.addSubview(ctaButton)
 
-        // Advertiser (9pt, 45% white)
-        advertiserLabel.font = .systemFont(ofSize: 9, weight: .regular)
-        advertiserLabel.textColor = UIColor.white.withAlphaComponent(0.45)
-        advertiserLabel.translatesAutoresizingMaskIntoConstraints = false
-        adView.addSubview(advertiserLabel)
-
-        // AdChoices container (bottom-right)
+        // AdChoices container — media's top-right corner
         adChoicesContainer.translatesAutoresizingMaskIntoConstraints = false
         adView.addSubview(adChoicesContainer)
 
@@ -160,56 +168,40 @@ final class NativeAdContainer: UIView {
             navyOverlay.leadingAnchor.constraint(equalTo: leadingAnchor),
             navyOverlay.trailingAnchor.constraint(equalTo: trailingAnchor),
 
-            // Ad view inset (matches SponsoredAffiliateCard padding)
-            adView.topAnchor.constraint(equalTo: topAnchor, constant: 10),
-            adView.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -10),
-            adView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12),
-            adView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12),
+            // Ad view fills the card edge-to-edge so every registered asset
+            // view lies fully inside the native ad view (validator requirement).
+            adView.topAnchor.constraint(equalTo: topAnchor),
+            adView.bottomAnchor.constraint(equalTo: bottomAnchor),
+            adView.leadingAnchor.constraint(equalTo: leadingAnchor),
+            adView.trailingAnchor.constraint(equalTo: trailingAnchor),
 
-            // Icon tile — top-pinned, fixed 52pt square, and bottom-bounded
-            // to the content area so it can never overflow (which previously
-            // left the content-area height ambiguous and collapsed the card).
-            iconTile.leadingAnchor.constraint(equalTo: adView.leadingAnchor),
-            iconTile.topAnchor.constraint(equalTo: adView.topAnchor),
-            iconTile.widthAnchor.constraint(equalToConstant: 52),
-            iconTile.heightAnchor.constraint(equalToConstant: 52),
-            iconTile.bottomAnchor.constraint(lessThanOrEqualTo: adView.bottomAnchor),
+            // Media — 56pt square, leading, vertically centered
+            mediaView.leadingAnchor.constraint(equalTo: adView.leadingAnchor, constant: 12),
+            mediaView.centerYAnchor.constraint(equalTo: adView.centerYAnchor),
+            mediaView.widthAnchor.constraint(equalToConstant: 56),
+            mediaView.heightAnchor.constraint(equalToConstant: 56),
 
-            iconImageView.centerXAnchor.constraint(equalTo: iconTile.centerXAnchor),
-            iconImageView.centerYAnchor.constraint(equalTo: iconTile.centerYAnchor),
-            iconImageView.widthAnchor.constraint(equalToConstant: 40),
-            iconImageView.heightAnchor.constraint(equalToConstant: 40),
+            // AdChoices — media's top-right corner
+            adChoicesContainer.trailingAnchor.constraint(equalTo: mediaView.trailingAnchor),
+            adChoicesContainer.topAnchor.constraint(equalTo: mediaView.topAnchor),
+            adChoicesContainer.widthAnchor.constraint(equalToConstant: 15),
+            adChoicesContainer.heightAnchor.constraint(equalToConstant: 15),
 
-            // Headline — right of icon, full remaining width
-            headlineLabel.leadingAnchor.constraint(equalTo: iconTile.trailingAnchor, constant: 10),
-            headlineLabel.topAnchor.constraint(equalTo: adView.topAnchor),
-            headlineLabel.trailingAnchor.constraint(equalTo: adView.trailingAnchor),
-
-            // Body — below headline
-            bodyLabel.leadingAnchor.constraint(equalTo: headlineLabel.leadingAnchor),
-            bodyLabel.topAnchor.constraint(equalTo: headlineLabel.bottomAnchor, constant: 3),
-            bodyLabel.trailingAnchor.constraint(equalTo: adView.trailingAnchor),
-
-            // Advertiser — below body
-            advertiserLabel.leadingAnchor.constraint(equalTo: headlineLabel.leadingAnchor),
-            advertiserLabel.topAnchor.constraint(equalTo: bodyLabel.bottomAnchor, constant: 3),
-            advertiserLabel.bottomAnchor.constraint(lessThanOrEqualTo: adView.bottomAnchor),
-
-            // CTA — bottom-right
-            ctaButton.trailingAnchor.constraint(equalTo: adView.trailingAnchor),
-            ctaButton.bottomAnchor.constraint(equalTo: adView.bottomAnchor),
+            // CTA — trailing edge, vertically centered
+            ctaButton.trailingAnchor.constraint(equalTo: adView.trailingAnchor, constant: -12),
+            ctaButton.centerYAnchor.constraint(equalTo: adView.centerYAnchor),
             ctaButton.heightAnchor.constraint(equalToConstant: 24),
-            ctaButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 60),
 
-            // AdChoices — bottom-right, above CTA
-            adChoicesContainer.trailingAnchor.constraint(equalTo: adView.trailingAnchor),
-            adChoicesContainer.bottomAnchor.constraint(equalTo: ctaButton.topAnchor, constant: -4),
-            adChoicesContainer.widthAnchor.constraint(equalToConstant: 16),
-            adChoicesContainer.heightAnchor.constraint(equalToConstant: 16),
+            // Text column — between media and CTA, vertically centered
+            textStack.leadingAnchor.constraint(equalTo: mediaView.trailingAnchor, constant: 10),
+            textStack.trailingAnchor.constraint(equalTo: ctaButton.leadingAnchor, constant: -8),
+            textStack.centerYAnchor.constraint(equalTo: adView.centerYAnchor),
+            textStack.topAnchor.constraint(greaterThanOrEqualTo: adView.topAnchor, constant: 8),
+            textStack.bottomAnchor.constraint(lessThanOrEqualTo: adView.bottomAnchor, constant: -8),
 
-            // Ad badge
-            adBadge.topAnchor.constraint(equalTo: topAnchor, constant: 3),
-            adBadge.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 3),
+            // Ad badge — top-left over the media corner
+            adBadge.topAnchor.constraint(equalTo: mediaView.topAnchor, constant: 2),
+            adBadge.leadingAnchor.constraint(equalTo: mediaView.leadingAnchor, constant: 2),
             adBadge.heightAnchor.constraint(equalToConstant: 14),
             adBadge.widthAnchor.constraint(greaterThanOrEqualToConstant: 18),
 
@@ -228,10 +220,13 @@ final class NativeAdContainer: UIView {
         // track impressions and handle clicks.
         adView.headlineView = headlineLabel
         adView.bodyView = bodyLabel
-        adView.iconView = iconImageView
+        adView.mediaView = mediaView
         adView.callToActionView = ctaButton
         adView.advertiserView = advertiserLabel
         adView.adChoicesView = adChoicesContainer
+
+        // Main media asset — shown through the MediaView (validator requirement).
+        mediaView.mediaContent = ad.mediaContent
 
         // Populate with ad assets
         headlineLabel.text = ad.headline
@@ -241,13 +236,6 @@ final class NativeAdContainer: UIView {
         advertiserLabel.isHidden = (ad.advertiser == nil)
         ctaButton.setTitle(ad.callToAction, for: .normal)
         ctaButton.isHidden = (ad.callToAction == nil)
-
-        if let icon = ad.icon?.image {
-            iconImageView.image = icon
-            iconImageView.isHidden = false
-        } else {
-            iconImageView.isHidden = true
-        }
 
         // Associate the ad — must be the last step, after all asset
         // views are populated and registered.
