@@ -176,6 +176,34 @@ final class ReelsViewModel {
     private let tmdb = TMDBService.shared
     private var hasLoaded: Bool = false
 
+    // MARK: Pagination state
+
+    /// The four sources that support background pagination for the endless feed.
+    private enum PagedSource: CaseIterable, Hashable {
+        case popularTV, trending, onTheAir, streamingMovies
+    }
+
+    /// Next TMDB page to fetch for every paginated source. Page 1 is consumed
+    /// by the initial `loadTrailers()` pass.
+    private var nextPage: Int = 2
+    /// Collapses concurrent load-more triggers into a single in-flight fetch.
+    private var isLoadingMore: Bool = false
+    /// Session-wide trailer-key dedup so no trailer ever appears twice.
+    private var seenTrailerKeys: Set<String> = []
+    /// Sources that returned a successful empty page — never fetched again.
+    private var exhaustedSources: Set<PagedSource> = []
+    /// Persistent ad-weaving counters so the Rakuten/AdMob cadence continues
+    /// seamlessly across appended batches instead of restarting per batch.
+    private var contentReelsSinceAd: Int = 0
+    private var adSlotCount: Int = 0
+    private var rakutenIndex: Int = 0
+
+    /// True once every paginated source has returned an empty page — the feed
+    /// can no longer grow, so the final reel is allowed to loop.
+    var allSourcesExhausted: Bool {
+        exhaustedSources.count == PagedSource.allCases.count
+    }
+
     /// TMDB provider IDs for the user's subscribed services, used to surface
     /// movies that are currently streaming (not just theatrical / upcoming).
     private let tmdbProviderIdMap: [String: Int] = [
@@ -197,6 +225,15 @@ final class ReelsViewModel {
     func loadTrailers() async {
         isLoading = true
         defer { isLoading = false }
+
+        // Fresh feed — reset pagination and ad-weaving state so a reload
+        // behaves exactly like a first launch.
+        nextPage = 2
+        seenTrailerKeys = []
+        exhaustedSources = []
+        contentReelsSinceAd = 0
+        adSlotCount = 0
+        rakutenIndex = 0
 
         // Fetch source lists in parallel — including movies currently on the
         // user's subscribed services so the feed includes streaming movies,
@@ -246,43 +283,11 @@ final class ReelsViewModel {
         combined += trendingItems + newItems + comingSoonItems
 
         // Deduplicate by trailer key so the same video doesn't appear twice.
-        var seen = Set<String>()
-        combined = combined.filter({ seen.insert($0.trailerKey).inserted })
+        // The seen set persists in the view model so later paginated batches
+        // keep deduplicating against everything already in the feed.
+        combined = combined.filter { seenTrailerKeys.insert($0.trailerKey).inserted }
 
-        let rakutenReels = makeRakutenAdReels()
-        var rakutenIndex = 0
-        var adSlotCount = 0
-        var finalFeed: [TrailerItem] = []
-
-        for (i, item) in combined.enumerated() {
-            finalFeed.append(item)
-
-            if (i + 1) % 3 == 0 {
-                adSlotCount += 1
-                if adSlotCount % 2 == 1 {
-                    // Odd ad slots (after reels 3, 9, 15...) → Rakuten
-                    if !rakutenReels.isEmpty {
-                        finalFeed.append(
-                            rakutenReels[rakutenIndex % rakutenReels.count]
-                        )
-                        rakutenIndex += 1
-                    }
-                } else {
-                    // Even ad slots (after reels 6, 12, 18...) → AdMob
-                    finalFeed.append(makeAdMobReel(slot: adSlotCount))
-                }
-            }
-        }
-
-        // Safety net: if the feed was too short to insert any
-        // Rakuten reel at all, append one now so it always appears.
-        let hasRakuten = finalFeed.contains {
-            $0.isSponsored && $0.platformId != "admob"
-        }
-        if !hasRakuten, let first = rakutenReels.first {
-            let insertAt = min(2, finalFeed.count)
-            finalFeed.insert(first, at: insertAt)
-        }
+        let finalFeed = weaveAds(into: combined, isInitialLoad: true)
 
         self.allTrailers = finalFeed
         self.hasLoaded = !finalFeed.isEmpty
@@ -292,6 +297,142 @@ final class ReelsViewModel {
         // Supabase whenever the user signs in. Nothing else to do here.
 
 
+    }
+
+    /// Weaves Rakuten and AdMob reels into a batch of content reels using the
+    /// persistent counters, preserving the launch cadence: an ad slot after
+    /// every third content reel, odd slots Rakuten (cycling the pool), even
+    /// slots AdMob. On the initial load only, inserts one Rakuten reel near
+    /// the top when none landed at all.
+    private func weaveAds(into batch: [TrailerItem], isInitialLoad: Bool) -> [TrailerItem] {
+        let rakutenReels = makeRakutenAdReels()
+        var out: [TrailerItem] = []
+
+        for item in batch {
+            out.append(item)
+            contentReelsSinceAd += 1
+
+            if contentReelsSinceAd == 3 {
+                contentReelsSinceAd = 0
+                adSlotCount += 1
+                if adSlotCount % 2 == 1 {
+                    // Odd ad slots (after reels 3, 9, 15...) → Rakuten
+                    if !rakutenReels.isEmpty {
+                        out.append(
+                            rakutenReels[rakutenIndex % rakutenReels.count]
+                        )
+                        rakutenIndex += 1
+                    }
+                } else {
+                    // Even ad slots (after reels 6, 12, 18...) → AdMob
+                    out.append(makeAdMobReel(slot: adSlotCount))
+                }
+            }
+        }
+
+        // Safety net (initial feed only): if the feed was too short to insert
+        // any Rakuten reel at all, insert one now so it always appears.
+        if isInitialLoad {
+            let hasRakuten = out.contains {
+                $0.isSponsored && $0.platformId != "admob"
+            }
+            if !hasRakuten, let first = rakutenReels.first {
+                let insertAt = min(2, out.count)
+                out.insert(first, at: insertAt)
+            }
+        }
+        return out
+    }
+
+    /// Fetches the next page of the four paginated sources (popular TV,
+    /// trending, on-the-air, big-five streaming movies), builds reels, drops
+    /// session-wide duplicates, weaves ads with the persistent counters, and
+    /// appends the batch to `allTrailers`. Concurrent triggers collapse into
+    /// one in-flight load via `isLoadingMore`. A failed request never marks a
+    /// source exhausted — only a successful empty result array does.
+    func loadMoreTrailers() async {
+        guard hasLoaded, !isLoadingMore, !allSourcesExhausted else { return }
+        isLoadingMore = true
+        defer { isLoadingMore = false }
+
+        let page = nextPage
+        let skipPopularTV = exhaustedSources.contains(.popularTV)
+        let skipTrending = exhaustedSources.contains(.trending)
+        let skipOnTheAir = exhaustedSources.contains(.onTheAir)
+        let skipMovies = exhaustedSources.contains(.streamingMovies)
+
+        // nil = fetch failed (or skipped); [] = successful empty page.
+        async let popularTVFetch: [TMDBResult]? = skipPopularTV ? nil : (try? tmdb.getPopularTV(page: page))
+        async let trendingFetch: [TMDBResult]? = skipTrending ? nil : (try? tmdb.getTrending(page: page))
+        async let onAirFetch: [TMDBResult]? = skipOnTheAir ? nil : (try? tmdb.getOnTheAir(page: page))
+        async let moviesFetch: ([TMDBResult], Bool)? = skipMovies ? nil : fetchMoreStreamingMovies(page: page)
+
+        let (popularTV, trending, onAir, movies) = await (popularTVFetch, trendingFetch, onAirFetch, moviesFetch)
+
+        var newItems: [TrailerItem] = []
+
+        if !skipPopularTV, let results = popularTV {
+            if results.isEmpty {
+                exhaustedSources.insert(.popularTV)
+            } else {
+                newItems += await buildItems(from: results, tab: .forYou)
+            }
+        }
+        if !skipTrending, let results = trending {
+            if results.isEmpty {
+                exhaustedSources.insert(.trending)
+            } else {
+                newItems += await buildItems(from: results, tab: .trending)
+            }
+        }
+        if !skipOnTheAir, let results = onAir {
+            if results.isEmpty {
+                exhaustedSources.insert(.onTheAir)
+            } else {
+                newItems += await buildItems(from: results, tab: .new)
+            }
+        }
+        if !skipMovies, let (movieResults, allSucceeded) = movies {
+            if movieResults.isEmpty {
+                if allSucceeded { exhaustedSources.insert(.streamingMovies) }
+            } else {
+                newItems += await buildItems(from: movieResults, tab: .forYou)
+            }
+        }
+
+        // Session-wide dedup — drop anything already in the feed.
+        let fresh = newItems.filter { seenTrailerKeys.insert($0.trailerKey).inserted }
+
+        if !fresh.isEmpty {
+            let woven = weaveAds(into: fresh, isInitialLoad: false)
+            allTrailers.append(contentsOf: woven)
+            print("[REELS] loadMore page=\(page): appended \(woven.count) reels (\(fresh.count) content, exhausted=\(exhaustedSources.count)/4)")
+        } else {
+            print("[REELS] loadMore page=\(page): appended 0 reels (exhausted=\(exhaustedSources.count)/4)")
+        }
+        nextPage += 1
+    }
+
+    /// Page-N popular movies for the big-five providers only (Netflix, Prime,
+    /// Disney+, Max, Hulu), deduplicated by TMDB id. Returns nil when every
+    /// provider request failed; the Bool reports whether all five succeeded
+    /// (required before the source may be marked exhausted).
+    private func fetchMoreStreamingMovies(page: Int) async -> ([TMDBResult], Bool)? {
+        let bigFive = [8, 9, 337, 1899, 15]
+        let fetched: [[TMDBResult]?] = await withTaskGroup(of: [TMDBResult]?.self) { group in
+            for pid in bigFive {
+                group.addTask { [tmdb] in
+                    try? await tmdb.getPopularMoviesOnService(tmdbProviderId: pid, page: page)
+                }
+            }
+            var all: [[TMDBResult]?] = []
+            for await results in group { all.append(results) }
+            return all
+        }
+        guard fetched.contains(where: { $0 != nil }) else { return nil }
+        var seen = Set<Int>()
+        let deduped = fetched.compactMap { $0 }.flatMap { $0 }.filter { seen.insert($0.id).inserted }
+        return (deduped, fetched.allSatisfy { $0 != nil })
     }
 
     private func mineResults(_ streams: [UserStream]) -> [TMDBResult] {
@@ -849,6 +990,11 @@ struct ReelsScreen: View {
                         }
                         _ = prevIdx
                         refreshSocialCounts(around: newValue)
+                        // Background pagination — top up the feed once the
+                        // user is within six reels of the end.
+                        if newValue >= vm.allTrailers.count - 6 {
+                            Task { await vm.loadMoreTrailers() }
+                        }
                     }
                 }
 
@@ -1050,12 +1196,26 @@ struct ReelsScreen: View {
                 activeTab: trailer.tab,
                 currentIndex: vm.currentIndex,
                 totalCount: vm.allTrailers.count,
-                onEnded: index == vm.allTrailers.count - 1
+                onEnded: (index == vm.allTrailers.count - 1 && vm.allSourcesExhausted)
                     ? nil
                     : {
                         guard index == vm.currentIndex else { return }
-                        withAnimation(.spring(response: 0.45, dampingFraction: 0.86)) {
-                            scrolledID = index + 1
+                        if vm.allTrailers.indices.contains(index + 1) {
+                            withAnimation(.spring(response: 0.45, dampingFraction: 0.86)) {
+                                scrolledID = index + 1
+                            }
+                        } else {
+                            // Reached the true last reel before pagination
+                            // caught up — load more, then advance only if the
+                            // next reel now exists and the user hasn't moved.
+                            Task {
+                                await vm.loadMoreTrailers()
+                                guard vm.currentIndex == index,
+                                      vm.allTrailers.indices.contains(index + 1) else { return }
+                                withAnimation(.spring(response: 0.45, dampingFraction: 0.86)) {
+                                    scrolledID = index + 1
+                                }
+                            }
                         }
                     },
                 isReminded: vm.isReminded(trailer),

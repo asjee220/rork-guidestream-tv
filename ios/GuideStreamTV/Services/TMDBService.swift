@@ -302,8 +302,8 @@ nonisolated struct TMDBService {
     }
 
     /// Currently-airing TV shows (used as the "New Episodes" fallback when Supabase is empty).
-    func getOnTheAir() async throws -> [TMDBResult] {
-        let urlString = "\(base)/tv/on_the_air?api_key=\(apiKey)&language=en-US&page=1"
+    func getOnTheAir(page: Int = 1) async throws -> [TMDBResult] {
+        let urlString = "\(base)/tv/on_the_air?api_key=\(apiKey)&language=en-US&page=\(page)"
         let data = try await get(urlString)
         let env = try JSONDecoder().decode(TMDBTrendingEnvelope.self, from: data)
         return env.results.map { stamp($0, mediaType: "tv") }
@@ -352,8 +352,8 @@ nonisolated struct TMDBService {
     }
 
     /// Popular TV shows trending globally.
-    func getPopularTV() async throws -> [TMDBResult] {
-        let urlString = "\(base)/tv/popular?api_key=\(apiKey)&language=en-US&page=1"
+    func getPopularTV(page: Int = 1) async throws -> [TMDBResult] {
+        let urlString = "\(base)/tv/popular?api_key=\(apiKey)&language=en-US&page=\(page)"
         let data = try await get(urlString)
         let env = try JSONDecoder().decode(TMDBTrendingEnvelope.self, from: data)
         return env.results.map { stamp($0, mediaType: "tv") }
@@ -548,10 +548,10 @@ nonisolated struct TMDBService {
             }
     }
 
-    func getTrending() async throws -> [TMDBResult] {
+    func getTrending(page: Int = 1) async throws -> [TMDBResult] {
         // Use the mixed `all/week` endpoint so the trending pool contains
         // both popular shows AND movies — the hero carousel needs variety.
-        let urlString = "\(base)/trending/all/week?api_key=\(apiKey)&language=en-US"
+        let urlString = "\(base)/trending/all/week?api_key=\(apiKey)&language=en-US&page=\(page)"
         let data = try await get(urlString)
         let env = try JSONDecoder().decode(TMDBTrendingEnvelope.self, from: data)
         // Filter to tv + movie only (the `all` endpoint can also return people).
@@ -585,8 +585,8 @@ nonisolated struct TMDBService {
     /// Popular movies currently available on a specific streaming service,
     /// using TMDB's discover endpoint filtered to flat-rate + ad-supported
     /// titles available in the US. Mirrors `getPopularOnService` but for movies.
-    func getPopularMoviesOnService(tmdbProviderId: Int) async throws -> [TMDBResult] {
-        let urlString = "\(base)/discover/movie?api_key=\(apiKey)&language=en-US&sort_by=popularity.desc&watch_region=US&with_watch_providers=\(tmdbProviderId)&page=1"
+    func getPopularMoviesOnService(tmdbProviderId: Int, page: Int = 1) async throws -> [TMDBResult] {
+        let urlString = "\(base)/discover/movie?api_key=\(apiKey)&language=en-US&sort_by=popularity.desc&watch_region=US&with_watch_providers=\(tmdbProviderId)&page=\(page)"
         let data = try await get(urlString)
         let env = try JSONDecoder().decode(TMDBTrendingEnvelope.self, from: data)
         return env.results.map { stamp($0, mediaType: "movie") }
