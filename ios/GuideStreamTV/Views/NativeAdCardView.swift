@@ -36,7 +36,7 @@ struct NativeAdCardView: UIViewRepresentable {
 /// Container view that hosts the `GADNativeAdView` and all asset subviews,
 /// plus the "Ad" badge, dismiss button, and AdChoices marker. Laid out with
 /// AutoLayout so text of varying lengths clips gracefully.
-private final class NativeAdContainer: UIView {
+fileprivate final class NativeAdContainer: UIView {
 
     var onDismiss: (() -> Void)?
 
