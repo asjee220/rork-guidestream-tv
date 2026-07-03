@@ -13,6 +13,9 @@
 //
 
 import SwiftUI
+#if canImport(GoogleMobileAds) && !targetEnvironment(simulator)
+import GoogleMobileAds
+#endif
 
 struct SponsoredSlotView: View {
     let service: StreamingService?
