@@ -51,7 +51,7 @@ final class NativeAdContainer: UIView {
     private let advertiserLabel = UILabel()
     private let adBadge = UILabel()
     private let dismissButton = UIButton(type: .system)
-    private let adChoicesContainer = UIView()
+    private let adChoicesContainer = AdChoicesView()
 
     override init(frame: CGRect) {
         super.init(frame: frame)
