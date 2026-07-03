@@ -93,6 +93,27 @@ final class AuthViewModel {
     /// authenticated users and guests (returns "guest" fallback).
     var currentUserId: String { currentUser?.id.uuidString ?? "guest" }
 
+    /// Returns `true` when the user subscribes to the streaming service
+    /// identified by `name`. Uses the same brand-key matching logic that
+    /// was previously duplicated inside `ShowDetailScreen`.
+    func subscribesToService(named name: String) -> Bool {
+        let key = name.lowercased()
+        let owned = self.selectedServices
+        return owned.contains { svc in
+            let s = svc.lowercased()
+            if key.contains("netflix") { return s.contains("netflix") }
+            if key.contains("hbo") || key.contains("max") { return s.contains("max") || s.contains("hbo") }
+            if key.contains("hulu") { return s.contains("hulu") }
+            if key.contains("disney") { return s.contains("disney") }
+            if key.contains("apple") { return s.contains("apple") }
+            if key.contains("prime") || key.contains("amazon") { return s.contains("amazon") || s.contains("prime") }
+            if key.contains("paramount") { return s.contains("paramount") }
+            if key.contains("peacock") { return s.contains("peacock") }
+            if key.contains("youtube") { return s.contains("youtube") }
+            return s.contains(key) || key.contains(s)
+        }
+    }
+
     private var currentNonce: String?
 
     /// Bootstrap from any persisted session (Supabase persists in Keychain by default).

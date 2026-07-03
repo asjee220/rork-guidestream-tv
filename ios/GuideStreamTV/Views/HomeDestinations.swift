@@ -176,6 +176,26 @@ struct EpisodeDetailSheet: View {
         return "Tap Watch on \(whereToWatchLabel) to open this title in the streaming app."
     }
 
+    /// `true` when the resolved source is a paid subscription the user
+    /// does not have — drives the "Get" label on the watch CTA.
+    private var requiresGet: Bool {
+        guard let source = resolvedSource,
+              source.type.lowercased() == "sub" else { return false }
+        return !AuthViewModel.shared.subscribesToService(named: source.name)
+    }
+
+    /// Availability helper caption shown below the watch CTA. Returns
+    /// `nil` (no view rendered) for subscribed, unknown, or unresolved types.
+    private var availabilityCaption: String? {
+        guard let source = resolvedSource else { return nil }
+        let type = source.type.lowercased()
+        let name = gsDisplayName(for: source.name)
+        if type == "free" { return "Free on \(name)" }
+        if type == "tve" { return "Available on \(name) with a TV provider" }
+        if type == "sub" { return AuthViewModel.shared.subscribesToService(named: source.name) ? nil : "Requires a \(name) subscription" }
+        return nil
+    }
+
     /// `true` when we're a show (or anything without explicit episode info).
     /// Drives both the Watchmode lookup (`tmdb_tv_id` vs `tmdb_movie_id`) and
     /// the Roku ECP `MediaType` parameter ("series" vs "movie").
@@ -236,6 +256,13 @@ struct EpisodeDetailSheet: View {
                     .padding(.horizontal, 20)
                     .padding(.top, 22)
 
+                if let caption = availabilityCaption {
+                    Text(caption)
+                        .scaledFont(size: 13)
+                        .foregroundStyle(Color.white.opacity(0.5))
+                        .padding(.top, 6)
+                        .padding(.horizontal, 20)
+                }
 
                 secondaryPillRow
                     .padding(.horizontal, 20)
@@ -915,13 +942,13 @@ struct EpisodeDetailSheet: View {
                         .tint(.white)
                 }
                 if let ctx = episodeContext, !episodeSourceUnavailable {
-                    Text("Watch S:\(ctx.seasonNum) EP:\(ctx.episodeNum)")
+                    Text(requiresGet ? "Get S:\(ctx.seasonNum) EP:\(ctx.episodeNum)" : "Watch S:\(ctx.seasonNum) EP:\(ctx.episodeNum)")
                         .scaledFont(size: 15, weight: .semibold)
                         .lineLimit(1)
                 } else {
                     Text(resolvedSource == nil && isResolvingSource
                          ? "Finding service…"
-                         : "Watch on")
+                         : (requiresGet ? "Get on" : "Watch on"))
                         .scaledFont(size: 17, weight: .semibold)
                         .lineLimit(1)
                 }

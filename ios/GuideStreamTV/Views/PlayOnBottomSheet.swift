@@ -60,7 +60,15 @@ struct PlayOnBottomSheet: View {
     private let likeCount: String = "2.4K"
     private let commentCount: String = "183"
     private let fallbackAboutText: String = "Tap the watch button to open this title in the streaming app."
-    private let availabilityLabel: String = "Available with subscription"
+    private var availabilityLabel: String? {
+        guard let source = resolvedSource else { return nil }
+        let type = source.type.lowercased()
+        let name = gsDisplayName(for: source.name)
+        if type == "free" { return "Free on \(name)" }
+        if type == "tve" { return "Available on \(name) with a TV provider" }
+        if type == "sub" { return AuthViewModel.shared.subscribesToService(named: source.name) ? nil : "Requires a \(name) subscription" }
+        return nil
+    }
     private let watchCTAColor: Color = Color.orange
 
     @State private var isLiked: Bool = false
@@ -89,6 +97,14 @@ struct PlayOnBottomSheet: View {
     /// to hide platform chips and CTAs when no service is available rather
     /// than rendering a meaningless "Streaming" placeholder.
     private var hasResolvedPlatform: Bool { resolvedSource?.name != nil }
+
+    /// `true` when the resolved source is a paid subscription the user
+    /// does not have — drives the "Get" label on the watch CTA.
+    private var requiresGet: Bool {
+        guard let source = resolvedSource,
+              source.type.lowercased() == "sub" else { return false }
+        return !AuthViewModel.shared.subscribesToService(named: source.name)
+    }
 
     private var whereToWatchLabel: String {
         if let name = resolvedSource?.name { return gsDisplayName(for: name) }
@@ -594,10 +610,12 @@ struct PlayOnBottomSheet: View {
                     }
                 }
 
-                Text(availabilityLabel)
-                    .scaledFont(size: 13)
-                    .foregroundStyle(Color.white.opacity(0.5))
-                    .padding(.top, 2)
+                if let availabilityLabel {
+                    Text(availabilityLabel)
+                        .scaledFont(size: 13)
+                        .foregroundStyle(Color.white.opacity(0.5))
+                        .padding(.top, 2)
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         } else {
@@ -705,13 +723,13 @@ struct PlayOnBottomSheet: View {
                         .tint(.white)
                 }
                 if let s = watchSeasonNum, let e = watchEpisodeNum, !episodeSourceUnavailable {
-                    Text("Watch S:\(s) EP:\(e)")
+                    Text(requiresGet ? "Get S:\(s) EP:\(e)" : "Watch S:\(s) EP:\(e)")
                         .scaledFont(size: 15, weight: .semibold)
                         .lineLimit(1)
                 } else {
                     Text(resolvedSource == nil && isResolvingSource
                          ? "Finding service…"
-                         : "Watch on")
+                         : (requiresGet ? "Get on" : "Watch on"))
                         .scaledFont(size: 17, weight: .semibold)
                         .lineLimit(1)
                 }

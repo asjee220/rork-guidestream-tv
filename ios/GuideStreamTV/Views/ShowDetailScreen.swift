@@ -882,21 +882,27 @@ struct ShowDetailScreen: View {
     /// during onboarding. Used to show a "Subscribed" badge on services
     /// the user already pays for.
     private func isSubscribedService(_ name: String) -> Bool {
-        let key = name.lowercased()
-        let owned = AuthViewModel.shared.selectedServices
-        return owned.contains { svc in
-            let s = svc.lowercased()
-            if key.contains("netflix") { return s.contains("netflix") }
-            if key.contains("hbo") || key.contains("max") { return s.contains("max") || s.contains("hbo") }
-            if key.contains("hulu") { return s.contains("hulu") }
-            if key.contains("disney") { return s.contains("disney") }
-            if key.contains("apple") { return s.contains("apple") }
-            if key.contains("prime") || key.contains("amazon") { return s.contains("amazon") || s.contains("prime") }
-            if key.contains("paramount") { return s.contains("paramount") }
-            if key.contains("peacock") { return s.contains("peacock") }
-            if key.contains("youtube") { return s.contains("youtube") }
-            return s.contains(key) || key.contains(s)
-        }
+        AuthViewModel.shared.subscribesToService(named: name)
+    }
+
+    /// `true` when the primary resolved source is a paid subscription the
+    /// user does not have — drives the "Get" label on the watch CTA.
+    private var primaryRequiresGet: Bool {
+        guard let source = vm.resolved.primarySource,
+              source.type.lowercased() == "sub" else { return false }
+        return !isSubscribedService(source.name)
+    }
+
+    /// Availability helper caption shown below the primary CTA. Returns
+    /// `nil` (no view rendered) for subscribed, unknown, or unresolved types.
+    private var availabilityCaption: String? {
+        guard let source = vm.resolved.primarySource else { return nil }
+        let type = source.type.lowercased()
+        let name = gsDisplayName(for: source.name)
+        if type == "free" { return "Free on \(name)" }
+        if type == "tve" { return "Available on \(name) with a TV provider" }
+        if type == "sub" { return isSubscribedService(source.name) ? nil : "Requires a \(name) subscription" }
+        return nil
     }
 
     /// Sorts subscribed services first so the user sees their own
@@ -1064,11 +1070,11 @@ struct ShowDetailScreen: View {
                                 .scaledFont(size: 15, weight: .bold)
 
                             if isTV, let ep = latestEpisode {
-                                Text("Watch S:\(ep.seasonNum) EP:\(ep.episodeNum)")
+                                Text(primaryRequiresGet ? "Get S:\(ep.seasonNum) EP:\(ep.episodeNum)" : "Watch S:\(ep.seasonNum) EP:\(ep.episodeNum)")
                                     .scaledFont(size: 15, weight: .bold)
                                     .lineLimit(1)
                             } else {
-                                Text("Watch on")
+                                Text(primaryRequiresGet ? "Get on" : "Watch on")
                                     .scaledFont(size: 15, weight: .bold)
                                     .lineLimit(1)
                             }
@@ -1102,6 +1108,13 @@ struct ShowDetailScreen: View {
                             .overlay(Circle().stroke(isSaved ? Color.orange : Color.white.opacity(0.14), lineWidth: 1))
                     }
                     .buttonStyle(.plain)
+                }
+
+                if let caption = availabilityCaption {
+                    Text(caption)
+                        .scaledFont(size: 13)
+                        .foregroundStyle(Color.white.opacity(0.5))
+                        .padding(.top, 6)
                 }
 
                 // Two outlined secondary buttons
