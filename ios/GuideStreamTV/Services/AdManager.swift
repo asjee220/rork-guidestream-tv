@@ -16,6 +16,7 @@ import UIKit
 
 #if canImport(GoogleMobileAds) && !targetEnvironment(simulator)
 import GoogleMobileAds
+import AppTrackingTransparency
 
 @MainActor
 final class AdManager: NSObject, ObservableObject, FullScreenContentDelegate, NativeAdLoaderDelegate, NativeAdDelegate {
@@ -31,11 +32,29 @@ final class AdManager: NSObject, ObservableObject, FullScreenContentDelegate, Na
     private var didStart = false
 
     /// Initialises the SDK once and preloads the interstitial + native pool.
-    /// Safe to call multiple times. No-op on simulator (the build excludes
-    /// this entire class body via the compile-time guard above).
+    /// On iOS 14+ requests App Tracking Transparency authorization first, then
+    /// initialises once the user responds (so the SDK can access IDFA). Ads
+    /// serve regardless of the user's choice — we gate on the request
+    /// *completing*, never on it being granted. Safe to call multiple times.
+    /// No-op on simulator (the build excludes this entire class body via the
+    /// compile-time guard above).
     func start() {
         guard !didStart else { return }
         didStart = true
+        if #available(iOS 14, *) {
+            ATTrackingManager.requestTrackingAuthorization { _ in
+                Task { @MainActor in
+                    self.startSDKAndPreload()
+                }
+            }
+        } else {
+            startSDKAndPreload()
+        }
+    }
+
+    /// Starts the Google Mobile Ads SDK and preloads the interstitial + native
+    /// pool. Runs exactly once, after ATT authorization has been resolved.
+    private func startSDKAndPreload() {
         MobileAds.shared.start { [weak self] _ in
             self?.loadInterstitial()
             self?.loadNativePool()
