@@ -35,6 +35,22 @@ struct ContentView: View {
                 BrandBackground()
             }
         }
+        // Registered on the root ZStack from first render regardless of auth
+        // state, so push taps are never dropped when HomeView is unmounted
+        // (other tab selected, cold launch, onboarding). The route is buffered
+        // in AppRouter and consumed by HomeView when it appears.
+        .onReceive(NotificationCenter.default.publisher(for: .guideStreamOpenTitle)) { notification in
+            guard let titleId = notification.userInfo?["titleId"] as? String, !titleId.isEmpty else { return }
+            let titleName = notification.userInfo?["titleName"] as? String
+            let posterUrl = notification.userInfo?["posterUrl"] as? String
+            let isTV = (notification.userInfo?["isTV"] as? Bool) ?? true
+            router.showTitle(PendingTitleRoute(
+                titleId: titleId,
+                titleName: titleName,
+                posterUrl: posterUrl,
+                isTV: isTV
+            ))
+        }
         .animation(.easeOut(duration: 0.3), value: auth.hasCompletedOnboarding)
         .animation(.easeOut(duration: 0.3), value: auth.isSignedIn)
         .environment(\.tabBarVisibility, tabBarVisibility)

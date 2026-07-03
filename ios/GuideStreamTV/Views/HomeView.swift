@@ -158,6 +158,8 @@ struct ComingToStreamingItem: Identifiable, Hashable {
 struct HomeView: View {
     var onOpenAgent: () -> Void = {}
 
+    @Environment(AppRouter.self) private var router
+
     @State private var widgetBannerDismissed: Bool = false
     @State private var path: [HomeRoute] = []
     @State private var detailSubject: DetailSubject?
@@ -1062,32 +1064,16 @@ struct HomeView: View {
             .toolbar(.hidden, for: .navigationBar)
         }
         .tint(Color.orange)
-        .onReceive(NotificationCenter.default.publisher(for: .guideStreamOpenTitle)) { notification in
-            guard let titleId = notification.userInfo?["titleId"] as? String else { return }
-            let kind = SourceKind.from(titleId: titleId)
-            if kind.isNonTMDB {
-                WatchIntentLogger.shared.log(
-                    eventType: .deeplinkFired,
-                    titleId: titleId,
-                    platformId: kind.sourceType,
-                    metadata: ["source": "push_notification", "kind": "went_live"]
-                )
-                creatorDetailTarget = CreatorDetailTarget(titleId: titleId, initialEpisode: nil)
-            } else if let tmdbId = Int(titleId) {
-                WatchIntentLogger.shared.log(
-                    eventType: .deeplinkFired,
-                    titleId: titleId,
-                    metadata: ["source": "push_notification"]
-                )
-                let show = PosterShow(
-                    title: "Show",
-                    meta: "",
-                    posterColors: HomeFallback.posterColors,
-                    symbol: "play.tv.fill",
-                    posterUrl: nil,
-                    tmdbId: tmdbId
-                )
-                detailSubject = .show(show)
+        .onChange(of: router.pendingTitleRoute) { _, route in
+            if let route {
+                router.pendingTitleRoute = nil
+                openPendingTitleRoute(route)
+            }
+        }
+        .onAppear {
+            if let route = router.pendingTitleRoute {
+                router.pendingTitleRoute = nil
+                openPendingTitleRoute(route)
             }
         }
         .task {
@@ -1123,6 +1109,40 @@ struct HomeView: View {
             await hydrateSourceImages()
         }
 
+    }
+
+    /// Routes a buffered push/deep-link title route to the correct detail sheet:
+    /// CreatorDetailView for prefixed (non-TMDB) ids, EpisodeDetailSheet for
+    /// bare TMDB ids — using the route's real name, poster, and isTV so movie
+    /// pushes open in movie mode instead of the old "Show" placeholder.
+    private func openPendingTitleRoute(_ route: PendingTitleRoute) {
+        let titleId = route.titleId
+        let kind = SourceKind.from(titleId: titleId)
+        if kind.isNonTMDB {
+            WatchIntentLogger.shared.log(
+                eventType: .deeplinkFired,
+                titleId: titleId,
+                platformId: kind.sourceType,
+                metadata: ["source": "push_notification", "kind": "went_live"]
+            )
+            creatorDetailTarget = CreatorDetailTarget(titleId: titleId, initialEpisode: nil)
+        } else if let tmdbId = Int(titleId) {
+            WatchIntentLogger.shared.log(
+                eventType: .deeplinkFired,
+                titleId: titleId,
+                metadata: ["source": "push_notification"]
+            )
+            let show = PosterShow(
+                title: route.titleName ?? "Show",
+                meta: "",
+                posterColors: HomeFallback.posterColors,
+                symbol: route.isTV ? "tv.fill" : "film.fill",
+                posterUrl: route.posterUrl,
+                tmdbId: tmdbId,
+                isTV: route.isTV
+            )
+            detailSubject = .show(show)
+        }
     }
 
     /// Clear the app icon badge and flag day-old new episodes as seen so the next launch doesn't re-pulse them.

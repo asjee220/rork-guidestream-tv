@@ -97,11 +97,52 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
             ]
         )
 
-        if let deepLink = userInfo["deep_link"] as? String,
-           let url = URL(string: deepLink) {
+        if let titleId, !titleId.isEmpty {
+            // Route in-app: post the same notification GuideStreamTVApp's
+            // onOpenURL handler posts, but enriched with the payload's
+            // display metadata so the detail sheet renders correctly.
+            let titleName = userInfo["title_name"] as? String
+            let posterUrl = userInfo["poster_url"] as? String
+            let isTV = Self.parseIsTV(from: userInfo)
+            await MainActor.run {
+                var info: [String: Any] = ["titleId": titleId, "isTV": isTV]
+                if let titleName, !titleName.isEmpty { info["titleName"] = titleName }
+                if let posterUrl, !posterUrl.isEmpty { info["posterUrl"] = posterUrl }
+                NotificationCenter.default.post(
+                    name: .guideStreamOpenTitle,
+                    object: nil,
+                    userInfo: info
+                )
+            }
+        } else if let deepLink = userInfo["deep_link"] as? String,
+                  let url = URL(string: deepLink) {
+            // Legacy fallback (no title_id): guidestream://show payloads and
+            // sports deep links continue on their existing unchanged path.
             await MainActor.run {
                 UIApplication.shared.open(url)
             }
         }
+    }
+
+    /// Tolerantly parse `is_tv` from an APNs payload. JSON bridging can deliver
+    /// Bool, NSNumber, Int, or the strings "true"/"false". Falls back to true
+    /// when absent; `media_type == "movie"` always means not-TV.
+    nonisolated private static func parseIsTV(from userInfo: [AnyHashable: Any]) -> Bool {
+        if let mediaType = userInfo["media_type"] as? String,
+           mediaType.lowercased() == "movie" {
+            return false
+        }
+        guard let raw = userInfo["is_tv"] else { return true }
+        if let b = raw as? Bool { return b }
+        if let n = raw as? NSNumber { return n.boolValue }
+        if let i = raw as? Int { return i != 0 }
+        if let s = raw as? String {
+            switch s.lowercased() {
+            case "true", "1": return true
+            case "false", "0": return false
+            default: return true
+            }
+        }
+        return true
     }
 }
