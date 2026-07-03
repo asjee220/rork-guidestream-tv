@@ -56,7 +56,7 @@ final class AdManager: NSObject, ObservableObject, FullScreenContentDelegate, Na
         #if DEBUG
         return "ca-app-pub-3940256099942544/4411468910"
         #else
-        return "ca-app-pub-6595855555549220/0000000000"
+        return "ca-app-pub-6595855555549220/5285695856"
         #endif
     }
 
@@ -64,7 +64,7 @@ final class AdManager: NSObject, ObservableObject, FullScreenContentDelegate, Na
         #if DEBUG
         return "ca-app-pub-3940256099942544/3986624511"
         #else
-        return "ca-app-pub-6595855555549220/0000000000"
+        return "ca-app-pub-6595855555549220/8047590567"
         #endif
     }
 
@@ -223,7 +223,7 @@ final class AdManager: NSObject, ObservableObject {
         #if DEBUG
         return "ca-app-pub-3940256099942544/4411468910"
         #else
-        return "ca-app-pub-6595855555549220/0000000000"
+        return "ca-app-pub-6595855555549220/5285695856"
         #endif
     }
 
@@ -231,7 +231,7 @@ final class AdManager: NSObject, ObservableObject {
         #if DEBUG
         return "ca-app-pub-3940256099942544/3986624511"
         #else
-        return "ca-app-pub-6595855555549220/0000000000"
+        return "ca-app-pub-6595855555549220/8047590567"
         #endif
     }
 
