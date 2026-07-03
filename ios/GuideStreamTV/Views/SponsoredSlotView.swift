@@ -99,12 +99,15 @@ struct SponsoredSlotView: View {
 
     // MARK: - Native ad fetch
 
-    /// Ensures a native load is in flight, then attempts to claim one ad from
-    /// the pool. Once an ad is claimed it is never replaced, so we bail early
-    /// if we already have one. On simulator or no-fill this stays nil and the
-    /// Rakuten fallback renders.
+    /// Boots the ad system (idempotent via start()'s didStart guard) so a
+    /// detail banner that is the first surface the user opens still initializes
+    /// the SDK, requests ATT, and loads the pool. Then ensures a native load is
+    /// in flight and attempts to claim one ad from the pool. Once an ad is
+    /// claimed it is never replaced, so we bail early if we already have one. On
+    /// simulator or no-fill this stays nil and the Rakuten fallback renders.
     private func fetchNativeAd() {
         guard currentNativeAd == nil else { return }
+        AdManager.shared.start()
         AdManager.shared.loadNativePool()
         if let ad = AdManager.shared.nextNativeAd() {
             currentNativeAd = ad
