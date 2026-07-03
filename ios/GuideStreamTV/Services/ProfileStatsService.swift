@@ -4,12 +4,10 @@
 //
 //  Aggregates the headline stats shown on the Profile screen pills:
 //  - servicesCount  → live from `AuthViewModel.selectedServices`
-//  - showsCount     → distinct `title_id`s from `watch_intent_events` — scoped
-//                     by user_id when authenticated, device_id for guests
-//  - hoursWatched   → actual watch duration summed from `metadata->>
-//                     'watch_duration_seconds'` across engagement events.
-//                     Falls back to an estimated 5-min-per-event average
-//                     for legacy rows that lack duration metadata.
+//  - showsCount     → server-computed via the `get_profile_stats` Postgres
+//                     function — scoped by user_id when authenticated,
+//                     device_id for guests
+//  - hoursWatched   → server-computed by the same RPC (numeric, one decimal)
 //  - devicesCount   → rows in `device_sessions` for the current user
 //
 //  Refreshes reactively via `Notification.Name.ProfileStatsNeedsRefresh` so
@@ -32,8 +30,8 @@ final class ProfileStatsService {
 
     /// Distinct shows the user has tapped, opened, or watched a trailer for.
     var showsCount: Int = UserDefaults.standard.integer(forKey: "gs.stats.showsCount")
-    /// Total hours of content actually consumed (sum of watch_duration_seconds
-    /// from metadata). Falls back to an estimate for legacy rows without duration.
+    /// Total hours of content actually consumed, computed server-side by the
+    /// `get_profile_stats` RPC (numeric, one decimal).
     var hoursWatched: Double = UserDefaults.standard.double(forKey: "gs.stats.hoursWatched")
     /// Number of devices the user is signed in on (1 for guests / offline).
     var devicesCount: Int = max(1, UserDefaults.standard.integer(forKey: "gs.stats.devicesCount"))
@@ -100,71 +98,35 @@ final class ProfileStatsService {
     }
 
     private func refreshEngagement() async {
-        let deviceId = DeviceIdentity.shared.deviceId
         let auth = AuthViewModel.shared
-        let userId = auth.currentUser?.id.uuidString
-        let isAuthenticated = auth.isAuthenticated
+
+        // The `get_profile_stats` function declares both parameters with null
+        // defaults, so only the key relevant to the current auth state is sent.
+        let params: [String: String]
+        if auth.isAuthenticated, let uid = auth.currentUser?.id.uuidString {
+            params = ["p_user_id": uid]
+        } else {
+            params = ["p_device_id": DeviceIdentity.shared.deviceId]
+        }
 
         do {
-            // Scoped query: user_id for authenticated users (captures all
-            // their devices), device_id for guests.
-            // `.eq()` must be called on the PostgrestFilterBuilder (after
-            // `.select()`) BEFORE `.limit()` which returns a TransformBuilder.
-            let baseQuery = SupabaseManager.shared.client
-                .from("watch_intent_events")
-                .select("title_id, event_type, metadata")
+            let rows: [ProfileStatsRow] = try await SupabaseManager.shared.client
+                .rpc("get_profile_stats", params: params)
+                .execute()
+                .value
 
-            let filteredQuery: PostgrestFilterBuilder
-            if isAuthenticated, let uid = userId {
-                filteredQuery = baseQuery.eq("user_id", value: uid)
-            } else {
-                filteredQuery = baseQuery.eq("device_id", value: deviceId)
+            guard let stats = rows.first else {
+                lastError = "get_profile_stats returned no rows"
+                print("[ProfileStats] engagement refresh failed: empty RPC result")
+                return
             }
 
-            let rows: [ProfileEventRow] = try await filteredQuery.limit(2000).execute().value
-
-            let engagementTypes: Set<String> = [
-                IntentEventType.cardTapped.rawValue,
-                IntentEventType.episodeDetailViewed.rawValue,
-                IntentEventType.continueWatching.rawValue,
-                IntentEventType.trailerWatched.rawValue,
-                IntentEventType.playOnDeviceChosen.rawValue,
-                IntentEventType.deeplinkFired.rawValue,
-                IntentEventType.trailerViewed.rawValue
-            ]
-
-            let engagementRows = rows.filter { engagementTypes.contains($0.event_type ?? "") }
-            let uniqueTitleIds = Set(engagementRows.compactMap { $0.title_id }.filter { !$0.isEmpty })
-
-            // Sum real watch durations from metadata. For legacy rows without
-            // watch_duration_seconds, fall back to 5-minute estimates.
-            var totalSeconds: Double = 0
-            for row in engagementRows {
-                if let meta = row.metadata,
-                   case .object(let dict) = meta,
-                   let durationJSON = dict["watch_duration_seconds"] {
-                    switch durationJSON {
-                    case .double(let d):
-                        totalSeconds += d
-                    case .integer(let i):
-                        totalSeconds += Double(i)
-                    case .string(let s):
-                        totalSeconds += Double(s) ?? 0
-                    default:
-                        totalSeconds += 300 // 5 min fallback for legacy rows
-                    }
-                } else {
-                    totalSeconds += 300 // 5 min fallback for legacy rows
-                }
-            }
-
-            self.showsCount = uniqueTitleIds.count
-            self.hoursWatched = (totalSeconds / 3600.0).roundedToDecimals(1)
+            self.showsCount = stats.shows_count
+            self.hoursWatched = stats.hours_watched
 
             UserDefaults.standard.set(showsCount, forKey: "gs.stats.showsCount")
             UserDefaults.standard.set(hoursWatched, forKey: "gs.stats.hoursWatched")
             lastError = nil
-            _ = userId // silence unused warning when guard-let shadows it
         } catch {
             lastError = error.localizedDescription
             print("[ProfileStats] engagement refresh failed: \(error.localizedDescription)")
@@ -196,21 +158,12 @@ final class ProfileStatsService {
 
 // MARK: - Decoding helpers
 
-nonisolated struct ProfileEventRow: Decodable, Sendable {
-    let title_id: String?
-    let event_type: String?
-    let metadata: AnyJSON?
+/// Single row returned by the `get_profile_stats` Postgres function.
+nonisolated private struct ProfileStatsRow: Decodable, Sendable {
+    let shows_count: Int
+    let hours_watched: Double
 }
 
 nonisolated struct DeviceCountRow: Decodable, Sendable {
     let device_id: String
-}
-
-// MARK: - Math
-
-nonisolated private extension Double {
-    func roundedToDecimals(_ places: Int) -> Double {
-        let multiplier = pow(10.0, Double(places))
-        return (self * multiplier).rounded() / multiplier
-    }
 }
