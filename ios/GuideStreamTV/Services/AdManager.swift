@@ -157,6 +157,11 @@ final class AdManager: NSObject, ObservableObject, FullScreenContentDelegate, Na
     private var nativePool: [NativeAd] = []
     private var nativeAdLoader: AdLoader?
 
+    /// Observable signal that changes whenever a native ad becomes available.
+    /// Views (e.g. SponsoredSlotView) observe this to re-attempt claiming an
+    /// ad from the pool once the async load completes.
+    @Published private(set) var nativePoolTick: Int = 0
+
     /// Returns a native ad from the pool (or nil if empty), and kicks off a
     /// background refill so the pool stays topped up.
     func nextNativeAd() -> NativeAd? {
@@ -188,6 +193,7 @@ final class AdManager: NSObject, ObservableObject, FullScreenContentDelegate, Na
         Task { @MainActor in
             nativeAd.delegate = self
             nativePool.append(nativeAd)
+            nativePoolTick += 1
         }
     }
 
@@ -265,6 +271,10 @@ final class AdManager: NSObject, ObservableObject {
     }
 
     // MARK: - Native ad pool (stubbed — always nil on simulator)
+
+    /// Observable signal mirrored from the real class so SponsoredSlotView
+    /// compiles against both branches. Never changes on the simulator/stub.
+    @Published private(set) var nativePoolTick: Int = 0
 
     func nextNativeAd() -> AnyObject? { nil }
     func loadNativePool() {}

@@ -34,6 +34,11 @@ struct SponsoredSlotView: View {
     /// Native ad pulled from the pool on appear. nil → Rakuten fallback.
     @State private var currentNativeAd: AnyObject? = nil
 
+    /// Observe the shared AdManager so the view re-evaluates when its native
+    /// pool fills (via nativePoolTick), letting a late-arriving ad upgrade the
+    /// Rakuten fallback to a native card.
+    @ObservedObject private var adManager = AdManager.shared
+
     var body: some View {
         Group {
             if let nativeAd = currentNativeAd {
@@ -52,6 +57,9 @@ struct SponsoredSlotView: View {
             }
         }
         .onAppear { fetchNativeAd() }
+        .onChange(of: adManager.nativePoolTick) { _, _ in
+            fetchNativeAd()
+        }
     }
 
     // MARK: - Native card
@@ -91,11 +99,14 @@ struct SponsoredSlotView: View {
 
     // MARK: - Native ad fetch
 
-    /// Pulls one native ad from the pool on appear. On simulator or no-fill
-    /// this stays nil and the Rakuten fallback renders.
+    /// Ensures a native load is in flight, then attempts to claim one ad from
+    /// the pool. Once an ad is claimed it is never replaced, so we bail early
+    /// if we already have one. On simulator or no-fill this stays nil and the
+    /// Rakuten fallback renders.
     private func fetchNativeAd() {
-        let ad = AdManager.shared.nextNativeAd()
-        if ad != nil {
+        guard currentNativeAd == nil else { return }
+        AdManager.shared.loadNativePool()
+        if let ad = AdManager.shared.nextNativeAd() {
             currentNativeAd = ad
         }
     }
