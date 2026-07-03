@@ -1034,10 +1034,19 @@ struct ShowDetailScreen: View {
                     Button(action: {
                         if let svc = vm.primaryService {
                             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                            // Best path: Watchmode episode-level sources
-                            // gave us a URL that deep-links directly to
-                            // the exact episode.
-                            if let epURL = episodeDeepLinkURL {
+                            // Gated "Get" path: route through Rakuten affiliate
+                            // so the tap is attributable and earns commission.
+                            if primaryRequiresGet,
+                               RakutenManager.shared.hasAffiliate(forServiceNamed: svc.name) {
+                                RakutenManager.shared.openAffiliateLink(
+                                    forServiceNamed: svc.name,
+                                    metadata: [
+                                        "source": "show_detail_get_cta",
+                                        "title": displayTitle,
+                                        "tmdb_id": resolvedTmdbId as Any
+                                    ]
+                                )
+                            } else if let epURL = episodeDeepLinkURL {
                                 StreamingDeepLinker.openResolvedURL(
                                     epURL,
                                     platform: gsDisplayName(for: svc.name),

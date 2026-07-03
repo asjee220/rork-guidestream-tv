@@ -87,6 +87,33 @@ final class RakutenManager {
         )
     ]
 
+    /// Resolves a streaming service display name or catalog id to the
+    /// affiliate dictionary key using brand-key contains matching.
+    func affiliateKey(forServiceNamed name: String) -> String? {
+        let key = name.lowercased()
+        if key.contains("netflix") { return "netflix" }
+        if key.contains("max") || key.contains("hbo") { return "hbo" }
+        if key.contains("hulu") { return "hulu" }
+        if key.contains("disney") { return "disney" }
+        if key.contains("apple") { return "apple" }
+        if key.contains("prime") || key.contains("amazon") { return "prime" }
+        if key.contains("paramount") { return "paramount" }
+        if key.contains("peacock") { return "peacock" }
+        return nil
+    }
+
+    /// Returns true when an affiliate entry exists for the given service.
+    func hasAffiliate(forServiceNamed name: String) -> Bool {
+        affiliateKey(forServiceNamed: name) != nil
+    }
+
+    /// Convenience wrapper that resolves the service name to an affiliate
+    /// key and delegates to `openAffiliateLink(serviceId:metadata:)`.
+    func openAffiliateLink(forServiceNamed name: String, metadata: [String: Any] = [:]) {
+        guard let key = affiliateKey(forServiceNamed: name) else { return }
+        openAffiliateLink(serviceId: key, metadata: metadata)
+    }
+
     func affiliate(for serviceId: String) -> RakutenAffiliate? {
         affiliates[serviceId.lowercased()]
     }

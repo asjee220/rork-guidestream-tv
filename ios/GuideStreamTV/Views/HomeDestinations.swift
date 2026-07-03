@@ -897,9 +897,20 @@ struct EpisodeDetailSheet: View {
         Button {
             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
 
-            // Best path: Watchmode episode-level sources gave us a
-            // URL that deep-links directly to the exact episode.
-            if let epURL = episodeDeepLinkURL {
+            // Gated "Get" path: route through Rakuten affiliate so the
+            // tap is attributable and earns commission. The Watch path
+            // (below) keeps the existing deep-link resolution.
+            if requiresGet,
+               RakutenManager.shared.hasAffiliate(forServiceNamed: resolvedSource?.name ?? "") {
+                RakutenManager.shared.openAffiliateLink(
+                    forServiceNamed: resolvedSource?.name ?? "",
+                    metadata: [
+                        "source": "episode_detail_get_cta",
+                        "title": title,
+                        "tmdb_id": tmdbId as Any
+                    ]
+                )
+            } else if let epURL = episodeDeepLinkURL {
                 StreamingDeepLinker.openResolvedURL(
                     epURL,
                     platform: whereToWatchLabel,

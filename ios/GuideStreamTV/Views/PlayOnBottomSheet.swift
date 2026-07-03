@@ -671,41 +671,57 @@ struct PlayOnBottomSheet: View {
     private var actualWatchButton: some View {
         Button {
             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-            WatchIntentLogger.shared.log(
-                eventType: .playOnDeviceChosen,
-                titleId: WatchIntentLogger.titleSlug(showTitle),
-                metadata: ["device_id": "watch-on-platform", "platform": whereToWatchLabel]
-            )
 
-            // Best path: Watchmode episode-level sources gave us a
-            // URL that deep-links directly to the exact episode.
-            if let epURL = episodeDeepLinkURL {
-                StreamingDeepLinker.openResolvedURL(
-                    epURL,
-                    platform: whereToWatchLabel,
-                    title: showTitle,
-                    tmdbId: tmdbId
-                )
-            } else if let pre = preResolvedDeepLinkURL {
-                let finalURL: URL = {
-                    if let s = watchSeasonNum, let e = watchEpisodeNum {
-                        return episodeDeeplinkURL(from: pre, season: s, episode: e)
-                    }
-                    return pre
-                }()
-                StreamingDeepLinker.openResolvedURL(
-                    finalURL,
-                    platform: whereToWatchLabel,
-                    title: showTitle,
-                    tmdbId: tmdbId
+            // Gated "Get" path: route through Rakuten affiliate so the
+            // tap is attributable and earns commission. The Watch path
+            // (below) keeps the existing deep-link + watch-intent log.
+            if requiresGet,
+               RakutenManager.shared.hasAffiliate(forServiceNamed: resolvedSource?.name ?? "") {
+                RakutenManager.shared.openAffiliateLink(
+                    forServiceNamed: resolvedSource?.name ?? "",
+                    metadata: [
+                        "source": "play_on_get_cta",
+                        "title": showTitle,
+                        "tmdb_id": tmdbId as Any
+                    ]
                 )
             } else {
-                StreamingDeepLinker.open(
-                    platform: whereToWatchLabel,
-                    title: showTitle,
-                    tmdbId: tmdbId,
-                    isTV: resolvedIsTV
+                WatchIntentLogger.shared.log(
+                    eventType: .playOnDeviceChosen,
+                    titleId: WatchIntentLogger.titleSlug(showTitle),
+                    metadata: ["device_id": "watch-on-platform", "platform": whereToWatchLabel]
                 )
+
+                // Best path: Watchmode episode-level sources gave us a
+                // URL that deep-links directly to the exact episode.
+                if let epURL = episodeDeepLinkURL {
+                    StreamingDeepLinker.openResolvedURL(
+                        epURL,
+                        platform: whereToWatchLabel,
+                        title: showTitle,
+                        tmdbId: tmdbId
+                    )
+                } else if let pre = preResolvedDeepLinkURL {
+                    let finalURL: URL = {
+                        if let s = watchSeasonNum, let e = watchEpisodeNum {
+                            return episodeDeeplinkURL(from: pre, season: s, episode: e)
+                        }
+                        return pre
+                    }()
+                    StreamingDeepLinker.openResolvedURL(
+                        finalURL,
+                        platform: whereToWatchLabel,
+                        title: showTitle,
+                        tmdbId: tmdbId
+                    )
+                } else {
+                    StreamingDeepLinker.open(
+                        platform: whereToWatchLabel,
+                        title: showTitle,
+                        tmdbId: tmdbId,
+                        isTV: resolvedIsTV
+                    )
+                }
             }
 
             // Defer the sheet dismiss by a beat so the URL open settles
