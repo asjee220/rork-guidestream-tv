@@ -11,6 +11,7 @@
 		XX50D61ED0BAE05FA2F8E9XX /* Supabase in Frameworks */ = {isa = PBXBuildFile; productRef = XX1C9FF110ABBCE8BF456CXX /* Supabase */; };
 		XXAC3EF89597191F3A09AEXX /* YouTubeKit in Frameworks */ = {isa = PBXBuildFile; productRef = XX45D5A1BA7EF4022DE2E3XX /* YouTubeKit */; };
 		XXCC7674DCAED9654ED19DXX /* GuideStreamWidget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = XX878FD47A39EC99354D39XX /* GuideStreamWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		ZZ30A1B2C3D4E5F6A7B8C9D0ZZ /* GoogleMobileAds in Frameworks */ = {isa = PBXBuildFile; productRef = ZZ20A1B2C3D4E5F6A7B8C9D0ZZ /* GoogleMobileAds */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -95,6 +96,7 @@
 				XX50D61ED0BAE05FA2F8E9XX /* Supabase in Frameworks */,
 				XXAC3EF89597191F3A09AEXX /* YouTubeKit in Frameworks */,
 				YY10A1B2C3D4E5F6A7B8C9D0YY,
+				ZZ30A1B2C3D4E5F6A7B8C9D0ZZ /* GoogleMobileAds in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -212,6 +214,7 @@
 				XX1C9FF110ABBCE8BF456CXX /* Supabase */,
 				XX45D5A1BA7EF4022DE2E3XX /* YouTubeKit */,
 				YY20A1B2C3D4E5F6A7B8C9D0YY /* YouTubeiOSPlayerHelper */,
+				ZZ20A1B2C3D4E5F6A7B8C9D0ZZ /* GoogleMobileAds */,
 			);
 			productName = GuideStreamTV;
 			productReference = 105FC57A2E9EAD3100EA8BCF /* GuideStreamTV.app */;
@@ -363,6 +366,7 @@
 				XX20EB7F6EA71E9F2E096CXX /* XCRemoteSwiftPackageReference "supabase-swift" */,
 				XXC440DD1AA4A7A1F8B8ADXX /* XCRemoteSwiftPackageReference "YouTubeKit" */,
 				YY30A1B2C3D4E5F6A7B8C9D0YY /* XCRemoteSwiftPackageReference "youtube-ios-player-helper" */,
+				ZZ10A1B2C3D4E5F6A7B8C9D0ZZ /* XCRemoteSwiftPackageReference "swift-package-manager-google-mobile-ads" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 105FC57B2E9EAD3100EA8BCF /* Products */;
@@ -1100,6 +1104,14 @@
 				minimumVersion = 1.0.4;
 			};
 		};
+		ZZ10A1B2C3D4E5F6A7B8C9D0ZZ /* XCRemoteSwiftPackageReference "swift-package-manager-google-mobile-ads" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/googleads/swift-package-manager-google-mobile-ads.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 13.0.0;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -1122,6 +1134,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = YY30A1B2C3D4E5F6A7B8C9D0YY /* XCRemoteSwiftPackageReference "youtube-ios-player-helper" */;
 			productName = YouTubeiOSPlayerHelper;
+		};
+		ZZ20A1B2C3D4E5F6A7B8C9D0ZZ /* GoogleMobileAds */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = ZZ10A1B2C3D4E5F6A7B8C9D0ZZ /* XCRemoteSwiftPackageReference "swift-package-manager-google-mobile-ads" */;
+			productName = GoogleMobileAds;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
