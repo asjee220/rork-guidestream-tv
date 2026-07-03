@@ -166,11 +166,14 @@ final class NativeAdContainer: UIView {
             adView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12),
             adView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12),
 
-            // Icon tile
+            // Icon tile — top-pinned, fixed 52pt square, and bottom-bounded
+            // to the content area so it can never overflow (which previously
+            // left the content-area height ambiguous and collapsed the card).
             iconTile.leadingAnchor.constraint(equalTo: adView.leadingAnchor),
             iconTile.topAnchor.constraint(equalTo: adView.topAnchor),
             iconTile.widthAnchor.constraint(equalToConstant: 52),
             iconTile.heightAnchor.constraint(equalToConstant: 52),
+            iconTile.bottomAnchor.constraint(lessThanOrEqualTo: adView.bottomAnchor),
 
             iconImageView.centerXAnchor.constraint(equalTo: iconTile.centerXAnchor),
             iconImageView.centerYAnchor.constraint(equalTo: iconTile.centerYAnchor),
