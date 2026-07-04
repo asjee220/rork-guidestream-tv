@@ -981,7 +981,7 @@ struct ReelsScreen: View {
 
                         // Tab pills — tap to jump to the first reel of each section.
                         ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: 18) {
+                            HStack(spacing: 13) {
                                 ForEach(ReelTab.allCases, id: \.self) { tab in
                                     TabPill(
                                         tab: tab,
@@ -1916,7 +1916,7 @@ private struct TabPill: View {
         Button(action: action) {
             VStack(spacing: 6) {
                 Text(tab.label)
-                    .scaledFont(size: 16, weight: active ? .bold : .medium)
+                    .scaledFont(size: 15, weight: active ? .bold : .medium)
                     .foregroundStyle(active ? .white : Color.white.opacity(0.40))
                 Rectangle()
                     .fill(active ? Color.white : .clear)
