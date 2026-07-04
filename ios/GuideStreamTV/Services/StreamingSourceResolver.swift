@@ -140,6 +140,12 @@ nonisolated struct StreamingSourceResolver {
         let overview = detail.plotOverview
         let sources = detail.sources ?? []
 
+        // Snapshot the user's subscribed services on the main actor. The
+        // resolver is a nonisolated struct, so we hop to the main actor to
+        // read AuthViewModel.shared.selectedServices. Set<String> is Sendable,
+        // so this is safe to pass into the pure selection logic below.
+        let subscribedServices = await MainActor.run { AuthViewModel.shared.selectedServices }
+
         if !sources.isEmpty {
             return selectFromSources(
                 sources: sources,
@@ -147,7 +153,8 @@ nonisolated struct StreamingSourceResolver {
                 providerName: fetched.providerName,
                 episodePlatformHint: episodePlatformHint,
                 overview: overview,
-                tmdbId: tmdbId
+                tmdbId: tmdbId,
+                subscribedServices: subscribedServices
             )
         }
 
@@ -207,7 +214,8 @@ nonisolated struct StreamingSourceResolver {
         providerName: String?,
         episodePlatformHint: String?,
         overview: String?,
-        tmdbId: Int
+        tmdbId: Int,
+        subscribedServices: Set<String>
     ) -> ResolvedStreaming {
         // Step 2 — US filter
         let usFiltered = sources.filter { ($0.region ?? "").uppercased() == "US" }
@@ -229,6 +237,14 @@ nonisolated struct StreamingSourceResolver {
         }
 
         // Priority selection, first match wins:
+        // (0) A watchable-tier source (sub/free/tve only — never rent or
+        //     purchase, even if the brand name matches) that the user is
+        //     subscribed to. Reuses `matches(sourceName:platform:)` against
+        //     the snapshot of `AuthViewModel.shared.selectedServices`. The
+        //     ranked list already orders sub > free > tve and non-reseller
+        //     before reseller, so among multiple subscribed matches the
+        //     best-ranked one wins deterministically. Falls through unchanged
+        //     when the user subscribes to none of the title's watchable sources.
         // (1) Episode platform hint match
         // (2) Network match among non-resellers — strongest TV signal.
         //     Broadcast nets (ABC, NBC, FOX, CBS) won't match streaming
@@ -237,7 +253,13 @@ nonisolated struct StreamingSourceResolver {
         // (4) First non-reseller
         // (5) First of any kind
         let chosen: WatchmodeSource?
-        if let hint = episodePlatformHint, !hint.isEmpty {
+        if let subscribed = ranked.first(where: { source in
+            let rank = sourceRank(source)
+            guard rank <= 2 else { return false } // sub/free/tve only
+            return subscribedServices.contains(where: { matches(sourceName: source.name, platform: $0) })
+        }) {
+            chosen = subscribed
+        } else if let hint = episodePlatformHint, !hint.isEmpty {
             chosen = ranked.first { matches(sourceName: $0.name, platform: hint) }
         } else if let net = networkName, !net.isEmpty {
             chosen = ranked.first {
