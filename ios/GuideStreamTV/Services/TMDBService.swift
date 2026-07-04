@@ -437,6 +437,36 @@ nonisolated struct TMDBService {
         return nil
     }
 
+    /// Returns the full pool of watchable streaming providers for a title in
+    /// the requested region (defaults to the device's resolved region), falling
+    /// back to US when the user's region has no entry. The pool is ordered
+    /// flatrate → ads → free (buy/rent excluded), preserving that order without
+    /// sorting or deduping — callers can pick their own preferred element.
+    /// Returns an empty array when no region entry exists, mirroring
+    /// `getTopWatchProvider` returning `nil`.
+    func getWatchProviders(
+        tmdbId: Int,
+        isTV: Bool,
+        region: String? = nil
+    ) async throws -> [TMDBWatchProvider] {
+        let kind = isTV ? "tv" : "movie"
+        let urlString = "\(base)/\(kind)/\(tmdbId)/watch/providers?api_key=\(apiKey)"
+        let data = try await get(urlString)
+        let env = try JSONDecoder().decode(TMDBProvidersEnvelope.self, from: data)
+        let resolvedRegion = (region ?? DeviceLocale.current().region).uppercased()
+        if let regionEntry = env.results[resolvedRegion] {
+            let pool = (regionEntry.flatrate ?? []) + (regionEntry.ads ?? []) + (regionEntry.free ?? [])
+            if !pool.isEmpty { return pool }
+        }
+        // Fallback to US — TMDB's most complete region — so callers always
+        // get a deeplink target when one exists somewhere in the world.
+        if resolvedRegion != "US", let usEntry = env.results["US"] {
+            let pool = (usEntry.flatrate ?? []) + (usEntry.ads ?? []) + (usEntry.free ?? [])
+            if !pool.isEmpty { return pool }
+        }
+        return []
+    }
+
     private static func bestProvider(in region: TMDBProviderRegion?) -> TMDBWatchProvider? {
         guard let region else { return nil }
         // Prefer subscription, then ad-supported, then free. Skip buy/rent — those

@@ -503,20 +503,52 @@ final class ReelsViewModel {
     }
 
     private func buildItems(from results: [TMDBResult], tab: ReelTab) async -> [TrailerItem] {
-        await withTaskGroup(of: TrailerItem?.self) { group in
+        // Snapshot the user's subscribed services once before the task group so
+        // every result in this batch sees a consistent view. Set<String> is
+        // Sendable, so capturing it into the task closures needs no actor hop.
+        let subscribedServiceIds = Set(AuthViewModel.shared.selectedServices.map { $0.lowercased() })
+        return await withTaskGroup(of: TrailerItem?.self) { group in
             for r in results {
-                group.addTask { [tmdb] in
+                group.addTask { [tmdb, subscribedServiceIds] in
                     // Only fetch the TV detail endpoint for TV shows — calling
                     // /tv/{movieId} for movies returns a slow 404 and blocks the
                     // task group for up to 12 seconds per movie result.
                     let detail: TMDBTVDetail? = r.isTV ? (try? await tmdb.getTVDetail(tmdbId: r.id)) : nil
                     async let keyTask: String? = try? (r.isTV ? tmdb.getTrailerKey(tmdbId: r.id) : tmdb.getMovieTrailerKey(tmdbId: r.id))
-                    async let providerTask: TMDBWatchProvider? = try? tmdb.getTopWatchProvider(tmdbId: r.id, isTV: r.isTV)
-                    let (key, provider) = await (keyTask, providerTask)
-                    guard let key, !key.isEmpty else { return nil }
+                    async let providerTask: [TMDBWatchProvider]? = try? tmdb.getWatchProviders(tmdbId: r.id, isTV: r.isTV)
+                    let (key, poolOptional) = await (keyTask, providerTask)
+                    let pool = poolOptional ?? []
+                    guard let key, !key.isEmpty, !pool.isEmpty else { return nil }
+
+                    // topProvider reproduces current behavior: the pool element
+                    // with the lowest displayPriority (nil treated as large).
+                    let topProvider = pool.min(by: {
+                        ($0.displayPriority ?? Int.max) < ($1.displayPriority ?? Int.max)
+                    })
+
+                    // subscribedProvider: a recognized provider the user
+                    // subscribes to. Apple is normalized so "apple" matches
+                    // whether the stored id is "apple" or "appletv". When
+                    // several qualify, the lowest displayPriority wins (which
+                    // mirrors the existing flatrate > ads > free ranking).
+                    let subscribedProvider: TMDBWatchProvider? = pool
+                        .filter { ReelPlatform.recognizedKey(for: $0.providerName) != nil }
+                        .filter { provider in
+                            guard let recognized = ReelPlatform.recognizedKey(for: provider.providerName) else { return false }
+                            if recognized == "apple" {
+                                return subscribedServiceIds.contains("apple")
+                                    || subscribedServiceIds.contains("appletv")
+                            }
+                            return subscribedServiceIds.contains(recognized)
+                        }
+                        .min(by: {
+                            ($0.displayPriority ?? Int.max) < ($1.displayPriority ?? Int.max)
+                        })
+
+                    let chosen = subscribedProvider ?? topProvider
                     // Reels must point at an app users can actually open — skip titles
                     // with no verified US streaming provider.
-                    guard let provider, let _ = ReelPlatform.recognizedKey(for: provider.providerName) else {
+                    guard let chosen, let _ = ReelPlatform.recognizedKey(for: chosen.providerName) else {
                         return nil
                     }
 
@@ -524,7 +556,7 @@ final class ReelsViewModel {
                     let overview = (detail?.overview?.isEmpty == false ? detail?.overview : r.overview) ?? ""
                     let year = detail?.year ?? r.year
                     let genreName = detail?.genreNames.first ?? "DRAMA"
-                    let plat = ReelPlatform.info(for: provider.providerName)
+                    let plat = ReelPlatform.info(for: chosen.providerName)
 
                     let runtimeText: String = {
                         if let m = detail?.runtimeMinutes, let seasons = detail?.numberOfSeasons {
