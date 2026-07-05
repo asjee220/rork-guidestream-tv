@@ -20,30 +20,10 @@ final class TabBarVisibility {
     private let threshold: CGFloat = 12
 
     func update(offset: CGFloat) {
-        let delta = offset - lastOffset
-        lastOffset = offset
-
-        // Always show at (or above) the top of content.
-        if offset <= 0 {
-            accumulatedDelta = 0
-            setVisible(true)
-            return
-        }
-
-        // Ignore tiny jitter.
-        if abs(delta) < 0.5 { return }
-
-        // Reset accumulator when direction changes.
-        if (delta > 0 && accumulatedDelta < 0) || (delta < 0 && accumulatedDelta > 0) {
-            accumulatedDelta = 0
-        }
-        accumulatedDelta += delta
-
-        if accumulatedDelta > threshold {
-            setVisible(false)
-        } else if accumulatedDelta < -threshold {
-            setVisible(true)
-        }
+        // Scroll-driven auto-hide is intentionally disabled; the bar stays
+        // visible at all scroll positions on normal tabs. Reels still hides
+        // via hide()/show()/reset(), which are unaffected.
+        return
     }
 
     private func setVisible(_ newValue: Bool) {

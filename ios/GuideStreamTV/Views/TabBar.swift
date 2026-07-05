@@ -59,7 +59,7 @@ struct FloatingTabBar: View {
             askButton
         }
         .padding(.horizontal, 8)
-        .padding(.bottom, 18)
+        .padding(.bottom, 4)
         .onAppear {
             withAnimation(.easeInOut(duration: 1.55).repeatForever(autoreverses: true)) {
                 isGlowExpanded = true
