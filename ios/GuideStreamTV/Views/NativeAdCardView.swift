@@ -150,9 +150,9 @@ final class NativeAdContainer: UIView {
         // "Ad" attribution badge — a subview of adView (so the validator sees
         // it inside the native ad view) positioned at the top of the text
         // column, above the headline, clear of media/text/CTA/AdChoices.
-        adBadge.text = "AD"
-        adBadge.font = .systemFont(ofSize: 7, weight: .heavy)
-        adBadge.textColor = UIColor.white.withAlphaComponent(0.55)
+        adBadge.text = "Ad"
+        adBadge.font = .systemFont(ofSize: 9, weight: .bold)
+        adBadge.textColor = UIColor.white.withAlphaComponent(0.85)
         adBadge.backgroundColor = UIColor.black.withAlphaComponent(0.35)
         adBadge.layer.cornerRadius = 4
         adBadge.clipsToBounds = true
@@ -200,8 +200,8 @@ final class NativeAdContainer: UIView {
             // Containment clamps keep the asset fully inside adView (validator).
             adChoicesContainer.trailingAnchor.constraint(equalTo: adView.trailingAnchor, constant: -8),
             adChoicesContainer.topAnchor.constraint(equalTo: adView.topAnchor, constant: 8),
-            adChoicesContainer.widthAnchor.constraint(equalToConstant: 15),
-            adChoicesContainer.heightAnchor.constraint(equalToConstant: 15),
+            adChoicesContainer.widthAnchor.constraint(equalToConstant: 16),
+            adChoicesContainer.heightAnchor.constraint(equalToConstant: 16),
             adChoicesContainer.leadingAnchor.constraint(greaterThanOrEqualTo: adView.leadingAnchor, constant: 8),
             adChoicesContainer.bottomAnchor.constraint(lessThanOrEqualTo: adView.bottomAnchor, constant: -8),
 
@@ -228,8 +228,8 @@ final class NativeAdContainer: UIView {
             // Containment clamps keep the badge fully inside adView (validator).
             adBadge.topAnchor.constraint(equalTo: adView.topAnchor, constant: 10),
             adBadge.leadingAnchor.constraint(equalTo: textStack.leadingAnchor),
-            adBadge.heightAnchor.constraint(equalToConstant: 14),
-            adBadge.widthAnchor.constraint(greaterThanOrEqualToConstant: 18),
+            adBadge.heightAnchor.constraint(equalToConstant: 16),
+            adBadge.widthAnchor.constraint(greaterThanOrEqualToConstant: 20),
             adBadge.trailingAnchor.constraint(lessThanOrEqualTo: adView.trailingAnchor, constant: -8),
             adBadge.bottomAnchor.constraint(lessThanOrEqualTo: adView.bottomAnchor, constant: -8),
 
