@@ -57,7 +57,7 @@ struct SportsView: View {
     @State private var favorites = TeamFavoritesService.shared
     @State private var isEditingTeams: Bool = false
 
-    private let sports: [String] = ["All", "NBA", "NFL", "Soccer", "MLB", "UFC"]
+    private let sports: [String] = ["All", "NBA", "NBA Summer", "NFL", "Soccer", "MLB", "UFC"]
 
     private struct TeamChip: Hashable {
         let abbrev: String

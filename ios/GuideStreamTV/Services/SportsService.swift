@@ -53,6 +53,9 @@ final class SportsService {
 
     private let endpoints: [Endpoint] = [
         Endpoint(sport: "NBA",    path: "basketball/nba/scoreboard"),
+        Endpoint(sport: "NBA Summer", path: "basketball/nba-summer-las-vegas/scoreboard"),
+        Endpoint(sport: "NBA Summer", path: "basketball/nba-summer-utah/scoreboard"),
+        Endpoint(sport: "NBA Summer", path: "basketball/nba-summer-sacramento/scoreboard"),
         Endpoint(sport: "NFL",    path: "football/nfl/scoreboard"),
         Endpoint(sport: "Soccer", path: "soccer/eng.1/scoreboard"),
         Endpoint(sport: "Soccer", path: "soccer/fifa.world/scoreboard"),
