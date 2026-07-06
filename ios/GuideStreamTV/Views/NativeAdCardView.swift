@@ -78,7 +78,11 @@ final class NativeAdContainer: UIView {
 
         // GADNativeAdView — fills the card edge-to-edge so every registered
         // asset view lies fully inside the native ad view (validator requirement).
-        adView.translatesAutoresizingMaskIntoConstraints = false
+        // Manually framed (translatesAutoresizingMaskIntoConstraints = true) so
+        // layoutSubviews() can pin it to integral bounds — the AdMob validator's
+        // "assets outside native ad view" check is a known false-positive when the
+        // ad view or its asset frames land on sub-pixel point values.
+        adView.translatesAutoresizingMaskIntoConstraints = true
         adView.clipsToBounds = true
         addSubview(adView)
 
@@ -177,12 +181,9 @@ final class NativeAdContainer: UIView {
             navyOverlay.leadingAnchor.constraint(equalTo: leadingAnchor),
             navyOverlay.trailingAnchor.constraint(equalTo: trailingAnchor),
 
-            // Ad view fills the card edge-to-edge so every registered asset
-            // view lies fully inside the native ad view (validator requirement).
-            adView.topAnchor.constraint(equalTo: topAnchor),
-            adView.bottomAnchor.constraint(equalTo: bottomAnchor),
-            adView.leadingAnchor.constraint(equalTo: leadingAnchor),
-            adView.trailingAnchor.constraint(equalTo: trailingAnchor),
+            // Note: adView is manually framed in layoutSubviews() with integral
+            // bounds (see override below), so no Auto Layout pins are activated
+            // here. Asset constraints relative to adView remain unchanged.
 
             // Media — 120pt square, leading, vertically centered. Sized so the
             // validator's "media view too small for video" check passes.
@@ -268,6 +269,43 @@ final class NativeAdContainer: UIView {
         // Associate the ad — must be the last step, after all asset
         // views are populated and registered.
         adView.nativeAd = ad
+    }
+
+    // MARK: - Layout
+
+    /// Pixel-aligns `adView` and every registered asset to integral frame
+    /// rects so the AdMob native ad validator's "assets outside native ad
+    /// view" check (a known false-positive on sub-pixel frames) passes.
+    /// Purely a rounding pass — visually imperceptible. No setNeedsLayout /
+    /// setNeedsUpdateConstraints to avoid a layout loop.
+    override func layoutSubviews() {
+        super.layoutSubviews()
+
+        // Frame adView to fill the card with whole-number width/height.
+        adView.frame = CGRect(x: 0,
+                              y: 0,
+                              width: bounds.width.rounded(.down),
+                              height: bounds.height.rounded(.down))
+        adView.layoutIfNeeded()
+
+        // Snap every registered asset view to an integral rect strictly inside
+        // adView. Frames in adView's coordinate space:
+        for view in [mediaView, ctaButton, adChoicesContainer, adBadge, textStack] {
+            view.frame = integralRect(view.frame)
+        }
+        // Frames in textStack's coordinate space:
+        for view in [headlineLabel, bodyLabel, advertiserLabel] {
+            view.frame = integralRect(view.frame)
+        }
+    }
+
+    /// Rounds a rect's origin to the nearest whole point and floors its size,
+    /// yielding an integral-pixel frame that never exceeds the original.
+    private func integralRect(_ rect: CGRect) -> CGRect {
+        CGRect(x: rect.origin.x.rounded(),
+               y: rect.origin.y.rounded(),
+               width: rect.width.rounded(.down),
+               height: rect.height.rounded(.down))
     }
 
     // MARK: - Actions
