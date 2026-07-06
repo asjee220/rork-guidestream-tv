@@ -90,6 +90,7 @@ struct AskStreamSheet: View {
     @State private var selectedMatch: AgentTitleMatchModel? = nil
     @State private var auth = AuthViewModel.shared
     @State private var providerByResult: [Int: Platform] = [:]
+    @State private var isDictating: Bool = false
     @FocusState private var inputFocus: AskFocusField?
 
     private let suggestions: [String] = [
@@ -112,7 +113,7 @@ struct AskStreamSheet: View {
                     .animation(.easeOut(duration: 0.2), value: isOpen)
 
                 VStack(spacing: 0) {
-                    sheetContent(height: geo.size.height * 0.80)
+                    sheetContent(height: max(320, min(geo.size.height * 0.80, geo.size.height - keyboardHeight - geo.safeAreaInsets.top)))
                         .offset(y: sheetOffset)
                         .animation(.spring(response: 0.55, dampingFraction: 0.82), value: sheetOffset)
                     Color.clear.frame(height: keyboardHeight)
@@ -121,6 +122,7 @@ struct AskStreamSheet: View {
             }
         }
         .ignoresSafeArea(.container, edges: .bottom)
+        .ignoresSafeArea(.keyboard, edges: .bottom)
         .fullScreenCover(item: $selectedMatch) { match in
             ShowDetailScreen(
                 titleId: String(match.id),
@@ -142,6 +144,7 @@ struct AskStreamSheet: View {
                 sheetOffset = 1200
                 inputFocus = nil
                 keyboardHeight = 0
+                stopDictation()
                 searchTask?.cancel()
                 aiTask?.cancel()
                 StreamAgentService.shared.reset()
@@ -164,6 +167,10 @@ struct AskStreamSheet: View {
                 keyboardHeight = 0
             }
         }
+        .onReceive(
+            NotificationCenter.default.publisher(for: UIApplication.willResignActiveNotification),
+            perform: { _ in stopDictation() }
+        )
         .onReceive(
             NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification),
             perform: handleKeyboardShow
@@ -345,14 +352,21 @@ struct AskStreamSheet: View {
                 .onSubmit(submitQuery)
                 .focused($inputFocus, equals: .bar)
 
-            if query.isEmpty {
+            if query.isEmpty || isDictating {
                 Button {
-                    haptic(.light)
+                    toggleDictation()
                 } label: {
                     ZStack {
                         Circle()
-                            .fill(Color.orange)
-                        Image(systemName: "mic.fill")
+                            .fill(isDictating ? Color.red : Color.orange)
+                            .scaleEffect(isDictating ? 1.08 : 1.0)
+                            .animation(
+                                isDictating
+                                    ? .easeInOut(duration: 0.7).repeatForever(autoreverses: true)
+                                    : .easeOut(duration: 0.2),
+                                value: isDictating
+                            )
+                        Image(systemName: isDictating ? "stop.fill" : "mic.fill")
                             .scaledFont(size: 14, weight: .semibold)
                             .foregroundStyle(.white)
                     }
@@ -875,6 +889,7 @@ struct AskStreamSheet: View {
     // MARK: - Actions
 
     private func submitQuery() {
+        stopDictation()
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         haptic(.medium)
@@ -1001,9 +1016,48 @@ struct AskStreamSheet: View {
         }
     }
 
+    // MARK: - Voice dictation
+
+    private func toggleDictation() {
+        if isDictating {
+            stopDictation()
+        } else {
+            startDictation()
+        }
+    }
+
+    private func startDictation() {
+        inputFocus = nil
+        Task {
+            let status = await SpeechInputService.shared.requestAuthorization()
+            guard status == .authorized else {
+                await MainActor.run { haptic(.light) }
+                return
+            }
+            let started = SpeechInputService.shared.start { [self] partial in
+                query = partial
+            }
+            await MainActor.run {
+                if started {
+                    isDictating = true
+                    haptic(.light)
+                } else {
+                    haptic(.light)
+                }
+            }
+        }
+    }
+
+    private func stopDictation() {
+        guard isDictating else { return }
+        SpeechInputService.shared.stop()
+        isDictating = false
+    }
+
     private func close() {
         haptic(.light)
         inputFocus = nil
+        stopDictation()
         onClose()
     }
 

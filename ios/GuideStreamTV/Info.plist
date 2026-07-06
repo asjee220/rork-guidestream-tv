@@ -167,6 +167,12 @@
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>GuideStream uses your local network to find streaming devices (Apple TV, Roku, Google TV, Fire TV, Samsung) so you can send shows to them.</string>
 
+	<!-- ===== Voice dictation for the Stream Agent ===== -->
+	<key>NSMicrophoneUsageDescription</key>
+	<string>GuideStream uses the microphone so you can speak your search or question to the Stream Agent.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>GuideStream uses speech recognition to turn what you say into a search or question for the Stream Agent.</string>
+
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsLocalNetworking</key>
