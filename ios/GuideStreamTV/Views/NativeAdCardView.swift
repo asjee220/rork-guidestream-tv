@@ -81,8 +81,9 @@ final class NativeAdContainer: UIView {
         adView.translatesAutoresizingMaskIntoConstraints = false
         addSubview(adView)
 
-        // Media view (56pt square) — shows the ad's main image/video and is
-        // registered as adView.mediaView. Replaces the old icon tile.
+        // Media view (120pt square) — shows the ad's main image/video and is
+        // registered as adView.mediaView. Sized to 120x120 so the AdMob native
+        // ad validator's "media view too small for video" check passes.
         mediaView.translatesAutoresizingMaskIntoConstraints = false
         mediaView.backgroundColor = UIColor.white.withAlphaComponent(0.10)
         mediaView.contentMode = .scaleAspectFill
@@ -134,11 +135,14 @@ final class NativeAdContainer: UIView {
         ctaButton.setContentHuggingPriority(.required, for: .horizontal)
         adView.addSubview(ctaButton)
 
-        // AdChoices container — media's top-right corner
+        // AdChoices container — top-trailing corner of the ad view, clear of
+        // every other registered asset and unobscured so it stays tappable.
         adChoicesContainer.translatesAutoresizingMaskIntoConstraints = false
         adView.addSubview(adChoicesContainer)
 
-        // "Ad" badge (top-left, our own decoration)
+        // "Ad" attribution badge — a subview of adView (so the validator sees
+        // it inside the native ad view) positioned at the top of the text
+        // column, above the headline, clear of media/text/CTA/AdChoices.
         adBadge.text = "AD"
         adBadge.font = .systemFont(ofSize: 7, weight: .heavy)
         adBadge.textColor = UIColor.white.withAlphaComponent(0.55)
@@ -147,9 +151,11 @@ final class NativeAdContainer: UIView {
         adBadge.clipsToBounds = true
         adBadge.textAlignment = .center
         adBadge.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(adBadge)
+        adView.addSubview(adBadge)
 
-        // Dismiss X (top-right)
+        // Dismiss X — sits to the left of AdChoices in the top-trailing area so
+        // it never covers the AdChoices control. Decorative (not a registered
+        // asset), so it stays on the container view.
         dismissButton.setImage(UIImage(systemName: "xmark"), for: .normal)
         dismissButton.tintColor = UIColor.white.withAlphaComponent(0.40)
         dismissButton.translatesAutoresizingMaskIntoConstraints = false
@@ -175,15 +181,17 @@ final class NativeAdContainer: UIView {
             adView.leadingAnchor.constraint(equalTo: leadingAnchor),
             adView.trailingAnchor.constraint(equalTo: trailingAnchor),
 
-            // Media — 56pt square, leading, vertically centered
+            // Media — 120pt square, leading, vertically centered. Sized so the
+            // validator's "media view too small for video" check passes.
             mediaView.leadingAnchor.constraint(equalTo: adView.leadingAnchor, constant: 12),
             mediaView.centerYAnchor.constraint(equalTo: adView.centerYAnchor),
-            mediaView.widthAnchor.constraint(equalToConstant: 56),
-            mediaView.heightAnchor.constraint(equalToConstant: 56),
+            mediaView.widthAnchor.constraint(equalToConstant: 120),
+            mediaView.heightAnchor.constraint(equalToConstant: 120),
 
-            // AdChoices — media's top-right corner
-            adChoicesContainer.trailingAnchor.constraint(equalTo: mediaView.trailingAnchor),
-            adChoicesContainer.topAnchor.constraint(equalTo: mediaView.topAnchor),
+            // AdChoices — top-trailing corner of the ad view, clear of all
+            // other assets and unobscured so it stays tappable.
+            adChoicesContainer.trailingAnchor.constraint(equalTo: adView.trailingAnchor, constant: -8),
+            adChoicesContainer.topAnchor.constraint(equalTo: adView.topAnchor, constant: 8),
             adChoicesContainer.widthAnchor.constraint(equalToConstant: 15),
             adChoicesContainer.heightAnchor.constraint(equalToConstant: 15),
 
@@ -199,15 +207,17 @@ final class NativeAdContainer: UIView {
             textStack.topAnchor.constraint(greaterThanOrEqualTo: adView.topAnchor, constant: 8),
             textStack.bottomAnchor.constraint(lessThanOrEqualTo: adView.bottomAnchor, constant: -8),
 
-            // Ad badge — top-left over the media corner
-            adBadge.topAnchor.constraint(equalTo: mediaView.topAnchor, constant: 2),
-            adBadge.leadingAnchor.constraint(equalTo: mediaView.leadingAnchor, constant: 2),
+            // Ad attribution badge — top of the text-column region, above the
+            // headline, clear of media/text/CTA/AdChoices. Required attribution.
+            adBadge.topAnchor.constraint(equalTo: adView.topAnchor, constant: 10),
+            adBadge.leadingAnchor.constraint(equalTo: textStack.leadingAnchor),
             adBadge.heightAnchor.constraint(equalToConstant: 14),
             adBadge.widthAnchor.constraint(greaterThanOrEqualToConstant: 18),
 
-            // Dismiss
+            // Dismiss — immediately to the left of AdChoices, top of card, so it
+            // never covers the AdChoices control. Decorative (container view).
             dismissButton.topAnchor.constraint(equalTo: topAnchor, constant: 4),
-            dismissButton.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -4),
+            dismissButton.trailingAnchor.constraint(equalTo: adChoicesContainer.leadingAnchor, constant: -4),
             dismissButton.widthAnchor.constraint(equalToConstant: 28),
             dismissButton.heightAnchor.constraint(equalToConstant: 28),
         ])

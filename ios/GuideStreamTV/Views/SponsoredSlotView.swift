@@ -31,11 +31,12 @@ struct SponsoredSlotView: View {
     var adSource: String = "sponsored_slot"
     var compact: Bool = false
 
-    /// Fixed height for the native card. Sized to fully show the icon tile,
-    /// two-line headline, body, advertiser, CTA, Ad badge, AdChoices, and
-    /// dismiss control without clipping, while staying close to the full
-    /// SponsoredAffiliateCard height so the fallback→native upgrade is seamless.
-    private static let nativeCardHeight: CGFloat = 80
+    /// Fixed height for the native card. Sized to fully contain the 120pt
+    /// media square plus padding, the two-line headline, body, advertiser,
+    /// CTA, Ad attribution badge, AdChoices, and dismiss control without
+    /// clipping, while staying close to the full SponsoredAffiliateCard height
+    /// so the fallback→native upgrade is seamless.
+    private static let nativeCardHeight: CGFloat = 136
 
     /// Native ad pulled from the pool on appear. nil → Rakuten fallback.
     @State private var currentNativeAd: AnyObject? = nil
