@@ -884,16 +884,17 @@ enum DeviceModelMap {
 struct NotificationsSettingsView: View {
     @State private var auth = AuthViewModel.shared
     @State private var pushOn: Bool = AuthViewModel.shared.notifyPushEnabled
-    @State private var smsOn: Bool = AuthViewModel.shared.notifySMSEnabled
+    // SMS episode-recap opt-in disabled — kept for later re-enablement.
+    // @State private var smsOn: Bool = AuthViewModel.shared.notifySMSEnabled
     @State private var systemDenied: Bool = false
     /// Currently-synced timezone shown in the read-only row. Defaults to the
     /// live device identifier and is replaced with the persisted value from
     /// `users.timezone` once `loadTimezone()` resolves for signed-in users.
     @State private var timezone: String = TimeZone.current.identifier
-    @State private var phoneDraft: String = AuthViewModel.formatUSPhoneDisplay(AuthViewModel.shared.phoneNumber ?? "")
-    @State private var isSavingPhone: Bool = false
-    @State private var phoneSaved: Bool = false
-    @State private var phoneSaveFailed: Bool = false
+    // @State private var phoneDraft: String = AuthViewModel.formatUSPhoneDisplay(AuthViewModel.shared.phoneNumber ?? "")
+    // @State private var isSavingPhone: Bool = false
+    // @State private var phoneSaved: Bool = false
+    // @State private var phoneSaveFailed: Bool = false
 
     var body: some View {
         ZStack {
@@ -966,147 +967,148 @@ struct NotificationsSettingsView: View {
                         )
                     }
 
-                    ProfileCard {
-                        NotificationToggleRow(
-                            icon: "message.fill",
-                            iconTint: Color.blue,
-                            title: "Episode synopsis by text",
-                            subtitle: "Get a 1-line SMS recap before each episode releases",
-                            isOn: $smsOn,
-                            tint: Color.blue
-                        )
-                        .onChange(of: smsOn) { _, newValue in
-                            withAnimation(.easeInOut(duration: 0.28)) {
-                                auth.setNotificationPreferences(push: pushOn, sms: newValue)
-                            }
-                        }
-
-                        if smsOn {
-                            VStack(alignment: .leading, spacing: 10) {
-                                Text("Mobile number")
-                                    .scaledFont(size: 11, weight: .semibold)
-                                    .tracking(0.8)
-                                    .foregroundStyle(Color.textTertiary)
-
-                                HStack(spacing: 0) {
-                                    Text("+1")
-                                        .scaledFont(size: 15, weight: .medium)
-                                        .foregroundStyle(Color.textSecondary)
-                                        .padding(.leading, 14)
-                                    TextField("", text: $phoneDraft)
-                                        .keyboardType(.phonePad)
-                                        .textContentType(.telephoneNumber)
-                                        .textInputAutocapitalization(.never)
-                                        .scaledFont(size: 15, weight: .medium)
-                                        .foregroundStyle(.white)
-                                        .tint(Color.orange)
-                                        .padding(.leading, 4)
-                                        .padding(.vertical, 12)
-                                }
-                                .background(
-                                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                        .fill(Color.white.opacity(0.05))
-                                )
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                        .stroke(Color.white.opacity(0.08), lineWidth: 1)
-                                )
-                                .onChange(of: phoneDraft) { _, newValue in
-                                    phoneDraft = AuthViewModel.formatUSPhoneDisplay(newValue)
-                                    phoneSaved = false
-                                    phoneSaveFailed = false
-                                }
-
-                                if !phoneDraft.isEmpty && AuthViewModel.normalizeUSPhone(phoneDraft) == nil {
-                                    Text("Enter a valid 10-digit US mobile number.")
-                                        .scaledFont(size: 11)
-                                        .foregroundStyle(Color(red: 0.96, green: 0.32, blue: 0.32))
-                                }
-
-                                Text("We'll text recaps to this number. Reply STOP to opt out; msg & data rates may apply.")
-                                    .scaledFont(size: 11)
-                                    .foregroundStyle(Color.textTertiary)
-                                    .fixedSize(horizontal: false, vertical: true)
-
-                                Button(action: {
-                                    Task {
-                                        isSavingPhone = true
-                                        defer { isSavingPhone = false }
-                                        let ok = await auth.updatePhoneNumber(phoneDraft)
-                                        if ok {
-                                            UINotificationFeedbackGenerator().notificationOccurred(.success)
-                                            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                                                phoneSaved = true
-                                                phoneSaveFailed = false
-                                            }
-                                            try? await Task.sleep(for: .seconds(1.6))
-                                            withAnimation(.easeOut(duration: 0.25)) { phoneSaved = false }
-                                        } else {
-                                            UINotificationFeedbackGenerator().notificationOccurred(.error)
-                                            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                                                phoneSaveFailed = true
-                                                phoneSaved = false
-                                            }
-                                        }
-                                    }
-                                }) {
-                                    HStack(spacing: 6) {
-                                        if isSavingPhone {
-                                            ProgressView()
-                                                .progressViewStyle(.circular)
-                                                .tint(.white)
-                                        }
-                                        Text("Save number")
-                                            .scaledFont(size: 13, weight: .semibold)
-                                    }
-                                    .foregroundStyle(.white)
-                                    .frame(maxWidth: .infinity)
-                                    .frame(height: 40)
-                                    .background(
-                                        RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                            .fill(AuthViewModel.normalizeUSPhone(phoneDraft) != nil ? Color.blue : Color.blue.opacity(0.35))
-                                    )
-                                }
-                                .buttonStyle(.plain)
-                                .disabled(AuthViewModel.normalizeUSPhone(phoneDraft) == nil || isSavingPhone)
-
-                                if phoneSaved {
-                                    HStack(spacing: 8) {
-                                        Image(systemName: "checkmark.circle.fill")
-                                            .scaledFont(size: 13, weight: .semibold)
-                                        Text("Saved")
-                                            .scaledFont(size: 13, weight: .semibold)
-                                    }
-                                    .foregroundStyle(Color.green)
-                                    .padding(.horizontal, 14)
-                                    .padding(.vertical, 8)
-                                    .background(
-                                        Capsule().fill(Color.green.opacity(0.12))
-                                    )
-                                    .transition(.opacity)
-                                }
-
-                                if phoneSaveFailed {
-                                    HStack(spacing: 8) {
-                                        Image(systemName: "exclamationmark.triangle.fill")
-                                            .scaledFont(size: 13, weight: .semibold)
-                                        Text("Couldn't save — check your connection")
-                                            .scaledFont(size: 13, weight: .semibold)
-                                    }
-                                    .foregroundStyle(Color.red.opacity(0.9))
-                                    .padding(.horizontal, 14)
-                                    .padding(.vertical, 8)
-                                    .background(
-                                        Capsule().fill(Color.red.opacity(0.12))
-                                    )
-                                    .transition(.opacity)
-                                }
-                            }
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 14)
-                            .transition(.opacity.combined(with: .move(edge: .top)))
-                        }
-                    }
+                    // SMS episode-recap opt-in disabled — kept for later re-enablement.
+                    // ProfileCard {
+                    //     NotificationToggleRow(
+                    //         icon: "message.fill",
+                    //         iconTint: Color.blue,
+                    //         title: "Episode synopsis by text",
+                    //         subtitle: "Get a 1-line SMS recap before each episode releases",
+                    //         isOn: $smsOn,
+                    //         tint: Color.blue
+                    //     )
+                    //     .onChange(of: smsOn) { _, newValue in
+                    //         withAnimation(.easeInOut(duration: 0.28)) {
+                    //             auth.setNotificationPreferences(push: pushOn, sms: newValue)
+                    //         }
+                    //     }
+                    //
+                    //     if smsOn {
+                    //         VStack(alignment: .leading, spacing: 10) {
+                    //             Text("Mobile number")
+                    //                 .scaledFont(size: 11, weight: .semibold)
+                    //                 .tracking(0.8)
+                    //                 .foregroundStyle(Color.textTertiary)
+                    //
+                    //             HStack(spacing: 0) {
+                    //                 Text("+1")
+                    //                     .scaledFont(size: 15, weight: .medium)
+                    //                     .foregroundStyle(Color.textSecondary)
+                    //                     .padding(.leading, 14)
+                    //                 TextField("", text: $phoneDraft)
+                    //                     .keyboardType(.phonePad)
+                    //                     .textContentType(.telephoneNumber)
+                    //                     .textInputAutocapitalization(.never)
+                    //                     .scaledFont(size: 15, weight: .medium)
+                    //                     .foregroundStyle(.white)
+                    //                     .tint(Color.orange)
+                    //                     .padding(.leading, 4)
+                    //                     .padding(.vertical, 12)
+                    //             }
+                    //             .background(
+                    //                 RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    //                     .fill(Color.white.opacity(0.05))
+                    //             )
+                    //             .overlay(
+                    //                 RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    //                     .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                    //             )
+                    //             .onChange(of: phoneDraft) { _, newValue in
+                    //                 phoneDraft = AuthViewModel.formatUSPhoneDisplay(newValue)
+                    //                 phoneSaved = false
+                    //                 phoneSaveFailed = false
+                    //             }
+                    //
+                    //             if !phoneDraft.isEmpty && AuthViewModel.normalizeUSPhone(phoneDraft) == nil {
+                    //                 Text("Enter a valid 10-digit US mobile number.")
+                    //                     .scaledFont(size: 11)
+                    //                     .foregroundStyle(Color(red: 0.96, green: 0.32, blue: 0.32))
+                    //             }
+                    //
+                    //             Text("We'll text recaps to this number. Reply STOP to opt out; msg & data rates may apply.")
+                    //                 .scaledFont(size: 11)
+                    //                 .foregroundStyle(Color.textTertiary)
+                    //                 .fixedSize(horizontal: false, vertical: true)
+                    //
+                    //             Button(action: {
+                    //                 Task {
+                    //                     isSavingPhone = true
+                    //                     defer { isSavingPhone = false }
+                    //                     let ok = await auth.updatePhoneNumber(phoneDraft)
+                    //                     if ok {
+                    //                         UINotificationFeedbackGenerator().notificationOccurred(.success)
+                    //                         withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                    //                             phoneSaved = true
+                    //                             phoneSaveFailed = false
+                    //                         }
+                    //                         try? await Task.sleep(for: .seconds(1.6))
+                    //                         withAnimation(.easeOut(duration: 0.25)) { phoneSaved = false }
+                    //                     } else {
+                    //                         UINotificationFeedbackGenerator().notificationOccurred(.error)
+                    //                         withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                    //                             phoneSaveFailed = true
+                    //                             phoneSaved = false
+                    //                         }
+                    //                     }
+                    //                 }
+                    //             }) {
+                    //                 HStack(spacing: 6) {
+                    //                     if isSavingPhone {
+                    //                         ProgressView()
+                    //                             .progressViewStyle(.circular)
+                    //                             .tint(.white)
+                    //                     }
+                    //                     Text("Save number")
+                    //                         .scaledFont(size: 13, weight: .semibold)
+                    //                 }
+                    //                 .foregroundStyle(.white)
+                    //                 .frame(maxWidth: .infinity)
+                    //                 .frame(height: 40)
+                    //                 .background(
+                    //                     RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    //                         .fill(AuthViewModel.normalizeUSPhone(phoneDraft) != nil ? Color.blue : Color.blue.opacity(0.35))
+                    //                 )
+                    //             }
+                    //             .buttonStyle(.plain)
+                    //             .disabled(AuthViewModel.normalizeUSPhone(phoneDraft) == nil || isSavingPhone)
+                    //
+                    //             if phoneSaved {
+                    //                 HStack(spacing: 8) {
+                    //                     Image(systemName: "checkmark.circle.fill")
+                    //                         .scaledFont(size: 13, weight: .semibold)
+                    //                     Text("Saved")
+                    //                         .scaledFont(size: 13, weight: .semibold)
+                    //                 }
+                    //                 .foregroundStyle(Color.green)
+                    //                 .padding(.horizontal, 14)
+                    //                 .padding(.vertical, 8)
+                    //                 .background(
+                    //                     Capsule().fill(Color.green.opacity(0.12))
+                    //                 )
+                    //                 .transition(.opacity)
+                    //             }
+                    //
+                    //             if phoneSaveFailed {
+                    //                 HStack(spacing: 8) {
+                    //                     Image(systemName: "exclamationmark.triangle.fill")
+                    //                         .scaledFont(size: 13, weight: .semibold)
+                    //                     Text("Couldn't save — check your connection")
+                    //                         .scaledFont(size: 13, weight: .semibold)
+                    //                 }
+                    //                 .foregroundStyle(Color.red.opacity(0.9))
+                    //                 .padding(.horizontal, 14)
+                    //                 .padding(.vertical, 8)
+                    //                 .background(
+                    //                     Capsule().fill(Color.red.opacity(0.12))
+                    //                 )
+                    //                 .transition(.opacity)
+                    //             }
+                    //         }
+                    //         .padding(.horizontal, 16)
+                    //         .padding(.vertical, 14)
+                    //         .transition(.opacity.combined(with: .move(edge: .top)))
+                    //     }
+                    // }
 
                     ProfileCard {
                         ProfileRow(
@@ -1195,8 +1197,9 @@ struct NotificationsSettingsView: View {
     }
 
     private func handlePushToggle(_ newValue: Bool) {
+        // SMS episode-recap opt-in disabled — sms passed as false.
         guard newValue else {
-            auth.setNotificationPreferences(push: false, sms: smsOn)
+            auth.setNotificationPreferences(push: false, sms: false)
             return
         }
         Task { @MainActor in
@@ -1205,15 +1208,15 @@ struct NotificationsSettingsView: View {
                     .requestAuthorization(options: [.alert, .badge, .sound])
                 if granted {
                     UIApplication.shared.registerForRemoteNotifications()
-                    auth.setNotificationPreferences(push: true, sms: smsOn)
+                    auth.setNotificationPreferences(push: true, sms: false)
                 } else {
                     pushOn = false
                     systemDenied = true
-                    auth.setNotificationPreferences(push: false, sms: smsOn)
+                    auth.setNotificationPreferences(push: false, sms: false)
                 }
             } catch {
                 pushOn = false
-                auth.setNotificationPreferences(push: false, sms: smsOn)
+                auth.setNotificationPreferences(push: false, sms: false)
             }
         }
     }
