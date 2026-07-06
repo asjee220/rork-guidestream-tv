@@ -113,7 +113,7 @@ struct AskStreamSheet: View {
                     .animation(.easeOut(duration: 0.2), value: isOpen)
 
                 VStack(spacing: 0) {
-                    sheetContent(height: max(320, min(geo.size.height * 0.80, geo.size.height - keyboardHeight - geo.safeAreaInsets.top)))
+                    sheetContent(height: max(320, min(geo.size.height * 0.80, geo.size.height - keyboardHeight - geo.safeAreaInsets.top - 20)))
                         .offset(y: sheetOffset)
                         .animation(.spring(response: 0.55, dampingFraction: 0.82), value: sheetOffset)
                     Color.clear.frame(height: keyboardHeight)
