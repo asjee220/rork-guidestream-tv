@@ -53,12 +53,6 @@ final class NativeAdContainer: UIView {
     private let dismissButton = UIButton(type: .system)
     private let adChoicesContainer = AdChoicesView()
 
-    // MARK: - Diagnostics (temporary)
-    // On-screen diagnostic to identify which registered native-ad asset the
-    // AdMob validator considers outside the ad view. Removed once the culprit
-    // is found. Not wrapped in #if DEBUG so it is visible in TestFlight.
-    private let diagnosticLabel = UILabel()
-
     override init(frame: CGRect) {
         super.init(frame: frame)
         setupViews()
@@ -91,9 +85,11 @@ final class NativeAdContainer: UIView {
         // Media view (120pt square) — shows the ad's main image/video and is
         // registered as adView.mediaView. Sized to 120x120 so the AdMob native
         // ad validator's "media view too small for video" check passes.
+        // Aspect-fit so non-square creatives are letterboxed within the box
+        // and the media content never overflows the ad view (validator).
         mediaView.translatesAutoresizingMaskIntoConstraints = false
         mediaView.backgroundColor = UIColor.white.withAlphaComponent(0.10)
-        mediaView.contentMode = .scaleAspectFill
+        mediaView.contentMode = .scaleAspectFit
         mediaView.layer.cornerRadius = 8
         mediaView.layer.borderWidth = 0.5
         mediaView.layer.borderColor = UIColor.white.withAlphaComponent(0.12).cgColor
@@ -169,20 +165,6 @@ final class NativeAdContainer: UIView {
         dismissButton.addTarget(self, action: #selector(dismissTapped), for: .touchUpInside)
         addSubview(dismissButton)
 
-        // Diagnostic label — created once and added above adView so it is
-        // never clipped by the native ad view. Pinned to the top-center of the
-        // card. Hidden until layoutSubviews() detects an out-of-bounds asset.
-        diagnosticLabel.font = .systemFont(ofSize: 9, weight: .bold)
-        diagnosticLabel.textColor = .red
-        diagnosticLabel.backgroundColor = UIColor.black.withAlphaComponent(0.6)
-        diagnosticLabel.layer.cornerRadius = 4
-        diagnosticLabel.clipsToBounds = true
-        diagnosticLabel.textAlignment = .center
-        diagnosticLabel.numberOfLines = 1
-        diagnosticLabel.translatesAutoresizingMaskIntoConstraints = false
-        diagnosticLabel.isHidden = true
-        addSubview(diagnosticLabel)
-
         NSLayoutConstraint.activate([
             // Background fills container
             bgEffect.topAnchor.constraint(equalTo: topAnchor),
@@ -256,60 +238,7 @@ final class NativeAdContainer: UIView {
             dismissButton.trailingAnchor.constraint(equalTo: adChoicesContainer.leadingAnchor, constant: -4),
             dismissButton.widthAnchor.constraint(equalToConstant: 28),
             dismissButton.heightAnchor.constraint(equalToConstant: 28),
-
-            // Diagnostic label — top-center of the card, above adView.
-            diagnosticLabel.topAnchor.constraint(equalTo: topAnchor, constant: 2),
-            diagnosticLabel.centerXAnchor.constraint(equalTo: centerXAnchor),
-            diagnosticLabel.heightAnchor.constraint(greaterThanOrEqualToConstant: 14),
         ])
-    }
-
-    // MARK: - Diagnostics (temporary)
-
-    /// Temporary on-screen diagnostic that outlines (in red) any registered
-    /// native-ad asset whose frame escapes `adView` at runtime, and lists the
-    /// offender names in a small red "OOB:" label at the top of the card.
-    /// Purely additive instrumentation to find the validator's culprit.
-    override func layoutSubviews() {
-        super.layoutSubviews()
-
-        let assets: [(name: String, view: UIView)] = [
-            ("headline", headlineLabel),
-            ("body", bodyLabel),
-            ("media", mediaView),
-            ("cta", ctaButton),
-            ("advertiser", advertiserLabel),
-            ("adchoices", adChoicesContainer),
-        ]
-
-        var offenders: [String] = []
-        for (_, asset) in assets {
-            asset.layer.borderWidth = 0
-            asset.layer.borderColor = nil
-        }
-
-        let adBounds = adView.bounds
-        for (name, asset) in assets {
-            guard !asset.isHidden else { continue }
-            let rectInAd = adView.convert(asset.bounds, from: asset)
-            if !adBounds.contains(rectInAd) {
-                asset.layer.borderColor = UIColor.red.cgColor
-                asset.layer.borderWidth = 2
-                offenders.append(name)
-            }
-        }
-
-        if offenders.isEmpty {
-            diagnosticLabel.isHidden = true
-            diagnosticLabel.text = nil
-        } else {
-            diagnosticLabel.text = "OOB: " + offenders.joined(separator: ", ")
-            diagnosticLabel.sizeToFit()
-            let pad: CGFloat = 4
-            diagnosticLabel.frame.size.width += pad * 2
-            diagnosticLabel.frame.size.height += pad
-            diagnosticLabel.isHidden = false
-        }
     }
 
     // MARK: - Configure
