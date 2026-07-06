@@ -79,6 +79,7 @@ final class NativeAdContainer: UIView {
         // GADNativeAdView — fills the card edge-to-edge so every registered
         // asset view lies fully inside the native ad view (validator requirement).
         adView.translatesAutoresizingMaskIntoConstraints = false
+        adView.clipsToBounds = true
         addSubview(adView)
 
         // Media view (120pt square) — shows the ad's main image/video and is
@@ -183,36 +184,51 @@ final class NativeAdContainer: UIView {
 
             // Media — 120pt square, leading, vertically centered. Sized so the
             // validator's "media view too small for video" check passes.
+            // Containment clamps keep the asset fully inside adView (validator).
             mediaView.leadingAnchor.constraint(equalTo: adView.leadingAnchor, constant: 12),
             mediaView.centerYAnchor.constraint(equalTo: adView.centerYAnchor),
             mediaView.widthAnchor.constraint(equalToConstant: 120),
             mediaView.heightAnchor.constraint(equalToConstant: 120),
+            mediaView.topAnchor.constraint(greaterThanOrEqualTo: adView.topAnchor, constant: 8),
+            mediaView.bottomAnchor.constraint(lessThanOrEqualTo: adView.bottomAnchor, constant: -8),
 
             // AdChoices — top-trailing corner of the ad view, clear of all
             // other assets and unobscured so it stays tappable.
+            // Containment clamps keep the asset fully inside adView (validator).
             adChoicesContainer.trailingAnchor.constraint(equalTo: adView.trailingAnchor, constant: -8),
             adChoicesContainer.topAnchor.constraint(equalTo: adView.topAnchor, constant: 8),
             adChoicesContainer.widthAnchor.constraint(equalToConstant: 15),
             adChoicesContainer.heightAnchor.constraint(equalToConstant: 15),
+            adChoicesContainer.leadingAnchor.constraint(greaterThanOrEqualTo: adView.leadingAnchor, constant: 8),
+            adChoicesContainer.bottomAnchor.constraint(lessThanOrEqualTo: adView.bottomAnchor, constant: -8),
 
-            // CTA — trailing edge, vertically centered
+            // CTA — trailing edge, vertically centered.
+            // Containment clamps keep the asset fully inside adView (validator).
             ctaButton.trailingAnchor.constraint(equalTo: adView.trailingAnchor, constant: -12),
             ctaButton.centerYAnchor.constraint(equalTo: adView.centerYAnchor),
             ctaButton.heightAnchor.constraint(equalToConstant: 24),
+            ctaButton.topAnchor.constraint(greaterThanOrEqualTo: adView.topAnchor, constant: 8),
+            ctaButton.bottomAnchor.constraint(lessThanOrEqualTo: adView.bottomAnchor, constant: -8),
+            ctaButton.leadingAnchor.constraint(greaterThanOrEqualTo: adView.leadingAnchor, constant: 8),
 
-            // Text column — between media and CTA, vertically centered
+            // Text column — between media and CTA, vertically centered.
+            // Trailing containment clamp keeps the stack inside adView (validator).
             textStack.leadingAnchor.constraint(equalTo: mediaView.trailingAnchor, constant: 10),
             textStack.trailingAnchor.constraint(equalTo: ctaButton.leadingAnchor, constant: -8),
             textStack.centerYAnchor.constraint(equalTo: adView.centerYAnchor),
             textStack.topAnchor.constraint(greaterThanOrEqualTo: adView.topAnchor, constant: 8),
             textStack.bottomAnchor.constraint(lessThanOrEqualTo: adView.bottomAnchor, constant: -8),
+            textStack.trailingAnchor.constraint(lessThanOrEqualTo: adView.trailingAnchor, constant: -8),
 
             // Ad attribution badge — top of the text-column region, above the
             // headline, clear of media/text/CTA/AdChoices. Required attribution.
+            // Containment clamps keep the badge fully inside adView (validator).
             adBadge.topAnchor.constraint(equalTo: adView.topAnchor, constant: 10),
             adBadge.leadingAnchor.constraint(equalTo: textStack.leadingAnchor),
             adBadge.heightAnchor.constraint(equalToConstant: 14),
             adBadge.widthAnchor.constraint(greaterThanOrEqualToConstant: 18),
+            adBadge.trailingAnchor.constraint(lessThanOrEqualTo: adView.trailingAnchor, constant: -8),
+            adBadge.bottomAnchor.constraint(lessThanOrEqualTo: adView.bottomAnchor, constant: -8),
 
             // Dismiss — immediately to the left of AdChoices, top of card, so it
             // never covers the AdChoices control. Decorative (container view).
