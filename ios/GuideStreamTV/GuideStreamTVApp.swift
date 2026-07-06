@@ -23,6 +23,12 @@ struct GuideStreamTVApp: App {
                         // data that may have been written while the app was
                         // backgrounded (or if the widget missed a previous reload).
                         WidgetCenter.shared.reloadTimelines(ofKind: "GuideStreamWidget")
+                        // Re-register for remote notifications on every
+                        // activation (cold launch + each return to foreground)
+                        // so iOS-rotated APNs tokens get refreshed in
+                        // `push_tokens`. Idempotent — only fires when the user
+                        // already granted permission; never shows the dialog.
+                        Task { await PushTokenManager.shared.refreshRegistrationIfAuthorized() }
                     }
                 }
                 .onOpenURL { url in

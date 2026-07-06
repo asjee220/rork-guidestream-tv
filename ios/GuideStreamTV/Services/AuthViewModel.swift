@@ -125,6 +125,9 @@ final class AuthViewModel {
             // Pick up any guest-era watch list rows and refresh from Supabase
             // so the list is in sync on cold launch.
             Task { await StreamsViewModel.shared.syncLocalToSupabase() }
+            // A token may have arrived from APNs before session restore
+            // completed — persist it now that we have an authenticated user.
+            await PushTokenManager.shared.flushPendingToken()
         } catch {
             self.currentUser = nil
         }
@@ -555,6 +558,7 @@ final class AuthViewModel {
                 // Promote any guest-era watch list rows and push token to the new user.
                 Task { await StreamsViewModel.shared.syncLocalToSupabase() }
                 Task { await PushTokenManager.shared.resaveCachedToken() }
+                await PushTokenManager.shared.flushPendingToken()
             } catch {
                 lastError = error.localizedDescription
                 print("[Auth ERROR] signInWithIdToken (apple) failed: \(error.localizedDescription)")
@@ -769,6 +773,7 @@ final class AuthViewModel {
                 setUserTimezone()
                 Task { await StreamsViewModel.shared.syncLocalToSupabase() }
                 Task { await PushTokenManager.shared.resaveCachedToken() }
+                await PushTokenManager.shared.flushPendingToken()
                 return true
             }
             // Session is nil — Supabase requires email confirmation. The user
@@ -848,6 +853,7 @@ final class AuthViewModel {
             setUserTimezone()
             Task { await StreamsViewModel.shared.syncLocalToSupabase() }
             Task { await PushTokenManager.shared.resaveCachedToken() }
+            await PushTokenManager.shared.flushPendingToken()
             return true
         } catch {
             let message = error.localizedDescription
