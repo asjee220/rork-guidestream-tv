@@ -945,6 +945,7 @@ struct ReelsScreen: View {
                     .ignoresSafeArea()
                     .onChange(of: scrolledID) { oldValue, newValue in
                         guard let newValue, newValue != vm.currentIndex else { return }
+                        isPlaying = true
                         let prevIdx = vm.currentIndex
                         vm.currentIndex = newValue
                         vm.reelSwipeCount += 1
@@ -1009,30 +1010,26 @@ struct ReelsScreen: View {
                         .buttonStyle(.plain)
                         .padding(.leading, 14)
 
-                        Spacer()
-
                         // Tab pills — tap to jump to the first reel of each section.
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: 13) {
-                                ForEach(ReelTab.allCases, id: \.self) { tab in
-                                    TabPill(
-                                        tab: tab,
-                                        active: currentTrailer?.tab == tab,
-                                        action: {
-                                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                                            if let idx = vm.allTrailers.firstIndex(where: { $0.tab == tab }) {
-                                                withAnimation(.spring(response: 0.45, dampingFraction: 0.86)) {
-                                                    scrolledID = idx
-                                                }
+                        HStack(spacing: 13) {
+                            ForEach(ReelTab.allCases, id: \.self) { tab in
+                                TabPill(
+                                    tab: tab,
+                                    active: currentTrailer?.tab == tab,
+                                    action: {
+                                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                        if let idx = vm.allTrailers.firstIndex(where: { $0.tab == tab }) {
+                                            withAnimation(.spring(response: 0.45, dampingFraction: 0.86)) {
+                                                scrolledID = idx
                                             }
                                         }
-                                    )
-                                }
+                                    }
+                                )
                             }
-                            .padding(.horizontal, 8)
                         }
-                        .allowsHitTesting(true)
-                        .frame(maxWidth: .infinity)
+                        .padding(.leading, 12)
+
+                        Spacer()
                     }
                     .padding(.top, topInset)
                     Spacer()
@@ -1724,7 +1721,8 @@ private struct ReelView: View {
                     .shadow(color: .black.opacity(0.35), radius: 10)
                 }
                 .buttonStyle(.plain)
-                .position(x: 38, y: size.height - bottomInset - 64)
+                .position(x: isPlaying ? 38 : size.width / 2,
+                          y: isPlaying ? size.height - bottomInset - 64 : size.height / 2 - 34 - 16 - 20)
             }
         }
         .clipped()
