@@ -198,7 +198,7 @@ class AuthViewModel private constructor(private val context: Context) : ViewMode
                     }
                     PushTokenManager.get().flushPendingToken()
                 }
-            } catch (_: Exception) {
+            } catch (_: Throwable) {
                 _currentUser.value = null
             } finally {
                 updateSignedInState()
