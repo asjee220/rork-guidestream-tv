@@ -45,4 +45,12 @@ class AppRouter {
     fun consumePendingTitleRoute() {
         pendingTitleRoute = null
     }
+
+    companion object {
+        @Volatile private var instance: AppRouter? = null
+        fun get(): AppRouter =
+            instance ?: synchronized(this) {
+                instance ?: AppRouter().also { instance = it }
+            }
+    }
 }
