@@ -127,7 +127,7 @@ private fun RootContent(
                 MainScreen(
                     router = AppRouter.get(),
                     onOpenAsk = {
-                        // TODO: open Ask Stream sheet
+                        // Ask sheet is now handled inside MainScreen via tab intercept
                     },
                 )
             }

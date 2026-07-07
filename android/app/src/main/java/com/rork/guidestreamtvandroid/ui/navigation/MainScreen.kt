@@ -7,25 +7,29 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
+import com.rork.guidestreamtvandroid.data.models.SourceKind
+import com.rork.guidestreamtvandroid.ui.ask.AskStreamSheet
 import com.rork.guidestreamtvandroid.ui.components.FloatingTabBar
-import com.rork.guidestreamtvandroid.ui.theme.BrandBackground
+import com.rork.guidestreamtvandroid.ui.detail.CreatorDetailScreen
+import com.rork.guidestreamtvandroid.ui.detail.ShowDetailScreen
+import com.rork.guidestreamtvandroid.ui.reels.ReelsScreen
 import com.rork.guidestreamtvandroid.ui.screens.HomeScreen
+import com.rork.guidestreamtvandroid.ui.search.SearchScreen
+import com.rork.guidestreamtvandroid.ui.sports.SportsGameDetailScreen
 import com.rork.guidestreamtvandroid.ui.sports.SportsScreen
 import com.rork.guidestreamtvandroid.ui.profile.ProfileScreen
-import com.rork.guidestreamtvandroid.ui.reels.ReelsScreen
-import com.rork.guidestreamtvandroid.ui.navigation.PendingTitleRoute
+import com.rork.guidestreamtvandroid.ui.theme.BrandBackground
 
 /**
- * Root main screen — floating tab bar + tab content.
+ * Root main screen — floating tab bar + tab content + detail overlays.
  * Mirrors iOS ContentView.mainApp.
  */
 @Composable
@@ -38,6 +42,27 @@ fun MainScreen(
     var tabBarVisible by remember { mutableStateOf(true) }
     var tabBeforeReels by remember { mutableStateOf(AppTab.HOME) }
 
+    // Overlay state — mirrors iOS sheet/fullScreenCover state in ContentView + HomeView
+    var showSearch by remember { mutableStateOf(false) }
+    var showAskSheet by remember { mutableStateOf(false) }
+    var showDetail by remember { mutableStateOf<PendingTitleRoute?>(null) }
+    var showCreatorDetail by remember { mutableStateOf<String?>(null) }
+    var selectedGame by remember { mutableStateOf<com.rork.guidestreamtvandroid.data.models.SportsGame?>(null) }
+
+    // Consume pending title route from AppRouter (deep-link / push buffer)
+    val pendingRoute = router.pendingTitleRoute
+    LaunchedEffect(pendingRoute) {
+        val route = pendingRoute ?: return@LaunchedEffect
+        router.consumePendingTitleRoute()
+        // Route to correct detail screen — mirrors iOS openPendingTitleRoute
+        val kind = SourceKind.from(route.titleId)
+        if (kind.isNonTMDB) {
+            showCreatorDetail = route.titleId
+        } else {
+            showDetail = route
+        }
+    }
+
     Box(modifier = modifier.fillMaxSize()) {
         BrandBackground()
 
@@ -48,11 +73,20 @@ fun MainScreen(
         ) {
             when (selectedTab) {
                 AppTab.HOME -> HomeScreen(
-                    onOpenTitle = { route -> router.showTitle(route) },
-                    onOpenSearch = { /* TODO: open search */ },
+                    onOpenTitle = { route ->
+                        val kind = SourceKind.from(route.titleId)
+                        if (kind.isNonTMDB) {
+                            showCreatorDetail = route.titleId
+                        } else {
+                            showDetail = route
+                        }
+                    },
+                    onOpenSearch = { showSearch = true },
                 )
-                AppTab.SPORTS -> SportsScreen()
-                AppTab.ASK -> { /* Intercepted — opens sheet */ }
+                AppTab.SPORTS -> SportsScreen(
+                    onOpenGame = { game -> selectedGame = game },
+                )
+                AppTab.ASK -> { /* Intercepted — opens sheet via onOpenAsk */ }
                 AppTab.REELS -> ReelsScreen(
                     onDismiss = {
                         val target = if (tabBeforeReels == AppTab.REELS) AppTab.HOME else tabBeforeReels
@@ -62,6 +96,62 @@ fun MainScreen(
                 AppTab.PROFILE -> ProfileScreen()
             }
         }
+
+        // Show detail (full-screen cover equivalent)
+        showDetail?.let { route ->
+            ShowDetailScreen(
+                titleId = route.titleId,
+                titleName = route.titleName ?: "Show",
+                isTV = route.isTv,
+                onBack = { showDetail = null },
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
+
+        // Creator detail (sheet equivalent)
+        showCreatorDetail?.let { titleId ->
+            CreatorDetailScreen(
+                titleId = titleId,
+                onBack = { showCreatorDetail = null },
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
+
+        // Search (full-screen cover equivalent)
+        if (showSearch) {
+            SearchScreen(
+                onClose = { showSearch = false },
+                onOpenTitle = { route ->
+                    showSearch = false
+                    val kind = SourceKind.from(route.titleId)
+                    if (kind.isNonTMDB) {
+                        showCreatorDetail = route.titleId
+                    } else {
+                        showDetail = route
+                    }
+                },
+                onOpenCreator = { titleId ->
+                    showSearch = false
+                    showCreatorDetail = titleId
+                },
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
+
+        // Sports game detail
+        selectedGame?.let { game ->
+            SportsGameDetailScreen(
+                game = game,
+                onBack = { selectedGame = null },
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
+
+        // Ask Stream sheet
+        AskStreamSheet(
+            isOpen = showAskSheet,
+            onClose = { showAskSheet = false },
+        )
 
         // Floating tab bar
         AnimatedVisibility(
@@ -74,7 +164,8 @@ fun MainScreen(
                 selected = selectedTab,
                 onTabSelected = { tab ->
                     if (tab == AppTab.ASK) {
-                        onOpenAsk()
+                        // Intercept ask tab — open sheet instead of switching
+                        showAskSheet = true
                     } else {
                         if (selectedTab != AppTab.REELS && tab == AppTab.REELS) {
                             tabBeforeReels = selectedTab

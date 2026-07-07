@@ -58,6 +58,7 @@ import com.rork.guidestreamtvandroid.ui.theme.TextTertiary
  */
 @Composable
 fun SportsScreen(
+    onOpenGame: (SportsGame) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val vm = SportsViewModel.get()
@@ -139,6 +140,7 @@ fun SportsScreen(
                             titleId = "${game.away.abbreviation}-${game.home.abbreviation}-${game.sport}",
                             metadata = mapOf("section" to "sports", "sport" to game.sport),
                         )
+                        onOpenGame(game)
                     })
                 }
             }
