@@ -10,6 +10,11 @@
       "name": "Functions",
       "path": "functions",
       "framework": "cloudflare"
+    },
+    {
+      "name": "Guide Stream TV Android",
+      "path": "android",
+      "framework": "kotlin"
     }
   ]
 }
