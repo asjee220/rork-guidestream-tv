@@ -1,11 +1,9 @@
 package com.rork.guidestreamtvandroid.ui.theme
 
-import android.os.Build
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.graphics.Color
 
 private val GuideStreamColorScheme = darkColorScheme(
     primary = BrandOrange,

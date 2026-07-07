@@ -22,6 +22,7 @@ import com.rork.guidestreamtvandroid.ui.screens.HomeScreen
 import com.rork.guidestreamtvandroid.ui.sports.SportsScreen
 import com.rork.guidestreamtvandroid.ui.profile.ProfileScreen
 import com.rork.guidestreamtvandroid.ui.reels.ReelsScreen
+import com.rork.guidestreamtvandroid.ui.navigation.PendingTitleRoute
 
 /**
  * Root main screen — floating tab bar + tab content.
@@ -42,9 +43,7 @@ fun MainScreen(
 
         // Tab content
         Box(
-            modifier = Modifier
-                .fillMaxSize()
-
+            modifier = Modifier.fillMaxSize(),
             contentAlignment = Alignment.TopStart,
         ) {
             when (selectedTab) {

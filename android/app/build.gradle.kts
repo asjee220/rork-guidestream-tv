@@ -17,10 +17,19 @@ android {
         versionName = "1.0"
     }
 
+    signingConfigs {
+        create("rorkPlayUpload") {
+            storeFile = file("/home/user/rork-app/android/app/play-upload-key.jks")
+            storePassword = "rork-play-upload"
+            keyAlias = "upload"
+            keyPassword = "rork-play-upload"
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName("rorkPlayUpload")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -79,6 +88,5 @@ dependencies {
     implementation(libs.play.services.auth)
     implementation(libs.androidx.credentials)
     implementation(libs.androidx.credentials.play.services.auth)
-    implementation(libs.googleid)
     debugImplementation(libs.androidx.ui.tooling)
 }

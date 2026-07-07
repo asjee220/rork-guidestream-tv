@@ -25,7 +25,7 @@ fun BrandBackground(
 
             // Blue glow — top-left
             drawCircle(
-                brush = Brush.radial(
+                brush = Brush.radialGradient(
                     colors = listOf(BrandBlue.copy(alpha = 0.24f), Color.Transparent),
                     center = Offset(w * 0.12f, h * 0.28f),
                     radius = w * 0.6f
@@ -36,7 +36,7 @@ fun BrandBackground(
 
             // Orange glow — bottom-right
             drawCircle(
-                brush = Brush.radial(
+                brush = Brush.radialGradient(
                     colors = listOf(BrandOrange.copy(alpha = 0.15f), Color.Transparent),
                     center = Offset(w * 0.72f, h * 0.78f),
                     radius = w * 0.5f
@@ -47,7 +47,7 @@ fun BrandBackground(
 
             // Light-blue glow — center
             drawCircle(
-                brush = Brush.radial(
+                brush = Brush.radialGradient(
                     colors = listOf(LightBlue.copy(alpha = 0.08f), Color.Transparent),
                     center = Offset(w * 0.45f, h * 0.4f),
                     radius = w * 0.4f
