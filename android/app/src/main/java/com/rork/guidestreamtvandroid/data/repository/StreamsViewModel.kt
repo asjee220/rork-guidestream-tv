@@ -7,6 +7,7 @@ import com.rork.guidestreamtvandroid.data.models.UserStream
 import com.rork.guidestreamtvandroid.data.remote.SupabaseManager
 import io.github.jan.supabase.postgrest.query.Order
 import io.github.jan.supabase.postgrest.postgrest
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -94,7 +95,8 @@ class StreamsViewModel private constructor(context: Context) {
                 val merged = mergeRemoteWithLocal(rows)
                 _userStreams.value = merged
                 saveLocalCache(merged)
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
+                if (e is CancellationException) throw e
                 _lastError.value = e.message
                 _userStreams.value = loadLocalCache()
             } finally {
@@ -158,7 +160,8 @@ class StreamsViewModel private constructor(context: Context) {
                     allRows.addAll(nonTmdbRows)
                 }
                 _newEpisodes.value = allRows.sortedByDescending { it.releasedAt }.take(20)
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
+                if (e is CancellationException) throw e
                 _lastError.value = e.message
             } finally {
                 _isLoadingEpisodes.value = false
@@ -229,7 +232,8 @@ class StreamsViewModel private constructor(context: Context) {
                 .from("user_streams")
                 .insert(payload)
             true
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
+            if (e is CancellationException) throw e
             val msg = e.message?.lowercase() ?: ""
             if (msg.contains("duplicate") || msg.contains("23505")) true
             else {
@@ -267,7 +271,8 @@ class StreamsViewModel private constructor(context: Context) {
                             }
                         }
                     }
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
+                if (e is CancellationException) throw e
                 _lastError.value = e.message
             }
         }

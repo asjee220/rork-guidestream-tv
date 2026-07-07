@@ -4,6 +4,7 @@ import android.content.Context
 import com.rork.guidestreamtvandroid.data.local.DeviceIdentity
 import com.rork.guidestreamtvandroid.data.remote.SupabaseManager
 import io.github.jan.supabase.postgrest.postgrest
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -54,7 +55,8 @@ class PushTokenManager private constructor(context: Context) {
                     .from("push_tokens")
                     .upsert(payload) { onConflict = "apns_token" }
                 pendingToken = null
-            } catch (_: Exception) {
+            } catch (e: Throwable) {
+                if (e is CancellationException) throw e
                 // Silent-fail — will be retried by flushPendingToken
             }
         }
@@ -78,7 +80,9 @@ class PushTokenManager private constructor(context: Context) {
                     .from("push_tokens")
                     .upsert(payload) { onConflict = "apns_token" }
                 pendingToken = null
-            } catch (_: Exception) {}
+            } catch (e: Throwable) {
+                if (e is CancellationException) throw e
+            }
         }
     }
 
@@ -97,7 +101,9 @@ class PushTokenManager private constructor(context: Context) {
                 SupabaseManager.client.postgrest
                     .from("push_tokens")
                     .delete { filter { eq("user_id", userId) } }
-            } catch (_: Exception) {}
+            } catch (e: Throwable) {
+                if (e is CancellationException) throw e
+            }
         }
         pendingToken = null
     }

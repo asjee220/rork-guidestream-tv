@@ -5,6 +5,7 @@ import android.util.Log
 import com.rork.guidestreamtvandroid.data.local.DeviceIdentity
 import com.rork.guidestreamtvandroid.data.remote.SupabaseManager
 import io.github.jan.supabase.postgrest.postgrest
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -123,7 +124,8 @@ class WatchIntentLogger private constructor(context: Context) {
                     .from("watch_intent_events")
                     .insert(payload)
                 synchronized(recentErrors) { totalSuccesses += 1 }
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
+                if (e is CancellationException) throw e
                 val message = e.message ?: "unknown"
                 val columnIssue = message.contains("device_id", ignoreCase = true) &&
                     (message.contains("column", ignoreCase = true) ||
@@ -143,7 +145,8 @@ class WatchIntentLogger private constructor(context: Context) {
                             .insert(fallback)
                         synchronized(recentErrors) { totalSuccesses += 1 }
                         return@launch
-                    } catch (e2: Exception) {
+                    } catch (e2: Throwable) {
+                        if (e2 is CancellationException) throw e2
                         recordError(event, e2.message ?: "unknown")
                         return@launch
                     }

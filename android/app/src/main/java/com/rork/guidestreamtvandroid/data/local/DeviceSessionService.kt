@@ -4,6 +4,7 @@ import android.content.Context
 import android.os.Build
 import com.rork.guidestreamtvandroid.data.remote.SupabaseManager
 import io.github.jan.supabase.postgrest.postgrest
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -81,7 +82,8 @@ class DeviceSessionService private constructor(private val context: Context) {
                     onConflict = "device_id"
                 }
             recordSuccess()
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
+            if (e is CancellationException) throw e
             val message = e.message ?: "unknown error"
             if (attempt < 1) {
                 val trimmed = dropMissingColumns(payload, message)
