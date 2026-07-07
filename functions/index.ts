@@ -21,6 +21,7 @@ import {
   debugStatus,
 } from "./_lib/supabase";
 import { sendBatchPush } from "./_lib/apns";
+import { sendBatchFcm } from "./_lib/fcm";
 import {
   searchCreators,
   enrichYouTubeCategories,
@@ -33,6 +34,7 @@ interface Env {
   APPLE_BUNDLE_ID: string;
   APPLE_KEY_ID: string;
   APPLE_TEAM_ID: string;
+  FIREBASE_SERVICE_ACCOUNT_KEY?: string;
   YOUTUBE_API_KEY?: string;
   TWITCH_CLIENT_ID?: string;
   TWITCH_CLIENT_SECRET?: string;
@@ -209,8 +211,16 @@ async function runPushDispatch(env: Env): Promise<DispatchResult> {
 
     // 2. Get their push tokens
     const tokens = await fetchPushTokensForUsers(userIds);
-    const tokenStrings = tokens.map((t) => t.apns_token);
-    console.log(`[push]   → ${tokenStrings.length} push tokens`);
+
+    // Split tokens by platform — APNs for iOS, FCM for Android
+    const iosTokens = tokens
+      .filter((t) => t.platform !== "android")
+      .map((t) => t.apns_token);
+    const androidTokens = tokens
+      .filter((t) => t.platform === "android")
+      .map((t) => t.apns_token);
+    const tokenStrings = [...iosTokens, ...androidTokens];
+    console.log(`[push]   → ${tokenStrings.length} push tokens (${iosTokens.length} iOS, ${androidTokens.length} Android)`);
 
     if (tokenStrings.length === 0) {
       console.log(`[push]   → no push tokens, marking notified`);
@@ -252,12 +262,34 @@ async function runPushDispatch(env: Env): Promise<DispatchResult> {
       deep_link: `guidestream://show/${ep.title_id}?${deepLinkParams}`,
     };
 
-    // 4. Send pushes
-    const { sent, failed, invalid } = await sendBatchPush(
-      env,
-      tokenStrings,
-      payload,
-    );
+    // 4. Send pushes — APNs to iOS, FCM to Android
+    const allInvalid: string[] = [];
+    let sent = 0;
+    let failed = 0;
+
+    if (iosTokens.length > 0) {
+      const apnsResult = await sendBatchPush(env, iosTokens, payload);
+      sent += apnsResult.sent;
+      failed += apnsResult.failed;
+      allInvalid.push(...apnsResult.invalid);
+    }
+
+    if (androidTokens.length > 0) {
+      const fcmPayload = {
+        title: `${title} — ${epLabel}`,
+        body: `A new episode is now available${platform}. Tap to watch.`,
+        deep_link: `guidestream://show/${ep.title_id}?${deepLinkParams}`,
+        title_id: ep.title_id,
+        platform_id: platformId,
+        notification_type: "new_episode",
+      };
+      const fcmResult = await sendBatchFcm(env, androidTokens, fcmPayload);
+      sent += fcmResult.sent;
+      failed += fcmResult.failed;
+      allInvalid.push(...fcmResult.invalid);
+    }
+
+    const invalid = allInvalid;
     totalSent += sent;
     totalFailed += failed;
     totalInvalid += invalid.length;

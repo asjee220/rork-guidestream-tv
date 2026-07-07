@@ -1,0 +1,435 @@
+package com.rork.guidestreamtvandroid.ui.detail
+
+import android.content.Intent
+import android.net.Uri
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.rork.guidestreamtvandroid.data.repository.StreamsViewModel
+import com.rork.guidestreamtvandroid.data.repository.WatchIntentLogger
+import com.rork.guidestreamtvandroid.ui.components.RemoteImage
+import com.rork.guidestreamtvandroid.ui.components.glassCard
+import com.rork.guidestreamtvandroid.ui.theme.BrandOrange
+import com.rork.guidestreamtvandroid.ui.theme.GlassFill
+import com.rork.guidestreamtvandroid.ui.theme.GlassStroke
+import com.rork.guidestreamtvandroid.ui.theme.TextPrimary
+import com.rork.guidestreamtvandroid.ui.theme.TextSecondary
+import com.rork.guidestreamtvandroid.ui.theme.TextTertiary
+
+/**
+ * Show detail screen — mirrors iOS ShowDetailScreen.swift.
+ * Backdrop hero, poster, title, meta, watch button, add/remove watchlist,
+ * season/episode browser, overview.
+ */
+@Composable
+fun ShowDetailScreen(
+    titleId: String,
+    titleName: String,
+    isTV: Boolean = true,
+    onBack: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val vm = ShowDetailViewModel.get()
+    val streamsVm = StreamsViewModel.get()
+    val context = LocalContext.current
+
+    val detail by vm.detail.collectAsStateWithLifecycle()
+    val season by vm.season.collectAsStateWithLifecycle()
+    val platform by vm.platform.collectAsStateWithLifecycle()
+    val topProvider by vm.topProvider.collectAsStateWithLifecycle()
+    val trailerKey by vm.trailerKey.collectAsStateWithLifecycle()
+    val isLoading by vm.isLoading.collectAsStateWithLifecycle()
+    val errorMessage by vm.errorMessage.collectAsStateWithLifecycle()
+    val currentSeason by vm.currentSeasonNumber.collectAsStateWithLifecycle()
+    val userStreams by streamsVm.userStreams.collectAsStateWithLifecycle()
+
+    val tmdbId = titleId.toIntOrNull()
+    val isSaved = userStreams.any { it.titleId == titleId }
+
+    // Load on first composition
+    androidx.compose.runtime.LaunchedEffect(titleId) {
+        vm.loadIfNeeded(titleId, isTV)
+    }
+
+    Box(modifier = modifier.fillMaxSize()) {
+        if (isLoading && detail == null) {
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center,
+            ) {
+                CircularProgressIndicator(color = BrandOrange)
+            }
+        } else {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState()),
+            ) {
+                // Hero backdrop
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .aspectRatio(1.5f),
+                ) {
+                    val backdropUrl = detail?.backdropPath?.let {
+                        "https://image.tmdb.org/t/p/w1280${if (it.startsWith("/")) it else "/$it"}"
+                    }
+                    RemoteImage(
+                        url = backdropUrl,
+                        contentDescription = titleName,
+                        modifier = Modifier.fillMaxSize(),
+                        cornerRadius = 0,
+                        placeholderText = titleName.take(2).uppercase(),
+                        placeholderFontSize = 32.sp,
+                    )
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(
+                                Brush.verticalGradient(
+                                    colors = listOf(
+                                        Color.Black.copy(alpha = 0.3f),
+                                        Color.Transparent,
+                                        Color.Black.copy(alpha = 0.6f),
+                                    ),
+                                ),
+                            ),
+                    )
+                    // Back button
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.TopStart)
+                            .padding(12.dp)
+                            .size(40.dp)
+                            .clip(CircleShape)
+                            .background(Color.Black.copy(alpha = 0.5f))
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null,
+                            ) { onBack() },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.ArrowBack,
+                            contentDescription = "Back",
+                            tint = TextPrimary,
+                            modifier = Modifier.size(22.dp),
+                        )
+                    }
+                    // Title + meta
+                    Column(
+                        modifier = Modifier
+                            .align(Alignment.BottomStart)
+                            .padding(16.dp),
+                    ) {
+                        Text(
+                            text = detail?.name ?: titleName,
+                            fontSize = 24.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = TextPrimary,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            if (detail?.voteAverage != null) {
+                                Text(
+                                    text = "★ ${String.format("%.1f", detail?.voteAverage)}",
+                                    fontSize = 14.sp,
+                                    color = BrandOrange,
+                                    fontWeight = FontWeight.SemiBold,
+                                )
+                                Spacer(Modifier.width(12.dp))
+                            }
+                            if (detail?.numberOfSeasons != null) {
+                                Text(
+                                    text = "${detail?.numberOfSeasons} season${if (detail?.numberOfSeasons == 1) "" else "s"}",
+                                    fontSize = 13.sp,
+                                    color = TextSecondary,
+                                )
+                                Spacer(Modifier.width(12.dp))
+                            }
+                            if (platform != null) {
+                                Text(
+                                    text = platform!!.name,
+                                    fontSize = 13.sp,
+                                    color = platform!!.color,
+                                    fontWeight = FontWeight.Bold,
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // Action buttons
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    // Watch button
+                    if (topProvider != null) {
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(BrandOrange)
+                                .clickable(
+                                    interactionSource = remember { MutableInteractionSource() },
+                                    indication = null,
+                                ) {
+                                    val webUrl = "https://www.themoviedb.org/${if (isTV) "tv" else "movie"}/$tmdbId/watch"
+                                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(webUrl)))
+                                }
+                                .padding(vertical = 14.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Filled.PlayArrow,
+                                    contentDescription = null,
+                                    tint = Color.White,
+                                    modifier = Modifier.size(20.dp),
+                                )
+                                Spacer(Modifier.width(6.dp))
+                                Text(
+                                    text = "Watch on ${platform?.name ?: topProvider?.providerName ?: "Streaming"}",
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White,
+                                )
+                            }
+                        }
+                    }
+                    // Add/Remove watchlist
+                    Box(
+                        modifier = Modifier
+                            .size(50.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(GlassFill)
+                            .border(1.dp, GlassStroke, RoundedCornerShape(12.dp))
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null,
+                            ) {
+                                if (isSaved) {
+                                    streamsVm.removeFromMyStreams(titleId)
+                                    WatchIntentLogger.get().log(
+                                        WatchIntentLogger.IntentEventType.WATCHLIST_REMOVED,
+                                        titleId = titleId,
+                                    )
+                                } else {
+                                    streamsVm.addToMyStreams(
+                                        titleId = titleId,
+                                        title = detail?.name ?: titleName,
+                                        posterUrl = detail?.posterPath?.let {
+                                            "https://image.tmdb.org/t/p/w342${if (it.startsWith("/")) it else "/$it"}"
+                                        },
+                                        platform = platform?.name,
+                                    )
+                                    WatchIntentLogger.get().log(
+                                        WatchIntentLogger.IntentEventType.WATCHLIST_ADDED,
+                                        titleId = titleId,
+                                        platformId = platform?.name?.lowercase(),
+                                    )
+                                }
+                            },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            imageVector = if (isSaved) Icons.Filled.Check else Icons.Filled.Add,
+                            contentDescription = if (isSaved) "In watchlist" else "Add to watchlist",
+                            tint = if (isSaved) BrandOrange else TextPrimary,
+                            modifier = Modifier.size(22.dp),
+                        )
+                    }
+                    // Share
+                    Box(
+                        modifier = Modifier
+                            .size(50.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(GlassFill)
+                            .border(1.dp, GlassStroke, RoundedCornerShape(12.dp))
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null,
+                            ) {
+                                val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                    type = "text/plain"
+                                    putExtra(Intent.EXTRA_TEXT, "https://www.themoviedb.org/${if (isTV) "tv" else "movie"}/$tmdbId")
+                                }
+                                context.startActivity(Intent.createChooser(shareIntent, "Share"))
+                            },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Share,
+                            contentDescription = "Share",
+                            tint = TextPrimary,
+                            modifier = Modifier.size(20.dp),
+                        )
+                    }
+                }
+
+                // Overview
+                if (!detail?.overview.isNullOrBlank()) {
+                    Text(
+                        text = "Overview",
+                        fontSize = 17.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = TextPrimary,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                    )
+                    Text(
+                        text = detail?.overview ?: "",
+                        fontSize = 14.sp,
+                        color = TextSecondary,
+                        lineHeight = 20.sp,
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                    )
+                }
+
+                // Seasons selector + episodes
+                if (isTV && detail?.numberOfSeasons != null && detail!!.numberOfSeasons!! > 0) {
+                    Spacer(Modifier.height(20.dp))
+                    Text(
+                        text = "Episodes",
+                        fontSize = 17.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = TextPrimary,
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                    )
+                    // Season chips
+                    LazyRow(
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        items((1..detail!!.numberOfSeasons!!).toList()) { s ->
+                            val selected = currentSeason == s
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(16.dp))
+                                    .background(if (selected) BrandOrange else GlassFill)
+                                    .border(1.dp, if (selected) BrandOrange else GlassStroke, RoundedCornerShape(16.dp))
+                                    .clickable(
+                                        interactionSource = remember { MutableInteractionSource() },
+                                        indication = null,
+                                    ) { vm.loadSeason(s) }
+                                    .padding(horizontal = 14.dp, vertical = 7.dp),
+                            ) {
+                                Text(
+                                    text = "Season $s",
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = if (selected) Color.White else TextSecondary,
+                                )
+                            }
+                        }
+                    }
+                    // Episode list
+                    season?.episodes?.forEach { ep ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 4.dp)
+                                .glassCard(10)
+                                .padding(10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(48.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(GlassFill),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Text(
+                                    text = "${ep.episodeNumber}",
+                                    fontSize = 18.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = BrandOrange,
+                                )
+                            }
+                            Spacer(Modifier.width(10.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = ep.name ?: "Episode ${ep.episodeNumber}",
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = TextPrimary,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                                if (ep.airDate != null) {
+                                    Text(
+                                        text = ep.airDate ?: "",
+                                        fontSize = 12.sp,
+                                        color = TextTertiary,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if (errorMessage != null) {
+                    Text(
+                        text = errorMessage ?: "",
+                        fontSize = 13.sp,
+                        color = BrandOrange,
+                        modifier = Modifier.padding(16.dp),
+                    )
+                }
+
+                Spacer(Modifier.height(40.dp))
+            }
+        }
+    }
+}

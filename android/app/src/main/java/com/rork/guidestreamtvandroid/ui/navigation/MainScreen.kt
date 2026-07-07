@@ -49,6 +49,7 @@ fun MainScreen(
             when (selectedTab) {
                 AppTab.HOME -> HomeScreen(
                     onOpenTitle = { route -> router.showTitle(route) },
+                    onOpenSearch = { /* TODO: open search */ },
                 )
                 AppTab.SPORTS -> SportsScreen()
                 AppTab.ASK -> { /* Intercepted — opens sheet */ }

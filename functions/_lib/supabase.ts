@@ -146,6 +146,7 @@ export interface PushToken {
   user_id: string;
   apns_token: string;
   device_type: string;
+  platform: string | null;
 }
 
 export interface PushLog {
@@ -204,7 +205,7 @@ export async function fetchPushTokensForUsers(
   const inClause = `(${userIds.map((id) => `"${id}"`).join(",")})`;
 
   return supabaseGet<PushToken>("push_tokens", {
-    select: "user_id,apns_token,device_type",
+    select: "user_id,apns_token,device_type,platform",
     user_id: `in.${inClause}`,
   });
 }
