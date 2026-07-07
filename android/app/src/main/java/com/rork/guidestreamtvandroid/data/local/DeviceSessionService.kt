@@ -106,7 +106,7 @@ class DeviceSessionService private constructor(private val context: Context) {
 
     private fun makePayload(): JsonObject {
         val auth = com.rork.guidestreamtvandroid.data.repository.AuthViewModel.get()
-        val nowIso = java.time.Instant.now().toString()
+        val nowIso = isoUtcNow()
         return buildJsonObject {
             put("device_id", DeviceIdentity.get().deviceId)
             put("is_guest", auth.isGuest.value && !auth.isAuthenticated.value)
@@ -130,6 +130,13 @@ class DeviceSessionService private constructor(private val context: Context) {
             val email = auth.email
             if (!email.isNullOrEmpty()) put("email", email)
         }
+    }
+
+    /** ISO-8601 UTC timestamp that works on all API levels (no java.time / desugaring needed). */
+    private fun isoUtcNow(): String {
+        val formatter = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", java.util.Locale.US)
+        formatter.timeZone = java.util.TimeZone.getTimeZone("UTC")
+        return formatter.format(java.util.Date())
     }
 
     private fun dropMissingColumns(
