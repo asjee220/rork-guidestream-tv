@@ -34,14 +34,27 @@ nonisolated struct WidgetLeavingSoonItem: Codable, Sendable {
     }
 }
 
+nonisolated struct WidgetNewEpisodeItem: Codable, Sendable {
+    let id: String
+    let title: String
+    let episodeLabel: String
+    let platform: String
+    let platformColorHex: String
+
+    enum CodingKeys: String, CodingKey {
+        case id, title, episodeLabel, platform, platformColorHex
+    }
+}
+
 nonisolated struct WidgetPayload: Codable, Sendable {
     let leavingSoon: [WidgetLeavingSoonItem]
     let watchlistCount: Int
     let newEpisodeCount: Int
     let lastUpdated: Date
+    let newEpisodes: [WidgetNewEpisodeItem]?
 
     enum CodingKeys: String, CodingKey {
-        case leavingSoon, watchlistCount, newEpisodeCount, lastUpdated
+        case leavingSoon, watchlistCount, newEpisodeCount, lastUpdated, newEpisodes
     }
 }
 
@@ -60,6 +73,9 @@ final class WidgetDataService {
     /// (called from ContentView / StreamsViewModel on every change) can
     /// preserve them without needing Watchmode data.
     private var cachedLeavingSoon: [WidgetLeavingSoonItem] = []
+    /// Cached new-episode items, preserved across `pushCounts()` calls the
+    /// same way `cachedLeavingSoon` is.
+    private var cachedNewEpisodes: [WidgetNewEpisodeItem] = []
 
     // MARK: - Full push (called from HomeView after Watchmode resolves)
 
@@ -67,7 +83,8 @@ final class WidgetDataService {
         expiringItems: [(tmdbId: Int, title: String, daysLeft: Int, sourceId: String)],
         posterUrls: [Int: String],
         watchlistCount: Int,
-        newEpisodeCount: Int
+        newEpisodeCount: Int,
+        newEpisodeRows: [NewEpisodeRow] = []
     ) {
         let formatter = DateFormatter()
         formatter.dateFormat = "MMM d"
@@ -92,11 +109,47 @@ final class WidgetDataService {
                 )
             }
 
-        cachedLeavingSoon = items
+        let mappedNewEpisodes = Self.mapNewEpisodes(newEpisodeRows)
+
+        // --- Wipe-bug fix: preserve good data on transient empty results ---
+        // If the freshly mapped leaving-soon list is empty (e.g. a transient
+        // Watchmode failure), keep the previously written items as long as
+        // they are less than 48h old — mirroring the preservation logic in
+        // `pushCounts()`.
+        var leavingSoon = items
+        if leavingSoon.isEmpty {
+            if let existing = loadExistingPayload(),
+               !existing.leavingSoon.isEmpty,
+               let lastUpdated = existing.lastUpdated as Date?,
+               Date().timeIntervalSince(lastUpdated) < 48 * 60 * 60 {
+                leavingSoon = existing.leavingSoon
+                cachedLeavingSoon = existing.leavingSoon
+            }
+        } else {
+            cachedLeavingSoon = items
+        }
+
+        // Carry existing newEpisodes forward only when the incoming list is
+        // empty, using the same loadExistingPayload pattern.
+        var newEpisodes = mappedNewEpisodes
+        if newEpisodes.isEmpty {
+            if let existing = loadExistingPayload(),
+               let existingNew = existing.newEpisodes,
+               !existingNew.isEmpty,
+               let lastUpdated = existing.lastUpdated as Date?,
+               Date().timeIntervalSince(lastUpdated) < 48 * 60 * 60 {
+                newEpisodes = existingNew
+                cachedNewEpisodes = existingNew
+            }
+        } else {
+            cachedNewEpisodes = mappedNewEpisodes
+        }
+
         writePayload(
-            leavingSoon: items,
+            leavingSoon: leavingSoon,
             watchlistCount: watchlistCount,
-            newEpisodeCount: newEpisodeCount
+            newEpisodeCount: newEpisodeCount,
+            newEpisodes: newEpisodes
         )
     }
 
@@ -107,7 +160,11 @@ final class WidgetDataService {
     /// in-memory cache is empty (first launch), we try to recover the
     /// Leaving Soon items already stored in the shared container so the
     /// widget doesn't blink back to empty.
-    func pushCounts(watchlistCount: Int, newEpisodeCount: Int) {
+    func pushCounts(
+        watchlistCount: Int,
+        newEpisodeCount: Int,
+        newEpisodeRows: [NewEpisodeRow] = []
+    ) {
         // Preserve in-memory cache if we have one
         var leavingSoon = cachedLeavingSoon
 
@@ -121,10 +178,28 @@ final class WidgetDataService {
             }
         }
 
+        // Map incoming new-episode rows; preserve the cached/existing items
+        // when the incoming list is empty so a counts-only refresh doesn't
+        // wipe a good new-episodes payload.
+        var newEpisodes = cachedNewEpisodes
+        if newEpisodeRows.isEmpty {
+            if newEpisodes.isEmpty,
+               let existing = loadExistingPayload(),
+               let existingNew = existing.newEpisodes,
+               !existingNew.isEmpty {
+                newEpisodes = existingNew
+                cachedNewEpisodes = existingNew
+            }
+        } else {
+            newEpisodes = Self.mapNewEpisodes(newEpisodeRows)
+            cachedNewEpisodes = newEpisodes
+        }
+
         writePayload(
             leavingSoon: leavingSoon,
             watchlistCount: watchlistCount,
-            newEpisodeCount: newEpisodeCount
+            newEpisodeCount: newEpisodeCount,
+            newEpisodes: newEpisodes
         )
     }
 
@@ -183,7 +258,7 @@ final class WidgetDataService {
             )
         }
         cachedLeavingSoon = sample
-        writePayload(leavingSoon: sample, watchlistCount: 12, newEpisodeCount: 3)
+        writePayload(leavingSoon: sample, watchlistCount: 12, newEpisodeCount: 3, newEpisodes: [])
     }
 
     // MARK: - Widget reload trigger
@@ -226,13 +301,15 @@ final class WidgetDataService {
     private func writePayload(
         leavingSoon: [WidgetLeavingSoonItem],
         watchlistCount: Int,
-        newEpisodeCount: Int
+        newEpisodeCount: Int,
+        newEpisodes: [WidgetNewEpisodeItem]
     ) {
         let payload = WidgetPayload(
             leavingSoon: leavingSoon,
             watchlistCount: watchlistCount,
             newEpisodeCount: newEpisodeCount,
-            lastUpdated: Date()
+            lastUpdated: Date(),
+            newEpisodes: newEpisodes
         )
 
         let encoder = JSONEncoder()
@@ -267,6 +344,38 @@ final class WidgetDataService {
 
         if anySucceeded {
             WidgetCenter.shared.reloadTimelines(ofKind: "GuideStreamWidget")
+        }
+    }
+
+    // MARK: - New-episode mapping
+
+    /// Maps up to 8 `NewEpisodeRow` values to widget-ready items, preserving
+    /// row order. Title falls back to `episodeTitle` then `titleId`; episode
+    /// label is `S{season} E{episode}` when both are non-nil (matching the
+    /// convention in ShowDetailScreen/HomeView), otherwise `episodeTitle`,
+    /// otherwise "New episode". Platform/color resolve via the same
+    /// `Platform.from(providerName:)` + `colorHex` used by `push()`.
+    private static func mapNewEpisodes(_ rows: [NewEpisodeRow]) -> [WidgetNewEpisodeItem] {
+        rows.prefix(8).map { row in
+            let title = row.title ?? row.episodeTitle ?? row.titleId
+            let episodeLabel: String
+            if let season = row.season, let episode = row.episode {
+                episodeLabel = "S\(season) E\(episode)"
+            } else if let epTitle = row.episodeTitle, !epTitle.isEmpty {
+                episodeLabel = epTitle
+            } else {
+                episodeLabel = "New episode"
+            }
+            let platform = Platform.from(providerName: row.platform)
+            let colorHex = platform?.colorHex ?? "#F5821F"
+            let platformName = platform?.name ?? (row.platform?.uppercased() ?? "STREAM")
+            return WidgetNewEpisodeItem(
+                id: row.id,
+                title: title,
+                episodeLabel: episodeLabel,
+                platform: platformName,
+                platformColorHex: colorHex
+            )
         }
     }
 }

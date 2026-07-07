@@ -69,7 +69,8 @@ final class StreamsViewModel {
         // Keep the widget in sync with the latest counts.
         WidgetDataService.shared.pushCounts(
             watchlistCount: userStreams.count,
-            newEpisodeCount: newEpisodes.count
+            newEpisodeCount: newEpisodes.count,
+            newEpisodeRows: newEpisodes
         )
     }
 
@@ -267,7 +268,8 @@ final class StreamsViewModel {
         // Keep the widget in sync after add.
         WidgetDataService.shared.pushCounts(
             watchlistCount: userStreams.count,
-            newEpisodeCount: newEpisodes.count
+            newEpisodeCount: newEpisodes.count,
+            newEpisodeRows: newEpisodes
         )
     }
 
@@ -377,7 +379,8 @@ final class StreamsViewModel {
         // Keep the widget in sync after remove.
         WidgetDataService.shared.pushCounts(
             watchlistCount: userStreams.count,
-            newEpisodeCount: newEpisodes.count
+            newEpisodeCount: newEpisodes.count,
+            newEpisodeRows: newEpisodes
         )
     }
 

@@ -21,12 +21,26 @@ nonisolated struct LeavingSoonItem: Codable, Hashable, Sendable, Identifiable {
     let expireDate: String
 }
 
+/// One new-episode alert, ready for widget display when there are no
+/// leaving-soon titles to show.
+nonisolated struct NewEpisodeItem: Codable, Hashable, Sendable, Identifiable {
+    let id: String
+    let title: String
+    let episodeLabel: String
+    let platform: String
+    let platformColorHex: String
+}
+
 /// The full widget payload written by the main app.
+///
+/// `newEpisodes` is optional so payloads written by previous app versions
+/// (which lack the key) still decode with `newEpisodes == nil`.
 nonisolated struct WidgetPayload: Codable, Sendable {
     let leavingSoon: [LeavingSoonItem]
     let watchlistCount: Int
     let newEpisodeCount: Int
     let lastUpdated: Date
+    let newEpisodes: [NewEpisodeItem]?
 }
 
 // MARK: - App Group helpers

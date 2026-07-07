@@ -68,7 +68,8 @@ struct ContentView: View {
             // finishes its network round-trips.
             WidgetDataService.shared.pushCounts(
                 watchlistCount: StreamsViewModel.shared.userStreams.count,
-                newEpisodeCount: StreamsViewModel.shared.newEpisodes.count
+                newEpisodeCount: StreamsViewModel.shared.newEpisodes.count,
+                newEpisodeRows: StreamsViewModel.shared.newEpisodes
             )
 
             // Capture a session_started event for every install — signed-in

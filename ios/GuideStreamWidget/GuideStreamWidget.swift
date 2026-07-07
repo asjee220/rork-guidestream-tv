@@ -44,7 +44,8 @@ nonisolated struct Provider: TimelineProvider {
                 ],
                 watchlistCount: 12,
                 newEpisodeCount: 3,
-                lastUpdated: Date()
+                lastUpdated: Date(),
+                newEpisodes: nil
             )
         )
     }
@@ -57,10 +58,10 @@ nonisolated struct Provider: TimelineProvider {
     func getTimeline(in context: Context, completion: @escaping (Timeline<WidgetEntry>) -> Void) {
         let payload = WidgetDataStore.load()
         let entry = WidgetEntry(date: Date(), payload: payload)
-        // Refresh every 5 minutes so the widget picks up new Leaving Soon data
-        // and watchlist changes quickly. The main app also calls
-        // WidgetCenter.shared.reloadTimelines() on every data change.
-        let nextUpdate = Date().addingTimeInterval(5 * 60)
+        // Refresh every 30 minutes. The main app calls
+        // WidgetCenter.shared.reloadTimelines() on every data change, so a
+        // short interval here only burns the widget refresh budget.
+        let nextUpdate = Date().addingTimeInterval(30 * 60)
         let timeline = Timeline(entries: [entry], policy: .after(nextUpdate))
         completion(timeline)
     }
@@ -160,7 +161,8 @@ struct MediumWidgetView: View {
 
                 Spacer()
 
-                if let updated = entry.payload?.lastUpdated {
+                if let updated = entry.payload?.lastUpdated,
+                   Date().timeIntervalSince(updated) < 24 * 60 * 60 {
                     Text(updated, style: .relative)
                         .font(.system(size: 9, weight: .medium))
                         .foregroundStyle(.white.opacity(0.3))
@@ -170,20 +172,80 @@ struct MediumWidgetView: View {
                 }
             }
 
-            // Section title
-            HStack(spacing: 5) {
+            // Section title — falls back to NEW EPISODES when there are no
+            // leaving-soon titles but new-episode content is available.
+            let hasLeavingSoon = entry.payload?.leavingSoon.isEmpty == false
+            let newEpItems = entry.payload?.newEpisodes
+            let hasNewEpisodes = newEpItems != nil && !(newEpItems?.isEmpty ?? true)
+
+            if hasLeavingSoon {
+                HStack(spacing: 5) {
+                    Text("LEAVING SOON")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(.orange)
+                    if let count = entry.payload?.leavingSoon.count, count > 0 {
+                        Text("· \(count) title\(count == 1 ? "" : "s")")
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundStyle(.white.opacity(0.4))
+                    }
+                }
+            } else if hasNewEpisodes {
+                HStack(spacing: 5) {
+                    Text("NEW EPISODES")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(Color(red: 0x00/255, green: 0x9E/255, blue: 0x8A/255))
+                    if let count = newEpItems?.count, count > 0 {
+                        Text("· \(count) new")
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundStyle(.white.opacity(0.4))
+                    }
+                }
+            } else {
                 Text("LEAVING SOON")
                     .font(.system(size: 10, weight: .bold))
                     .foregroundStyle(.orange)
-                if let count = entry.payload?.leavingSoon.count, count > 0 {
-                    Text("· \(count) title\(count == 1 ? "" : "s")")
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.4))
-                }
             }
 
-            // Leaving Soon rows
-            if let items = entry.payload?.leavingSoon, !items.isEmpty {
+            // Rows — leaving soon first, then new-episodes fallback, then empty state.
+            if hasLeavingSoon {
+                if let items = entry.payload?.leavingSoon {
+                    VStack(spacing: 6) {
+                        ForEach(Array(items.prefix(3))) { item in
+                            HStack(spacing: 8) {
+                                // Platform pill
+                                Text(item.platform)
+                                    .font(.system(size: 8, weight: .bold))
+                                    .foregroundStyle(.white)
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 3)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                            .fill(Color(hex: item.platformColorHex) ?? .gray)
+                                    )
+
+                                // Title
+                                Text(item.title)
+                                    .font(.system(size: 13, weight: .semibold))
+                                    .foregroundStyle(.white)
+                                    .lineLimit(1)
+
+                                Spacer()
+
+                                // Days remaining badge
+                                Text("\(item.daysRemaining)d")
+                                    .font(.system(size: 10, weight: .bold))
+                                    .foregroundStyle(.orange)
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                            .fill(Color.orange.opacity(0.15))
+                                    )
+                            }
+                        }
+                    }
+                }
+            } else if hasNewEpisodes, let items = newEpItems {
                 VStack(spacing: 6) {
                     ForEach(Array(items.prefix(3))) { item in
                         HStack(spacing: 8) {
@@ -206,15 +268,15 @@ struct MediumWidgetView: View {
 
                             Spacer()
 
-                            // Days remaining badge
-                            Text("\(item.daysRemaining)d")
+                            // Episode label badge (teal)
+                            Text(item.episodeLabel)
                                 .font(.system(size: 10, weight: .bold))
-                                .foregroundStyle(.orange)
+                                .foregroundStyle(Color(red: 0x00/255, green: 0x9E/255, blue: 0x8A/255))
                                 .padding(.horizontal, 6)
                                 .padding(.vertical, 2)
                                 .background(
                                     RoundedRectangle(cornerRadius: 4, style: .continuous)
-                                        .fill(Color.orange.opacity(0.15))
+                                        .fill(Color(red: 0x00/255, green: 0x9E/255, blue: 0x8A/255).opacity(0.15))
                                 )
                         }
                     }
@@ -279,11 +341,18 @@ struct LargeWidgetView: View {
                 StatBadge(label: "Expiring", value: entry.payload?.leavingSoon.count ?? 0, color: .orange)
             }
 
-            // Grid of leaving-soon titles
+            // Grid of leaving-soon titles, falling back to new-episode cards
+            // when there are no expiring titles but new episodes exist.
             if let items = entry.payload?.leavingSoon, !items.isEmpty {
                 LazyVGrid(columns: columns, spacing: 8) {
                     ForEach(Array(items.prefix(8))) { item in
                         LeavingSoonCard(item: item)
+                    }
+                }
+            } else if let newItems = entry.payload?.newEpisodes, !newItems.isEmpty {
+                LazyVGrid(columns: columns, spacing: 8) {
+                    ForEach(Array(newItems.prefix(8))) { item in
+                        NewEpisodeCard(item: item)
                     }
                 }
             } else {
@@ -365,6 +434,54 @@ struct LeavingSoonCard: View {
                 Text(item.expireDate)
                     .font(.system(size: 9, weight: .medium))
                     .foregroundStyle(.white.opacity(0.35))
+            }
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color.white.opacity(0.05))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .strokeBorder(Color.white.opacity(0.08), lineWidth: 0.5)
+                )
+        )
+    }
+}
+
+/// Sibling of `LeavingSoonCard` used in the large widget's new-episodes
+/// fallback. Visually identical except the bottom row shows the episode
+/// label in teal on the left and nothing on the right.
+struct NewEpisodeCard: View {
+    let item: NewEpisodeItem
+
+    private let teal = Color(red: 0x00/255, green: 0x9E/255, blue: 0x8A/255)
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            // Platform badge
+            Text(item.platform)
+                .font(.system(size: 7, weight: .bold))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 5)
+                .padding(.vertical, 2)
+                .background(
+                    RoundedRectangle(cornerRadius: 3, style: .continuous)
+                        .fill(Color(hex: item.platformColorHex) ?? .gray)
+                )
+
+            Text(item.title)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(.white)
+                .lineLimit(2)
+
+            Spacer(minLength: 0)
+
+            HStack(spacing: 4) {
+                Text(item.episodeLabel)
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(teal)
+                Spacer()
             }
         }
         .padding(10)

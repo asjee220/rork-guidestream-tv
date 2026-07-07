@@ -895,7 +895,8 @@ struct HomeView: View {
                         expiringItems: expiringItems,
                         posterUrls: expiringPosterUrls,
                         watchlistCount: streams.userStreams.count,
-                        newEpisodeCount: streams.newEpisodes.count
+                        newEpisodeCount: streams.newEpisodes.count,
+                        newEpisodeRows: streams.newEpisodes
                     )
                 }
                 } // ScrollViewReader
@@ -1339,7 +1340,8 @@ struct HomeView: View {
                 expiringItems: expiringItems,
                 posterUrls: expiringPosterUrls,
                 watchlistCount: streams.userStreams.count,
-                newEpisodeCount: streams.newEpisodes.count
+                newEpisodeCount: streams.newEpisodes.count,
+                newEpisodeRows: streams.newEpisodes
             )
             let topGenreId = topGenreFromWatchList()
             if topGenreId.id != selectedGenreId {
@@ -1371,7 +1373,8 @@ struct HomeView: View {
                 expiringItems: expiringItems,
                 posterUrls: expiringPosterUrls,
                 watchlistCount: streams.userStreams.count,
-                newEpisodeCount: streams.newEpisodes.count
+                newEpisodeCount: streams.newEpisodes.count,
+                newEpisodeRows: streams.newEpisodes
             )
             let topGenreId = topGenreFromWatchList()
             if topGenreId.id != selectedGenreId {
