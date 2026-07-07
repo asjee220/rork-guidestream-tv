@@ -26,6 +26,8 @@ struct AccountView: View {
     @State private var savedFlash: Bool = false
     @State private var showResetSent: Bool = false
     @State private var showDeleteConfirm: Bool = false
+    @State private var isDeleting: Bool = false
+    @State private var deleteError: String? = nil
     @State private var isSendingReset: Bool = false
     @FocusState private var nameFocused: Bool
 
@@ -45,6 +47,10 @@ struct AccountView: View {
                                 .transition(.opacity)
                         }
                         deleteCard
+                        if let deleteError {
+                            statusBanner(text: deleteError, isError: true)
+                                .transition(.opacity)
+                        }
                     } else {
                         guestPrompt
                     }
@@ -72,6 +78,7 @@ struct AccountView: View {
             Button("Delete account", role: .destructive) {
                 Task { await deleteAccount() }
             }
+            .disabled(isDeleting)
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("Your account will be permanently deleted. You'll be signed out immediately and lose access to your saved shows, devices, and history.")
@@ -299,15 +306,42 @@ struct AccountView: View {
     }
 
     private func deleteAccount() async {
-        // Real account deletion requires a backend admin call. For now we
-        // sign the user out and log a deletion-requested event so the team
-        // can follow up. The user immediately sees the welcome screen.
-        WatchIntentLogger.shared.log(
-            eventType: .authSignedIn,
-            metadata: ["action": "account_deletion_requested"]
-        )
-        await auth.signOut()
-        dismiss()
+        // Call the deployed Supabase edge function to permanently delete the
+        // user's account server-side, then sign out locally. Requires a
+        // signed-in user's JWT — no anon-key fallback.
+        guard let accessToken = (try? await SupabaseManager.shared.client.auth.session)?.accessToken else {
+            deleteError = "Couldn't delete your account. Check your connection and try again."
+            return
+        }
+
+        isDeleting = true
+        deleteError = nil
+        defer { isDeleting = false }
+
+        let base = SupabaseConfig.url.trimmingCharacters(in: .whitespaces)
+        guard let url = URL(string: "\(base)/functions/v1/delete_account") else {
+            deleteError = "Couldn't delete your account. Check your connection and try again."
+            return
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(SupabaseConfig.anonKey, forHTTPHeaderField: "apikey")
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        request.httpBody = try? JSONSerialization.data(withJSONObject: [String: Any]())
+
+        do {
+            let (_, response) = try await URLSession.shared.data(for: request)
+            guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+                deleteError = "Couldn't delete your account. Check your connection and try again."
+                return
+            }
+            await auth.signOut()
+            dismiss()
+        } catch {
+            deleteError = "Couldn't delete your account. Check your connection and try again."
+        }
     }
 
     private func signOutToWelcome() {

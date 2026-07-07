@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		PR1VACY0002BUILDFILE000B /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = PR1VACY0001FILEREF0000A /* PrivacyInfo.xcprivacy */; };
 		AB50D61ED0BAE05FA2F8EA /* Supabase in Frameworks */ = {isa = PBXBuildFile; productRef = AB1C9FF110ABBCE8BF456A /* Supabase */; };
 		XX50D61ED0BAE05FA2F8E9XX /* Supabase in Frameworks */ = {isa = PBXBuildFile; productRef = XX1C9FF110ABBCE8BF456CXX /* Supabase */; };
 		XXAC3EF89597191F3A09AEXX /* YouTubeKit in Frameworks */ = {isa = PBXBuildFile; productRef = XX45D5A1BA7EF4022DE2E3XX /* YouTubeKit */; };
@@ -53,6 +54,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		PR1VACY0001FILEREF0000A /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = GuideStreamTV/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		105FC57A2E9EAD3100EA8BCF /* GuideStreamTV.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = GuideStreamTV.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		105FC5892E9EAD3200EA8BCF /* GuideStreamTVTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = GuideStreamTVTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		105FC5932E9EAD3200EA8BCF /* GuideStreamTVUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = GuideStreamTVUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -173,6 +175,7 @@
 				XX0A484E14E2DE04089045XX /* GuideStreamTVTV */,
 				XXAA11BB22CC33DD44EE55XX /* Shared */,
 				XXFE3FBA6264EA26BA6BC1XX /* GuideStreamWidget */,
+				PR1VACY0001FILEREF0000A /* PrivacyInfo.xcprivacy */,
 			);
 			sourceTree = "<group>";
 		};
@@ -408,6 +411,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				PR1VACY0002BUILDFILE000B /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -655,7 +659,6 @@
 					sling,
 					dazn,
 					com.apple.tvremote,
-					"App-Prefs",
 				);
 				INFOPLIST_KEY_NSBonjourServices = (
 					_airplay._tcp,
@@ -751,7 +754,6 @@
 					sling,
 					dazn,
 					com.apple.tvremote,
-					"App-Prefs",
 				);
 				INFOPLIST_KEY_NSBonjourServices = (
 					_airplay._tcp,

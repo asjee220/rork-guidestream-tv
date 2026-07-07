@@ -233,15 +233,10 @@ struct CastToTVSheet: View {
 
     private var openSettingsButton: some View {
         Button {
-            // Try the private Privacy > Local Network deep link first so the
-            // user lands on the exact toggle. Fall back to the app's own
-            // Settings page (the only officially-supported path) if iOS
-            // refuses to open the prefs URL.
-            let localNetworkURL = URL(string: "App-Prefs:Privacy&path=LOCAL_NETWORK")
-            let appSettingsURL = URL(string: UIApplication.openSettingsURLString)
-            if let localNetworkURL, UIApplication.shared.canOpenURL(localNetworkURL) {
-                UIApplication.shared.open(localNetworkURL)
-            } else if let appSettingsURL {
+            // Open the app's own Settings page — the only officially-supported
+            // URL. The private App-Prefs scheme was removed for App Store
+            // compliance (it's an undocumented URL that triggers rejection).
+            if let appSettingsURL = URL(string: UIApplication.openSettingsURLString) {
                 UIApplication.shared.open(appSettingsURL)
             }
         } label: {
@@ -258,16 +253,12 @@ struct CastToTVSheet: View {
         .buttonStyle(.plain)
     }
 
-    /// Opens iOS Wi-Fi settings directly so the user can toggle Wi-Fi off/on
-    /// or rejoin the network. Falls back to the app's settings page if iOS
-    /// rejects the prefs URL.
+    /// Opens the app's Settings page so the user can toggle Wi-Fi off/on or
+    /// rejoin the network. The private App-Prefs:WIFI scheme was removed for
+    /// App Store compliance (undocumented URL that triggers rejection).
     private var openWiFiSettingsButton: some View {
         Button {
-            let wifiURL = URL(string: "App-Prefs:WIFI")
-            let appSettingsURL = URL(string: UIApplication.openSettingsURLString)
-            if let wifiURL, UIApplication.shared.canOpenURL(wifiURL) {
-                UIApplication.shared.open(wifiURL)
-            } else if let appSettingsURL {
+            if let appSettingsURL = URL(string: UIApplication.openSettingsURLString) {
                 UIApplication.shared.open(appSettingsURL)
             }
         } label: {

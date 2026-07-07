@@ -152,7 +152,6 @@
 		<string>sling</string>
 		<string>dazn</string>
 		<string>com.apple.tvremote</string>
-		<string>App-Prefs</string>
 	</array>
 
 	<key>NSBonjourServices</key>
