@@ -71,6 +71,7 @@ import com.rork.guidestreamtvandroid.ui.theme.BrandOrange
 import com.rork.guidestreamtvandroid.ui.theme.BrandWordmark
 import com.rork.guidestreamtvandroid.ui.theme.GlassFill
 import com.rork.guidestreamtvandroid.ui.theme.GlassStroke
+import com.rork.guidestreamtvandroid.ui.theme.Navy
 import com.rork.guidestreamtvandroid.ui.theme.TextPrimary
 import com.rork.guidestreamtvandroid.ui.theme.TextSecondary
 import com.rork.guidestreamtvandroid.ui.theme.TextTertiary
@@ -134,13 +135,23 @@ fun OnboardingFlow(
         }
 
         if (showEmailAuth) {
-            EmailAuthScreen(
-                onAuthenticated = {
-                    showEmailAuth = false
-                    step = 1
-                },
-                onClose = { showEmailAuth = false },
-            )
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Navy)
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                    ) { },
+            ) {
+                EmailAuthScreen(
+                    onAuthenticated = {
+                        showEmailAuth = false
+                        step = 1
+                    },
+                    onClose = { showEmailAuth = false },
+                )
+            }
         }
     }
 }
