@@ -82,51 +82,64 @@ import kotlinx.coroutines.launch
  */
 @Composable
 fun OnboardingFlow(
+    startStep: Int = 0,
     onFinish: () -> Unit,
-    onEmailAuth: () -> Unit,
 ) {
-    var step by remember { mutableStateOf(0) }
+    var step by remember { mutableStateOf(startStep) }
+    var showEmailAuth by remember { mutableStateOf(false) }
     val auth = AuthViewModel.get()
     val selectedServices = remember { mutableStateOf(auth.selectedServices.value) }
     var pushOn by remember { mutableStateOf(auth.notifyPushEnabled.value) }
     val scope = rememberCoroutineScope()
 
-    AnimatedContent(
-        targetState = step,
-        transitionSpec = {
-            (slideInHorizontally(tween(350)) { it } + fadeIn(tween(350))) togetherWith
-                (slideOutHorizontally(tween(350)) { -it } + fadeOut(tween(350)))
-        },
-        label = "onboarding",
-    ) { currentStep ->
-        when (currentStep) {
-            0 -> WelcomeScreen(
-                onContinue = { step = 1 },
-                onEmailAuth = onEmailAuth,
-            )
-            1 -> ConnectServicesScreen(
-                selected = selectedServices.value,
-                onToggle = { id ->
-                    selectedServices.value = if (id in selectedServices.value) {
-                        selectedServices.value - id
-                    } else {
-                        selectedServices.value + id
-                    }
+    Box(modifier = Modifier.fillMaxSize()) {
+        AnimatedContent(
+            targetState = step,
+            transitionSpec = {
+                (slideInHorizontally(tween(350)) { it } + fadeIn(tween(350))) togetherWith
+                    (slideOutHorizontally(tween(350)) { -it } + fadeOut(tween(350)))
+            },
+            label = "onboarding",
+        ) { currentStep ->
+            when (currentStep) {
+                0 -> WelcomeScreen(
+                    onContinue = { step = 1 },
+                    onEmailAuth = { showEmailAuth = true },
+                )
+                1 -> ConnectServicesScreen(
+                    selected = selectedServices.value,
+                    onToggle = { id ->
+                        selectedServices.value = if (id in selectedServices.value) {
+                            selectedServices.value - id
+                        } else {
+                            selectedServices.value + id
+                        }
+                    },
+                    onContinue = {
+                        auth.setSelectedServices(selectedServices.value)
+                        step = 2
+                    },
+                )
+                else -> StayNotifiedScreen(
+                    pushOn = pushOn,
+                    onPushToggle = { pushOn = it },
+                    onContinue = {
+                        auth.setNotificationPreferences(pushOn, false)
+                        if (!auth.isAuthenticated.value) auth.continueAsGuest()
+                        auth.completeOnboarding()
+                        onFinish()
+                    },
+                )
+            }
+        }
+
+        if (showEmailAuth) {
+            EmailAuthScreen(
+                onAuthenticated = {
+                    showEmailAuth = false
+                    step = 1
                 },
-                onContinue = {
-                    auth.setSelectedServices(selectedServices.value)
-                    step = 2
-                },
-            )
-            else -> StayNotifiedScreen(
-                pushOn = pushOn,
-                onPushToggle = { pushOn = it },
-                onContinue = {
-                    auth.setNotificationPreferences(pushOn, false)
-                    auth.continueAsGuest()
-                    auth.completeOnboarding()
-                    onFinish()
-                },
+                onClose = { showEmailAuth = false },
             )
         }
     }

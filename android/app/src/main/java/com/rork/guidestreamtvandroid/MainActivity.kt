@@ -36,7 +36,6 @@ import com.rork.guidestreamtvandroid.data.repository.StreamsViewModel
 import com.rork.guidestreamtvandroid.ui.navigation.AppRouter
 import com.rork.guidestreamtvandroid.ui.navigation.MainScreen
 import com.rork.guidestreamtvandroid.ui.navigation.PendingTitleRoute
-import com.rork.guidestreamtvandroid.ui.onboarding.EmailAuthScreen
 import com.rork.guidestreamtvandroid.ui.onboarding.OnboardingFlow
 import com.rork.guidestreamtvandroid.ui.theme.AppTheme
 import com.rork.guidestreamtvandroid.ui.theme.BrandBackground
@@ -115,7 +114,6 @@ private fun RootContent(
     val isSignedIn by auth.isSignedIn.collectAsState()
     val hasCompletedOnboarding by auth.hasCompletedOnboarding.collectAsState()
     val isAuthenticated by auth.isAuthenticated.collectAsState()
-    var showEmailAuth by remember { mutableStateOf(false) }
 
     // Handle deep link from initial intent
     LaunchedEffect(initialIntent) {
@@ -123,45 +121,32 @@ private fun RootContent(
         if (uri != null) onDeepLink(uri)
     }
 
-    val showOnboarding = !hasCompletedOnboarding && !isAuthenticated
-    val showMain = isSignedIn && (hasCompletedOnboarding || isAuthenticated)
-
     Box(modifier = Modifier.fillMaxSize()) {
         BrandBackground()
 
         when {
-            // Still restoring session — show splash
-            !sessionRestored && !showOnboarding -> {
-                SplashScreen()
-            }
-            // Onboarding needed
-            showOnboarding && !showEmailAuth -> {
-                OnboardingFlow(
-                    onFinish = {
-                        // After onboarding completes, refresh data
-                        StreamsViewModel.get().refreshAll()
-                    },
-                    onEmailAuth = { showEmailAuth = true },
-                )
-            }
-            // Email auth sheet
-            showEmailAuth -> {
-                EmailAuthScreen(
-                    onAuthenticated = {
-                        showEmailAuth = false
-                        StreamsViewModel.get().refreshAll()
-                    },
-                    onClose = { showEmailAuth = false },
-                )
-            }
-            // Main app
-            else -> {
+            // Main app — only when signed in AND onboarding complete
+            isSignedIn && hasCompletedOnboarding -> {
                 MainScreen(
                     router = AppRouter.get(),
                     onOpenAsk = {
                         // Ask sheet is now handled inside MainScreen via tab intercept
                     },
                 )
+            }
+            // Session restored — run onboarding (resume at services for authed users)
+            sessionRestored -> {
+                OnboardingFlow(
+                    startStep = if (isAuthenticated) 1 else 0,
+                    onFinish = {
+                        // After onboarding completes, refresh data
+                        StreamsViewModel.get().refreshAll()
+                    },
+                )
+            }
+            // Still restoring session — show splash
+            else -> {
+                SplashScreen()
             }
         }
     }
