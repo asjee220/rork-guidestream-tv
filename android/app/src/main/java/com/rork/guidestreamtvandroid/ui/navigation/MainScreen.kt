@@ -5,6 +5,9 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
@@ -27,6 +30,7 @@ import com.rork.guidestreamtvandroid.ui.sports.SportsGameDetailScreen
 import com.rork.guidestreamtvandroid.ui.sports.SportsScreen
 import com.rork.guidestreamtvandroid.ui.profile.ProfileScreen
 import com.rork.guidestreamtvandroid.ui.theme.BrandBackground
+import com.rork.guidestreamtvandroid.ui.theme.Navy
 
 /**
  * Root main screen — floating tab bar + tab content + detail overlays.
@@ -97,54 +101,85 @@ fun MainScreen(
             }
         }
 
+        // Full-screen overlay open flag — hides the floating tab bar behind opaque covers
+        val overlayOpen = showDetail != null || showCreatorDetail != null || showSearch || selectedGame != null
+
         // Show detail (full-screen cover equivalent)
         showDetail?.let { route ->
-            ShowDetailScreen(
-                titleId = route.titleId,
-                titleName = route.titleName ?: "Show",
-                isTV = route.isTv,
-                onBack = { showDetail = null },
-                modifier = Modifier.fillMaxSize(),
-            )
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Navy)
+                    .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { },
+            ) {
+                ShowDetailScreen(
+                    titleId = route.titleId,
+                    titleName = route.titleName ?: "Show",
+                    isTV = route.isTv,
+                    onBack = { showDetail = null },
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
         }
 
         // Creator detail (sheet equivalent)
         showCreatorDetail?.let { titleId ->
-            CreatorDetailScreen(
-                titleId = titleId,
-                onBack = { showCreatorDetail = null },
-                modifier = Modifier.fillMaxSize(),
-            )
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Navy)
+                    .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { },
+            ) {
+                CreatorDetailScreen(
+                    titleId = titleId,
+                    onBack = { showCreatorDetail = null },
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
         }
 
         // Search (full-screen cover equivalent)
         if (showSearch) {
-            SearchScreen(
-                onClose = { showSearch = false },
-                onOpenTitle = { route ->
-                    showSearch = false
-                    val kind = SourceKind.from(route.titleId)
-                    if (kind.isNonTMDB) {
-                        showCreatorDetail = route.titleId
-                    } else {
-                        showDetail = route
-                    }
-                },
-                onOpenCreator = { titleId ->
-                    showSearch = false
-                    showCreatorDetail = titleId
-                },
-                modifier = Modifier.fillMaxSize(),
-            )
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Navy)
+                    .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { },
+            ) {
+                SearchScreen(
+                    onClose = { showSearch = false },
+                    onOpenTitle = { route ->
+                        showSearch = false
+                        val kind = SourceKind.from(route.titleId)
+                        if (kind.isNonTMDB) {
+                            showCreatorDetail = route.titleId
+                        } else {
+                            showDetail = route
+                        }
+                    },
+                    onOpenCreator = { titleId ->
+                        showSearch = false
+                        showCreatorDetail = titleId
+                    },
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
         }
 
         // Sports game detail
         selectedGame?.let { game ->
-            SportsGameDetailScreen(
-                game = game,
-                onBack = { selectedGame = null },
-                modifier = Modifier.fillMaxSize(),
-            )
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Navy)
+                    .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { },
+            ) {
+                SportsGameDetailScreen(
+                    game = game,
+                    onBack = { selectedGame = null },
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
         }
 
         // Ask Stream sheet
@@ -155,7 +190,7 @@ fun MainScreen(
 
         // Floating tab bar
         AnimatedVisibility(
-            visible = tabBarVisible,
+            visible = tabBarVisible && !overlayOpen,
             enter = slideInVertically { it } + fadeIn(),
             exit = slideOutVertically { it } + fadeOut(),
             modifier = Modifier.align(Alignment.BottomCenter),
