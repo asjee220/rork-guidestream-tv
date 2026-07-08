@@ -56,6 +56,7 @@ class StreamsViewModel private constructor(context: Context) {
         fun init(context: Context): StreamsViewModel =
             instance ?: synchronized(this) {
                 instance ?: StreamsViewModel(context.applicationContext).also {
+                    instance = it
                     it._userStreams.value = it.loadLocalCache()
                 }
             }

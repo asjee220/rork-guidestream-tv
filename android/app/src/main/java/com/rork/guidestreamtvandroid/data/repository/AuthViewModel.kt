@@ -149,6 +149,7 @@ class AuthViewModel private constructor(private val context: Context) : ViewMode
         fun init(context: Context): AuthViewModel =
             instance ?: synchronized(this) {
                 instance ?: AuthViewModel(context.applicationContext).also {
+                    instance = it
                     it.updateSignedInState()
                 }
             }
