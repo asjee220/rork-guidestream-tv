@@ -30,6 +30,7 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -99,6 +100,8 @@ fun HomeScreen(
     val providerByTmdb by homeVm.providerByTmdb.collectAsStateWithLifecycle()
     val userStreams by streamsVm.userStreams.collectAsStateWithLifecycle()
     val selectedServices by authVm.selectedServices.collectAsStateWithLifecycle()
+
+    LaunchedEffect(Unit) { homeVm.loadAll() }
 
     val scrollState = rememberScrollState()
 
