@@ -93,10 +93,7 @@ fun HomeScreen(
     val upcoming by homeVm.upcoming.collectAsStateWithLifecycle()
     val bingeReady by homeVm.bingeReady.collectAsStateWithLifecycle()
     val genreShows by homeVm.genreShows.collectAsStateWithLifecycle()
-    val popularOnNetflix by homeVm.popularOnNetflix.collectAsStateWithLifecycle()
-    val popularOnPrime by homeVm.popularOnPrime.collectAsStateWithLifecycle()
-    val popularOnDisney by homeVm.popularOnDisney.collectAsStateWithLifecycle()
-    val popularOnHbo by homeVm.popularOnHbo.collectAsStateWithLifecycle()
+    val popularByService by homeVm.popularByService.collectAsStateWithLifecycle()
     val providerByTmdb by homeVm.providerByTmdb.collectAsStateWithLifecycle()
     val userStreams by streamsVm.userStreams.collectAsStateWithLifecycle()
     val selectedServices by authVm.selectedServices.collectAsStateWithLifecycle()
@@ -274,14 +271,8 @@ fun HomeScreen(
                 ShimmerSection("Popular on ${svc.name}", Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
             }
         } else {
-            val serviceResults = mapOf(
-                "netflix" to popularOnNetflix,
-                "prime" to popularOnPrime,
-                "disney" to popularOnDisney,
-                "hbo" to popularOnHbo,
-            )
             services.forEach { svc ->
-                val results = serviceResults[svc.id] ?: emptyList()
+                val results = popularByService[svc.id] ?: emptyList()
                 if (results.isNotEmpty()) {
                     PopularOnServiceSection(
                         serviceName = svc.name,

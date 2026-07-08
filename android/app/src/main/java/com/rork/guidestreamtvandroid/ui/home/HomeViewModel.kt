@@ -3,6 +3,7 @@ package com.rork.guidestreamtvandroid.ui.home
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rork.guidestreamtvandroid.data.models.Platform
+import com.rork.guidestreamtvandroid.data.models.StreamingCatalog
 import com.rork.guidestreamtvandroid.data.models.TMDBResult
 import com.rork.guidestreamtvandroid.data.remote.TMDBService
 import com.rork.guidestreamtvandroid.data.repository.AuthViewModel
@@ -45,19 +46,10 @@ class HomeViewModel : ViewModel() {
     private val _genreShows = MutableStateFlow<List<TMDBResult>>(emptyList())
     val genreShows: StateFlow<List<TMDBResult>> = _genreShows.asStateFlow()
 
-    private val _popularOnNetflix = MutableStateFlow<List<TMDBResult>>(emptyList())
-    val popularOnNetflix: StateFlow<List<TMDBResult>> = _popularOnNetflix.asStateFlow()
+    private val _popularByService = MutableStateFlow<Map<String, List<TMDBResult>>>(emptyMap())
+    val popularByService: StateFlow<Map<String, List<TMDBResult>>> = _popularByService.asStateFlow()
 
-    private val _popularOnPrime = MutableStateFlow<List<TMDBResult>>(emptyList())
-    val popularOnPrime: StateFlow<List<TMDBResult>> = _popularOnPrime.asStateFlow()
-
-    private val _popularOnDisney = MutableStateFlow<List<TMDBResult>>(emptyList())
-    val popularOnDisney: StateFlow<List<TMDBResult>> = _popularOnDisney.asStateFlow()
-
-    private val _popularOnHbo = MutableStateFlow<List<TMDBResult>>(emptyList())
-    val popularOnHbo: StateFlow<List<TMDBResult>> = _popularOnHbo.asStateFlow()
-
-    /** TMDB provider IDs for popular streaming services. */
+    /** TMDB provider IDs for streaming services (matches iOS). */
     private val providerIdMap = mapOf(
         "netflix" to 8,
         "prime" to 9,
@@ -67,6 +59,17 @@ class HomeViewModel : ViewModel() {
         "appletv" to 350,
         "paramount" to 531,
         "peacock" to 386,
+        "starz" to 43,
+        "showtime" to 37,
+        "crunchyroll" to 283,
+        "amc" to 526,
+        "discovery" to 584,
+        "mubi" to 11,
+        "britbox" to 151,
+        "fubo" to 257,
+        "tubi" to 73,
+        "pluto" to 300,
+        "youtube" to 192,
     )
 
     /** Cached top US provider per TMDB id. */
@@ -92,10 +95,20 @@ class HomeViewModel : ViewModel() {
                 launch { _upcoming.value = tmdb.getUpcomingMovies() },
                 launch { _bingeReady.value = tmdb.getDiscoverEnded() },
                 launch { _genreShows.value = tmdb.getDiscoverByGenre(80) }, // Crime
-                launch { _popularOnNetflix.value = tmdb.discoverByProvider(8) },
-                launch { _popularOnPrime.value = tmdb.discoverByProvider(9) },
-                launch { _popularOnDisney.value = tmdb.discoverByProvider(337) },
-                launch { _popularOnHbo.value = tmdb.discoverByProvider(1899) },
+                launch {
+                    val services = StreamingCatalog.ordered(AuthViewModel.get().selectedServices.value)
+                    val entries = services
+                        .mapNotNull { svc -> providerIdMap[svc.id]?.let { svc.id to it } }
+                        .map { (serviceId, providerId) ->
+                            launch(Dispatchers.IO) {
+                                val results = tmdb.discoverByProvider(providerId)
+                                if (results.isNotEmpty()) {
+                                    _popularByService.value = _popularByService.value + (serviceId to results)
+                                }
+                            }
+                        }
+                    entries.forEach { it.join() }
+                },
             )
             jobs.forEach { it.join() }
 
