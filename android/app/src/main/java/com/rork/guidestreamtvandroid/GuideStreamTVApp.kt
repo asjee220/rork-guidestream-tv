@@ -18,6 +18,24 @@ import com.rork.guidestreamtvandroid.widget.WidgetDataService
 class GuideStreamTVApp : Application() {
     override fun onCreate() {
         super.onCreate()
+
+        // TEMP DIAGNOSTIC: capture any uncaught crash to SharedPreferences so it can
+        // be surfaced on screen on the next launch. Delegates to the previous handler
+        // so the process still terminates normally.
+        val previousHandler = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
+            try {
+                val trace = "Thread: ${thread.name}\n\n${throwable.stackTraceToString()}"
+                getSharedPreferences("gs_prefs", MODE_PRIVATE)
+                    .edit()
+                    .putString("gs_last_crash", trace)
+                    .commit()
+            } catch (_: Throwable) {
+                // The crash handler must never throw.
+            }
+            previousHandler?.uncaughtException(thread, throwable)
+        }
+
         // Initialize singletons in dependency order. Each step is guarded so a
         // single failing service can never prevent the app from launching.
         safe("DeviceIdentity") { DeviceIdentity.init(this) }
