@@ -278,6 +278,12 @@ struct ShowDetailScreen: View {
     @State private var showMoreEpisodes: Bool = false
     @State private var vm = ShowDetailViewModel()
     @State private var deepDivesVM = DeepDivesViewModel()
+    /// Trailers & clips for this title, loaded alongside the Deep Dives fetch.
+    /// Empty until the title's videos resolve; drives the Trailers & Clips row.
+    @State private var trailerVideos: [TMDBVideo] = []
+    @State private var showTrailerReels: Bool = false
+    @State private var trailerReelFeed: [TrailerItem] = []
+    @State private var trailerReelStartIndex: Int = 0
     /// Per-episode deep link URL resolved from Watchmode's episode-level
     /// sources endpoint. When non-nil, the watch button opens this URL
     /// so the streaming app lands on the exact episode.
@@ -400,8 +406,9 @@ struct ShowDetailScreen: View {
                     socialCounter
                     whereToWatchSection
                     fanActivitySection
-                    synopsisSection
+                    trailersSection
                     deepDivesSection
+                    synopsisSection
                     if isTV {
                         episodesSection
                     }
@@ -488,8 +495,130 @@ struct ShowDetailScreen: View {
         }
         .onChange(of: vm.tmdb?.name) { _, name in
             guard let name, !name.isEmpty, let tmdbId = resolvedTmdbId else { return }
-            Task { await deepDivesVM.load(tmdbId: tmdbId, mediaType: isTV ? "tv" : "movie", showTitle: name) }
+            Task {
+                async let deepLoad: Void = deepDivesVM.load(tmdbId: tmdbId, mediaType: isTV ? "tv" : "movie", showTitle: name)
+                let vids = (try? await TMDBService.shared.getTitleVideos(tmdbId: tmdbId, isTV: isTV)) ?? []
+                await deepLoad
+                trailerVideos = vids
+            }
         }
+        .fullScreenCover(isPresented: $showTrailerReels) {
+            ReelsScreen(
+                onDismiss: { showTrailerReels = false },
+                injectedReels: trailerReelFeed,
+                injectedStartIndex: trailerReelStartIndex
+            )
+        }
+    }
+
+    // MARK: Trailers & Clips
+
+    @ViewBuilder
+    private var trailersSection: some View {
+        if trailerVideos.isEmpty {
+            EmptyView()
+        } else {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Trailers & Clips")
+                    .scaledFont(size: 17, weight: .semibold)
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 20)
+
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 10) {
+                        ForEach(Array(trailerVideos.prefix(6).enumerated()), id: \.element.key) { idx, video in
+                            Button {
+                                openTrailerReels(startIndex: idx)
+                            } label: {
+                                trailerCard(video)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.horizontal, 20)
+                }
+            }
+            .padding(.top, 18)
+        }
+    }
+
+    private func trailerCard(_ video: TMDBVideo) -> some View {
+        let thumb = URL(string: "https://img.youtube.com/vi/\(video.key)/hqdefault.jpg")
+        return RoundedRectangle(cornerRadius: 12, style: .continuous)
+            .fill(Color.white.opacity(0.05))
+            .frame(width: 130, height: 195)
+            .overlay {
+                RemoteImage(url: thumb, contentMode: .fill)
+            }
+            .clipShape(.rect(cornerRadius: 12))
+            .overlay(alignment: .center) {
+                Image(systemName: "play.circle.fill")
+                    .scaledFont(size: 34, weight: .regular)
+                    .foregroundStyle(.white.opacity(0.92))
+                    .shadow(color: .black.opacity(0.4), radius: 8)
+            }
+            .overlay(alignment: .topLeading) {
+                if let type = video.type, !type.isEmpty {
+                    Text(type)
+                        .scaledFont(size: 9, weight: .bold)
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 3)
+                        .background(.ultraThinMaterial, in: .rect(cornerRadius: 5))
+                        .padding(6)
+                }
+            }
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(Color.white.opacity(0.10), lineWidth: 0.5)
+            )
+    }
+
+    /// Builds the title-scoped Reels feed from the loaded videos. Every item
+    /// shares the same title identity and differs only by trailer key / type.
+    private func buildTrailerReelFeed() -> [TrailerItem] {
+        let svcName = vm.primaryService?.name ?? ""
+        let color = vm.primaryService?.color ?? Color.orange
+        let posterU = posterUrl.flatMap { URL(string: $0) }
+        let backdropU = heroImageUrl.flatMap { URL(string: $0) }
+        let identity = String(displayTitle.prefix(3)).uppercased()
+        return trailerVideos.map { v in
+            TrailerItem(
+                id: v.key,
+                tmdbId: resolvedTmdbId ?? 0,
+                showName: displayTitle,
+                synopsis: synopsis,
+                genre: (genres.first ?? "").uppercased(),
+                runtime: "",
+                platformId: svcName.lowercased(),
+                platformName: svcName.isEmpty ? "TRAILER" : svcName.uppercased(),
+                platformColor: color,
+                platformTextColor: .white,
+                backdropURL: backdropU,
+                posterURL: posterU,
+                trailerKey: v.key,
+                thumbnailURL: URL(string: "https://img.youtube.com/vi/\(v.key)/hqdefault.jpg"),
+                youtubeURL: URL(string: "https://www.youtube.com/watch?v=\(v.key)"),
+                deepLinkURL: nil,
+                voteAverage: vm.tmdb?.voteAverage ?? 0,
+                likes: 0,
+                comments: 0,
+                tab: .forYou,
+                identityCode: identity,
+                gradeColor: color.opacity(0.15),
+                isSponsored: false,
+                isTV: isTV,
+                videoType: v.type,
+                videoName: v.name
+            )
+        }
+    }
+
+    private func openTrailerReels(startIndex: Int) {
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        trailerReelFeed = buildTrailerReelFeed()
+        trailerReelStartIndex = startIndex
+        showTrailerReels = true
     }
 
     /// Opens the streaming app for a specific tapped service badge.

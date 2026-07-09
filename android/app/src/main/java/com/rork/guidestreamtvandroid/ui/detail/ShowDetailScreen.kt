@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -51,14 +52,20 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.rork.guidestreamtvandroid.data.models.DeepDiveCreator
+import com.rork.guidestreamtvandroid.data.remote.TMDBService
 import com.rork.guidestreamtvandroid.data.repository.StreamsViewModel
 import com.rork.guidestreamtvandroid.data.repository.WatchIntentLogger
 import com.rork.guidestreamtvandroid.ui.components.RemoteImage
 import com.rork.guidestreamtvandroid.ui.components.glassCard
+import com.rork.guidestreamtvandroid.ui.reels.ReelTab
+import com.rork.guidestreamtvandroid.ui.reels.ReelsScreen
+import com.rork.guidestreamtvandroid.ui.reels.TrailerItem
 import com.rork.guidestreamtvandroid.ui.theme.BrandOrange
 import com.rork.guidestreamtvandroid.ui.theme.GlassFill
 import com.rork.guidestreamtvandroid.ui.theme.GlassStroke
 import com.rork.guidestreamtvandroid.ui.theme.TextPrimary
+import com.rork.guidestreamtvandroid.ui.theme.Navy
 import com.rork.guidestreamtvandroid.ui.theme.TextSecondary
 import com.rork.guidestreamtvandroid.ui.theme.TextTertiary
 
@@ -92,9 +99,28 @@ fun ShowDetailScreen(
     val tmdbId = titleId.toIntOrNull()
     val isSaved = userStreams.any { it.titleId == titleId }
 
+    // Deep Dives + Trailers & Clips state
+    val deepVm = DeepDivesViewModel.get()
+    val creators by deepVm.creators.collectAsStateWithLifecycle()
+    var trailerVideos by remember { mutableStateOf<List<TMDBService.TMDBVideo>>(emptyList()) }
+    // Title-scoped Reels player state (holds the injected feed locally).
+    var reelsFeed by remember { mutableStateOf<List<TrailerItem>?>(null) }
+    var reelsStartIndex by remember { mutableStateOf(0) }
+
     // Load on first composition
     androidx.compose.runtime.LaunchedEffect(titleId) {
         vm.loadIfNeeded(titleId, isTV)
+        val tid = titleId.toIntOrNull()
+        trailerVideos = if (tid != null) {
+            try { TMDBService.get().getTitleVideos(tid, isTV) } catch (_: Exception) { emptyList() }
+        } else emptyList()
+    }
+    androidx.compose.runtime.LaunchedEffect(detail?.name) {
+        val name = detail?.name
+        val tid = titleId.toIntOrNull()
+        if (!name.isNullOrBlank() && tid != null) {
+            deepVm.load(tid, if (isTV) "tv" else "movie", name)
+        }
     }
 
     Box(modifier = modifier.fillMaxSize()) {
@@ -318,6 +344,55 @@ fun ShowDetailScreen(
                     }
                 }
 
+                // Trailers & Clips
+                TitleTrailersRow(
+                    videos = trailerVideos,
+                    onTrailerTap = { idx ->
+                        val tid = titleId.toIntOrNull() ?: 0
+                        val posterU = detail?.posterPath?.let {
+                            "https://image.tmdb.org/t/p/w342${if (it.startsWith("/")) it else "/$it"}"
+                        }
+                        val backdropU = detail?.backdropPath?.let {
+                            "https://image.tmdb.org/t/p/w1280${if (it.startsWith("/")) it else "/$it"}"
+                        }
+                        val genreLabel = detail?.genres?.firstOrNull()?.name ?: if (isTV) "Series" else "Movie"
+                        val plat = platform
+                        reelsStartIndex = idx
+                        reelsFeed = trailerVideos.map { v ->
+                            TrailerItem(
+                                id = v.key,
+                                tmdbId = tid,
+                                showName = detail?.name ?: titleName,
+                                synopsis = detail?.overview ?: "",
+                                genre = genreLabel,
+                                runtime = "",
+                                platformId = plat?.name?.lowercase() ?: "",
+                                platformName = plat?.name ?: "TRAILER",
+                                platformColor = plat?.color ?: BrandOrange,
+                                backdropUrl = backdropU,
+                                posterUrl = posterU,
+                                trailerKey = v.key,
+                                thumbnailUrl = "https://img.youtube.com/vi/${v.key}/hqdefault.jpg",
+                                voteAverage = detail?.voteAverage ?: 0.0,
+                                tab = ReelTab.FOR_YOU,
+                                isTV = isTV,
+                                videoType = v.type,
+                                videoName = v.name,
+                            )
+                        }
+                    },
+                )
+
+                // Deep Dives
+                DeepDivesSection(
+                    creators = creators,
+                    onOpenChannel = { url ->
+                        if (url.isNotBlank()) {
+                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                        }
+                    },
+                )
+
                 // Overview
                 if (!detail?.overview.isNullOrBlank()) {
                     Text(
@@ -429,6 +504,163 @@ fun ShowDetailScreen(
                 }
 
                 Spacer(Modifier.height(40.dp))
+            }
+        }
+
+        // Title-scoped Reels player (Trailers & Clips) — full-screen overlay
+        // holding the injected feed in local state (no nav-graph serialization).
+        reelsFeed?.let { feed ->
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Navy)
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                    ) { },
+            ) {
+                ReelsScreen(
+                    onDismiss = { reelsFeed = null },
+                    injectedReels = feed,
+                    injectedStartIndex = reelsStartIndex,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Trailers & Clips row for the title detail screen. Up to 6 2:3 poster cards
+ * showing YouTube thumbnails; tapping opens the title-scoped Reels player.
+ * Hidden entirely when there are no qualifying videos.
+ */
+@Composable
+private fun TitleTrailersRow(
+    videos: List<TMDBService.TMDBVideo>,
+    onTrailerTap: (Int) -> Unit,
+) {
+    if (videos.isEmpty()) return
+    Spacer(Modifier.height(8.dp))
+    Text(
+        text = "Trailers & Clips",
+        fontSize = 17.sp,
+        fontWeight = FontWeight.Bold,
+        color = TextPrimary,
+        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+    )
+    LazyRow(
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        itemsIndexed(videos.take(6)) { idx, v ->
+            Box(
+                modifier = Modifier
+                    .width(120.dp)
+                    .aspectRatio(2f / 3f)
+                    .clip(RoundedCornerShape(12.dp))
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                    ) { onTrailerTap(idx) },
+            ) {
+                RemoteImage(
+                    url = "https://img.youtube.com/vi/${v.key}/hqdefault.jpg",
+                    contentDescription = v.name,
+                    modifier = Modifier.fillMaxSize(),
+                    cornerRadius = 12,
+                )
+                Icon(
+                    imageVector = Icons.Filled.PlayArrow,
+                    contentDescription = "Play",
+                    tint = Color.White,
+                    modifier = Modifier
+                        .align(Alignment.Center)
+                        .size(34.dp),
+                )
+                if (!v.type.isNullOrBlank()) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.TopStart)
+                            .padding(6.dp)
+                            .clip(RoundedCornerShape(5.dp))
+                            .background(Color.Black.copy(alpha = 0.6f))
+                            .padding(horizontal = 6.dp, vertical = 3.dp),
+                    ) {
+                        Text(
+                            text = v.type!!,
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Deep Dives section — up to 4 YouTube creator channels that publish analysis
+ * content about the title. Hidden entirely when the list is empty.
+ */
+@Composable
+private fun DeepDivesSection(
+    creators: List<DeepDiveCreator>,
+    onOpenChannel: (String) -> Unit,
+) {
+    if (creators.isEmpty()) return
+    Spacer(Modifier.height(16.dp))
+    Text(
+        text = "Deep Dives",
+        fontSize = 17.sp,
+        fontWeight = FontWeight.Bold,
+        color = TextPrimary,
+        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+    )
+    LazyRow(
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        items(creators.take(4)) { creator ->
+            Column(
+                modifier = Modifier
+                    .width(150.dp)
+                    .glassCard(10)
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                    ) { onOpenChannel(creator.channelUrl) }
+                    .padding(10.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                RemoteImage(
+                    url = creator.avatarUrl,
+                    contentDescription = creator.name,
+                    modifier = Modifier.size(48.dp),
+                    cornerRadius = 24,
+                    placeholderText = creator.name.take(1).uppercase(),
+                    placeholderFontSize = 18.sp,
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = creator.name,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = TextPrimary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                val label = creator.subscriberLabel
+                if (label != null) {
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        text = "$label subscribers",
+                        fontSize = 10.sp,
+                        color = TextSecondary,
+                        maxLines = 1,
+                    )
+                }
             }
         }
     }

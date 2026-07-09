@@ -65,6 +65,11 @@ struct TrailerItem: Identifiable, Hashable {
     /// record `media_type` on `title_likes`. Defaults to `true` for entries
     /// without a TMDB identity (e.g. sponsored reels), which are never liked.
     var isTV: Bool = true
+    /// For title-scoped Reels (Trailers & Clips), the TMDB video type
+    /// ("Trailer", "Teaser", "Featurette", "Clip"). nil in the global feed.
+    var videoType: String? = nil
+    /// The TMDB video name for title-scoped reels. nil in the global feed.
+    var videoName: String? = nil
 
     static func == (lhs: TrailerItem, rhs: TrailerItem) -> Bool { lhs.id == rhs.id }
     func hash(into hasher: inout Hasher) { hasher.combine(id) }
@@ -910,6 +915,23 @@ struct ReelsScreen: View {
     /// to whichever tab they were on before opening Reels.
     let onDismiss: () -> Void
 
+    /// When non-nil, the screen renders exactly these title-scoped reels
+    /// (Trailers & Clips) instead of the global shared feed, starting at
+    /// `injectedStartIndex`. In this mode the shared `ReelsViewModel` is never
+    /// touched, the category pills are hidden, and each reel shows the
+    /// embedded streaming-service switcher.
+    var injectedReels: [TrailerItem]? = nil
+    var injectedStartIndex: Int = 0
+    /// Local paging position for the injected title-scoped feed.
+    @State private var injectedScrolledID: Int?
+
+    init(onDismiss: @escaping () -> Void, injectedReels: [TrailerItem]? = nil, injectedStartIndex: Int = 0) {
+        self.onDismiss = onDismiss
+        self.injectedReels = injectedReels
+        self.injectedStartIndex = injectedStartIndex
+        _injectedScrolledID = State(initialValue: injectedReels == nil ? nil : injectedStartIndex)
+    }
+
     var body: some View {
         GeometryReader { geo in
             // Use the FULL screen size for each reel so paging height matches the
@@ -924,7 +946,9 @@ struct ReelsScreen: View {
             ZStack {
                 Color(hex: "04090F").ignoresSafeArea()
 
-                if vm.isLoading && vm.allTrailers.isEmpty {
+                if let injected = injectedReels {
+                    injectedScroll(injected, size: fullSize, topInset: topInset, bottomInset: bottomInset)
+                } else if vm.isLoading && vm.allTrailers.isEmpty {
                     LoadingSpinner().frame(width: 36, height: 36)
                 } else if vm.allTrailers.isEmpty {
                     EmptyReelsState()
@@ -1011,23 +1035,26 @@ struct ReelsScreen: View {
                         .padding(.leading, 14)
 
                         // Tab pills — tap to jump to the first reel of each section.
-                        HStack(spacing: 13) {
-                            ForEach(ReelTab.allCases, id: \.self) { tab in
-                                TabPill(
-                                    tab: tab,
-                                    active: currentTrailer?.tab == tab,
-                                    action: {
-                                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                                        if let idx = vm.allTrailers.firstIndex(where: { $0.tab == tab }) {
-                                            withAnimation(.spring(response: 0.45, dampingFraction: 0.86)) {
-                                                scrolledID = idx
+                        // Hidden in the injected title-scoped mode.
+                        if injectedReels == nil {
+                            HStack(spacing: 13) {
+                                ForEach(ReelTab.allCases, id: \.self) { tab in
+                                    TabPill(
+                                        tab: tab,
+                                        active: currentTrailer?.tab == tab,
+                                        action: {
+                                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                            if let idx = vm.allTrailers.firstIndex(where: { $0.tab == tab }) {
+                                                withAnimation(.spring(response: 0.45, dampingFraction: 0.86)) {
+                                                    scrolledID = idx
+                                                }
                                             }
                                         }
-                                    }
-                                )
+                                    )
+                                }
                             }
+                            .padding(.leading, 12)
                         }
-                        .padding(.leading, 12)
 
                         Spacer()
                     }
@@ -1067,6 +1094,8 @@ struct ReelsScreen: View {
             AdManager.shared.start()
             // Hide the floating tab bar so the reel fills the entire screen.
             tabBarVisibility.hide()
+            // Injected title-scoped mode never touches the shared feed.
+            guard injectedReels == nil else { return }
             await vm.loadIfNeeded()
             if scrolledID == nil { scrolledID = 0 }
             prefetchNeighbors(around: vm.currentIndex)
@@ -1119,6 +1148,9 @@ struct ReelsScreen: View {
     }
 
     private var currentTrailer: TrailerItem? {
+        if let injected = injectedReels {
+            return injected[safe: injectedScrolledID ?? injectedStartIndex]
+        }
         guard vm.allTrailers.indices.contains(vm.currentIndex) else { return nil }
         return vm.allTrailers[vm.currentIndex]
     }
@@ -1127,7 +1159,10 @@ struct ReelsScreen: View {
     /// reel — otherwise downward swipes mean "previous reel" and we mustn't
     /// fight the paging ScrollView.
     private var canDismissSwipe: Bool {
-        vm.currentIndex == 0 && !vm.allTrailers.isEmpty
+        if injectedReels != nil {
+            return (injectedScrolledID ?? injectedStartIndex) == 0
+        }
+        return vm.currentIndex == 0 && !vm.allTrailers.isEmpty
     }
 
     private func handleDismiss() {
@@ -1243,6 +1278,104 @@ struct ReelsScreen: View {
             .id(index)
     }
 
+    // MARK: - Injected title-scoped feed
+
+    /// Renders the fixed title-scoped reel list in the same paging ScrollView
+    /// used by the global feed, starting at `injectedStartIndex`. Never touches
+    /// the shared `ReelsViewModel`.
+    @ViewBuilder
+    private func injectedScroll(_ feed: [TrailerItem], size: CGSize, topInset: CGFloat, bottomInset: CGFloat) -> some View {
+        ScrollView(.vertical, showsIndicators: false) {
+            LazyVStack(spacing: 0) {
+                ForEach(Array(feed.enumerated()), id: \.element.id) { idx, trailer in
+                    injectedReelCell(trailer: trailer, index: idx, feed: feed, size: size, topInset: topInset, bottomInset: bottomInset)
+                        .frame(width: size.width, height: size.height)
+                        .id(idx)
+                }
+            }
+            .scrollTargetLayout()
+        }
+        .scrollTargetBehavior(.paging)
+        .scrollPosition(id: $injectedScrolledID)
+        .scrollIndicators(.hidden)
+        .ignoresSafeArea()
+        .onChange(of: injectedScrolledID) { _, newValue in
+            guard let newValue else { return }
+            isPlaying = true
+            UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+            if let t = feed[safe: newValue], t.tmdbId > 0 {
+                Task { await SocialViewModel.shared.refreshCounts(titleId: String(t.tmdbId)) }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func injectedReelCell(trailer: TrailerItem, index: Int, feed: [TrailerItem], size: CGSize, topInset: CGFloat, bottomInset: CGFloat) -> some View {
+        let isCurrent = index == (injectedScrolledID ?? injectedStartIndex)
+        ReelView(
+            trailer: trailer,
+            tvdbInfo: nil,
+            size: size,
+            topInset: topInset,
+            bottomInset: bottomInset,
+            isPlaying: isCurrent && isPlaying,
+            isMuted: isMuted,
+            isCurrent: isCurrent,
+            likeCount: social.likes(String(trailer.tmdbId)),
+            isLiked: social.isLiked(String(trailer.tmdbId)),
+            isSaved: StreamsViewModel.shared.userStreams.contains { $0.titleId == String(trailer.tmdbId) },
+            commentCount: social.commentTotal(String(trailer.tmdbId)),
+            activeTab: trailer.tab,
+            currentIndex: index,
+            totalCount: feed.count,
+            onEnded: {
+                guard index == (injectedScrolledID ?? injectedStartIndex) else { return }
+                if feed.indices.contains(index + 1) {
+                    withAnimation(.spring(response: 0.45, dampingFraction: 0.86)) {
+                        injectedScrolledID = index + 1
+                    }
+                }
+            },
+            isReminded: false,
+            onTogglePlay: { isPlaying.toggle() },
+            onToggleMute: {
+                UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+                isMuted.toggle()
+            },
+            onLike: {
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                let tid = String(trailer.tmdbId)
+                let mediaType = trailer.isTV ? "tv" : "movie"
+                Task { await SocialViewModel.shared.toggleLike(titleId: tid, mediaType: mediaType, tmdbId: trailer.tmdbId) }
+            },
+            onComments: { showComments = true },
+            onSave: {
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                let tid = String(trailer.tmdbId)
+                Task {
+                    if StreamsViewModel.shared.userStreams.contains(where: { $0.titleId == tid }) {
+                        await StreamsViewModel.shared.removeFromMyStreams(titleId: tid)
+                    } else {
+                        await StreamsViewModel.shared.addToMyStreams(
+                            titleId: tid,
+                            title: trailer.showName,
+                            posterUrl: trailer.posterURL?.absoluteString,
+                            platform: trailer.platformId
+                        )
+                    }
+                }
+            },
+            onShare: { showShare = true },
+            onTabSelect: { _ in },
+            onSponsorCTA: {},
+            onShowDetail: {},
+            onNotify: {},
+            isInjected: true
+        )
+        .frame(width: size.width, height: size.height)
+        .id(index)
+    }
+
     private func prefetchNeighbors(around index: Int) {}
 
     /// Lazily fetch like + comment counts for the current reel and its
@@ -1332,6 +1465,9 @@ private struct ReelView: View {
     let onSponsorCTA: () -> Void
     let onShowDetail: () -> Void
     let onNotify: () -> Void
+    /// Title-scoped mode: replaces the Watch pill with the streaming-service
+    /// switcher, shows the video-type chip, and suppresses the glass ad.
+    var isInjected: Bool = false
 
     @State private var contentOpacity: Double = 0.4
     @State private var likeBounce: CGFloat = 1.0
@@ -1570,6 +1706,15 @@ private struct ReelView: View {
                             .background((trailer.isSponsored ? Color.white.opacity(0.06) : Color.white.opacity(0.12)))
                             .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.white.opacity(trailer.isSponsored ? 0.10 : 0.20)))
                             .clipShape(.rect(cornerRadius: 6))
+                        if isInjected, let vtype = trailer.videoType, !vtype.isEmpty {
+                            Text(vtype)
+                                .scaledFont(size: 11, weight: .bold)
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 10).padding(.vertical, 5)
+                                .background(Color.white.opacity(0.12))
+                                .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.white.opacity(0.20)))
+                                .clipShape(.rect(cornerRadius: 6))
+                        }
                     }
                     .padding(.trailing, 90)
                     .padding(.bottom, 8)
@@ -1632,6 +1777,12 @@ private struct ReelView: View {
                                     .opacity(glassAdVisible ? 1 : 0)
                                     .allowsHitTesting(glassAdVisible)
                             }
+                        } else if isInjected {
+                            WatchNowSwitcher(
+                                tmdbId: trailer.tmdbId,
+                                isTV: trailer.isTV,
+                                showName: trailer.showName
+                            )
                         } else {
                             PlayOnPill(action: onShowDetail)
                             if !glassAdDismissed, !glassAdTargets.isEmpty {
@@ -1726,10 +1877,10 @@ private struct ReelView: View {
             }
         }
         .clipped()
-        .onAppear { armGlassAdFade() }
+        .onAppear { if !isInjected { armGlassAdFade() } }
         .onChange(of: isCurrent) { _, nowCurrent in
             if nowCurrent {
-                armGlassAdFade()
+                if !isInjected { armGlassAdFade() }
             } else {
                 glassAdFadeTask?.cancel()
                 adAdvanceTask?.cancel()
@@ -2066,6 +2217,119 @@ private struct NotifyMePill: View {
             DragGesture(minimumDistance: 0)
                 .onChanged { _ in isPressed = true }
                 .onEnded { _ in isPressed = false }
+        )
+    }
+}
+
+/// Brand color for a streaming service name. Mirrors the per-service brand
+/// mapping used across the app's watch surfaces (PlayOnBottomSheet etc.).
+private func reelBrandColor(for name: String) -> Color {
+    let key = name.lowercased()
+    if key.contains("netflix") { return Color(red: 0xE5/255, green: 0x09/255, blue: 0x14/255) }
+    if key.contains("hbo") || key.contains("max") { return Color(red: 0x5B/255, green: 0x2D/255, blue: 0x8E/255) }
+    if key.contains("hulu") { return Color(red: 0x1C/255, green: 0xE7/255, blue: 0x83/255) }
+    if key.contains("disney") { return Color(red: 0.05, green: 0.10, blue: 0.42) }
+    if key.contains("apple") { return Color(white: 0.12) }
+    if key.contains("prime") || key.contains("amazon") { return Color(red: 0.0, green: 0.66, blue: 0.93) }
+    if key.contains("paramount") { return Color(red: 0x00/255, green: 0x64/255, blue: 0xFF/255) }
+    if key.contains("peacock") { return Color(red: 0.05, green: 0.05, blue: 0.10) }
+    if key.contains("youtube") { return Color(red: 0.90, green: 0.10, blue: 0.10) }
+    if key.contains("crunchyroll") { return Color(red: 0xF4/255, green: 0x7B/255, blue: 0x20/255) }
+    if key.contains("showtime") { return Color(red: 0xD8/255, green: 0x00/255, blue: 0x00/255) }
+    if key.contains("starz") { return Color(white: 0.08) }
+    return Color(red: 0x6A/255, green: 0x3F/255, blue: 0xE0/255)
+}
+
+/// Title-scoped Reels bottom control. Starts as a compact "Watch now" pill;
+/// tapping expands it inline into a horizontal row of streaming-service chips
+/// resolved from Watchmode (subscribed-first). Chips open the service's web
+/// URL. Shows a disabled "Not available to stream" state when nothing is
+/// streamable, and never crashes.
+private struct WatchNowSwitcher: View {
+    let tmdbId: Int
+    let isTV: Bool
+    let showName: String
+
+    @State private var expanded: Bool = false
+    @State private var sources: [WatchmodeSource] = []
+    @State private var loaded: Bool = false
+    @State private var loading: Bool = false
+
+    var body: some View {
+        Group {
+            if !expanded {
+                Button {
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) { expanded = true }
+                } label: {
+                    pill(text: "Watch now", icon: "play.fill", dimmed: false)
+                }
+                .buttonStyle(.plain)
+            } else if loading && !loaded {
+                pill(text: "Finding services…", icon: "hourglass", dimmed: true)
+            } else if loaded && sources.isEmpty {
+                pill(text: "Not available to stream", icon: "xmark.circle", dimmed: true)
+            } else {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(sources) { source in
+                            Button {
+                                openSource(source)
+                            } label: {
+                                Text(gsDisplayName(for: source.name))
+                                    .scaledFont(size: 13, weight: .bold)
+                                    .foregroundStyle(.white)
+                                    .padding(.horizontal, 16)
+                                    .frame(height: 44)
+                                    .background(Capsule().fill(reelBrandColor(for: source.name)))
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+            }
+        }
+        .task(id: expanded) {
+            guard expanded, !loaded, !loading else { return }
+            await loadSources()
+        }
+    }
+
+    private func pill(text: String, icon: String, dimmed: Bool) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: icon)
+                .scaledFont(size: 14, weight: .bold)
+            Text(text)
+                .scaledFont(size: 15, weight: .bold)
+        }
+        .foregroundStyle(.white)
+        .padding(.horizontal, 22)
+        .frame(height: 52)
+        .background(Capsule().fill(Color(hex: "F5821F")))
+        .shadow(color: Color(hex: "F5821F").opacity(0.55), radius: 14, y: 6)
+        .opacity(dimmed ? 0.6 : 1.0)
+    }
+
+    private func loadSources() async {
+        guard tmdbId > 0 else { loaded = true; return }
+        loading = true
+        let resolved = await StreamingSourceResolver.shared.resolve(tmdbId: tmdbId, isTV: isTV)
+        let subscribed = resolved.usSources.filter { AuthViewModel.shared.subscribesToService(named: $0.name) }
+        let others = resolved.usSources.filter { !AuthViewModel.shared.subscribesToService(named: $0.name) }
+        sources = subscribed + others
+        loaded = true
+        loading = false
+    }
+
+    private func openSource(_ source: WatchmodeSource) {
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        guard let s = source.webUrl, let url = URL(string: s) else { return }
+        StreamingDeepLinker.openResolvedURL(
+            url,
+            platform: source.name,
+            title: showName,
+            tmdbId: tmdbId > 0 ? tmdbId : nil,
+            titleSlug: String(tmdbId)
         )
     }
 }

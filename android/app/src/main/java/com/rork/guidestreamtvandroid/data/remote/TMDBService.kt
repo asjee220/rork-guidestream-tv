@@ -243,6 +243,23 @@ class TMDBService {
         } catch (_: Exception) { null }
     }
 
+    /**
+     * Trailers & clips attached to a title, for the detail-screen
+     * "Trailers & Clips" row and its title-scoped Reels player. Returns only
+     * YouTube videos whose type is Trailer, Teaser, Featurette, or Clip,
+     * ordered Trailer → Teaser → Featurette → Clip (stable within each type).
+     */
+    suspend fun getTitleVideos(tmdbId: Int, isTV: Boolean): List<TMDBVideo> {
+        val kind = if (isTV) "tv" else "movie"
+        return try {
+            val response: TMDBVideosEnvelope = client.get("$base/$kind/$tmdbId/videos?api_key=$apiKey&language=en-US").body()
+            val order = mapOf("Trailer" to 0, "Teaser" to 1, "Featurette" to 2, "Clip" to 3)
+            response.results
+                .filter { it.site == "YouTube" && order.containsKey(it.type) }
+                .sortedBy { order[it.type] ?: 99 }
+        } catch (_: Exception) { emptyList() }
+    }
+
     // ── Watch Providers ──────────────────────────────────────────────
 
     @Serializable

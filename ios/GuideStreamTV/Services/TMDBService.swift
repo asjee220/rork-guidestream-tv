@@ -540,6 +540,30 @@ nonisolated struct TMDBService {
         return sorted.first?.key
     }
 
+    /// Trailers & clips attached to a title, for the detail-screen
+    /// "Trailers & Clips" row and its title-scoped Reels player. Returns only
+    /// YouTube videos whose type is Trailer, Teaser, Featurette, or Clip,
+    /// ordered Trailer → Teaser → Featurette → Clip and stable within each
+    /// type. Reuses the existing `TMDBVideo` / `TMDBVideosEnvelope` decoders.
+    func getTitleVideos(tmdbId: Int, isTV: Bool) async throws -> [TMDBVideo] {
+        let kind = isTV ? "tv" : "movie"
+        let urlString = "\(base)/\(kind)/\(tmdbId)/videos?api_key=\(apiKey)&language=en-US"
+        let data = try await get(urlString)
+        let env = try JSONDecoder().decode(TMDBVideosEnvelope.self, from: data)
+        let order: [String: Int] = ["Trailer": 0, "Teaser": 1, "Featurette": 2, "Clip": 3]
+        let filtered = env.results.filter {
+            $0.site == "YouTube" && order[$0.type ?? ""] != nil
+        }
+        // Swift's sort isn't guaranteed stable, so keep the original index as a
+        // tiebreaker to preserve order within each video type.
+        return filtered.enumerated().sorted { a, b in
+            let ra = order[a.element.type ?? ""] ?? 99
+            let rb = order[b.element.type ?? ""] ?? 99
+            if ra != rb { return ra < rb }
+            return a.offset < b.offset
+        }.map { $0.element }
+    }
+
     private func stamp(_ r: TMDBResult, mediaType: String) -> TMDBResult {
         TMDBResult(
             id: r.id,

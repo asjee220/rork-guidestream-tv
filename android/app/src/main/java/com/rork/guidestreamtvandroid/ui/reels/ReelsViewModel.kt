@@ -42,6 +42,10 @@ data class TrailerItem(
     val tab: ReelTab,
     val isSponsored: Boolean = false,
     val isTV: Boolean = true,
+    /** Title-scoped Reels (Trailers & Clips): TMDB video type, else null. */
+    val videoType: String? = null,
+    /** Title-scoped Reels: TMDB video name, else null. */
+    val videoName: String? = null,
 ) {
     val youtubeUrl: String get() = "https://www.youtube.com/watch?v=$trailerKey"
     val deepLinkUrl: String? get() = if (platformId.isNotBlank()) "https://www.themoviedb.org/${if (isTV) "tv" else "movie"}/$tmdbId/watch" else null
