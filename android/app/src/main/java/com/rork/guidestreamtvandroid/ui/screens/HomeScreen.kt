@@ -79,6 +79,7 @@ import com.rork.guidestreamtvandroid.ui.theme.TextTertiary
 fun HomeScreen(
     onOpenTitle: (PendingTitleRoute) -> Unit = {},
     onOpenSearch: () -> Unit = {},
+    onSeeAllPopular: (serviceId: String, providerId: Int) -> Unit = { _, _ -> },
     modifier: Modifier = Modifier,
 ) {
     val homeVm = HomeViewModel.get()
@@ -274,6 +275,7 @@ fun HomeScreen(
             services.forEach { svc ->
                 val results = popularByService[svc.id] ?: emptyList()
                 if (results.isNotEmpty()) {
+                    val providerId = HomeViewModel.get().providerIdFor(svc.id)
                     PopularOnServiceSection(
                         serviceName = svc.name,
                         accentColor = svc.glow,
@@ -285,6 +287,15 @@ fun HomeScreen(
                                 metadata = mapOf("section" to "popular_on_${svc.id}"),
                             )
                             onOpenTitle(PendingTitleRoute(titleId = r.id.toString(), titleName = r.displayName, isTv = r.isTV))
+                        },
+                        onSeeAll = providerId?.let { pid ->
+                            {
+                                WatchIntentLogger.get().log(
+                                    WatchIntentLogger.IntentEventType.CARD_TAPPED,
+                                    metadata = mapOf("section" to "popular_on_${svc.id}_see_all"),
+                                )
+                                onSeeAllPopular(svc.id, pid)
+                            }
                         },
                     )
                 }
@@ -719,6 +730,7 @@ private fun PopularOnServiceSection(
     accentColor: Color,
     shows: List<TMDBResult>,
     onOpen: (TMDBResult) -> Unit,
+    onSeeAll: (() -> Unit)? = null,
 ) {
     if (shows.isEmpty()) return
     Column(Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
@@ -735,6 +747,20 @@ private fun PopularOnServiceSection(
                 fontWeight = FontWeight.Bold,
                 color = accentColor,
             )
+            if (onSeeAll != null) {
+                Spacer(Modifier.weight(1f))
+                Text(
+                    text = "See all",
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = accentColor,
+                    modifier = Modifier
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                        ) { onSeeAll() },
+                )
+            }
         }
         Spacer(Modifier.height(10.dp))
         LazyRow(

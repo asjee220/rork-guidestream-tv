@@ -589,6 +589,15 @@ struct HomeView: View {
                                                 metadata: ["section": "popular_on_\(service.id)"]
                                             )
                                             detailSubject = .show(show)
+                                        },
+                                        onSeeAll: tmdbProviderIdMap[service.id].map { providerId in
+                                            {
+                                                WatchIntentLogger.shared.log(
+                                                    eventType: .cardTapped,
+                                                    metadata: ["section": "popular_on_\(service.id)_see_all"]
+                                                )
+                                                path.append(.popularOnServiceCategories(serviceId: service.id, providerId: providerId))
+                                            }
                                         }
                                     )
                                     .padding(.horizontal, 20)
@@ -1008,6 +1017,25 @@ struct HomeView: View {
                     ContinueWatchingGridView(
                         episodes: continueWatchingEpisodes,
                         onSelect: { ep in detailSubject = .episode(ep) }
+                    )
+                case .popularOnServiceCategories(let serviceId, let providerId):
+                    let svc = StreamingCatalog.service(for: serviceId)
+                    let initial: [PosterShow] = (popularOnServiceResults[serviceId] ?? []).map { r in
+                        PosterShow(
+                            title: r.displayName,
+                            meta: r.year.map { "\($0)" } ?? (r.isTV ? "Series" : "Movie"),
+                            posterColors: [(svc?.glow ?? Color.orange).opacity(0.85), svc?.bg ?? Color.navy],
+                            symbol: "play.fill",
+                            posterUrl: r.posterUrl,
+                            tmdbId: r.id,
+                            isTV: r.isTV
+                        )
+                    }
+                    PopularOnServiceCategoriesView(
+                        serviceId: serviceId,
+                        providerId: providerId,
+                        initialShows: initial,
+                        onSelect: { show in detailSubject = .show(show) }
                     )
                 }
             }
@@ -3869,13 +3897,14 @@ private struct PopularOnServiceSection: View {
     let accentColor: Color
     let shows: [PosterShow]
     let onOpen: (PosterShow) -> Void
+    var onSeeAll: (() -> Void)? = nil
 
     var body: some View {
         SectionGlassCard(
             title: "Popular on \(serviceName)",
             highlighted: false,
             accentColor: accentColor,
-            onSeeAll: nil
+            onSeeAll: onSeeAll
         ) {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 10) {

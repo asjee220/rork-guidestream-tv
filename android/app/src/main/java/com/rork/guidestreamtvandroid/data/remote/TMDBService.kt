@@ -104,6 +104,51 @@ class TMDBService {
         return results.take(limit)
     }
 
+    /** Popular TV shows on a specific streaming service (flatrate + ads, US). */
+    suspend fun getPopularOnService(providerId: Int, pages: Int = 2): List<TMDBResult> {
+        val collected = mutableListOf<TMDBResult>()
+        val seen = mutableSetOf<Int>()
+        for (page in 1..maxOf(1, pages)) {
+            val results = fetchList("$base/discover/tv?api_key=$apiKey&language=en-US&sort_by=popularity.desc&watch_region=US&with_watch_providers=$providerId&with_watch_monetization_types=flatrate%7Cads&page=$page", "tv")
+            for (r in results) if (seen.add(r.id)) collected.add(r)
+        }
+        return collected
+    }
+
+    /** Popular movies on a specific streaming service (US). */
+    suspend fun getPopularMoviesOnService(providerId: Int, pages: Int = 2): List<TMDBResult> {
+        val collected = mutableListOf<TMDBResult>()
+        val seen = mutableSetOf<Int>()
+        for (page in 1..maxOf(1, pages)) {
+            val results = fetchList("$base/discover/movie?api_key=$apiKey&language=en-US&sort_by=popularity.desc&watch_region=US&with_watch_providers=$providerId&page=$page", "movie")
+            for (r in results) if (seen.add(r.id)) collected.add(r)
+        }
+        return collected
+    }
+
+    /** Popular titles on a service within a single genre (flatrate + ads, US). */
+    suspend fun getPopularOnServiceByGenre(providerId: Int, genreId: Int, mediaType: String = "tv", pages: Int = 2): List<TMDBResult> {
+        val collected = mutableListOf<TMDBResult>()
+        val seen = mutableSetOf<Int>()
+        for (page in 1..maxOf(1, pages)) {
+            val results = fetchList("$base/discover/$mediaType?api_key=$apiKey&language=en-US&sort_by=popularity.desc&watch_region=US&with_watch_providers=$providerId&with_watch_monetization_types=flatrate%7Cads&with_genres=$genreId&page=$page", mediaType)
+            for (r in results) if (seen.add(r.id)) collected.add(r)
+        }
+        return collected
+    }
+
+    /** Popular international / foreign-language titles on a service (flatrate + ads, US). */
+    suspend fun getPopularOnServiceInternational(providerId: Int, pages: Int = 2): List<TMDBResult> {
+        val languages = "ko|ja|fr|de|es|it|pt|hi|ar|tr|sv|no|da|fi|nl|pl|th|zh"
+        val collected = mutableListOf<TMDBResult>()
+        val seen = mutableSetOf<Int>()
+        for (page in 1..maxOf(1, pages)) {
+            val results = fetchList("$base/discover/tv?api_key=$apiKey&language=en-US&sort_by=popularity.desc&watch_region=US&with_watch_providers=$providerId&with_watch_monetization_types=flatrate%7Cads&with_original_language=$languages&page=$page", "tv")
+            for (r in results) if (seen.add(r.id)) collected.add(r)
+        }
+        return collected
+    }
+
     /** Top-rated TV shows. */
     suspend fun getTopRated(): List<TMDBResult> {
         return fetchList("$base/tv/top_rated?api_key=$apiKey&language=en-US&page=1", "tv")

@@ -15,6 +15,241 @@ enum HomeRoute: Hashable {
     case topPicks
     case trending
     case leavingSoon
+    case popularOnServiceCategories(serviceId: String, providerId: Int)
+}
+
+// MARK: - Popular on Service — category browse
+
+/// Full-screen category browser reached via the "See all" link on each
+/// "Popular on {service}" home rail. A single horizontally-scrolling pill
+/// row (All + genre tabs) pinned above a two-column poster grid. Each
+/// category loads lazily and is cached; the All tab combines TV + movies
+/// and is seeded from the rail's already-built posters so it never blanks.
+struct PopularOnServiceCategoriesView: View {
+    let serviceId: String
+    let providerId: Int
+    let initialShows: [PosterShow]
+    var onSelect: (PosterShow) -> Void
+
+    /// One selectable category. `all` combines TV + movies; `.genre`
+    /// carries the TMDB genre id + media type; `.international` uses the
+    /// original-language discover method.
+    private struct CategoryTab: Identifiable, Hashable {
+        let id: String
+        let name: String
+        let kind: Kind
+
+        enum Kind: Hashable {
+            case all
+            case genre(Int, String)
+            case international
+        }
+    }
+
+    private let categories: [CategoryTab] = [
+        CategoryTab(id: "all", name: "All", kind: .all),
+        CategoryTab(id: "crime", name: "Crime & Thriller", kind: .genre(80, "tv")),
+        CategoryTab(id: "scifi", name: "Sci-Fi", kind: .genre(10765, "tv")),
+        CategoryTab(id: "comedy", name: "Comedy", kind: .genre(35, "tv")),
+        CategoryTab(id: "drama", name: "Drama", kind: .genre(18, "tv")),
+        CategoryTab(id: "action", name: "Action", kind: .genre(10759, "tv")),
+        CategoryTab(id: "documentary", name: "Documentary", kind: .genre(99, "tv")),
+        CategoryTab(id: "romance", name: "Romance", kind: .genre(10749, "movie")),
+        CategoryTab(id: "international", name: "International", kind: .international)
+    ]
+
+    @State private var selectedCategory: String = "all"
+    @State private var resultsByCategory: [String: [PosterShow]] = [:]
+    @State private var loadingCategories: Set<String> = []
+    @State private var didSeedAll = false
+
+    private let columns = [
+        GridItem(.flexible(), spacing: 14),
+        GridItem(.flexible(), spacing: 14)
+    ]
+
+    private var service: StreamingService? { StreamingCatalog.service(for: serviceId) }
+    private var serviceName: String { service?.name ?? "Streaming" }
+    private var glow: Color { service?.glow ?? Color(red: 0.42, green: 0.45, blue: 0.55) }
+    private var bg: Color { service?.bg ?? Color(red: 0.08, green: 0.10, blue: 0.16) }
+
+    private var currentShows: [PosterShow] { resultsByCategory[selectedCategory] ?? [] }
+    private var currentIsLoading: Bool { loadingCategories.contains(selectedCategory) }
+
+    /// Grid tag: POPULAR for the All tab, the uppercased category name otherwise.
+    private var currentTag: String {
+        if selectedCategory == "all" { return "POPULAR" }
+        return (categories.first { $0.id == selectedCategory }?.name ?? "").uppercased()
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            pillRow
+                .padding(.top, 10)
+                .padding(.bottom, 6)
+
+            contentRegion
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .background(BrandBackground())
+        .navigationTitle("Popular on \(serviceName)")
+        .navigationBarTitleDisplayMode(.large)
+        .toolbarBackground(Color.navy, for: .navigationBar)
+        .toolbarColorScheme(.dark, for: .navigationBar)
+        .task { await seedAndLoadAll() }
+        .onChange(of: selectedCategory) { _, newValue in
+            guard newValue != "all", resultsByCategory[newValue] == nil,
+                  let cat = categories.first(where: { $0.id == newValue })
+            else { return }
+            Task { await loadCategory(cat) }
+        }
+    }
+
+    // MARK: - Pill row
+
+    private var pillRow: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(categories) { cat in
+                    let isSelected = cat.id == selectedCategory
+                    Button {
+                        selectedCategory = cat.id
+                    } label: {
+                        Text(cat.name)
+                            .scaledFont(size: 13, weight: .semibold)
+                            .foregroundStyle(isSelected ? Color.black : Color.white.opacity(0.85))
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 8)
+                            .background(
+                                Capsule().fill(isSelected ? glow : Color.white.opacity(0.10))
+                            )
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 20)
+        }
+        .overlay(alignment: .trailing) {
+            LinearGradient(
+                colors: [Color.navy.opacity(0), Color.navy],
+                startPoint: .leading,
+                endPoint: .trailing
+            )
+            .frame(width: 44)
+            .allowsHitTesting(false)
+        }
+    }
+
+    // MARK: - Content
+
+    @ViewBuilder
+    private var contentRegion: some View {
+        if currentShows.isEmpty && currentIsLoading {
+            VStack {
+                Spacer()
+                ProgressView().tint(.white)
+                Spacer()
+            }
+        } else if currentShows.isEmpty {
+            VStack(spacing: 10) {
+                Spacer()
+                Image(systemName: "tray")
+                    .scaledFont(size: 34, weight: .regular)
+                    .foregroundStyle(Color.white.opacity(0.35))
+                Text("Nothing here yet")
+                    .scaledFont(size: 15, weight: .semibold)
+                    .foregroundStyle(Color.white.opacity(0.55))
+                Spacer()
+            }
+            .frame(maxWidth: .infinity)
+        } else {
+            ScrollView {
+                LazyVGrid(columns: columns, spacing: 16) {
+                    ForEach(currentShows) { show in
+                        Button(action: { select(show) }) {
+                            BingeGridCard(show: show, tag: currentTag)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal, 20)
+                .padding(.top, 12)
+                .padding(.bottom, 120)
+            }
+        }
+    }
+
+    // MARK: - Actions
+
+    private func select(_ show: PosterShow) {
+        WatchIntentLogger.shared.log(
+            eventType: .cardTapped,
+            titleId: WatchIntentLogger.titleSlug(show.title),
+            metadata: ["section": "popular_on_\(serviceId)_category_\(selectedCategory)"]
+        )
+        onSelect(show)
+    }
+
+    // MARK: - Loading
+
+    private func poster(from r: TMDBResult) -> PosterShow {
+        PosterShow(
+            title: r.displayName,
+            meta: r.year.map { "\($0)" } ?? (r.isTV ? "Series" : "Movie"),
+            posterColors: [glow.opacity(0.85), bg],
+            symbol: "play.fill",
+            posterUrl: r.posterUrl,
+            tmdbId: r.id,
+            isTV: r.isTV
+        )
+    }
+
+    /// Seeds the All tab from the rail posters, then replaces it with the
+    /// full combined TV + movie list. Never blocks: the seed shows instantly.
+    private func seedAndLoadAll() async {
+        if !didSeedAll {
+            didSeedAll = true
+            if resultsByCategory["all"] == nil {
+                resultsByCategory["all"] = Array(initialShows.prefix(25))
+            }
+        }
+        loadingCategories.insert("all")
+        async let tvCall = (try? await TMDBService.shared.getPopularOnService(tmdbProviderId: providerId)) ?? []
+        async let movieCall = (try? await TMDBService.shared.getPopularMoviesOnService(tmdbProviderId: providerId)) ?? []
+        let (tv, movies) = await (tvCall, movieCall)
+        var interleaved: [TMDBResult] = []
+        let maxCount = max(tv.count, movies.count)
+        for i in 0..<maxCount {
+            if i < tv.count { interleaved.append(tv[i]) }
+            if i < movies.count { interleaved.append(movies[i]) }
+        }
+        var merged: [PosterShow] = []
+        var seen = Set<Int>()
+        for r in interleaved where seen.insert(r.id).inserted {
+            merged.append(poster(from: r))
+            if merged.count >= 25 { break }
+        }
+        if !merged.isEmpty {
+            resultsByCategory["all"] = merged
+        }
+        loadingCategories.remove("all")
+    }
+
+    private func loadCategory(_ cat: CategoryTab) async {
+        guard resultsByCategory[cat.id] == nil, !loadingCategories.contains(cat.id) else { return }
+        loadingCategories.insert(cat.id)
+        let results: [TMDBResult]
+        switch cat.kind {
+        case .all:
+            results = []
+        case .genre(let genreId, let mediaType):
+            results = (try? await TMDBService.shared.getPopularOnServiceByGenre(tmdbProviderId: providerId, genreId: genreId, mediaType: mediaType)) ?? []
+        case .international:
+            results = (try? await TMDBService.shared.getPopularOnServiceInternational(tmdbProviderId: providerId)) ?? []
+        }
+        resultsByCategory[cat.id] = results.prefix(25).map { poster(from: $0) }
+        loadingCategories.remove(cat.id)
+    }
 }
 
 enum DetailSubject: Identifiable, Hashable {

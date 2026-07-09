@@ -76,6 +76,9 @@ class HomeViewModel : ViewModel() {
     private val _providerByTmdb = MutableStateFlow<Map<Int, Platform>>(emptyMap())
     val providerByTmdb: StateFlow<Map<Int, Platform>> = _providerByTmdb.asStateFlow()
 
+    /** TMDB provider id for a service id, or null when the service has no mapping. */
+    fun providerIdFor(serviceId: String): Int? = providerIdMap[serviceId]
+
     companion object {
         @Volatile private var instance: HomeViewModel? = null
         fun get(): HomeViewModel = instance ?: synchronized(this) {

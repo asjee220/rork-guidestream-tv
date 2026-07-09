@@ -622,6 +622,44 @@ nonisolated struct TMDBService {
         return env.results.map { stamp($0, mediaType: "movie") }
     }
 
+    /// Popular titles on a specific streaming service within a single genre —
+    /// the genre-scoped category tabs on the "Popular on {service}" browse
+    /// screen. Pages through `pages` results and de-duplicates by id while
+    /// preserving order. Defaults to TV; pass "movie" for movie-only genres.
+    func getPopularOnServiceByGenre(tmdbProviderId: Int, genreId: Int, mediaType: String = "tv", pages: Int = 2) async throws -> [TMDBResult] {
+        var collected: [TMDBResult] = []
+        var seen = Set<Int>()
+        for page in 1...max(1, pages) {
+            let urlString = "\(base)/discover/\(mediaType)?api_key=\(apiKey)&language=en-US&sort_by=popularity.desc&watch_region=US&with_watch_providers=\(tmdbProviderId)&with_watch_monetization_types=flatrate%7Cads&with_genres=\(genreId)&page=\(page)"
+            let data = try await get(urlString)
+            let env = try JSONDecoder().decode(TMDBTrendingEnvelope.self, from: data)
+            for r in env.results.map({ stamp($0, mediaType: mediaType) }) where seen.insert(r.id).inserted {
+                collected.append(r)
+            }
+        }
+        return collected
+    }
+
+    /// International / foreign-language titles on a specific streaming service —
+    /// the "International" category tab on the "Popular on {service}" browse
+    /// screen. Mirrors `getPopularOnServiceByGenre` but filters by the same
+    /// original-language list used by `getDiscoverInternational` instead of a
+    /// genre. Keeps mediaType tv.
+    func getPopularOnServiceInternational(tmdbProviderId: Int, pages: Int = 2) async throws -> [TMDBResult] {
+        let languages = "ko|ja|fr|de|es|it|pt|hi|ar|tr|sv|no|da|fi|nl|pl|th|zh"
+        var collected: [TMDBResult] = []
+        var seen = Set<Int>()
+        for page in 1...max(1, pages) {
+            let urlString = "\(base)/discover/tv?api_key=\(apiKey)&language=en-US&sort_by=popularity.desc&watch_region=US&with_watch_providers=\(tmdbProviderId)&with_watch_monetization_types=flatrate%7Cads&with_original_language=\(languages)&page=\(page)"
+            let data = try await get(urlString)
+            let env = try JSONDecoder().decode(TMDBTrendingEnvelope.self, from: data)
+            for r in env.results.map({ stamp($0, mediaType: "tv") }) where seen.insert(r.id).inserted {
+                collected.append(r)
+            }
+        }
+        return collected
+    }
+
     /// "What's New Today" — trending TV + movies for the current day, capturing
     /// the daily zeitgeist of titles freshly hitting streaming services. Uses
     /// TMDB's `trending/all/day` endpoint and filters out people results.

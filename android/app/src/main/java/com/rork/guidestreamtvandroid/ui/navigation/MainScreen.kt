@@ -25,12 +25,19 @@ import com.rork.guidestreamtvandroid.ui.detail.CreatorDetailScreen
 import com.rork.guidestreamtvandroid.ui.detail.ShowDetailScreen
 import com.rork.guidestreamtvandroid.ui.reels.ReelsScreen
 import com.rork.guidestreamtvandroid.ui.screens.HomeScreen
+import com.rork.guidestreamtvandroid.ui.screens.PopularOnServiceCategoriesScreen
 import com.rork.guidestreamtvandroid.ui.search.SearchScreen
 import com.rork.guidestreamtvandroid.ui.sports.SportsGameDetailScreen
 import com.rork.guidestreamtvandroid.ui.sports.SportsScreen
 import com.rork.guidestreamtvandroid.ui.profile.ProfileScreen
 import com.rork.guidestreamtvandroid.ui.theme.BrandBackground
 import com.rork.guidestreamtvandroid.ui.theme.Navy
+
+/** Target for the "Popular on {service}" full-screen category browser overlay. */
+data class PopularCategoriesTarget(
+    val serviceId: String,
+    val providerId: Int,
+)
 
 /**
  * Root main screen — floating tab bar + tab content + detail overlays.
@@ -52,6 +59,7 @@ fun MainScreen(
     var showDetail by remember { mutableStateOf<PendingTitleRoute?>(null) }
     var showCreatorDetail by remember { mutableStateOf<String?>(null) }
     var selectedGame by remember { mutableStateOf<com.rork.guidestreamtvandroid.data.models.SportsGame?>(null) }
+    var showPopularCategories by remember { mutableStateOf<PopularCategoriesTarget?>(null) }
 
     // Consume pending title route from AppRouter (deep-link / push buffer)
     val pendingRoute = router.pendingTitleRoute
@@ -86,6 +94,9 @@ fun MainScreen(
                         }
                     },
                     onOpenSearch = { showSearch = true },
+                    onSeeAllPopular = { serviceId, providerId ->
+                        showPopularCategories = PopularCategoriesTarget(serviceId, providerId)
+                    },
                 )
                 AppTab.SPORTS -> SportsScreen(
                     onOpenGame = { game -> selectedGame = game },
@@ -102,7 +113,7 @@ fun MainScreen(
         }
 
         // Full-screen overlay open flag — hides the floating tab bar behind opaque covers
-        val overlayOpen = showDetail != null || showCreatorDetail != null || showSearch || selectedGame != null
+        val overlayOpen = showDetail != null || showCreatorDetail != null || showSearch || selectedGame != null || showPopularCategories != null
 
         // Show detail (full-screen cover equivalent)
         showDetail?.let { route ->
@@ -177,6 +188,26 @@ fun MainScreen(
                 SportsGameDetailScreen(
                     game = game,
                     onBack = { selectedGame = null },
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
+        }
+
+        // Popular on {service} category browser (full-screen cover equivalent)
+        showPopularCategories?.let { target ->
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Navy)
+                    .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { },
+            ) {
+                PopularOnServiceCategoriesScreen(
+                    target = target,
+                    onBack = { showPopularCategories = null },
+                    onOpenTitle = { route ->
+                        showPopularCategories = null
+                        showDetail = route
+                    },
                     modifier = Modifier.fillMaxSize(),
                 )
             }
