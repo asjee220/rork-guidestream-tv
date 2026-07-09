@@ -288,6 +288,10 @@ struct ShowDetailScreen: View {
     /// sources endpoint. When non-nil, the watch button opens this URL
     /// so the streaming app lands on the exact episode.
     @State private var episodeDeepLinkURL: URL?
+    /// Name of the service the user tapped to make the active source. Only
+    /// honored when the user is subscribed to two or more of the title's
+    /// services; otherwise the resolver's primary is used.
+    @State private var selectedServiceName: String?
 
     private let platformId = "hbo"
     private let fallbackSynopsis = "The Roy family is known for controlling the biggest media and entertainment company in the world. However, their world changes when their father steps back from the company. As power shifts and alliances fracture, each sibling jockeys for control in a ruthless game of legacy, loyalty, and survival."
@@ -345,9 +349,38 @@ struct ShowDetailScreen: View {
         return nil
     }
 
+    /// Services from `sortedServices` the user is subscribed to. When two or
+    /// more, the "Where to Watch" chips become selectable and the Watch
+    /// button follows the selection.
+    private var subscribedServices: [WhereToWatchService] {
+        sortedServices.filter { isSubscribedService($0.name) }
+    }
+
+    /// The service the Watch button and Play On sheet currently target.
+    /// Returns the user-selected service when set and subscribed, otherwise
+    /// the resolver's primary.
+    private var activeService: WhereToWatchService? {
+        if let sel = selectedServiceName,
+           isSubscribedService(sel),
+           let match = vm.services.first(where: { $0.name == sel }) {
+            return match
+        }
+        return vm.primaryService
+    }
+
+    /// The Watchmode source matching `activeService`, falling back to the
+    /// resolver's primary source.
+    private var activeSource: WatchmodeSource? {
+        if let name = activeService?.name,
+           let match = vm.resolved.usSources.first(where: { $0.name == name }) {
+            return match
+        }
+        return vm.resolved.primarySource
+    }
+
     /// Short service name for display inside the watch button badge.
     private var primaryServiceShortName: String? {
-        guard let name = vm.primaryService?.name else { return nil }
+        guard let name = activeService?.name else { return nil }
         let key = name.lowercased()
         if key.contains("paramount") { return "P+" }
         if key.contains("disney") { return "D+" }
@@ -440,7 +473,7 @@ struct ShowDetailScreen: View {
                 isOpen: playOnOpen,
                 onClose: { playOnOpen = false },
                 showTitle: displayTitle,
-                showSubtitle: isTV ? (latestEpisode.map { "S:\($0.seasonNum) EP:\($0.episodeNum) \u{00B7} \($0.name)" } ?? "S:1 EP:1") : (yearText + " \u{00B7} " + (vm.primaryService?.name ?? "Movie")),
+                showSubtitle: isTV ? (latestEpisode.map { "S:\($0.seasonNum) EP:\($0.episodeNum) \u{00B7} \($0.name)" } ?? "S:1 EP:1") : (yearText + " \u{00B7} " + (activeService?.name ?? "Movie")),
                 thumbnailUrl: posterUrl,
                 tmdbId: resolvedTmdbId,
                 isTV: isTV,
@@ -449,7 +482,8 @@ struct ShowDetailScreen: View {
                     onPlayOn()
                 },
                 watchSeasonNum: latestEpisode?.seasonNum,
-                watchEpisodeNum: latestEpisode?.episodeNum
+                watchEpisodeNum: latestEpisode?.episodeNum,
+                preferredServiceName: activeService?.name
             )
             .allowsHitTesting(playOnOpen)
         }
@@ -467,26 +501,13 @@ struct ShowDetailScreen: View {
             vm.startLoad(titleId: titleId, isTV: isTV)
             // Resolve per-episode deep link from Watchmode so the watch
             // button opens the exact episode in the streaming app.
-            if let tid = resolvedTmdbId, isTV,
-               let ep = latestEpisode {
-                if let epSources = await WatchmodeService.shared.episodeSources(
-                    tmdbId: tid, isTV: true,
-                    season: ep.seasonNum, episode: ep.episodeNum
-                ) {
-                    // Use the primary service's source_id to find the
-                    // matching episode source.
-                    let resolvedSrc: WatchmodeSource? = {
-                        guard let svc = vm.primaryService else { return nil }
-                        return vm.resolved.usSources.first(where: {
-                            $0.name == svc.name
-                        })
-                    }()
-                    let url = Self.episodeSourceURL(
-                        from: epSources, resolvedSource: resolvedSrc
-                    )
-                    await MainActor.run { self.episodeDeepLinkURL = url }
-                }
-            }
+            await resolveEpisodeDeepLink(forService: activeService?.name)
+        }
+        .onChange(of: selectedServiceName) { _, _ in
+            // Re-resolve the episode-level deep link for the newly selected
+            // service; falls back to the title-level URL when no episode
+            // source matches.
+            Task { await resolveEpisodeDeepLink(forService: activeService?.name) }
         }
         .onChange(of: vm.tmdb?.numberOfSeasons) { _, n in
             if let n {
@@ -653,6 +674,33 @@ struct ShowDetailScreen: View {
             isTV: isTV,
             titleSlug: titleId
         )
+    }
+
+    /// Resolves the per-episode deep link for a given service (nil = primary).
+    /// Called on initial load and whenever the selected service changes; sets
+    /// `episodeDeepLinkURL` to the episode source matching that service's
+    /// `sourceId`, or nil when none matches (the button then falls back to the
+    /// title-level URL for the active service).
+    private func resolveEpisodeDeepLink(forService serviceName: String?) async {
+        guard let tid = resolvedTmdbId, isTV, let ep = latestEpisode else { return }
+        guard let epSources = await WatchmodeService.shared.episodeSources(
+            tmdbId: tid, isTV: true, season: ep.seasonNum, episode: ep.episodeNum
+        ) else {
+            await MainActor.run { self.episodeDeepLinkURL = nil }
+            return
+        }
+        let url: URL? = {
+            guard let name = serviceName,
+                  let ts = vm.resolved.usSources.first(where: { $0.name == name }) else {
+                // Initial / primary path — best-effort first eligible source.
+                return Self.episodeSourceURL(from: epSources, resolvedSource: nil)
+            }
+            guard let match = epSources.first(where: { $0.sourceId == ts.sourceId }) else { return nil }
+            if let s = match.iosUrl, Self.isRealDeepLinkURL(s), let u = URL(string: s) { return u }
+            if let s = match.webUrl, Self.isRealDeepLinkURL(s), let u = URL(string: s) { return u }
+            return nil
+        }()
+        await MainActor.run { self.episodeDeepLinkURL = url }
     }
 
     /// Looks up a title-specific URL for the tapped service from the
@@ -1014,10 +1062,10 @@ struct ShowDetailScreen: View {
         AuthViewModel.shared.subscribesToService(named: name)
     }
 
-    /// `true` when the primary resolved source is a paid subscription the
-    /// user does not have — drives the "Get" label on the watch CTA.
+    /// `true` when the active source is a paid subscription the user does
+    /// not have — drives the "Get" label on the watch CTA.
     private var primaryRequiresGet: Bool {
-        guard let source = vm.resolved.primarySource,
+        guard let source = activeSource,
               source.type.lowercased() == "sub" else { return false }
         return !isSubscribedService(source.name)
     }
@@ -1065,9 +1113,19 @@ struct ShowDetailScreen: View {
                     HStack(spacing: 10) {
                         ForEach(services) { s in
                             Button {
-                                openDeeplink(serviceName: s.name)
+                                if subscribedServices.count >= 2, isSubscribedService(s.name) {
+                                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                    selectedServiceName = s.name
+                                } else {
+                                    openDeeplink(serviceName: s.name)
+                                }
                             } label: {
-                                ServiceBadge(service: s, isSubscribed: isSubscribedService(s.name))
+                                ServiceBadge(
+                                    name: s.name,
+                                    color: s.color,
+                                    isSubscribed: isSubscribedService(s.name),
+                                    isSelected: subscribedServices.count >= 2 && activeService?.name == s.name
+                                )
                             }
                             .buttonStyle(.plain)
                         }
@@ -1161,7 +1219,7 @@ struct ShowDetailScreen: View {
                 // same layout as before — circle button preserved exactly)
                 HStack(spacing: 8) {
                     Button(action: {
-                        if let svc = vm.primaryService {
+                        if let svc = activeService {
                             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                             // Gated "Get" path: route through Rakuten affiliate
                             // so the tap is attributable and earns commission.
@@ -1225,7 +1283,7 @@ struct ShowDetailScreen: View {
                                     .padding(.vertical, 3)
                                     .background(
                                         RoundedRectangle(cornerRadius: 4, style: .continuous)
-                                            .fill(vm.primaryService?.color ?? Color.white.opacity(0.22))
+                                            .fill(activeService?.color ?? Color.white.opacity(0.22))
                                     )
                             }
                         }
@@ -1487,45 +1545,6 @@ private struct TMDBEpisodeCardSmall: View {
                 .lineLimit(1)
         }
         .frame(width: 148, alignment: .leading)
-    }
-}
-
-// MARK: - Service badge
-
-private struct ServiceBadge: View {
-    let service: WhereToWatchService
-    var isSubscribed: Bool = false
-
-    var body: some View {
-        HStack(spacing: 8) {
-            Circle()
-                .fill(service.color)
-                .frame(width: 8, height: 8)
-            Text(gsDisplayName(for: service.name))
-                .scaledFont(size: 14, weight: .semibold)
-                .foregroundStyle(.white)
-            if isSubscribed {
-                Text("Subscribed")
-                    .scaledFont(size: 9, weight: .heavy)
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(
-                        RoundedRectangle(cornerRadius: 4, style: .continuous)
-                            .fill(Color.green.opacity(0.85))
-                    )
-            }
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
-        .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(isSubscribed ? service.color.opacity(0.28) : service.color.opacity(0.18))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .stroke(isSubscribed ? service.color.opacity(0.70) : service.color.opacity(0.45), lineWidth: 1)
-        )
     }
 }
 

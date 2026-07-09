@@ -53,9 +53,16 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.rork.guidestreamtvandroid.data.models.DeepDiveCreator
+import com.rork.guidestreamtvandroid.data.models.Platform
+import com.rork.guidestreamtvandroid.data.models.StreamingCatalog
 import com.rork.guidestreamtvandroid.data.remote.TMDBService
+import com.rork.guidestreamtvandroid.data.remote.WatchmodeResolveService
+import com.rork.guidestreamtvandroid.data.remote.WatchmodeSrc
+import com.rork.guidestreamtvandroid.data.repository.AuthViewModel
 import com.rork.guidestreamtvandroid.data.repository.StreamsViewModel
 import com.rork.guidestreamtvandroid.data.repository.WatchIntentLogger
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import com.rork.guidestreamtvandroid.ui.components.RemoteImage
 import com.rork.guidestreamtvandroid.ui.components.glassCard
 import com.rork.guidestreamtvandroid.ui.reels.ReelTab
@@ -98,6 +105,33 @@ fun ShowDetailScreen(
 
     val tmdbId = titleId.toIntOrNull()
     val isSaved = userStreams.any { it.titleId == titleId }
+
+    // Streaming-source switcher state. When the user is subscribed to two or
+    // more of the title's services, tapping a chip makes it the active source
+    // and the Watch button follows the selection.
+    val authVm = AuthViewModel.get()
+    val selectedServices by authVm.selectedServices.collectAsStateWithLifecycle()
+    var usSources by remember { mutableStateOf<List<WatchmodeSrc>>(emptyList()) }
+    var selectedSource by remember { mutableStateOf<WatchmodeSrc?>(null) }
+    val isSourceSubscribed: (String) -> Boolean = { name ->
+        val n = name.lowercase()
+        StreamingCatalog.ordered(selectedServices).any { svc ->
+            val s = svc.name.lowercase()
+            n.contains(s) || s.contains(n)
+        }
+    }
+    androidx.compose.runtime.LaunchedEffect(titleId) {
+        val tid = titleId.toIntOrNull()
+        if (tid != null) {
+            val resolved = try {
+                withContext(Dispatchers.IO) { WatchmodeResolveService.resolve(tid, isTV) }
+            } catch (_: Exception) {
+                emptyList()
+            }
+            usSources = resolved
+            selectedSource = resolved.firstOrNull { isSourceSubscribed(it.name) } ?: resolved.firstOrNull()
+        }
+    }
 
     // Deep Dives + Trailers & Clips state
     val deepVm = DeepDivesViewModel.get()
@@ -233,6 +267,19 @@ fun ShowDetailScreen(
                     }
                 }
 
+                // Where to Watch — selectable streaming-source chips
+                WhereToWatchRow(
+                    sources = usSources,
+                    selectedSource = selectedSource,
+                    isSourceSubscribed = isSourceSubscribed,
+                    onSelect = { selectedSource = it },
+                    onOpen = { url ->
+                        if (url.isNotBlank()) {
+                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                        }
+                    },
+                )
+
                 // Action buttons
                 Row(
                     modifier = Modifier
@@ -241,7 +288,13 @@ fun ShowDetailScreen(
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
                     // Watch button
-                    if (topProvider != null) {
+                    if (topProvider != null || usSources.isNotEmpty()) {
+                        val watchLabel = "Watch on " + (
+                            selectedSource?.name
+                                ?: platform?.name
+                                ?: topProvider?.providerName
+                                ?: "Streaming"
+                        )
                         Box(
                             modifier = Modifier
                                 .weight(1f)
@@ -251,8 +304,9 @@ fun ShowDetailScreen(
                                     interactionSource = remember { MutableInteractionSource() },
                                     indication = null,
                                 ) {
-                                    val webUrl = "https://www.themoviedb.org/${if (isTV) "tv" else "movie"}/$tmdbId/watch"
-                                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(webUrl)))
+                                    val target = selectedSource?.webUrl?.takeIf { it.isNotBlank() }
+                                        ?: "https://www.themoviedb.org/${if (isTV) "tv" else "movie"}/$tmdbId/watch"
+                                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(target)))
                                 }
                                 .padding(vertical = 14.dp),
                             contentAlignment = Alignment.Center,
@@ -266,7 +320,7 @@ fun ShowDetailScreen(
                                 )
                                 Spacer(Modifier.width(6.dp))
                                 Text(
-                                    text = "Watch on ${platform?.name ?: topProvider?.providerName ?: "Streaming"}",
+                                    text = watchLabel,
                                     fontSize = 14.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = Color.White,
@@ -525,6 +579,115 @@ fun ShowDetailScreen(
                     injectedStartIndex = reelsStartIndex,
                     modifier = Modifier.fillMaxSize(),
                 )
+            }
+        }
+    }
+}
+
+/**
+ * "Where to Watch" chip row. Renders one chip per US streaming source. When the
+ * user is subscribed to two or more of the title's services, tapping a
+ * subscribed chip makes it the active source (Watch button follows); every
+ * other tap opens the source's web URL directly. Hidden when there are no
+ * sources.
+ */
+@Composable
+private fun WhereToWatchRow(
+    sources: List<WatchmodeSrc>,
+    selectedSource: WatchmodeSrc?,
+    isSourceSubscribed: (String) -> Boolean,
+    onSelect: (WatchmodeSrc) -> Unit,
+    onOpen: (String) -> Unit,
+) {
+    if (sources.isEmpty()) return
+    val subscribedCount = sources.count { isSourceSubscribed(it.name) }
+    Spacer(Modifier.height(8.dp))
+    Text(
+        text = "Where to Watch",
+        fontSize = 17.sp,
+        fontWeight = FontWeight.Bold,
+        color = TextPrimary,
+        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+    )
+    LazyRow(
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        items(sources) { source ->
+            val subscribed = isSourceSubscribed(source.name)
+            val selected = selectedSource?.sourceId == source.sourceId
+            val dotColor = Platform.from(source.name)?.color ?: BrandOrange
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(dotColor.copy(alpha = if (subscribed) 0.28f else 0.18f))
+                    .border(
+                        width = if (selected) 2.dp else 1.dp,
+                        color = if (selected) dotColor else dotColor.copy(alpha = if (subscribed) 0.70f else 0.45f),
+                        shape = RoundedCornerShape(12.dp),
+                    )
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                    ) {
+                        if (subscribedCount >= 2 && subscribed) {
+                            onSelect(source)
+                        } else {
+                            source.webUrl?.let { onOpen(it) }
+                        }
+                    }
+                    .padding(horizontal = 14.dp, vertical = 10.dp),
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(8.dp)
+                            .clip(CircleShape)
+                            .background(dotColor),
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = source.name,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = TextPrimary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    if (subscribed) {
+                        Spacer(Modifier.width(8.dp))
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(Color(0xFF34C759).copy(alpha = 0.85f))
+                                .padding(horizontal = 6.dp, vertical = 2.dp),
+                        ) {
+                            Text(
+                                text = "Subscribed",
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Black,
+                                color = Color.White,
+                            )
+                        }
+                    }
+                    if (selected) {
+                        Spacer(Modifier.width(6.dp))
+                        Box(
+                            modifier = Modifier
+                                .size(16.dp)
+                                .clip(CircleShape)
+                                .background(BrandOrange),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Check,
+                                contentDescription = "Selected",
+                                tint = Color.White,
+                                modifier = Modifier.size(10.dp),
+                            )
+                        }
+                    }
+                }
             }
         }
     }

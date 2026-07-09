@@ -272,6 +272,66 @@ struct FanActivityCard: View {
     }
 }
 
+// MARK: - Service badge
+
+/// Streaming-service chip used in the "Where to Watch" rows on both detail
+/// surfaces. Shows a color dot, the service name, an optional green
+/// "Subscribed" badge, and — when `isSelected` — a service-color ring plus a
+/// small orange checkmark marking it as the active source the Watch button
+/// follows.
+struct ServiceBadge: View {
+    let name: String
+    let color: Color
+    var isSubscribed: Bool = false
+    var isSelected: Bool = false
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Circle()
+                .fill(color)
+                .frame(width: 8, height: 8)
+            Text(gsDisplayName(for: name))
+                .scaledFont(size: 14, weight: .semibold)
+                .foregroundStyle(.white)
+            if isSubscribed {
+                Text("Subscribed")
+                    .scaledFont(size: 9, weight: .heavy)
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(
+                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                            .fill(Color.green.opacity(0.85))
+                    )
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(isSubscribed ? color.opacity(0.28) : color.opacity(0.18))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(
+                    isSelected ? color : (isSubscribed ? color.opacity(0.70) : color.opacity(0.45)),
+                    lineWidth: isSelected ? 2 : 1
+                )
+        )
+        .overlay(alignment: .topTrailing) {
+            if isSelected {
+                Image(systemName: "checkmark")
+                    .scaledFont(size: 8, weight: .bold)
+                    .foregroundStyle(.white)
+                    .frame(width: 16, height: 16)
+                    .background(Circle().fill(Color.orange))
+                    .overlay(Circle().stroke(Color.white.opacity(0.9), lineWidth: 0.5))
+                    .offset(x: 5, y: -5)
+            }
+        }
+    }
+}
+
 // MARK: - Sticky compact header
 
 /// Sticky condensed header that fades in as the user scrolls past the hero.

@@ -302,6 +302,10 @@ struct EpisodeDetailSheet: View {
     @State private var episodeRokuURL: String? = nil
     @State private var episodeSourceUnavailable: Bool = false
     @State private var isResolvingEpisodeSources: Bool = false
+    /// All US streaming sources for this title. Drives the "Where to Watch"
+    /// chip row and lets the user pick an active source when subscribed to
+    /// two or more of them.
+    @State private var allSources: [WatchmodeSource] = []
 
     private var platformColor: Color {
         if let name = resolvedSource?.name { return brandColor(for: name) }
@@ -487,6 +491,10 @@ struct EpisodeDetailSheet: View {
                     .padding(.horizontal, 20)
                     .padding(.top, 20)
 
+                whereToWatchRow
+                    .padding(.horizontal, 20)
+                    .padding(.top, 22)
+
                 watchActions
                     .padding(.horizontal, 20)
                     .padding(.top, 22)
@@ -649,6 +657,89 @@ struct EpisodeDetailSheet: View {
             self.resolvedSource = r.primarySource
             self.resolvedOverview = r.overview
             self.resolvedProviderName = r.providerNameFallback
+            self.allSources = r.usSources
+        }
+    }
+
+    /// Re-resolves the episode-level deep link + Roku path for a specific
+    /// user-selected source. Factored from the initial `.task` episode-source
+    /// logic so a chip tap can retarget the watch button to that service.
+    private func resolveEpisodeSources(for source: WatchmodeSource) async {
+        guard let tid = tmdbId, isTV, let ctx = episodeContext else { return }
+        await MainActor.run { self.isResolvingEpisodeSources = true }
+        let epSources = await WatchmodeService.shared.episodeSources(
+            tmdbId: tid, isTV: true, season: ctx.seasonNum, episode: ctx.episodeNum
+        )
+        let url = epSources.flatMap { Self.episodeSourceURL(from: $0, resolvedSource: source) }
+        let rokuPath = epSources.flatMap { Self.episodeRokuPath(from: $0, resolvedSource: source) }
+        await MainActor.run {
+            self.episodeDeepLinkURL = url
+            self.episodeRokuURL = rokuPath
+            self.episodeSourceUnavailable = false
+            self.isResolvingEpisodeSources = false
+        }
+    }
+
+    /// Handles a "Where to Watch" chip tap. When the user is subscribed to
+    /// two or more of the title's services and taps a subscribed one, it
+    /// becomes the active source (watch button follows). Otherwise it opens
+    /// the source's deep link directly.
+    private func onWhereToWatchTap(_ source: WatchmodeSource, subscribedCount: Int) {
+        if subscribedCount >= 2, AuthViewModel.shared.subscribesToService(named: source.name) {
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            resolvedSource = source
+            Task { await resolveEpisodeSources(for: source) }
+        } else {
+            if let web = source.webUrl, Self.isRealDeepLinkURL(web), let u = URL(string: web) {
+                StreamingDeepLinker.openResolvedURL(
+                    u, platform: source.name, title: title, tmdbId: tmdbId
+                )
+            } else {
+                StreamingDeepLinker.open(
+                    platform: source.name, title: title, tmdbId: tmdbId, isTV: isTV
+                )
+            }
+        }
+    }
+
+    // MARK: - Where to watch row
+
+    @ViewBuilder
+    private var whereToWatchRow: some View {
+        if !allSources.isEmpty {
+            let sortedSources = allSources.sorted { a, b in
+                let aSub = AuthViewModel.shared.subscribesToService(named: a.name)
+                let bSub = AuthViewModel.shared.subscribesToService(named: b.name)
+                if aSub != bSub { return aSub }
+                return false
+            }
+            let subscribedCount = sortedSources.filter {
+                AuthViewModel.shared.subscribesToService(named: $0.name)
+            }.count
+            VStack(alignment: .leading, spacing: 10) {
+                Text("WHERE TO WATCH")
+                    .scaledFont(size: 12, weight: .heavy)
+                    .tracking(1.4)
+                    .foregroundStyle(Color.white.opacity(0.45))
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 10) {
+                        ForEach(sortedSources) { source in
+                            Button {
+                                onWhereToWatchTap(source, subscribedCount: subscribedCount)
+                            } label: {
+                                ServiceBadge(
+                                    name: source.name,
+                                    color: brandColor(for: source.name),
+                                    isSubscribed: AuthViewModel.shared.subscribesToService(named: source.name),
+                                    isSelected: subscribedCount >= 2 && resolvedSource?.sourceId == source.sourceId
+                                )
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 

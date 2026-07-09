@@ -51,6 +51,11 @@ struct PlayOnBottomSheet: View {
     var watchSeasonNum: Int? = nil
     var watchEpisodeNum: Int? = nil
 
+    /// When non-nil and one of the resolved US sources matches this service
+    /// name, the resolved source is overridden to it so the Play On sheet
+    /// targets the caller's active/selected service.
+    var preferredServiceName: String? = nil
+
     // Illustrative fallback metadata used until the live Watchmode lookup
     // resolves (or as a fallback when the API is unavailable). Overridden
     // by `metadataLine` / `genreLine` when those are set.
@@ -274,6 +279,17 @@ struct PlayOnBottomSheet: View {
         await MainActor.run {
             self.resolvedSource = r.primarySource
             self.resolvedOverview = r.overview
+            // Honor the caller's active/selected service when it's one of
+            // the resolved US sources (case-insensitive, either direction).
+            if let pref = preferredServiceName {
+                let key = pref.lowercased()
+                if let match = r.usSources.first(where: {
+                    let n = $0.name.lowercased()
+                    return n.contains(key) || key.contains(n)
+                }) {
+                    self.resolvedSource = match
+                }
+            }
         }
 
         // Resolve per-episode deep link when season/episode info is
