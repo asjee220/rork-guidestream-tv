@@ -1255,51 +1255,17 @@ struct ShowDetailScreen: View {
                         .padding(.top, 6)
                 }
 
-                // Two outlined secondary buttons
-                HStack(spacing: 8) {
+                // Single "More episodes" secondary button (shows only)
+                if isTV {
                     Button(action: {
                         UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                        if isTV {
-                            showMoreEpisodes = true
-                        } else if let tid = resolvedTmdbId {
-                            Task {
-                                let key = try? await TMDBService.shared.getMovieTrailerKey(tmdbId: tid)
-                                await MainActor.run {
-                                    if let key {
-                                        UIApplication.shared.open(URL(string: "https://www.youtube.com/watch?v=\(key)")!)
-                                    }
-                                }
-                            }
-                        }
+                        showMoreEpisodes = true
                     }) {
                         HStack(spacing: 5) {
-                            Image(systemName: isTV ? "list.bullet" : "film")
+                            Image(systemName: "list.bullet")
                                 .scaledFont(size: 12, weight: .semibold)
                                 .foregroundStyle(Color.white.opacity(0.55))
-                            Text(isTV ? "More episodes" : "Trailer")
-                                .scaledFont(size: 12, weight: .semibold)
-                                .foregroundStyle(.white)
-                        }
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 40)
-                        .background(
-                            Capsule().fill(Color.white.opacity(0.05))
-                        )
-                        .overlay(
-                            Capsule().stroke(Color.white.opacity(0.16), lineWidth: 1)
-                        )
-                    }
-                    .buttonStyle(.plain)
-
-                    Button(action: {
-                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                        onBack()
-                    }) {
-                        HStack(spacing: 5) {
-                            Image(systemName: "info.circle")
-                                .scaledFont(size: 12, weight: .semibold)
-                                .foregroundStyle(Color.white.opacity(0.55))
-                            Text("Full details")
+                            Text("More episodes")
                                 .scaledFont(size: 12, weight: .semibold)
                                 .foregroundStyle(.white)
                         }
