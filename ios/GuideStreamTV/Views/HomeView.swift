@@ -161,6 +161,8 @@ struct HomeView: View {
     @Environment(AppRouter.self) private var router
 
     @State private var widgetBannerDismissed: Bool = false
+    /// Inline sponsored slot indices dismissed for this session.
+    @State private var dismissedAdSlots: Set<Int> = []
     @State private var path: [HomeRoute] = []
     @State private var detailSubject: DetailSubject?
     @State private var showSearch: Bool = false
@@ -221,6 +223,61 @@ struct HomeView: View {
     /// True when the user has at least one non-TMDB (creator/podcast) saved.
     private var hasFollowedCreators: Bool {
         streams.userStreams.contains { SourceKind.from(titleId: $0.titleId).isNonTMDB }
+    }
+
+    /// Rotating pool of the eight affiliate offers, matching the detail-sheet
+    /// sponsored cards (affiliateAdData in HomeDestinations.swift).
+    private static let inlineAdPool: [(serviceId: String, headline: String, subtitle: String)] = [
+        ("netflix", "Stream more on Netflix", "Unlimited shows & movies · Try free"),
+        ("hbo", "Watch more on Max", "HBO, Max Originals & more · Try free"),
+        ("hulu", "Live TV + streaming on Hulu", "Starting at $7.99/mo · Try free"),
+        ("disney", "Disney+, Hulu & ESPN+ bundle", "Disney Bundle · Try free"),
+        ("appletv", "Award-winning originals", "Apple TV+ · First month free"),
+        ("prime", "Included with Prime", "Prime Video · Try free"),
+        ("paramount", "NFL on CBS & live sports", "Paramount+ · Try free"),
+        ("peacock", "Stream free on Peacock", "NBC shows & live sports · Free tier")
+    ]
+
+    /// Picks the affiliate offer for an inline slot, rotating by slot index and
+    /// preferring a service the user hasn't already selected.
+    private func inlineAdOffer(for slotIndex: Int) -> (serviceId: String, headline: String, subtitle: String) {
+        let owned = auth.selectedServices
+        let unowned = Self.inlineAdPool.filter { !owned.contains($0.serviceId) }
+        let chosen = unowned.isEmpty ? Self.inlineAdPool : unowned
+        return chosen[slotIndex % chosen.count]
+    }
+
+    /// Compact inline sponsored slot inserted between home feed rows. Hidden
+    /// once its index is dismissed for the session. Even slots prefer AdMob
+    /// (Rakuten backfill); odd slots render the Rakuten card directly.
+    @ViewBuilder
+    private func inlineAdSlot(_ slotIndex: Int) -> some View {
+        if !dismissedAdSlots.contains(slotIndex) {
+            let offer = inlineAdOffer(for: slotIndex)
+            let service = StreamingCatalog.service(for: offer.serviceId)
+            SponsoredSlotView(
+                service: service,
+                fallbackName: service?.name ?? offer.headline,
+                fallbackColor: service?.glow ?? .white,
+                headline: offer.headline,
+                subtitle: offer.subtitle,
+                onTap: {
+                    RakutenManager.shared.openAffiliateLink(
+                        serviceId: offer.serviceId,
+                        metadata: ["section": "home_inline_ad_\(slotIndex)"]
+                    )
+                    WatchIntentLogger.shared.log(
+                        eventType: .cardTapped,
+                        metadata: ["section": "home_inline_ad_\(slotIndex)"]
+                    )
+                },
+                onDismiss: { dismissedAdSlots.insert(slotIndex) },
+                adSource: "home_inline",
+                compact: true,
+                preferredSource: slotIndex % 2 == 0 ? .adMobFirst : .rakutenFirst
+            )
+            .padding(.horizontal, 20)
+        }
     }
 
     var body: some View {
@@ -458,6 +515,9 @@ struct HomeView: View {
                             .padding(.horizontal, 20)
                         }
 
+                        // Inline sponsored slot #0 — after What's New Today
+                        inlineAdSlot(0)
+
                         if !homeContentReady {
                             HomeShimmerSection(title: "Top Picks for You")
                                 .padding(.horizontal, 20)
@@ -559,6 +619,9 @@ struct HomeView: View {
                             )
                             .padding(.horizontal, 20)
                         }
+
+                        // Inline sponsored slot #1 — after Leaving Soon
+                        inlineAdSlot(1)
 
                         if !homeContentReady {
                             ForEach(StreamingCatalog.ordered(from: auth.selectedServices), id: \.id) { service in
@@ -730,6 +793,9 @@ struct HomeView: View {
                             }
                         }
 
+                        // Inline sponsored slot #2 — after Because you watch
+                        inlineAdSlot(2)
+
                         if !homeContentReady {
                             HomeShimmerSection(title: "Top rated right now")
                                 .padding(.horizontal, 20)
@@ -858,6 +924,9 @@ struct HomeView: View {
                             )
                             .padding(.horizontal, 20)
                         }
+
+                        // Inline sponsored slot #3 — after Binge Worthy
+                        inlineAdSlot(3)
 
                         if !homeContentReady {
                             HomeShimmerSection(title: "News")

@@ -33,6 +33,7 @@ import com.google.android.gms.ads.AdListener
 import com.google.android.gms.ads.AdRequest
 import com.google.android.gms.ads.AdSize
 import com.google.android.gms.ads.AdView
+import com.google.android.gms.ads.LoadAdError
 import com.rork.guidestreamtvandroid.AppConfig
 import com.rork.guidestreamtvandroid.ui.theme.BrandOrange
 import com.rork.guidestreamtvandroid.ui.theme.GlassFill
@@ -48,6 +49,8 @@ import com.rork.guidestreamtvandroid.ui.theme.TextTertiary
 @Composable
 fun NativeAdCard(
     modifier: Modifier = Modifier,
+    onAdLoaded: () -> Unit = {},
+    onAdFailedToLoad: () -> Unit = {},
 ) {
     Column(
         modifier = modifier
@@ -81,6 +84,8 @@ fun NativeAdCard(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(100.dp),
+            onAdLoaded = onAdLoaded,
+            onAdFailedToLoad = onAdFailedToLoad,
         )
     }
 }
@@ -92,6 +97,8 @@ fun NativeAdCard(
 fun BannerAd(
     adUnitId: String,
     modifier: Modifier = Modifier,
+    onAdLoaded: () -> Unit = {},
+    onAdFailedToLoad: () -> Unit = {},
 ) {
     var adLoaded by remember { mutableStateOf(false) }
     AndroidView(
@@ -103,6 +110,11 @@ fun BannerAd(
                 adListener = object : AdListener() {
                     override fun onAdLoaded() {
                         adLoaded = true
+                        onAdLoaded()
+                    }
+
+                    override fun onAdFailedToLoad(error: LoadAdError) {
+                        onAdFailedToLoad()
                     }
                 }
                 loadAd(AdRequest.Builder().build())
@@ -116,52 +128,3 @@ fun BannerAd(
     )
 }
 
-/**
- * Sponsored slot — a placeholder card shown in the home feed
- * when no native ad is loaded yet. Mirrors iOS SponsoredSlotView.
- */
-@Composable
-fun SponsoredSlot(
-    modifier: Modifier = Modifier,
-) {
-    Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
-            .background(GlassFill)
-            .border(1.dp, GlassStroke, RoundedCornerShape(14.dp))
-            .padding(12.dp),
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(4.dp))
-                    .background(BrandOrange.copy(alpha = 0.2f))
-                    .padding(horizontal = 6.dp, vertical = 2.dp),
-            ) {
-                Text(
-                    text = "Sponsored",
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = BrandOrange,
-                )
-            }
-            Spacer(Modifier.weight(1f))
-        }
-        Spacer(Modifier.height(8.dp))
-        Text(
-            text = "Discover more shows",
-            fontSize = 14.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = TextPrimary,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-        Text(
-            text = "Ad space — your favourite streaming picks here.",
-            fontSize = 12.sp,
-            color = TextTertiary,
-            maxLines = 2,
-        )
-    }
-}

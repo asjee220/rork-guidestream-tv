@@ -17,6 +17,14 @@ import SwiftUI
 import GoogleMobileAds
 #endif
 
+/// Preferred ad source for a pooled inline slot. `adMobFirst` shows a native
+/// AdMob unit when it fills and backfills with the Rakuten affiliate card;
+/// `rakutenFirst` skips the native claim so the Rakuten card renders directly.
+enum PooledAdSource {
+    case adMobFirst
+    case rakutenFirst
+}
+
 struct SponsoredSlotView: View {
     let service: StreamingService?
     let fallbackName: String
@@ -30,6 +38,11 @@ struct SponsoredSlotView: View {
     /// surface can distinguish its own native impressions.
     var adSource: String = "sponsored_slot"
     var compact: Bool = false
+
+    /// Whether this slot prefers a native AdMob unit or the Rakuten card.
+    /// Defaults to `.adMobFirst` so the three existing detail-sheet callers
+    /// are unchanged.
+    var preferredSource: PooledAdSource = .adMobFirst
 
     /// Fixed height for the native card. Sized to fully contain the 120pt
     /// media square plus padding, the two-line headline, body, advertiser,
@@ -121,6 +134,9 @@ struct SponsoredSlotView: View {
     /// simulator or no-fill this stays nil and the Rakuten fallback renders.
     private func fetchNativeAd() {
         guard currentNativeAd == nil else { return }
+        // Rakuten-first slots never claim a native ad, so the Rakuten
+        // affiliate card always renders as the guaranteed backfill.
+        guard preferredSource != .rakutenFirst else { return }
         AdManager.shared.start()
         AdManager.shared.loadNativePool()
         if let ad = AdManager.shared.nextNativeAd() {

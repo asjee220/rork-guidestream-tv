@@ -33,6 +33,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -56,6 +57,8 @@ import com.rork.guidestreamtvandroid.ui.components.PosterCard
 import com.rork.guidestreamtvandroid.ui.components.RemoteImage
 import com.rork.guidestreamtvandroid.ui.components.ShimmerHero
 import com.rork.guidestreamtvandroid.ui.components.ShimmerSection
+import com.rork.guidestreamtvandroid.ui.ads.PooledAdSource
+import com.rork.guidestreamtvandroid.ui.ads.SponsoredSlot
 import com.rork.guidestreamtvandroid.ui.components.glassCard
 import com.rork.guidestreamtvandroid.ui.home.HomeViewModel
 import com.rork.guidestreamtvandroid.ui.navigation.PendingTitleRoute
@@ -100,6 +103,9 @@ fun HomeScreen(
     val selectedServices by authVm.selectedServices.collectAsStateWithLifecycle()
 
     LaunchedEffect(Unit) { homeVm.loadAll() }
+
+    // Inline sponsored slot indices dismissed for this session.
+    val dismissedAdSlots = remember { mutableStateMapOf<Int, Boolean>() }
 
     val scrollState = rememberScrollState()
 
@@ -199,6 +205,13 @@ fun HomeScreen(
             )
         }
 
+        // Inline sponsored slot #0 — after What's New Today
+        InlineAdSlot(
+            slotIndex = 0,
+            selectedServices = selectedServices,
+            dismissed = dismissedAdSlots,
+        )
+
         // Top Picks for You (trending scored)
         if (!homeReady) {
             ShimmerSection("Top Picks for You", Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
@@ -265,6 +278,13 @@ fun HomeScreen(
             )
         }
 
+        // Inline sponsored slot #1 — after Leaving Soon
+        InlineAdSlot(
+            slotIndex = 1,
+            selectedServices = selectedServices,
+            dismissed = dismissedAdSlots,
+        )
+
         // Popular on {service}
         val services = StreamingCatalog.ordered(selectedServices)
         if (!homeReady) {
@@ -321,6 +341,13 @@ fun HomeScreen(
             )
         }
 
+        // Inline sponsored slot #2 — after Because you watch Crime
+        InlineAdSlot(
+            slotIndex = 2,
+            selectedServices = selectedServices,
+            dismissed = dismissedAdSlots,
+        )
+
         // Top Rated
         if (!homeReady) {
             ShimmerSection("Top rated right now", Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
@@ -358,6 +385,13 @@ fun HomeScreen(
                 },
             )
         }
+
+        // Inline sponsored slot #3 — after Binge Worthy
+        InlineAdSlot(
+            slotIndex = 3,
+            selectedServices = selectedServices,
+            dismissed = dismissedAdSlots,
+        )
 
         // Widget promo banner
         WidgetPromoBanner(
@@ -849,5 +883,53 @@ private fun WidgetPromoBanner(onSetUp: () -> Unit) {
                 color = Color.White,
             )
         }
+    }
+}
+
+// ── Inline Sponsored Slot ───────────────────────────────────────────
+
+/**
+ * Rotating pool of the eight affiliate offers, matching the iOS inline ad pool
+ * and the detail-sheet sponsored cards (headline, subtitle, service id).
+ */
+private val inlineAdPool: List<Triple<String, String, String>> = listOf(
+    Triple("netflix", "Stream more on Netflix", "Unlimited shows & movies · Try free"),
+    Triple("hbo", "Watch more on Max", "HBO, Max Originals & more · Try free"),
+    Triple("hulu", "Live TV + streaming on Hulu", "Starting at $7.99/mo · Try free"),
+    Triple("disney", "Disney+, Hulu & ESPN+ bundle", "Disney Bundle · Try free"),
+    Triple("appletv", "Award-winning originals", "Apple TV+ · First month free"),
+    Triple("prime", "Included with Prime", "Prime Video · Try free"),
+    Triple("paramount", "NFL on CBS & live sports", "Paramount+ · Try free"),
+    Triple("peacock", "Stream free on Peacock", "NBC shows & live sports · Free tier"),
+)
+
+/**
+ * Compact inline sponsored slot inserted between home feed rows — mirrors iOS
+ * inlineAdSlot. Hidden once its index is dismissed for the session. Even slots
+ * prefer AdMob (Rakuten backfill); odd slots render the Rakuten card directly.
+ */
+@Composable
+private fun InlineAdSlot(
+    slotIndex: Int,
+    selectedServices: Set<String>,
+    dismissed: MutableMap<Int, Boolean>,
+) {
+    if (dismissed[slotIndex] == true) return
+
+    // Rotate through the pool, preferring a service the user doesn't already own.
+    val unowned = inlineAdPool.filter { it.first !in selectedServices }
+    val pool = if (unowned.isEmpty()) inlineAdPool else unowned
+    val offer = pool[slotIndex % pool.size]
+    val service = StreamingCatalog.service(offer.first)
+
+    Box(Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
+        SponsoredSlot(
+            preferredSource = if (slotIndex % 2 == 0) PooledAdSource.ADMOB_FIRST else PooledAdSource.RAKUTEN_FIRST,
+            service = service,
+            serviceId = offer.first,
+            headline = offer.second,
+            subtitle = offer.third,
+            onDismiss = { dismissed[slotIndex] = true },
+        )
     }
 }
