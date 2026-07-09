@@ -564,6 +564,8 @@ fun ShowDetailScreen(
         // Title-scoped Reels player (Trailers & Clips) — full-screen overlay
         // holding the injected feed in local state (no nav-graph serialization).
         reelsFeed?.let { feed ->
+            // System back closes the player instead of leaving the detail screen.
+            androidx.activity.compose.BackHandler { reelsFeed = null }
             Box(
                 modifier = Modifier
                     .fillMaxSize()

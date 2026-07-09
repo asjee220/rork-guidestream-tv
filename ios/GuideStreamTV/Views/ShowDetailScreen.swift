@@ -281,9 +281,12 @@ struct ShowDetailScreen: View {
     /// Trailers & clips for this title, loaded alongside the Deep Dives fetch.
     /// Empty until the title's videos resolve; drives the Trailers & Clips row.
     @State private var trailerVideos: [TMDBVideo] = []
-    @State private var showTrailerReels: Bool = false
-    @State private var trailerReelFeed: [TrailerItem] = []
-    @State private var trailerReelStartIndex: Int = 0
+    /// Item-driven presentation for the title-scoped Reels player. Using
+    /// `fullScreenCover(item:)` guarantees the cover is built from the tapped
+    /// feed — an `isPresented:` cover can evaluate its content with the stale
+    /// (empty) feed when both are set in the same transaction, which presented
+    /// an empty player.
+    @State private var trailerReels: TrailerReelsPresentation?
     /// Per-episode deep link URL resolved from Watchmode's episode-level
     /// sources endpoint. When non-nil, the watch button opens this URL
     /// so the streaming app lands on the exact episode.
@@ -523,11 +526,11 @@ struct ShowDetailScreen: View {
                 trailerVideos = vids
             }
         }
-        .fullScreenCover(isPresented: $showTrailerReels) {
+        .fullScreenCover(item: $trailerReels) { reels in
             ReelsScreen(
-                onDismiss: { showTrailerReels = false },
-                injectedReels: trailerReelFeed,
-                injectedStartIndex: trailerReelStartIndex
+                onDismiss: { trailerReels = nil },
+                injectedReels: reels.feed,
+                injectedStartIndex: reels.startIndex
             )
         }
     }
@@ -637,9 +640,9 @@ struct ShowDetailScreen: View {
 
     private func openTrailerReels(startIndex: Int) {
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-        trailerReelFeed = buildTrailerReelFeed()
-        trailerReelStartIndex = startIndex
-        showTrailerReels = true
+        let feed = buildTrailerReelFeed()
+        guard !feed.isEmpty else { return }
+        trailerReels = TrailerReelsPresentation(feed: feed, startIndex: startIndex)
     }
 
     /// Opens the streaming app for a specific tapped service badge.
@@ -1358,6 +1361,16 @@ struct ShowDetailScreen: View {
             )
         }
     }
+}
+
+// MARK: - Trailer reels presentation payload
+
+/// Identifiable payload carrying the title-scoped Reels feed and the tapped
+/// start index into the full-screen cover.
+private struct TrailerReelsPresentation: Identifiable {
+    let id = UUID()
+    let feed: [TrailerItem]
+    let startIndex: Int
 }
 
 // MARK: - Episode small card
