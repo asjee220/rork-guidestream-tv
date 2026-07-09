@@ -1305,16 +1305,6 @@ private struct PosterCard: View {
                         .clipped()
                         .allowsHitTesting(false)
                     }
-                    .overlay(alignment: .bottom) {
-                        Text(tag)
-                            .scaledFont(size: 8, weight: .bold)
-                            .tracking(0.8)
-                            .foregroundStyle(Color.orange)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 5)
-                            .background(Color.orange.opacity(0.30))
-                            .allowsHitTesting(false)
-                    }
                     .clipShape(.rect(cornerRadius: 10))
 
                 VStack(alignment: .leading, spacing: 2) {
