@@ -282,22 +282,6 @@ private fun WelcomeScreen(
                 textAlign = TextAlign.Center,
             )
         }
-
-        Spacer(Modifier.height(40.dp))
-
-        // Skip — get started free
-        Text(
-            text = "Get started free",
-            fontSize = 14.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = TextSecondary,
-            modifier = Modifier
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null,
-                ) { onContinue() }
-                .padding(12.dp),
-        )
     }
 }
 
