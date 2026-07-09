@@ -7,7 +7,6 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		PR1VACY0002BUILDFILE000B /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = PR1VACY0001FILEREF0000A /* PrivacyInfo.xcprivacy */; };
 		AB50D61ED0BAE05FA2F8EA /* Supabase in Frameworks */ = {isa = PBXBuildFile; productRef = AB1C9FF110ABBCE8BF456A /* Supabase */; };
 		XX50D61ED0BAE05FA2F8E9XX /* Supabase in Frameworks */ = {isa = PBXBuildFile; productRef = XX1C9FF110ABBCE8BF456CXX /* Supabase */; };
 		XXAC3EF89597191F3A09AEXX /* YouTubeKit in Frameworks */ = {isa = PBXBuildFile; productRef = XX45D5A1BA7EF4022DE2E3XX /* YouTubeKit */; };
@@ -411,7 +410,6 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				PR1VACY0002BUILDFILE000B /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
