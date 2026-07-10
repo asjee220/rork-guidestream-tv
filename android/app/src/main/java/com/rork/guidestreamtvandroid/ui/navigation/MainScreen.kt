@@ -107,6 +107,7 @@ fun MainScreen(
                     onDismiss = {
                         val target = if (tabBeforeReels == AppTab.REELS) AppTab.HOME else tabBeforeReels
                         selectedTab = target
+                        tabBarVisible = true
                     },
                 )
                 AppTab.PROFILE -> ProfileScreen()
