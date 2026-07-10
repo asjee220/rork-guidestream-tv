@@ -31,8 +31,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.rork.guidestreamtvandroid.data.remote.SupabaseManager
 import com.rork.guidestreamtvandroid.data.repository.AuthViewModel
 import com.rork.guidestreamtvandroid.data.repository.StreamsViewModel
+import io.github.jan.supabase.auth.handleDeeplinks
 import com.rork.guidestreamtvandroid.ui.navigation.AppRouter
 import com.rork.guidestreamtvandroid.ui.navigation.MainScreen
 import com.rork.guidestreamtvandroid.ui.navigation.PendingTitleRoute
@@ -63,6 +65,11 @@ class MainActivity : ComponentActivity() {
             return
         }
 
+        // Import any Supabase OAuth session returned via the guidestream:// redirect.
+        SupabaseManager.client.handleDeeplinks(intent) {
+            AuthViewModel.get().handleOAuthCallback()
+        }
+
         enableEdgeToEdge()
         setContent {
             AppTheme {
@@ -77,6 +84,9 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        SupabaseManager.client.handleDeeplinks(intent) {
+            AuthViewModel.get().handleOAuthCallback()
+        }
         handleDeepLink(intent.data)
     }
 

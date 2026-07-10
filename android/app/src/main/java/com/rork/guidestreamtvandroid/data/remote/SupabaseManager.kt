@@ -17,7 +17,13 @@ object SupabaseManager {
         supabaseUrl = SUPABASE_URL,
         supabaseKey = SUPABASE_ANON_KEY,
     ) {
-        install(Auth)
+        install(Auth) {
+            // Deep-link redirect target for OAuth (Google) sign-in. Produces the
+            // redirect URL "guidestream://auth-callback", matching the scheme
+            // registered in AndroidManifest.xml and the password-reset redirect.
+            scheme = "guidestream"
+            host = "auth-callback"
+        }
         install(Postgrest)
     }
 }
