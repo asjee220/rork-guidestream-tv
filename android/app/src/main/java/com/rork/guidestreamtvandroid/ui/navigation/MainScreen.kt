@@ -100,7 +100,7 @@ fun MainScreen(
                     },
                 )
                 AppTab.SPORTS -> SportsScreen(
-                    onOpenGame = { game -> selectedGame = game },
+                    onOpenGameDetail = { game -> selectedGame = game },
                 )
                 AppTab.ASK -> { /* Intercepted — opens sheet via onOpenAsk */ }
                 AppTab.REELS -> ReelsScreen(

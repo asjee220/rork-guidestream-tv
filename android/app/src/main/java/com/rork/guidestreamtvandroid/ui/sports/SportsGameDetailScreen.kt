@@ -29,9 +29,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -42,6 +41,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.rork.guidestreamtvandroid.data.models.SportsGame
+import com.rork.guidestreamtvandroid.data.repository.TeamFavoritesService
 import com.rork.guidestreamtvandroid.ui.components.RemoteImage
 import com.rork.guidestreamtvandroid.ui.components.glassCard
 import com.rork.guidestreamtvandroid.ui.theme.BrandOrange
@@ -63,9 +63,10 @@ fun SportsGameDetailScreen(
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val context = LocalContext.current
-    var awayFav by remember { mutableStateOf(false) }
-    var homeFav by remember { mutableStateOf(false) }
+    val favorites = TeamFavoritesService.get()
+    val favRows by favorites.rows.collectAsStateWithLifecycle()
+    val awayFav = game.away.uid != null && favRows.containsKey(game.away.uid)
+    val homeFav = game.home.uid != null && favRows.containsKey(game.home.uid)
 
     val isLive = game.state == "live"
     val isFinal = game.state == "final"
@@ -94,7 +95,10 @@ fun SportsGameDetailScreen(
                     .size(40.dp)
                     .clip(CircleShape)
                     .background(GlassFill)
-                    .clip(RoundedCornerShape(20.dp)),
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                    ) { onBack() },
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(
@@ -143,7 +147,7 @@ fun SportsGameDetailScreen(
                         Spacer(Modifier.width(8.dp))
                         FavoriteStar(
                             isFavorite = awayFav,
-                            onClick = { awayFav = !awayFav },
+                            onClick = { favorites.toggle(game.away, game.leagueShort, game.sport) },
                         )
                     }
                     Text(
@@ -177,7 +181,7 @@ fun SportsGameDetailScreen(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         FavoriteStar(
                             isFavorite = homeFav,
-                            onClick = { homeFav = !homeFav },
+                            onClick = { favorites.toggle(game.home, game.leagueShort, game.sport) },
                         )
                         Spacer(Modifier.width(8.dp))
                         Text(
