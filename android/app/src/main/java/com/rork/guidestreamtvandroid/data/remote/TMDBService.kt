@@ -285,6 +285,16 @@ class TMDBService {
      * ordered Trailer → Teaser → Featurette → Clip (stable within each type).
      */
     suspend fun getTitleVideos(tmdbId: Int, isTV: Boolean): List<TMDBVideo> {
+        // Try the requested media type first; if it yields no videos (e.g. the
+        // title was opened with the wrong isTV flag, or a movie id routed through
+        // the TV path), fall back to the other type so the Trailers & Clips row
+        // still populates.
+        val primary = videos(tmdbId, isTV)
+        if (primary.isNotEmpty()) return primary
+        return videos(tmdbId, !isTV)
+    }
+
+    private suspend fun videos(tmdbId: Int, isTV: Boolean): List<TMDBVideo> {
         val kind = if (isTV) "tv" else "movie"
         return try {
             val response: TMDBVideosEnvelope = client.get("$base/$kind/$tmdbId/videos?api_key=$apiKey&language=en-US").body()

@@ -529,6 +529,14 @@ struct ShowDetailScreen: View {
         }
         .task(id: titleId) {
             vm.startLoad(titleId: titleId, isTV: isTV)
+            // Load Trailers & Clips directly off the TMDB id (available
+            // immediately) so the row populates even when the detail fetch
+            // fails or the title carries the wrong isTV flag. getTitleVideos
+            // falls back to the other media type when the primary is empty.
+            if let tmdbId = resolvedTmdbId {
+                let vids = (try? await TMDBService.shared.getTitleVideos(tmdbId: tmdbId, isTV: isTV)) ?? []
+                trailerVideos = vids
+            }
             // Resolve per-episode deep link from Watchmode so the watch
             // button opens the exact episode in the streaming app.
             await resolveEpisodeDeepLink(forService: activeService?.name)
@@ -547,22 +555,15 @@ struct ShowDetailScreen: View {
         .onChange(of: vm.tmdb?.name) { _, name in
             guard let name, !name.isEmpty, let tmdbId = resolvedTmdbId else { return }
             Task {
-                async let deepLoad: Void = deepDivesVM.load(tmdbId: tmdbId, mediaType: isTV ? "tv" : "movie", showTitle: name)
-                let vids = (try? await TMDBService.shared.getTitleVideos(tmdbId: tmdbId, isTV: isTV)) ?? []
-                await deepLoad
-                trailerVideos = vids
+                await deepDivesVM.load(tmdbId: tmdbId, mediaType: isTV ? "tv" : "movie", showTitle: name)
             }
         }
         .onChange(of: vm.detail?.title) { _, name in
             // Movies populate `vm.detail` (not `vm.tmdb`), so the TV trigger above
-            // never fires for them. Mirror the same Trailers & Clips + Deep Dives
-            // load here for the movie path only.
+            // never fires for them. Mirror the Deep Dives load here for movies.
             guard !isTV, let name, !name.isEmpty, let tmdbId = resolvedTmdbId else { return }
             Task {
-                async let deepLoad: Void = deepDivesVM.load(tmdbId: tmdbId, mediaType: "movie", showTitle: name)
-                let vids = (try? await TMDBService.shared.getTitleVideos(tmdbId: tmdbId, isTV: false)) ?? []
-                await deepLoad
-                trailerVideos = vids
+                await deepDivesVM.load(tmdbId: tmdbId, mediaType: "movie", showTitle: name)
             }
         }
         .fullScreenCover(item: $trailerReels) { reels in

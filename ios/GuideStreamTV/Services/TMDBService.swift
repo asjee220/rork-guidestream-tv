@@ -584,6 +584,16 @@ nonisolated struct TMDBService {
     /// ordered Trailer → Teaser → Featurette → Clip and stable within each
     /// type. Reuses the existing `TMDBVideo` / `TMDBVideosEnvelope` decoders.
     func getTitleVideos(tmdbId: Int, isTV: Bool) async throws -> [TMDBVideo] {
+        // Try the requested media type first; if it yields no videos (e.g. the
+        // title was opened with the wrong isTV flag, or a movie id was routed
+        // through the TV path), fall back to the other type so the Trailers &
+        // Clips row still populates.
+        let primary = try await videos(tmdbId: tmdbId, isTV: isTV)
+        if !primary.isEmpty { return primary }
+        return (try? await videos(tmdbId: tmdbId, isTV: !isTV)) ?? []
+    }
+
+    private func videos(tmdbId: Int, isTV: Bool) async throws -> [TMDBVideo] {
         let kind = isTV ? "tv" : "movie"
         let urlString = "\(base)/\(kind)/\(tmdbId)/videos?api_key=\(apiKey)&language=en-US"
         let data = try await get(urlString)
