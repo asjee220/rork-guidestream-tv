@@ -26,9 +26,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -72,6 +74,8 @@ fun SearchScreen(
     val tmdbResults by vm.tmdbResults.collectAsStateWithLifecycle()
     val creatorResults by vm.creatorResults.collectAsStateWithLifecycle()
     val popular by vm.popular.collectAsStateWithLifecycle()
+
+    LaunchedEffect(Unit) { vm.loadPopular() }
 
     Column(
         modifier = modifier.fillMaxSize(),
@@ -189,14 +193,24 @@ fun SearchScreen(
         // Results
         if (query.isBlank()) {
             // Popular trending
-            if (popular.isNotEmpty()) {
-                Text(
-                    text = "Popular This Week",
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = TextPrimary,
-                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
-                )
+            Text(
+                text = "Popular This Week",
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold,
+                color = TextPrimary,
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
+            )
+            if (popular.isEmpty()) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.TopCenter,
+                ) {
+                    CircularProgressIndicator(
+                        color = BrandOrange,
+                        modifier = Modifier.padding(top = 40.dp).size(28.dp),
+                    )
+                }
+            } else {
                 LazyColumn(
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 20.dp, vertical = 4.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -216,6 +230,16 @@ fun SearchScreen(
                         )
                     }
                 }
+            }
+        } else if (isSearching && tmdbResults.isEmpty() && creatorResults.isEmpty()) {
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.TopCenter,
+            ) {
+                CircularProgressIndicator(
+                    color = BrandOrange,
+                    modifier = Modifier.padding(top = 40.dp).size(28.dp),
+                )
             }
         } else if (tmdbResults.isEmpty() && creatorResults.isEmpty() && !isSearching) {
             Box(
