@@ -88,9 +88,12 @@ final class PushTokenManager {
     /// iOS rotates the token.
     func refreshRegistrationIfAuthorized() async {
         let settings = await UNUserNotificationCenter.current().notificationSettings()
-        let authorized = settings.authorizationStatus == .authorized
+        var authorized = settings.authorizationStatus == .authorized
             || settings.authorizationStatus == .provisional
-            || settings.authorizationStatus == .ephemeral
+        #if os(iOS)
+        // `.ephemeral` (App Clips) exists only on iOS, not tvOS.
+        authorized = authorized || settings.authorizationStatus == .ephemeral
+        #endif
         guard authorized else { return }
         // `PushTokenManager` is @MainActor, so we're already on the main
         // thread — but be explicit since UIApplication requires it.
