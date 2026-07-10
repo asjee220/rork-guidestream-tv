@@ -139,7 +139,12 @@ data class TMDBEpisodeSummary(
 data class SportsGame(
     val id: String,
     val sport: String,
-    val state: String = "upcoming",
+    /** Short league label (e.g. "NBA"). */
+    val leagueShort: String = "",
+    /** Normalized state: "live" | "pre" | "post". */
+    val state: String = "pre",
+    /** Human-readable status (e.g. "3rd Qtr · 8:42", "Final", "Fri 7:30 PM"). */
+    val statusDetail: String = "",
     val home: TeamSummary,
     val away: TeamSummary,
     @SerialName("start_time") val startTime: String? = null,
@@ -153,6 +158,17 @@ data class SportsGame(
         val abbreviation: String,
         val logoUrl: String? = null,
         val record: String? = null,
+        /** Stable ESPN team uid used to key favorites. */
+        val uid: String? = null,
+        /** Full team display name (e.g. "New York Knicks"). */
+        val displayName: String = "",
+        /** Short team name (e.g. "Knicks"). */
+        val shortName: String = "",
+        /** Score as a string for direct display. */
+        val score: String = "",
+        /** Primary team color as a hex string without leading #. */
+        val primaryHex: String? = null,
+        val isWinner: Boolean = false,
     )
 }
 

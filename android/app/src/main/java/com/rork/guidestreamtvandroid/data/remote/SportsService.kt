@@ -113,23 +113,39 @@ class SportsService {
                 val comp = ev.competitions.firstOrNull() ?: return@mapNotNull null
                 val home = comp.competitors.find { it.homeAway == "home" } ?: return@mapNotNull null
                 val away = comp.competitors.find { it.homeAway == "away" } ?: return@mapNotNull null
-                val state = ev.status?.type?.state ?: "pre"
+                // ESPN reports state as "pre" | "in" | "post"; normalize "in" to "live".
+                val rawState = ev.status?.type?.state ?: "pre"
+                val state = if (rawState == "in") "live" else rawState
                 val detail = ev.status?.type?.shortDetail ?: ""
                 SportsGame(
                     id = ev.id,
                     sport = endpoint.sport,
+                    leagueShort = endpoint.sport,
                     state = state,
+                    statusDetail = detail,
                     home = SportsGame.TeamSummary(
                         name = home.displayNameStr.ifEmpty { home.abbreviation },
                         abbreviation = home.abbreviation,
                         logoUrl = home.team?.logo,
                         record = home.shortDisplayNameStr,
+                        uid = home.uid,
+                        displayName = home.displayNameStr.ifEmpty { home.abbreviation },
+                        shortName = home.shortDisplayNameStr.ifEmpty { home.abbreviation },
+                        score = home.score,
+                        primaryHex = home.team?.color,
+                        isWinner = home.winner ?: false,
                     ),
                     away = SportsGame.TeamSummary(
                         name = away.displayNameStr.ifEmpty { away.abbreviation },
                         abbreviation = away.abbreviation,
                         logoUrl = away.team?.logo,
                         record = away.shortDisplayNameStr,
+                        uid = away.uid,
+                        displayName = away.displayNameStr.ifEmpty { away.abbreviation },
+                        shortName = away.shortDisplayNameStr.ifEmpty { away.abbreviation },
+                        score = away.score,
+                        primaryHex = away.team?.color,
+                        isWinner = away.winner ?: false,
                     ),
                     startTime = ev.date,
                     broadcasts = ev.broadcasts.flatMap { it.names },
