@@ -190,6 +190,10 @@ class AuthViewModel private constructor(private val context: Context) : ViewMode
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 val auth = SupabaseManager.client.auth
+                // The SDK loads the persisted session from storage asynchronously.
+                // Wait for that to finish before reading it, otherwise a valid
+                // email/password session reads back as null on cold launch.
+                auth.awaitInitialization()
                 val session = auth.currentSessionOrNull()
                 if (session != null) {
                     _currentUser.value = session.user
