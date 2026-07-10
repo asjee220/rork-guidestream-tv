@@ -16,10 +16,15 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
@@ -27,14 +32,19 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -42,6 +52,7 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -55,6 +66,7 @@ import com.rork.guidestreamtvandroid.data.repository.StreamsViewModel
 import com.rork.guidestreamtvandroid.data.repository.WatchIntentLogger
 import com.rork.guidestreamtvandroid.ui.components.PosterCard
 import com.rork.guidestreamtvandroid.ui.components.RemoteImage
+import com.rork.guidestreamtvandroid.ui.components.ServicesPill
 import com.rork.guidestreamtvandroid.ui.components.ShimmerHero
 import com.rork.guidestreamtvandroid.ui.components.ShimmerSection
 import com.rork.guidestreamtvandroid.ui.ads.PooledAdSource
@@ -67,10 +79,13 @@ import com.rork.guidestreamtvandroid.ui.theme.BrandOrange
 import com.rork.guidestreamtvandroid.ui.theme.GlassFill
 import com.rork.guidestreamtvandroid.ui.theme.GlassStroke
 import com.rork.guidestreamtvandroid.ui.theme.LightBlue
+import com.rork.guidestreamtvandroid.ui.theme.Navy
 import com.rork.guidestreamtvandroid.ui.theme.NewsGreen
 import com.rork.guidestreamtvandroid.ui.theme.TextPrimary
 import com.rork.guidestreamtvandroid.ui.theme.TextSecondary
 import com.rork.guidestreamtvandroid.ui.theme.TextTertiary
+import com.rork.guidestreamtvandroid.ui.theme.BrandWordmark
+import com.rork.guidestreamtvandroid.ui.theme.WordmarkSize
 
 /**
  * Home feed — mirrors iOS HomeView.swift.
@@ -107,14 +122,19 @@ fun HomeScreen(
     // Inline sponsored slot indices dismissed for this session.
     val dismissedAdSlots = remember { mutableStateMapOf<Int, Boolean>() }
 
+    // Services editor sheet (opened from the top-bar services pill).
+    var showServicesSheet by remember { mutableStateOf(false) }
+
     val scrollState = rememberScrollState()
 
+    Box(modifier = modifier.fillMaxSize()) {
     Column(
-        modifier = modifier
+        modifier = Modifier
             .fillMaxSize()
             .verticalScroll(scrollState),
     ) {
-        Spacer(Modifier.height(56.dp))
+        // Reserve space for the pinned PageBar (status bar + 56dp bar height).
+        Spacer(Modifier.statusBarsPadding().height(56.dp))
 
         // Search bar
         SearchBar(onClick = onOpenSearch)
@@ -401,6 +421,149 @@ fun HomeScreen(
         )
 
         Spacer(Modifier.height(96.dp))
+    }
+
+        // Pinned top bar — wordmark left, services pill right (mirrors iOS PageBar)
+        HomePageBar(
+            selectedServiceIds = StreamingCatalog.ordered(selectedServices).map { it.id },
+            onOpenServices = { showServicesSheet = true },
+            modifier = Modifier.align(Alignment.TopStart),
+        )
+    }
+
+    if (showServicesSheet) {
+        ServicesEditorSheet(
+            selected = selectedServices,
+            onToggle = { id ->
+                val next = if (id in selectedServices) selectedServices - id else selectedServices + id
+                authVm.setSelectedServices(next)
+            },
+            onDismiss = { showServicesSheet = false },
+        )
+    }
+}
+
+// ── Page Bar (pinned top) ────────────────────────────────────────────────────
+
+@Composable
+private fun HomePageBar(
+    selectedServiceIds: List<String>,
+    onOpenServices: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .statusBarsPadding()
+            .height(56.dp)
+            .padding(horizontal = 20.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        BrandWordmark(size = WordmarkSize.NAV)
+        Spacer(Modifier.weight(1f))
+        if (selectedServiceIds.isNotEmpty()) {
+            ServicesPill(
+                serviceIds = selectedServiceIds,
+                onTap = onOpenServices,
+            )
+        }
+    }
+}
+
+// ── Services Editor Sheet ────────────────────────────────────────────────────
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ServicesEditorSheet(
+    selected: Set<String>,
+    onToggle: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = Navy,
+    ) {
+        Column {
+            Text(
+                text = "My services",
+                fontSize = 20.sp,
+                fontWeight = FontWeight.Bold,
+                color = TextPrimary,
+                modifier = Modifier.padding(horizontal = 20.dp),
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = "${selected.size} selected · tap to add or remove",
+                fontSize = 13.sp,
+                color = TextSecondary,
+                modifier = Modifier.padding(horizontal = 20.dp),
+            )
+            Spacer(Modifier.height(16.dp))
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(3),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(420.dp)
+                    .padding(horizontal = 20.dp)
+                    .navigationBarsPadding(),
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                verticalArrangement = Arrangement.spacedBy(22.dp),
+            ) {
+                items(StreamingCatalog.all, key = { it.id }) { svc ->
+                    ServiceEditorTile(
+                        service = svc,
+                        isSelected = svc.id in selected,
+                        onTap = { onToggle(svc.id) },
+                    )
+                }
+            }
+            Spacer(Modifier.height(12.dp))
+        }
+    }
+}
+
+@Composable
+private fun ServiceEditorTile(
+    service: com.rork.guidestreamtvandroid.data.models.StreamingService,
+    isSelected: Boolean,
+    onTap: () -> Unit,
+) {
+    val borderColor = if (isSelected) service.glow else Color.White.copy(alpha = 0.08f)
+    val borderWidth = if (isSelected) 2.dp else 1.dp
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .aspectRatio(0.85f)
+            .clip(RoundedCornerShape(14.dp))
+            .background(service.bg)
+            .border(borderWidth, borderColor, RoundedCornerShape(14.dp))
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+            ) { onTap() },
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        val display = service.display
+        val label = when (display) {
+            is com.rork.guidestreamtvandroid.data.models.StreamingService.Display.Text -> display.text
+            is com.rork.guidestreamtvandroid.data.models.StreamingService.Display.SymbolText -> display.text
+            is com.rork.guidestreamtvandroid.data.models.StreamingService.Display.Star -> service.name
+        }
+        val labelColor = when (display) {
+            is com.rork.guidestreamtvandroid.data.models.StreamingService.Display.Text -> display.color
+            is com.rork.guidestreamtvandroid.data.models.StreamingService.Display.SymbolText -> display.color
+            is com.rork.guidestreamtvandroid.data.models.StreamingService.Display.Star -> display.color
+        }
+        Text(
+            text = label,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Black,
+            color = labelColor,
+            textAlign = TextAlign.Center,
+        )
     }
 }
 
