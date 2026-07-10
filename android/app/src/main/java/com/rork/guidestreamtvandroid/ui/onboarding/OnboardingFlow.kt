@@ -213,8 +213,9 @@ private fun WelcomeScreen(
             .padding(horizontal = 24.dp)
             .verticalScroll(rememberScrollState()),
         horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
     ) {
-        Spacer(Modifier.height(80.dp))
+        Spacer(Modifier.height(24.dp))
 
         // Logo
         BrandWordmark(size = com.rork.guidestreamtvandroid.ui.theme.WordmarkSize.LARGE)
