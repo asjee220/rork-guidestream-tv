@@ -974,7 +974,7 @@ struct CastToTVSheet: View {
             "platform": .string(platform),
             "title": .string(showTitle),
             "content_url": .string(resolvedURL?.absoluteString ?? ""),
-            "device_name": .string("STAMP-B tvos=\(watchmodeSource?.tvosUrl ?? "nil") roku=\(watchmodeSource?.rokuUrl ?? "nil")")
+            "device_name": .string("STAMP-C tvos=\(watchmodeSource?.tvosUrl ?? "nil") roku=\(watchmodeSource?.rokuUrl ?? "nil")")
         ]
         try? await SupabaseManager.shared.client
             .from("debug_logs")

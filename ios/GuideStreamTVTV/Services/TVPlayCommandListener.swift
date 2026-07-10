@@ -94,7 +94,7 @@ final class TVPlayCommandListener {
             .insert([
                 "event": .string("tv_listener_subscribed"),
                 "user_id": .string(userId),
-                "device_name": .string("STAMP-B"),
+                "device_name": .string("STAMP-C status=\(ch.status)"),
                 "target_name": .string("play-commands:\(userId)")
             ] as [String: AnyJSON])
             .execute()
