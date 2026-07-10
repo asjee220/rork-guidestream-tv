@@ -89,9 +89,29 @@ fun OnboardingFlow(
     var step by remember { mutableStateOf(startStep) }
     var showEmailAuth by remember { mutableStateOf(false) }
     val auth = AuthViewModel.get()
+    val streams = StreamsViewModel.get()
     val selectedServices = remember { mutableStateOf(auth.selectedServices.value) }
     var pushOn by remember { mutableStateOf(auth.notifyPushEnabled.value) }
     val scope = rememberCoroutineScope()
+
+    // Terminal path: mark onboarding complete and hand control back to the host.
+    val finish: () -> Unit = {
+        if (!auth.isAuthenticated.value) auth.continueAsGuest()
+        auth.completeOnboarding()
+        onFinish()
+    }
+
+    // Commit seeded shows / creators into the watchlist (guest or signed-in).
+    val commitSeeds: (List<StreamSeed>) -> Unit = { seeds ->
+        seeds.forEach { seed ->
+            streams.addToMyStreams(
+                titleId = seed.titleId,
+                title = seed.title,
+                posterUrl = seed.posterUrl,
+                platform = seed.platform,
+            )
+        }
+    }
 
     Box(modifier = Modifier.fillMaxSize()) {
         AnimatedContent(
@@ -121,15 +141,34 @@ fun OnboardingFlow(
                         step = 2
                     },
                 )
-                else -> StayNotifiedScreen(
+                2 -> StayNotifiedScreen(
                     pushOn = pushOn,
                     onPushToggle = { pushOn = it },
                     onContinue = {
                         auth.setNotificationPreferences(pushOn, false)
                         if (!auth.isAuthenticated.value) auth.continueAsGuest()
-                        auth.completeOnboarding()
-                        onFinish()
+                        step = 3
                     },
+                )
+                3 -> SeedPromptScreen(
+                    selectedServices = selectedServices.value,
+                    onContinue = { step = 4 },
+                    onSkip = { finish() },
+                )
+                4 -> WatchingNowScreen(
+                    selectedServices = selectedServices.value,
+                    onContinue = { seeds ->
+                        commitSeeds(seeds)
+                        step = 5
+                    },
+                    onSkip = { step = 5 },
+                )
+                else -> FollowCreatorsOnboardingScreen(
+                    onContinue = { seeds ->
+                        commitSeeds(seeds)
+                        finish()
+                    },
+                    onSkip = { finish() },
                 )
             }
         }
@@ -672,9 +711,9 @@ private fun StayNotifiedScreen(
 // ── Onboarding header ─────────────────────────────────────────────
 
 @Composable
-private fun OnboardingHeader(
+internal fun OnboardingHeader(
     progress: Float,
-    onClose: (() -> Unit)?,
+    onClose: (() -> Unit)? = null,
 ) {
     Column(
         modifier = Modifier
