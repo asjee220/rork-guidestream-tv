@@ -607,10 +607,13 @@ private fun InjectedReelsScreen(
                     },
                 )
             }
-            // Top overlay: dismiss chevron only (no category pills)
+            // Top overlay: dismiss chevron only (no category pills).
+            // statusBarsPadding keeps the tap target below the system status bar
+            // so the status bar doesn't swallow the tap.
             Box(
                 modifier = Modifier
                     .align(Alignment.TopStart)
+                    .statusBarsPadding()
                     .padding(12.dp)
                     .size(40.dp)
                     .clip(CircleShape)
