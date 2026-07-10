@@ -100,7 +100,10 @@ class ReelsViewModel : ViewModel() {
                 val forYouPool = (trending + onAir).distinctBy { it.id }
                 all.addAll(0, buildTrailers(forYouPool, ReelTab.FOR_YOU, isTV = true))
 
-                _trailers.value = all.distinctBy { it.trailerKey }
+                // Dedupe within each tab (not globally): For You reuses the same
+                // trailer keys as Trending/New, so a global distinctBy would wipe out
+                // the tab-specific items and leave those tabs empty.
+                _trailers.value = all.distinctBy { it.tab to it.trailerKey }
             } finally {
                 _isLoading.value = false
             }
