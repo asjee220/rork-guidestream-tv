@@ -553,6 +553,18 @@ struct ShowDetailScreen: View {
                 trailerVideos = vids
             }
         }
+        .onChange(of: vm.detail?.title) { _, name in
+            // Movies populate `vm.detail` (not `vm.tmdb`), so the TV trigger above
+            // never fires for them. Mirror the same Trailers & Clips + Deep Dives
+            // load here for the movie path only.
+            guard !isTV, let name, !name.isEmpty, let tmdbId = resolvedTmdbId else { return }
+            Task {
+                async let deepLoad: Void = deepDivesVM.load(tmdbId: tmdbId, mediaType: "movie", showTitle: name)
+                let vids = (try? await TMDBService.shared.getTitleVideos(tmdbId: tmdbId, isTV: false)) ?? []
+                await deepLoad
+                trailerVideos = vids
+            }
+        }
         .fullScreenCover(item: $trailerReels) { reels in
             ReelsScreen(
                 onDismiss: { trailerReels = nil },
