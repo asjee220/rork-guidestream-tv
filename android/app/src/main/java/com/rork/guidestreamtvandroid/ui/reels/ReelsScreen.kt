@@ -42,6 +42,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -137,6 +138,10 @@ fun ReelsScreen(
                 Text("No trailers available", color = TextTertiary, fontSize = 15.sp)
             }
         } else {
+            // Key the pager to the current tab so switching categories fully
+            // rebuilds the pager (fresh page 0 + fresh content) instead of
+            // keeping the previous tab's cached pages.
+            key(currentTab) {
             val pagerState = rememberPagerState(pageCount = { filteredTrailers.size })
 
             // Reset autoplay on page change
@@ -218,6 +223,7 @@ fun ReelsScreen(
                         context.startActivity(Intent.createChooser(shareIntent, "Share trailer"))
                     },
                 )
+            }
             }
 
             // Top overlay: dismiss chevron + category pills
