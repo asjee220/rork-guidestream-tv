@@ -72,6 +72,9 @@ class ShowDetailViewModel : ViewModel() {
                     _currentSeasonNumber.value = seasonNum
                     val seasonResult = tmdb.getSeason(tmdbId, seasonNum)
                     _season.value = seasonResult
+                } else {
+                    // Movie — load metadata from TMDB, mirroring the TV path.
+                    _detail.value = tmdb.getMovieDetail(tmdbId)
                 }
                 val provider = tmdb.getTopWatchProvider(tmdbId)
                 _topProvider.value = provider

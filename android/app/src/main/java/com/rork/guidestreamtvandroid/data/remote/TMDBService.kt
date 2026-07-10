@@ -227,6 +227,41 @@ class TMDBService {
         } catch (_: Exception) { null }
     }
 
+    @Serializable
+    private data class TMDBMovieDetailDTO(
+        val id: Int = 0,
+        val title: String = "",
+        val overview: String? = null,
+        @SerialName("poster_path") val posterPath: String? = null,
+        @SerialName("backdrop_path") val backdropPath: String? = null,
+        @SerialName("vote_average") val voteAverage: Double? = null,
+        val genres: List<TMDBGenre>? = null,
+        @SerialName("release_date") val releaseDate: String? = null,
+        val runtime: Int? = null,
+    )
+
+    /**
+     * Movie metadata from TMDB — the movie counterpart to [getTVDetail].
+     * Maps the movie payload into [TMDBTVDetail] so the detail screen renders
+     * movies with the same overview/rating/genres/backdrop fields as TV.
+     */
+    suspend fun getMovieDetail(tmdbId: Int): TMDBTVDetail? {
+        return try {
+            val movie: TMDBMovieDetailDTO = client.get("$base/movie/$tmdbId?api_key=$apiKey&language=en-US").body()
+            TMDBTVDetail(
+                id = movie.id,
+                name = movie.title,
+                overview = movie.overview,
+                posterPath = movie.posterPath,
+                backdropPath = movie.backdropPath,
+                voteAverage = movie.voteAverage,
+                genres = movie.genres,
+                numberOfSeasons = null,
+                firstAirDate = movie.releaseDate,
+            )
+        } catch (_: Exception) { null }
+    }
+
     suspend fun getSeason(tmdbId: Int, seasonNumber: Int): TMDBSeason? {
         return try {
             client.get("$base/tv/$tmdbId/season/$seasonNumber?api_key=$apiKey&language=en-US").body()

@@ -141,6 +141,37 @@ nonisolated struct TMDBTVDetail: Decodable, Sendable {
     }
 }
 
+/// Movie detail from TMDB's `/movie/{id}` endpoint. Mirrors the pattern used
+/// by `TMDBTVDetail` so the detail screen can load movie metadata from TMDB
+/// instead of misrouting a TMDB id through Watchmode's titleDetail.
+nonisolated struct TMDBMovieDetail: Decodable, Sendable {
+    let id: Int
+    let title: String
+    let overview: String?
+    let posterPath: String?
+    let backdropPath: String?
+    let voteAverage: Double?
+    let genres: [TMDBGenre]?
+    let releaseDate: String?
+    let runtime: Int?
+
+    var posterUrl: String? { TMDBImage.url(posterPath, size: .poster500) }
+    var backdropUrl: String? { TMDBImage.url(backdropPath, size: .backdrop1280) }
+    var year: Int? {
+        guard let d = releaseDate, d.count >= 4 else { return nil }
+        return Int(d.prefix(4))
+    }
+    var genreNames: [String] { genres?.map { $0.name } ?? [] }
+
+    enum CodingKeys: String, CodingKey {
+        case id, title, overview, genres, runtime
+        case posterPath = "poster_path"
+        case backdropPath = "backdrop_path"
+        case voteAverage = "vote_average"
+        case releaseDate = "release_date"
+    }
+}
+
 nonisolated struct TMDBEpisode: Decodable, Hashable, Sendable, Identifiable {
     let id: Int
     let episodeNumber: Int
@@ -287,6 +318,13 @@ nonisolated struct TMDBService {
         let urlString = "\(base)/tv/\(tmdbId)?api_key=\(apiKey)&language=en-US"
         let data = try await get(urlString)
         return try JSONDecoder().decode(TMDBTVDetail.self, from: data)
+    }
+
+    /// Movie metadata from TMDB — the movie counterpart to `getTVDetail`.
+    func getMovieDetail(tmdbId: Int) async throws -> TMDBMovieDetail {
+        let urlString = "\(base)/movie/\(tmdbId)?api_key=\(apiKey)&language=en-US"
+        let data = try await get(urlString)
+        return try JSONDecoder().decode(TMDBMovieDetail.self, from: data)
     }
 
     func getSeason(tmdbId: Int, seasonNumber: Int) async throws -> TMDBSeason {

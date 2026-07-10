@@ -133,19 +133,46 @@ final class ShowDetailViewModel {
             // silently ignored on failure so the sheet always renders.
             Task { await enrichWithTVDB(tmdbId: tmdbId) }
         } else {
-            // Movie — resolve streaming sources via TMDB id
+            // Movie — load metadata from TMDB (mirroring the TV path). A TMDB id
+            // must never be routed through Watchmode's titleDetail, which would
+            // interpret it as a Watchmode title id and return an unrelated title.
             if let tmdbId = Int(titleId) {
                 let r = await StreamingSourceResolver.shared.resolve(tmdbId: tmdbId, isTV: false)
                 self.resolved = r
+                do {
+                    let movie = try await TMDBService.shared.getMovieDetail(tmdbId: tmdbId)
+                    detail = WatchmodeTitleDetail(
+                        id: tmdbId,
+                        title: movie.title,
+                        year: movie.year,
+                        userRating: movie.voteAverage,
+                        plotOverview: movie.overview,
+                        genreNames: movie.genreNames,
+                        trailer: nil,
+                        posterUrl: movie.posterUrl,
+                        backdrop: movie.backdropUrl,
+                        releaseDate: movie.releaseDate,
+                        endYear: nil,
+                        runtimeMinutes: movie.runtime,
+                        usRating: nil,
+                        type: "movie",
+                        sources: nil
+                    )
+                } catch {
+                    errorMessage = error.localizedDescription
+                    loadedTitleId = nil
+                }
             } else {
+                // Legacy Watchmode string id — the only case where Watchmode's
+                // titleDetail is the correct lookup.
                 self.resolved = .empty
-            }
-            do {
-                let result = try await WatchmodeService.shared.titleDetail(titleId: titleId)
-                detail = result
-            } catch {
-                errorMessage = error.localizedDescription
-                loadedTitleId = nil
+                do {
+                    let result = try await WatchmodeService.shared.titleDetail(titleId: titleId)
+                    detail = result
+                } catch {
+                    errorMessage = error.localizedDescription
+                    loadedTitleId = nil
+                }
             }
         }
         isLoading = false
@@ -318,7 +345,7 @@ struct ShowDetailScreen: View {
         return "2024"
     }
     private var heroImageUrl: String? {
-        vm.tmdb?.backdropUrl ?? backdropUrl ?? posterUrl
+        vm.tmdb?.backdropUrl ?? vm.detail?.backdrop ?? backdropUrl ?? posterUrl
     }
     private var tmdbEpisodes: [TMDBEpisode] { vm.season?.episodes ?? [] }
 
