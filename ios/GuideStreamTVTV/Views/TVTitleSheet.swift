@@ -50,6 +50,11 @@ struct TVTitleSheet: View {
     @State private var season: Int = 1
     @State private var episode: Int = 1
 
+    // Currently selected Where-to-Watch service. Nil means use the resolved
+    // primary. Reset when a new title loads so every title starts on its
+    // default primary.
+    @State private var selectedServiceName: String?
+
     // Parsed from titleId
     private var tmdbId: Int? {
         let parts = detail.titleId.split(separator: ":")
@@ -71,9 +76,42 @@ struct TVTitleSheet: View {
         social.isLiked(detail.titleId)
     }
 
+    // All resolved US streaming sources for this title.
+    private var usSources: [TVWatchmodeResolver.TVResolvedSource] {
+        resolvedStreaming?.usSources ?? []
+    }
+
+    // The source the Play button and label currently act on. Honors an explicit
+    // chip selection when the viewer subscribes to it and it's in the source
+    // list; otherwise falls back to the resolved primary.
+    private var activeSource: TVWatchmodeResolver.TVResolvedSource? {
+        if let selected = selectedServiceName,
+           AuthViewModel.shared.subscribesToService(named: selected),
+           let match = usSources.first(where: { $0.name == selected }) {
+            return match
+        }
+        return resolvedStreaming?.primarySource
+    }
+
+    // Count of resolved sources the viewer subscribes to — drives whether
+    // chips enter selection mode (2+) or launch directly (0 or 1).
+    private var subscribedSourceCount: Int {
+        usSources.filter { AuthViewModel.shared.subscribesToService(named: $0.name) }.count
+    }
+
+    // Sources ordered subscribed-first, preserving original order within groups.
+    private var sortedSources: [TVWatchmodeResolver.TVResolvedSource] {
+        usSources.enumerated().sorted { a, b in
+            let aSub = AuthViewModel.shared.subscribesToService(named: a.element.name)
+            let bSub = AuthViewModel.shared.subscribesToService(named: b.element.name)
+            if aSub != bSub { return aSub && !bSub }
+            return a.offset < b.offset
+        }.map { $0.element }
+    }
+
     // Best display name for the Play button
     private var playServiceName: String {
-        if let name = resolvedStreaming?.primarySource?.name, !name.isEmpty {
+        if let name = activeSource?.name, !name.isEmpty {
             return name
         }
         if let name = resolvedStreaming?.providerNameFallback, !name.isEmpty {
@@ -82,28 +120,17 @@ struct TVTitleSheet: View {
         return detail.platform ?? "Streaming"
     }
 
-    // Best deep-link URL for the Play button
+    // Best deep-link URL for the Play button — strictly from activeSource,
+    // subject to the brand guard.
     private var bestDeepLinkURL: URL? {
-        let epTvos = resolvedStreaming?.episodeSource?.tvosUrl
-        let primTvos = resolvedStreaming?.primarySource?.tvosUrl
-        let epWeb = resolvedStreaming?.episodeSource?.webUrl
-        let primWeb = resolvedStreaming?.primarySource?.webUrl
-        let candidates = [epTvos, primTvos, epWeb, primWeb]
-        for candidate in candidates {
-            if let str = candidate, let url = URL(string: str) {
-                return url
-            }
-        }
-        return nil
+        guard let source = activeSource else { return nil }
+        return guardedDeepLink(for: source)
     }
 
-    // Best web URL for fallback
+    // Best web URL for fallback — strictly from activeSource, brand-guarded.
     private var bestWebURL: URL? {
-        if let str = resolvedStreaming?.episodeSource?.webUrl ?? resolvedStreaming?.primarySource?.webUrl,
-           let url = URL(string: str) {
-            return url
-        }
-        return nil
+        guard let source = activeSource else { return nil }
+        return guardedWebURL(for: source)
     }
 
     // Synopsis text — resolved overview preferred, existing overview as fallback
@@ -192,6 +219,11 @@ struct TVTitleSheet: View {
                         .background(.white.opacity(0.08), in: Capsule())
                     }
 
+                    // Where to Watch chips (hidden when no resolved sources)
+                    if !usSources.isEmpty {
+                        whereToWatchRow
+                    }
+
                     // Action buttons row
                     HStack(spacing: 24) {
                         // Play on <service>
@@ -215,6 +247,7 @@ struct TVTitleSheet: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
         }
         .task {
+            selectedServiceName = nil
             await loadData()
         }
         .onChange(of: season) { _, _ in
@@ -223,6 +256,64 @@ struct TVTitleSheet: View {
         .onChange(of: episode) { _, _ in
             Task { await resolveStreamingData() }
         }
+        .onChange(of: selectedServiceName) { _, _ in
+            Task { await resolveStreamingData() }
+        }
+    }
+
+    // MARK: - Where to Watch chips
+
+    private var whereToWatchRow: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("WHERE TO WATCH")
+                .font(.system(size: 15, weight: .heavy))
+                .foregroundStyle(TVTheme.textTertiary)
+                .tracking(2)
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 18) {
+                    ForEach(sortedSources, id: \.sourceId) { source in
+                        serviceChip(for: source)
+                    }
+                }
+                .padding(.vertical, 6)
+            }
+        }
+    }
+
+    private func serviceChip(for source: TVWatchmodeResolver.TVResolvedSource) -> some View {
+        let isSubscribed = AuthViewModel.shared.subscribesToService(named: source.name)
+        let isActive = activeSource?.sourceId == source.sourceId
+        return Button {
+            if subscribedSourceCount >= 2 && isSubscribed {
+                selectedServiceName = source.name
+            } else {
+                open(source: source)
+            }
+        } label: {
+            HStack(spacing: 8) {
+                Text(gsDisplayName(for: source.name))
+                    .font(.system(size: 18, weight: .bold))
+                    .foregroundStyle(.white)
+                if isSubscribed {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundStyle(.white.opacity(0.9))
+                }
+            }
+            .padding(.horizontal, 22)
+            .padding(.vertical, 14)
+            .background(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(brandColor(for: source.name))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(isActive ? TVTheme.orange : Color.white.opacity(0.12),
+                            lineWidth: isActive ? 4 : 1)
+            )
+        }
+        .buttonStyle(.card)
     }
 
     // MARK: - Season / Episode stepper
@@ -299,19 +390,11 @@ struct TVTitleSheet: View {
 
     private var playButton: some View {
         Button {
-            let name = playServiceName
-            if let deepLink = bestDeepLinkURL {
-                TVOSDeepLinker.open(
-                    platform: name,
-                    title: detail.title,
-                    contentURL: bestWebURL,
-                    tvosDeepLink: deepLink
-                )
+            if let source = activeSource {
+                open(source: source)
             } else {
-                TVOSDeepLinker.open(
-                    platform: name,
-                    title: detail.title
-                )
+                // No resolved source — fall back to the name-based open chain.
+                TVOSDeepLinker.open(platform: playServiceName, title: detail.title)
             }
         } label: {
             HStack(spacing: 14) {
@@ -428,9 +511,129 @@ struct TVTitleSheet: View {
             tmdbId: tid,
             isTV: isTV,
             season: isTV ? season : nil,
-            episode: isTV ? episode : nil
+            episode: isTV ? episode : nil,
+            subscribedServices: Array(AuthViewModel.shared.selectedServices),
+            episodePlatformHint: selectedServiceName
         )
         resolvedStreaming = result
         isResolving = false
+    }
+
+    // MARK: - Deep-link launch + brand guard
+
+    /// Opens a specific resolved source, preferring a guarded deep link and
+    /// falling back to the name-based open chain. Shared by the Play button and
+    /// the chip launch path.
+    private func open(source: TVWatchmodeResolver.TVResolvedSource) {
+        if let deepLink = guardedDeepLink(for: source) {
+            TVOSDeepLinker.open(
+                platform: source.name,
+                title: detail.title,
+                contentURL: guardedWebURL(for: source),
+                tvosDeepLink: deepLink
+            )
+        } else {
+            TVOSDeepLinker.open(platform: source.name, title: detail.title)
+        }
+    }
+
+    /// The episode source only applies when it belongs to the same service as
+    /// the given source (shared source_id), so a selected service never opens
+    /// another service's episode link.
+    private func episodeSource(matching source: TVWatchmodeResolver.TVResolvedSource) -> TVWatchmodeResolver.TVResolvedSource? {
+        guard let ep = resolvedStreaming?.episodeSource, ep.sourceId == source.sourceId else { return nil }
+        return ep
+    }
+
+    private func guardedDeepLink(for source: TVWatchmodeResolver.TVResolvedSource) -> URL? {
+        let ep = episodeSource(matching: source)
+        let candidates = [ep?.tvosUrl, source.tvosUrl, ep?.webUrl, source.webUrl]
+        for candidate in candidates {
+            if let str = candidate, let url = URL(string: str), urlAllowed(url, forService: source.name) {
+                return url
+            }
+        }
+        return nil
+    }
+
+    private func guardedWebURL(for source: TVWatchmodeResolver.TVResolvedSource) -> URL? {
+        let ep = episodeSource(matching: source)
+        let candidates = [ep?.webUrl, source.webUrl]
+        for candidate in candidates {
+            if let str = candidate, let url = URL(string: str), urlAllowed(url, forService: source.name) {
+                return url
+            }
+        }
+        return nil
+    }
+
+    /// A URL is allowed for a service only when the URL's detected brand is nil
+    /// or equal to the service's brand token. A different non-nil brand is
+    /// rejected (guards against wrong-app deep links, e.g. a Prime link served
+    /// for an Apple TV+ title).
+    private func urlAllowed(_ url: URL, forService name: String) -> Bool {
+        guard let detected = brandToken(forURL: url) else { return true }
+        return detected == brandToken(forServiceName: name)
+    }
+
+    private func brandToken(forURL url: URL) -> String? {
+        let scheme = url.scheme?.lowercased() ?? ""
+        let host = url.host?.lowercased() ?? ""
+        if scheme == "aiv" || host.contains("amazon") || host.contains("primevideo") { return "amazon" }
+        if scheme == "nflx" || host.contains("netflix") { return "netflix" }
+        if scheme == "videos" || host.contains("apple") { return "apple" }
+        if host.contains("hulu") { return "hulu" }
+        if scheme == "disneyplus" || host.contains("disney") { return "disney" }
+        if scheme == "hbomax" || host.contains("max") || host.contains("hbo") { return "max" }
+        if scheme == "paramountplus" || host.contains("paramount") { return "paramount" }
+        if scheme == "peacock" || host.contains("peacock") { return "peacock" }
+        if scheme == "youtube" || host.contains("youtube") { return "youtube" }
+        if host.contains("crunchyroll") { return "crunchyroll" }
+        return nil
+    }
+
+    private func brandToken(forServiceName name: String) -> String? {
+        let k = name.lowercased()
+        if k.contains("amazon") || k.contains("prime") { return "amazon" }
+        if k.contains("netflix") { return "netflix" }
+        if k.contains("apple") { return "apple" }
+        if k.contains("hulu") { return "hulu" }
+        if k.contains("disney") { return "disney" }
+        if k.contains("max") || k.contains("hbo") { return "max" }
+        if k.contains("paramount") { return "paramount" }
+        if k.contains("peacock") { return "peacock" }
+        if k.contains("youtube") { return "youtube" }
+        if k.contains("crunchyroll") { return "crunchyroll" }
+        return nil
+    }
+
+    // MARK: - Brand styling (local copies mirroring the tvOS ShowDetailScreen /
+    // PlayOnBottomSheet helpers)
+
+    private func brandColor(for name: String) -> Color {
+        let key = name.lowercased()
+        if key.contains("netflix") { return Color(red: 0xE5/255, green: 0x09/255, blue: 0x14/255) }
+        if key.contains("hbo") || key.contains("max") { return Color(red: 0x5B/255, green: 0x2D/255, blue: 0x8E/255) }
+        if key.contains("hulu") { return Color(red: 0x1C/255, green: 0xE7/255, blue: 0x83/255) }
+        if key.contains("disney") { return Color(red: 0.05, green: 0.10, blue: 0.42) }
+        if key.contains("apple") { return Color(white: 0.12) }
+        if key.contains("prime") || key.contains("amazon") { return Color(red: 0.0, green: 0.66, blue: 0.93) }
+        if key.contains("paramount") { return Color(red: 0x00/255, green: 0x64/255, blue: 0xFF/255) }
+        if key.contains("peacock") { return Color(red: 0.05, green: 0.05, blue: 0.10) }
+        if key.contains("youtube") { return Color(red: 0.90, green: 0.10, blue: 0.10) }
+        return Color(white: 0.18)
+    }
+
+    private func gsDisplayName(for raw: String) -> String {
+        let k = raw.lowercased()
+        if k.contains("paramount") { return "Paramount+" }
+        if k.contains("disney") { return "Disney+" }
+        if k.contains("apple") && (k.contains("tv") || k.contains("+")) { return "Apple TV+" }
+        if k.contains("max") || (k.contains("hbo") && k.contains("max")) { return "Max" }
+        if k.contains("prime") || (k.contains("amazon") && k.contains("prime")) { return "Prime Video" }
+        if k.contains("peacock") { return "Peacock" }
+        if k.contains("crunchyroll") { return "Crunchyroll" }
+        if k.contains("showtime") { return "Showtime" }
+        return raw
     }
 }

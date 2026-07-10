@@ -269,6 +269,26 @@ final class AuthViewModel {
         UserDefaults.standard.set(sms, forKey: "gs.notifySMS")
     }
 
+    /// Read-only brand-aware check for whether the viewer subscribes to a given
+    /// service name. Maps common brand aliases (HBO/Max, Prime/Amazon, etc.) to
+    /// the entries stored in `selectedServices`. Does not mutate any state.
+    func subscribesToService(named name: String) -> Bool {
+        let key = name.lowercased()
+        return selectedServices.contains { rawEntry in
+            let entry = rawEntry.lowercased()
+            if key.contains("netflix") { return entry.contains("netflix") }
+            if key.contains("hbo") || key.contains("max") { return entry.contains("max") || entry.contains("hbo") }
+            if key.contains("hulu") { return entry.contains("hulu") }
+            if key.contains("disney") { return entry.contains("disney") }
+            if key.contains("apple") { return entry.contains("apple") }
+            if key.contains("prime") || key.contains("amazon") { return entry.contains("amazon") || entry.contains("prime") }
+            if key.contains("paramount") { return entry.contains("paramount") }
+            if key.contains("peacock") { return entry.contains("peacock") }
+            if key.contains("youtube") { return entry.contains("youtube") }
+            return entry.contains(key) || key.contains(entry)
+        }
+    }
+
     func completeOnboarding() {
         self.hasCompletedOnboarding = true
         UserDefaults.standard.set(true, forKey: "gs.onboardingComplete")

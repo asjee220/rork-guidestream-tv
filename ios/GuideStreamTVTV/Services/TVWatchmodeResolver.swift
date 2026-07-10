@@ -66,16 +66,22 @@ final class TVWatchmodeResolver {
         tmdbId: Int,
         isTV: Bool,
         season: Int?,
-        episode: Int?
+        episode: Int?,
+        subscribedServices: [String] = [],
+        episodePlatformHint: String? = nil
     ) async -> TVResolvedStreaming? {
-        let cacheKey = "\(tmdbId)-\(season ?? 0)-\(episode ?? 0)"
+        // Include the platform hint in the cache key so a selected-service
+        // resolve doesn't collide with the default resolve for the same episode.
+        let cacheKey = "\(tmdbId)-\(season ?? 0)-\(episode ?? 0)-\(episodePlatformHint ?? "")"
         if let cached = cache[cacheKey] { return cached }
 
         let body = ResolveBody(
             tmdbId: tmdbId,
             isTV: isTV,
             season: season,
-            episode: episode
+            episode: episode,
+            subscribedServices: subscribedServices,
+            episodePlatformHint: episodePlatformHint
         )
 
         do {
@@ -98,8 +104,10 @@ private struct ResolveBody: Encodable {
     let isTV: Bool
     let season: Int?
     let episode: Int?
+    let subscribedServices: [String]
+    let episodePlatformHint: String?
 
     enum CodingKeys: String, CodingKey {
-        case tmdbId, isTV, season, episode
+        case tmdbId, isTV, season, episode, subscribedServices, episodePlatformHint
     }
 }
