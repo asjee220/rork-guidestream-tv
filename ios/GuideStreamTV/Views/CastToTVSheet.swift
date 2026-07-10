@@ -945,6 +945,7 @@ struct CastToTVSheet: View {
         )
 
         do {
+            if let token = try? await SupabaseManager.shared.client.auth.session.accessToken { await SupabaseManager.shared.client.realtimeV2.setAuth(token) }
             let ch = SupabaseManager.shared.client.realtimeV2.channel("play-commands:\(userId)") { config in config.isPrivate = true }
             await ch.subscribe()
             try await ch.broadcast(event: "play-command", message: payload)

@@ -67,12 +67,16 @@ final class TVPlayCommandListener {
         // so commands still reach the TV even before sign-in completes
         // (the device row is keyed on deviceId, not user id).
         let userId: String
+        var accessToken: String? = nil
         do {
             let session = try await client.auth.session
             userId = session.user.id.uuidString
+            accessToken = session.accessToken
         } catch {
             userId = "guest"
         }
+
+        if let accessToken { try? await client.realtimeV2.setAuth(accessToken) }
 
         let ch = client.realtimeV2.channel("play-commands:\(userId)") { config in config.isPrivate = true }
         self.channel = ch
