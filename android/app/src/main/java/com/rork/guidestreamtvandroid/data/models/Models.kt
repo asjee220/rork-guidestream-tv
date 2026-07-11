@@ -103,6 +103,7 @@ data class TMDBResult(
     @SerialName("vote_average") val voteAverage: Double? = null,
     @SerialName("first_air_date") val firstAirDate: String? = null,
     @SerialName("release_date") val releaseDate: String? = null,
+    @SerialName("genre_ids") val genreIds: List<Int>? = null,
 ) {
     val displayName: String get() = name ?: title ?: "Untitled"
     val isTV: Boolean get() = (mediaType ?: "tv") == "tv"

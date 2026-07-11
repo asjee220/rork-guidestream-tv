@@ -116,6 +116,7 @@ fun HomeScreen(
     val genreShows by homeVm.genreShows.collectAsStateWithLifecycle()
     val popularByService by homeVm.popularByService.collectAsStateWithLifecycle()
     val providerByTmdb by homeVm.providerByTmdb.collectAsStateWithLifecycle()
+    val preferredGenres by homeVm.preferredGenres.collectAsStateWithLifecycle()
     val userStreams by streamsVm.userStreams.collectAsStateWithLifecycle()
     val watchedIds by streamsVm.watchedIds.collectAsStateWithLifecycle()
     val selectedServices by authVm.selectedServices.collectAsStateWithLifecycle()
@@ -254,7 +255,9 @@ fun HomeScreen(
                 }
             }
             fun scoreFor(r: TMDBResult): Double =
-                0.75 * ((r.voteAverage ?: 7.0) / 10.0) + (if (onService(r.id)) 0.20 else 0.0)
+                0.60 * ((r.voteAverage ?: 7.0) / 10.0) +
+                    (if (onService(r.id)) 0.20 else 0.0) +
+                    (if (preferredGenres.isNotEmpty() && (r.genreIds ?: emptyList()).any { it in preferredGenres }) 0.20 else 0.0)
             val topPicks = trending
                 .filter { providerByTmdb[it.id] != null }
                 .filter { !watchedIds.contains(it.id.toString()) }

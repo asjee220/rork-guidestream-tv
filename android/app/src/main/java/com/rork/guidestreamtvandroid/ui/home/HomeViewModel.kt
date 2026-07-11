@@ -76,6 +76,17 @@ class HomeViewModel : ViewModel() {
     private val _providerByTmdb = MutableStateFlow<Map<Int, Platform>>(emptyMap())
     val providerByTmdb: StateFlow<Map<Int, Platform>> = _providerByTmdb.asStateFlow()
 
+    /**
+     * Taste signal: union of genre ids across the user's watched + saved titles.
+     * Starts empty so Top Picks renders instantly on rating + service; the row
+     * re-ranks once these resolve in the background.
+     */
+    private val _preferredGenres = MutableStateFlow<Set<Int>>(emptySet())
+    val preferredGenres: StateFlow<Set<Int>> = _preferredGenres.asStateFlow()
+
+    /** In-memory cache of resolved genre ids per TMDB id so a title is never looked up twice. */
+    private val genreCache = mutableMapOf<Int, Set<Int>>()
+
     /** TMDB provider id for a service id, or null when the service has no mapping. */
     fun providerIdFor(serviceId: String): Int? = providerIdMap[serviceId]
 
@@ -122,6 +133,33 @@ class HomeViewModel : ViewModel() {
 
             // Refresh watchlist from Supabase
             StreamsViewModel.get().refreshAll()
+
+            // Resolve the user's taste genres in the background. Additive and
+            // best-effort — never blocks the Top Picks row from rendering.
+            resolvePreferredGenres()
+        }
+    }
+
+    /**
+     * Best-effort taste resolver. Gathers the user's library ids (numeric TMDB
+     * title ids from the watchlist — skipping yt:/tw:/pod: creator ids — plus
+     * watched ids), resolves each uncached id's genres via TV detail then falls
+     * back to movie detail, caches them, and emits [preferredGenres] as the
+     * union. Runs off the main thread and never blocks the feed.
+     */
+    private fun resolvePreferredGenres() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val streams = StreamsViewModel.get()
+            val libraryIds = buildSet {
+                streams.userStreams.value.forEach { it.titleId.toIntOrNull()?.let(::add) }
+                streams.watchedIds.value.forEach { it.toIntOrNull()?.let(::add) }
+            }
+            val pending = libraryIds.filter { !genreCache.containsKey(it) }
+            for (id in pending) {
+                val detail = tmdb.getTVDetail(id) ?: tmdb.getMovieDetail(id)
+                genreCache[id] = detail?.genres?.map { it.id }?.toSet() ?: emptySet()
+            }
+            _preferredGenres.value = genreCache.values.flatten().toSet()
         }
     }
 
