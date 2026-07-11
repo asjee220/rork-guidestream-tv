@@ -117,8 +117,8 @@ class ReelsViewModel : ViewModel() {
     ): List<TrailerItem> {
         val items = mutableListOf<TrailerItem>()
         for (r in results.take(20)) {
-            val key = tmdb.getTrailerKey(r.id) ?: continue
-            val provider = tmdb.getTopWatchProvider(r.id)
+            val key = tmdb.getTrailerKey(r.id, r.isTV) ?: continue
+            val provider = tmdb.getTopWatchProvider(r.id, r.isTV)
             val platform = Platform.from(provider?.providerName)
             if (platform == null && tab != ReelTab.COMING_SOON) continue
             items.add(

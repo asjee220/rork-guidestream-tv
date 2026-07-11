@@ -268,10 +268,11 @@ class TMDBService {
         } catch (_: Exception) { null }
     }
 
-    /** Get YouTube trailer key for a TV show. */
-    suspend fun getTrailerKey(tmdbId: Int): String? {
+    /** Get YouTube trailer key for a title (TV by default, movie when isTV is false). */
+    suspend fun getTrailerKey(tmdbId: Int, isTV: Boolean = true): String? {
+        val kind = if (isTV) "tv" else "movie"
         return try {
-            val response: TMDBVideosEnvelope = client.get("$base/tv/$tmdbId/videos?api_key=$apiKey&language=en-US").body()
+            val response: TMDBVideosEnvelope = client.get("$base/$kind/$tmdbId/videos?api_key=$apiKey&language=en-US").body()
             response.results
                 .filter { it.site == "YouTube" && it.type == "Trailer" }
                 .firstOrNull()?.key
@@ -326,10 +327,11 @@ class TMDBService {
         val results: Map<String, TMDBProviderRegion> = emptyMap(),
     )
 
-    /** Returns the top US streaming provider for a title. */
-    suspend fun getTopWatchProvider(tmdbId: Int): TMDBWatchProvider? {
+    /** Returns the top US streaming provider for a title (TV by default, movie when isTV is false). */
+    suspend fun getTopWatchProvider(tmdbId: Int, isTV: Boolean = true): TMDBWatchProvider? {
+        val kind = if (isTV) "tv" else "movie"
         return try {
-            val response: TMDBProvidersEnvelope = client.get("$base/tv/$tmdbId/watch/providers?api_key=$apiKey").body()
+            val response: TMDBProvidersEnvelope = client.get("$base/$kind/$tmdbId/watch/providers?api_key=$apiKey").body()
             val us = response.results["US"]
             us?.flatrate?.firstOrNull() ?: us?.ads?.firstOrNull() ?: us?.free?.firstOrNull()
         } catch (_: Exception) { null }
