@@ -40,6 +40,8 @@ import com.rork.guidestreamtvandroid.data.repository.WatchIntentLogger
 import com.rork.guidestreamtvandroid.ui.theme.BrandOrange
 import com.rork.guidestreamtvandroid.ui.theme.GlassFill
 import com.rork.guidestreamtvandroid.ui.theme.GlassStroke
+import com.rork.guidestreamtvandroid.ui.theme.OutlineVariant
+import com.rork.guidestreamtvandroid.ui.theme.SurfaceContainer
 import com.rork.guidestreamtvandroid.ui.theme.TextPrimary
 import com.rork.guidestreamtvandroid.ui.theme.TextSecondary
 import com.rork.guidestreamtvandroid.ui.theme.TextTertiary
@@ -170,8 +172,8 @@ private fun RakutenAffiliatePresentation(
             modifier = Modifier
                 .size(56.dp)
                 .clip(RoundedCornerShape(8.dp))
-                .background(service?.bg ?: Color.White.copy(alpha = 0.10f))
-                .border(0.5.dp, Color.White.copy(alpha = 0.12f), RoundedCornerShape(8.dp)),
+                .background(service?.bg ?: SurfaceContainer)
+                .border(0.5.dp, OutlineVariant, RoundedCornerShape(8.dp)),
             contentAlignment = Alignment.Center,
         ) {
             Text(

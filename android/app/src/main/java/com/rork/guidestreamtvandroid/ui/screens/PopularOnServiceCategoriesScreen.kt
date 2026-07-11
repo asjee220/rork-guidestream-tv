@@ -54,6 +54,7 @@ import com.rork.guidestreamtvandroid.ui.home.HomeViewModel
 import com.rork.guidestreamtvandroid.ui.navigation.PendingTitleRoute
 import com.rork.guidestreamtvandroid.ui.navigation.PopularCategoriesTarget
 import com.rork.guidestreamtvandroid.ui.theme.Navy
+import com.rork.guidestreamtvandroid.ui.theme.SurfaceContainer
 import com.rork.guidestreamtvandroid.ui.theme.systemBottomInset
 import com.rork.guidestreamtvandroid.ui.theme.TextPrimary
 import com.rork.guidestreamtvandroid.ui.theme.TextSecondary
@@ -203,7 +204,7 @@ fun PopularOnServiceCategoriesScreen(
                     Box(
                         modifier = Modifier
                             .clip(RoundedCornerShape(50))
-                            .background(if (selected) glow else Color.White.copy(alpha = 0.10f))
+                            .background(if (selected) glow else SurfaceContainer)
                             .clickable(
                                 interactionSource = remember { MutableInteractionSource() },
                                 indication = null,

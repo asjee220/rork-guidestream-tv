@@ -65,7 +65,11 @@ import com.rork.guidestreamtvandroid.ui.theme.BrandBlue
 import com.rork.guidestreamtvandroid.ui.theme.BottomSafeSpacer
 import com.rork.guidestreamtvandroid.ui.theme.BrandOrange
 import com.rork.guidestreamtvandroid.ui.theme.BrandWordmark
+import com.rork.guidestreamtvandroid.ui.theme.Hairline
 import com.rork.guidestreamtvandroid.ui.theme.Navy
+import com.rork.guidestreamtvandroid.ui.theme.OutlineVariant
+import com.rork.guidestreamtvandroid.ui.theme.SurfaceContainer
+import com.rork.guidestreamtvandroid.ui.theme.SurfaceElevated
 import com.rork.guidestreamtvandroid.ui.theme.TextPrimary
 import com.rork.guidestreamtvandroid.ui.theme.TextSecondary
 import com.rork.guidestreamtvandroid.ui.theme.WordmarkSize
@@ -188,7 +192,7 @@ fun SportsScreen(
                     )
                 }
                 item {
-                    Box(Modifier.fillMaxWidth().height(1.dp).background(Color.White.copy(alpha = 0.06f)))
+                    Box(Modifier.fillMaxWidth().height(1.dp).background(Hairline))
                 }
             } else {
                 item { NoFavoritesPrompt() }
@@ -349,10 +353,10 @@ private fun MyTeamsSection(
                         verticalArrangement = Arrangement.spacedBy(3.dp),
                         modifier = Modifier
                             .clip(RoundedCornerShape(12.dp))
-                            .background(Color.White.copy(alpha = 0.04f))
+                            .background(SurfaceContainer)
                             .border(
                                 1.dp,
-                                if (chip.isLive) LiveRed.copy(alpha = 0.35f) else Color.White.copy(alpha = 0.07f),
+                                if (chip.isLive) LiveRed.copy(alpha = 0.35f) else OutlineVariant,
                                 RoundedCornerShape(12.dp),
                             )
                             .clickable(
@@ -433,7 +437,7 @@ private fun SectionHeader(title: String, count: Int, onSeeAll: () -> Unit) {
         Box(
             modifier = Modifier
                 .clip(CircleShape)
-                .background(Color.White.copy(alpha = 0.08f))
+                .background(SurfaceContainer)
                 .padding(horizontal = 7.dp, vertical = 2.dp),
         ) {
             Text("$count", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White.copy(alpha = 0.5f))
@@ -464,8 +468,8 @@ fun LiveGameRow(game: SportsGame, onClick: () -> Unit) {
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
-            .background(Color(0xFF161B27))
-            .border(1.dp, Color.White.copy(alpha = 0.07f), RoundedCornerShape(16.dp))
+            .background(SurfaceContainer)
+            .border(1.dp, OutlineVariant, RoundedCornerShape(16.dp))
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
@@ -522,8 +526,8 @@ fun UpcomingGameRow(game: SportsGame, onClick: () -> Unit) {
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
-            .background(Color(0xFF161B27))
-            .border(1.dp, Color.White.copy(alpha = 0.07f), RoundedCornerShape(16.dp))
+            .background(SurfaceContainer)
+            .border(1.dp, OutlineVariant, RoundedCornerShape(16.dp))
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
@@ -564,8 +568,8 @@ fun FinalGameRow(game: SportsGame, onClick: () -> Unit) {
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(14.dp))
-            .background(Color(0xFF12161F))
-            .border(1.dp, Color.White.copy(alpha = 0.05f), RoundedCornerShape(14.dp))
+            .background(SurfaceElevated)
+            .border(1.dp, OutlineVariant, RoundedCornerShape(14.dp))
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
@@ -578,7 +582,7 @@ fun FinalGameRow(game: SportsGame, onClick: () -> Unit) {
             FinalScoreLine(game.away)
             FinalScoreLine(game.home)
         }
-        Box(Modifier.width(1.dp).height(36.dp).background(Color.White.copy(alpha = 0.06f)))
+        Box(Modifier.width(1.dp).height(36.dp).background(Hairline))
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
             Text(game.statusDetail.ifEmpty { "Final" }, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.White.copy(alpha = 0.55f))
             Text(game.sport, fontSize = 9.sp, fontWeight = FontWeight.SemiBold, color = Color.White.copy(alpha = 0.35f))
@@ -621,8 +625,8 @@ private fun LoadingCard() {
             .fillMaxWidth()
             .height(120.dp)
             .clip(RoundedCornerShape(16.dp))
-            .background(Color.White.copy(alpha = 0.04f))
-            .border(1.dp, Color.White.copy(alpha = 0.06f), RoundedCornerShape(16.dp)),
+            .background(SurfaceContainer)
+            .border(1.dp, OutlineVariant, RoundedCornerShape(16.dp)),
     )
 }
 
@@ -724,7 +728,7 @@ private fun ServiceEditorTile(
     isSelected: Boolean,
     onTap: () -> Unit,
 ) {
-    val borderColor = if (isSelected) service.glow else Color.White.copy(alpha = 0.08f)
+    val borderColor = if (isSelected) service.glow else OutlineVariant
     val borderWidth = if (isSelected) 2.dp else 1.dp
     Column(
         modifier = Modifier

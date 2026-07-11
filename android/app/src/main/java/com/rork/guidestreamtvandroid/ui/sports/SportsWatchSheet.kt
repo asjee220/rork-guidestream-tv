@@ -56,7 +56,10 @@ import com.rork.guidestreamtvandroid.data.repository.TeamFavoritesService
 import com.rork.guidestreamtvandroid.data.repository.WatchIntentLogger
 import com.rork.guidestreamtvandroid.ui.cast.CastToTVSheet
 import com.rork.guidestreamtvandroid.ui.theme.BrandOrange
+import com.rork.guidestreamtvandroid.ui.theme.Hairline
 import com.rork.guidestreamtvandroid.ui.theme.Navy
+import com.rork.guidestreamtvandroid.ui.theme.OutlineVariant
+import com.rork.guidestreamtvandroid.ui.theme.SurfaceContainer
 import com.rork.guidestreamtvandroid.ui.theme.TextPrimary
 import com.rork.guidestreamtvandroid.ui.theme.TextSecondary
 import com.rork.guidestreamtvandroid.ui.theme.TextTertiary
@@ -163,8 +166,8 @@ fun SportsWatchSheet(
                     .padding(top = 20.dp)
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(14.dp))
-                    .background(Color.White.copy(alpha = 0.05f))
-                    .border(0.5.dp, Color.White.copy(alpha = 0.07f), RoundedCornerShape(14.dp))
+                    .background(SurfaceContainer)
+                    .border(0.5.dp, OutlineVariant, RoundedCornerShape(14.dp))
                     .padding(14.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
@@ -399,7 +402,7 @@ private fun HeaderRow(game: SportsGame, gameTitle: String, primaryBroadcast: Str
                 Box(
                     modifier = Modifier
                         .clip(CircleShape)
-                        .background(Color.White.copy(alpha = 0.10f))
+                        .background(SurfaceContainer)
                         .padding(horizontal = 10.dp, vertical = 6.dp),
                 ) {
                     Text(game.sport.uppercase(), fontSize = 11.sp, fontWeight = FontWeight.Black, color = Color.White)
@@ -465,7 +468,7 @@ private fun CircleAction(
             modifier = Modifier
                 .size(54.dp)
                 .clip(CircleShape)
-                .background(Color.White.copy(alpha = 0.08f)),
+                .background(SurfaceContainer),
             contentAlignment = Alignment.Center,
         ) {
             Icon(imageVector = icon, contentDescription = label, tint = tint, modifier = Modifier.size(22.dp))
@@ -506,7 +509,7 @@ private fun Divider() {
             .fillMaxWidth()
             .padding(horizontal = 20.dp)
             .height(1.dp)
-            .background(Color.White.copy(alpha = 0.08f)),
+            .background(Hairline),
     )
 }
 

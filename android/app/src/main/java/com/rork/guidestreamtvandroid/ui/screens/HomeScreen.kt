@@ -84,6 +84,7 @@ import com.rork.guidestreamtvandroid.ui.theme.GlassStroke
 import com.rork.guidestreamtvandroid.ui.theme.LightBlue
 import com.rork.guidestreamtvandroid.ui.theme.Navy
 import com.rork.guidestreamtvandroid.ui.theme.NewsGreen
+import com.rork.guidestreamtvandroid.ui.theme.OutlineVariant
 import com.rork.guidestreamtvandroid.ui.theme.TextPrimary
 import com.rork.guidestreamtvandroid.ui.theme.TextSecondary
 import com.rork.guidestreamtvandroid.ui.theme.TextTertiary
@@ -553,7 +554,7 @@ private fun ServiceEditorTile(
     isSelected: Boolean,
     onTap: () -> Unit,
 ) {
-    val borderColor = if (isSelected) service.glow else Color.White.copy(alpha = 0.08f)
+    val borderColor = if (isSelected) service.glow else OutlineVariant
     val borderWidth = if (isSelected) 2.dp else 1.dp
     Column(
         modifier = Modifier

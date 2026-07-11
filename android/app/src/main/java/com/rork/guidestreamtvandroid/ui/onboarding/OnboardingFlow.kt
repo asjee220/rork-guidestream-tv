@@ -72,7 +72,10 @@ import com.rork.guidestreamtvandroid.ui.theme.BrandOrange
 import com.rork.guidestreamtvandroid.ui.theme.BrandWordmark
 import com.rork.guidestreamtvandroid.ui.theme.GlassFill
 import com.rork.guidestreamtvandroid.ui.theme.GlassStroke
+import com.rork.guidestreamtvandroid.ui.theme.Hairline
 import com.rork.guidestreamtvandroid.ui.theme.Navy
+import com.rork.guidestreamtvandroid.ui.theme.OutlineVariant
+import com.rork.guidestreamtvandroid.ui.theme.SurfaceContainer
 import com.rork.guidestreamtvandroid.ui.theme.TextPrimary
 import com.rork.guidestreamtvandroid.ui.theme.TextSecondary
 import com.rork.guidestreamtvandroid.ui.theme.TextTertiary
@@ -281,7 +284,7 @@ private fun WelcomeScreen(
                     modifier = Modifier
                         .weight(1f)
                         .height(1.dp)
-                        .background(Color.White.copy(alpha = 0.1f)),
+                        .background(Hairline),
                 )
                 Text(
                     text = "or",
@@ -293,7 +296,7 @@ private fun WelcomeScreen(
                     modifier = Modifier
                         .weight(1f)
                         .height(1.dp)
-                        .background(Color.White.copy(alpha = 0.1f)),
+                        .background(Hairline),
                 )
             }
             Spacer(Modifier.height(12.dp))
@@ -487,7 +490,7 @@ private fun ServiceTile(
     isSelected: Boolean,
     onTap: () -> Unit,
 ) {
-    val borderColor = if (isSelected) service.glow else Color.White.copy(alpha = 0.08f)
+    val borderColor = if (isSelected) service.glow else OutlineVariant
     val borderWidth = if (isSelected) 2.dp else 1.dp
     Column(
         modifier = Modifier
@@ -572,7 +575,7 @@ private fun StayNotifiedScreen(
                 modifier = Modifier
                     .size(220.dp)
                     .clip(CircleShape)
-                    .background(Color.White.copy(alpha = 0.04f)),
+                    .background(SurfaceContainer),
             )
             Box(
                 modifier = Modifier
@@ -618,8 +621,8 @@ private fun StayNotifiedScreen(
                 .fillMaxWidth()
                 .padding(horizontal = 20.dp)
                 .clip(RoundedCornerShape(18.dp))
-                .background(Color.White.copy(alpha = 0.04f))
-                .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(18.dp)),
+                .background(SurfaceContainer)
+                .border(1.dp, OutlineVariant, RoundedCornerShape(18.dp)),
         ) {
             Row(
                 modifier = Modifier
@@ -720,7 +723,7 @@ internal fun OnboardingHeader(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(Color.White.copy(alpha = 0.04f)),
+            .background(SurfaceContainer),
     ) {
         Row(
             modifier = Modifier
@@ -734,7 +737,7 @@ internal fun OnboardingHeader(
                     modifier = Modifier
                         .size(36.dp)
                         .clip(CircleShape)
-                        .background(Color.White.copy(alpha = 0.10f))
+                        .background(SurfaceContainer)
                         .clickable { onClose() },
                     contentAlignment = Alignment.Center,
                 ) {
