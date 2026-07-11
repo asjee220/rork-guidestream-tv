@@ -62,6 +62,7 @@ import com.rork.guidestreamtvandroid.data.repository.TeamFavoritesService
 import com.rork.guidestreamtvandroid.data.repository.WatchIntentLogger
 import com.rork.guidestreamtvandroid.ui.components.ServicesPill
 import com.rork.guidestreamtvandroid.ui.theme.BrandBlue
+import com.rork.guidestreamtvandroid.ui.theme.BottomSafeSpacer
 import com.rork.guidestreamtvandroid.ui.theme.BrandOrange
 import com.rork.guidestreamtvandroid.ui.theme.BrandWordmark
 import com.rork.guidestreamtvandroid.ui.theme.Navy
@@ -219,7 +220,7 @@ fun SportsScreen(
                 }
             }
 
-            item { Spacer(Modifier.height(90.dp)) }
+            item { BottomSafeSpacer(withTabBar = true) }
         }
     }
 

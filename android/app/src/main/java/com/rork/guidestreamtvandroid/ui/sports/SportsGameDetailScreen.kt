@@ -44,6 +44,7 @@ import com.rork.guidestreamtvandroid.data.models.SportsGame
 import com.rork.guidestreamtvandroid.data.repository.TeamFavoritesService
 import com.rork.guidestreamtvandroid.ui.components.RemoteImage
 import com.rork.guidestreamtvandroid.ui.components.glassCard
+import com.rork.guidestreamtvandroid.ui.theme.BottomSafeSpacer
 import com.rork.guidestreamtvandroid.ui.theme.BrandOrange
 import com.rork.guidestreamtvandroid.ui.theme.GlassFill
 import com.rork.guidestreamtvandroid.ui.theme.TextPrimary
@@ -266,6 +267,8 @@ fun SportsGameDetailScreen(
                     )
                 }
             }
+
+            BottomSafeSpacer(withTabBar = false)
         }
     }
 }

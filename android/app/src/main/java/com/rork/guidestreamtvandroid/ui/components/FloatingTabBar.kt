@@ -38,6 +38,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -46,8 +47,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.rork.guidestreamtvandroid.ui.navigation.AppTab
 import com.rork.guidestreamtvandroid.ui.theme.BrandOrange
-import com.rork.guidestreamtvandroid.ui.theme.GlassFill
-import com.rork.guidestreamtvandroid.ui.theme.GlassStroke
+import com.rork.guidestreamtvandroid.ui.theme.OutlineVariant
+import com.rork.guidestreamtvandroid.ui.theme.SurfaceContainer
 import com.rork.guidestreamtvandroid.ui.theme.TextPrimary
 import com.rork.guidestreamtvandroid.ui.theme.TextTertiary
 
@@ -74,9 +75,10 @@ fun FloatingTabBar(
             modifier = Modifier
                 .weight(1f)
                 .height(64.dp)
+                .shadow(6.dp, RoundedCornerShape(32.dp), clip = false)
                 .clip(RoundedCornerShape(32.dp))
-                .background(GlassFill)
-                .border(1.dp, GlassStroke, RoundedCornerShape(32.dp))
+                .background(SurfaceContainer)
+                .border(1.dp, OutlineVariant, RoundedCornerShape(32.dp))
                 .padding(horizontal = 6.dp),
             horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically,

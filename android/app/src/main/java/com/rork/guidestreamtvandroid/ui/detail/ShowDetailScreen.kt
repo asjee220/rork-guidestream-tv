@@ -71,6 +71,7 @@ import com.rork.guidestreamtvandroid.ui.reels.ReelTab
 import com.rork.guidestreamtvandroid.ui.reels.ReelsScreen
 import com.rork.guidestreamtvandroid.ui.reels.TrailerItem
 import com.rork.guidestreamtvandroid.ui.theme.BrandBlue
+import com.rork.guidestreamtvandroid.ui.theme.BottomSafeSpacer
 import com.rork.guidestreamtvandroid.ui.theme.BrandOrange
 import com.rork.guidestreamtvandroid.ui.theme.GlassFill
 import com.rork.guidestreamtvandroid.ui.theme.GlassStroke
@@ -590,7 +591,7 @@ fun ShowDetailScreen(
                     )
                 }
 
-                Spacer(Modifier.height(40.dp))
+                BottomSafeSpacer(withTabBar = false)
             }
         }
 

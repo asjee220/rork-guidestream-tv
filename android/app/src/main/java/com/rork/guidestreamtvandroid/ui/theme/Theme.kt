@@ -18,8 +18,10 @@ private val GuideStreamColorScheme = darkColorScheme(
     onSurface = TextPrimary,
     surfaceVariant = SurfaceElevated,
     onSurfaceVariant = TextSecondary,
+    surfaceContainer = SurfaceContainer,
+    surfaceContainerHigh = SurfaceElevated,
     outline = Hairline,
-    outlineVariant = GlassStroke,
+    outlineVariant = OutlineVariant,
 )
 
 @Composable

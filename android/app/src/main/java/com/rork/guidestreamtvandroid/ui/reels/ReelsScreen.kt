@@ -70,6 +70,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import com.rork.guidestreamtvandroid.ui.theme.BrandBlue
 import com.rork.guidestreamtvandroid.ui.theme.BrandOrange
+import com.rork.guidestreamtvandroid.ui.theme.systemBottomInset
 import com.rork.guidestreamtvandroid.ui.theme.GlassFill
 import com.rork.guidestreamtvandroid.ui.theme.GlassStroke
 import com.rork.guidestreamtvandroid.ui.theme.TextPrimary
@@ -405,7 +406,7 @@ private fun ReelView(
         Column(
             modifier = Modifier
                 .align(Alignment.BottomEnd)
-                .padding(end = 12.dp, bottom = 100.dp),
+                .padding(end = 12.dp, bottom = 24.dp + systemBottomInset()),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(18.dp),
         ) {
@@ -443,7 +444,7 @@ private fun ReelView(
         Column(
             modifier = Modifier
                 .align(Alignment.BottomStart)
-                .padding(start = 16.dp, bottom = 100.dp)
+                .padding(start = 16.dp, bottom = 24.dp + systemBottomInset())
                 .fillMaxWidth(if (injected) 0.72f else 0.65f),
         ) {
             // Platform badge + optional video-type chip (title-scoped mode)

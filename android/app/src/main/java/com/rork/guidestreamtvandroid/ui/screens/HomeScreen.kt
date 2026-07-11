@@ -76,6 +76,7 @@ import com.rork.guidestreamtvandroid.ui.ads.SponsoredSlot
 import com.rork.guidestreamtvandroid.ui.components.glassCard
 import com.rork.guidestreamtvandroid.ui.home.HomeViewModel
 import com.rork.guidestreamtvandroid.ui.navigation.PendingTitleRoute
+import com.rork.guidestreamtvandroid.ui.theme.BottomSafeSpacer
 import com.rork.guidestreamtvandroid.ui.theme.BrandBlue
 import com.rork.guidestreamtvandroid.ui.theme.BrandOrange
 import com.rork.guidestreamtvandroid.ui.theme.GlassFill
@@ -442,7 +443,7 @@ fun HomeScreen(
             },
         )
 
-        Spacer(Modifier.height(96.dp))
+        BottomSafeSpacer(withTabBar = true)
     }
 
         // Pinned top bar — wordmark left, services pill right (mirrors iOS PageBar)
@@ -601,7 +602,7 @@ private fun SearchBar(onClick: () -> Unit) {
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
             ) { onClick() }
-            .glassCard(14)
+            .glassCard()
             .padding(horizontal = 14.dp, vertical = 11.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -1037,7 +1038,7 @@ private fun EmptyStateRow(title: String, message: String) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .glassCard(14)
+                .glassCard()
                 .padding(vertical = 24.dp, horizontal = 16.dp),
             contentAlignment = Alignment.Center,
         ) {
@@ -1058,7 +1059,7 @@ private fun WidgetPromoBanner(onSetUp: () -> Unit) {
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 20.dp, vertical = 8.dp)
-            .glassCard(14)
+            .glassCard()
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,

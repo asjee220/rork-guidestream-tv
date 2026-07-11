@@ -48,6 +48,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.rork.guidestreamtvandroid.ui.components.RemoteImage
 import com.rork.guidestreamtvandroid.ui.components.glassCard
 import com.rork.guidestreamtvandroid.ui.navigation.PendingTitleRoute
+import com.rork.guidestreamtvandroid.ui.theme.BottomSafeSpacer
 import com.rork.guidestreamtvandroid.ui.theme.BrandOrange
 import com.rork.guidestreamtvandroid.ui.theme.GlassFill
 import com.rork.guidestreamtvandroid.ui.theme.GlassStroke
@@ -108,7 +109,7 @@ fun SearchScreen(
             Row(
                 modifier = Modifier
                     .weight(1f)
-                    .glassCard(14)
+                    .glassCard()
                     .padding(horizontal = 12.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -229,6 +230,7 @@ fun SearchScreen(
                             },
                         )
                     }
+                    item { BottomSafeSpacer(withTabBar = false) }
                 }
             }
         } else if (isSearching && tmdbResults.isEmpty() && creatorResults.isEmpty()) {
@@ -303,6 +305,7 @@ fun SearchScreen(
                         )
                     }
                 }
+                item { BottomSafeSpacer(withTabBar = false) }
             }
         }
     }
@@ -324,7 +327,7 @@ private fun SearchResultRow(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
             ) { onClick() }
-            .glassCard(12)
+            .glassCard()
             .padding(10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

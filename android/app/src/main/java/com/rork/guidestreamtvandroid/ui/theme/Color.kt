@@ -17,8 +17,12 @@ val TextTertiary = Color.White.copy(alpha = 0.35f)
 // Surfaces
 val SurfaceDark = Color(red = 0x0B, green = 0x12, blue = 0x1C)
 val SurfaceElevated = Color(red = 0x12, green = 0x1B, blue = 0x2A)
-val GlassFill = Color.White.copy(alpha = 0.07f)
-val GlassStroke = Color.White.copy(alpha = 0.10f)
+// Canonical Material 3 tonal tokens — opaque surface + hairline outline.
+val SurfaceContainer = Color(0xFF142033)
+val OutlineVariant = Color.White.copy(alpha = 0.13f)
+// Legacy names kept as aliases so all existing call sites inherit the tonal treatment.
+val GlassFill = SurfaceContainer
+val GlassStroke = OutlineVariant
 val Hairline = Color.White.copy(alpha = 0.08f)
 
 // Platform brand colors

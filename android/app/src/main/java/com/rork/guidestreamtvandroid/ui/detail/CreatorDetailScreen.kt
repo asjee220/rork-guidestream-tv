@@ -58,6 +58,7 @@ import com.rork.guidestreamtvandroid.data.repository.StreamsViewModel
 import com.rork.guidestreamtvandroid.data.repository.WatchIntentLogger
 import com.rork.guidestreamtvandroid.ui.components.RemoteImage
 import com.rork.guidestreamtvandroid.ui.components.glassCard
+import com.rork.guidestreamtvandroid.ui.theme.BottomSafeSpacer
 import com.rork.guidestreamtvandroid.ui.theme.BrandOrange
 import com.rork.guidestreamtvandroid.ui.theme.GlassFill
 import com.rork.guidestreamtvandroid.ui.theme.GlassStroke
@@ -335,7 +336,7 @@ fun CreatorDetailScreen(
                     }
                 }
 
-                Spacer(Modifier.height(40.dp))
+                BottomSafeSpacer(withTabBar = false)
             }
         }
     }

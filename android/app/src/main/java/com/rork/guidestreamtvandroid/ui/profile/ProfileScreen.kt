@@ -52,6 +52,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.rork.guidestreamtvandroid.data.repository.AuthViewModel
 import com.rork.guidestreamtvandroid.data.repository.StreamsViewModel
 import com.rork.guidestreamtvandroid.ui.components.glassCard
+import com.rork.guidestreamtvandroid.ui.theme.BottomSafeSpacer
 import com.rork.guidestreamtvandroid.ui.theme.BrandOrange
 import com.rork.guidestreamtvandroid.ui.theme.GlassFill
 import com.rork.guidestreamtvandroid.ui.theme.GlassStroke
@@ -206,7 +207,7 @@ fun ProfileScreen(
             titleColor = Color(0xFFE55050),
         )
 
-        Spacer(Modifier.height(100.dp))
+        BottomSafeSpacer(withTabBar = true)
     }
 
     // Sub-screens as overlays
@@ -290,7 +291,7 @@ private fun ProfileRow(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 4.dp)
-            .glassCard(12)
+            .glassCard()
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
@@ -354,7 +355,7 @@ private fun SignOutConfirm(
         Column(
             modifier = Modifier
                 .padding(horizontal = 32.dp)
-                .glassCard(16)
+                .glassCard()
                 .padding(24.dp),
         ) {
             Text(

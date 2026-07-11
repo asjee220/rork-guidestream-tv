@@ -3,34 +3,43 @@ package com.rork.guidestreamtvandroid.ui.components
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import com.rork.guidestreamtvandroid.ui.theme.GlassFill
-import com.rork.guidestreamtvandroid.ui.theme.GlassStroke
+import com.rork.guidestreamtvandroid.ui.theme.OutlineVariant
+import com.rork.guidestreamtvandroid.ui.theme.SurfaceContainer
 
 /**
- * Glass card modifier: white 7% fill + white 10% hairline stroke, 14dp corners.
- * Mirrors iOS `.glassCard()` modifier.
+ * Material 3 tonal card modifier: opaque tonal fill (#142033) + white 13% hairline
+ * outline, 10dp corners, with a soft elevation shadow. On the near-black Navy
+ * background the shadow is subtle by design — the opaque tonal fill is the primary
+ * depth cue, which is how Material 3 expresses elevation in dark themes.
  */
 fun Modifier.glassCard(
-    cornerRadius: Int = 14,
-): Modifier = this
-    .clip(RoundedCornerShape(cornerRadius.dp))
-    .background(GlassFill)
-    .border(1.dp, GlassStroke, RoundedCornerShape(cornerRadius.dp))
+    cornerRadius: Int = 10,
+    elevation: Dp = 6.dp,
+): Modifier {
+    val shape = RoundedCornerShape(cornerRadius.dp)
+    return this
+        .shadow(elevation, shape, clip = false)
+        .clip(shape)
+        .background(SurfaceContainer)
+        .border(1.dp, OutlineVariant, shape)
+}
 
 @Composable
 fun GlassCard(
     modifier: Modifier = Modifier,
-    cornerRadius: Int = 14,
+    cornerRadius: Int = 10,
+    elevation: Dp = 6.dp,
     content: @Composable () -> Unit,
 ) {
     Box(
-        modifier = modifier.glassCard(cornerRadius),
+        modifier = modifier.glassCard(cornerRadius, elevation),
     ) {
         content()
     }
