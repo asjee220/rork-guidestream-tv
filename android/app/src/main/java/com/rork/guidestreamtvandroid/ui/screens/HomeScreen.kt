@@ -240,18 +240,33 @@ fun HomeScreen(
         if (!homeReady) {
             ShimmerSection("Top Picks for You", Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
         } else if (trending.isNotEmpty()) {
+            // Personalised Top Picks: exclude watched titles and boost titles on
+            // the user's selected services above equally-rated ones. Reuses the
+            // app's owned-service normalisation (lowercase name compare with the
+            // apple / hbo-max special cases).
+            val selected = selectedServices.map { it.lowercase() }
+            fun onService(id: Int): Boolean {
+                val key = providerByTmdb[id]?.name?.lowercase() ?: return false
+                return selected.any { s ->
+                    key.contains(s) ||
+                        (s == "appletv" && key.contains("apple")) ||
+                        (s == "hbo" && (key.contains("hbo") || key.contains("max")))
+                }
+            }
+            fun scoreFor(r: TMDBResult): Double =
+                0.75 * ((r.voteAverage ?: 7.0) / 10.0) + (if (onService(r.id)) 0.20 else 0.0)
             val topPicks = trending
                 .filter { providerByTmdb[it.id] != null }
-                .sortedByDescending { it.voteAverage ?: 7.0 }
+                .filter { !watchedIds.contains(it.id.toString()) }
+                .sortedByDescending { scoreFor(it) }
                 .take(12)
             PosterSection(
                 title = "Top Picks for You",
                 shows = topPicks,
                 providerByTmdb = providerByTmdb,
                 badgeText = { r ->
-                    val score = (r.voteAverage ?: 7.0) / 10.0
-                    val clamped = (score * 100).toInt().coerceIn(72, 98)
-                    "${clamped}% Match"
+                    val score = scoreFor(r)
+                    "${(score.coerceIn(0.50, 0.99) * 100).toInt()}% Match"
                 },
                 onOpen = { r ->
                     WatchIntentLogger.get().log(
