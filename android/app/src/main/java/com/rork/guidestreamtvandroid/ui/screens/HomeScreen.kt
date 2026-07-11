@@ -28,10 +28,12 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ModalBottomSheet
@@ -115,6 +117,7 @@ fun HomeScreen(
     val popularByService by homeVm.popularByService.collectAsStateWithLifecycle()
     val providerByTmdb by homeVm.providerByTmdb.collectAsStateWithLifecycle()
     val userStreams by streamsVm.userStreams.collectAsStateWithLifecycle()
+    val watchedIds by streamsVm.watchedIds.collectAsStateWithLifecycle()
     val selectedServices by authVm.selectedServices.collectAsStateWithLifecycle()
 
     LaunchedEffect(Unit) { homeVm.loadAll() }
@@ -171,6 +174,7 @@ fun HomeScreen(
         } else {
             WatchListSection(
                 streams = userStreams,
+                watchedIds = watchedIds,
                 onOpen = { stream ->
                     WatchIntentLogger.get().log(
                         WatchIntentLogger.IntentEventType.CARD_TAPPED,
@@ -698,6 +702,7 @@ private fun HeroCarousel(
 @Composable
 private fun WatchListSection(
     streams: List<com.rork.guidestreamtvandroid.data.models.UserStream>,
+    watchedIds: Set<String>,
     onOpen: (com.rork.guidestreamtvandroid.data.models.UserStream) -> Unit,
 ) {
     if (streams.isEmpty()) {
@@ -719,7 +724,11 @@ private fun WatchListSection(
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             items(streams.take(15)) { stream ->
-                WatchListCard(stream = stream, onClick = { onOpen(stream) })
+                WatchListCard(
+                    stream = stream,
+                    isWatched = watchedIds.contains(stream.titleId),
+                    onClick = { onOpen(stream) },
+                )
             }
         }
     }
@@ -728,6 +737,7 @@ private fun WatchListSection(
 @Composable
 private fun WatchListCard(
     stream: com.rork.guidestreamtvandroid.data.models.UserStream,
+    isWatched: Boolean = false,
     onClick: () -> Unit,
 ) {
     Column(
@@ -762,6 +772,25 @@ private fun WatchListCard(
                         .height(3.dp)
                         .background(platform.color),
                 )
+            }
+            // Display-only watched badge — never mutates any saved title.
+            if (isWatched) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(4.dp)
+                        .size(20.dp)
+                        .clip(CircleShape)
+                        .background(BrandBlue),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Visibility,
+                        contentDescription = "Watched",
+                        tint = Color.White,
+                        modifier = Modifier.size(12.dp),
+                    )
+                }
             }
         }
         Spacer(Modifier.height(6.dp))
