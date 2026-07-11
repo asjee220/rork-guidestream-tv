@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -317,8 +318,14 @@ private fun ReelView(
     sources: List<WatchmodeSrc>? = null,
     onOpenSource: (WatchmodeSrc) -> Unit = {},
 ) {
+    // Per-reel embed-failure flag: a video whose owner disabled embedding fires
+    // onError, collapses the reel back to its poster, and leaves the Play rail
+    // button working so the user can still open it in YouTube.
+    var embedFailed by remember(reel.id) { mutableStateOf(false) }
+
     Box(modifier = Modifier.fillMaxSize()) {
-        // Backdrop image
+        // Backdrop image — stays underneath the player so the reel is never blank
+        // while the embed loads and collapses cleanly back to the poster on error.
         RemoteImage(
             url = reel.backdropUrl ?: reel.thumbnailUrl ?: reel.posterUrl,
             contentDescription = reel.showName,
@@ -327,6 +334,29 @@ private fun ReelView(
             placeholderText = reel.showName.take(2).uppercase(),
             placeholderFontSize = 36.sp,
         )
+
+        // Inline YouTube player — only for the current page with a valid embed.
+        // Non-current pages never instantiate a WebView, so swiping never leaves
+        // two players (or two audio streams) alive at once.
+        if (isCurrent && reel.trailerKey.isNotBlank() && !embedFailed) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clip(RoundedCornerShape(0.dp)),
+                contentAlignment = Alignment.Center,
+            ) {
+                YouTubeReelPlayer(
+                    videoId = reel.trailerKey,
+                    isMuted = isMuted,
+                    isPlaying = isPlaying,
+                    onEmbedError = { embedFailed = true },
+                    onEnded = { /* loop=1 playlist restarts automatically */ },
+                    modifier = Modifier
+                        .fillMaxHeight()
+                        .aspectRatio(16f / 9f),
+                )
+            }
+        }
 
         // Dark gradient for readability
         Box(
