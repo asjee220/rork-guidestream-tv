@@ -55,6 +55,9 @@ import com.rork.guidestreamtvandroid.data.repository.AuthViewModel
 import com.rork.guidestreamtvandroid.ui.theme.BrandBackground
 import com.rork.guidestreamtvandroid.ui.theme.BrandOrange
 import com.rork.guidestreamtvandroid.ui.theme.BrandWordmark
+import com.rork.guidestreamtvandroid.ui.theme.Hairline
+import com.rork.guidestreamtvandroid.ui.theme.OutlineVariant
+import com.rork.guidestreamtvandroid.ui.theme.SurfaceContainer
 import com.rork.guidestreamtvandroid.ui.theme.TextPrimary
 import com.rork.guidestreamtvandroid.ui.theme.TextSecondary
 import com.rork.guidestreamtvandroid.ui.theme.TextTertiary
@@ -178,8 +181,8 @@ fun EmailAuthScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(16.dp))
-                    .background(Color.White.copy(alpha = 0.04f))
-                    .border(1.dp, Color.White.copy(alpha = 0.10f), RoundedCornerShape(16.dp)),
+                    .background(SurfaceContainer)
+                    .border(1.dp, OutlineVariant, RoundedCornerShape(16.dp)),
             ) {
                 if (mode == EmailAuthMode.SIGN_UP) {
                     AuthField(
@@ -444,6 +447,6 @@ private fun Divider() {
             .fillMaxWidth()
             .padding(horizontal = 16.dp)
             .height(1.dp)
-            .background(Color.White.copy(alpha = 0.06f)),
+            .background(Hairline),
     )
 }
