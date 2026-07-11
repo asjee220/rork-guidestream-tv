@@ -59,6 +59,7 @@ struct WatchListView: View {
 /// whatever navigation chrome the surface needs (sheet vs. push).
 private struct WatchListContent: View {
     @State private var streams = StreamsViewModel.shared
+    @State private var social = SocialViewModel.shared
     @State private var auth = AuthViewModel.shared
     @State private var detailSubject: DetailSubject?
     @State private var showFollowCreators: Bool = false
@@ -108,6 +109,7 @@ private struct WatchListContent: View {
         .task {
             await streams.fetchUserStreams()
             await streams.fetchLatestContentDates()
+            await social.loadAllWatched()
             await hydrateLiveStatus()
             await hydrateSourceImages()
         }
@@ -117,6 +119,7 @@ private struct WatchListContent: View {
         .refreshable {
             await streams.fetchUserStreams()
             await streams.fetchLatestContentDates()
+            await social.loadAllWatched()
             await hydrateLiveStatus()
             await hydrateSourceImages()
         }
@@ -159,7 +162,8 @@ private struct WatchListContent: View {
                                 isLive: liveStatusMap[item.titleId]?.isLive ?? false,
                                 isStreamer: SourceKind.from(titleId: item.titleId).isLivestream,
                                 streamTitle: liveStatusMap[item.titleId]?.streamTitle,
-                                effectivePosterUrl: CreatorImageOverrides.resolve(titleId: item.titleId, stored: item.posterUrl ?? sourceImageMap[item.titleId])
+                                effectivePosterUrl: CreatorImageOverrides.resolve(titleId: item.titleId, stored: item.posterUrl ?? sourceImageMap[item.titleId]),
+                                isWatched: social.isWatched(item.titleId)
                             )
                         }
                         .buttonStyle(.plain)
@@ -385,6 +389,9 @@ private struct WatchListRow: View {
     /// Resolved poster URL — uses content_sources.image_url as a fallback
     /// when user_streams.poster_url is nil, so every creator shows an image.
     var effectivePosterUrl: String? = nil
+    /// Display-only: shows a small blue eye badge on the poster when the
+    /// saved title is marked watched. Never mutates any watchlist state.
+    var isWatched: Bool = false
 
     private var posterKind: SourceKind { SourceKind.from(titleId: item.titleId) }
 
@@ -416,6 +423,23 @@ private struct WatchListRow: View {
             }
             .frame(width: 60, height: 90)
             .clipShape(.rect(cornerRadius: 8))
+            .overlay(alignment: .bottomTrailing) {
+                if isWatched {
+                    Circle()
+                        .fill(Color(hex: "1A6FE8"))
+                        .frame(width: 20, height: 20)
+                        .overlay {
+                            Image(systemName: "eye.fill")
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundStyle(.white)
+                        }
+                        .overlay {
+                            Circle()
+                                .stroke(Color.black.opacity(0.35), lineWidth: 1)
+                        }
+                        .padding(4)
+                }
+            }
 
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {

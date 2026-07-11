@@ -11,6 +11,7 @@ import SwiftUI
 
 struct TVWatchListView: View {
     @State private var streams = TVStreamsViewModel.shared
+    @State private var social = SocialViewModel.shared
     @State private var pendingDetail: TVTitleDetail?
 
     private let columns: [GridItem] = Array(
@@ -52,6 +53,19 @@ struct TVWatchListView: View {
                                         platform: row.platform
                                     )
                                 }
+                                .overlay(alignment: .bottomTrailing) {
+                                    if social.isWatched(row.titleId) {
+                                        Circle()
+                                            .fill(TVTheme.blue)
+                                            .frame(width: 34, height: 34)
+                                            .overlay {
+                                                Image(systemName: "eye.fill")
+                                                    .font(.system(size: 18, weight: .bold))
+                                                    .foregroundStyle(.white)
+                                            }
+                                            .padding(10)
+                                    }
+                                }
                             }
                         }
                         .padding(.horizontal, 80)
@@ -63,6 +77,7 @@ struct TVWatchListView: View {
         .task {
             await streams.fetchUserStreams()
             await streams.fetchLatestContentDates()
+            await social.loadAllWatched()
         }
         .sheet(item: $pendingDetail) { detail in
             TVTitleSheet(detail: detail) { _ in

@@ -168,6 +168,33 @@ final class SocialViewModel {
         }
     }
 
+    /// Loads every `title_watched` row owned by the current user/device in a
+    /// single query and replaces `watchedByMe` with that set. Display-only:
+    /// used by the Watch List to show the eye badge on saved titles that are
+    /// already marked watched. Never writes to `title_watched`.
+    func loadAllWatched() async {
+        let deviceId = DeviceIdentity.shared.deviceId
+        do {
+            var query = SupabaseManager.shared.client
+                .from("title_watched")
+                .select("title_id")
+            if let uid = currentUserId?.uuidString {
+                query = query.or("user_id.eq.\(uid),device_id.eq.\(deviceId)")
+            } else {
+                query = query.eq("device_id", value: deviceId)
+            }
+            struct WatchedIdRow: Decodable {
+                let titleId: String
+                enum CodingKeys: String, CodingKey { case titleId = "title_id" }
+            }
+            let rows: [WatchedIdRow] = try await query.execute().value
+            watchedByMe = Set(rows.map { $0.titleId })
+            saveCache()
+        } catch {
+            print("[Social] loadAllWatched failed: \(error.localizedDescription)")
+        }
+    }
+
     private func fetchHasWatched(titleId: String) async -> Bool {
         let deviceId = DeviceIdentity.shared.deviceId
         do {

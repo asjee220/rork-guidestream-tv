@@ -171,6 +171,32 @@ final class SocialViewModel {
         }
     }
 
+    /// Loads every `title_watched` row owned by the current user/device in a
+    /// single query and replaces `watchedByMe`. Display-only: used by the
+    /// Watch List to show the eye badge on saved titles already marked
+    /// watched. Never writes to `title_watched`.
+    func loadAllWatched() async {
+        let deviceId = TVDeviceIdentity.shared.deviceId
+        let userId = TVAuthViewModel.shared.currentUser?.id.uuidString
+
+        var query = TVSupabaseManager.shared.client
+            .from("title_watched")
+            .select("title_id")
+
+        if let userId {
+            query = query.or("user_id.eq.\(userId),device_id.eq.\(deviceId)")
+        } else {
+            query = query.eq("device_id", value: deviceId)
+        }
+
+        do {
+            let rows: [WatchedRow] = try await query.execute().value
+            watchedByMe = Set(rows.map { $0.titleId })
+        } catch {
+            // Silently keep current state on failure.
+        }
+    }
+
     /// Optimistically flips the series-level watched flag, then writes through
     /// to `title_watched` best-effort. Mirrors `toggleLike`. One tap marks the
     /// whole series — never per-episode.
