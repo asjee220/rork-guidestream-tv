@@ -56,6 +56,8 @@ final class SocialViewModel {
     private(set) var likeCounts: [String: Int] = [:]
     /// Title_ids the current device/user has liked.
     private(set) var likedByMe: Set<String> = []
+    /// Title_ids the current device/user has marked watched (series-level).
+    private(set) var watchedByMe: Set<String> = []
     /// Total comment count per title_id.
     private(set) var commentCounts: [String: Int] = [:]
     /// Most recent comment thread per title_id (latest first).
@@ -67,6 +69,8 @@ final class SocialViewModel {
     private(set) var loadingCounts: Set<String> = []
     /// Titles whose like state is currently being toggled (server in-flight).
     private(set) var togglingLikes: Set<String> = []
+    /// Titles whose watched state is currently being toggled (server in-flight).
+    private(set) var togglingWatched: Set<String> = []
     /// Titles whose comment post is currently being submitted.
     private(set) var postingComment: Set<String> = []
 
@@ -86,6 +90,7 @@ final class SocialViewModel {
 
     func likes(_ titleId: String) -> Int { likeCounts[titleId] ?? 0 }
     func isLiked(_ titleId: String) -> Bool { likedByMe.contains(titleId) }
+    func isWatched(_ titleId: String) -> Bool { watchedByMe.contains(titleId) }
     func commentTotal(_ titleId: String) -> Int { commentCounts[titleId] ?? 0 }
     func thread(_ titleId: String) -> [TitleComment] { commentsByTitle[titleId] ?? [] }
 
@@ -102,9 +107,10 @@ final class SocialViewModel {
 
         async let likeTotal: Int = fetchLikeCount(titleId: trimmed)
         async let mineLiked: Bool = fetchHasLiked(titleId: trimmed)
+        async let mineWatched: Bool = fetchHasWatched(titleId: trimmed)
         async let commentTotal: Int = fetchCommentCount(titleId: trimmed)
 
-        let (lt, ml, ct) = await (likeTotal, mineLiked, commentTotal)
+        let (lt, ml, mw, ct) = await (likeTotal, mineLiked, mineWatched, commentTotal)
         likeCounts[trimmed] = lt
         commentCounts[trimmed] = ct
         if ml {
@@ -114,6 +120,15 @@ final class SocialViewModel {
             // optimistic local like would get reverted by this refresh.
             if !togglingLikes.contains(trimmed) {
                 likedByMe.remove(trimmed)
+            }
+        }
+        if mw {
+            watchedByMe.insert(trimmed)
+        } else {
+            // Only un-flag if the server has no row — otherwise an in-flight
+            // optimistic local watched would get reverted by this refresh.
+            if !togglingWatched.contains(trimmed) {
+                watchedByMe.remove(trimmed)
             }
         }
         saveCache()
@@ -150,6 +165,26 @@ final class SocialViewModel {
         } catch {
             print("[Social] hasLiked fetch failed: \(error.localizedDescription)")
             return likedByMe.contains(titleId)
+        }
+    }
+
+    private func fetchHasWatched(titleId: String) async -> Bool {
+        let deviceId = DeviceIdentity.shared.deviceId
+        do {
+            var query = SupabaseManager.shared.client
+                .from("title_watched")
+                .select("id", head: true, count: .exact)
+                .eq("title_id", value: titleId)
+            if let uid = currentUserId?.uuidString {
+                query = query.or("user_id.eq.\(uid),device_id.eq.\(deviceId)")
+            } else {
+                query = query.eq("device_id", value: deviceId)
+            }
+            let response = try await query.execute()
+            return (response.count ?? 0) > 0
+        } catch {
+            print("[Social] hasWatched fetch failed: \(error.localizedDescription)")
+            return watchedByMe.contains(titleId)
         }
     }
 
@@ -294,6 +329,95 @@ final class SocialViewModel {
         } catch {
             self.lastError = error.localizedDescription
             print("[Social] like delete failed: \(error.localizedDescription)")
+        }
+    }
+
+    // MARK: - Watched (series-level)
+
+    /// Toggle the user's series-level "watched" flag on `titleId`. Structural
+    /// mirror of `toggleLike`: local state flips immediately, then a
+    /// best-effort write-through to `title_watched` happens in the background.
+    /// One tap marks the whole series — never per-episode.
+    func toggleWatched(titleId: String, titleName: String? = nil, mediaType: String? = nil, tmdbId: Int? = nil) async {
+        let trimmed = titleId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        togglingWatched.insert(trimmed)
+        defer { togglingWatched.remove(trimmed) }
+
+        let wasWatched = watchedByMe.contains(trimmed)
+        // Optimistic local flip.
+        if wasWatched {
+            watchedByMe.remove(trimmed)
+        } else {
+            watchedByMe.insert(trimmed)
+        }
+        saveCache()
+
+        var meta: [String: Any] = ["watched": !wasWatched, "source": "detail_sheet"]
+        if let mediaType { meta["media_type"] = mediaType }
+        WatchIntentLogger.shared.log(
+            eventType: .watchedToggled,
+            titleId: trimmed,
+            metadata: meta
+        )
+
+        let deviceId = DeviceIdentity.shared.deviceId
+        let userId = currentUserId?.uuidString
+        if wasWatched {
+            await removeWatched(titleId: trimmed, userId: userId, deviceId: deviceId)
+        } else {
+            await insertWatched(titleId: trimmed, userId: userId, deviceId: deviceId, titleName: titleName, mediaType: mediaType, tmdbId: tmdbId)
+        }
+    }
+
+    @discardableResult
+    private func insertWatched(titleId: String, userId: String?, deviceId: String, titleName: String?, mediaType: String?, tmdbId: Int?) async -> Bool {
+        var payload: [String: AnyJSON] = [
+            "title_id": .string(titleId),
+            "device_id": .string(deviceId)
+        ]
+        if let userId { payload["user_id"] = .string(userId) }
+        if let titleName { payload["title_name"] = .string(titleName) }
+        if let mediaType { payload["media_type"] = .string(mediaType) }
+        if let tmdbId { payload["tmdb_id"] = .integer(tmdbId) }
+        do {
+            try await SupabaseManager.shared.client
+                .from("title_watched")
+                .insert(payload)
+                .execute()
+            return true
+        } catch {
+            let message = error.localizedDescription.lowercased()
+            // Duplicate is fine — partial unique index hit means the watched
+            // row already exists for this owner. Treat as success.
+            if message.contains("duplicate") || message.contains("23505") {
+                return true
+            }
+            if message.contains("42501") || message.contains("row-level security") {
+                self.lastError = "Supabase blocked the watched mark. Open Profile → Diagnostics and run the schema setup SQL."
+            } else {
+                self.lastError = error.localizedDescription
+            }
+            print("[Social] watched insert failed: \(error.localizedDescription)")
+            return false
+        }
+    }
+
+    private func removeWatched(titleId: String, userId: String?, deviceId: String) async {
+        do {
+            var query = SupabaseManager.shared.client
+                .from("title_watched")
+                .delete()
+                .eq("title_id", value: titleId)
+            if let userId {
+                query = query.or("user_id.eq.\(userId),device_id.eq.\(deviceId)")
+            } else {
+                query = query.eq("device_id", value: deviceId)
+            }
+            try await query.execute()
+        } catch {
+            self.lastError = error.localizedDescription
+            print("[Social] watched delete failed: \(error.localizedDescription)")
         }
     }
 
@@ -448,11 +572,13 @@ final class SocialViewModel {
     func clearLocalCache() {
         self.likeCounts = [:]
         self.likedByMe = []
+        self.watchedByMe = []
         self.commentCounts = [:]
         self.commentsByTitle = [:]
         self.loadingComments = []
         self.loadingCounts = []
         self.togglingLikes = []
+        self.togglingWatched = []
         self.postingComment = []
         UserDefaults.standard.removeObject(forKey: localCacheKey)
     }
@@ -463,6 +589,7 @@ final class SocialViewModel {
     private struct CacheBlob: Codable {
         let likeCounts: [String: Int]
         let likedByMe: [String]
+        let watchedByMe: [String]?
         let commentCounts: [String: Int]
     }
 
@@ -473,6 +600,7 @@ final class SocialViewModel {
             self.likeCounts = blob.likeCounts
             self.commentCounts = blob.commentCounts
             self.likedByMe = Set(blob.likedByMe)
+            self.watchedByMe = Set(blob.watchedByMe ?? [])
         } catch {
             print("[Social] cache hydrate failed: \(error.localizedDescription)")
         }
@@ -482,6 +610,7 @@ final class SocialViewModel {
         let blob = CacheBlob(
             likeCounts: likeCounts,
             likedByMe: Array(likedByMe),
+            watchedByMe: Array(watchedByMe),
             commentCounts: commentCounts
         )
         do {

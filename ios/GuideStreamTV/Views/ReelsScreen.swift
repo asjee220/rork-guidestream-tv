@@ -841,6 +841,19 @@ private func makeRakutenAdReels() -> [TrailerItem] {
         SocialViewModel.shared.isLiked(String(trailer.tmdbId))
     }
 
+    func toggleWatched(_ trailer: TrailerItem) {
+        guard !trailer.isSponsored, trailer.tmdbId > 0 else { return }
+        let titleId = String(trailer.tmdbId)
+        let titleName = trailer.showName
+        let mediaType = trailer.isTV ? "tv" : "movie"
+        let watchedTmdbId = trailer.tmdbId
+        Task { await SocialViewModel.shared.toggleWatched(titleId: titleId, titleName: titleName, mediaType: mediaType, tmdbId: watchedTmdbId) }
+    }
+
+    func isWatched(_ trailer: TrailerItem) -> Bool {
+        SocialViewModel.shared.isWatched(String(trailer.tmdbId))
+    }
+
     func commentCount(for trailer: TrailerItem) -> Int {
         SocialViewModel.shared.commentTotal(String(trailer.tmdbId))
     }
@@ -1187,6 +1200,7 @@ struct ReelsScreen: View {
                 isCurrent: isCurrent,
                 likeCount: vm.likeCount(for: trailer),
                 isLiked: vm.isLiked(trailer),
+                isWatched: vm.isWatched(trailer),
                 isSaved: vm.isSaved(trailer),
                 commentCount: vm.commentCount(for: trailer),
                 activeTab: trailer.tab,
@@ -1236,6 +1250,10 @@ struct ReelsScreen: View {
                 onSave: {
                     UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                     Task { await vm.toggleSave(trailer) }
+                },
+                onWatched: {
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    vm.toggleWatched(trailer)
                 },
                 onShare: { showShare = true },
                 onTabSelect: { tab in
@@ -1323,6 +1341,7 @@ struct ReelsScreen: View {
             isCurrent: isCurrent,
             likeCount: social.likes(String(trailer.tmdbId)),
             isLiked: social.isLiked(String(trailer.tmdbId)),
+            isWatched: social.isWatched(String(trailer.tmdbId)),
             isSaved: StreamsViewModel.shared.userStreams.contains { $0.titleId == String(trailer.tmdbId) },
             commentCount: social.commentTotal(String(trailer.tmdbId)),
             activeTab: trailer.tab,
@@ -1364,6 +1383,12 @@ struct ReelsScreen: View {
                         )
                     }
                 }
+            },
+            onWatched: {
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                let tid = String(trailer.tmdbId)
+                let mediaType = trailer.isTV ? "tv" : "movie"
+                Task { await SocialViewModel.shared.toggleWatched(titleId: tid, titleName: trailer.showName, mediaType: mediaType, tmdbId: trailer.tmdbId) }
             },
             onShare: { showShare = true },
             onTabSelect: { _ in },
@@ -1447,6 +1472,7 @@ private struct ReelView: View {
     let isCurrent: Bool
     let likeCount: Int
     let isLiked: Bool
+    let isWatched: Bool
     let isSaved: Bool
     let commentCount: Int
     let activeTab: ReelTab
@@ -1460,6 +1486,7 @@ private struct ReelView: View {
     let onLike: () -> Void
     let onComments: () -> Void
     let onSave: () -> Void
+    let onWatched: () -> Void
     let onShare: () -> Void
     let onTabSelect: (ReelTab) -> Void
     let onSponsorCTA: () -> Void
@@ -1662,6 +1689,15 @@ private struct ReelView: View {
                         }
 
                         WatchListButton(saved: isSaved, sponsored: trailer.isSponsored, action: onSave)
+
+                        if !trailer.isSponsored {
+                            RailButton(
+                                icon: isWatched ? "eye.fill" : "eye",
+                                label: "Watched",
+                                tint: isWatched ? Color(hex: "1A6FE8") : .white,
+                                action: onWatched
+                            )
+                        }
 
                         RailButton(icon: "arrowshape.turn.up.right", label: "Share", tint: .white, action: onShare)
                     }

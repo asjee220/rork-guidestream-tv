@@ -66,6 +66,7 @@ final class SocialViewModel {
 
     private(set) var likeCounts: [String: Int] = [:]
     private(set) var likedByMe: Set<String> = []
+    private(set) var watchedByMe: Set<String> = []
     private(set) var commentCounts: [String: Int] = [:]
     private(set) var commentThreads: [String: [TitleComment]] = [:]
     var loadingComments: Set<String> = []
@@ -86,10 +87,27 @@ final class SocialViewModel {
         let tmdb_id: Int?
     }
 
+    nonisolated private struct WatchedRow: Decodable {
+        let titleId: String
+        enum CodingKeys: String, CodingKey { case titleId = "title_id" }
+    }
+
+    /// Concrete `Encodable` payload for inserting a watched row. Mirrors
+    /// `LikeInsertPayload` but also carries the series `title_name`.
+    private struct WatchedInsertPayload: Encodable {
+        let title_id: String
+        let device_id: String
+        let user_id: String?
+        let title_name: String?
+        let media_type: String?
+        let tmdb_id: Int?
+    }
+
     private init() {}
 
     func likes(_ titleId: String) -> Int { likeCounts[titleId] ?? 0 }
     func isLiked(_ titleId: String) -> Bool { likedByMe.contains(titleId) }
+    func isWatched(_ titleId: String) -> Bool { watchedByMe.contains(titleId) }
     func commentTotal(_ titleId: String) -> Int { commentCounts[titleId] ?? 0 }
     func thread(_ titleId: String) -> [TitleComment] { commentThreads[titleId] ?? [] }
 
@@ -129,6 +147,83 @@ final class SocialViewModel {
         } catch {
             // Silently keep current state on failure.
         }
+
+        var watchedQuery = TVSupabaseManager.shared.client
+            .from("title_watched")
+            .select("title_id")
+            .eq("title_id", value: titleId)
+
+        if let userId {
+            watchedQuery = watchedQuery.or("user_id.eq.\(userId),device_id.eq.\(deviceId)")
+        } else {
+            watchedQuery = watchedQuery.eq("device_id", value: deviceId)
+        }
+
+        do {
+            let rows: [WatchedRow] = try await watchedQuery.execute().value
+            if rows.isEmpty {
+                watchedByMe.remove(titleId)
+            } else {
+                watchedByMe.insert(titleId)
+            }
+        } catch {
+            // Silently keep current state on failure.
+        }
+    }
+
+    /// Optimistically flips the series-level watched flag, then writes through
+    /// to `title_watched` best-effort. Mirrors `toggleLike`. One tap marks the
+    /// whole series — never per-episode.
+    func toggleWatched(titleId: String, titleName: String? = nil, mediaType: String? = nil, tmdbId: Int? = nil) async {
+        let wasWatched = watchedByMe.contains(titleId)
+
+        // Optimistic flip
+        if wasWatched {
+            watchedByMe.remove(titleId)
+        } else {
+            watchedByMe.insert(titleId)
+        }
+
+        let deviceId = TVDeviceIdentity.shared.deviceId
+        let userId = TVAuthViewModel.shared.currentUser?.id.uuidString
+
+        do {
+            if wasWatched {
+                // Un-watch — delete the row
+                var query = TVSupabaseManager.shared.client
+                    .from("title_watched")
+                    .delete()
+                    .eq("title_id", value: titleId)
+                if let userId {
+                    query = query.eq("user_id", value: userId)
+                } else {
+                    query = query.eq("device_id", value: deviceId)
+                }
+                _ = try await query.execute()
+            } else {
+                // Watched — insert a row
+                let payload = WatchedInsertPayload(
+                    title_id: titleId,
+                    device_id: deviceId,
+                    user_id: userId,
+                    title_name: titleName,
+                    media_type: mediaType,
+                    tmdb_id: tmdbId
+                )
+                _ = try await TVSupabaseManager.shared.client
+                    .from("title_watched")
+                    .insert(payload)
+                    .execute()
+            }
+        } catch {
+            // Swallow — optimistic state wins.
+        }
+
+        // Log the intent
+        WatchIntentLogger.shared.log(
+            eventType: .watchedToggled,
+            titleId: titleId
+        )
     }
 
     /// Optimistically flips local state, then writes through to Supabase

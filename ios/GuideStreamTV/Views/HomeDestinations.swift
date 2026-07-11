@@ -277,6 +277,7 @@ struct EpisodeDetailSheet: View {
     @State private var isToggleSaving: Bool = false
     @State private var showComments: Bool = false
     @State private var isTogglingLike: Bool = false
+    @State private var isTogglingWatched: Bool = false
     /// Watchmode-resolved source for the show (top US sub > free > tve > rent).
     /// When set, drives the platform label, color, and the "Watch on" deeplink so
     /// shows show their real streaming service instead of the placeholder "HBO Max".
@@ -896,6 +897,24 @@ struct EpisodeDetailSheet: View {
                 Task {
                     await social.toggleLike(titleId: key, mediaType: mediaType, tmdbId: likeTmdbId)
                     await MainActor.run { isTogglingLike = false }
+                }
+            }
+            .frame(maxWidth: .infinity)
+
+            circleAction(
+                icon: social.isWatched(key) ? "eye.fill" : "eye",
+                label: "Watched",
+                tint: social.isWatched(key) ? Color(hex: "1A6FE8") : .white,
+                showDot: false
+            ) {
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                guard !isTogglingWatched else { return }
+                isTogglingWatched = true
+                let mediaType = isTV ? "tv" : "movie"
+                let watchedTmdbId = tmdbId
+                Task {
+                    await social.toggleWatched(titleId: key, titleName: title, mediaType: mediaType, tmdbId: watchedTmdbId)
+                    await MainActor.run { isTogglingWatched = false }
                 }
             }
             .frame(maxWidth: .infinity)

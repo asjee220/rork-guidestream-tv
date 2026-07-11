@@ -28,7 +28,7 @@ struct TVTitleDetail: Identifiable, Hashable {
 // MARK: - Focus fields
 
 private enum SheetFocus: Hashable {
-    case play, like, watchList, close
+    case play, like, watched, watchList, close
 }
 
 // MARK: - Sheet
@@ -74,6 +74,10 @@ struct TVTitleSheet: View {
 
     private var isLiked: Bool {
         social.isLiked(detail.titleId)
+    }
+
+    private var isWatched: Bool {
+        social.isWatched(detail.titleId)
     }
 
     // All resolved US streaming sources for this title.
@@ -231,6 +235,9 @@ struct TVTitleSheet: View {
 
                         // Like / Unlike
                         likeButton
+
+                        // Watched toggle
+                        watchedButton
 
                         // Watch List toggle
                         watchListButton
@@ -441,6 +448,33 @@ struct TVTitleSheet: View {
         }
         .buttonStyle(.card)
         .focused($focusedField, equals: .like)
+    }
+
+    // MARK: - Watched button
+
+    private var watchedButton: some View {
+        Button {
+            Task {
+                await social.toggleWatched(
+                    titleId: detail.titleId,
+                    titleName: detail.title,
+                    mediaType: isTV ? "tv" : "movie",
+                    tmdbId: tmdbId
+                )
+            }
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: isWatched ? "eye.fill" : "eye")
+                    .font(.system(size: 24, weight: .bold))
+                Text(isWatched ? "Watched" : "Mark Watched")
+                    .font(.system(size: 22, weight: .semibold))
+            }
+            .foregroundStyle(isWatched ? TVTheme.blue : .white)
+            .padding(.horizontal, 28)
+            .padding(.vertical, 18)
+        }
+        .buttonStyle(.card)
+        .focused($focusedField, equals: .watched)
     }
 
     // MARK: - Watch List button

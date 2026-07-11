@@ -40,6 +40,7 @@ enum IntentEventType: String {
     case onboardingCompleted = "onboarding_completed"
     case serviceSelected = "service_selected"
     case appOpened = "app_opened"
+    case watchedToggled = "watched_toggled"
 }
 
 /// Fire-and-forget stub — all calls silently succeed. The real iOS
