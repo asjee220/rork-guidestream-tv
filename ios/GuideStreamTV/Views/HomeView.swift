@@ -171,6 +171,7 @@ struct HomeView: View {
     @State private var showWatchListSheet: Bool = false
     @State private var auth = AuthViewModel.shared
     @State private var streams = StreamsViewModel.shared
+    @State private var social = SocialViewModel.shared
     @State private var castPlayback = CastPlaybackState.shared
     @State private var trending: [TMDBResult] = []
     @State private var onAir: [TMDBResult] = []
@@ -1781,27 +1782,43 @@ struct HomeView: View {
             }
     }
 
-    /// Top picks — trending titles scored by vote average and displayed with
-    /// a match-percentage badge. Deduplicated against other recommendation rows.
+    /// Top picks — trending titles personalised to the viewer: watched titles
+    /// are excluded, and titles on the user's selected services are boosted
+    /// above equally-rated ones. The match badge reflects rating + subscription.
+    /// Deduplicated against other recommendation rows.
     private var topPicksShows: [PosterShow] {
-        trending
+        // Reuse the app's owned-service normalisation (see showsBySelectedPlatform).
+        let selected = auth.selectedServices.map { $0.lowercased() }
+        func isOnService(_ id: Int) -> Bool {
+            guard let key = providerByTmdb[id]?.name.lowercased() else { return false }
+            return selected.contains { s in
+                key.contains(s) ||
+                (s == "appletv" && key.contains("apple")) ||
+                (s == "hbo" && (key.contains("hbo") || key.contains("max")))
+            }
+        }
+
+        return trending
             .filter { providerByTmdb[$0.id] != nil }
-            .map { r in
-                let baseScore = (r.voteAverage ?? 7.0) / 10.0
-                let clamped = max(72, min(98, Int(baseScore * 100)))
-                return PosterShow(
+            .filter { !social.isWatched(String($0.id)) }
+            .map { r -> (show: PosterShow, score: Double) in
+                let onService = isOnService(r.id)
+                let score = 0.75 * ((r.voteAverage ?? 7.0) / 10.0) + (onService ? 0.20 : 0.0)
+                let pct = Int(min(0.99, max(0.50, score)) * 100)
+                let show = PosterShow(
                     title: r.displayName,
-                    meta: "\(clamped)% Match",
+                    meta: "\(pct)% Match",
                     posterColors: HomeFallback.posterColors,
                     symbol: "star.fill",
                     posterUrl: r.posterUrl,
                     tmdbId: r.id,
                     voteAverage: r.voteAverage
                 )
+                return (show, score)
             }
-            .sorted { ($0.voteAverage ?? 0) > ($1.voteAverage ?? 0) }
+            .sorted { $0.score > $1.score }
             .prefix(12)
-            .map { $0 }
+            .map { $0.show }
     }
 
     /// Trending ranked — same pool as top picks but deduplicated so the
@@ -2472,13 +2489,13 @@ private struct TopPicksSection: View {
                                                 endPoint: .bottomTrailing
                                             )
                                         )
-                                        .frame(width: 110, height: 155)
+                                        .frame(width: 150, height: 225)
                                     RemoteImage(
                                         urlString: show.posterUrl,
                                         contentMode: .fill,
                                         fallbackColors: show.posterColors
                                     )
-                                    .frame(width: 110, height: 155)
+                                    .frame(width: 150, height: 225)
                                     .clipShape(.rect(cornerRadius: 10))
                                     .allowsHitTesting(false)
                                 }
