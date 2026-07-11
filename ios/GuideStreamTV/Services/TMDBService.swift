@@ -37,6 +37,33 @@ nonisolated struct TMDBResult: Identifiable, Hashable, Sendable, Decodable {
     let voteAverage: Double?
     let firstAirDate: String?
     let releaseDate: String?
+    let genreIds: [Int]?
+
+    init(
+        id: Int,
+        mediaType: String?,
+        name: String?,
+        title: String?,
+        posterPath: String?,
+        backdropPath: String?,
+        overview: String?,
+        voteAverage: Double?,
+        firstAirDate: String?,
+        releaseDate: String?,
+        genreIds: [Int]? = nil
+    ) {
+        self.id = id
+        self.mediaType = mediaType
+        self.name = name
+        self.title = title
+        self.posterPath = posterPath
+        self.backdropPath = backdropPath
+        self.overview = overview
+        self.voteAverage = voteAverage
+        self.firstAirDate = firstAirDate
+        self.releaseDate = releaseDate
+        self.genreIds = genreIds
+    }
 
     var displayName: String { name ?? title ?? "Untitled" }
     var isTV: Bool { (mediaType ?? "tv") == "tv" }
@@ -56,6 +83,7 @@ nonisolated struct TMDBResult: Identifiable, Hashable, Sendable, Decodable {
         case voteAverage = "vote_average"
         case firstAirDate = "first_air_date"
         case releaseDate = "release_date"
+        case genreIds = "genre_ids"
     }
 }
 
@@ -623,7 +651,8 @@ nonisolated struct TMDBService {
             overview: r.overview,
             voteAverage: r.voteAverage,
             firstAirDate: r.firstAirDate,
-            releaseDate: r.releaseDate
+            releaseDate: r.releaseDate,
+            genreIds: r.genreIds
         )
     }
 
@@ -645,7 +674,8 @@ nonisolated struct TMDBService {
                     overview: r.overview,
                     voteAverage: r.voteAverage,
                     firstAirDate: r.firstAirDate,
-                    releaseDate: r.releaseDate
+                    releaseDate: r.releaseDate,
+                    genreIds: r.genreIds
                 )
             }
     }
@@ -670,7 +700,8 @@ nonisolated struct TMDBService {
                     overview: r.overview,
                     voteAverage: r.voteAverage,
                     firstAirDate: r.firstAirDate,
-                    releaseDate: r.releaseDate
+                    releaseDate: r.releaseDate,
+                    genreIds: r.genreIds
                 )
             }
     }
@@ -752,7 +783,8 @@ nonisolated struct TMDBService {
                     overview: r.overview,
                     voteAverage: r.voteAverage,
                     firstAirDate: r.firstAirDate,
-                    releaseDate: r.releaseDate
+                    releaseDate: r.releaseDate,
+                    genreIds: r.genreIds
                 )
             }
     }

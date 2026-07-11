@@ -183,6 +183,12 @@ struct HomeView: View {
     /// Cached top US streaming provider per TMDB id. Items without an entry have no real
     /// streaming service and are filtered out of the UI.
     @State private var providerByTmdb: [Int: Platform] = [:]
+    /// Taste signal: union of genre ids across the user's saved / liked / watched titles.
+    /// Starts empty so Top Picks renders instantly on rating+service; the row re-ranks
+    /// once these resolve in the background.
+    @State private var preferredGenres: Set<Int> = []
+    /// Cache of resolved genre ids per TMDB id so a title is never looked up twice.
+    @State private var resolvedGenres: [Int: Set<Int>] = [:]
     @State private var popularOnServiceResults: [String: [TMDBResult]] = [:]
     private let tmdbProviderIdMap: [String: Int] = ["netflix": 8, "prime": 9, "disney": 337, "hbo": 1899, "hulu": 15, "appletv": 350, "paramount": 531, "peacock": 386, "starz": 43, "showtime": 37, "crunchyroll": 283, "amc": 526, "discovery": 584, "mubi": 11, "britbox": 151, "fubo": 257, "tubi": 73, "pluto": 300, "youtube": 192]
     @State private var topRated: [TMDBResult] = []
@@ -1409,6 +1415,13 @@ struct HomeView: View {
         newsStreams = news
         await hydrateProviders()
 
+        // Refresh the watched set so Top Picks exclusion is fresh on Home.
+        await SocialViewModel.shared.loadAllWatched()
+
+        // Resolve the user's taste genres in the background. Additive and
+        // best-effort — never blocks the Top Picks row from rendering.
+        Task { await resolvePreferredGenres() }
+
         // Defer non-hero work so the carousel can appear without
         // waiting for platform rows, expiring titles, or genre
         // enrichment. These run fire-and-forget and populate their
@@ -1563,6 +1576,58 @@ struct HomeView: View {
         var next = providerByTmdb
         for (id, platform) in resolved { next[id] = platform }
         providerByTmdb = next
+    }
+
+    /// Best-effort taste resolver. Builds the user's library id set (numeric TMDB
+    /// ids from the watchlist plus liked/watched title ids), resolves each id's
+    /// genres via TMDB (TV first, movie fallback), caches them in `resolvedGenres`,
+    /// and unions everything into `preferredGenres`. Runs off the hot path with
+    /// capped concurrency so it never blocks the Top Picks row.
+    private func resolvePreferredGenres() async {
+        func numericIds(_ ids: [String]) -> [Int] {
+            ids.compactMap { s in s.allSatisfy(\.isNumber) ? Int(s) : nil }
+        }
+        var libraryIds = Set<Int>()
+        libraryIds.formUnion(numericIds(streams.userStreams.map(\.titleId)))
+        libraryIds.formUnion(numericIds(Array(social.likedByMe)))
+        libraryIds.formUnion(numericIds(Array(social.watchedByMe)))
+
+        let pending = libraryIds.filter { resolvedGenres[$0] == nil }
+        guard !pending.isEmpty else {
+            preferredGenres = Set(resolvedGenres.values.flatMap { $0 })
+            return
+        }
+
+        // Resolve with capped concurrency (4 in flight) so it stays lightweight.
+        let ids = Array(pending)
+        let maxConcurrent = 4
+        var cursor = 0
+        let resolved: [Int: Set<Int>] = await withTaskGroup(of: (Int, Set<Int>).self) { group in
+            func schedule(_ id: Int) {
+                group.addTask {
+                    if let tv = try? await TMDBService.shared.getTVDetail(tmdbId: id),
+                       let genres = tv.genres, !genres.isEmpty {
+                        return (id, Set(genres.map(\.id)))
+                    }
+                    if let movie = try? await TMDBService.shared.getMovieDetail(tmdbId: id) {
+                        return (id, Set(movie.genres?.map(\.id) ?? []))
+                    }
+                    return (id, [])
+                }
+            }
+            while cursor < ids.count && cursor < maxConcurrent {
+                schedule(ids[cursor]); cursor += 1
+            }
+            var out: [Int: Set<Int>] = [:]
+            for await (id, genres) in group {
+                out[id] = genres
+                if cursor < ids.count { schedule(ids[cursor]); cursor += 1 }
+            }
+            return out
+        }
+
+        for (id, genres) in resolved { resolvedGenres[id] = genres }
+        preferredGenres = Set(resolvedGenres.values.flatMap { $0 })
     }
 
     /// Fetches popular TV shows AND movies for each of the user's selected
@@ -1803,7 +1868,11 @@ struct HomeView: View {
             .filter { !social.isWatched(String($0.id)) }
             .map { r -> (show: PosterShow, score: Double) in
                 let onService = isOnService(r.id)
-                let score = 0.75 * ((r.voteAverage ?? 7.0) / 10.0) + (onService ? 0.20 : 0.0)
+                let tasteMatch = !preferredGenres.isEmpty
+                    && !Set(r.genreIds ?? []).isDisjoint(with: preferredGenres)
+                let score = 0.60 * ((r.voteAverage ?? 7.0) / 10.0)
+                    + (onService ? 0.20 : 0.0)
+                    + (tasteMatch ? 0.20 : 0.0)
                 let pct = Int(min(0.99, max(0.50, score)) * 100)
                 let show = PosterShow(
                     title: r.displayName,
