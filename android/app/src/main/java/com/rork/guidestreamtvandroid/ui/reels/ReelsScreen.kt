@@ -34,6 +34,7 @@ import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VolumeOff
 import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.CircularProgressIndicator
@@ -67,6 +68,7 @@ import com.rork.guidestreamtvandroid.data.repository.WatchIntentLogger
 import com.rork.guidestreamtvandroid.ui.components.RemoteImage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import com.rork.guidestreamtvandroid.ui.theme.BrandBlue
 import com.rork.guidestreamtvandroid.ui.theme.BrandOrange
 import com.rork.guidestreamtvandroid.ui.theme.GlassFill
 import com.rork.guidestreamtvandroid.ui.theme.GlassStroke
@@ -109,6 +111,7 @@ fun ReelsScreen(
     val isLoading by vm.isLoading.collectAsStateWithLifecycle()
     val currentTab by vm.currentTab.collectAsStateWithLifecycle()
     val userStreams by streamsVm.userStreams.collectAsStateWithLifecycle()
+    val watchedIds by streamsVm.watchedIds.collectAsStateWithLifecycle()
 
     // Tab-filtered trailers
     val filteredTrailers = remember(trailers, currentTab) {
@@ -165,6 +168,7 @@ fun ReelsScreen(
                 val reel = filteredTrailers[page]
                 val isCurrent = page == pagerState.currentPage
                 val isSaved = userStreams.any { it.titleId == reel.tmdbId.toString() }
+                val isWatched = watchedIds.contains(reel.tmdbId.toString())
 
                 ReelView(
                     reel = reel,
@@ -172,6 +176,7 @@ fun ReelsScreen(
                     isPlaying = isPlaying,
                     isMuted = isMuted,
                     isSaved = isSaved,
+                    isWatched = isWatched,
                     onTogglePlay = {
                         isPlaying = !isPlaying
                         WatchIntentLogger.get().log(
@@ -215,6 +220,14 @@ fun ReelsScreen(
                                 platformId = reel.platformId,
                             )
                         }
+                    },
+                    onToggleWatched = {
+                        streamsVm.toggleWatched(
+                            titleId = reel.tmdbId.toString(),
+                            titleName = reel.showName,
+                            mediaType = if (reel.isTV) "tv" else "movie",
+                            tmdbId = reel.tmdbId,
+                        )
                     },
                     onShare = {
                         val shareIntent = Intent(Intent.ACTION_SEND).apply {
@@ -292,10 +305,12 @@ private fun ReelView(
     isPlaying: Boolean,
     isMuted: Boolean,
     isSaved: Boolean,
+    isWatched: Boolean,
     onTogglePlay: () -> Unit,
     onToggleMute: () -> Unit,
     onPlayYoutube: () -> Unit,
     onToggleSave: () -> Unit,
+    onToggleWatched: () -> Unit,
     onShare: () -> Unit,
     injected: Boolean = false,
     sources: List<WatchmodeSrc>? = null,
@@ -401,6 +416,13 @@ private fun ReelView(
                 tint = if (isSaved) BrandOrange else TextPrimary,
                 onClick = onToggleSave,
             )
+            // Watched
+            RailButton(
+                icon = Icons.Filled.Visibility,
+                label = "Watched",
+                tint = if (isWatched) BrandBlue else TextPrimary,
+                onClick = onToggleWatched,
+            )
             // Share
             RailButton(
                 icon = Icons.Filled.Share,
@@ -505,6 +527,7 @@ private fun InjectedReelsScreen(
     val context = LocalContext.current
     val streamsVm = StreamsViewModel.get()
     val userStreams by streamsVm.userStreams.collectAsStateWithLifecycle()
+    val watchedIds by streamsVm.watchedIds.collectAsStateWithLifecycle()
 
     var isPlaying by remember { mutableStateOf(true) }
     var isMuted by remember { mutableStateOf(true) }
@@ -558,12 +581,14 @@ private fun InjectedReelsScreen(
                 val reel = reels[page]
                 val isCurrent = page == pagerState.currentPage
                 val isSaved = userStreams.any { it.titleId == reel.tmdbId.toString() }
+                val isWatched = watchedIds.contains(reel.tmdbId.toString())
                 ReelView(
                     reel = reel,
                     isCurrent = isCurrent,
                     isPlaying = isPlaying,
                     isMuted = isMuted,
                     isSaved = isSaved,
+                    isWatched = isWatched,
                     onTogglePlay = { isPlaying = !isPlaying },
                     onToggleMute = { isMuted = !isMuted },
                     onPlayYoutube = {
@@ -589,6 +614,14 @@ private fun InjectedReelsScreen(
                                 platformId = reel.platformId,
                             )
                         }
+                    },
+                    onToggleWatched = {
+                        streamsVm.toggleWatched(
+                            titleId = reel.tmdbId.toString(),
+                            titleName = reel.showName,
+                            mediaType = if (reel.isTV) "tv" else "movie",
+                            tmdbId = reel.tmdbId,
+                        )
                     },
                     onShare = {
                         val shareIntent = Intent(Intent.ACTION_SEND).apply {

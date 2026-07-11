@@ -56,6 +56,7 @@ class WatchIntentLogger private constructor(context: Context) {
         ONBOARDING_COMPLETED("onboarding_completed"),
         SERVICE_SELECTED("service_selected"),
         APP_OPENED("app_opened"),
+        WATCHED_TOGGLED("watched_toggled"),
     }
 
     data class LoggerError(

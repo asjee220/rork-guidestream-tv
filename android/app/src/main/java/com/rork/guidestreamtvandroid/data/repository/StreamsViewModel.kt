@@ -15,6 +15,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
@@ -26,6 +28,11 @@ import kotlinx.serialization.json.put
  */
 class StreamsViewModel private constructor(context: Context) {
 
+    @Serializable
+    private data class WatchedRow(
+        @SerialName("title_id") val titleId: String,
+    )
+
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val prefs = context.getSharedPreferences("gs_prefs", Context.MODE_PRIVATE)
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
@@ -35,6 +42,9 @@ class StreamsViewModel private constructor(context: Context) {
 
     private val _userStreams = MutableStateFlow<List<UserStream>>(emptyList())
     val userStreams: StateFlow<List<UserStream>> = _userStreams.asStateFlow()
+
+    private val _watchedIds = MutableStateFlow<Set<String>>(emptySet())
+    val watchedIds: StateFlow<Set<String>> = _watchedIds.asStateFlow()
 
     private val _newEpisodes = MutableStateFlow<List<NewEpisodeRow>>(emptyList())
     val newEpisodes: StateFlow<List<NewEpisodeRow>> = _newEpisodes.asStateFlow()
@@ -71,6 +81,9 @@ class StreamsViewModel private constructor(context: Context) {
         }
     }
 
+    /** True when the series is flagged watched by the current owner. */
+    fun isWatched(titleId: String): Boolean = _watchedIds.value.contains(titleId.trim())
+
     fun fetchUserStreams() {
         _isLoadingStreams.value = true
         scope.launch {
@@ -102,6 +115,135 @@ class StreamsViewModel private constructor(context: Context) {
                 _userStreams.value = loadLocalCache()
             } finally {
                 _isLoadingStreams.value = false
+            }
+            fetchWatchedIds()
+        }
+    }
+
+    /**
+     * Hydrates the series-level watched set for the current owner. Runs on the
+     * same pass as [fetchUserStreams] so the eye icons reflect server state on
+     * launch. Failures leave the optimistic/local set untouched.
+     */
+    private suspend fun fetchWatchedIds() {
+        try {
+            val deviceId = DeviceIdentity.get().deviceId
+            val uid = currentUserId
+            val rows = SupabaseManager.client.postgrest
+                .from("title_watched")
+                .select {
+                    filter {
+                        if (uid != null) {
+                            or {
+                                eq("user_id", uid)
+                                eq("device_id", deviceId)
+                            }
+                        } else {
+                            eq("device_id", deviceId)
+                        }
+                    }
+                }
+                .decodeList<WatchedRow>()
+            _watchedIds.value = rows.map { it.titleId }.toSet()
+        } catch (e: Throwable) {
+            if (e is CancellationException) throw e
+            _lastError.value = e.message
+        }
+    }
+
+    /**
+     * Optimistically flips the single series-level watched flag and writes
+     * through to `title_watched`. Mirrors the watchlist owner rules exactly:
+     * signed-in rows use `user_id`, guests use `device_id`. One tap marks the
+     * whole series — never per-episode.
+     */
+    fun toggleWatched(
+        titleId: String,
+        titleName: String? = null,
+        mediaType: String? = null,
+        tmdbId: Int? = null,
+    ) {
+        val trimmedId = titleId.trim()
+        if (trimmedId.isEmpty()) return
+        val wasWatched = _watchedIds.value.contains(trimmedId)
+
+        // Optimistic flip
+        _watchedIds.value = if (wasWatched) {
+            _watchedIds.value - trimmedId
+        } else {
+            _watchedIds.value + trimmedId
+        }
+
+        WatchIntentLogger.get().log(
+            WatchIntentLogger.IntentEventType.WATCHED_TOGGLED,
+            titleId = trimmedId,
+        )
+
+        scope.launch {
+            val deviceId = DeviceIdentity.get().deviceId
+            val uid = currentUserId
+            try {
+                if (wasWatched) {
+                    SupabaseManager.client.postgrest
+                        .from("title_watched")
+                        .delete {
+                            filter {
+                                eq("title_id", trimmedId)
+                                if (uid != null) {
+                                    or {
+                                        eq("user_id", uid)
+                                        eq("device_id", deviceId)
+                                    }
+                                } else {
+                                    eq("device_id", deviceId)
+                                }
+                            }
+                        }
+                } else {
+                    insertWatched(
+                        userId = uid,
+                        deviceId = deviceId,
+                        titleId = trimmedId,
+                        titleName = titleName,
+                        mediaType = mediaType,
+                        tmdbId = tmdbId,
+                    )
+                }
+            } catch (e: Throwable) {
+                if (e is CancellationException) throw e
+                _lastError.value = e.message
+            }
+        }
+    }
+
+    private suspend fun insertWatched(
+        userId: String?,
+        deviceId: String,
+        titleId: String,
+        titleName: String?,
+        mediaType: String?,
+        tmdbId: Int?,
+    ): Boolean {
+        val payload = buildJsonObject {
+            put("device_id", deviceId)
+            put("title_id", titleId)
+            if (userId != null) put("user_id", userId)
+            if (titleName != null) put("title_name", titleName)
+            if (mediaType != null) put("media_type", mediaType)
+            if (tmdbId != null) put("tmdb_id", tmdbId)
+        }
+        return try {
+            SupabaseManager.client.postgrest
+                .from("title_watched")
+                .insert(payload)
+            true
+        } catch (e: Throwable) {
+            if (e is CancellationException) throw e
+            val msg = e.message?.lowercase() ?: ""
+            if (msg.contains("duplicate") || msg.contains("23505")) true
+            else {
+                _lastError.value = e.message
+                false
             }
         }
     }

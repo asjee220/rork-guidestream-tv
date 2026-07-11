@@ -33,6 +33,7 @@ import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -69,6 +70,7 @@ import com.rork.guidestreamtvandroid.ui.components.glassCard
 import com.rork.guidestreamtvandroid.ui.reels.ReelTab
 import com.rork.guidestreamtvandroid.ui.reels.ReelsScreen
 import com.rork.guidestreamtvandroid.ui.reels.TrailerItem
+import com.rork.guidestreamtvandroid.ui.theme.BrandBlue
 import com.rork.guidestreamtvandroid.ui.theme.BrandOrange
 import com.rork.guidestreamtvandroid.ui.theme.GlassFill
 import com.rork.guidestreamtvandroid.ui.theme.GlassStroke
@@ -103,9 +105,11 @@ fun ShowDetailScreen(
     val errorMessage by vm.errorMessage.collectAsStateWithLifecycle()
     val currentSeason by vm.currentSeasonNumber.collectAsStateWithLifecycle()
     val userStreams by streamsVm.userStreams.collectAsStateWithLifecycle()
+    val watchedIds by streamsVm.watchedIds.collectAsStateWithLifecycle()
 
     val tmdbId = titleId.toIntOrNull()
     val isSaved = userStreams.any { it.titleId == titleId }
+    val isWatched = watchedIds.contains(titleId)
 
     // Streaming-source switcher state. When the user is subscribed to two or
     // more of the title's services, tapping a chip makes it the active source
@@ -369,6 +373,33 @@ fun ShowDetailScreen(
                             imageVector = if (isSaved) Icons.Filled.Check else Icons.Filled.Add,
                             contentDescription = if (isSaved) "In watchlist" else "Add to watchlist",
                             tint = if (isSaved) BrandOrange else TextPrimary,
+                            modifier = Modifier.size(22.dp),
+                        )
+                    }
+                    // Watched toggle
+                    Box(
+                        modifier = Modifier
+                            .size(50.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(GlassFill)
+                            .border(1.dp, GlassStroke, RoundedCornerShape(12.dp))
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null,
+                            ) {
+                                streamsVm.toggleWatched(
+                                    titleId = titleId,
+                                    titleName = detail?.name ?: titleName,
+                                    mediaType = if (isTV) "tv" else "movie",
+                                    tmdbId = tmdbId,
+                                )
+                            },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Visibility,
+                            contentDescription = "Watched",
+                            tint = if (isWatched) BrandBlue else TextPrimary,
                             modifier = Modifier.size(22.dp),
                         )
                     }
