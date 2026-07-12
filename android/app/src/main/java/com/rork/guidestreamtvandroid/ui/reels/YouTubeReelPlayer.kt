@@ -3,9 +3,12 @@ package com.rork.guidestreamtvandroid.ui.reels
 import android.annotation.SuppressLint
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
+import android.webkit.ConsoleMessage
 import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
 import android.webkit.WebView
+import android.webkit.WebViewClient
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -40,11 +43,13 @@ fun YouTubeReelPlayer(
     videoId: String,
     isMuted: Boolean,
     isPlaying: Boolean,
-    onEmbedError: () -> Unit,
+    onPlayerError: (Int) -> Unit,
+    onPlayerReady: () -> Unit,
     onEnded: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val currentOnEmbedError by rememberUpdatedState(onEmbedError)
+    val currentOnPlayerError by rememberUpdatedState(onPlayerError)
+    val currentOnPlayerReady by rememberUpdatedState(onPlayerReady)
     val currentOnEnded by rememberUpdatedState(onEnded)
     val mainHandler = remember { Handler(Looper.getMainLooper()) }
 
@@ -67,8 +72,22 @@ fun YouTubeReelPlayer(
                     mediaPlaybackRequiresUserGesture = false
                     domStorageEnabled = true
                 }
-                // Required for HTML5 <video> to render inside a WebView.
-                webChromeClient = WebChromeClient()
+                // A WebViewClient keeps loads rendering in-place instead of being
+                // handed off to an external handler.
+                webViewClient = WebViewClient()
+                // Required for HTML5 <video> to render inside a WebView; the
+                // console hook surfaces IFrame API errors that are otherwise
+                // invisible on device.
+                webChromeClient = object : WebChromeClient() {
+                    override fun onConsoleMessage(consoleMessage: ConsoleMessage): Boolean {
+                        Log.d(
+                            "GSReels",
+                            "console: ${consoleMessage.message()} " +
+                                "[${consoleMessage.sourceId()}:${consoleMessage.lineNumber()}]",
+                        )
+                        return true
+                    }
+                }
                 setBackgroundColor(android.graphics.Color.BLACK)
                 isVerticalScrollBarEnabled = false
                 isHorizontalScrollBarEnabled = false
@@ -77,7 +96,8 @@ fun YouTubeReelPlayer(
                     object {
                         @JavascriptInterface
                         fun onReady() {
-                            // No-op hook; playback is driven by player vars.
+                            Log.d("GSReels", "player ready")
+                            mainHandler.post { currentOnPlayerReady() }
                         }
 
                         @JavascriptInterface
@@ -86,8 +106,14 @@ fun YouTubeReelPlayer(
                         }
 
                         @JavascriptInterface
-                        fun onEmbedError() {
-                            mainHandler.post { currentOnEmbedError() }
+                        fun onPlayerState(state: Int) {
+                            Log.d("GSReels", "state: $state")
+                        }
+
+                        @JavascriptInterface
+                        fun onPlayerError(code: Int) {
+                            Log.d("GSReels", "error code: $code")
+                            mainHandler.post { currentOnPlayerError(code) }
                         }
                     },
                     "GSBridge",
@@ -192,6 +218,16 @@ private fun buildEmbedHtml(videoId: String, isMuted: Boolean): String {
         <script src="https://www.youtube.com/iframe_api"></script>
         <script>
             var player;
+            var ready = false;
+            window.onerror = function(message) {
+                if (window.GSBridge && GSBridge.onPlayerError) { GSBridge.onPlayerError(-1); }
+                return false;
+            };
+            setTimeout(function() {
+                if (!ready) {
+                    if (window.GSBridge && GSBridge.onPlayerError) { GSBridge.onPlayerError(-2); }
+                }
+            }, 8000);
             function onYouTubeIframeAPIReady() {
                 player = new YT.Player('player', {
                     videoId: '$videoId',
@@ -213,6 +249,7 @@ private fun buildEmbedHtml(videoId: String, isMuted: Boolean): String {
                     },
                     events: {
                         'onReady': function(e) {
+                            ready = true;
                             try {
                                 e.target.playVideo();
                                 if ($muteFlag === 1) { e.target.mute(); } else { e.target.unMute(); }
@@ -220,12 +257,13 @@ private fun buildEmbedHtml(videoId: String, isMuted: Boolean): String {
                             if (window.GSBridge && GSBridge.onReady) { GSBridge.onReady(); }
                         },
                         'onStateChange': function(e) {
+                            if (window.GSBridge && GSBridge.onPlayerState) { GSBridge.onPlayerState(e.data); }
                             if (e.data === 0) {
                                 if (window.GSBridge && GSBridge.onEnded) { GSBridge.onEnded(); }
                             }
                         },
                         'onError': function(e) {
-                            if (window.GSBridge && GSBridge.onEmbedError) { GSBridge.onEmbedError(); }
+                            if (window.GSBridge && GSBridge.onPlayerError) { GSBridge.onPlayerError(e.data); }
                         }
                     }
                 });

@@ -55,6 +55,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -318,10 +319,10 @@ private fun ReelView(
     sources: List<WatchmodeSrc>? = null,
     onOpenSource: (WatchmodeSrc) -> Unit = {},
 ) {
-    // Per-reel embed-failure flag: a video whose owner disabled embedding fires
-    // onError, collapses the reel back to its poster, and leaves the Play rail
-    // button working so the user can still open it in YouTube.
-    var embedFailed by remember(reel.id) { mutableStateOf(false) }
+    // Per-reel last player error code (null = none yet). Only genuinely fatal
+    // owner-disabled-embed codes (101/150) collapse the reel to its poster; all
+    // other codes keep the WebView mounted so we can keep diagnosing.
+    var playerErrorCode by remember(reel.id) { mutableStateOf<Int?>(null) }
 
     Box(modifier = Modifier.fillMaxSize()) {
         // Backdrop image — stays underneath the player so the reel is never blank
@@ -338,7 +339,8 @@ private fun ReelView(
         // Inline YouTube player — only for the current page with a valid embed.
         // Non-current pages never instantiate a WebView, so swiping never leaves
         // two players (or two audio streams) alive at once.
-        if (isCurrent && reel.trailerKey.isNotBlank() && !embedFailed) {
+        val fatalEmbedError = playerErrorCode == 101 || playerErrorCode == 150
+        if (isCurrent && reel.trailerKey.isNotBlank() && !fatalEmbedError) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -349,7 +351,8 @@ private fun ReelView(
                     videoId = reel.trailerKey,
                     isMuted = isMuted,
                     isPlaying = isPlaying,
-                    onEmbedError = { embedFailed = true },
+                    onPlayerError = { code -> playerErrorCode = code },
+                    onPlayerReady = { playerErrorCode = null },
                     onEnded = { /* loop=1 playlist restarts automatically */ },
                     modifier = Modifier
                         .fillMaxHeight()
@@ -373,6 +376,26 @@ private fun ReelView(
                     ),
                 ),
         )
+
+        // Temporary diagnostic badge: shows the raw YouTube player error code on
+        // device so failures are readable without adb.
+        playerErrorCode?.let { code ->
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(12.dp)
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(Color.Black.copy(alpha = 0.6f))
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
+            ) {
+                Text(
+                    text = "YT err $code",
+                    color = Color.White,
+                    fontSize = 11.sp,
+                    fontFamily = FontFamily.Monospace,
+                )
+            }
+        }
 
         // Center play/pause button (only when current and paused or controls shown)
         if (isCurrent && !isPlaying) {
