@@ -424,7 +424,6 @@ enum StreamingCatalog {
 
 typealias TMDBService = TVTMDBService
 typealias SportsService = TVSportsService
-typealias NewsService = TVNewsService
 
 // MARK: - TMDBService stub extensions
 

@@ -180,13 +180,6 @@
 		<true/>
 		<key>NSExceptionDomains</key>
 		<dict>
-			<key>newsapi.org</key>
-			<dict>
-				<key>NSExceptionAllowsInsecureHTTPLoads</key>
-				<false/>
-				<key>NSIncludesSubdomains</key>
-				<true/>
-			</dict>
 		</dict>
 	</dict>
 </dict>

@@ -109,25 +109,6 @@ nonisolated struct TVTMDBWatchProvider: Decodable, Sendable, Hashable {
     }
 }
 
-// MARK: - News
-
-nonisolated struct TVNewsStream: Identifiable, Hashable, Sendable {
-    let id: Int
-    let title: String
-    let outlet: String
-    let posterUrl: String?
-    let backdropUrl: String?
-    let overview: String?
-    let isTV: Bool
-    let publishedAt: Date?
-    let providerName: String?
-
-    var canonicalTitleId: String {
-        let kind = isTV ? "tv" : "movie"
-        return "tmdb:\(kind):\(id)"
-    }
-}
-
 // MARK: - Sports (ESPN)
 
 struct TVSportsGame: Identifiable, Hashable {
@@ -173,6 +154,5 @@ nonisolated struct TVTitleRecencyRow: Decodable, Sendable {
 typealias SportsGame = TVSportsGame
 typealias GameTeam = TVGameTeam
 typealias GameState = TVGameState
-typealias NewsStream = TVNewsStream
 typealias TMDBResult = TVTMDBResult
 typealias UserStream = TVUserStream

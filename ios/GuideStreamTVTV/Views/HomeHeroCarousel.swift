@@ -16,13 +16,11 @@ import SwiftUI
 enum HeroItem: Identifiable {
     case media(TMDBResult, Platform?)
     case game(SportsGame)
-    case news(NewsStream)
 
     var id: String {
         switch self {
         case .media(let r, _): return "media-\(r.id)"
         case .game(let g): return "game-\(g.id)"
-        case .news(let n): return "news-\(n.id)"
         }
     }
 }
@@ -31,7 +29,6 @@ struct HomeHeroCarousel: View {
     let items: [HeroItem]
     let onSelectMedia: (TMDBResult, Platform?) -> Void
     let onSelectGame: (SportsGame) -> Void
-    let onSelectNews: (NewsStream) -> Void
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
@@ -43,8 +40,6 @@ struct HomeHeroCarousel: View {
                             onSelectMedia(result, platform)
                         case .game(let game):
                             onSelectGame(game)
-                        case .news(let news):
-                            onSelectNews(news)
                         }
                     }
                     .frame(width: 460)
@@ -96,7 +91,6 @@ private struct HeroCarouselCard: View {
         switch item {
         case .media: return Color.orange.opacity(0.30)
         case .game: return Color.blue.opacity(0.40)
-        case .news: return Color.newsGreen.opacity(0.45)
         }
     }
 
@@ -104,7 +98,6 @@ private struct HeroCarouselCard: View {
         switch item {
         case .media: return Color.orange.opacity(0.18)
         case .game: return Color.blue.opacity(0.24)
-        case .news: return Color.newsGreen.opacity(0.30)
         }
     }
 
@@ -113,23 +106,7 @@ private struct HeroCarouselCard: View {
         switch item {
         case .media(let result, _): mediaBackdrop(result)
         case .game(let game): sportsBackdrop(game)
-        case .news(let news): newsBackdrop(news)
         }
-    }
-
-    private func newsBackdrop(_ news: NewsStream) -> some View {
-        Color.black
-            .overlay {
-                RemoteImage(
-                    urlString: news.backdropUrl ?? news.posterUrl,
-                    contentMode: .fill,
-                    fallbackColors: [
-                        Color.newsGreen.opacity(0.85),
-                        Color(red: 0.04, green: 0.20, blue: 0.18)
-                    ]
-                )
-                .allowsHitTesting(false)
-            }
     }
 
     private func mediaBackdrop(_ result: TMDBResult) -> some View {
@@ -178,80 +155,7 @@ private struct HeroCarouselCard: View {
         switch item {
         case .media(let result, let platform): mediaContent(result, platform)
         case .game(let game): gameContent(game)
-        case .news(let news): newsContent(news)
         }
-    }
-
-    // MARK: - News content
-
-    private func newsContent(_ news: NewsStream) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 8) {
-                breakingNewsBadge
-                badgePill(news.outlet.uppercased(), bg: Color.white.opacity(0.20))
-                Spacer(minLength: 0)
-            }
-
-            Spacer(minLength: 0)
-
-            VStack(alignment: .leading, spacing: 8) {
-                Text(news.title)
-                    .scaledFont(size: 22, weight: .bold)
-                    .foregroundStyle(.white)
-                    .lineLimit(2)
-                    .multilineTextAlignment(.leading)
-                    .shadow(color: Color.black.opacity(0.45), radius: 8, y: 2)
-
-                newsMetaRow(news)
-
-                ctaPill(label: "Watch Now", tint: Color.newsGreen)
-                    .padding(.top, 8)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private var breakingNewsBadge: some View {
-        HStack(spacing: 5) {
-            Image(systemName: "dot.radiowaves.left.and.right")
-                .scaledFont(size: 10, weight: .black)
-            Text("BREAKING")
-                .scaledFont(size: 10, weight: .black)
-                .tracking(0.8)
-        }
-        .foregroundStyle(.white)
-        .padding(.horizontal, 9)
-        .padding(.vertical, 5)
-        .background(Capsule().fill(Color.white.opacity(0.18)))
-        .overlay(Capsule().stroke(Color.white.opacity(0.35), lineWidth: 1))
-    }
-
-    private func newsMetaRow(_ news: NewsStream) -> some View {
-        HStack(spacing: 8) {
-            Text(news.isTV ? "News Show" : "News Special")
-                .scaledFont(size: 12, weight: .semibold)
-                .foregroundStyle(Color.white.opacity(0.85))
-            if let date = news.publishedAt {
-                metaDot
-                Text(Self.relativeDate(date))
-                    .scaledFont(size: 12, weight: .medium)
-                    .foregroundStyle(Color.white.opacity(0.85))
-            }
-            if let provider = news.providerName {
-                metaDot
-                Text(provider)
-                    .scaledFont(size: 12, weight: .semibold)
-                    .foregroundStyle(.white)
-                    .lineLimit(1)
-            }
-            Spacer(minLength: 0)
-        }
-    }
-
-    private static func relativeDate(_ date: Date) -> String {
-        let f = RelativeDateTimeFormatter()
-        f.unitsStyle = .short
-        return f.localizedString(for: date, relativeTo: Date())
     }
 
     // MARK: - Media content

@@ -174,18 +174,6 @@ data class SportsGame(
 }
 
 @Serializable
-data class NewsStream(
-    val id: Int,
-    val title: String,
-    val outlet: String,
-    @SerialName("provider_name") val providerName: String? = null,
-    @SerialName("image_url") val imageUrl: String? = null,
-    @SerialName("article_url") val articleUrl: String? = null,
-    val published: String? = null,
-    val summary: String? = null,
-)
-
-@Serializable
 data class CreatorChannel(
     @SerialName("title_id") val titleId: String,
     @SerialName("display_name") val displayName: String,

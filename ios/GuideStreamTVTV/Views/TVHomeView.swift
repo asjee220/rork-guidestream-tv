@@ -13,7 +13,6 @@ import SwiftUI
 struct TVHomeView: View {
     @State private var trending: [TVTMDBResult] = []
     @State private var newEpisodes: [TVTMDBResult] = []
-    @State private var news: [TVNewsStream] = []
     @State private var sports: [TVSportsGame] = []
     @State private var isLoading: Bool = true
 
@@ -41,14 +40,6 @@ struct TVHomeView: View {
                     TVRail(title: "New Episodes", accent: TVTheme.blue, count: newEpisodes.count) {
                         ForEach(newEpisodes) { item in
                             posterCard(for: item, accent: TVTheme.blue)
-                        }
-                    }
-                }
-
-                if !news.isEmpty {
-                    TVRail(title: "Top News", accent: TVTheme.newsGreen, count: news.count) {
-                        ForEach(news) { item in
-                            newsCard(for: item)
                         }
                     }
                 }
@@ -132,28 +123,6 @@ struct TVHomeView: View {
         }
     }
 
-    private func newsCard(for item: TVNewsStream) -> some View {
-        TVWideCard(
-            title: item.title,
-            subtitle: item.outlet,
-            backdropUrl: item.backdropUrl ?? item.posterUrl,
-            accent: TVTheme.newsGreen,
-            isSaved: streams.contains(titleId: item.canonicalTitleId)
-        ) {
-            pendingDetail = TVTitleDetail(
-                titleId: item.canonicalTitleId,
-                title: item.title,
-                overview: item.overview,
-                posterUrl: item.posterUrl,
-                backdropUrl: item.backdropUrl,
-                tag: item.outlet,
-                accent: TVTheme.newsGreen,
-                year: nil,
-                platform: item.providerName
-            )
-        }
-    }
-
     // MARK: - Loading placeholders
 
     private func loadingRail(title: String, accent: Color) -> some View {
@@ -176,14 +145,12 @@ struct TVHomeView: View {
         isLoading = true
         async let trendingTask = (try? TVTMDBService.shared.getTrending()) ?? []
         async let newEpisodesTask = (try? TVTMDBService.shared.getOnTheAir()) ?? []
-        async let newsTask = TVNewsService.shared.fetchTopNewsStreams(limit: 10)
         async let sportsTask = TVSportsService.shared.fetchAll()
         async let watchTask: Void = TVStreamsViewModel.shared.fetchUserStreams()
 
-        let (t, ne, nw, sp, _) = await (trendingTask, newEpisodesTask, newsTask, sportsTask, watchTask)
+        let (t, ne, sp, _) = await (trendingTask, newEpisodesTask, sportsTask, watchTask)
         self.trending = t
         self.newEpisodes = ne
-        self.news = nw
         self.sports = sp
         self.isLoading = false
     }

@@ -111,9 +111,7 @@ struct HomeView: View {
     @State private var bingeFallback: [TMDBResult] = []
     @State private var newToday: [TMDBResult] = []
     @State private var sportsGames: [SportsGame] = []
-    @State private var newsStreams: [NewsStream] = []
     @State private var selectedGame: SportsGame?
-    @State private var selectedNews: NewsStream?
     /// Cached top US streaming provider per TMDB id. Items without an entry have no real
     /// streaming service and are filtered out of the UI.
     @State private var providerByTmdb: [Int: Platform] = [:]
@@ -148,19 +146,6 @@ struct HomeView: View {
                                         ]
                                     )
                                     selectedGame = game
-                                },
-                                onSelectNews: { news in
-                                    WatchIntentLogger.shared.log(
-                                        eventType: .cardTapped,
-                                        titleId: String(news.id),
-                                        platformId: (news.providerName ?? "tmdb").lowercased(),
-                                        metadata: [
-                                            "section": "hero_carousel",
-                                            "kind": "news",
-                                            "outlet": news.outlet
-                                        ]
-                                    )
-                                    selectedNews = news
                                 }
                             )
                         }
@@ -283,29 +268,6 @@ struct HomeView: View {
                             .padding(.horizontal, 20)
                         }
 
-                        if !newsStreams.isEmpty {
-                            NewsSection(
-                                items: newsStreams,
-                                onSeeAll: {
-                                    WatchIntentLogger.shared.log(
-                                        eventType: .cardTapped,
-                                        metadata: ["section": "news_see_all"]
-                                    )
-                                    path.append(.news)
-                                },
-                                onOpen: { news in
-                                    WatchIntentLogger.shared.log(
-                                        eventType: .cardTapped,
-                                        titleId: String(news.id),
-                                        platformId: (news.providerName ?? "tmdb").lowercased(),
-                                        metadata: ["section": "news", "outlet": news.outlet]
-                                    )
-                                    selectedNews = news
-                                }
-                            )
-                            .padding(.horizontal, 20)
-                        }
-
                         Color.clear.frame(height: 96)
                     }
                     .padding(.top, 4)
@@ -357,11 +319,6 @@ struct HomeView: View {
                         shows: allWhatsNewTodayShows,
                         onSelect: { show in detailSubject = .show(show) }
                     )
-                case .news:
-                    NewsListView(
-                        items: newsStreams,
-                        onSelect: { news in selectedNews = news }
-                    )
                 case .widgetSetup:
                     WidgetSetupView()
                 }
@@ -372,9 +329,6 @@ struct HomeView: View {
             }
             .fullScreenCover(item: $selectedGame) { game in
                 SportsWatchSheet(game: game)
-            }
-            .fullScreenCover(item: $selectedNews) { news in
-                EpisodeDetailSheet(subject: .show(newsAsPoster(news)))
             }
             .fullScreenCover(isPresented: $showServicesSheet) {
                 ServicesBottomSheet()
@@ -388,9 +342,6 @@ struct HomeView: View {
             }
             .sheet(item: $selectedGame) { game in
                 SportsWatchSheet(game: game)
-            }
-            .sheet(item: $selectedNews) { news in
-                EpisodeDetailSheet(subject: .show(newsAsPoster(news)))
             }
             .sheet(isPresented: $showServicesSheet) {
                 ServicesBottomSheet()
@@ -432,14 +383,12 @@ struct HomeView: View {
         async let endedCall = try? TMDBService.shared.getDiscoverEnded()
         async let newTodayCall = try? TMDBService.shared.getNewToday()
         async let sportsCall = SportsService.shared.fetchAll()
-        async let newsCall = NewsService.shared.fetchTopNewsStreams(limit: 10)
-        let (t, a, e, n, s, news) = await (trendingCall, onAirCall, endedCall, newTodayCall, sportsCall, newsCall)
+        let (t, a, e, n, s) = await (trendingCall, onAirCall, endedCall, newTodayCall, sportsCall)
         if let t { trending = t }
         if let a { onAir = a }
         if let e { bingeFallback = e }
         if let n { newToday = n }
         sportsGames = s
-        newsStreams = news
         await hydrateProviders()
     }
 
@@ -490,12 +439,6 @@ struct HomeView: View {
         let liveGames = sportsGames.filter { $0.state == .live }.prefix(2)
         for g in liveGames { items.append(.game(g)) }
 
-        // Insert up to 2 news tiles immediately after the sports block so
-        // news rides the high-priority real estate at the start of the rail.
-        for news in newsStreams.prefix(2) {
-            items.append(.news(news))
-        }
-
         let mediaPool = trending + onAir + bingeFallback
         var seen: Set<Int> = []
         var media: [HeroItem] = []
@@ -512,27 +455,6 @@ struct HomeView: View {
             items.append(.game(nextUp))
         }
         return items
-    }
-
-    /// Wraps a `NewsStream` in the existing `PosterShow` shape so the
-    /// EpisodeDetailSheet can present it identically to a regular show.
-    /// Keeping the news flow on the same sheet means deeplinking, watchlist
-    /// toggling, and cast-to-TV all work for news without a parallel UI.
-    private func newsAsPoster(_ news: NewsStream) -> PosterShow {
-        let dateLabel: String = {
-            guard let d = news.publishedAt else { return "News" }
-            let f = RelativeDateTimeFormatter()
-            f.unitsStyle = .short
-            return f.localizedString(for: d, relativeTo: Date())
-        }()
-        return PosterShow(
-            title: news.title,
-            meta: "\(news.outlet) · \(dateLabel)",
-            posterColors: [Color.newsGreen, Color(red: 0.04, green: 0.20, blue: 0.18)],
-            symbol: "dot.radiowaves.left.and.right",
-            posterUrl: news.posterUrl,
-            tmdbId: news.id
-        )
     }
 
     private func mediaAsPoster(_ r: TMDBResult, platform: Platform?) -> PosterShow {
@@ -944,137 +866,6 @@ private struct WhatsNewTodaySection: View {
                 .padding(.vertical, 6)
             }
         }
-    }
-}
-
-// MARK: - News section
-
-/// Horizontal rail of the top news streams across every connected
-/// streaming service. Uses the brand teal/green so news stands apart
-/// from the orange entertainment treatment and the blue sports rail.
-private struct NewsSection: View {
-    let items: [NewsStream]
-    let onSeeAll: () -> Void
-    let onOpen: (NewsStream) -> Void
-
-    var body: some View {
-        SectionGlassCard(
-            title: "News",
-            highlighted: true,
-            accentColor: Color.newsGreen,
-            onSeeAll: onSeeAll
-        ) {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 12) {
-                    ForEach(items) { news in
-                        NewsCard(news: news, onTap: { onOpen(news) })
-                    }
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 6)
-            }
-        }
-    }
-}
-
-private struct NewsCard: View {
-    let news: NewsStream
-    let onTap: () -> Void
-
-    private static let formatter: RelativeDateTimeFormatter = {
-        let f = RelativeDateTimeFormatter()
-        f.unitsStyle = .short
-        return f
-    }()
-
-    var body: some View {
-        Button(action: onTap) {
-            VStack(alignment: .leading, spacing: 8) {
-                Color.newsGreen
-                    .frame(width: 220, height: 124)
-                    .overlay {
-                        RemoteImage(
-                            urlString: news.backdropUrl ?? news.posterUrl,
-                            contentMode: .fill,
-                            fallbackColors: [Color.newsGreen, Color(red: 0.04, green: 0.20, blue: 0.18)]
-                        )
-                        .frame(width: 220, height: 124)
-                        .clipped()
-                        .allowsHitTesting(false)
-                    }
-                    .overlay(
-                        LinearGradient(
-                            colors: [
-                                Color.newsGreen.opacity(0.0),
-                                Color.newsGreen.opacity(0.4),
-                                Color(red: 0.04, green: 0.20, blue: 0.18).opacity(0.85)
-                            ],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                        .allowsHitTesting(false)
-                    )
-                    .overlay(alignment: .topLeading) {
-                        HStack(spacing: 4) {
-                            Image(systemName: "dot.radiowaves.left.and.right")
-                                .scaledFont(size: 8, weight: .black)
-                                .symbolEffect(.variableColor.iterative.reversing, options: .repeating)
-                            Text("LIVE")
-                                .scaledFont(size: 8, weight: .heavy)
-                                .tracking(0.6)
-                        }
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 3)
-                        .background(
-                            RoundedRectangle(cornerRadius: 4, style: .continuous)
-                                .fill(Color.newsGreen)
-                        )
-                        .padding(8)
-                        .allowsHitTesting(false)
-                    }
-                    .overlay(alignment: .bottomLeading) {
-                        Text(news.outlet.uppercased())
-                            .scaledFont(size: 9, weight: .heavy)
-                            .tracking(0.6)
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 7)
-                            .padding(.vertical, 3)
-                            .background(
-                                RoundedRectangle(cornerRadius: 4, style: .continuous)
-                                    .fill(Color.black.opacity(0.55))
-                            )
-                            .padding(8)
-                            .allowsHitTesting(false)
-                    }
-                    .clipShape(.rect(cornerRadius: 10))
-
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(news.title)
-                        .scaledFont(size: 13, weight: .semibold)
-                        .foregroundStyle(Color.textPrimary)
-                        .lineLimit(2)
-                        .multilineTextAlignment(.leading)
-                    if let provider = news.providerName, let date = news.publishedAt {
-                        Text("\(provider) · \(Self.formatter.localizedString(for: date, relativeTo: Date()))")
-                            .scaledFont(size: 11)
-                            .foregroundStyle(Color.textTertiary)
-                            .lineLimit(1)
-                    } else if let provider = news.providerName {
-                        Text(provider)
-                            .scaledFont(size: 11)
-                            .foregroundStyle(Color.textTertiary)
-                            .lineLimit(1)
-                    } else if let date = news.publishedAt {
-                        Text(Self.formatter.localizedString(for: date, relativeTo: Date()))
-                            .scaledFont(size: 11)
-                            .foregroundStyle(Color.textTertiary)
-                    }
-                }
-                .frame(width: 220, alignment: .leading)
-            }
-        }
-        .buttonStyle(.plain)
     }
 }
 

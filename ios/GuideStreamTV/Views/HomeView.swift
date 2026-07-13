@@ -179,7 +179,6 @@ struct HomeView: View {
     @State private var newToday: [TMDBResult] = []
     @State private var newReleases: [StreamingRelease] = []
     @State private var sportsGames: [SportsGame] = []
-    @State private var newsStreams: [NewsStream] = []
     @State private var selectedGame: SportsGame?
     /// Cached top US streaming provider per TMDB id. Items without an entry have no real
     /// streaming service and are filtered out of the UI.
@@ -364,19 +363,6 @@ struct HomeView: View {
                                         ]
                                     )
                                     selectedGame = game
-                                },
-                                onSelectNews: { news in
-                                    WatchIntentLogger.shared.log(
-                                        eventType: .cardTapped,
-                                        titleId: String(news.id),
-                                        platformId: (news.providerName ?? "tmdb").lowercased(),
-                                        metadata: [
-                                            "section": "hero_carousel",
-                                            "kind": "news",
-                                            "outlet": news.outlet
-                                        ]
-                                    )
-                                    openNewsArticle(news)
                                 },
                                 onSelectLiveCreator: { creator in
                                     WatchIntentLogger.shared.log(
@@ -936,32 +922,6 @@ struct HomeView: View {
                         // Inline sponsored slot #3 — after Binge Worthy
                         inlineAdSlot(3)
 
-                        if !homeContentReady {
-                            HomeShimmerSection(title: "News")
-                                .padding(.horizontal, 20)
-                        } else if !newsStreams.isEmpty {
-                            NewsSection(
-                                items: newsStreams,
-                                onSeeAll: {
-                                    WatchIntentLogger.shared.log(
-                                        eventType: .cardTapped,
-                                        metadata: ["section": "news_see_all"]
-                                    )
-                                    path.append(.news)
-                                },
-                                onOpen: { news in
-                                    WatchIntentLogger.shared.log(
-                                        eventType: .cardTapped,
-                                        titleId: String(news.id),
-                                        platformId: (news.providerName ?? "tmdb").lowercased(),
-                                        metadata: ["section": "news", "outlet": news.outlet]
-                                    )
-                                    openNewsArticle(news)
-                                }
-                            )
-                            .padding(.horizontal, 20)
-                        }
-
                         Color.clear.frame(height: 96)
                     }
                     .padding(.top, 4)
@@ -1061,11 +1021,6 @@ struct HomeView: View {
                     WhatsNewTodayListView(
                         shows: allWhatsNewTodayShows,
                         onSelect: { show in detailSubject = .show(show) }
-                    )
-                case .news:
-                    NewsListView(
-                        items: newsStreams,
-                        onSelect: { news in openNewsArticle(news) }
                     )
                 case .widgetSetup:
                     WidgetSetupView()
@@ -1402,11 +1357,10 @@ struct HomeView: View {
         async let endedCall = try? TMDBService.shared.getDiscoverEnded()
         async let newTodayCall = try? TMDBService.shared.getNewToday()
         async let sportsCall = SportsService.shared.fetchAll()
-        async let newsCall = NewsService.shared.fetchTopNewsStreams(limit: 10)
         async let topRatedCall = try? TMDBService.shared.getTopRated()
         async let genreCall = try? TMDBService.shared.getDiscoverByGenre(selectedGenreId)
         async let newReleasesCall = StreamingReleasesService.shared.fetchReleases()
-        let (t, a, e, n, s, news, tr, genre, nr) = await (trendingCall, onAirCall, endedCall, newTodayCall, sportsCall, newsCall, topRatedCall, genreCall, newReleasesCall)
+        let (t, a, e, n, s, tr, genre, nr) = await (trendingCall, onAirCall, endedCall, newTodayCall, sportsCall, topRatedCall, genreCall, newReleasesCall)
         if let t { trending = t }
         if let a { onAir = a }
         if let e { bingeFallback = e }
@@ -1415,7 +1369,6 @@ struct HomeView: View {
         if let tr { topRated = tr }
         if let genre { genreShows = genre }
         sportsGames = s
-        newsStreams = news
         await hydrateProviders()
 
         // Refresh the watched set so Top Picks exclusion is fresh on Home.
@@ -1698,11 +1651,6 @@ struct HomeView: View {
             items.append(.game(g))
         }
 
-        // News (up to 4)
-        for n in newsStreams.prefix(4) {
-            items.append(.news(n))
-        }
-
         // Live creators (up to 2) — follow-scoped only
         for c in liveCreators.prefix(2) {
             items.append(.liveCreator(c))
@@ -1759,8 +1707,6 @@ struct HomeView: View {
         }
     }
 
-    /// Opens a news article in Safari. News items come from NewsAPI —
-    /// they're publisher articles, not TMDB titles, so there's no
     /// Builds a compact metadata line from a search result (e.g. "2024 · Movie"
     /// or "2020 · TV Series") for the PlayOnBottomSheet header.
     private func metadata(for result: SearchResult) -> String {
@@ -1768,14 +1714,6 @@ struct HomeView: View {
         let typePart = result.isTV ? "TV Series" : "Movie"
         if yearPart.isEmpty { return typePart }
         return "\(yearPart) · \(typePart)"
-    }
-
-    /// streaming service to resolve. The article URL (or the outlet's
-    /// live-stream fallback) takes the user to the original story.
-    private func openNewsArticle(_ news: NewsStream) {
-        let target = news.articleUrl ?? news.fallbackWebURL
-        guard let urlString = target, let url = URL(string: urlString) else { return }
-        UIApplication.shared.open(url)
     }
 
     private func mediaAsPoster(_ r: TMDBResult, platform: Platform?) -> PosterShow {
@@ -2914,137 +2852,6 @@ private struct WhatsNewTodaySection: View {
                 .padding(.vertical, 6)
             }
         }
-    }
-}
-
-// MARK: - News section
-
-/// Horizontal rail of the top news streams across every connected
-/// streaming service. Uses the brand teal/green so news stands apart
-/// from the orange entertainment treatment and the blue sports rail.
-private struct NewsSection: View {
-    let items: [NewsStream]
-    let onSeeAll: () -> Void
-    let onOpen: (NewsStream) -> Void
-
-    var body: some View {
-        SectionGlassCard(
-            title: "News",
-            highlighted: true,
-            accentColor: Color.newsGreen,
-            onSeeAll: onSeeAll
-        ) {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 12) {
-                    ForEach(items) { news in
-                        NewsCard(news: news, onTap: { onOpen(news) })
-                    }
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 6)
-            }
-        }
-    }
-}
-
-private struct NewsCard: View {
-    let news: NewsStream
-    let onTap: () -> Void
-
-    private static let formatter: RelativeDateTimeFormatter = {
-        let f = RelativeDateTimeFormatter()
-        f.unitsStyle = .short
-        return f
-    }()
-
-    var body: some View {
-        Button(action: onTap) {
-            VStack(alignment: .leading, spacing: 8) {
-                Color.newsGreen
-                    .frame(width: 220, height: 124)
-                    .overlay {
-                        RemoteImage(
-                            urlString: news.backdropUrl ?? news.posterUrl,
-                            contentMode: .fill,
-                            fallbackColors: [Color.newsGreen, Color(red: 0.04, green: 0.20, blue: 0.18)]
-                        )
-                        .frame(width: 220, height: 124)
-                        .clipped()
-                        .allowsHitTesting(false)
-                    }
-                    .overlay(
-                        LinearGradient(
-                            colors: [
-                                Color.newsGreen.opacity(0.0),
-                                Color.newsGreen.opacity(0.4),
-                                Color(red: 0.04, green: 0.20, blue: 0.18).opacity(0.85)
-                            ],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                        .allowsHitTesting(false)
-                    )
-                    .overlay(alignment: .topLeading) {
-                        HStack(spacing: 4) {
-                            Image(systemName: "dot.radiowaves.left.and.right")
-                                .scaledFont(size: 8, weight: .black)
-                                .symbolEffect(.variableColor.iterative.reversing, options: .repeating)
-                            Text("LIVE")
-                                .scaledFont(size: 8, weight: .heavy)
-                                .tracking(0.6)
-                        }
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 3)
-                        .background(
-                            RoundedRectangle(cornerRadius: 4, style: .continuous)
-                                .fill(Color.newsGreen)
-                        )
-                        .padding(8)
-                        .allowsHitTesting(false)
-                    }
-                    .overlay(alignment: .bottomLeading) {
-                        Text(news.outlet.uppercased())
-                            .scaledFont(size: 9, weight: .heavy)
-                            .tracking(0.6)
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 7)
-                            .padding(.vertical, 3)
-                            .background(
-                                RoundedRectangle(cornerRadius: 4, style: .continuous)
-                                    .fill(Color.black.opacity(0.55))
-                            )
-                            .padding(8)
-                            .allowsHitTesting(false)
-                    }
-                    .clipShape(.rect(cornerRadius: 10))
-
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(news.title)
-                        .scaledFont(size: 13, weight: .semibold)
-                        .foregroundStyle(Color.textPrimary)
-                        .lineLimit(2)
-                        .multilineTextAlignment(.leading)
-                    if let provider = news.providerName, let date = news.publishedAt {
-                        Text("\(provider) · \(Self.formatter.localizedString(for: date, relativeTo: Date()))")
-                            .scaledFont(size: 11)
-                            .foregroundStyle(Color.textTertiary)
-                            .lineLimit(1)
-                    } else if let provider = news.providerName {
-                        Text(provider)
-                            .scaledFont(size: 11)
-                            .foregroundStyle(Color.textTertiary)
-                            .lineLimit(1)
-                    } else if let date = news.publishedAt {
-                        Text(Self.formatter.localizedString(for: date, relativeTo: Date()))
-                            .scaledFont(size: 11)
-                            .foregroundStyle(Color.textTertiary)
-                    }
-                }
-                .frame(width: 220, alignment: .leading)
-            }
-        }
-        .buttonStyle(.plain)
     }
 }
 
