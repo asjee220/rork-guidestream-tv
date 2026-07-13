@@ -61,11 +61,14 @@ import com.rork.guidestreamtvandroid.data.remote.TMDBService
 import com.rork.guidestreamtvandroid.data.remote.WatchmodeResolveService
 import com.rork.guidestreamtvandroid.data.remote.WatchmodeSrc
 import com.rork.guidestreamtvandroid.data.repository.AuthViewModel
+import com.rork.guidestreamtvandroid.data.repository.SocialViewModel
 import com.rork.guidestreamtvandroid.data.repository.StreamsViewModel
 import com.rork.guidestreamtvandroid.data.repository.WatchIntentLogger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import com.rork.guidestreamtvandroid.ui.comments.TitleCommentsSheet
 import com.rork.guidestreamtvandroid.ui.components.RemoteImage
+import com.rork.guidestreamtvandroid.ui.components.SocialCounterRow
 import com.rork.guidestreamtvandroid.ui.components.glassCard
 import com.rork.guidestreamtvandroid.ui.reels.ReelTab
 import com.rork.guidestreamtvandroid.ui.reels.ReelsScreen
@@ -107,6 +110,14 @@ fun ShowDetailScreen(
     val currentSeason by vm.currentSeasonNumber.collectAsStateWithLifecycle()
     val userStreams by streamsVm.userStreams.collectAsStateWithLifecycle()
     val watchedIds by streamsVm.watchedIds.collectAsStateWithLifecycle()
+
+    // Social (likes + comments) state.
+    val socialVm = SocialViewModel.get()
+    val likeCounts by socialVm.likeCounts.collectAsStateWithLifecycle()
+    val likedByMe by socialVm.likedByMe.collectAsStateWithLifecycle()
+    val commentCounts by socialVm.commentCounts.collectAsStateWithLifecycle()
+    var showComments by remember { mutableStateOf(false) }
+    androidx.compose.runtime.LaunchedEffect(titleId) { socialVm.refreshCounts(titleId) }
 
     val tmdbId = titleId.toIntOrNull()
     val isSaved = userStreams.any { it.titleId == titleId }
@@ -271,6 +282,27 @@ fun ShowDetailScreen(
                                 )
                             }
                         }
+                        Spacer(Modifier.height(10.dp))
+                        SocialCounterRow(
+                            isLiked = likedByMe.contains(titleId),
+                            likeCount = likeCounts[titleId] ?: 0,
+                            commentCount = commentCounts[titleId] ?: 0,
+                            onLike = {
+                                socialVm.toggleLike(
+                                    titleId,
+                                    mediaType = if (isTV) "tv" else "movie",
+                                    tmdbId = titleId.toIntOrNull(),
+                                )
+                            },
+                            onComment = {
+                                showComments = true
+                                WatchIntentLogger.get().log(
+                                    WatchIntentLogger.IntentEventType.COMMENTS_OPENED,
+                                    titleId = titleId,
+                                    metadata = mapOf("source" to "show_detail"),
+                                )
+                            },
+                        )
                     }
                 }
 
@@ -616,6 +648,18 @@ fun ShowDetailScreen(
                     modifier = Modifier.fillMaxSize(),
                 )
             }
+        }
+
+        if (showComments) {
+            TitleCommentsSheet(
+                titleId = titleId,
+                title = detail?.name ?: titleName,
+                subtitle = null,
+                posterUrl = detail?.posterPath?.let {
+                    "https://image.tmdb.org/t/p/w342${if (it.startsWith("/")) it else "/$it"}"
+                },
+                onDismiss = { showComments = false },
+            )
         }
     }
 }

@@ -6,6 +6,7 @@ import com.rork.guidestreamtvandroid.data.local.DeviceIdentity
 import com.rork.guidestreamtvandroid.data.local.DeviceSessionService
 import com.rork.guidestreamtvandroid.data.repository.AuthViewModel
 import com.rork.guidestreamtvandroid.data.repository.PushTokenManager
+import com.rork.guidestreamtvandroid.data.repository.SocialViewModel
 import com.rork.guidestreamtvandroid.data.repository.StreamsViewModel
 import com.rork.guidestreamtvandroid.data.repository.TeamFavoritesService
 import com.rork.guidestreamtvandroid.data.repository.WatchIntentLogger
@@ -44,6 +45,7 @@ class GuideStreamTVApp : Application() {
         safe("WatchIntentLogger") { WatchIntentLogger.init(this) }
         safe("DeviceSessionService") { DeviceSessionService.init(this) }
         safe("StreamsViewModel") { StreamsViewModel.init(this) }
+        safe("SocialViewModel") { SocialViewModel.init(this) }
         safe("TeamFavoritesService") { TeamFavoritesService.init(this) }
         safe("PushTokenManager") { PushTokenManager.init(this) }
         safe("WidgetDataService") { WidgetDataService.init(this) }

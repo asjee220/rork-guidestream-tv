@@ -54,9 +54,12 @@ import androidx.lifecycle.viewModelScope
 import com.rork.guidestreamtvandroid.data.models.ContentSource
 import com.rork.guidestreamtvandroid.data.models.NewEpisodeRow
 import com.rork.guidestreamtvandroid.data.remote.SupabaseManager
+import com.rork.guidestreamtvandroid.data.repository.SocialViewModel
 import com.rork.guidestreamtvandroid.data.repository.StreamsViewModel
 import com.rork.guidestreamtvandroid.data.repository.WatchIntentLogger
+import com.rork.guidestreamtvandroid.ui.comments.TitleCommentsSheet
 import com.rork.guidestreamtvandroid.ui.components.RemoteImage
+import com.rork.guidestreamtvandroid.ui.components.SocialCounterRow
 import com.rork.guidestreamtvandroid.ui.components.glassCard
 import com.rork.guidestreamtvandroid.ui.theme.BottomSafeSpacer
 import com.rork.guidestreamtvandroid.ui.theme.BrandOrange
@@ -152,8 +155,19 @@ fun CreatorDetailScreen(
     val isFollowed = userStreams.any { it.titleId == titleId }
     val sourceType = source?.sourceType ?: titleId.substringBefore(":", "youtube")
 
+    // Social (likes + comments) state. Creators/podcasts have no TMDB identity,
+    // so likes key off the prefixed titleId only (no mediaType / tmdbId).
+    val socialVm = SocialViewModel.get()
+    val likeCounts by socialVm.likeCounts.collectAsStateWithLifecycle()
+    val likedByMe by socialVm.likedByMe.collectAsStateWithLifecycle()
+    val commentCounts by socialVm.commentCounts.collectAsStateWithLifecycle()
+    var showComments by remember { mutableStateOf(false) }
+
     LaunchedEffect(titleId) {
         vm.load(titleId)
+    }
+    LaunchedEffect(titleId) {
+        socialVm.refreshCounts(titleId)
     }
 
     Box(modifier = modifier.fillMaxSize()) {
@@ -242,6 +256,23 @@ fun CreatorDetailScreen(
                         }
                     }
                 }
+
+                // Social counter row (like / comment)
+                SocialCounterRow(
+                    isLiked = likedByMe.contains(titleId),
+                    likeCount = likeCounts[titleId] ?: 0,
+                    commentCount = commentCounts[titleId] ?: 0,
+                    onLike = { socialVm.toggleLike(titleId) },
+                    onComment = {
+                        showComments = true
+                        WatchIntentLogger.get().log(
+                            WatchIntentLogger.IntentEventType.COMMENTS_OPENED,
+                            titleId = titleId,
+                            metadata = mapOf("source" to "creator_detail"),
+                        )
+                    },
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                )
 
                 // Follow button
                 Row(
@@ -338,6 +369,16 @@ fun CreatorDetailScreen(
 
                 BottomSafeSpacer(withTabBar = false)
             }
+        }
+
+        if (showComments) {
+            TitleCommentsSheet(
+                titleId = titleId,
+                title = source?.displayName ?: titleId,
+                subtitle = null,
+                posterUrl = source?.imageUrl,
+                onDismiss = { showComments = false },
+            )
         }
     }
 }
