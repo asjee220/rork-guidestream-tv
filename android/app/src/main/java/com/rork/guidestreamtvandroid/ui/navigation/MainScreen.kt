@@ -19,14 +19,19 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import com.rork.guidestreamtvandroid.data.models.Platform
 import com.rork.guidestreamtvandroid.data.models.SourceKind
+import com.rork.guidestreamtvandroid.data.models.TMDBResult
 import com.rork.guidestreamtvandroid.ui.ask.AskStreamSheet
 import com.rork.guidestreamtvandroid.ui.components.FloatingTabBar
 import com.rork.guidestreamtvandroid.ui.detail.CreatorDetailScreen
 import com.rork.guidestreamtvandroid.ui.detail.ShowDetailScreen
 import com.rork.guidestreamtvandroid.ui.reels.ReelsScreen
+import com.rork.guidestreamtvandroid.ui.screens.HomeListScreen
 import com.rork.guidestreamtvandroid.ui.screens.HomeScreen
 import com.rork.guidestreamtvandroid.ui.screens.PopularOnServiceCategoriesScreen
+import com.rork.guidestreamtvandroid.ui.screens.WatchListScreen
+import com.rork.guidestreamtvandroid.ui.screens.WidgetSetupScreen
 import com.rork.guidestreamtvandroid.ui.search.SearchScreen
 import com.rork.guidestreamtvandroid.ui.sports.SportsGameDetailScreen
 import com.rork.guidestreamtvandroid.ui.sports.SportsScreen
@@ -38,6 +43,14 @@ import com.rork.guidestreamtvandroid.ui.theme.Navy
 data class PopularCategoriesTarget(
     val serviceId: String,
     val providerId: Int,
+)
+
+/** Target for the generic "See all" full-screen poster grid overlay (Binge/What's New/etc.). */
+data class HomeListTarget(
+    val title: String,
+    val tag: String,
+    val shows: List<TMDBResult>,
+    val providerByTmdb: Map<Int, Platform>,
 )
 
 /**
@@ -61,6 +74,9 @@ fun MainScreen(
     var showCreatorDetail by remember { mutableStateOf<String?>(null) }
     var selectedGame by remember { mutableStateOf<com.rork.guidestreamtvandroid.data.models.SportsGame?>(null) }
     var showPopularCategories by remember { mutableStateOf<PopularCategoriesTarget?>(null) }
+    var showHomeList by remember { mutableStateOf<HomeListTarget?>(null) }
+    var showWatchList by remember { mutableStateOf(false) }
+    var showWidgetSetup by remember { mutableStateOf(false) }
 
     // Consume pending title route from AppRouter (deep-link / push buffer)
     val pendingRoute = router.pendingTitleRoute
@@ -98,6 +114,9 @@ fun MainScreen(
                     onSeeAllPopular = { serviceId, providerId ->
                         showPopularCategories = PopularCategoriesTarget(serviceId, providerId)
                     },
+                    onSeeAllList = { target -> showHomeList = target },
+                    onOpenWatchList = { showWatchList = true },
+                    onOpenWidgetSetup = { showWidgetSetup = true },
                 )
                 AppTab.SPORTS -> SportsScreen(
                     onOpenGameDetail = { game -> selectedGame = game },
@@ -115,7 +134,7 @@ fun MainScreen(
         }
 
         // Full-screen overlay open flag — hides the floating tab bar behind opaque covers
-        val overlayOpen = showDetail != null || showCreatorDetail != null || showSearch || selectedGame != null || showPopularCategories != null
+        val overlayOpen = showDetail != null || showCreatorDetail != null || showSearch || selectedGame != null || showPopularCategories != null || showHomeList != null || showWatchList || showWidgetSetup
 
         // Show detail (full-screen cover equivalent)
         showDetail?.let { route ->
@@ -210,6 +229,65 @@ fun MainScreen(
                         showPopularCategories = null
                         showDetail = route
                     },
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
+        }
+
+        // Generic "See all" poster grid (Binge Worthy / New This Week / etc.)
+        showHomeList?.let { target ->
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Navy)
+                    .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { },
+            ) {
+                HomeListScreen(
+                    target = target,
+                    onBack = { showHomeList = null },
+                    onOpenTitle = { route ->
+                        showHomeList = null
+                        showDetail = route
+                    },
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
+        }
+
+        // Full Watch List destination
+        if (showWatchList) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Navy)
+                    .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { },
+            ) {
+                WatchListScreen(
+                    onBack = { showWatchList = false },
+                    onOpenTitle = { route ->
+                        showWatchList = false
+                        val kind = SourceKind.from(route.titleId)
+                        if (kind.isNonTMDB) {
+                            showCreatorDetail = route.titleId
+                        } else {
+                            showDetail = route
+                        }
+                    },
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
+        }
+
+        // Widget setup instructions
+        if (showWidgetSetup) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Navy)
+                    .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { },
+            ) {
+                WidgetSetupScreen(
+                    onBack = { showWidgetSetup = false },
                     modifier = Modifier.fillMaxSize(),
                 )
             }

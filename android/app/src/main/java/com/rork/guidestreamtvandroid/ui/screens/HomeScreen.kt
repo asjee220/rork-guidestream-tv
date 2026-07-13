@@ -75,6 +75,7 @@ import com.rork.guidestreamtvandroid.ui.ads.PooledAdSource
 import com.rork.guidestreamtvandroid.ui.ads.SponsoredSlot
 import com.rork.guidestreamtvandroid.ui.components.glassCard
 import com.rork.guidestreamtvandroid.ui.home.HomeViewModel
+import com.rork.guidestreamtvandroid.ui.navigation.HomeListTarget
 import com.rork.guidestreamtvandroid.ui.navigation.PendingTitleRoute
 import com.rork.guidestreamtvandroid.ui.theme.BottomSafeSpacer
 import com.rork.guidestreamtvandroid.ui.theme.BrandBlue
@@ -102,6 +103,9 @@ fun HomeScreen(
     onOpenTitle: (PendingTitleRoute) -> Unit = {},
     onOpenSearch: () -> Unit = {},
     onSeeAllPopular: (serviceId: String, providerId: Int) -> Unit = { _, _ -> },
+    onSeeAllList: (HomeListTarget) -> Unit = {},
+    onOpenWatchList: () -> Unit = {},
+    onOpenWidgetSetup: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val homeVm = HomeViewModel.get()
@@ -191,6 +195,13 @@ fun HomeScreen(
                         posterUrl = stream.posterUrl,
                     ))
                 },
+                onSeeAll = {
+                    WatchIntentLogger.get().log(
+                        WatchIntentLogger.IntentEventType.CARD_TAPPED,
+                        metadata = mapOf("section" to "watch_list_see_all"),
+                    )
+                    onOpenWatchList()
+                },
             )
         }
 
@@ -230,6 +241,13 @@ fun HomeScreen(
                     )
                     onOpenTitle(PendingTitleRoute(titleId = r.id.toString(), titleName = r.displayName, isTv = r.isTV))
                 },
+                onSeeAll = {
+                    WatchIntentLogger.get().log(
+                        WatchIntentLogger.IntentEventType.CARD_TAPPED,
+                        metadata = mapOf("section" to "whats_new_today_see_all"),
+                    )
+                    onSeeAllList(HomeListTarget(title = "New This Week", tag = "TODAY", shows = newReleases, providerByTmdb = providerByTmdb))
+                },
             )
         }
 
@@ -261,11 +279,11 @@ fun HomeScreen(
                 0.60 * ((r.voteAverage ?: 7.0) / 10.0) +
                     (if (onService(r.id)) 0.20 else 0.0) +
                     (if (preferredGenres.isNotEmpty() && (r.genreIds ?: emptyList()).any { it in preferredGenres }) 0.20 else 0.0)
-            val topPicks = trending
+            val topPicksAll = trending
                 .filter { providerByTmdb[it.id] != null }
                 .filter { !watchedIds.contains(it.id.toString()) }
                 .sortedByDescending { scoreFor(it) }
-                .take(12)
+            val topPicks = topPicksAll.take(12)
             PosterSection(
                 title = "Top Picks for You",
                 shows = topPicks,
@@ -281,6 +299,13 @@ fun HomeScreen(
                         metadata = mapOf("section" to "top_picks"),
                     )
                     onOpenTitle(PendingTitleRoute(titleId = r.id.toString(), titleName = r.displayName, isTv = r.isTV))
+                },
+                onSeeAll = {
+                    WatchIntentLogger.get().log(
+                        WatchIntentLogger.IntentEventType.CARD_TAPPED,
+                        metadata = mapOf("section" to "top_picks_see_all"),
+                    )
+                    onSeeAllList(HomeListTarget(title = "Top Picks for You", tag = "TOP PICK", shows = topPicksAll, providerByTmdb = providerByTmdb))
                 },
             )
         }
@@ -299,6 +324,13 @@ fun HomeScreen(
                         metadata = mapOf("section" to "trending_ranked"),
                     )
                     onOpenTitle(PendingTitleRoute(titleId = r.id.toString(), titleName = r.displayName, isTv = r.isTV))
+                },
+                onSeeAll = {
+                    WatchIntentLogger.get().log(
+                        WatchIntentLogger.IntentEventType.CARD_TAPPED,
+                        metadata = mapOf("section" to "trending_ranked_see_all"),
+                    )
+                    onSeeAllList(HomeListTarget(title = "Trending This Week", tag = "TRENDING", shows = trending.filter { providerByTmdb[it.id] != null }, providerByTmdb = providerByTmdb))
                 },
             )
         }
@@ -319,6 +351,13 @@ fun HomeScreen(
                         metadata = mapOf("section" to "leaving_soon"),
                     )
                     onOpenTitle(PendingTitleRoute(titleId = r.id.toString(), titleName = r.displayName, isTv = true))
+                },
+                onSeeAll = {
+                    WatchIntentLogger.get().log(
+                        WatchIntentLogger.IntentEventType.CARD_TAPPED,
+                        metadata = mapOf("section" to "leaving_soon_see_all"),
+                    )
+                    onSeeAllList(HomeListTarget(title = "Leaving Soon", tag = "LEAVING SOON", shows = onAir.filter { providerByTmdb[it.id] != null }, providerByTmdb = providerByTmdb))
                 },
             )
         }
@@ -416,8 +455,9 @@ fun HomeScreen(
         if (!homeReady) {
             ShimmerSection("Binge Worthy", Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
         } else if (bingeReady.isNotEmpty()) {
+            val bingeTitle = if (userStreams.isEmpty()) "Binge Worthy" else "Binge Ready 🎉"
             PosterSection(
-                title = if (userStreams.isEmpty()) "Binge Worthy" else "Binge Ready 🎉",
+                title = bingeTitle,
                 shows = bingeReady.filter { providerByTmdb[it.id] != null }.take(12),
                 providerByTmdb = providerByTmdb,
                 onOpen = { r ->
@@ -427,6 +467,13 @@ fun HomeScreen(
                         metadata = mapOf("section" to "binge_ready"),
                     )
                     onOpenTitle(PendingTitleRoute(titleId = r.id.toString(), titleName = r.displayName, isTv = r.isTV))
+                },
+                onSeeAll = {
+                    WatchIntentLogger.get().log(
+                        WatchIntentLogger.IntentEventType.CARD_TAPPED,
+                        metadata = mapOf("section" to "binge_ready_see_all"),
+                    )
+                    onSeeAllList(HomeListTarget(title = bingeTitle, tag = "BINGE", shows = bingeReady.filter { providerByTmdb[it.id] != null }, providerByTmdb = providerByTmdb))
                 },
             )
         }
@@ -442,6 +489,7 @@ fun HomeScreen(
         WidgetPromoBanner(
             onSetUp = {
                 WatchIntentLogger.get().log(WatchIntentLogger.IntentEventType.WIDGET_SETUP_TAPPED)
+                onOpenWidgetSetup()
             },
         )
 
@@ -725,21 +773,39 @@ private fun WatchListSection(
     streams: List<com.rork.guidestreamtvandroid.data.models.UserStream>,
     watchedIds: Set<String>,
     onOpen: (com.rork.guidestreamtvandroid.data.models.UserStream) -> Unit,
+    onSeeAll: (() -> Unit)? = null,
 ) {
     if (streams.isEmpty()) {
         EmptyStateRow(
             title = "My Watch List",
             message = "Tap the + on any show to add it here.",
+            onSeeAll = onSeeAll,
         )
         return
     }
     Column(Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
-        Text(
-            text = "My Watch List",
-            fontSize = 18.sp,
-            fontWeight = FontWeight.Bold,
-            color = TextPrimary,
-        )
+        Row(verticalAlignment = Alignment.Bottom) {
+            Text(
+                text = "My Watch List",
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold,
+                color = TextPrimary,
+            )
+            if (onSeeAll != null) {
+                Spacer(Modifier.weight(1f))
+                Text(
+                    text = "See all",
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = BrandOrange,
+                    modifier = Modifier
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                        ) { onSeeAll() },
+                )
+            }
+        }
         Spacer(Modifier.height(10.dp))
         LazyRow(
             horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -836,6 +902,7 @@ private fun PosterSection(
     onOpen: (TMDBResult) -> Unit,
     badgeText: ((TMDBResult) -> String?)? = null,
     accentColor: Color = BrandOrange,
+    onSeeAll: (() -> Unit)? = null,
 ) {
     if (shows.isEmpty()) return
     Column(Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
@@ -854,6 +921,20 @@ private fun PosterSection(
                     .background(accentColor)
                     .align(Alignment.Bottom),
             )
+            if (onSeeAll != null) {
+                Spacer(Modifier.weight(1f))
+                Text(
+                    text = "See all",
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = accentColor,
+                    modifier = Modifier
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                        ) { onSeeAll() },
+                )
+            }
         }
         Spacer(Modifier.height(10.dp))
         LazyRow(
@@ -944,15 +1025,32 @@ private fun TrendingRankedSection(
     shows: List<TMDBResult>,
     providerByTmdb: Map<Int, Platform>,
     onOpen: (TMDBResult) -> Unit,
+    onSeeAll: (() -> Unit)? = null,
 ) {
     if (shows.isEmpty()) return
     Column(Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
-        Text(
-            text = "Trending This Week",
-            fontSize = 18.sp,
-            fontWeight = FontWeight.Bold,
-            color = TextPrimary,
-        )
+        Row(verticalAlignment = Alignment.Bottom) {
+            Text(
+                text = "Trending This Week",
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold,
+                color = TextPrimary,
+            )
+            if (onSeeAll != null) {
+                Spacer(Modifier.weight(1f))
+                Text(
+                    text = "See all",
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = BrandOrange,
+                    modifier = Modifier
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                        ) { onSeeAll() },
+                )
+            }
+        }
         Spacer(Modifier.height(10.dp))
         LazyRow(
             horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -1028,14 +1126,30 @@ private fun PopularOnServiceSection(
 // ── Empty State ──────────────────────────────────────────────────────────────
 
 @Composable
-private fun EmptyStateRow(title: String, message: String) {
+private fun EmptyStateRow(title: String, message: String, onSeeAll: (() -> Unit)? = null) {
     Column(Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
-        Text(
-            text = title,
-            fontSize = 18.sp,
-            fontWeight = FontWeight.Bold,
-            color = TextPrimary,
-        )
+        Row(verticalAlignment = Alignment.Bottom) {
+            Text(
+                text = title,
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold,
+                color = TextPrimary,
+            )
+            if (onSeeAll != null) {
+                Spacer(Modifier.weight(1f))
+                Text(
+                    text = "See all",
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = BrandOrange,
+                    modifier = Modifier
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                        ) { onSeeAll() },
+                )
+            }
+        }
         Spacer(Modifier.height(10.dp))
         Box(
             modifier = Modifier
