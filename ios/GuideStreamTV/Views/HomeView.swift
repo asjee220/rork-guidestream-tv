@@ -177,6 +177,7 @@ struct HomeView: View {
     @State private var onAir: [TMDBResult] = []
     @State private var bingeFallback: [TMDBResult] = []
     @State private var newToday: [TMDBResult] = []
+    @State private var newReleases: [StreamingRelease] = []
     @State private var sportsGames: [SportsGame] = []
     @State private var newsStreams: [NewsStream] = []
     @State private var selectedGame: SportsGame?
@@ -498,7 +499,7 @@ struct HomeView: View {
                         }
 
                         if !homeContentReady {
-                            HomeShimmerSection(title: "What's New Today")
+                            HomeShimmerSection(title: "New This Week")
                                 .padding(.horizontal, 20)
                         } else if !whatsNewTodayShows.isEmpty {
                             WhatsNewTodaySection(
@@ -1404,11 +1405,13 @@ struct HomeView: View {
         async let newsCall = NewsService.shared.fetchTopNewsStreams(limit: 10)
         async let topRatedCall = try? TMDBService.shared.getTopRated()
         async let genreCall = try? TMDBService.shared.getDiscoverByGenre(selectedGenreId)
-        let (t, a, e, n, s, news, tr, genre) = await (trendingCall, onAirCall, endedCall, newTodayCall, sportsCall, newsCall, topRatedCall, genreCall)
+        async let newReleasesCall = StreamingReleasesService.shared.fetchReleases()
+        let (t, a, e, n, s, news, tr, genre, nr) = await (trendingCall, onAirCall, endedCall, newTodayCall, sportsCall, newsCall, topRatedCall, genreCall, newReleasesCall)
         if let t { trending = t }
         if let a { onAir = a }
         if let e { bingeFallback = e }
         if let n { newToday = n }
+        if let nr { newReleases = nr }
         if let tr { topRated = tr }
         if let genre { genreShows = genre }
         sportsGames = s
@@ -1832,17 +1835,17 @@ struct HomeView: View {
     }
 
     private var allWhatsNewTodayShows: [PosterShow] {
-        newToday
-            .filter { providerByTmdb[$0.id] != nil }
+        newReleases
             .map { r in
                 PosterShow(
-                    title: r.displayName,
-                    meta: r.year.map { "\($0)" } ?? (r.isTV ? "New series" : "New release"),
+                    title: r.title,
+                    meta: r.sourceName ?? "",
                     posterColors: HomeFallback.posterColors,
                     symbol: "flame.fill",
                     posterUrl: r.posterUrl,
-                    tmdbId: r.id,
-                    voteAverage: r.voteAverage
+                    tmdbId: r.tmdbId,
+                    voteAverage: r.voteAverage,
+                    isTV: r.tmdbType == "tv"
                 )
             }
     }
@@ -2900,11 +2903,11 @@ private struct WhatsNewTodaySection: View {
     let onOpen: (PosterShow) -> Void
 
     var body: some View {
-        SectionGlassCard(title: "What's New Today", highlighted: true, onSeeAll: onSeeAll) {
+        SectionGlassCard(title: "New This Week", highlighted: true, onSeeAll: onSeeAll) {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 10) {
                     ForEach(shows) { show in
-                        PosterCard(show: show, tag: "NEW TODAY", onTap: { onOpen(show) })
+                        PosterCard(show: show, tag: "NEW", posterWidth: 150, posterHeight: 225, onTap: { onOpen(show) })
                     }
                 }
                 .padding(.horizontal, 16)
@@ -3298,14 +3301,17 @@ private struct EpisodeThumbCard: View {
 private struct PosterCard: View {
     let show: PosterShow
     let tag: String
+    var posterWidth: CGFloat = 110
+    var posterHeight: CGFloat = 155
     let onTap: () -> Void
 
     var body: some View {
-        Button(action: onTap) {
+        let typeScale = posterWidth / 110
+        return Button(action: onTap) {
             VStack(alignment: .leading, spacing: 8) {
                 ZStack {
                     Color.black
-                        .frame(width: 110, height: 155)
+                        .frame(width: posterWidth, height: posterHeight)
                         .overlay {
                             LinearGradient(
                                 colors: show.posterColors,
@@ -3320,7 +3326,7 @@ private struct PosterCard: View {
                                 contentMode: .fill,
                                 fallbackColors: show.posterColors
                             )
-                            .frame(width: 110, height: 155)
+                            .frame(width: posterWidth, height: posterHeight)
                             .clipped()
                             .allowsHitTesting(false)
                         }
@@ -3329,10 +3335,10 @@ private struct PosterCard: View {
                     if let score = show.voteAverage, score > 0 {
                         HStack(spacing: 2) {
                             Image(systemName: "star.fill")
-                                .scaledFont(size: 7, weight: .bold)
+                                .scaledFont(size: 7 * typeScale, weight: .bold)
                                 .foregroundStyle(Color(red:1, green:0.77, blue:0.24))
                             Text(String(format: "%.1f", score))
-                                .scaledFont(size: 8, weight: .bold)
+                                .scaledFont(size: 8 * typeScale, weight: .bold)
                                 .foregroundStyle(.white)
                         }
                         .padding(.horizontal, 5)
@@ -3354,15 +3360,15 @@ private struct PosterCard: View {
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(show.title)
-                        .scaledFont(size: 12, weight: .semibold)
+                        .scaledFont(size: 12 * typeScale, weight: .semibold)
                         .foregroundStyle(Color.textPrimary)
                         .lineLimit(1)
                     Text(show.meta)
-                        .scaledFont(size: 10)
+                        .scaledFont(size: 10 * typeScale)
                         .foregroundStyle(Color.textTertiary)
                         .lineLimit(1)
                 }
-                .frame(width: 110, alignment: .leading)
+                .frame(width: posterWidth, alignment: .leading)
             }
         }
         .buttonStyle(.plain)

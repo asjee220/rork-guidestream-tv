@@ -112,7 +112,7 @@ fun HomeScreen(
     val trending by homeVm.trending.collectAsStateWithLifecycle()
     val onAir by homeVm.onAir.collectAsStateWithLifecycle()
     val topRated by homeVm.topRated.collectAsStateWithLifecycle()
-    val nowPlaying by homeVm.nowPlaying.collectAsStateWithLifecycle()
+    val newReleases by homeVm.newReleases.collectAsStateWithLifecycle()
     val upcoming by homeVm.upcoming.collectAsStateWithLifecycle()
     val bingeReady by homeVm.bingeReady.collectAsStateWithLifecycle()
     val genreShows by homeVm.genreShows.collectAsStateWithLifecycle()
@@ -213,21 +213,22 @@ fun HomeScreen(
             )
         }
 
-        // What's New Today (now playing movies)
+        // New This Week (streaming releases from the last 7 days)
         if (!homeReady) {
-            ShimmerSection("What's New Today", Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
-        } else if (nowPlaying.isNotEmpty()) {
+            ShimmerSection("New This Week", Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
+        } else if (newReleases.isNotEmpty()) {
             PosterSection(
-                title = "What's New Today",
-                shows = nowPlaying.take(12),
+                title = "New This Week",
+                shows = newReleases.take(12),
                 providerByTmdb = providerByTmdb,
+                badgeText = { "NEW" },
                 onOpen = { r ->
                     WatchIntentLogger.get().log(
                         WatchIntentLogger.IntentEventType.CARD_TAPPED,
                         titleId = r.id.toString(),
                         metadata = mapOf("section" to "whats_new_today"),
                     )
-                    onOpenTitle(PendingTitleRoute(titleId = r.id.toString(), titleName = r.displayName, isTv = false))
+                    onOpenTitle(PendingTitleRoute(titleId = r.id.toString(), titleName = r.displayName, isTv = r.isTV))
                 },
             )
         }
@@ -880,7 +881,7 @@ private fun PosterCardWithBadge(
 ) {
     Column(
         modifier = Modifier
-            .width(120.dp)
+            .width(150.dp)
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,

@@ -5,7 +5,9 @@ import androidx.lifecycle.viewModelScope
 import com.rork.guidestreamtvandroid.data.models.Platform
 import com.rork.guidestreamtvandroid.data.models.StreamingCatalog
 import com.rork.guidestreamtvandroid.data.models.TMDBResult
+import com.rork.guidestreamtvandroid.data.remote.StreamingReleasesService
 import com.rork.guidestreamtvandroid.data.remote.TMDBService
+import com.rork.guidestreamtvandroid.data.remote.toTMDBResult
 import com.rork.guidestreamtvandroid.data.repository.AuthViewModel
 import com.rork.guidestreamtvandroid.data.repository.StreamsViewModel
 import kotlinx.coroutines.Dispatchers
@@ -34,8 +36,8 @@ class HomeViewModel : ViewModel() {
     private val _topRated = MutableStateFlow<List<TMDBResult>>(emptyList())
     val topRated: StateFlow<List<TMDBResult>> = _topRated.asStateFlow()
 
-    private val _nowPlaying = MutableStateFlow<List<TMDBResult>>(emptyList())
-    val nowPlaying: StateFlow<List<TMDBResult>> = _nowPlaying.asStateFlow()
+    private val _newReleases = MutableStateFlow<List<TMDBResult>>(emptyList())
+    val newReleases: StateFlow<List<TMDBResult>> = _newReleases.asStateFlow()
 
     private val _upcoming = MutableStateFlow<List<TMDBResult>>(emptyList())
     val upcoming: StateFlow<List<TMDBResult>> = _upcoming.asStateFlow()
@@ -105,7 +107,12 @@ class HomeViewModel : ViewModel() {
                 launch { _trending.value = tmdb.getTrendingTV() },
                 launch { _onAir.value = tmdb.getOnTheAir() },
                 launch { _topRated.value = tmdb.getTopRated() },
-                launch { _nowPlaying.value = tmdb.getNowPlayingMovies() },
+                launch {
+                    val rows = StreamingReleasesService.get().fetchReleases()
+                    if (rows != null) {
+                        _newReleases.value = rows.map { it.toTMDBResult() }
+                    }
+                },
                 launch { _upcoming.value = tmdb.getUpcomingMovies() },
                 launch { _bingeReady.value = tmdb.getDiscoverEnded() },
                 launch { _genreShows.value = tmdb.getDiscoverByGenre(80) }, // Crime

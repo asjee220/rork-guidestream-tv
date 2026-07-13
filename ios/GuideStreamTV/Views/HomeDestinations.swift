@@ -1629,7 +1629,7 @@ struct WhatsNewTodayListView: View {
             .padding(.bottom, 120)
         }
         .background(BrandBackground())
-        .navigationTitle("What's New Today")
+        .navigationTitle("New This Week")
         .navigationBarTitleDisplayMode(.large)
         .toolbarBackground(Color.navy, for: .navigationBar)
         .toolbarColorScheme(.dark, for: .navigationBar)
