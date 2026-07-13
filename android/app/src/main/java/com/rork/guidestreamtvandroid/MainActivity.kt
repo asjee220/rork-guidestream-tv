@@ -1,36 +1,19 @@
 package com.rork.guidestreamtvandroid
 
-import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.selection.SelectionContainer
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.rork.guidestreamtvandroid.data.remote.SupabaseManager
 import com.rork.guidestreamtvandroid.data.repository.AuthViewModel
 import com.rork.guidestreamtvandroid.data.repository.StreamsViewModel
@@ -47,23 +30,6 @@ import com.rork.guidestreamtvandroid.ui.theme.WordmarkSize
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
-        // TEMP DIAGNOSTIC: if a crash was captured on the previous launch, show it
-        // full-screen instead of composing the normal app.
-        val prefs = getSharedPreferences("gs_prefs", Context.MODE_PRIVATE)
-        val savedCrash = prefs.getString("gs_last_crash", null)
-        if (!savedCrash.isNullOrEmpty()) {
-            setContent {
-                CrashLogScreen(
-                    crash = savedCrash,
-                    onClear = {
-                        prefs.edit().remove("gs_last_crash").commit()
-                        recreate()
-                    },
-                )
-            }
-            return
-        }
 
         // Import any Supabase OAuth session returned via the guidestream:// redirect.
         SupabaseManager.client.handleDeeplinks(intent) {
@@ -157,38 +123,6 @@ private fun RootContent(
             // Still restoring session — show splash
             else -> {
                 SplashScreen()
-            }
-        }
-    }
-}
-
-@Composable
-private fun CrashLogScreen(
-    crash: String,
-    onClear: () -> Unit,
-) {
-    Surface(
-        modifier = Modifier.fillMaxSize(),
-        color = Color(0xFF04090F),
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Button(onClick = onClear) {
-                Text("Clear Crash Log")
-            }
-            SelectionContainer(
-                modifier = Modifier.verticalScroll(rememberScrollState()),
-            ) {
-                Text(
-                    text = crash,
-                    color = Color.White,
-                    fontFamily = FontFamily.Monospace,
-                    fontSize = 10.sp,
-                )
             }
         }
     }

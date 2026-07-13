@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import java.util.TimeZone
@@ -352,21 +353,43 @@ class AuthViewModel private constructor(private val context: Context) : ViewMode
 
     // ── Google Sign-In (OAuth via Supabase) ──────────────────────────
 
-    fun signInWithGoogle(onComplete: (Boolean) -> Unit = {}) {
+    fun signInWithGoogle() {
         _isAuthenticating.value = true
         _lastError.value = null
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 SupabaseManager.client.auth.signInWith(Google)
-                // On Android, OAuth opens a browser; session is imported on return.
+                // On Android, OAuth opens a browser and this call returns
+                // immediately; the session is imported when the
+                // guidestream://auth-callback deep link returns and
+                // handleOAuthCallback runs. Do not signal completion here.
                 _isAuthenticating.value = false
-                onComplete(false)
             } catch (e: Exception) {
                 _lastError.value = e.message
                 _isAuthenticating.value = false
-                onComplete(false)
             }
         }
+    }
+
+    /**
+     * Best-effort extraction of given/family/full names from Supabase's
+     * `UserInfo.userMetadata`. Google's OIDC payload typically contains
+     * `given_name`, `family_name`, and `name`. Mirrors iOS `extractGoogleName`.
+     * Returns nulls for any field that isn't present.
+     */
+    private fun extractGoogleName(user: UserInfo): Triple<String?, String?, String?> {
+        val meta = user.userMetadata
+        fun lookup(key: String): String? {
+            val value = meta?.get(key) as? JsonPrimitive ?: return null
+            if (!value.isString) return null
+            val trimmed = value.content.trim()
+            return trimmed.ifEmpty { null }
+        }
+        val first = lookup("given_name") ?: lookup("first_name")
+        val last = lookup("family_name") ?: lookup("last_name")
+        val full = lookup("name") ?: lookup("full_name")
+            ?: listOfNotNull(first, last).joinToString(" ").ifEmpty { null }
+        return Triple(first, last, full)
     }
 
     /** Called after OAuth redirect returns with a session. */
@@ -381,11 +404,26 @@ class AuthViewModel private constructor(private val context: Context) : ViewMode
                     prefs.edit().putBoolean("gs.isGuest", false).apply()
                     updateSignedInState()
                     if (user != null) {
+                        // Pull first/last name out of Google's user_metadata
+                        // (Supabase forwards the OAuth profile fields), matching iOS.
+                        val (googleFirst, googleLast, googleFull) = extractGoogleName(user)
+                        if (!googleFirst.isNullOrEmpty()) {
+                            _firstName.value = googleFirst
+                            prefs.edit().putString("gs.firstName", googleFirst).apply()
+                        }
+                        if (!googleLast.isNullOrEmpty()) {
+                            _lastName.value = googleLast
+                            prefs.edit().putString("gs.lastName", googleLast).apply()
+                        }
+                        if (!googleFull.isNullOrEmpty()) {
+                            _displayName.value = googleFull
+                            prefs.edit().putString("gs.displayName", googleFull).apply()
+                        }
                         upsertProfile(
                             userId = user.id,
-                            displayName = null,
-                            firstName = null,
-                            lastName = null,
+                            displayName = googleFull,
+                            firstName = googleFirst,
+                            lastName = googleLast,
                             email = user.email,
                         )
                         WatchIntentLogger.get().log(

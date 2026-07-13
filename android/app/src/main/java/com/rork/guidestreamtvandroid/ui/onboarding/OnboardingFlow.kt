@@ -47,6 +47,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -93,7 +94,16 @@ fun OnboardingFlow(
     var step by remember { mutableStateOf(startStep) }
     var showEmailAuth by remember { mutableStateOf(false) }
     val auth = AuthViewModel.get()
+    val isAuthenticated by auth.isAuthenticated.collectAsState()
     val streams = StreamsViewModel.get()
+
+    // When the Google OAuth deep link returns and flips authentication on,
+    // advance off the Welcome screen (which otherwise looks like the splash).
+    // Guarded on step 0 so it's idempotent and never pulls a user who has
+    // already progressed backwards or forwards.
+    LaunchedEffect(isAuthenticated) {
+        if (isAuthenticated && step == 0) step = 1
+    }
     val selectedServices = remember { mutableStateOf(auth.selectedServices.value) }
     var pushOn by remember { mutableStateOf(auth.notifyPushEnabled.value) }
     val scope = rememberCoroutineScope()
@@ -271,7 +281,7 @@ private fun WelcomeScreen(
                 background = Color.White,
                 textColor = Color(red = 0.24f, green = 0.25f, blue = 0.26f),
                 isLoading = isAuthenticating,
-                onClick = { auth.signInWithGoogle { success -> if (success) onContinue() } },
+                onClick = { auth.signInWithGoogle() },
             )
             Spacer(Modifier.height(12.dp))
 
