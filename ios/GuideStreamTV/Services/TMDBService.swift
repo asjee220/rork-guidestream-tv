@@ -542,10 +542,13 @@ nonisolated struct TMDBService {
         return pool.min(by: { ($0.displayPriority ?? 999) < ($1.displayPriority ?? 999) })
     }
 
-    /// Trailers / teasers attached to a TV show. Returns a YouTube key for the best match, or nil.
-    /// For ongoing shows, also checks season-specific video endpoints (latest 3 seasons)
-    /// because TMDB's main `/tv/{id}/videos` often only carries the original pilot trailer.
-    func getTrailerKey(tmdbId: Int) async throws -> String? {
+    /// Ordered list of YouTube trailer/teaser candidate keys for a TV show,
+    /// best match first, capped at four entries. On embed failure the Reels
+    /// player advances through this list before collapsing to the backdrop.
+    /// For ongoing shows, also checks season-specific video endpoints (latest 3
+    /// seasons) because TMDB's main `/tv/{id}/videos` often only carries the
+    /// original pilot trailer.
+    func getTrailerCandidates(tmdbId: Int) async throws -> [String] {
         // 1. Grab the main video list.
         let mainUrl = "\(base)/tv/\(tmdbId)/videos?api_key=\(apiKey)&language=en-US"
         let mainData = try await get(mainUrl)
@@ -571,7 +574,12 @@ nonisolated struct TMDBService {
 
         // 4. Filter to YouTube Trailers/Teasers and sort: official → newest → Trailer over Teaser.
         let yt = unique.filter { $0.site == "YouTube" && ($0.type == "Trailer" || $0.type == "Teaser") }
-        if yt.isEmpty { return unique.first?.key }
+        if yt.isEmpty {
+            // No YouTube trailer/teaser — fall back to any YouTube video (never a
+            // Vimeo key, which would be a guaranteed YouTube-embed failure).
+            // If no YouTube video exists at all, hand back an empty list.
+            return Array(unique.filter { $0.site == "YouTube" }.map { $0.key }.prefix(4))
+        }
         let sorted = yt.sorted { a, b in
             let aOfficial = a.official == true ? 1 : 0
             let bOfficial = b.official == true ? 1 : 0
@@ -583,15 +591,19 @@ nonisolated struct TMDBService {
             let bIsTrailer = b.type == "Trailer" ? 1 : 0
             return aIsTrailer > bIsTrailer
         }
-        return sorted.first?.key
+        return Array(sorted.map { $0.key }.prefix(4))
     }
 
-    func getMovieTrailerKey(tmdbId: Int) async throws -> String? {
+    /// Ordered list of YouTube trailer/teaser candidate keys for a movie,
+    /// mirroring `getTrailerCandidates` — capped at four, YouTube-only.
+    func getMovieTrailerCandidates(tmdbId: Int) async throws -> [String] {
         let urlString = "\(base)/movie/\(tmdbId)/videos?api_key=\(apiKey)&language=en-US"
         let data = try await get(urlString)
         let env = try JSONDecoder().decode(TMDBVideosEnvelope.self, from: data)
         let yt = env.results.filter { $0.site == "YouTube" && ($0.type == "Trailer" || $0.type == "Teaser") }
-        if yt.isEmpty { return env.results.first?.key }
+        if yt.isEmpty {
+            return Array(env.results.filter { $0.site == "YouTube" }.map { $0.key }.prefix(4))
+        }
         let sorted = yt.sorted { a, b in
             let aOfficial = a.official == true ? 1 : 0
             let bOfficial = b.official == true ? 1 : 0
@@ -603,7 +615,17 @@ nonisolated struct TMDBService {
             let bIsTrailer = b.type == "Trailer" ? 1 : 0
             return aIsTrailer > bIsTrailer
         }
-        return sorted.first?.key
+        return Array(sorted.map { $0.key }.prefix(4))
+    }
+
+    /// Trailers / teasers attached to a TV show. Returns a YouTube key for the
+    /// best match, or nil. Thin wrapper over `getTrailerCandidates`.
+    func getTrailerKey(tmdbId: Int) async throws -> String? {
+        try await getTrailerCandidates(tmdbId: tmdbId).first
+    }
+
+    func getMovieTrailerKey(tmdbId: Int) async throws -> String? {
+        try await getMovieTrailerCandidates(tmdbId: tmdbId).first
     }
 
     /// Trailers & clips attached to a title, for the detail-screen

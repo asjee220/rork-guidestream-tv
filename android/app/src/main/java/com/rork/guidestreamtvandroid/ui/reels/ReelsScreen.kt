@@ -319,10 +319,15 @@ private fun ReelView(
     sources: List<WatchmodeSrc>? = null,
     onOpenSource: (WatchmodeSrc) -> Unit = {},
 ) {
-    // Per-reel last player error code (null = none yet). Only genuinely fatal
-    // owner-disabled-embed codes (101/150) collapse the reel to its poster; all
-    // other codes keep the WebView mounted so we can keep diagnosing.
-    var playerErrorCode by remember(reel.id) { mutableStateOf<Int?>(null) }
+    // Ordered candidate playback: index 0 is reel.trailerKey, index N is
+    // reel.fallbackKeys[N-1]. Only genuinely fatal owner-disabled-embed codes
+    // (101/150) advance to the next candidate; once every candidate has failed
+    // the reel collapses to its poster. Other error codes keep the WebView
+    // mounted exactly as before.
+    var candidateIndex by remember(reel.id) { mutableStateOf(0) }
+    var allCandidatesFailed by remember(reel.id) { mutableStateOf(false) }
+    val activeKey = if (candidateIndex == 0) reel.trailerKey
+        else reel.fallbackKeys.getOrNull(candidateIndex - 1) ?: reel.trailerKey
 
     Box(modifier = Modifier.fillMaxSize()) {
         // Backdrop image — stays underneath the player so the reel is never blank
@@ -339,8 +344,7 @@ private fun ReelView(
         // Inline YouTube player — only for the current page with a valid embed.
         // Non-current pages never instantiate a WebView, so swiping never leaves
         // two players (or two audio streams) alive at once.
-        val fatalEmbedError = playerErrorCode == 101 || playerErrorCode == 150
-        if (isCurrent && reel.trailerKey.isNotBlank() && !fatalEmbedError) {
+        if (isCurrent && reel.trailerKey.isNotBlank() && !allCandidatesFailed) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -348,11 +352,21 @@ private fun ReelView(
                 contentAlignment = Alignment.Center,
             ) {
                 YouTubeReelPlayer(
-                    videoId = reel.trailerKey,
+                    videoId = activeKey,
                     isMuted = isMuted,
                     isPlaying = isPlaying,
-                    onPlayerError = { code -> playerErrorCode = code },
-                    onPlayerReady = { playerErrorCode = null },
+                    onPlayerError = { code ->
+                        // Only owner-disabled-embed codes advance/collapse; any
+                        // other code leaves the WebView mounted as before.
+                        if (code == 101 || code == 150) {
+                            if (candidateIndex < reel.fallbackKeys.size) {
+                                candidateIndex += 1
+                            } else {
+                                allCandidatesFailed = true
+                            }
+                        }
+                    },
+                    onPlayerReady = { allCandidatesFailed = false },
                     onEnded = { /* loop=1 playlist restarts automatically */ },
                     modifier = Modifier
                         .fillMaxHeight()
@@ -376,26 +390,6 @@ private fun ReelView(
                     ),
                 ),
         )
-
-        // Temporary diagnostic badge: shows the raw YouTube player error code on
-        // device so failures are readable without adb.
-        playerErrorCode?.let { code ->
-            Box(
-                modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .padding(12.dp)
-                    .clip(RoundedCornerShape(6.dp))
-                    .background(Color.Black.copy(alpha = 0.6f))
-                    .padding(horizontal = 8.dp, vertical = 4.dp),
-            ) {
-                Text(
-                    text = "YT err $code",
-                    color = Color.White,
-                    fontSize = 11.sp,
-                    fontFamily = FontFamily.Monospace,
-                )
-            }
-        }
 
         // Center play/pause button (only when current and paused or controls shown)
         if (isCurrent && !isPlaying) {

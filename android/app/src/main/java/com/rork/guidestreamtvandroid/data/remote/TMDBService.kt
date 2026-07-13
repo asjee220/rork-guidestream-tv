@@ -214,6 +214,8 @@ class TMDBService {
         val name: String? = null,
         val site: String? = null,
         val type: String? = null,
+        @SerialName("published_at") val publishedAt: String? = null,
+        val official: Boolean? = null,
     )
 
     @Serializable
@@ -268,15 +270,61 @@ class TMDBService {
         } catch (_: Exception) { null }
     }
 
-    /** Get YouTube trailer key for a title (TV by default, movie when isTV is false). */
-    suspend fun getTrailerKey(tmdbId: Int, isTV: Boolean = true): String? {
+    /**
+     * Ordered list of YouTube trailer/teaser candidate keys for a title,
+     * best match first, capped at four. The Reels player advances through
+     * this list on embed error before collapsing to the backdrop. For TV
+     * shows with more than one season, also scans the latest three seasons'
+     * video endpoints (TMDB's main `/tv/{id}/videos` often only carries the
+     * original pilot trailer). Sort order matches iOS exactly: official desc,
+     * publishedAt desc, then Trailer before Teaser. Returns an empty list on
+     * any exception.
+     */
+    suspend fun getTrailerCandidates(tmdbId: Int, isTV: Boolean = true): List<String> {
         val kind = if (isTV) "tv" else "movie"
         return try {
-            val response: TMDBVideosEnvelope = client.get("$base/$kind/$tmdbId/videos?api_key=$apiKey&language=en-US").body()
-            response.results
-                .filter { it.site == "YouTube" && it.type == "Trailer" }
-                .firstOrNull()?.key
-        } catch (_: Exception) { null }
+            val main: TMDBVideosEnvelope = client.get("$base/$kind/$tmdbId/videos?api_key=$apiKey&language=en-US").body()
+            val allVideos = main.results.toMutableList()
+
+            // For multi-season TV shows, pull season-specific videos too.
+            if (isTV) {
+                val detail = getTVDetail(tmdbId)
+                val seasons = detail?.numberOfSeasons ?: 0
+                if (seasons > 1) {
+                    val startSeason = seasons
+                    val endSeason = maxOf(1, seasons - 2)
+                    for (season in startSeason downTo endSeason) {
+                        try {
+                            val seasonEnv: TMDBVideosEnvelope =
+                                client.get("$base/tv/$tmdbId/season/$season/videos?api_key=$apiKey&language=en-US").body()
+                            allVideos.addAll(seasonEnv.results)
+                        } catch (_: Exception) { /* skip this season */ }
+                    }
+                }
+            }
+
+            // Dedupe by key.
+            val seen = mutableSetOf<String>()
+            val unique = allVideos.filter { seen.add(it.key) }
+
+            val yt = unique.filter {
+                it.site == "YouTube" && (it.type == "Trailer" || it.type == "Teaser")
+            }
+            if (yt.isEmpty()) {
+                return unique.filter { it.site == "YouTube" }.map { it.key }.take(4)
+            }
+            val sorted = yt.sortedWith(
+                compareByDescending<TMDBVideo> { if (it.official == true) 1 else 0 }
+                    .thenByDescending { it.publishedAt ?: "" }
+                    .thenByDescending { if (it.type == "Trailer") 1 else 0 },
+            )
+            sorted.map { it.key }.take(4)
+        } catch (_: Exception) { emptyList() }
+    }
+
+    /** Get YouTube trailer key for a title (TV by default, movie when isTV is false). */
+    suspend fun getTrailerKey(tmdbId: Int, isTV: Boolean = true): String? {
+        return getTrailerCandidates(tmdbId, isTV).firstOrNull()
     }
 
     /**

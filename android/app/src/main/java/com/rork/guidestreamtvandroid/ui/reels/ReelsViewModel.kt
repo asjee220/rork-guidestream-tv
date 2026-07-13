@@ -37,6 +37,13 @@ data class TrailerItem(
     val backdropUrl: String?,
     val posterUrl: String?,
     val trailerKey: String,
+    /**
+     * Ordered fallback YouTube video ids to try (in priority order) after the
+     * first candidate raises a fatal embed error. Empty for single-candidate
+     * reels, preserving the collapse-to-poster behavior for those. Excluded
+     * from identity/dedupe (keyed off [trailerKey]).
+     */
+    val fallbackKeys: List<String> = emptyList(),
     val thumbnailUrl: String?,
     val voteAverage: Double,
     val tab: ReelTab,
@@ -117,7 +124,8 @@ class ReelsViewModel : ViewModel() {
     ): List<TrailerItem> {
         val items = mutableListOf<TrailerItem>()
         for (r in results.take(20)) {
-            val key = tmdb.getTrailerKey(r.id, r.isTV) ?: continue
+            val candidates = tmdb.getTrailerCandidates(r.id, r.isTV)
+            val key = candidates.firstOrNull() ?: continue
             val provider = tmdb.getTopWatchProvider(r.id, r.isTV)
             val platform = Platform.from(provider?.providerName)
             if (platform == null && tab != ReelTab.COMING_SOON) continue
@@ -135,6 +143,7 @@ class ReelsViewModel : ViewModel() {
                     backdropUrl = r.backdropUrl,
                     posterUrl = r.posterUrl,
                     trailerKey = key,
+                    fallbackKeys = candidates.drop(1),
                     thumbnailUrl = "https://img.youtube.com/vi/$key/hqdefault.jpg",
                     voteAverage = r.voteAverage ?: 7.0,
                     tab = tab,

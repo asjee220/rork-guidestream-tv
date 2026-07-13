@@ -51,6 +51,11 @@ struct TrailerItem: Identifiable, Hashable {
     let backdropURL: URL?
     let posterURL: URL?
     let trailerKey: String
+    /// Ordered fallback YouTube video ids to try (in priority order) after the
+    /// first candidate raises an embed error. Empty for single-candidate reels
+    /// (injected title-scoped reels and sponsored reels), preserving today's
+    /// collapse-to-poster behavior for those. Excluded from identity/dedupe.
+    var fallbackKeys: [String] = []
     let thumbnailURL: URL?
     let youtubeURL: URL?
     let deepLinkURL: String?
@@ -519,11 +524,13 @@ final class ReelsViewModel {
                     // /tv/{movieId} for movies returns a slow 404 and blocks the
                     // task group for up to 12 seconds per movie result.
                     let detail: TMDBTVDetail? = r.isTV ? (try? await tmdb.getTVDetail(tmdbId: r.id)) : nil
-                    async let keyTask: String? = try? (r.isTV ? tmdb.getTrailerKey(tmdbId: r.id) : tmdb.getMovieTrailerKey(tmdbId: r.id))
+                    async let candidatesTask: [String]? = try? (r.isTV ? tmdb.getTrailerCandidates(tmdbId: r.id) : tmdb.getMovieTrailerCandidates(tmdbId: r.id))
                     async let providerTask: [TMDBWatchProvider]? = try? tmdb.getWatchProviders(tmdbId: r.id, isTV: r.isTV)
-                    let (key, poolOptional) = await (keyTask, providerTask)
+                    let (candidatesOptional, poolOptional) = await (candidatesTask, providerTask)
+                    let candidates = candidatesOptional ?? []
                     let pool = poolOptional ?? []
-                    guard let key, !key.isEmpty, !pool.isEmpty else { return nil }
+                    guard let key = candidates.first, !key.isEmpty, !pool.isEmpty else { return nil }
+                    let fallbackKeys = Array(candidates.dropFirst())
 
                     // topProvider reproduces current behavior: the pool element
                     // with the lowest displayPriority (nil treated as large).
@@ -596,6 +603,7 @@ final class ReelsViewModel {
                         backdropURL: backdrop,
                         posterURL: poster,
                         trailerKey: key,
+                        fallbackKeys: fallbackKeys,
                         thumbnailURL: thumb,
                         youtubeURL: embed,
                         deepLinkURL: nil,
@@ -662,9 +670,9 @@ final class ReelsViewModel {
                 let releaseDate = entry.date
                 let tmdbId = release.tmdbId!
                 group.addTask { [tmdb] in
-                    guard let key = try? await tmdb.getMovieTrailerKey(tmdbId: tmdbId),
-                          !key.isEmpty
-                    else { return nil }
+                    let candidates = (try? await tmdb.getMovieTrailerCandidates(tmdbId: tmdbId)) ?? []
+                    guard let key = candidates.first, !key.isEmpty else { return nil }
+                    let fallbackKeys = Array(candidates.dropFirst())
 
                     let name = release.title ?? ""
                     let badgeText = "STREAMING \(outDF.string(from: releaseDate).uppercased())"
@@ -686,6 +694,7 @@ final class ReelsViewModel {
                         backdropURL: thumb,
                         posterURL: thumb,
                         trailerKey: key,
+                        fallbackKeys: fallbackKeys,
                         thumbnailURL: thumb,
                         youtubeURL: embed,
                         deepLinkURL: nil,
@@ -1498,7 +1507,11 @@ private struct ReelView: View {
 
     @State private var contentOpacity: Double = 0.4
     @State private var likeBounce: CGFloat = 1.0
-    @State private var embedFailed: Bool = false
+    /// Index into the candidate list: 0 = `trailer.trailerKey`, N = `fallbackKeys[N-1]`.
+    @State private var candidateIndex: Int = 0
+    /// Terminal state once every candidate has raised an embed error — the reel
+    /// then collapses to its backdrop, exactly like the old single-key path.
+    @State private var allCandidatesFailed: Bool = false
     @State private var playbackProgress: Double = 0
     @State private var showControls: Bool = false
     @State private var controlsFadeTask: Task<Void, Never>?
@@ -1509,6 +1522,12 @@ private struct ReelView: View {
     @State private var glassAdVisible: Bool = false
     @State private var glassAdFadeTask: Task<Void, Never>? = nil
     @State private var adAdvanceTask: Task<Void, Never>? = nil
+
+    /// The YouTube video id currently loading: the primary key at index 0, or
+    /// the corresponding fallback key thereafter.
+    private var activeKey: String {
+        candidateIndex == 0 ? trailer.trailerKey : (trailer.fallbackKeys[safe: candidateIndex - 1] ?? trailer.trailerKey)
+    }
 
     private func resolveGlassAds(count: Int) -> [(serviceId: String, name: String, color: Color, tagline: String)] {
         let current = trailer.platformId.lowercased()
@@ -1596,9 +1615,9 @@ private struct ReelView: View {
             // On real devices we render via inline HTML with baseURL = youtube.com
             // so the IFrame Player API treats it as same-origin and doesn't throw
             // error 150/153 for videos with embed restrictions.
-            if !trailer.trailerKey.isEmpty, !embedFailed {
+            if !trailer.trailerKey.isEmpty, !allCandidatesFailed {
                 #if targetEnvironment(simulator)
-                SimulatorTrailerPoster(trailer: trailer)
+                SimulatorTrailerPoster(trailer: trailer, videoKey: activeKey)
                     .frame(width: size.height * 16 / 9, height: size.height)
                     .position(x: size.width / 2, y: size.height / 2)
                 #else
@@ -1606,14 +1625,23 @@ private struct ReelView: View {
                     ZStack {
                         // Poster sits underneath so the reel is never blank
                         // while the IFrame embed loads.
-                        SimulatorTrailerPoster(trailer: trailer)
+                        SimulatorTrailerPoster(trailer: trailer, videoKey: activeKey)
                         YouTubePlayerView(
-                            videoId: trailer.trailerKey,
+                            videoId: activeKey,
                             isMuted: isMuted,
                             isPlaying: isPlaying,
                             progress: $playbackProgress,
                             seekToFraction: $seekToFraction,
-                            onEmbedError: { embedFailed = true },
+                            onEmbedError: {
+                                // Advance to the next candidate; only collapse to
+                                // the backdrop once every candidate has failed.
+                                if candidateIndex < trailer.fallbackKeys.count {
+                                    candidateIndex += 1
+                                    playbackProgress = 0
+                                } else {
+                                    allCandidatesFailed = true
+                                }
+                            },
                             onEnded: onEnded
                         )
                         .allowsHitTesting(false)
@@ -1623,7 +1651,7 @@ private struct ReelView: View {
                     .position(x: size.width / 2, y: size.height / 2)
                 } else {
                     // Neighbors show poster only — avoids spinning up multiple players simultaneously.
-                    SimulatorTrailerPoster(trailer: trailer)
+                    SimulatorTrailerPoster(trailer: trailer, videoKey: activeKey)
                         .frame(width: size.height * 16 / 9, height: size.height)
                         .position(x: size.width / 2, y: size.height / 2)
                         .allowsHitTesting(false)
@@ -2444,9 +2472,14 @@ private struct EmptyReelsState: View {
 /// real `YouTubePlayerView` is rendered instead.
 private struct SimulatorTrailerPoster: View {
     let trailer: TrailerItem
+    /// Which candidate's thumbnail to show — defaults to the reel's own primary
+    /// key, but the Reels feed passes the currently-loading candidate so the
+    /// poster underlay matches the video being attempted.
+    var videoKey: String = ""
 
     var body: some View {
-        let thumb = URL(string: "https://img.youtube.com/vi/\(trailer.trailerKey)/maxresdefault.jpg")
+        let key = videoKey.isEmpty ? trailer.trailerKey : videoKey
+        let thumb = URL(string: "https://img.youtube.com/vi/\(key)/maxresdefault.jpg")
         ZStack {
             RemoteImage(url: thumb,
                         contentMode: .fill,
