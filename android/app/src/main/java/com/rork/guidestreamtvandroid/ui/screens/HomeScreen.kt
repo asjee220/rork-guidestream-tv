@@ -61,8 +61,10 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.rork.guidestreamtvandroid.data.models.Platform
+import com.rork.guidestreamtvandroid.data.models.SourceKind
 import com.rork.guidestreamtvandroid.data.models.StreamingCatalog
 import com.rork.guidestreamtvandroid.data.models.TMDBResult
+import com.rork.guidestreamtvandroid.data.remote.RecommendedCreator
 import com.rork.guidestreamtvandroid.data.repository.AuthViewModel
 import com.rork.guidestreamtvandroid.data.repository.StreamsViewModel
 import com.rork.guidestreamtvandroid.data.repository.WatchIntentLogger
@@ -120,6 +122,8 @@ fun HomeScreen(
     val upcoming by homeVm.upcoming.collectAsStateWithLifecycle()
     val bingeReady by homeVm.bingeReady.collectAsStateWithLifecycle()
     val genreShows by homeVm.genreShows.collectAsStateWithLifecycle()
+    val selectedGenreName by homeVm.selectedGenreName.collectAsStateWithLifecycle()
+    val recommendedCreators by homeVm.recommendedCreators.collectAsStateWithLifecycle()
     val popularByService by homeVm.popularByService.collectAsStateWithLifecycle()
     val providerByTmdb by homeVm.providerByTmdb.collectAsStateWithLifecycle()
     val preferredGenres by homeVm.preferredGenres.collectAsStateWithLifecycle()
@@ -310,6 +314,43 @@ fun HomeScreen(
             )
         }
 
+        // Creators/Podcasts for You
+        if (!homeReady) {
+            ShimmerSection("Creators/Podcasts for You", Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
+        } else {
+            val hasFollowedCreators = userStreams.any { SourceKind.from(it.titleId).isNonTMDB }
+            if (hasFollowedCreators) {
+                val followedCreatorIds = userStreams
+                    .map { it.titleId }
+                    .filter { SourceKind.from(it).isNonTMDB }
+                    .toSet()
+                val creators = recommendedCreators.filter { it.titleId !in followedCreatorIds }
+                if (creators.isEmpty()) {
+                    EmptyStateRow(
+                        title = "Creators/Podcasts for You",
+                        message = "Follow more creators to get fresh recommendations.",
+                    )
+                } else {
+                    CreatorsForYouSection(
+                        creators = creators,
+                        onOpen = { creator ->
+                            WatchIntentLogger.get().log(
+                                WatchIntentLogger.IntentEventType.CARD_TAPPED,
+                                titleId = creator.titleId,
+                                platformId = creator.sourceType,
+                                metadata = mapOf("section" to "creators_for_you"),
+                            )
+                            onOpenTitle(PendingTitleRoute(
+                                titleId = creator.titleId,
+                                titleName = creator.displayName,
+                                posterUrl = creator.imageUrl,
+                            ))
+                        },
+                    )
+                }
+            }
+        }
+
         // Trending This Week (ranked)
         if (!homeReady) {
             ShimmerSection("Trending This Week", Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
@@ -406,19 +447,24 @@ fun HomeScreen(
             }
         }
 
+        // Browse by genre (pill grid) — drives the Because you watch rail below.
+        GenrePillGrid(
+            onSelect = { pill -> HomeViewModel.get().loadGenre(pill.id, pill.label, pill.mediaType) },
+        )
+
         // Because You Watch (genre discovery)
         if (!homeReady) {
-            ShimmerSection("Because you watch Crime", Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
+            ShimmerSection("Because you watch $selectedGenreName", Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
         } else if (genreShows.isNotEmpty()) {
             PosterSection(
-                title = "Because you watch Crime",
+                title = "Because you watch $selectedGenreName",
                 shows = genreShows.filter { providerByTmdb[it.id] != null }.take(12),
                 providerByTmdb = providerByTmdb,
                 onOpen = { r ->
                     WatchIntentLogger.get().log(
                         WatchIntentLogger.IntentEventType.CARD_TAPPED,
                         titleId = r.id.toString(),
-                        metadata = mapOf("section" to "because_you_watch", "genre" to "Crime"),
+                        metadata = mapOf("section" to "because_you_watch", "genre" to selectedGenreName),
                     )
                     onOpenTitle(PendingTitleRoute(titleId = r.id.toString(), titleName = r.displayName, isTv = r.isTV))
                 },
@@ -449,6 +495,29 @@ fun HomeScreen(
                     onOpenTitle(PendingTitleRoute(titleId = r.id.toString(), titleName = r.displayName, isTv = r.isTV))
                 },
             )
+        }
+
+        // New seasons — shows you follow (on-air titles from the user's watch list)
+        if (!homeReady) {
+            ShimmerSection("New seasons — shows you follow", Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
+        } else {
+            val savedIds = userStreams.mapNotNull { it.titleId.toIntOrNull() }.toSet()
+            val newSeasons = onAir.filter { it.id in savedIds }.take(8)
+            if (newSeasons.isNotEmpty()) {
+                PosterSection(
+                    title = "New seasons — shows you follow",
+                    shows = newSeasons,
+                    providerByTmdb = providerByTmdb,
+                    onOpen = { r ->
+                        WatchIntentLogger.get().log(
+                            WatchIntentLogger.IntentEventType.CARD_TAPPED,
+                            titleId = r.id.toString(),
+                            metadata = mapOf("section" to "new_seasons"),
+                        )
+                        onOpenTitle(PendingTitleRoute(titleId = r.id.toString(), titleName = r.displayName, isTv = true))
+                    },
+                )
+            }
         }
 
         // Binge Worthy (ended shows)
@@ -1164,6 +1233,160 @@ private fun EmptyStateRow(title: String, message: String, onSeeAll: (() -> Unit)
                 color = TextTertiary,
             )
         }
+    }
+}
+
+// ── Creators/Podcasts for You ────────────────────────────────────────────────
+
+@Composable
+private fun CreatorsForYouSection(
+    creators: List<RecommendedCreator>,
+    onOpen: (RecommendedCreator) -> Unit,
+) {
+    if (creators.isEmpty()) return
+    Column(Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
+        Text(
+            text = "Creators/Podcasts for You",
+            fontSize = 18.sp,
+            fontWeight = FontWeight.Bold,
+            color = TextPrimary,
+        )
+        Spacer(Modifier.height(10.dp))
+        LazyRow(
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            items(creators, key = { it.titleId }) { creator ->
+                CreatorAvatarCard(creator = creator, onClick = { onOpen(creator) })
+            }
+        }
+    }
+}
+
+@Composable
+private fun CreatorAvatarCard(
+    creator: RecommendedCreator,
+    onClick: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .width(110.dp)
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+            ) { onClick() },
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(96.dp)
+                .clip(CircleShape),
+        ) {
+            RemoteImage(
+                url = creator.imageUrl,
+                contentDescription = creator.displayName,
+                modifier = Modifier.fillMaxSize(),
+                cornerRadius = 48,
+                placeholderText = creator.displayName.take(2).uppercase(),
+                placeholderFontSize = 24.sp,
+            )
+        }
+        Spacer(Modifier.height(6.dp))
+        Text(
+            text = creator.displayName,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = TextPrimary,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            textAlign = TextAlign.Center,
+        )
+        Text(
+            text = creator.category,
+            fontSize = 10.sp,
+            color = TextSecondary,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            textAlign = TextAlign.Center,
+        )
+        Text(
+            text = "${creator.matchPercentage}% Match",
+            fontSize = 10.sp,
+            color = TextSecondary,
+            fontWeight = FontWeight.Medium,
+        )
+    }
+}
+
+// ── Browse by Genre (pill grid) ──────────────────────────────────────────────
+
+private data class GenrePill(val id: Int, val label: String, val mediaType: String)
+
+private val browseGenres: List<GenrePill> = listOf(
+    GenrePill(80, "Crime & Thriller", "tv"),
+    GenrePill(10765, "Sci-Fi", "tv"),
+    GenrePill(35, "Comedy", "tv"),
+    GenrePill(18, "Drama", "tv"),
+    GenrePill(10759, "Action", "tv"),
+    GenrePill(99, "Documentary", "tv"),
+    GenrePill(10749, "Romance", "movie"),
+    GenrePill(10769, "International", "international"),
+)
+
+@Composable
+private fun GenrePillGrid(onSelect: (GenrePill) -> Unit) {
+    Column(Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
+        Text(
+            text = "Browse by genre",
+            fontSize = 18.sp,
+            fontWeight = FontWeight.Bold,
+            color = TextPrimary,
+        )
+        Spacer(Modifier.height(10.dp))
+        browseGenres.chunked(2).forEach { pair ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                pair.forEach { pill ->
+                    GenrePillButton(
+                        pill = pill,
+                        modifier = Modifier.weight(1f),
+                        onClick = { onSelect(pill) },
+                    )
+                }
+                if (pair.size == 1) {
+                    Spacer(Modifier.weight(1f))
+                }
+            }
+            Spacer(Modifier.height(10.dp))
+        }
+    }
+}
+
+@Composable
+private fun GenrePillButton(
+    pill: GenrePill,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    Box(
+        modifier = modifier
+            .glassCard()
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+            ) { onClick() }
+            .padding(vertical = 14.dp, horizontal = 12.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = pill.label,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = TextPrimary,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 

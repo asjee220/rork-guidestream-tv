@@ -4,7 +4,10 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rork.guidestreamtvandroid.data.models.Platform
 import com.rork.guidestreamtvandroid.data.models.StreamingCatalog
+import com.rork.guidestreamtvandroid.data.models.SourceKind
 import com.rork.guidestreamtvandroid.data.models.TMDBResult
+import com.rork.guidestreamtvandroid.data.remote.RecommendedCreator
+import com.rork.guidestreamtvandroid.data.remote.RecommendedCreatorsService
 import com.rork.guidestreamtvandroid.data.remote.StreamingReleasesService
 import com.rork.guidestreamtvandroid.data.remote.TMDBService
 import com.rork.guidestreamtvandroid.data.remote.toTMDBResult
@@ -47,6 +50,15 @@ class HomeViewModel : ViewModel() {
 
     private val _genreShows = MutableStateFlow<List<TMDBResult>>(emptyList())
     val genreShows: StateFlow<List<TMDBResult>> = _genreShows.asStateFlow()
+
+    private val _selectedGenreId = MutableStateFlow(80)
+    val selectedGenreId: StateFlow<Int> = _selectedGenreId.asStateFlow()
+
+    private val _selectedGenreName = MutableStateFlow("Crime")
+    val selectedGenreName: StateFlow<String> = _selectedGenreName.asStateFlow()
+
+    private val _recommendedCreators = MutableStateFlow<List<RecommendedCreator>>(emptyList())
+    val recommendedCreators: StateFlow<List<RecommendedCreator>> = _recommendedCreators.asStateFlow()
 
     private val _popularByService = MutableStateFlow<Map<String, List<TMDBResult>>>(emptyMap())
     val popularByService: StateFlow<Map<String, List<TMDBResult>>> = _popularByService.asStateFlow()
@@ -144,6 +156,29 @@ class HomeViewModel : ViewModel() {
             // Resolve the user's taste genres in the background. Additive and
             // best-effort — never blocks the Top Picks row from rendering.
             resolvePreferredGenres()
+
+            // Resolve creator/podcast recommendations in the background. Additive
+            // and best-effort — never blocks the feed from rendering.
+            loadRecommendedCreators()
+        }
+    }
+
+    /**
+     * Best-effort creator/podcast recommendations. Collects the user's followed
+     * non-TMDB title ids (yt:/pod:/tw:/kick:), returns early with an empty list
+     * when none are followed, and otherwise asks the `recommend_creators` edge
+     * function for a server-ranked list. Never blocks the feed.
+     */
+    fun loadRecommendedCreators() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val followedIds = StreamsViewModel.get().userStreams.value
+                .map { it.titleId }
+                .filter { SourceKind.from(it).isNonTMDB }
+            if (followedIds.isEmpty()) {
+                _recommendedCreators.value = emptyList()
+                return@launch
+            }
+            _recommendedCreators.value = RecommendedCreatorsService.recommend(followedIds)
         }
     }
 
@@ -183,10 +218,23 @@ class HomeViewModel : ViewModel() {
         _providerByTmdb.value = map
     }
 
-    /** Refresh genre discovery for a new genre selection. */
-    fun loadGenre(genreId: Int) {
+    /**
+     * Refresh genre discovery for a new genre selection. Updates the selection
+     * flows first so the "Because you watch" title never lags the tapped pill,
+     * then loads by media type exactly as iOS does and resolves providers for the
+     * new results so poster badges populate.
+     */
+    fun loadGenre(genreId: Int, genreName: String, mediaType: String) {
+        _selectedGenreId.value = genreId
+        _selectedGenreName.value = genreName
         viewModelScope.launch(Dispatchers.IO) {
-            _genreShows.value = tmdb.getDiscoverByGenre(genreId)
+            val results = when (mediaType) {
+                "movie" -> tmdb.getDiscoverByGenre(genreId, "movie")
+                "international" -> tmdb.getDiscoverInternational()
+                else -> tmdb.getDiscoverByGenre(genreId)
+            }
+            _genreShows.value = results
+            resolveProviders(results)
         }
     }
 }
