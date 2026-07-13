@@ -296,10 +296,11 @@ struct ShowDetailScreen: View {
 
     @State private var scrollOffset: CGFloat = 0
     @State private var synopsisExpanded: Bool = false
-    @State private var liked: Bool = false
     @State private var notifyOn: Bool = true
     @State private var showComments: Bool = false
     @State private var streams = StreamsViewModel.shared
+    @State private var social = SocialViewModel.shared
+    @State private var isTogglingLike: Bool = false
     @State private var selectedSeason: String = "Season 4"
     @State private var playOnOpen: Bool = false
     @State private var showMoreEpisodes: Bool = false
@@ -519,13 +520,23 @@ struct ShowDetailScreen: View {
         }
         .preferredColorScheme(.dark)
         .sheet(isPresented: $showComments) {
-            CommentsViewerSheet()
+            TitleCommentsSheet(
+                titleId: titleId,
+                title: title,
+                subtitle: nil,
+                posterUrl: posterUrl,
+                posterColors: [],
+                accent: Color.orange
+            )
         }
         .onAppear {
             WatchIntentLogger.shared.log(
                 eventType: .episodeDetailViewed,
                 titleId: titleId
             )
+        }
+        .task(id: titleId) {
+            await social.refreshCounts(titleId: titleId)
         }
         .task(id: titleId) {
             vm.startLoad(titleId: titleId, isTV: isTV)
@@ -942,33 +953,32 @@ struct ShowDetailScreen: View {
     // MARK: Social counter row
 
     private var socialCounter: some View {
-        HStack(spacing: 16) {
-            Button(action: { showComments = true }) {
-                HStack(spacing: 6) {
-                    Image(systemName: "heart.fill")
-                        .scaledFont(size: 14, weight: .bold)
-                        .foregroundStyle(Color.orange)
-                    Text("24.8K")
-                        .scaledFont(size: 13, weight: .semibold)
-                        .foregroundStyle(.white)
+        SocialCounterRow(
+            titleId: titleId,
+            isLiked: social.isLiked(titleId),
+            likeCount: social.likes(titleId),
+            commentCount: social.commentTotal(titleId),
+            onLike: {
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                guard !isTogglingLike else { return }
+                isTogglingLike = true
+                let mediaType = isTV ? "tv" : "movie"
+                let likeTmdbId = resolvedTmdbId
+                Task {
+                    await social.toggleLike(titleId: titleId, mediaType: mediaType, tmdbId: likeTmdbId)
+                    await MainActor.run { isTogglingLike = false }
                 }
+            },
+            onComment: {
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                showComments = true
+                WatchIntentLogger.shared.log(
+                    eventType: .commentsOpened,
+                    titleId: titleId,
+                    metadata: ["source": "show_detail"]
+                )
             }
-            .buttonStyle(.plain)
-
-            Button(action: { showComments = true }) {
-                HStack(spacing: 6) {
-                    Image(systemName: "bubble.left")
-                        .scaledFont(size: 14, weight: .semibold)
-                        .foregroundStyle(Color.white.opacity(0.75))
-                    Text("3.1K")
-                        .scaledFont(size: 13, weight: .semibold)
-                        .foregroundStyle(.white)
-                }
-            }
-            .buttonStyle(.plain)
-
-            Spacer(minLength: 0)
-        }
+        )
         .padding(.horizontal, 20)
         .padding(.top, 14)
     }
@@ -1185,13 +1195,6 @@ struct ShowDetailScreen: View {
 
     private var fanActivitySection: some View {
         FanActivityCard(
-            liked: liked,
-            likeLabel: "24.8K",
-            onLike: {
-                withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) { liked.toggle() }
-            },
-            commentLabel: "3.1K",
-            onComment: { showComments = true },
             isSaved: isSaved,
             saveLabel: isSaved ? "Saved" : "Save",
             onSave: { toggleWatchList() },
@@ -1622,148 +1625,6 @@ struct PlayOnTriggerButton: View {
             .overlay(Capsule().stroke(Color.white.opacity(0.20), lineWidth: 1))
         }
         .buttonStyle(.plain)
-    }
-}
-
-// MARK: - Comments Viewer Sheet
-
-struct CommentsViewerSheet: View {
-    @Environment(\.dismiss) private var dismiss
-    @State private var tab: Tab = .comments
-
-    enum Tab: Hashable { case likes, comments }
-
-    private let likes: [(name: String, color: Color)] = [
-        ("Alex Carter", Color(red: 0.95, green: 0.45, blue: 0.10)),
-        ("Sam Lin", Color(red: 0.18, green: 0.55, blue: 0.95)),
-        ("Priya Shah", Color(red: 0.60, green: 0.25, blue: 0.85)),
-        ("Jules Park", Color(red: 0.20, green: 0.78, blue: 0.55)),
-        ("Mara Vance", Color(red: 0.95, green: 0.30, blue: 0.45)),
-        ("Theo Ward", Color(red: 0.30, green: 0.70, blue: 0.90))
-    ]
-
-    private let comments: [(name: String, time: String, text: String, color: Color)] = [
-        ("Alex Carter", "2h", "Kendall's monologue this week was unreal. Best episode of the season.", Color(red: 0.95, green: 0.45, blue: 0.10)),
-        ("Sam Lin", "4h", "Shiv's storyline is what's keeping me hooked.", Color(red: 0.18, green: 0.55, blue: 0.95)),
-        ("Priya Shah", "8h", "Cinematography is on another level lately.", Color(red: 0.60, green: 0.25, blue: 0.85)),
-        ("Jules Park", "1d", "Roman fans where you at 😭", Color(red: 0.20, green: 0.78, blue: 0.55)),
-        ("Mara Vance", "1d", "The pacing in this season finale was perfect.", Color(red: 0.95, green: 0.30, blue: 0.45))
-    ]
-
-    var body: some View {
-        VStack(spacing: 0) {
-            Capsule()
-                .fill(Color.white.opacity(0.25))
-                .frame(width: 40, height: 4)
-                .padding(.top, 10)
-                .padding(.bottom, 14)
-
-            HStack(spacing: 0) {
-                tabButton("Likes", .likes)
-                tabButton("Comments", .comments)
-            }
-            .padding(.horizontal, 20)
-            .padding(.bottom, 8)
-
-            ScrollView {
-                LazyVStack(spacing: 12) {
-                    if tab == .likes {
-                        ForEach(likes.indices, id: \.self) { i in
-                            likeRow(name: likes[i].name, color: likes[i].color)
-                        }
-                    } else {
-                        ForEach(comments.indices, id: \.self) { i in
-                            commentRow(comments[i])
-                        }
-                    }
-                }
-                .padding(.horizontal, 20)
-                .padding(.top, 4)
-                .padding(.bottom, 40)
-            }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .background(BrandBackground())
-        .presentationDetents([.fraction(0.8), .large])
-        .presentationDragIndicator(.hidden)
-        .presentationContentInteraction(.scrolls)
-    }
-
-    private func tabButton(_ label: String, _ value: Tab) -> some View {
-        Button(action: { withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { tab = value } }) {
-            VStack(spacing: 8) {
-                Text(label)
-                    .scaledFont(size: 14, weight: .semibold)
-                    .foregroundStyle(tab == value ? .white : Color.textSecondary)
-                Rectangle()
-                    .fill(tab == value ? Color.orange : Color.clear)
-                    .frame(height: 2)
-            }
-            .frame(maxWidth: .infinity)
-        }
-        .buttonStyle(.plain)
-    }
-
-    private func likeRow(name: String, color: Color) -> some View {
-        HStack(spacing: 12) {
-            avatar(name: name, color: color)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(name)
-                    .scaledFont(size: 14, weight: .semibold)
-                    .foregroundStyle(.white)
-                Text("liked this")
-                    .scaledFont(size: 12)
-                    .foregroundStyle(Color.textSecondary)
-            }
-            Spacer(minLength: 0)
-            Image(systemName: "heart.fill")
-                .scaledFont(size: 14, weight: .bold)
-                .foregroundStyle(Color.orange)
-        }
-        .padding(12)
-        .background(Color.white.opacity(0.04))
-        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.white.opacity(0.08), lineWidth: 1))
-        .clipShape(.rect(cornerRadius: 12))
-    }
-
-    private func commentRow(_ c: (name: String, time: String, text: String, color: Color)) -> some View {
-        HStack(alignment: .top, spacing: 12) {
-            avatar(name: c.name, color: c.color)
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 8) {
-                    Text(c.name)
-                        .scaledFont(size: 14, weight: .semibold)
-                        .foregroundStyle(.white)
-                    Text(c.time)
-                        .scaledFont(size: 11)
-                        .foregroundStyle(Color.textTertiary)
-                }
-                Text(c.text)
-                    .scaledFont(size: 13)
-                    .foregroundStyle(Color.textPrimary.opacity(0.85))
-                    .lineSpacing(3)
-            }
-            Spacer(minLength: 0)
-        }
-        .padding(12)
-        .background(Color.white.opacity(0.04))
-        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.white.opacity(0.08), lineWidth: 1))
-        .clipShape(.rect(cornerRadius: 12))
-    }
-
-    private func avatar(name: String, color: Color) -> some View {
-        Circle()
-            .fill(color)
-            .frame(width: 36, height: 36)
-            .overlay {
-                Text(initials(name))
-                    .scaledFont(size: 13, weight: .bold)
-                    .foregroundStyle(.white)
-            }
-    }
-
-    private func initials(_ name: String) -> String {
-        name.split(separator: " ").prefix(2).compactMap { $0.first.map(String.init) }.joined()
     }
 }
 

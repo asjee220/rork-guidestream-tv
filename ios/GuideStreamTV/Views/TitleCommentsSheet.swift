@@ -125,6 +125,21 @@ struct TitleCommentsSheet: View {
                 .padding(.horizontal, 10)
                 .padding(.vertical, 4)
                 .background(Capsule().fill(Color.white.opacity(0.10)))
+
+            Button {
+                dismiss()
+            } label: {
+                ZStack {
+                    Circle()
+                        .fill(Color.white.opacity(0.10))
+                        .frame(width: 30, height: 30)
+                    Image(systemName: "xmark")
+                        .scaledFont(size: 12, weight: .bold)
+                        .foregroundStyle(Color.white.opacity(0.85))
+                }
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Close comments")
         }
         .padding(.horizontal, 20)
         .padding(.top, 16)

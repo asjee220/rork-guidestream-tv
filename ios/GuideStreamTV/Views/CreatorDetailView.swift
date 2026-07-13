@@ -105,13 +105,20 @@ struct CreatorDetailView: View {
                             onShare: { triggerShare() }
                         )
 
-                        // MARK: Fan Activity card (like / comment / save / notify)
-                        FanActivityCard(
-                            liked: social.isLiked(titleId),
-                            likeLabel: social.likes(titleId) > 0 ? formatSocialCount(social.likes(titleId)) : "Like",
+                        // MARK: Social counter row (like / comment)
+                        SocialCounterRow(
+                            titleId: titleId,
+                            isLiked: social.isLiked(titleId),
+                            likeCount: social.likes(titleId),
+                            commentCount: social.commentTotal(titleId),
                             onLike: { toggleLikeAction() },
-                            commentLabel: social.commentTotal(titleId) > 0 ? formatSocialCount(social.commentTotal(titleId)) : "Comment",
-                            onComment: { openComments() },
+                            onComment: { openComments() }
+                        )
+                        .padding(.horizontal, 20)
+                        .padding(.top, 16)
+
+                        // MARK: Fan Activity card (follow / notify)
+                        FanActivityCard(
                             isSaved: isFollowed,
                             saveLabel: isFollowed ? "Following" : "Follow",
                             onSave: { toggleFollow() },

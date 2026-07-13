@@ -826,27 +826,32 @@ struct EpisodeDetailSheet: View {
                 }
                 .padding(.top, 2)
 
-                HStack(spacing: 10) {
-                    HStack(spacing: 6) {
-                        Image(systemName: social.isLiked(socialTitleKey) ? "heart.fill" : "heart")
-                            .scaledFont(size: 12)
-                            .foregroundStyle(Color.orange)
-                        Text(formatSocialCount(social.likes(socialTitleKey)))
-                            .scaledFont(size: 13, weight: .semibold)
-                            .foregroundStyle(.white)
+                SocialCounterRow(
+                    titleId: socialTitleKey,
+                    isLiked: social.isLiked(socialTitleKey),
+                    likeCount: social.likes(socialTitleKey),
+                    commentCount: social.commentTotal(socialTitleKey),
+                    onLike: {
+                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                        guard !isTogglingLike else { return }
+                        isTogglingLike = true
+                        let mediaType = isTV ? "tv" : "movie"
+                        let likeTmdbId = tmdbId
+                        Task {
+                            await social.toggleLike(titleId: socialTitleKey, mediaType: mediaType, tmdbId: likeTmdbId)
+                            await MainActor.run { isTogglingLike = false }
+                        }
+                    },
+                    onComment: {
+                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                        showComments = true
+                        WatchIntentLogger.shared.log(
+                            eventType: .commentsOpened,
+                            titleId: socialTitleKey,
+                            metadata: ["source": "episode_detail_sheet"]
+                        )
                     }
-                    Text("·")
-                        .scaledFont(size: 13)
-                        .foregroundStyle(Color.white.opacity(0.4))
-                    HStack(spacing: 6) {
-                        Image(systemName: "bubble.left")
-                            .scaledFont(size: 12)
-                            .foregroundStyle(Color.white.opacity(0.7))
-                        Text(formatSocialCount(social.commentTotal(socialTitleKey)))
-                            .scaledFont(size: 13, weight: .semibold)
-                            .foregroundStyle(.white)
-                    }
-                }
+                )
                 .padding(.top, 4)
             }
 
@@ -881,26 +886,7 @@ struct EpisodeDetailSheet: View {
 
     private var actionsRow: some View {
         let key = socialTitleKey
-        let isLiked = social.isLiked(key)
         return HStack(spacing: 0) {
-            circleAction(
-                icon: isLiked ? "heart.fill" : "heart",
-                label: "Like",
-                tint: isLiked ? Color.orange : .white,
-                showDot: false
-            ) {
-                UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                guard !isTogglingLike else { return }
-                isTogglingLike = true
-                let mediaType = isTV ? "tv" : "movie"
-                let likeTmdbId = tmdbId
-                Task {
-                    await social.toggleLike(titleId: key, mediaType: mediaType, tmdbId: likeTmdbId)
-                    await MainActor.run { isTogglingLike = false }
-                }
-            }
-            .frame(maxWidth: .infinity)
-
             circleAction(
                 icon: social.isWatched(key) ? "eye.fill" : "eye",
                 label: "Watched",
@@ -919,22 +905,6 @@ struct EpisodeDetailSheet: View {
             }
             .frame(maxWidth: .infinity)
 
-            circleAction(
-                icon: "bubble.left.fill",
-                label: "Comments",
-                tint: .white,
-                showDot: false
-            ) {
-                UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                showComments = true
-                WatchIntentLogger.shared.log(
-                    eventType: .commentsOpened,
-                    titleId: key,
-                    metadata: ["source": "episode_detail_sheet"]
-                )
-            }
-            .frame(maxWidth: .infinity)
-
             ShareLink(
                 item: URL(string: "https://guidestream.tv")!,
                 subject: Text(title),
@@ -944,7 +914,7 @@ struct EpisodeDetailSheet: View {
                     ZStack {
                         Circle()
                             .fill(Color.white.opacity(0.08))
-                            .frame(width: 54, height: 54)
+                            .frame(width: 56, height: 56)
                         Image(systemName: "square.and.arrow.up")
                             .scaledFont(size: 22, weight: .regular)
                             .foregroundStyle(.white)
@@ -984,7 +954,7 @@ struct EpisodeDetailSheet: View {
                 ZStack {
                     Circle()
                         .fill(Color.white.opacity(0.08))
-                        .frame(width: 54, height: 54)
+                        .frame(width: 56, height: 56)
                     if isLoading {
                         ProgressView()
                             .controlSize(.small)

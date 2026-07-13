@@ -179,17 +179,77 @@ struct DetailHeroHeader<Metadata: View>: View {
     }
 }
 
+// MARK: - Social counter row
+
+/// Shared like / comment counter row used by every detail surface (episode
+/// sheet, show detail, creator detail). Renders a heart button with the like
+/// count and a comment button with the comment count, both driven by
+/// `SocialViewModel` through the host's closures so counts and fill state stay
+/// in sync with the real `title_likes` / `title_comments` tables.
+struct SocialCounterRow: View {
+    let titleId: String
+    var isLiked: Bool
+    var likeCount: Int
+    var commentCount: Int
+    var onLike: () -> Void
+    var onComment: () -> Void
+
+    var body: some View {
+        HStack(spacing: 14) {
+            Button(action: onLike) {
+                HStack(spacing: 7) {
+                    Image(systemName: isLiked ? "heart.fill" : "heart")
+                        .scaledFont(size: 20)
+                        .foregroundStyle(Color.orange)
+                    Text(formatCount(likeCount))
+                        .scaledFont(size: 16, weight: .semibold)
+                        .foregroundStyle(.white)
+                }
+                .padding(.vertical, 7)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Like")
+
+            Text("·")
+                .scaledFont(size: 13)
+                .foregroundStyle(Color.white.opacity(0.4))
+
+            Button(action: onComment) {
+                HStack(spacing: 7) {
+                    Image(systemName: "bubble.left")
+                        .scaledFont(size: 20)
+                        .foregroundStyle(Color.white.opacity(0.7))
+                    Text(formatCount(commentCount))
+                        .scaledFont(size: 16, weight: .semibold)
+                        .foregroundStyle(.white)
+                }
+                .padding(.vertical, 7)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Comments")
+
+            Spacer(minLength: 0)
+        }
+    }
+
+    /// Compact count formatting matching the rest of the app:
+    /// 0 -> "0", 1234 -> "1.2K", 1_234_567 -> "1.2M".
+    private func formatCount(_ n: Int) -> String {
+        if n >= 1_000_000 { return String(format: "%.1fM", Double(n) / 1_000_000) }
+        if n >= 1_000 { return String(format: "%.1fK", Double(n) / 1_000) }
+        return "\(n)"
+    }
+}
+
 // MARK: - Fan Activity card
 
-/// "Fan Activity" card with four circular action buttons (like, comment, save,
-/// notify). Each button's state and action is supplied by the host so the same
-/// card can drive a TMDB title's social paths or a creator's follow/notify paths.
+/// "Fan Activity" card with two circular action buttons (save, notify). Each
+/// button's state and action is supplied by the host so the same card can drive
+/// a TMDB title's watchlist paths or a creator's follow/notify paths. Like and
+/// comment now live in `SocialCounterRow` on every surface.
 struct FanActivityCard: View {
-    let liked: Bool
-    let likeLabel: String
-    let onLike: () -> Void
-    let commentLabel: String
-    let onComment: () -> Void
     let isSaved: Bool
     let saveLabel: String
     let onSave: () -> Void
@@ -203,20 +263,6 @@ struct FanActivityCard: View {
                 .foregroundStyle(.white)
 
             HStack(spacing: 12) {
-                fanButton(label: likeLabel, filled: liked) {
-                    LikeIcon(liked: liked)
-                } action: {
-                    onLike()
-                }
-
-                fanButton(label: commentLabel) {
-                    Image(systemName: "bubble.left")
-                        .scaledFont(size: 18, weight: .semibold)
-                        .foregroundStyle(.white)
-                } action: {
-                    onComment()
-                }
-
                 fanButton(label: saveLabel) {
                     Image(systemName: isSaved ? "bookmark.fill" : "bookmark")
                         .scaledFont(size: 18, weight: .semibold)
@@ -318,15 +364,16 @@ struct ServiceBadge: View {
                     lineWidth: isSelected ? 2 : 1
                 )
         )
+        .padding(.top, 8)
+        .padding(.trailing, 8)
         .overlay(alignment: .topTrailing) {
             if isSelected {
                 Image(systemName: "checkmark")
-                    .scaledFont(size: 8, weight: .bold)
+                    .scaledFont(size: 9, weight: .bold)
                     .foregroundStyle(.white)
-                    .frame(width: 16, height: 16)
+                    .frame(width: 18, height: 18)
                     .background(Circle().fill(Color.orange))
                     .overlay(Circle().stroke(Color.white.opacity(0.9), lineWidth: 0.5))
-                    .offset(x: 5, y: -5)
             }
         }
     }
