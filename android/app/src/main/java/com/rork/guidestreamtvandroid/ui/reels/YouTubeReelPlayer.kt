@@ -1,12 +1,15 @@
 package com.rork.guidestreamtvandroid.ui.reels
 
 import android.annotation.SuppressLint
+import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import android.webkit.ConsoleMessage
 import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
+import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.compose.runtime.Composable
@@ -21,16 +24,25 @@ import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import androidx.webkit.WebViewAssetLoader
+import com.rork.guidestreamtvandroid.BuildConfig
 
 /**
  * Inline YouTube trailer player for Reels.
  *
- * Mirrors the shipping iOS phone implementation: it embeds the official YouTube
- * IFrame Player API inside a plain [WebView] loaded from a youtube.com base URL
- * (so the IFrame API treats the page as same-origin and does not raise embed
- * error 150/153). This is YouTube-ToS compliant and requires no Gradle
- * dependency. It never uses ExoPlayer/media3, which cannot play YouTube and
- * would require ToS-violating stream extraction.
+ * The IFrame Player API validates the embedding page's real origin and
+ * referrer against the `origin` playerVar. iOS' `WKWebView.loadHTMLString`
+ * grants a base-URL document that origin, but Android's
+ * `loadDataWithBaseURL` gives the document an opaque origin with no valid
+ * referrer, so YouTube rejects the embed with error 150 on every video.
+ *
+ * The fix serves the player HTML from a genuine, servable https origin via
+ * AndroidX [WebViewAssetLoader] (`https://appassets.androidplatform.net`), so
+ * the document has a real origin and referrer that match the `origin`
+ * playerVar. The player page is a static asset (`assets/yt_player.html`) that
+ * reads its video id and mute flag from the query string. This is
+ * YouTube-ToS compliant and never uses ExoPlayer/media3, which cannot play
+ * YouTube and would require ToS-violating stream extraction.
  *
  * The WebView never consumes touch ([pointerInteropFilter] returns false),
  * mirroring the iOS `allowsHitTesting(false)` on the player layer so the
@@ -63,6 +75,16 @@ fun YouTubeReelPlayer(
     AndroidView(
         modifier = modifier.pointerInteropFilter { false },
         factory = { ctx ->
+            // Serve the player HTML from a real https origin so the IFrame API
+            // sees a valid origin + referrer matching the `origin` playerVar.
+            val assetLoader = WebViewAssetLoader.Builder()
+                .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(ctx))
+                .build()
+
+            if (BuildConfig.DEBUG) {
+                WebView.setWebContentsDebuggingEnabled(true)
+            }
+
             WebView(ctx).apply {
                 @Suppress("DEPRECATION")
                 settings.apply {
@@ -71,10 +93,22 @@ fun YouTubeReelPlayer(
                     // embed stays frozen on a black frame.
                     mediaPlaybackRequiresUserGesture = false
                     domStorageEnabled = true
+                    // Android's default WebView UA carries the "; wv" token,
+                    // which YouTube penalises. Strip it from the real default
+                    // rather than fabricating a UA from scratch.
+                    userAgentString = userAgentString.replace("; wv", "")
                 }
-                // A WebViewClient keeps loads rendering in-place instead of being
-                // handed off to an external handler.
-                webViewClient = WebViewClient()
+                // Delegate asset requests to the loader so the player page is
+                // served from https://appassets.androidplatform.net with a real
+                // origin instead of an opaque loadDataWithBaseURL origin.
+                webViewClient = object : WebViewClient() {
+                    override fun shouldInterceptRequest(
+                        view: WebView,
+                        request: WebResourceRequest,
+                    ): WebResourceResponse? {
+                        return assetLoader.shouldInterceptRequest(request.url)
+                    }
+                }
                 // Required for HTML5 <video> to render inside a WebView; the
                 // console hook surfaces IFrame API errors that are otherwise
                 // invisible on device.
@@ -118,6 +152,7 @@ fun YouTubeReelPlayer(
                     },
                     "GSBridge",
                 )
+                holder.webViewRef = this
             }
         },
         update = { webView ->
@@ -125,13 +160,14 @@ fun YouTubeReelPlayer(
                 holder.lastVideoId = videoId
                 holder.lastMuted = isMuted
                 holder.lastPlaying = isPlaying
-                webView.loadDataWithBaseURL(
-                    "https://www.youtube.com",
-                    buildEmbedHtml(videoId, isMuted),
-                    "text/html",
-                    "utf-8",
-                    null,
-                )
+                val muteFlag = if (isMuted) "1" else "0"
+                val url = Uri.parse("https://appassets.androidplatform.net/assets/yt_player.html")
+                    .buildUpon()
+                    .appendQueryParameter("v", videoId)
+                    .appendQueryParameter("mute", muteFlag)
+                    .build()
+                    .toString()
+                webView.loadUrl(url)
             } else {
                 if (holder.lastMuted != isMuted) {
                     holder.lastMuted = isMuted
@@ -150,6 +186,7 @@ fun YouTubeReelPlayer(
             webView.loadUrl("about:blank")
             webView.removeAllViews()
             webView.destroy()
+            holder.webViewRef = null
         },
     )
 
@@ -194,82 +231,4 @@ private class PlayerStateHolder {
     var lastMuted: Boolean = true
     var lastPlaying: Boolean = true
     var webViewRef: WebView? = null
-}
-
-/**
- * Builds the IFrame Player API HTML. Player vars match the iOS playerVars
- * exactly so behaviour is identical across platforms.
- */
-private fun buildEmbedHtml(videoId: String, isMuted: Boolean): String {
-    val muteFlag = if (isMuted) 1 else 0
-    return """
-        <!DOCTYPE html>
-        <html>
-        <head>
-        <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-        <style>
-            * { margin: 0; padding: 0; }
-            html, body { background: #000; width: 100%; height: 100%; overflow: hidden; }
-            #player { width: 100%; height: 100%; }
-        </style>
-        </head>
-        <body>
-        <div id="player"></div>
-        <script src="https://www.youtube.com/iframe_api"></script>
-        <script>
-            var player;
-            var ready = false;
-            window.onerror = function(message) {
-                if (window.GSBridge && GSBridge.onPlayerError) { GSBridge.onPlayerError(-1); }
-                return false;
-            };
-            setTimeout(function() {
-                if (!ready) {
-                    if (window.GSBridge && GSBridge.onPlayerError) { GSBridge.onPlayerError(-2); }
-                }
-            }, 8000);
-            function onYouTubeIframeAPIReady() {
-                player = new YT.Player('player', {
-                    videoId: '$videoId',
-                    playerVars: {
-                        playsinline: 1,
-                        autoplay: 1,
-                        mute: $muteFlag,
-                        controls: 0,
-                        rel: 0,
-                        modestbranding: 1,
-                        showinfo: 0,
-                        iv_load_policy: 3,
-                        fs: 0,
-                        disablekb: 1,
-                        loop: 1,
-                        playlist: '$videoId',
-                        enablejsapi: 1,
-                        origin: 'https://www.youtube.com'
-                    },
-                    events: {
-                        'onReady': function(e) {
-                            ready = true;
-                            try {
-                                e.target.playVideo();
-                                if ($muteFlag === 1) { e.target.mute(); } else { e.target.unMute(); }
-                            } catch (err) {}
-                            if (window.GSBridge && GSBridge.onReady) { GSBridge.onReady(); }
-                        },
-                        'onStateChange': function(e) {
-                            if (window.GSBridge && GSBridge.onPlayerState) { GSBridge.onPlayerState(e.data); }
-                            if (e.data === 0) {
-                                if (window.GSBridge && GSBridge.onEnded) { GSBridge.onEnded(); }
-                            }
-                        },
-                        'onError': function(e) {
-                            if (window.GSBridge && GSBridge.onPlayerError) { GSBridge.onPlayerError(e.data); }
-                        }
-                    }
-                });
-            }
-        </script>
-        </body>
-        </html>
-    """.trimIndent()
 }

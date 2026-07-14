@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<style>
+    * { margin: 0; padding: 0; }
+    html, body { background: #000; width: 100%; height: 100%; overflow: hidden; }
+    #player { width: 100%; height: 100%; }
+</style>
+</head>
+<body>
+<div id="player"></div>
+<script src="https://www.youtube.com/iframe_api"></script>
+<script>
+    var params = new URLSearchParams(window.location.search);
+    var videoId = params.get('v') || '';
+    var muteFlag = params.get('mute') === '1' ? 1 : 0;
+    var player;
+    var ready = false;
+    window.onerror = function(message) {
+        if (window.GSBridge && GSBridge.onPlayerError) { GSBridge.onPlayerError(-1); }
+        return false;
+    };
+    setTimeout(function() {
+        if (!ready) {
+            if (window.GSBridge && GSBridge.onPlayerError) { GSBridge.onPlayerError(-2); }
+        }
+    }, 8000);
+    function onYouTubeIframeAPIReady() {
+        player = new YT.Player('player', {
+            videoId: videoId,
+            playerVars: {
+                playsinline: 1,
+                autoplay: 1,
+                mute: muteFlag,
+                controls: 0,
+                rel: 0,
+                modestbranding: 1,
+                showinfo: 0,
+                iv_load_policy: 3,
+                fs: 0,
+                disablekb: 1,
+                loop: 1,
+                playlist: videoId,
+                enablejsapi: 1,
+                origin: 'https://appassets.androidplatform.net'
+            },
+            events: {
+                'onReady': function(e) {
+                    ready = true;
+                    try {
+                        e.target.playVideo();
+                        if (muteFlag === 1) { e.target.mute(); } else { e.target.unMute(); }
+                    } catch (err) {}
+                    if (window.GSBridge && GSBridge.onReady) { GSBridge.onReady(); }
+                },
+                'onStateChange': function(e) {
+                    if (window.GSBridge && GSBridge.onPlayerState) { GSBridge.onPlayerState(e.data); }
+                    if (e.data === 0) {
+                        if (window.GSBridge && GSBridge.onEnded) { GSBridge.onEnded(); }
+                    }
+                },
+                'onError': function(e) {
+                    if (window.GSBridge && GSBridge.onPlayerError) { GSBridge.onPlayerError(e.data); }
+                }
+            }
+        });
+    }
+</script>
+</body>
+</html>

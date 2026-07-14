@@ -61,10 +61,12 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.rork.guidestreamtvandroid.BuildConfig
 import com.rork.guidestreamtvandroid.data.models.Platform
 import com.rork.guidestreamtvandroid.data.remote.WatchmodeResolveService
 import com.rork.guidestreamtvandroid.data.remote.WatchmodeSrc
 import com.rork.guidestreamtvandroid.data.repository.AuthViewModel
+import com.rork.guidestreamtvandroid.data.repository.DebugLog
 import com.rork.guidestreamtvandroid.data.repository.StreamsViewModel
 import com.rork.guidestreamtvandroid.data.repository.WatchIntentLogger
 import com.rork.guidestreamtvandroid.ui.components.RemoteImage
@@ -326,6 +328,9 @@ private fun ReelView(
     // mounted exactly as before.
     var candidateIndex by remember(reel.id) { mutableStateOf(0) }
     var allCandidatesFailed by remember(reel.id) { mutableStateOf(false) }
+    // Last error code from the player, surfaced only as a debug-build badge so a
+    // failing reel is visible on device without a photograph.
+    var lastErrorCode by remember(reel.id) { mutableStateOf<Int?>(null) }
     val activeKey = if (candidateIndex == 0) reel.trailerKey
         else reel.fallbackKeys.getOrNull(candidateIndex - 1) ?: reel.trailerKey
 
@@ -356,9 +361,23 @@ private fun ReelView(
                     isMuted = isMuted,
                     isPlaying = isPlaying,
                     onPlayerError = { code ->
-                        // Only owner-disabled-embed codes advance/collapse; any
-                        // other code leaves the WebView mounted as before.
-                        if (code == 101 || code == 150) {
+                        // Every error code is logged so a dead player is never a
+                        // silent backdrop with no explanation.
+                        DebugLog.log(
+                            event = "reel_player_error",
+                            platform = "android",
+                            title = reel.showName,
+                            contentUrl = "https://www.youtube.com/watch?v=$activeKey",
+                            deviceName = "code=$code candidate=$candidateIndex",
+                            matched = false,
+                        )
+                        lastErrorCode = code
+                        // Embed-blocked (owner-disabled) and player-failed codes
+                        // both walk the fallback keys, then collapse to poster.
+                        val embedBlocked = code == 101 || code == 150 || code == 153
+                        val playerFailed = code == -1 || code == -2 || code == 2 ||
+                            code == 5 || code == 100
+                        if (embedBlocked || playerFailed) {
                             if (candidateIndex < reel.fallbackKeys.size) {
                                 candidateIndex += 1
                             } else {
@@ -366,7 +385,17 @@ private fun ReelView(
                             }
                         }
                     },
-                    onPlayerReady = { allCandidatesFailed = false },
+                    onPlayerReady = {
+                        allCandidatesFailed = false
+                        lastErrorCode = null
+                        DebugLog.log(
+                            event = "reel_player_ready",
+                            platform = "android",
+                            title = reel.showName,
+                            contentUrl = "https://www.youtube.com/watch?v=$activeKey",
+                            matched = true,
+                        )
+                    },
                     onEnded = { /* loop=1 playlist restarts automatically */ },
                     modifier = Modifier
                         .fillMaxHeight()
@@ -554,6 +583,26 @@ private fun ReelView(
             if (injected) {
                 Spacer(Modifier.height(12.dp))
                 WatchNowSwitcher(sources = sources, onOpenSource = onOpenSource)
+            }
+        }
+
+        // Debug-only failure badge — never rendered in a release build.
+        if (BuildConfig.DEBUG && isCurrent && lastErrorCode != null) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .statusBarsPadding()
+                    .padding(start = 12.dp, top = 60.dp)
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(Color.Red.copy(alpha = 0.85f))
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
+            ) {
+                Text(
+                    text = "err ${lastErrorCode}",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White,
+                )
             }
         }
     }
