@@ -487,10 +487,6 @@ struct EpisodeDetailSheet: View {
                     .padding(.top, 12)
                     .padding(.bottom, 4)
 
-                watchContextCard
-                    .padding(.horizontal, 20)
-                    .padding(.top, 20)
-
                 whereToWatchRow
                     .padding(.horizontal, 20)
                     .padding(.top, 22)
@@ -1001,79 +997,6 @@ struct EpisodeDetailSheet: View {
                 .lineSpacing(4)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    // MARK: - Watch context card
-
-    @ViewBuilder
-    private var watchContextCard: some View {
-        if case .episode(let episode) = subject {
-            HStack(spacing: 12) {
-                Color.black
-                    .frame(width: 56, height: 56)
-                    .overlay {
-                        RemoteImage(
-                            urlString: episode.posterUrl,
-                            contentMode: .fill,
-                            fallbackColors: episode.posterColors
-                        )
-                        .allowsHitTesting(false)
-                    }
-                    .clipShape(.rect(cornerRadius: 8))
-
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack(spacing: 4) {
-                        Text("\(episode.season) ·")
-                            .scaledFont(size: 12, weight: .semibold)
-                            .foregroundStyle(Color.white.opacity(0.55))
-                        Text(episode.progress > 0 ? "Resume" : "Most recent")
-                            .scaledFont(size: 12, weight: .semibold)
-                            .foregroundStyle(.white)
-                    }
-                    Text(episode.title)
-                        .scaledFont(size: 13, weight: .bold)
-                        .foregroundStyle(.white)
-                        .lineLimit(1)
-                }
-
-                Spacer(minLength: 8)
-
-                if episode.progress > 0 {
-                    Text("\(Int(episode.progress * 100))%")
-                        .scaledFont(size: 10, weight: .heavy)
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(RoundedRectangle(cornerRadius: 4).fill(Color.orange))
-                } else if episode.isNew {
-                    Text("NEW")
-                        .scaledFont(size: 10, weight: .heavy)
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(RoundedRectangle(cornerRadius: 4).fill(Color.orange))
-                }
-            }
-            .padding(12)
-            .background(
-                RoundedRectangle(cornerRadius: 14)
-                    .fill(Color.white.opacity(0.05))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 14)
-                            .stroke(Color.white.opacity(0.07), lineWidth: 0.5)
-                    )
-            )
-            .overlay(alignment: .bottom) {
-                if episode.progress > 0 {
-                    GeometryReader { geo in
-                        Color.orange
-                            .frame(width: geo.size.width * episode.progress, height: 3)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                }
-            }
-            .clipShape(.rect(cornerRadius: 14))
-        }
     }
 
     // MARK: - Secondary pill row
