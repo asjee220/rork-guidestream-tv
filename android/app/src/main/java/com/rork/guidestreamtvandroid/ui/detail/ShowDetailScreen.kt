@@ -312,11 +312,6 @@ fun ShowDetailScreen(
                     selectedSource = selectedSource,
                     isSourceSubscribed = isSourceSubscribed,
                     onSelect = { selectedSource = it },
-                    onOpen = { url ->
-                        if (url.isNotBlank()) {
-                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
-                        }
-                    },
                 )
 
                 // Action buttons
@@ -677,10 +672,8 @@ private fun WhereToWatchRow(
     selectedSource: WatchmodeSrc?,
     isSourceSubscribed: (String) -> Boolean,
     onSelect: (WatchmodeSrc) -> Unit,
-    onOpen: (String) -> Unit,
 ) {
     if (sources.isEmpty()) return
-    val subscribedCount = sources.count { isSourceSubscribed(it.name) }
     Spacer(Modifier.height(8.dp))
     Text(
         text = "Where to Watch",
@@ -710,11 +703,7 @@ private fun WhereToWatchRow(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null,
                     ) {
-                        if (subscribedCount >= 2 && subscribed) {
-                            onSelect(source)
-                        } else {
-                            source.webUrl?.let { onOpen(it) }
-                        }
+                        onSelect(source)
                     }
                     .padding(horizontal = 14.dp, vertical = 10.dp),
             ) {

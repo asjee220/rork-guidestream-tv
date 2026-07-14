@@ -680,22 +680,10 @@ struct EpisodeDetailSheet: View {
     /// two or more of the title's services and taps a subscribed one, it
     /// becomes the active source (watch button follows). Otherwise it opens
     /// the source's deep link directly.
-    private func onWhereToWatchTap(_ source: WatchmodeSource, subscribedCount: Int) {
-        if subscribedCount >= 2, AuthViewModel.shared.subscribesToService(named: source.name) {
-            UIImpactFeedbackGenerator(style: .light).impactOccurred()
-            resolvedSource = source
-            Task { await resolveEpisodeSources(for: source) }
-        } else {
-            if let web = source.webUrl, Self.isRealDeepLinkURL(web), let u = URL(string: web) {
-                StreamingDeepLinker.openResolvedURL(
-                    u, platform: source.name, title: title, tmdbId: tmdbId
-                )
-            } else {
-                StreamingDeepLinker.open(
-                    platform: source.name, title: title, tmdbId: tmdbId, isTV: isTV
-                )
-            }
-        }
+    private func onWhereToWatchTap(_ source: WatchmodeSource) {
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        resolvedSource = source
+        Task { await resolveEpisodeSources(for: source) }
     }
 
     // MARK: - Where to watch row
@@ -709,9 +697,6 @@ struct EpisodeDetailSheet: View {
                 if aSub != bSub { return aSub }
                 return false
             }
-            let subscribedCount = sortedSources.filter {
-                AuthViewModel.shared.subscribesToService(named: $0.name)
-            }.count
             VStack(alignment: .leading, spacing: 10) {
                 Text("WHERE TO WATCH")
                     .scaledFont(size: 12, weight: .heavy)
@@ -721,13 +706,13 @@ struct EpisodeDetailSheet: View {
                     HStack(spacing: 10) {
                         ForEach(sortedSources) { source in
                             Button {
-                                onWhereToWatchTap(source, subscribedCount: subscribedCount)
+                                onWhereToWatchTap(source)
                             } label: {
                                 ServiceBadge(
                                     name: source.name,
                                     color: brandColor(for: source.name),
                                     isSubscribed: AuthViewModel.shared.subscribesToService(named: source.name),
-                                    isSelected: subscribedCount >= 2 && resolvedSource?.sourceId == source.sourceId
+                                    isSelected: resolvedSource?.sourceId == source.sourceId
                                 )
                             }
                             .buttonStyle(.plain)

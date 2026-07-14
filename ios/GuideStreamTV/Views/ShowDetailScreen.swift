@@ -382,17 +382,11 @@ struct ShowDetailScreen: View {
 
     /// Services from `sortedServices` the user is subscribed to. When two or
     /// more, the "Where to Watch" chips become selectable and the Watch
-    /// button follows the selection.
-    private var subscribedServices: [WhereToWatchService] {
-        sortedServices.filter { isSubscribedService($0.name) }
-    }
-
     /// The service the Watch button and Play On sheet currently target.
-    /// Returns the user-selected service when set and subscribed, otherwise
-    /// the resolver's primary.
+    /// Returns the user-selected service when set and it matches a known
+    /// service, otherwise the resolver's primary.
     private var activeService: WhereToWatchService? {
         if let sel = selectedServiceName,
-           isSubscribedService(sel),
            let match = vm.services.first(where: { $0.name == sel }) {
             return match
         }
@@ -1126,7 +1120,7 @@ struct ShowDetailScreen: View {
     /// Availability helper caption shown below the primary CTA. Returns
     /// `nil` (no view rendered) for subscribed, unknown, or unresolved types.
     private var availabilityCaption: String? {
-        guard let source = vm.resolved.primarySource else { return nil }
+        guard let source = activeSource else { return nil }
         let type = source.type.lowercased()
         let name = gsDisplayName(for: source.name)
         if type == "free" { return "Free on \(name)" }
@@ -1166,18 +1160,14 @@ struct ShowDetailScreen: View {
                     HStack(spacing: 10) {
                         ForEach(services) { s in
                             Button {
-                                if subscribedServices.count >= 2, isSubscribedService(s.name) {
-                                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                                    selectedServiceName = s.name
-                                } else {
-                                    openDeeplink(serviceName: s.name)
-                                }
+                                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                selectedServiceName = s.name
                             } label: {
                                 ServiceBadge(
                                     name: s.name,
                                     color: s.color,
                                     isSubscribed: isSubscribedService(s.name),
-                                    isSelected: subscribedServices.count >= 2 && activeService?.name == s.name
+                                    isSelected: activeService?.name == s.name
                                 )
                             }
                             .buttonStyle(.plain)
