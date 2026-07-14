@@ -524,11 +524,29 @@ final class ReelsViewModel {
                     // /tv/{movieId} for movies returns a slow 404 and blocks the
                     // task group for up to 12 seconds per movie result.
                     let detail: TMDBTVDetail? = r.isTV ? (try? await tmdb.getTVDetail(tmdbId: r.id)) : nil
-                    async let candidatesTask: [String]? = try? (r.isTV ? tmdb.getTrailerCandidates(tmdbId: r.id) : tmdb.getMovieTrailerCandidates(tmdbId: r.id))
+                    // Server-verified playable trailer keys in rank order. The
+                    // resolver only returns keys that are embeddable, public,
+                    // processed, and not US-blocked, so the first key is trusted
+                    // to play — no client-side ranking can replicate that.
+                    async let resolveTask: [String]? = TrailerResolveService.resolve(tmdbId: r.id, isTV: r.isTV)
                     async let providerTask: [TMDBWatchProvider]? = try? tmdb.getWatchProviders(tmdbId: r.id, isTV: r.isTV)
-                    let (candidatesOptional, poolOptional) = await (candidatesTask, providerTask)
-                    let candidates = candidatesOptional ?? []
+                    let (resolved, poolOptional) = await (resolveTask, providerTask)
                     let pool = poolOptional ?? []
+
+                    // Three-way handling of the resolver result:
+                    //  * nil → the call failed; degrade to the unverified TMDB
+                    //    key so a brief Supabase outage doesn't empty the feed.
+                    //  * [] → the title has no playable trailer at all; drop it.
+                    //  * [...] → verified keys; first is primary, rest fallback.
+                    let candidates: [String]
+                    if let resolved {
+                        if resolved.isEmpty { return nil }
+                        candidates = resolved
+                    } else {
+                        let single = (try? await (r.isTV ? tmdb.getTrailerKey(tmdbId: r.id) : tmdb.getMovieTrailerKey(tmdbId: r.id))) ?? nil
+                        guard let single, !single.isEmpty else { return nil }
+                        candidates = [single]
+                    }
                     guard let key = candidates.first, !key.isEmpty, !pool.isEmpty else { return nil }
                     let fallbackKeys = Array(candidates.dropFirst())
 
@@ -670,7 +688,18 @@ final class ReelsViewModel {
                 let releaseDate = entry.date
                 let tmdbId = release.tmdbId!
                 group.addTask { [tmdb] in
-                    let candidates = (try? await tmdb.getMovieTrailerCandidates(tmdbId: tmdbId)) ?? []
+                    // Coming Soon is always movies — resolve server-verified
+                    // playable keys, same three-way handling as buildItems.
+                    let resolved = await TrailerResolveService.resolve(tmdbId: tmdbId, isTV: false)
+                    let candidates: [String]
+                    if let resolved {
+                        if resolved.isEmpty { return nil }
+                        candidates = resolved
+                    } else {
+                        let single = (try? await tmdb.getMovieTrailerKey(tmdbId: tmdbId)) ?? nil
+                        guard let single, !single.isEmpty else { return nil }
+                        candidates = [single]
+                    }
                     guard let key = candidates.first, !key.isEmpty else { return nil }
                     let fallbackKeys = Array(candidates.dropFirst())
 

@@ -372,12 +372,12 @@ private fun ReelView(
                             matched = false,
                         )
                         lastErrorCode = code
-                        // Embed-blocked (owner-disabled) and player-failed codes
-                        // both walk the fallback keys, then collapse to poster.
-                        val embedBlocked = code == 101 || code == 150 || code == 153
-                        val playerFailed = code == -1 || code == -2 || code == 2 ||
-                            code == 5 || code == 100
-                        if (embedBlocked || playerFailed) {
+                        // Only owner-disabled-embed codes (101/150) are fatal:
+                        // walk the server-verified fallback keys, then collapse
+                        // to the poster once every candidate is exhausted. Every
+                        // other code leaves the WebView mounted exactly as before
+                        // so transient states can still recover.
+                        if (code == 101 || code == 150) {
                             if (candidateIndex < reel.fallbackKeys.size) {
                                 candidateIndex += 1
                             } else {

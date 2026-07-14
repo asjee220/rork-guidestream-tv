@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.rork.guidestreamtvandroid.data.models.Platform
 import com.rork.guidestreamtvandroid.data.models.TMDBResult
 import com.rork.guidestreamtvandroid.data.remote.TMDBService
+import com.rork.guidestreamtvandroid.data.remote.TrailerResolveService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -124,7 +125,17 @@ class ReelsViewModel : ViewModel() {
     ): List<TrailerItem> {
         val items = mutableListOf<TrailerItem>()
         for (r in results.take(20)) {
-            val candidates = tmdb.getTrailerCandidates(r.id, r.isTV)
+            // Server-verified playable keys in rank order. Three-way handling:
+            //  * null → resolver unreachable; degrade to the unverified TMDB key
+            //    so a brief Supabase outage doesn't empty the feed.
+            //  * empty → title has no playable trailer at all; skip it entirely.
+            //  * non-empty → first key is primary, the rest are fallbacks.
+            val resolved = TrailerResolveService.resolve(r.id, r.isTV)
+            val candidates: List<String> = when {
+                resolved == null -> listOf(tmdb.getTrailerKey(r.id, r.isTV) ?: continue)
+                resolved.isEmpty() -> continue
+                else -> resolved
+            }
             val key = candidates.firstOrNull() ?: continue
             val provider = tmdb.getTopWatchProvider(r.id, r.isTV)
             val platform = Platform.from(provider?.providerName)
@@ -145,6 +156,7 @@ class ReelsViewModel : ViewModel() {
                     trailerKey = key,
                     fallbackKeys = candidates.drop(1),
                     thumbnailUrl = "https://img.youtube.com/vi/$key/hqdefault.jpg",
+                    // (fallbackKeys carries the remaining verified keys in rank order)
                     voteAverage = r.voteAverage ?: 7.0,
                     tab = tab,
                     isTV = r.isTV,
