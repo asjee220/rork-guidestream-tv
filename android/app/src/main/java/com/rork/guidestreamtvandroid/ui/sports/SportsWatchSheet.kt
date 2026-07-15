@@ -17,6 +17,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -47,10 +49,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.rork.guidestreamtvandroid.data.models.Platform
 import com.rork.guidestreamtvandroid.data.models.SportsGame
+import com.rork.guidestreamtvandroid.data.repository.AuthViewModel
 import com.rork.guidestreamtvandroid.data.repository.StreamsViewModel
 import com.rork.guidestreamtvandroid.data.repository.TeamFavoritesService
 import com.rork.guidestreamtvandroid.data.repository.WatchIntentLogger
@@ -71,7 +76,7 @@ import java.util.TimeZone
 /**
  * Bottom sheet presented when a user taps a game card in the Sports tab.
  * Mirrors iOS SportsWatchSheet.swift — header, actions row, watch context,
- * watch CTA + watch list, secondary pills, About, close.
+ * Where to Watch chips, watch CTA + watch list, secondary pills, About, close.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -88,9 +93,27 @@ fun SportsWatchSheet(
     val streams = StreamsViewModel.get()
     val userStreams by streams.userStreams.collectAsStateWithLifecycle()
 
+    val auth = AuthViewModel.get()
     var showCast by remember { mutableStateOf(false) }
+    var selectedBroadcast by remember { mutableStateOf<String?>(null) }
 
     val primaryBroadcast = game.broadcasts.firstOrNull()
+
+    // De-duped broadcasts preserving first-seen order, then stable-sorted so
+    // services the user subscribes to come first — mirrors the iOS chip order.
+    val sortedBroadcasts = game.broadcasts
+        .distinct()
+        .withIndex()
+        .sortedWith(
+            compareByDescending<IndexedValue<String>> { auth.subscribesToService(it.value) }
+                .thenBy { it.index }
+        )
+        .map { it.value }
+
+    // The broadcast the Watch CTA currently targets.
+    val activeBroadcast = selectedBroadcast?.takeIf { sortedBroadcasts.contains(it) }
+        ?: sortedBroadcasts.firstOrNull()
+        ?: game.broadcasts.firstOrNull()
     val gameTitle = "${game.away.shortName.ifEmpty { game.away.abbreviation }} vs ${game.home.shortName.ifEmpty { game.home.abbreviation }}"
     val saveId = WatchIntentLogger.get().titleSlug("${game.away.abbreviation}-${game.home.abbreviation}-${game.sport}")
     val isSaved = userStreams.any { it.titleId == saveId }
@@ -177,6 +200,14 @@ fun SportsWatchSheet(
                 }
             }
 
+            // Where to Watch chips
+            SportsWhereToWatchRow(
+                broadcasts = sortedBroadcasts,
+                activeBroadcast = activeBroadcast,
+                isSubscribed = { auth.subscribesToService(it) },
+                onSelect = { selectedBroadcast = it },
+            )
+
             // Watch CTA + watch list
             Row(
                 modifier = Modifier
@@ -186,7 +217,7 @@ fun SportsWatchSheet(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalAlignment = Alignment.Top,
             ) {
-                val canWatch = primaryBroadcast != null
+                val canWatch = activeBroadcast != null
                 Box(
                     modifier = Modifier
                         .weight(1f)
@@ -201,10 +232,10 @@ fun SportsWatchSheet(
                             WatchIntentLogger.get().log(
                                 WatchIntentLogger.IntentEventType.DEEPLINK_FIRED,
                                 titleId = saveId,
-                                platformId = primaryBroadcast?.lowercase(),
-                                metadata = mapOf("sport" to game.sport, "platform_name" to (primaryBroadcast ?: "")),
+                                platformId = activeBroadcast?.lowercase(),
+                                metadata = mapOf("sport" to game.sport, "platform_name" to (activeBroadcast ?: "")),
                             )
-                            val q = Uri.encode("watch ${primaryBroadcast ?: ""} $gameTitle live")
+                            val q = Uri.encode("watch ${activeBroadcast ?: ""} $gameTitle live")
                             runCatching {
                                 context.startActivity(
                                     Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com/search?q=$q")),
@@ -225,7 +256,7 @@ fun SportsWatchSheet(
                             modifier = Modifier.size(18.dp),
                         )
                         Text(
-                            text = if (canWatch) "Watch on $primaryBroadcast" else "Broadcast TBA",
+                            text = if (canWatch) "Watch on $activeBroadcast" else "Broadcast TBA",
                             fontSize = 16.sp,
                             fontWeight = FontWeight.SemiBold,
                             color = Color.White,
@@ -250,7 +281,7 @@ fun SportsWatchSheet(
                                 if (isSaved) {
                                     streams.removeFromMyStreams(saveId)
                                 } else {
-                                    streams.addToMyStreams(saveId, gameTitle, null, primaryBroadcast)
+                                    streams.addToMyStreams(saveId, gameTitle, null, activeBroadcast)
                                 }
                             },
                         contentAlignment = Alignment.Center,
@@ -325,6 +356,107 @@ fun SportsWatchSheet(
 
     if (showCast) {
         CastToTVSheet(onClose = { showCast = false })
+    }
+}
+
+/**
+ * Selectable "Where to Watch" chip row for the sports sheet. Faithfully mirrors
+ * the show-detail `WhereToWatchRow` styling: one chip per broadcast, subscribed
+ * chips get a green "Subscribed" badge and the active chip an orange checkmark.
+ * Hidden entirely when there are no broadcasts.
+ */
+@Composable
+private fun SportsWhereToWatchRow(
+    broadcasts: List<String>,
+    activeBroadcast: String?,
+    isSubscribed: (String) -> Boolean,
+    onSelect: (String) -> Unit,
+) {
+    if (broadcasts.isEmpty()) return
+    Text(
+        text = "Where to Watch",
+        fontSize = 17.sp,
+        fontWeight = FontWeight.Bold,
+        color = TextPrimary,
+        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+    )
+    LazyRow(
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        items(broadcasts) { broadcast ->
+            val subscribed = isSubscribed(broadcast)
+            val selected = activeBroadcast == broadcast
+            val dotColor = Platform.from(broadcast)?.color ?: BrandOrange
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(dotColor.copy(alpha = if (subscribed) 0.28f else 0.18f))
+                    .border(
+                        width = if (selected) 2.dp else 1.dp,
+                        color = if (selected) dotColor else dotColor.copy(alpha = if (subscribed) 0.70f else 0.45f),
+                        shape = RoundedCornerShape(12.dp),
+                    )
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                    ) {
+                        onSelect(broadcast)
+                    }
+                    .padding(horizontal = 14.dp, vertical = 10.dp),
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(8.dp)
+                            .clip(CircleShape)
+                            .background(dotColor),
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = broadcast,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = TextPrimary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    if (subscribed) {
+                        Spacer(Modifier.width(8.dp))
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(Color(0xFF34C759).copy(alpha = 0.85f))
+                                .padding(horizontal = 6.dp, vertical = 2.dp),
+                        ) {
+                            Text(
+                                text = "Subscribed",
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Black,
+                                color = Color.White,
+                            )
+                        }
+                    }
+                    if (selected) {
+                        Spacer(Modifier.width(6.dp))
+                        Box(
+                            modifier = Modifier
+                                .size(16.dp)
+                                .clip(CircleShape)
+                                .background(BrandOrange),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Check,
+                                contentDescription = "Selected",
+                                tint = Color.White,
+                                modifier = Modifier.size(10.dp),
+                            )
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
