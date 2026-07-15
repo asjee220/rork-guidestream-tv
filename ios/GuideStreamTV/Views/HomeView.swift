@@ -2491,7 +2491,7 @@ private struct TopPicksSection: View {
                                     .clipShape(.rect(cornerRadius: 10))
                                     .allowsHitTesting(false)
                                 }
-                                .overlay(alignment: .bottomTrailing) {
+                                .overlay(alignment: .topTrailing) {
                                     if show.meta.contains("%") {
                                         Text(show.meta)
                                             .scaledFont(size: 8, weight: .bold)
@@ -2541,8 +2541,6 @@ private struct CreatorsForYouSection: View {
 
     /// Mustard/goldenrod accent for the section header and match chips.
     private static let mustardAccent = Color(red: 0xD4/255, green: 0xA0/255, blue: 0x17/255)
-    /// Match-percentage chip background — translucent mustard.
-    private static let mustardChipBg = Color(red: 0xD4/255, green: 0xA0/255, blue: 0x17/255).opacity(0.88)
 
     var body: some View {
         SectionGlassCard(
@@ -2605,8 +2603,8 @@ private struct CreatorsForYouSection: View {
                                     .padding(5)
                                     .allowsHitTesting(false)
                                 }
-                                .overlay(alignment: .bottomTrailing) {
-                                    // Match percentage chip — mustard with white text
+                                .overlay(alignment: .topTrailing) {
+                                    // Match percentage chip — blue with white text (matches Top Picks)
                                     Text("\(creator.matchPercentage)% Match")
                                         .scaledFont(size: 8, weight: .bold)
                                         .foregroundStyle(Color.white)
@@ -2614,7 +2612,7 @@ private struct CreatorsForYouSection: View {
                                         .padding(.vertical, 3)
                                         .background(
                                             RoundedRectangle(cornerRadius: 5)
-                                                .fill(Self.mustardChipBg)
+                                                .fill(Color(red: 0.10, green: 0.44, blue: 0.91).opacity(0.88))
                                         )
                                         .padding(5)
                                         .allowsHitTesting(false)

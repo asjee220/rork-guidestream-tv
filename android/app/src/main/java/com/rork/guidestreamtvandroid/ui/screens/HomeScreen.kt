@@ -1324,10 +1324,10 @@ private fun CreatorAvatarCard(
             }
             Box(
                 modifier = Modifier
-                    .align(Alignment.BottomEnd)
+                    .align(Alignment.TopEnd)
                     .padding(5.dp)
                     .clip(RoundedCornerShape(5.dp))
-                    .background(Color(red = 0xD4, green = 0xA0, blue = 0x17).copy(alpha = 0.9f))
+                    .background(BrandBlue.copy(alpha = 0.9f))
                     .padding(horizontal = 5.dp, vertical = 3.dp),
             ) {
                 Text(
