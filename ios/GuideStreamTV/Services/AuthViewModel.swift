@@ -122,6 +122,7 @@ final class AuthViewModel {
             let session = try await SupabaseManager.shared.client.auth.session
             self.currentUser = session.user
             await loadDisplayName()
+            await restoreOnboardingState()
             // Pick up any guest-era watch list rows and refresh from Supabase
             // so the list is in sync on cold launch.
             Task { await StreamsViewModel.shared.syncLocalToSupabase() }
@@ -448,6 +449,43 @@ final class AuthViewModel {
         }
     }
 
+    /// Re-hydrates onboarding completion, connected services, and notification
+    /// preferences from the `users` row for the signed-in user. Called after
+    /// every authenticated session so returning users and cross-device
+    /// sign-ins land straight in the main app with their settings intact.
+    /// Guests are skipped (no `users` row). Failures leave local state as-is
+    /// so brand-new users still go through onboarding normally.
+    @MainActor
+    func restoreOnboardingState() async {
+        guard let uid = currentUser?.id.uuidString else { return }
+        do {
+            let rows: [OnboardingStateRow] = try await SupabaseManager.shared.client
+                .from("users")
+                .select("onboarding_complete, services")
+                .eq("id", value: uid)
+                .limit(1)
+                .execute()
+                .value
+            if let row = rows.first {
+                let services = row.services ?? []
+                if row.onboarding_complete == true || !services.isEmpty {
+                    self.hasCompletedOnboarding = true
+                    UserDefaults.standard.set(true, forKey: "gs.onboardingComplete")
+                }
+                if !services.isEmpty {
+                    self.selectedServices = Set(services)
+                    UserDefaults.standard.set(Array(services), forKey: "gs.selectedServices")
+                }
+            }
+        } catch {
+            // Column may be missing on older projects — keep local defaults.
+            print("[Auth] restoreOnboardingState failed: \(error.localizedDescription)")
+            return
+        }
+        await loadNotificationCategoryPreferences()
+        await loadMovieReleasePreference()
+    }
+
     /// Loads all five category notification preferences from `users` for the
     /// signed-in user without re-triggering any upserts. Guests keep their
     /// locally-cached values. Older projects missing columns fall back
@@ -544,6 +582,7 @@ final class AuthViewModel {
                 } else {
                     await loadDisplayName()
                 }
+                await restoreOnboardingState()
                 WatchIntentLogger.shared.log(
                     eventType: .authSignedIn,
                     metadata: [
@@ -616,7 +655,8 @@ final class AuthViewModel {
             id: userId,
             services: Array(selectedServices),
             notify_push: notifyPushEnabled,
-            notify_sms: notifySMSEnabled
+            notify_sms: notifySMSEnabled,
+            onboarding_complete: true
         )
         Task {
             do {
@@ -760,6 +800,7 @@ final class AuthViewModel {
                     email: session.user.email
                 )
                 await loadDisplayName()
+                await restoreOnboardingState()
                 WatchIntentLogger.shared.log(
                     eventType: .authSignedIn,
                     metadata: [
@@ -841,6 +882,7 @@ final class AuthViewModel {
                 email: session.user.email
             )
             await loadDisplayName()
+            await restoreOnboardingState()
             WatchIntentLogger.shared.log(
                 eventType: .authSignedIn,
                 metadata: [
@@ -938,6 +980,7 @@ final class AuthViewModel {
                 email: session.user.email
             )
             await loadDisplayName()
+            await restoreOnboardingState()
             WatchIntentLogger.shared.log(
                 eventType: .authSignedIn,
                 metadata: [

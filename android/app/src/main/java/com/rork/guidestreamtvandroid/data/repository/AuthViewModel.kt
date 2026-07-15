@@ -11,6 +11,7 @@ import io.github.jan.supabase.auth.providers.Google
 import io.github.jan.supabase.auth.providers.builtin.Email
 import io.github.jan.supabase.auth.user.UserInfo
 import io.github.jan.supabase.postgrest.postgrest
+import io.github.jan.supabase.postgrest.query.Columns
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -54,6 +55,25 @@ class AuthViewModel private constructor(private val context: Context) : ViewMode
         val services: List<String>,
         @SerialName("notify_push") val notifyPush: Boolean,
         @SerialName("notify_sms") val notifySms: Boolean,
+        @SerialName("onboarding_complete") val onboardingComplete: Boolean,
+    )
+
+    /**
+     * Minimal decoder for re-hydrating onboarding state and notification
+     * preferences from the `users` row after sign-in. Every field is nullable
+     * so older projects missing columns still decode cleanly.
+     */
+    @Serializable
+    data class OnboardingStateRow(
+        @SerialName("onboarding_complete") val onboardingComplete: Boolean? = null,
+        val services: List<String>? = null,
+        @SerialName("notify_push") val notifyPush: Boolean? = null,
+        @SerialName("notify_sms") val notifySms: Boolean? = null,
+        @SerialName("notify_new_episodes") val notifyNewEpisodes: Boolean? = null,
+        @SerialName("notify_watchlist") val notifyWatchlist: Boolean? = null,
+        @SerialName("notify_live") val notifyLive: Boolean? = null,
+        @SerialName("notify_sports") val notifySports: Boolean? = null,
+        @SerialName("notify_movie_releases") val notifyMovieReleases: Boolean? = null,
     )
 
     private val prefs = context.getSharedPreferences("gs_prefs", Context.MODE_PRIVATE)
@@ -199,6 +219,7 @@ class AuthViewModel private constructor(private val context: Context) : ViewMode
                 if (session != null) {
                     _currentUser.value = session.user
                     loadDisplayName()
+                    restoreOnboardingState()
                     launch(Dispatchers.IO) {
                         StreamsViewModel.get().syncLocalToSupabase()
                     }
@@ -226,6 +247,74 @@ class AuthViewModel private constructor(private val context: Context) : ViewMode
             applyLoadedName(rows.firstOrNull())
         } catch (_: Exception) {
             // Fallback — keep cached value
+        }
+    }
+
+    /**
+     * Re-hydrates onboarding completion, connected services, and notification
+     * preferences from the `users` row for the signed-in user. Called after
+     * every authenticated session so returning users and cross-device sign-ins
+     * land straight in the main app with their settings intact. Guests are
+     * skipped (no `users` row). Failures leave local state as-is so brand-new
+     * users still go through onboarding normally.
+     */
+    suspend fun restoreOnboardingState() {
+        val uid = currentUserId ?: return
+        try {
+            val rows = SupabaseManager.client.postgrest
+                .from("users")
+                .select(
+                    columns = Columns.raw(
+                        "onboarding_complete, services, notify_push, notify_sms, " +
+                            "notify_new_episodes, notify_watchlist, notify_live, " +
+                            "notify_sports, notify_movie_releases",
+                    ),
+                ) {
+                    filter { eq("id", uid) }
+                    limit(1)
+                }
+                .decodeList<OnboardingStateRow>()
+            val row = rows.firstOrNull() ?: return
+            val services = row.services ?: emptyList()
+            if (row.onboardingComplete == true || services.isNotEmpty()) {
+                _hasCompletedOnboarding.value = true
+                prefs.edit().putBoolean("gs.onboardingComplete", true).apply()
+            }
+            if (services.isNotEmpty()) {
+                val serviceSet = services.toSet()
+                _selectedServices.value = serviceSet
+                prefs.edit().putStringSet("gs.selectedServices", serviceSet).apply()
+            }
+            row.notifyPush?.let {
+                _notifyPushEnabled.value = it
+                prefs.edit().putBoolean("gs.notifyPush", it).apply()
+            }
+            row.notifySms?.let {
+                _notifySMSEnabled.value = it
+                prefs.edit().putBoolean("gs.notifySMS", it).apply()
+            }
+            row.notifyNewEpisodes?.let {
+                _notifyNewEpisodesEnabled.value = it
+                prefs.edit().putBoolean("gs.notifyNewEpisodes", it).apply()
+            }
+            row.notifyWatchlist?.let {
+                _notifyWatchlistEnabled.value = it
+                prefs.edit().putBoolean("gs.notifyWatchlist", it).apply()
+            }
+            row.notifyLive?.let {
+                _notifyLiveEnabled.value = it
+                prefs.edit().putBoolean("gs.notifyLive", it).apply()
+            }
+            row.notifySports?.let {
+                _notifySportsEnabled.value = it
+                prefs.edit().putBoolean("gs.notifySports", it).apply()
+            }
+            row.notifyMovieReleases?.let {
+                _notifyMovieReleasesEnabled.value = it
+                prefs.edit().putBoolean("gs.notifyMovieReleases", it).apply()
+            }
+        } catch (_: Exception) {
+            // Columns may be missing on older projects — keep local defaults.
         }
     }
 
@@ -432,6 +521,7 @@ class AuthViewModel private constructor(private val context: Context) : ViewMode
                         )
                     }
                     loadDisplayName()
+                    restoreOnboardingState()
                     DeviceSessionService.get().upsert("google_signed_in")
                     setUserTimezone()
                     launch { StreamsViewModel.get().syncLocalToSupabase() }
@@ -516,6 +606,7 @@ class AuthViewModel private constructor(private val context: Context) : ViewMode
                     )
                 }
                 loadDisplayName()
+                restoreOnboardingState()
                 DeviceSessionService.get().upsert("email_signed_up")
                 setUserTimezone()
                 _isAuthenticating.value = false
@@ -589,6 +680,7 @@ class AuthViewModel private constructor(private val context: Context) : ViewMode
                     )
                 }
                 loadDisplayName()
+                restoreOnboardingState()
                 DeviceSessionService.get().upsert("email_signed_in")
                 setUserTimezone()
                 viewModelScope.launch { StreamsViewModel.get().syncLocalToSupabase() }
@@ -668,6 +760,7 @@ class AuthViewModel private constructor(private val context: Context) : ViewMode
             services = _selectedServices.value.toList(),
             notifyPush = _notifyPushEnabled.value,
             notifySms = _notifySMSEnabled.value,
+            onboardingComplete = true,
         )
         viewModelScope.launch(Dispatchers.IO) {
             try {

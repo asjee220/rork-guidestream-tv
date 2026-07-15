@@ -85,6 +85,15 @@ nonisolated struct OnboardingPrefsUpsert: Encodable, Sendable {
     let services: [String]
     let notify_push: Bool
     let notify_sms: Bool
+    let onboarding_complete: Bool
+}
+
+/// Minimal decoder for re-hydrating onboarding state from the `users` row
+/// after sign-in. Fields are optional so older projects missing the
+/// `onboarding_complete` column still decode cleanly.
+nonisolated struct OnboardingStateRow: Decodable, Sendable {
+    let onboarding_complete: Bool?
+    let services: [String]?
 }
 
 /// Lightweight decode helper for fetching display_name + first_name + last_name
