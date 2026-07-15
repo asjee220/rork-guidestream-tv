@@ -41,8 +41,9 @@ struct EmailAuthView: View {
     init(onAuthenticated: @escaping () -> Void, onClose: @escaping () -> Void) {
         self.onAuthenticated = onAuthenticated
         self.onClose = onClose
-        // First touch on this device → create account. After that → sign in.
-        _mode = State(initialValue: AuthViewModel.shared.hasUsedEmailAuth ? .signIn : .signUp)
+        // The email screen always opens in sign-in mode; users tap
+        // "New here? Create account" to switch into sign-up.
+        _mode = State(initialValue: .signIn)
     }
 
     var body: some View {

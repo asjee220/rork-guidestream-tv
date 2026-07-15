@@ -80,9 +80,10 @@ fun EmailAuthScreen(
     val isAuthenticating by auth.isAuthenticating.collectAsState()
     val lastError by auth.lastError.collectAsState()
     val lastInfo by auth.lastInfo.collectAsState()
-    val hasUsedEmailAuth by auth.hasUsedEmailAuth.collectAsState()
 
-    var mode by remember { mutableStateOf(if (hasUsedEmailAuth) EmailAuthMode.SIGN_IN else EmailAuthMode.SIGN_UP) }
+    // The email screen always opens in sign-in mode; users tap
+    // "New here? Create account" to switch into sign-up.
+    var mode by remember { mutableStateOf(EmailAuthMode.SIGN_IN) }
     var firstName by remember { mutableStateOf("") }
     var lastName by remember { mutableStateOf("") }
     var email by remember { mutableStateOf("") }
