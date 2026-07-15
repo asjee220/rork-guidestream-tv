@@ -301,6 +301,7 @@ fun HomeScreen(
                 title = "Top Picks for You",
                 shows = topPicks,
                 providerByTmdb = providerByTmdb,
+                badgeAsMatchChip = true,
                 badgeText = { r ->
                     val score = scoreFor(r)
                     "${(score.coerceIn(0.50, 0.99) * 100).toInt()}% Match"
