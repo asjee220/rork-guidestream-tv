@@ -6,6 +6,7 @@
 import SwiftUI
 import UserNotifications
 import Supabase
+import UIKit
 
 // MARK: - Home Models
 
@@ -3513,6 +3514,19 @@ private struct LeavingSoonSection: View {
         return String(parts[1]).trimmingCharacters(in: .whitespaces)
     }
 
+    /// Picks a readable flag text color for the given flag background by
+    /// computing its relative luminance. Near-black brand colors (Peacock,
+    /// Starz, Apple TV+) get white text; everything else keeps navy.
+    private func flagTextColor(for background: Color) -> Color {
+        var r: CGFloat = 0
+        var g: CGFloat = 0
+        var b: CGFloat = 0
+        var a: CGFloat = 0
+        UIColor(background).getRed(&r, green: &g, blue: &b, alpha: &a)
+        let luminance = 0.299 * r + 0.587 * g + 0.114 * b
+        return luminance < 0.2 ? Color.white : Color.navy
+    }
+
     var body: some View {
         SectionGlassCard(
             title: "Leaving Soon",
@@ -3552,7 +3566,7 @@ private struct LeavingSoonSection: View {
                                         .overlay(alignment: .bottom) {
                                             Text(daysLeftText(for: show))
                                                 .scaledFont(size: 11, weight: .bold)
-                                                .foregroundStyle(Color.navy)
+                                                .foregroundStyle(flagTextColor(for: pColor))
                                                 .frame(maxWidth: .infinity)
                                                 .padding(.vertical, 6)
                                                 .background(pColor)
