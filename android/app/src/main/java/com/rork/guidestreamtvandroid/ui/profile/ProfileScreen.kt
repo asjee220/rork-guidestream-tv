@@ -49,6 +49,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.rork.guidestreamtvandroid.BuildConfig
 import com.rork.guidestreamtvandroid.data.repository.AuthViewModel
 import com.rork.guidestreamtvandroid.data.repository.StreamsViewModel
 import com.rork.guidestreamtvandroid.ui.components.glassCard
@@ -205,6 +206,16 @@ fun ProfileScreen(
             subtitle = if (isGuest) "Exit guest mode" else "Sign out of your account",
             onClick = { showSignOutConfirm = true },
             titleColor = Color(0xFFE55050),
+        )
+
+        Spacer(Modifier.height(16.dp))
+
+        Text(
+            text = "Version ${BuildConfig.VERSION_NAME} (Build ${BuildConfig.VERSION_CODE})",
+            fontSize = 12.sp,
+            color = TextTertiary,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth(),
         )
 
         BottomSafeSpacer(withTabBar = true)
