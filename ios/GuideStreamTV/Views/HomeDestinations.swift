@@ -306,6 +306,7 @@ struct EpisodeDetailSheet: View {
     /// chip row and lets the user pick an active source when subscribed to
     /// two or more of them.
     @State private var allSources: [WatchmodeSource] = []
+    @State private var reminders = ReleaseReminderService.shared
 
     private var platformColor: Color {
         if let name = resolvedSource?.name { return brandColor(for: name) }
@@ -444,6 +445,19 @@ struct EpisodeDetailSheet: View {
         return true
     }
 
+    /// True when this subject is a "coming to streaming" poster — drives the
+    /// reduced sheet layout (header + Notify/Share + About only).
+    private var isComingToStreaming: Bool {
+        if case .show(let s) = subject { return s.isComingToStreaming }
+        return false
+    }
+
+    /// Reminder identity for the release_reminders write-through. Empty when
+    /// there's no tmdbId, in which case Notify renders but performs no write.
+    private var reminderKey: String {
+        tmdbId.map(String.init) ?? ""
+    }
+
     private func brandColor(for name: String) -> Color {
         let key = name.lowercased()
         if key.contains("netflix") { return Color(red: 0xE5/255, green: 0x09/255, blue: 0x14/255) }
@@ -464,53 +478,69 @@ struct EpisodeDetailSheet: View {
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: 0) {
-                headerRow
-                    .padding(.horizontal, 20)
-                    .padding(.top, 6)
-                    .padding(.bottom, 18)
-
-                Rectangle()
-                    .fill(Color.white.opacity(0.08))
-                    .frame(height: 1)
-                    .padding(.horizontal, 20)
-
-                actionsRow
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 22)
-
-                Rectangle()
-                    .fill(Color.white.opacity(0.08))
-                    .frame(height: 1)
-                    .padding(.horizontal, 20)
-
-                affiliateBanner
-                    .padding(.top, 12)
-                    .padding(.bottom, 4)
-
-                whereToWatchRow
-                    .padding(.horizontal, 20)
-                    .padding(.top, 22)
-
-                watchActions
-                    .padding(.horizontal, 20)
-                    .padding(.top, 22)
-
-                if let caption = availabilityCaption {
-                    Text(caption)
-                        .scaledFont(size: 13)
-                        .foregroundStyle(Color.white.opacity(0.5))
-                        .padding(.top, 6)
+                if isComingToStreaming {
+                    headerRow
                         .padding(.horizontal, 20)
+                        .padding(.top, 6)
+                        .padding(.bottom, 18)
+
+                    comingSoonActionsRow
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 22)
+
+                    aboutSection
+                        .padding(.horizontal, 20)
+                        .padding(.top, 28)
+                        .padding(.bottom, 28)
+                } else {
+                    headerRow
+                        .padding(.horizontal, 20)
+                        .padding(.top, 6)
+                        .padding(.bottom, 18)
+
+                    Rectangle()
+                        .fill(Color.white.opacity(0.08))
+                        .frame(height: 1)
+                        .padding(.horizontal, 20)
+
+                    actionsRow
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 22)
+
+                    Rectangle()
+                        .fill(Color.white.opacity(0.08))
+                        .frame(height: 1)
+                        .padding(.horizontal, 20)
+
+                    affiliateBanner
+                        .padding(.top, 12)
+                        .padding(.bottom, 4)
+
+                    whereToWatchRow
+                        .padding(.horizontal, 20)
+                        .padding(.top, 22)
+
+                    watchActions
+                        .padding(.horizontal, 20)
+                        .padding(.top, 22)
+
+                    if let caption = availabilityCaption {
+                        Text(caption)
+                            .scaledFont(size: 13)
+                            .foregroundStyle(Color.white.opacity(0.5))
+                            .padding(.top, 6)
+                            .padding(.horizontal, 20)
+                    }
+
+                    secondaryPillRow
+                        .padding(.horizontal, 20)
+                        .padding(.top, 16)
+
+                    aboutSection
+                        .padding(.horizontal, 20)
+                        .padding(.top, 28)
+                        .padding(.bottom, 28)
                 }
-
-                secondaryPillRow
-                    .padding(.horizontal, 20)
-                    .padding(.top, 16)
-
-                aboutSection
-                    .padding(.horizontal, 20)
-                    .padding(.top, 28)
-                    .padding(.bottom, 28)
             }
         }
         .background(Color(red: 0x13/255, green: 0x18/255, blue: 0x1D/255).ignoresSafeArea())
@@ -542,6 +572,9 @@ struct EpisodeDetailSheet: View {
             adDismissed = false
             episodeSourceUnavailable = false
             isResolvingEpisodeSources = false
+            if isComingToStreaming, tmdbId != nil {
+                await reminders.refreshReminded(titleId: reminderKey)
+            }
             // Run source resolution and TMDB detail fetch in parallel
             // so showLatestEpisode is ready before the user can tap
             // "Full details" — otherwise knownLatestEpisode is nil and
@@ -860,6 +893,48 @@ struct EpisodeDetailSheet: View {
                         .padding(8)
                 }
             }
+    }
+
+    // MARK: - Coming-soon actions row
+
+    /// Reduced actions row for coming-to-streaming titles: a circular Notify
+    /// (reminder toggle) and the same circular Share used in `actionsRow`.
+    private var comingSoonActionsRow: some View {
+        HStack(spacing: 40) {
+            circleAction(
+                icon: reminders.isReminded(reminderKey) ? "bell.fill" : "bell",
+                label: "Notify",
+                tint: .white,
+                showDot: reminders.isReminded(reminderKey)
+            ) {
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                guard !reminderKey.isEmpty else { return }
+                Task {
+                    await reminders.toggleReminder(titleId: reminderKey, tmdbId: tmdbId, source: "coming_to_streaming_sheet")
+                }
+            }
+
+            ShareLink(
+                item: URL(string: "https://guidestream.tv")!,
+                subject: Text(title),
+                message: Text("Watch \(title) on GuideStream TV")
+            ) {
+                VStack(spacing: 8) {
+                    ZStack {
+                        Circle()
+                            .fill(Color.white.opacity(0.08))
+                            .frame(width: 56, height: 56)
+                        Image(systemName: "square.and.arrow.up")
+                            .scaledFont(size: 22, weight: .regular)
+                            .foregroundStyle(.white)
+                    }
+                    Text("Share")
+                        .scaledFont(size: 13)
+                        .foregroundStyle(Color.white.opacity(0.7))
+                }
+            }
+        }
+        .frame(maxWidth: .infinity)
     }
 
     // MARK: - Actions row

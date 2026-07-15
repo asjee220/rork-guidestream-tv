@@ -60,7 +60,7 @@ final class ReleaseReminderService {
 
     /// Toggle the reminder for `titleId`. Local state flips immediately so the
     /// UI reacts on the next frame; the Supabase write is best-effort.
-    func toggleReminder(titleId: String, tmdbId: Int?) async {
+    func toggleReminder(titleId: String, tmdbId: Int?, source: String = "reels_coming_soon") async {
         let trimmed = titleId.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
 
@@ -75,7 +75,7 @@ final class ReleaseReminderService {
         WatchIntentLogger.shared.log(
             eventType: .notifyReleaseTapped,
             titleId: trimmed,
-            metadata: ["set": !wasReminded, "source": "reels_coming_soon"]
+            metadata: ["set": !wasReminded, "source": source]
         )
 
         let deviceId = DeviceIdentity.shared.deviceId

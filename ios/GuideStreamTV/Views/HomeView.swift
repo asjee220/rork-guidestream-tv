@@ -97,6 +97,7 @@ struct PosterShow: Identifiable, Hashable {
     var voteAverage: Double? = nil
     var seasonCount: Int? = nil
     var isTV: Bool = true
+    var isComingToStreaming: Bool = false
 }
 
 /// Default gradient colors used as a tasteful fallback while TMDB images load or when they fail.
@@ -2169,7 +2170,8 @@ struct HomeView: View {
                                 posterColors: HomeFallback.posterColors,
                                 symbol: "film.fill",
                                 posterUrl: movie.posterUrl,
-                                tmdbId: movie.id
+                                tmdbId: movie.id,
+                                isComingToStreaming: true
                             ),
                             badgeText: badge,
                             isDated: true,
@@ -2187,7 +2189,8 @@ struct HomeView: View {
                                 posterColors: HomeFallback.posterColors,
                                 symbol: "film.fill",
                                 posterUrl: movie.posterUrl,
-                                tmdbId: movie.id
+                                tmdbId: movie.id,
+                                isComingToStreaming: true
                             ),
                             badgeText: "Coming soon",
                             isDated: false,
