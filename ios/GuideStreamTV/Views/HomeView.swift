@@ -200,7 +200,6 @@ struct HomeView: View {
     @State private var selectedGenreName: String = "Crime"
     @State private var tvdbUpcomingItems: [TVDBUpcomingItem] = []
     @State private var genreHighlighted: Bool = false
-    @State private var becauseYouWatchHighlighted: Bool = false
     @State private var comingToStreaming: [ComingToStreamingItem] = []
     /// Maps prefixed title_ids to their live status for watchlist live indicators.
     @State private var liveStatusMap: [String: LiveStatus] = [:]
@@ -706,14 +705,12 @@ struct HomeView: View {
                             .padding(.horizontal, 20)
                         }
 
-                        GenreDiscoverySection(highlighted: false) { genreId, genreName, mediaType in
+                        GenreDiscoverySection(highlighted: false, selectedGenreId: selectedGenreId) { genreId, genreName, mediaType in
                             selectedGenreId = genreId
                             selectedGenreName = genreName
                             withAnimation(.spring(response: 0.3, dampingFraction: 0.75)) {
                                 scrollProxy.scrollTo("browseByGenre", anchor: .top)
                             }
-                            // Dramatic pulse sequence for the Because You Watch panel
-                            becauseYouWatchHighlighted = false
                             Task {
                                 let shows: [TMDBResult]?
                                 switch mediaType {
@@ -728,26 +725,6 @@ struct HomeView: View {
                                     genreShows = shows
                                     recommendedShows = shows
                                     await hydrateProviders()
-                                    // Phase 1: slow grow-in with relaxed spring
-                                    await MainActor.run {
-                                        withAnimation(.spring(response: 0.55, dampingFraction: 0.55, blendDuration: 0)) {
-                                            becauseYouWatchHighlighted = true
-                                        }
-                                    }
-                                    try? await Task.sleep(for: .milliseconds(550))
-                                    // Phase 2: leisurely snap-back overshoot
-                                    await MainActor.run {
-                                        withAnimation(.spring(response: 0.75, dampingFraction: 0.6, blendDuration: 0)) {
-                                            becauseYouWatchHighlighted = false
-                                        }
-                                    }
-                                    try? await Task.sleep(for: .milliseconds(800))
-                                    // Phase 3: gentle settle into persistent glow
-                                    await MainActor.run {
-                                        withAnimation(.spring(response: 1.1, dampingFraction: 0.7, blendDuration: 0.15)) {
-                                            becauseYouWatchHighlighted = true
-                                        }
-                                    }
                                 }
                             }
                         }
@@ -755,7 +732,7 @@ struct HomeView: View {
                         .padding(.horizontal, 20)
 
                         if !homeContentReady {
-                            HomeShimmerSection(title: "Because you watch \(selectedGenreName)")
+                            HomeShimmerSection(title: "Browsing \(selectedGenreName)")
                                 .padding(.horizontal, 20)
                         } else if !recommendedShows.isEmpty {
                             let recShows = recommendedShows
@@ -766,7 +743,6 @@ struct HomeView: View {
                                 BecauseYouWatchSection(
                                     genreName: selectedGenreName,
                                     shows: recShows,
-                                    highlighted: becauseYouWatchHighlighted,
                                     onOpen: { show in
                                         WatchIntentLogger.shared.log(
                                             eventType: .cardTapped,
@@ -779,10 +755,6 @@ struct HomeView: View {
                                         detailSubject = .show(show)
                                     }
                                 )
-                                .scaleEffect(becauseYouWatchHighlighted ? 1.06 : 1.0)
-                                .animation(.spring(response: 0.75, dampingFraction: 0.55), value: becauseYouWatchHighlighted)
-                                .shadow(color: becauseYouWatchHighlighted ? Color.orange.opacity(0.45) : .clear, radius: becauseYouWatchHighlighted ? 24 : 0, y: becauseYouWatchHighlighted ? 6 : 0)
-                                .animation(.spring(response: 0.8, dampingFraction: 0.6), value: becauseYouWatchHighlighted)
                                 .padding(.horizontal, 20)
                             }
                         }
@@ -3392,6 +3364,7 @@ private struct TrendingRankedSection: View {
 
 private struct GenreDiscoverySection: View {
     let highlighted: Bool
+    let selectedGenreId: Int
     let onSelectGenre: (Int, String, String) -> Void
 
     /// Genre data: (id, name, icon, color, mediaType).
@@ -3436,8 +3409,15 @@ private struct GenreDiscoverySection: View {
                             RoundedRectangle(cornerRadius: 10)
                                 .fill(color.opacity(0.12))
                                 .overlay(
-                                    RoundedRectangle(cornerRadius: 10)
-                                        .stroke(color.opacity(0.25), lineWidth: 0.5)
+                                    Group {
+                                        if id == selectedGenreId {
+                                            RoundedRectangle(cornerRadius: 10)
+                                                .stroke(Color.orange, lineWidth: 2)
+                                        } else {
+                                            RoundedRectangle(cornerRadius: 10)
+                                                .stroke(color.opacity(0.25), lineWidth: 0.5)
+                                        }
+                                    }
                                 )
                         )
                     }
@@ -3455,13 +3435,11 @@ private struct GenreDiscoverySection: View {
 private struct BecauseYouWatchSection: View {
     let genreName: String
     let shows: [PosterShow]
-    let highlighted: Bool
     let onOpen: (PosterShow) -> Void
 
     var body: some View {
         SectionGlassCard(
-            title: "Because you watch \(genreName)",
-            highlighted: highlighted,
+            title: "Browsing \(genreName)",
             accentColor: Color.orange
         ) {
             ScrollView(.horizontal, showsIndicators: false) {
@@ -3474,6 +3452,10 @@ private struct BecauseYouWatchSection: View {
                 .padding(.vertical, 6)
             }
         }
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(Color.orange, lineWidth: 2)
+        )
     }
 }
 

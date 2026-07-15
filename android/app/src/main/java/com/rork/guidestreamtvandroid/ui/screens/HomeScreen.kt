@@ -127,6 +127,7 @@ fun HomeScreen(
     val bingeReady by homeVm.bingeReady.collectAsStateWithLifecycle()
     val genreShows by homeVm.genreShows.collectAsStateWithLifecycle()
     val selectedGenreName by homeVm.selectedGenreName.collectAsStateWithLifecycle()
+    val selectedGenreId by homeVm.selectedGenreId.collectAsStateWithLifecycle()
     val recommendedCreators by homeVm.recommendedCreators.collectAsStateWithLifecycle()
     val popularByService by homeVm.popularByService.collectAsStateWithLifecycle()
     val providerByTmdb by homeVm.providerByTmdb.collectAsStateWithLifecycle()
@@ -457,15 +458,16 @@ fun HomeScreen(
 
         // Browse by genre (pill grid) — drives the Because you watch rail below.
         GenrePillGrid(
+            selectedGenreId = selectedGenreId,
             onSelect = { pill -> HomeViewModel.get().loadGenre(pill.id, pill.label, pill.mediaType) },
         )
 
         // Because You Watch (genre discovery)
         if (!homeReady) {
-            ShimmerSection("Because you watch $selectedGenreName", Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
+            ShimmerSection("Browsing $selectedGenreName", Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
         } else if (genreShows.isNotEmpty()) {
             PosterSection(
-                title = "Because you watch $selectedGenreName",
+                title = "Browsing $selectedGenreName",
                 shows = genreShows.filter { providerByTmdb[it.id] != null }.take(20),
                 providerByTmdb = providerByTmdb,
                 onOpen = { r ->
@@ -1364,7 +1366,7 @@ private val browseGenres: List<GenrePill> = listOf(
 )
 
 @Composable
-private fun GenrePillGrid(onSelect: (GenrePill) -> Unit) {
+private fun GenrePillGrid(selectedGenreId: Int, onSelect: (GenrePill) -> Unit) {
     Column(Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
         Text(
             text = "Browse by genre",
@@ -1382,6 +1384,7 @@ private fun GenrePillGrid(onSelect: (GenrePill) -> Unit) {
                     GenrePillButton(
                         pill = pill,
                         modifier = Modifier.weight(1f),
+                        selected = pill.id == selectedGenreId,
                         onClick = { onSelect(pill) },
                     )
                 }
@@ -1398,11 +1401,13 @@ private fun GenrePillGrid(onSelect: (GenrePill) -> Unit) {
 private fun GenrePillButton(
     pill: GenrePill,
     modifier: Modifier = Modifier,
+    selected: Boolean = false,
     onClick: () -> Unit,
 ) {
     Box(
         modifier = modifier
             .glassCard()
+            .then(if (selected) Modifier.border(2.dp, BrandOrange, RoundedCornerShape(10.dp)) else Modifier)
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
