@@ -69,18 +69,18 @@ final class ShowDetailViewModel {
     /// `loadIfNeeded`) do not cancel the in-flight URLSession requests.
     /// SwiftUI's `.task(id:)` would tear down the task on each re-render,
     /// producing `NSURLErrorDomain -999` "cancelled" failures.
-    func startLoad(titleId: String, isTV: Bool = true) {
+    func startLoad(titleId: String, isTV: Bool = true, expectedTitle: String? = nil) {
         guard loadedTitleId != titleId else { return }
         loadTask?.cancel()
         loadTask = Task {
-            await self.loadIfNeeded(titleId: titleId, isTV: isTV)
+            await self.loadIfNeeded(titleId: titleId, isTV: isTV, expectedTitle: expectedTitle)
         }
     }
 
     /// Loads TMDB detail + Watchmode sources in parallel, then enriches with
     /// TVDB for higher-fidelity episode air-date data.
     /// `titleId` may be a TMDB integer id (preferred) or a legacy Watchmode id.
-    func loadIfNeeded(titleId: String, isTV: Bool = true) async {
+    func loadIfNeeded(titleId: String, isTV: Bool = true, expectedTitle: String? = nil) async {
         guard loadedTitleId != titleId else { return }
         loadedTitleId = titleId
         isLoading = true
@@ -89,6 +89,37 @@ final class ShowDetailViewModel {
         if let tmdbId = Int(titleId), isTV {
             async let tmdbCall: TMDBTVDetail? = try? TMDBService.shared.getTVDetail(tmdbId: tmdbId)
             let tmdbResult = await tmdbCall
+
+            // Legacy heal — watch-list rows saved before media types were
+            // recorded default to TV, so a saved movie id lands here and either
+            // misses the /tv endpoint or resolves to an unrelated series that
+            // happens to share the numeric id. When that's detectable, fall
+            // back to the movie path instead of rendering the wrong title.
+            var healAsMovie = false
+            if tmdbResult == nil {
+                healAsMovie = true
+            } else if let expected = expectedTitle?.trimmingCharacters(in: .whitespacesAndNewlines),
+                      !expected.isEmpty,
+                      let tvName = tmdbResult?.name,
+                      !Self.titlesShareTokens(tvName, expected),
+                      let movie = try? await TMDBService.shared.getMovieDetail(tmdbId: tmdbId),
+                      Self.titlesShareTokens(movie.title, expected) {
+                healAsMovie = true
+            }
+            if healAsMovie {
+                NSLog("[DETAIL_HEAL] titleId=%@ tv lookup rejected (tv=%@ expected=%@) — loading as movie",
+                      titleId, tmdbResult?.name ?? "nil", expectedTitle ?? "nil")
+                await loadAsMovie(tmdbId: tmdbId)
+                // Persist the correction once for saved watch-list rows so the
+                // heal never has to fire again for this title.
+                if detail != nil,
+                   StreamsViewModel.shared.userStreams.contains(where: { $0.titleId == titleId && $0.isTV != false }) {
+                    await StreamsViewModel.shared.updateStreamMediaType(titleId: titleId, isTV: false)
+                }
+                isLoading = false
+                return
+            }
+
             self.tmdb = tmdbResult
             let lea = tmdbResult?.lastEpisodeToAir
             let seasonNum: Int
@@ -137,31 +168,7 @@ final class ShowDetailViewModel {
             // must never be routed through Watchmode's titleDetail, which would
             // interpret it as a Watchmode title id and return an unrelated title.
             if let tmdbId = Int(titleId) {
-                let r = await StreamingSourceResolver.shared.resolve(tmdbId: tmdbId, isTV: false)
-                self.resolved = r
-                do {
-                    let movie = try await TMDBService.shared.getMovieDetail(tmdbId: tmdbId)
-                    detail = WatchmodeTitleDetail(
-                        id: tmdbId,
-                        title: movie.title,
-                        year: movie.year,
-                        userRating: movie.voteAverage,
-                        plotOverview: movie.overview,
-                        genreNames: movie.genreNames,
-                        trailer: nil,
-                        posterUrl: movie.posterUrl,
-                        backdrop: movie.backdropUrl,
-                        releaseDate: movie.releaseDate,
-                        endYear: nil,
-                        runtimeMinutes: movie.runtime,
-                        usRating: nil,
-                        type: "movie",
-                        sources: nil
-                    )
-                } catch {
-                    errorMessage = error.localizedDescription
-                    loadedTitleId = nil
-                }
+                await loadAsMovie(tmdbId: tmdbId)
             } else {
                 // Legacy Watchmode string id — the only case where Watchmode's
                 // titleDetail is the correct lookup.
@@ -176,6 +183,55 @@ final class ShowDetailViewModel {
             }
         }
         isLoading = false
+    }
+
+    /// Loads the TMDB movie detail + streaming sources for a movie id and maps
+    /// it into the shared `detail` shape. Used by both the explicit movie path
+    /// and the legacy tv→movie heal.
+    private func loadAsMovie(tmdbId: Int) async {
+        let r = await StreamingSourceResolver.shared.resolve(tmdbId: tmdbId, isTV: false)
+        self.resolved = r
+        do {
+            let movie = try await TMDBService.shared.getMovieDetail(tmdbId: tmdbId)
+            detail = WatchmodeTitleDetail(
+                id: tmdbId,
+                title: movie.title,
+                year: movie.year,
+                userRating: movie.voteAverage,
+                plotOverview: movie.overview,
+                genreNames: movie.genreNames,
+                trailer: nil,
+                posterUrl: movie.posterUrl,
+                backdrop: movie.backdropUrl,
+                releaseDate: movie.releaseDate,
+                endYear: nil,
+                runtimeMinutes: movie.runtime,
+                usRating: nil,
+                type: "movie",
+                sources: nil
+            )
+        } catch {
+            errorMessage = error.localizedDescription
+            loadedTitleId = nil
+        }
+    }
+
+    /// Normalized token overlap — lowercased alphanumeric words. Returns true
+    /// when the two titles share at least one token, so "The Office" vs
+    /// "Office Space" matches but "Breaking Bad" vs "Heat" does not.
+    nonisolated private static func titlesShareTokens(_ a: String, _ b: String) -> Bool {
+        func tokens(_ s: String) -> Set<String> {
+            Set(
+                s.lowercased()
+                    .split(whereSeparator: { !$0.isLetter && !$0.isNumber })
+                    .map(String.init)
+                    .filter { !$0.isEmpty }
+            )
+        }
+        let ta = tokens(a)
+        let tb = tokens(b)
+        guard !ta.isEmpty, !tb.isEmpty else { return false }
+        return !ta.isDisjoint(with: tb)
     }
 
     /// Looks up the TVDB series id from the TMDB id, then fetches the next
@@ -533,7 +589,7 @@ struct ShowDetailScreen: View {
             await social.refreshCounts(titleId: titleId)
         }
         .task(id: titleId) {
-            vm.startLoad(titleId: titleId, isTV: isTV)
+            vm.startLoad(titleId: titleId, isTV: isTV, expectedTitle: title)
             // Load Trailers & Clips directly off the TMDB id (available
             // immediately) so the row populates even when the detail fetch
             // fails or the title carries the wrong isTV flag. getTitleVideos
@@ -815,7 +871,8 @@ struct ShowDetailScreen: View {
                     titleId: key,
                     title: displayTitle,
                     posterUrl: posterUrl,
-                    platform: vm.primaryService?.name
+                    platform: vm.primaryService?.name,
+                    isTV: isTV
                 )
             }
         }

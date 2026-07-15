@@ -426,7 +426,9 @@ struct FollowCreatorsOnboardingView: View {
                 title_id: titleId,
                 title: item?.displayName,
                 poster_url: item?.imageUrl,
-                platform: item?.sourceType
+                platform: item?.sourceType,
+                // Creators/podcasts are not TMDB titles — no tv/movie type.
+                is_tv: nil
             )
         }
     }

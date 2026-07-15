@@ -37,7 +37,7 @@ object Routes {
     // Reels
     const val REELS = "reels"
 
-    fun showDetail(titleId: String, title: String, isTv: Boolean = true): String =
+    fun showDetail(titleId: String, title: String, isTv: Boolean): String =
         "show_detail/$titleId/${java.net.URLEncoder.encode(title, "UTF-8")}/$isTv"
 
     fun creatorDetail(titleId: String): String = "creator_detail/$titleId"

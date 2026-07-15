@@ -218,6 +218,7 @@ fun ReelsScreen(
                                 title = reel.showName,
                                 posterUrl = reel.posterUrl,
                                 platform = reel.platformName,
+                                isTv = reel.isTV,
                             )
                             WatchIntentLogger.get().log(
                                 WatchIntentLogger.IntentEventType.WATCHLIST_ADDED,
@@ -704,6 +705,7 @@ private fun InjectedReelsScreen(
                                 title = reel.showName,
                                 posterUrl = reel.posterUrl,
                                 platform = reel.platformName,
+                                isTv = reel.isTV,
                             )
                             WatchIntentLogger.get().log(
                                 WatchIntentLogger.IntentEventType.WATCHLIST_ADDED,

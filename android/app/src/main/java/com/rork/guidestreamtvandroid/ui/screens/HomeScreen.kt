@@ -206,6 +206,7 @@ fun HomeScreen(
                         titleId = stream.titleId,
                         titleName = stream.title ?: stream.titleName,
                         posterUrl = stream.posterUrl,
+                        isTv = stream.isTv ?: true,
                     ))
                 },
                 onSeeAll = {
@@ -358,6 +359,9 @@ fun HomeScreen(
                                 titleId = creator.titleId,
                                 titleName = creator.displayName,
                                 posterUrl = creator.imageUrl,
+                                // Creators route to CreatorDetail via SourceKind; the
+                                // tv/movie flag is unused for prefixed ids.
+                                isTv = true,
                             ))
                         },
                     )
@@ -405,7 +409,7 @@ fun HomeScreen(
                         titleId = r.id.toString(),
                         metadata = mapOf("section" to "leaving_soon"),
                     )
-                    onOpenTitle(PendingTitleRoute(titleId = r.id.toString(), titleName = r.displayName, isTv = true))
+                    onOpenTitle(PendingTitleRoute(titleId = r.id.toString(), titleName = r.displayName, isTv = r.isTV))
                 },
                 onSeeAll = {
                     WatchIntentLogger.get().log(

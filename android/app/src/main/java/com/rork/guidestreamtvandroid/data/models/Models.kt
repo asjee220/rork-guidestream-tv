@@ -14,6 +14,8 @@ data class UserStream(
     @SerialName("added_at") val addedAt: String? = null,
     @SerialName("title_name") val titleName: String? = null,
     @SerialName("device_id") val deviceId: String? = null,
+    /** Media type — true = TV, false = movie, null = legacy row or non-TMDB entity. */
+    @SerialName("is_tv") val isTv: Boolean? = null,
 )
 
 @Serializable

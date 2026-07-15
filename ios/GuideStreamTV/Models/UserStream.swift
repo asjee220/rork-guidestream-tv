@@ -13,6 +13,9 @@ nonisolated struct UserStream: Codable, Identifiable, Hashable, Sendable {
     let posterUrl: String?
     let platform: String?
     let addedAt: Date?
+    /// Media type of the saved title — true for TV, false for movie, nil for
+    /// legacy rows and non-TMDB entities (creators, podcasts, sports).
+    let isTV: Bool?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -22,6 +25,7 @@ nonisolated struct UserStream: Codable, Identifiable, Hashable, Sendable {
         case posterUrl = "poster_url"
         case platform
         case addedAt = "added_at"
+        case isTV = "is_tv"
     }
 }
 
@@ -69,6 +73,7 @@ nonisolated struct UserStreamInsert: Encodable, Sendable {
     let title: String?
     let poster_url: String?
     let platform: String?
+    let is_tv: Bool?
 }
 
 nonisolated struct UserProfileUpsert: Encodable, Sendable {

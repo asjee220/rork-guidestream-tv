@@ -14,7 +14,8 @@ data class PendingTitleRoute(
     val titleId: String,
     val titleName: String? = null,
     val posterUrl: String? = null,
-    val isTv: Boolean = true,
+    /** Explicit media type — no default so every route decides tv vs movie. */
+    val isTv: Boolean,
 )
 
 /**

@@ -97,7 +97,7 @@ struct PosterShow: Identifiable, Hashable {
     var tmdbId: Int? = nil
     var voteAverage: Double? = nil
     var seasonCount: Int? = nil
-    var isTV: Bool = true
+    var isTV: Bool
     var isComingToStreaming: Bool = false
 }
 
@@ -196,7 +196,7 @@ struct HomeView: View {
     @State private var topRated: [TMDBResult] = []
     @State private var genreShows: [TMDBResult] = []
     @State private var recommendedShows: [TMDBResult] = []
-    @State private var expiringItems: [(tmdbId: Int, title: String, daysLeft: Int, sourceId: String)] = []
+    @State private var expiringItems: [(tmdbId: Int, title: String, daysLeft: Int, sourceId: String, isTV: Bool)] = []
     @State private var expiringPosterUrls: [Int: String] = [:]
     @State private var selectedGenreId: Int = 80
     @State private var selectedGenreName: String = "Crime"
@@ -633,7 +633,8 @@ struct HomeView: View {
                                             posterColors: [service.glow.opacity(0.85), service.bg],
                                             symbol: "play.fill",
                                             posterUrl: r.posterUrl,
-                                            tmdbId: r.id
+                                            tmdbId: r.id,
+                                            isTV: r.isTV
                                         )
                                     }
                                     PopularOnServiceSection(
@@ -820,7 +821,8 @@ struct HomeView: View {
                                         posterColors: item.platform.map { [$0.color, $0.color.opacity(0.7)] } ?? HomeFallback.posterColors,
                                         symbol: "sparkles",
                                         posterUrl: item.posterUrl,
-                                        tmdbId: item.id
+                                        tmdbId: item.id,
+                                        isTV: true
                                     ))
                                 }
                             )
@@ -912,7 +914,7 @@ struct HomeView: View {
                     await hydrateSourceImages()
                     // Push updated widget data on pull-to-refresh.
                     WidgetDataService.shared.push(
-                        expiringItems: expiringItems,
+                        expiringItems: expiringItems.map { (tmdbId: $0.tmdbId, title: $0.title, daysLeft: $0.daysLeft, sourceId: $0.sourceId) },
                         posterUrls: expiringPosterUrls,
                         watchlistCount: streams.userStreams.count,
                         newEpisodeCount: streams.newEpisodes.count,
@@ -1385,7 +1387,7 @@ struct HomeView: View {
             }
             // Push fresh data to the widget via App Group UserDefaults.
             WidgetDataService.shared.push(
-                expiringItems: expiringItems,
+                expiringItems: expiringItems.map { (tmdbId: $0.tmdbId, title: $0.title, daysLeft: $0.daysLeft, sourceId: $0.sourceId) },
                 posterUrls: expiringPosterUrls,
                 watchlistCount: streams.userStreams.count,
                 newEpisodeCount: streams.newEpisodes.count,
@@ -1418,7 +1420,7 @@ struct HomeView: View {
                 await resolveExpiringPosters()
             }
             WidgetDataService.shared.push(
-                expiringItems: expiringItems,
+                expiringItems: expiringItems.map { (tmdbId: $0.tmdbId, title: $0.title, daysLeft: $0.daysLeft, sourceId: $0.sourceId) },
                 posterUrls: expiringPosterUrls,
                 watchlistCount: streams.userStreams.count,
                 newEpisodeCount: streams.newEpisodes.count,
@@ -1741,7 +1743,8 @@ struct HomeView: View {
                     symbol: "play.tv.fill",
                     posterUrl: r.posterUrl,
                     tmdbId: r.id,
-                    voteAverage: r.voteAverage
+                    voteAverage: r.voteAverage,
+                    isTV: r.isTV
                 )
             }
     }
@@ -1803,7 +1806,8 @@ struct HomeView: View {
                     symbol: "star.fill",
                     posterUrl: r.posterUrl,
                     tmdbId: r.id,
-                    voteAverage: r.voteAverage
+                    voteAverage: r.voteAverage,
+                    isTV: r.isTV
                 )
                 return (show, score)
             }
@@ -1827,7 +1831,8 @@ struct HomeView: View {
                     symbol: "chart.bar.fill",
                     posterUrl: r.posterUrl,
                     tmdbId: r.id,
-                    voteAverage: r.voteAverage
+                    voteAverage: r.voteAverage,
+                    isTV: r.isTV
                 )
             }
             .prefix(20)
@@ -1839,17 +1844,30 @@ struct HomeView: View {
     /// Also resolves posters for the curated fallback so those cards are never blank.
     private func resolveExpiringPosters() async {
         let fallbackIds: Set<Int> = [1396, 2316, 73586, 69478, 76479, 83867]
+        // Media type per id — expiring items carry their Watchmode-derived type;
+        // the curated fallback ids are all TV series.
+        var typeById: [Int: Bool] = [:]
+        for item in expiringItems { typeById[item.tmdbId] = item.isTV }
+        for id in fallbackIds where typeById[id] == nil { typeById[id] = true }
         let allIds = Set(expiringItems.map { $0.tmdbId }).union(fallbackIds)
         guard !allIds.isEmpty else { return }
 
         var fresh: [Int: String] = [:]
         await withTaskGroup(of: (Int, String?).self) { group in
             for tmdbId in allIds {
+                let isTV = typeById[tmdbId] ?? true
                 group.addTask {
-                    guard let detail = try? await TMDBService.shared.getTVDetail(tmdbId: tmdbId) else {
-                        return (tmdbId, nil)
+                    if isTV {
+                        guard let detail = try? await TMDBService.shared.getTVDetail(tmdbId: tmdbId) else {
+                            return (tmdbId, nil)
+                        }
+                        return (tmdbId, detail.posterUrl)
+                    } else {
+                        guard let detail = try? await TMDBService.shared.getMovieDetail(tmdbId: tmdbId) else {
+                            return (tmdbId, nil)
+                        }
+                        return (tmdbId, detail.posterUrl)
                     }
-                    return (tmdbId, detail.posterUrl)
                 }
             }
             for await (id, url) in group {
@@ -1885,19 +1903,20 @@ struct HomeView: View {
                     posterColors: HomeFallback.posterColors,
                     symbol: "clock.badge.exclamationmark",
                     posterUrl: posterUrl,
-                    tmdbId: item.tmdbId
+                    tmdbId: item.tmdbId,
+                    isTV: item.isTV
                 )
             }
         if !live.isEmpty { return live }
         // Curated fallback — well-known titles commonly cycling off services.
         // Poster URLs resolved by resolveExpiringPosters() alongside live items.
         return [
-            PosterShow(title: "Breaking Bad", meta: "2 days left · NETFLIX", posterColors: [Color(red: 0x0A/255, green: 0x3E/255, blue: 0x2A/255), Color(red: 0x1A/255, green: 0x1A/255, blue: 0x2E/255)], symbol: "clock.badge.exclamationmark", posterUrl: expiringPosterUrls[1396], tmdbId: 1396),
-            PosterShow(title: "The Office", meta: "3 days left · PEACOCK", posterColors: [Color(red: 0x2D/255, green: 0x2D/255, blue: 0x3A/255), Color(red: 0x1A/255, green: 0x1A/255, blue: 0x2E/255)], symbol: "clock.badge.exclamationmark", posterUrl: expiringPosterUrls[2316], tmdbId: 2316),
-            PosterShow(title: "Yellowstone", meta: "4 days left · PARAMOUNT+", posterColors: [Color(red: 0x3A/255, green: 0x2E/255, blue: 0x17/255), Color(red: 0x1A/255, green: 0x1A/255, blue: 0x2E/255)], symbol: "clock.badge.exclamationmark", posterUrl: expiringPosterUrls[73586], tmdbId: 73586),
-            PosterShow(title: "The Handmaid's Tale", meta: "5 days left · HULU", posterColors: [Color(red: 0x2A/255, green: 0x1A/255, blue: 0x1A/255), Color(red: 0x1A/255, green: 0x2E/255, blue: 0x2A/255)], symbol: "clock.badge.exclamationmark", posterUrl: expiringPosterUrls[69478], tmdbId: 69478),
-            PosterShow(title: "The Boys", meta: "6 days left · PRIME", posterColors: [Color(red: 0x1A/255, green: 0x1A/255, blue: 0x3A/255), Color(red: 0x1A/255, green: 0x2E/255, blue: 0x2E/255)], symbol: "clock.badge.exclamationmark", posterUrl: expiringPosterUrls[76479], tmdbId: 76479),
-            PosterShow(title: "Andor", meta: "Today · DISNEY+", posterColors: [Color(red: 0x2A/255, green: 0x2A/255, blue: 0x1A/255), Color(red: 0x3A/255, green: 0x3A/255, blue: 0x2E/255)], symbol: "clock.badge.exclamationmark", posterUrl: expiringPosterUrls[83867], tmdbId: 83867),
+            PosterShow(title: "Breaking Bad", meta: "2 days left · NETFLIX", posterColors: [Color(red: 0x0A/255, green: 0x3E/255, blue: 0x2A/255), Color(red: 0x1A/255, green: 0x1A/255, blue: 0x2E/255)], symbol: "clock.badge.exclamationmark", posterUrl: expiringPosterUrls[1396], tmdbId: 1396, isTV: true),
+            PosterShow(title: "The Office", meta: "3 days left · PEACOCK", posterColors: [Color(red: 0x2D/255, green: 0x2D/255, blue: 0x3A/255), Color(red: 0x1A/255, green: 0x1A/255, blue: 0x2E/255)], symbol: "clock.badge.exclamationmark", posterUrl: expiringPosterUrls[2316], tmdbId: 2316, isTV: true),
+            PosterShow(title: "Yellowstone", meta: "4 days left · PARAMOUNT+", posterColors: [Color(red: 0x3A/255, green: 0x2E/255, blue: 0x17/255), Color(red: 0x1A/255, green: 0x1A/255, blue: 0x2E/255)], symbol: "clock.badge.exclamationmark", posterUrl: expiringPosterUrls[73586], tmdbId: 73586, isTV: true),
+            PosterShow(title: "The Handmaid's Tale", meta: "5 days left · HULU", posterColors: [Color(red: 0x2A/255, green: 0x1A/255, blue: 0x1A/255), Color(red: 0x1A/255, green: 0x2E/255, blue: 0x2A/255)], symbol: "clock.badge.exclamationmark", posterUrl: expiringPosterUrls[69478], tmdbId: 69478, isTV: true),
+            PosterShow(title: "The Boys", meta: "6 days left · PRIME", posterColors: [Color(red: 0x1A/255, green: 0x1A/255, blue: 0x3A/255), Color(red: 0x1A/255, green: 0x2E/255, blue: 0x2E/255)], symbol: "clock.badge.exclamationmark", posterUrl: expiringPosterUrls[76479], tmdbId: 76479, isTV: true),
+            PosterShow(title: "Andor", meta: "Today · DISNEY+", posterColors: [Color(red: 0x2A/255, green: 0x2A/255, blue: 0x1A/255), Color(red: 0x3A/255, green: 0x3A/255, blue: 0x2E/255)], symbol: "clock.badge.exclamationmark", posterUrl: expiringPosterUrls[83867], tmdbId: 83867, isTV: true),
         ]
     }
 
@@ -2172,6 +2191,7 @@ struct HomeView: View {
                                 symbol: "film.fill",
                                 posterUrl: movie.posterUrl,
                                 tmdbId: movie.id,
+                                isTV: false,
                                 isComingToStreaming: true
                             ),
                             badgeText: badge,
@@ -2191,6 +2211,7 @@ struct HomeView: View {
                                 symbol: "film.fill",
                                 posterUrl: movie.posterUrl,
                                 tmdbId: movie.id,
+                                isTV: false,
                                 isComingToStreaming: true
                             ),
                             badgeText: "Coming soon",
@@ -3623,7 +3644,8 @@ private struct NewSeasonsSection: View {
                             symbol: "play.tv.fill",
                             posterUrl: r.posterUrl,
                             tmdbId: r.id,
-                            voteAverage: r.voteAverage
+                            voteAverage: r.voteAverage,
+                            isTV: true
                         ))
                     } label: {
                         HStack(spacing: 12) {

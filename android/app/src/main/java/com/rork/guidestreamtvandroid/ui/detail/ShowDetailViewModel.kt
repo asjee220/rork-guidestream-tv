@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rork.guidestreamtvandroid.data.models.Platform
 import com.rork.guidestreamtvandroid.data.remote.TMDBService
+import com.rork.guidestreamtvandroid.data.repository.StreamsViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -51,7 +52,7 @@ class ShowDetailViewModel : ViewModel() {
         }
     }
 
-    fun loadIfNeeded(titleId: String, isTV: Boolean = true) {
+    fun loadIfNeeded(titleId: String, isTV: Boolean, expectedTitle: String? = null) {
         if (loadedTitleId == titleId) return
         loadedTitleId = titleId
         _isLoading.value = true
@@ -66,12 +67,41 @@ class ShowDetailViewModel : ViewModel() {
                 }
                 if (isTV) {
                     val detailResult = tmdb.getTVDetail(tmdbId)
-                    _detail.value = detailResult
-                    val seasonNum = detailResult?.lastEpisodeToAir?.seasonNumber
-                        ?.takeIf { it >= 1 } ?: maxOf(1, detailResult?.numberOfSeasons ?: 1)
-                    _currentSeasonNumber.value = seasonNum
-                    val seasonResult = tmdb.getSeason(tmdbId, seasonNum)
-                    _season.value = seasonResult
+                    // Legacy heal — watch-list rows saved before media types were
+                    // recorded default to TV, so a saved movie id lands here and
+                    // either misses the /tv endpoint or resolves to an unrelated
+                    // series sharing the numeric id. Fall back to the movie
+                    // lookup when that's detectable instead of rendering the
+                    // wrong title.
+                    var healedMovie: TMDBService.TMDBTVDetail? = null
+                    val expected = expectedTitle?.trim().orEmpty()
+                    if (detailResult == null) {
+                        healedMovie = tmdb.getMovieDetail(tmdbId)
+                    } else if (expected.isNotEmpty() && !titlesShareTokens(detailResult.name, expected)) {
+                        val movie = tmdb.getMovieDetail(tmdbId)
+                        if (movie != null && titlesShareTokens(movie.name, expected)) {
+                            healedMovie = movie
+                        }
+                    }
+                    if (detailResult == null || healedMovie != null) {
+                        _detail.value = healedMovie
+                        if (healedMovie != null) {
+                            // Persist the correction once for saved watch-list
+                            // rows so the heal never has to fire again.
+                            val streams = StreamsViewModel.get()
+                            val saved = streams.userStreams.value.firstOrNull { it.titleId == titleId }
+                            if (saved != null && saved.isTv != false) {
+                                streams.updateStreamMediaType(titleId, isTv = false)
+                            }
+                        }
+                    } else {
+                        _detail.value = detailResult
+                        val seasonNum = detailResult.lastEpisodeToAir?.seasonNumber
+                            ?.takeIf { it >= 1 } ?: maxOf(1, detailResult.numberOfSeasons ?: 1)
+                        _currentSeasonNumber.value = seasonNum
+                        val seasonResult = tmdb.getSeason(tmdbId, seasonNum)
+                        _season.value = seasonResult
+                    }
                 } else {
                     // Movie — load metadata from TMDB, mirroring the TV path.
                     _detail.value = tmdb.getMovieDetail(tmdbId)
@@ -87,6 +117,21 @@ class ShowDetailViewModel : ViewModel() {
                 _isLoading.value = false
             }
         }
+    }
+
+    /**
+     * Normalized token overlap — lowercased alphanumeric words. True when the
+     * two titles share at least one token, so "The Office" vs "Office Space"
+     * matches but "Breaking Bad" vs "Heat" does not.
+     */
+    private fun titlesShareTokens(a: String?, b: String): Boolean {
+        if (a.isNullOrBlank() || b.isBlank()) return false
+        fun tokens(s: String): Set<String> =
+            s.lowercase().split(Regex("[^a-z0-9]+")).filter { it.isNotEmpty() }.toSet()
+        val ta = tokens(a)
+        val tb = tokens(b)
+        if (ta.isEmpty() || tb.isEmpty()) return false
+        return ta.intersect(tb).isNotEmpty()
     }
 
     fun loadSeason(seasonNumber: Int) {

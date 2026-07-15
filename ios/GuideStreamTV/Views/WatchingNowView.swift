@@ -249,7 +249,8 @@ struct WatchingNowView: View {
                 title_id: titleId,
                 title: show?.displayName,
                 poster_url: show?.posterUrl,
-                platform: platform
+                platform: platform,
+                is_tv: show?.isTV
             )
         }
     }

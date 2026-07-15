@@ -86,12 +86,12 @@ nonisolated struct WatchmodeService {
     /// titles that expire within 30 days.
     func getExpiringTitles(
         tmdbIds: [Int]
-    ) async -> [(tmdbId: Int, title: String, daysLeft: Int, sourceId: String)] {
-        var results: [(Int, String, Int, String)] = []
+    ) async -> [(tmdbId: Int, title: String, daysLeft: Int, sourceId: String, isTV: Bool)] {
+        var results: [(Int, String, Int, String, Bool)] = []
         let calendar = Calendar.current
         let now = Date()
 
-        await withTaskGroup(of: (Int, String, Int, String)?.self) { group in
+        await withTaskGroup(of: (Int, String, Int, String, Bool)?.self) { group in
             for tmdbId in tmdbIds.prefix(25) {
                 group.addTask {
                     // Try TV lookup first, fall back to movie — TMDB trending
@@ -108,13 +108,17 @@ nonisolated struct WatchmodeService {
                     let formatter = ISO8601DateFormatter()
                     formatter.formatOptions = [.withFullDate]
 
+                    // Carry the resolved media type so downstream detail routing
+                    // never sends a movie id to the TMDB /tv endpoint.
+                    let isTV = !(detail.type == "movie" || detail.type == "short_film")
+
                     for source in sources {
                         guard let endStr = source.endDate,
                               let endDate = formatter.date(from: endStr)
                         else { continue }
                         let days = calendar.dateComponents([.day], from: now, to: endDate).day ?? 999
                         if days >= 0 && days <= 30 {
-                            return (tmdbId, detail.title, days, source.name)
+                            return (tmdbId, detail.title, days, source.name, isTV)
                         }
                     }
                     return nil

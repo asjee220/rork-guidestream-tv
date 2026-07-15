@@ -218,7 +218,7 @@ final class StreamsViewModel {
     /// change on the next frame, regardless of whether Supabase eventually
     /// succeeds. Writes through to Supabase for BOTH guests and signed-in
     /// users so the row is recoverable across reinstalls/devices.
-    func addToMyStreams(titleId: String, title: String?, posterUrl: String? = nil, platform: String? = nil) async {
+    func addToMyStreams(titleId: String, title: String?, posterUrl: String? = nil, platform: String? = nil, isTV: Bool? = nil) async {
         let trimmedId = titleId.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedId.isEmpty else { return }
 
@@ -232,7 +232,8 @@ final class StreamsViewModel {
                 title: title,
                 posterUrl: posterUrl,
                 platform: platform,
-                addedAt: Date()
+                addedAt: Date(),
+                isTV: isTV
             )
             self.userStreams.insert(optimistic, at: 0)
             saveLocalCache(self.userStreams)
@@ -253,7 +254,8 @@ final class StreamsViewModel {
             titleId: trimmedId,
             title: title,
             posterUrl: posterUrl,
-            platform: platform
+            platform: platform,
+            isTV: isTV
         )
         if didInsert {
             // Refresh to pick up the canonical id/timestamp from the server.
@@ -286,7 +288,8 @@ final class StreamsViewModel {
         titleId: String,
         title: String?,
         posterUrl: String?,
-        platform: String?
+        platform: String?,
+        isTV: Bool? = nil
     ) async -> Bool {
         // Always populate `title_name` (legacy schemas declared it NOT NULL).
         // Fall back to titleId if we don't have a display title so the
@@ -302,6 +305,7 @@ final class StreamsViewModel {
         if let title { payload["title"] = .string(title) }
         if let posterUrl { payload["poster_url"] = .string(posterUrl) }
         if let platform { payload["platform"] = .string(platform) }
+        if let isTV { payload["is_tv"] = .bool(isTV) }
 
         // Up to four retries: legacy schemas may still have other NOT NULL
         // columns or missing columns we have to work around.
@@ -384,6 +388,29 @@ final class StreamsViewModel {
         )
     }
 
+    /// Persists a corrected media type onto an existing `user_streams` row.
+    /// Called when the detail screen's legacy heal determines a saved title
+    /// was actually a movie (or show) so the row self-corrects permanently.
+    func updateStreamMediaType(titleId: String, isTV: Bool) async {
+        let trimmedId = titleId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedId.isEmpty else { return }
+        let deviceId = DeviceIdentity.shared.deviceId
+        do {
+            var query = try SupabaseManager.shared.client
+                .from("user_streams")
+                .update(["is_tv": isTV])
+                .eq("title_id", value: trimmedId)
+            if let uid = currentUserId?.uuidString {
+                query = query.or("user_id.eq.\(uid),device_id.eq.\(deviceId)")
+            } else {
+                query = query.eq("device_id", value: deviceId)
+            }
+            try await query.execute()
+        } catch {
+            print("[Streams] updateStreamMediaType failed: \(error.localizedDescription)")
+        }
+    }
+
     /// Mark any `new_episodes` rows older than 24h as no longer new for the current user's titles.
     func markStaleEpisodesSeen() async {
         let deviceId = DeviceIdentity.shared.deviceId
@@ -436,7 +463,8 @@ final class StreamsViewModel {
                 titleId: row.titleId,
                 title: row.title,
                 posterUrl: row.posterUrl,
-                platform: row.platform
+                platform: row.platform,
+                isTV: row.isTV
             )
         }
 

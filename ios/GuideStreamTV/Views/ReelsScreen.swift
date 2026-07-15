@@ -866,7 +866,8 @@ private func makeRakutenAdReels() -> [TrailerItem] {
                 titleId: titleId,
                 title: trailer.showName,
                 posterUrl: trailer.posterURL?.absoluteString,
-                platform: trailer.platformId
+                platform: trailer.platformId,
+                isTV: trailer.isTV
             )
         }
     }
@@ -1194,7 +1195,8 @@ struct ReelsScreen: View {
             posterColors: [trailer.platformColor.opacity(0.85), Color(hex: "04090F")],
             symbol: "play.rectangle",
             posterUrl: trailer.posterURL?.absoluteString ?? trailer.backdropURL?.absoluteString,
-            tmdbId: trailer.tmdbId > 0 ? trailer.tmdbId : nil
+            tmdbId: trailer.tmdbId > 0 ? trailer.tmdbId : nil,
+            isTV: trailer.isTV
         )
     }
 
@@ -1417,7 +1419,8 @@ struct ReelsScreen: View {
                             titleId: tid,
                             title: trailer.showName,
                             posterUrl: trailer.posterURL?.absoluteString,
-                            platform: trailer.platformId
+                            platform: trailer.platformId,
+                            isTV: trailer.isTV
                         )
                     }
                 }

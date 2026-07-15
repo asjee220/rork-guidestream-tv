@@ -317,6 +317,7 @@ class StreamsViewModel private constructor(context: Context) {
         title: String? = null,
         posterUrl: String? = null,
         platform: String? = null,
+        isTv: Boolean? = null,
     ) {
         val trimmedId = titleId.trim()
         if (trimmedId.isEmpty()) return
@@ -330,6 +331,7 @@ class StreamsViewModel private constructor(context: Context) {
                 posterUrl = posterUrl,
                 platform = platform,
                 addedAt = null,
+                isTv = isTv,
             )
             _userStreams.value = listOf(optimistic) + _userStreams.value
             saveLocalCache(_userStreams.value)
@@ -347,6 +349,7 @@ class StreamsViewModel private constructor(context: Context) {
                 title = title,
                 posterUrl = posterUrl,
                 platform = platform,
+                isTv = isTv,
             )
             if (didInsert) fetchUserStreams()
         }
@@ -359,6 +362,7 @@ class StreamsViewModel private constructor(context: Context) {
         title: String?,
         posterUrl: String?,
         platform: String?,
+        isTv: Boolean? = null,
     ): Boolean {
         val safeTitle = title ?: titleId
         val payload = buildJsonObject {
@@ -369,6 +373,7 @@ class StreamsViewModel private constructor(context: Context) {
             if (title != null) put("title", title)
             if (posterUrl != null) put("poster_url", posterUrl)
             if (platform != null) put("platform", platform)
+            if (isTv != null) put("is_tv", isTv)
         }
         return try {
             SupabaseManager.client.postgrest
@@ -421,6 +426,46 @@ class StreamsViewModel private constructor(context: Context) {
         }
     }
 
+    /**
+     * Persists a corrected media type onto an existing user_streams row.
+     * Called when the detail screen's legacy heal determines a saved title was
+     * actually a movie (or show) so the row self-corrects permanently.
+     */
+    fun updateStreamMediaType(titleId: String, isTv: Boolean) {
+        val trimmedId = titleId.trim()
+        if (trimmedId.isEmpty()) return
+        val current = _userStreams.value.firstOrNull { it.titleId == trimmedId } ?: return
+        if (current.isTv == isTv) return
+        _userStreams.value = _userStreams.value.map {
+            if (it.titleId == trimmedId) it.copy(isTv = isTv) else it
+        }
+        saveLocalCache(_userStreams.value)
+        scope.launch {
+            try {
+                val deviceId = DeviceIdentity.get().deviceId
+                val uid = currentUserId
+                SupabaseManager.client.postgrest
+                    .from("user_streams")
+                    .update({ set("is_tv", isTv) }) {
+                        filter {
+                            eq("title_id", trimmedId)
+                            if (uid != null) {
+                                or {
+                                    eq("user_id", uid)
+                                    eq("device_id", deviceId)
+                                }
+                            } else {
+                                eq("device_id", deviceId)
+                            }
+                        }
+                    }
+            } catch (e: Throwable) {
+                if (e is CancellationException) throw e
+                _lastError.value = e.message
+            }
+        }
+    }
+
     fun syncLocalToSupabase() {
         scope.launch {
             val uid = currentUserId ?: return@launch
@@ -435,6 +480,7 @@ class StreamsViewModel private constructor(context: Context) {
                     title = row.title,
                     posterUrl = row.posterUrl,
                     platform = row.platform,
+                    isTv = row.isTv,
                 )
             }
             val remaining = local.filter { it.userId != guestUserId }

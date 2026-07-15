@@ -155,6 +155,7 @@ fun WatchListScreen(
                                     titleId = stream.titleId,
                                     titleName = stream.title ?: stream.titleName,
                                     posterUrl = stream.posterUrl,
+                                    isTv = stream.isTv ?: true,
                                 ),
                             )
                         },

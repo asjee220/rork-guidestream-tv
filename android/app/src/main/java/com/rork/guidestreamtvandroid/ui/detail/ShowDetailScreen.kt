@@ -92,7 +92,7 @@ import com.rork.guidestreamtvandroid.ui.theme.TextTertiary
 fun ShowDetailScreen(
     titleId: String,
     titleName: String,
-    isTV: Boolean = true,
+    isTV: Boolean,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -160,7 +160,7 @@ fun ShowDetailScreen(
 
     // Load on first composition
     androidx.compose.runtime.LaunchedEffect(titleId) {
-        vm.loadIfNeeded(titleId, isTV)
+        vm.loadIfNeeded(titleId, isTV, expectedTitle = titleName)
         val tid = titleId.toIntOrNull()
         trailerVideos = if (tid != null) {
             try { TMDBService.get().getTitleVideos(tid, isTV) } catch (_: Exception) { emptyList() }
@@ -387,6 +387,7 @@ fun ShowDetailScreen(
                                             "https://image.tmdb.org/t/p/w342${if (it.startsWith("/")) it else "/$it"}"
                                         },
                                         platform = platform?.name,
+                                        isTv = isTV,
                                     )
                                     WatchIntentLogger.get().log(
                                         WatchIntentLogger.IntentEventType.WATCHLIST_ADDED,

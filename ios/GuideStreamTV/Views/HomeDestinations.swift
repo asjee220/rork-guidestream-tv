@@ -1336,7 +1336,8 @@ struct EpisodeDetailSheet: View {
                     titleId: key,
                     title: title,
                     posterUrl: posterUrl,
-                    platform: resolvedSource?.name ?? whereToWatchLabel
+                    platform: resolvedSource?.name ?? whereToWatchLabel,
+                    isTV: isTV
                 )
             }
             await MainActor.run { isToggleSaving = false }
