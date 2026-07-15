@@ -1,6 +1,7 @@
 package com.rork.guidestreamtvandroid
 
 import android.content.Intent
+import android.content.pm.ActivityInfo
 import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -30,6 +31,14 @@ import com.rork.guidestreamtvandroid.ui.theme.WordmarkSize
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // Lock phones to portrait; let tablets (>= 600dp smallest width) rotate
+        // freely while still honoring the system auto-rotate lock.
+        requestedOrientation = if (resources.configuration.smallestScreenWidthDp >= 600) {
+            ActivityInfo.SCREEN_ORIENTATION_FULL_USER
+        } else {
+            ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        }
 
         // Import any Supabase OAuth session returned via the guidestream:// redirect.
         SupabaseManager.client.handleDeeplinks(intent) {
