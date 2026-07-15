@@ -982,6 +982,7 @@ private fun PosterSection(
     badgeText: ((TMDBResult) -> String?)? = null,
     accentColor: Color = BrandOrange,
     onSeeAll: (() -> Unit)? = null,
+    badgeAsMatchChip: Boolean = false,
 ) {
     if (shows.isEmpty()) return
     Column(Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
@@ -1026,6 +1027,7 @@ private fun PosterSection(
                     platformColor = providerByTmdb[r.id]?.color,
                     badgeText = badge,
                     onClick = { onOpen(r) },
+                    badgeAsMatchChip = badgeAsMatchChip,
                 )
             }
         }
@@ -1038,6 +1040,7 @@ private fun PosterCardWithBadge(
     platformColor: Color?,
     badgeText: String?,
     onClick: () -> Unit,
+    badgeAsMatchChip: Boolean = false,
 ) {
     Column(
         modifier = Modifier
@@ -1070,6 +1073,23 @@ private fun PosterCardWithBadge(
                         .background(platformColor),
                 )
             }
+            if (badgeAsMatchChip && badgeText != null) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(5.dp)
+                        .clip(RoundedCornerShape(5.dp))
+                        .background(BrandBlue.copy(alpha = 0.9f))
+                        .padding(horizontal = 5.dp, vertical = 3.dp),
+                ) {
+                    Text(
+                        text = badgeText,
+                        fontSize = 8.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White,
+                    )
+                }
+            }
         }
         Spacer(Modifier.height(6.dp))
         Text(
@@ -1080,19 +1100,21 @@ private fun PosterCardWithBadge(
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
-        if (badgeText != null) {
-            Text(
-                text = badgeText,
-                fontSize = 10.sp,
-                color = TextSecondary,
-                fontWeight = FontWeight.Medium,
-            )
-        } else if (show.year != null) {
-            Text(
-                text = show.year.toString(),
-                fontSize = 10.sp,
-                color = TextSecondary,
-            )
+        if (!badgeAsMatchChip) {
+            if (badgeText != null) {
+                Text(
+                    text = badgeText,
+                    fontSize = 10.sp,
+                    color = TextSecondary,
+                    fontWeight = FontWeight.Medium,
+                )
+            } else if (show.year != null) {
+                Text(
+                    text = show.year.toString(),
+                    fontSize = 10.sp,
+                    color = TextSecondary,
+                )
+            }
         }
     }
 }
