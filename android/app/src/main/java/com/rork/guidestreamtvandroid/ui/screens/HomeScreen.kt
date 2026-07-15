@@ -82,6 +82,10 @@ import com.rork.guidestreamtvandroid.ui.navigation.PendingTitleRoute
 import com.rork.guidestreamtvandroid.ui.theme.BottomSafeSpacer
 import com.rork.guidestreamtvandroid.ui.theme.BrandBlue
 import com.rork.guidestreamtvandroid.ui.theme.BrandOrange
+import com.rork.guidestreamtvandroid.ui.theme.KickGreen
+import com.rork.guidestreamtvandroid.ui.theme.PodcastPurple
+import com.rork.guidestreamtvandroid.ui.theme.TwitchPurple
+import com.rork.guidestreamtvandroid.ui.theme.YouTubeRed
 import com.rork.guidestreamtvandroid.ui.theme.GlassFill
 import com.rork.guidestreamtvandroid.ui.theme.GlassStroke
 import com.rork.guidestreamtvandroid.ui.theme.LightBlue
@@ -902,7 +906,7 @@ private fun WatchListCard(
 ) {
     Column(
         modifier = Modifier
-            .width(120.dp)
+            .width(150.dp)
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
@@ -1273,26 +1277,64 @@ private fun CreatorAvatarCard(
 ) {
     Column(
         modifier = Modifier
-            .width(110.dp)
+            .width(150.dp)
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
             ) { onClick() },
-        horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Box(
             modifier = Modifier
-                .size(96.dp)
-                .clip(CircleShape),
+                .fillMaxWidth()
+                .aspectRatio(0.67f)
+                .clip(RoundedCornerShape(10.dp)),
         ) {
             RemoteImage(
                 url = creator.imageUrl,
                 contentDescription = creator.displayName,
                 modifier = Modifier.fillMaxSize(),
-                cornerRadius = 48,
+                cornerRadius = 10,
                 placeholderText = creator.displayName.take(2).uppercase(),
-                placeholderFontSize = 24.sp,
+                placeholderFontSize = 20.sp,
             )
+            val kind = SourceKind.from(creator.titleId)
+            val sourceColor = when (kind) {
+                SourceKind.YOUTUBE -> YouTubeRed
+                SourceKind.PODCAST -> PodcastPurple
+                SourceKind.TWITCH -> TwitchPurple
+                SourceKind.KICK -> KickGreen
+                else -> BrandOrange
+            }
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(5.dp)
+                    .clip(RoundedCornerShape(4.dp))
+                    .background(sourceColor.copy(alpha = 0.9f))
+                    .padding(horizontal = 6.dp, vertical = 2.dp),
+            ) {
+                Text(
+                    text = kind.displayLabel.uppercase(),
+                    fontSize = 8.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = if (kind == SourceKind.KICK) Color.Black else Color.White,
+                )
+            }
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(5.dp)
+                    .clip(RoundedCornerShape(5.dp))
+                    .background(Color(red = 0xD4, green = 0xA0, blue = 0x17).copy(alpha = 0.9f))
+                    .padding(horizontal = 5.dp, vertical = 3.dp),
+            ) {
+                Text(
+                    text = "${creator.matchPercentage}% Match",
+                    fontSize = 8.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White,
+                )
+            }
         }
         Spacer(Modifier.height(6.dp))
         Text(
@@ -1302,21 +1344,6 @@ private fun CreatorAvatarCard(
             color = TextPrimary,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
-            textAlign = TextAlign.Center,
-        )
-        Text(
-            text = creator.category,
-            fontSize = 10.sp,
-            color = TextSecondary,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            textAlign = TextAlign.Center,
-        )
-        Text(
-            text = "${creator.matchPercentage}% Match",
-            fontSize = 10.sp,
-            color = TextSecondary,
-            fontWeight = FontWeight.Medium,
         )
     }
 }

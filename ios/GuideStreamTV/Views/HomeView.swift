@@ -2327,7 +2327,7 @@ private struct HomeShimmerSection: View {
                     ForEach(0..<5, id: \.self) { i in
                         RoundedRectangle(cornerRadius: 10)
                             .fill(Color.white.opacity(0.06))
-                            .frame(width: 110, height: 155)
+                            .frame(width: 150, height: 225)
                             .overlay(
                                 RoundedRectangle(cornerRadius: 10)
                                     .fill(
@@ -2545,7 +2545,7 @@ private struct TopPicksSection: View {
                                     .scaledFont(size: 12, weight: .semibold)
                                     .foregroundStyle(Color.textPrimary)
                                     .lineLimit(1)
-                                    .frame(width: 110, alignment: .leading)
+                                    .frame(width: 150, alignment: .leading)
                             }
                         }
                         .buttonStyle(.plain)
@@ -2598,13 +2598,13 @@ private struct CreatorsForYouSection: View {
                                                 endPoint: .bottomTrailing
                                             )
                                         )
-                                        .frame(width: 110, height: 155)
+                                        .frame(width: 150, height: 225)
                                     RemoteImage(
                                         urlString: creator.imageUrl,
                                         contentMode: .fill,
                                         fallbackColors: [Color(red: 0.20, green: 0.15, blue: 0.45), Color(red: 0.04, green: 0.02, blue: 0.10)]
                                     )
-                                    .frame(width: 110, height: 155)
+                                    .frame(width: 150, height: 225)
                                     .clipShape(.rect(cornerRadius: 10))
                                     .allowsHitTesting(false)
                                 }
@@ -2650,7 +2650,7 @@ private struct CreatorsForYouSection: View {
                                     .scaledFont(size: 12, weight: .semibold)
                                     .foregroundStyle(Color.textPrimary)
                                     .lineLimit(1)
-                                    .frame(width: 110, alignment: .leading)
+                                    .frame(width: 150, alignment: .leading)
                             }
                         }
                         .buttonStyle(.plain)
@@ -3115,12 +3115,12 @@ private struct EpisodeThumbCard: View {
 private struct PosterCard: View {
     let show: PosterShow
     let tag: String
-    var posterWidth: CGFloat = 110
-    var posterHeight: CGFloat = 155
+    var posterWidth: CGFloat = 150
+    var posterHeight: CGFloat = 225
     let onTap: () -> Void
 
     var body: some View {
-        let typeScale = posterWidth / 110
+        let typeScale = posterWidth / 150
         return Button(action: onTap) {
             VStack(alignment: .leading, spacing: 8) {
                 ZStack {
@@ -3345,13 +3345,13 @@ private struct TrendingRankedSection: View {
                                                 endPoint: .bottomTrailing
                                             )
                                         )
-                                        .frame(width: 110, height: 155)
+                                        .frame(width: 150, height: 225)
                                     RemoteImage(
                                         urlString: show.posterUrl,
                                         contentMode: .fill,
                                         fallbackColors: show.posterColors
                                     )
-                                    .frame(width: 110, height: 155)
+                                    .frame(width: 150, height: 225)
                                     .clipShape(.rect(cornerRadius: 10))
                                     .allowsHitTesting(false)
                                 }
@@ -3375,7 +3375,7 @@ private struct TrendingRankedSection: View {
                                     .scaledFont(size: 12, weight: .semibold)
                                     .foregroundStyle(Color.textPrimary)
                                     .lineLimit(1)
-                                    .frame(width: 110, alignment: .leading)
+                                    .frame(width: 150, alignment: .leading)
                             }
                         }
                         .buttonStyle(.plain)
