@@ -549,11 +549,47 @@ struct ConnectServicesView: View {
     @Binding var selected: Set<String>
     var onContinue: () -> Void
 
+    @State private var serviceQuery: String = ""
+    @FocusState private var isSearchFocused: Bool
+
     private let columns = [
         GridItem(.flexible(), spacing: 16),
         GridItem(.flexible(), spacing: 16),
         GridItem(.flexible(), spacing: 16)
     ]
+
+    private var filteredServices: [StreamingService] {
+        let q = serviceQuery.trimmingCharacters(in: .whitespaces)
+        guard !q.isEmpty else { return StreamingCatalog.all }
+        return StreamingCatalog.all.filter { $0.name.localizedCaseInsensitiveContains(q) }
+    }
+
+    private var searchField: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .scaledFont(size: 14, weight: .semibold)
+                .foregroundStyle(Color.textSecondary)
+            TextField(
+                "",
+                text: $serviceQuery,
+                prompt: Text("Search services").foregroundStyle(Color.textSecondary)
+            )
+            .font(.custom("SF Pro Text", size: 15))
+            .foregroundStyle(.white)
+            .focused($isSearchFocused)
+            .autocorrectionDisabled()
+            .textInputAutocapitalization(.never)
+        }
+        .padding(.horizontal, 14)
+        .frame(height: 44)
+        .background(Capsule().fill(Color.white.opacity(0.05)))
+        .overlay(
+            Capsule().stroke(
+                isSearchFocused ? Color.orange : Color.white.opacity(0.10),
+                lineWidth: 1
+            )
+        )
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -571,16 +607,27 @@ struct ConnectServicesView: View {
                         .foregroundStyle(Color.textSecondary)
                         .padding(.bottom, 18)
 
-                    LazyVGrid(columns: columns, spacing: 22) {
-                        ForEach(StreamingCatalog.all) { svc in
-                            ServiceTile(
-                                service: svc,
-                                isSelected: selected.contains(svc.id),
-                                onTap: { toggle(svc.id) }
-                            )
+                    searchField
+                        .padding(.bottom, 16)
+
+                    if filteredServices.isEmpty {
+                        Text("No services match")
+                            .font(.custom("SF Pro Text", size: 14))
+                            .foregroundStyle(Color.textSecondary)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 28)
+                    } else {
+                        LazyVGrid(columns: columns, spacing: 22) {
+                            ForEach(filteredServices) { svc in
+                                ServiceTile(
+                                    service: svc,
+                                    isSelected: selected.contains(svc.id),
+                                    onTap: { toggle(svc.id) }
+                                )
+                            }
                         }
+                        .padding(.bottom, 24)
                     }
-                    .padding(.bottom, 24)
                 }
                 .padding(.horizontal, 20)
             }

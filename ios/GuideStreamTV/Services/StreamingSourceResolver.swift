@@ -201,7 +201,10 @@ nonisolated struct StreamingSourceResolver {
         if p.contains("showtime") { return s.contains("showtime") || s.contains("sho ") }
         if p.contains("starz") { return s.contains("starz") }
         if p.contains("crunchyroll") { return s.contains("crunchyroll") }
-        return s.contains(p) || p.contains(s)
+        let ns = s.filter { $0.isLetter || $0.isNumber }
+        let np = p.filter { $0.isLetter || $0.isNumber }
+        if np.isEmpty { return false }
+        return ns.contains(np) || np.contains(ns)
     }
 
     // MARK: - Pure selection logic (no network calls)

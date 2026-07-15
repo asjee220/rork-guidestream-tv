@@ -18,9 +18,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
@@ -28,11 +30,16 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -58,6 +65,11 @@ fun ConnectedServicesScreen(
 ) {
     val authVm = AuthViewModel.get()
     val selectedServices by authVm.selectedServices.collectAsStateWithLifecycle()
+    var serviceQuery by remember { mutableStateOf("") }
+    val filteredServices = remember(serviceQuery) {
+        if (serviceQuery.isBlank()) StreamingCatalog.all
+        else StreamingCatalog.all.filter { it.name.contains(serviceQuery, ignoreCase = true) }
+    }
 
     Column(
         modifier = modifier.fillMaxSize().background(Color(red = 0x04, green = 0x09, blue = 0x0F))
@@ -82,7 +94,21 @@ fun ConnectedServicesScreen(
         Text("Toggle the services you subscribe to. We'll personalise your feed.", fontSize = 13.sp, color = TextSecondary)
         Spacer(Modifier.height(20.dp))
 
-        StreamingCatalog.all.forEach { service ->
+        ServiceSearchField(
+            query = serviceQuery,
+            onQueryChange = { serviceQuery = it },
+        )
+        Spacer(Modifier.height(12.dp))
+
+        if (filteredServices.isEmpty()) {
+            Box(
+                modifier = Modifier.fillMaxWidth().padding(vertical = 28.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text("No services match", fontSize = 14.sp, color = TextSecondary)
+            }
+        }
+        filteredServices.forEach { service ->
             val isSelected = service.id in selectedServices
             Row(
                 modifier = Modifier
@@ -136,6 +162,60 @@ fun ConnectedServicesScreen(
         }
         Spacer(Modifier.height(40.dp))
     }
+}
+
+@Composable
+private fun ServiceSearchField(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var isFocused by remember { mutableStateOf(false) }
+    BasicTextField(
+        value = query,
+        onValueChange = onQueryChange,
+        singleLine = true,
+        textStyle = TextStyle(color = Color.White, fontSize = 15.sp),
+        cursorBrush = SolidColor(BrandOrange),
+        modifier = modifier
+            .fillMaxWidth()
+            .height(44.dp)
+            .clip(RoundedCornerShape(50.dp))
+            .background(Color.White.copy(alpha = 0.05f))
+            .border(
+                1.dp,
+                if (isFocused) BrandOrange else Color.White.copy(alpha = 0.10f),
+                RoundedCornerShape(50.dp),
+            )
+            .onFocusChanged { isFocused = it.isFocused },
+        decorationBox = { innerTextField ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(44.dp)
+                    .padding(horizontal = 14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Search,
+                    contentDescription = null,
+                    tint = TextSecondary,
+                    modifier = Modifier.size(16.dp),
+                )
+                Spacer(Modifier.width(8.dp))
+                Box(modifier = Modifier.weight(1f)) {
+                    if (query.isEmpty()) {
+                        Text(
+                            text = "Search services",
+                            fontSize = 15.sp,
+                            color = TextSecondary,
+                        )
+                    }
+                    innerTextField()
+                }
+            }
+        },
+    )
 }
 
 /**

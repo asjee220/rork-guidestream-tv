@@ -30,6 +30,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Search
@@ -52,8 +53,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -633,6 +637,11 @@ private fun ServicesEditorSheet(
     onDismiss: () -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    var serviceQuery by remember { mutableStateOf("") }
+    val filteredServices = remember(serviceQuery) {
+        if (serviceQuery.isBlank()) StreamingCatalog.all
+        else StreamingCatalog.all.filter { it.name.contains(serviceQuery, ignoreCase = true) }
+    }
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
@@ -654,22 +663,41 @@ private fun ServicesEditorSheet(
                 modifier = Modifier.padding(horizontal = 20.dp),
             )
             Spacer(Modifier.height(16.dp))
-            LazyVerticalGrid(
-                columns = GridCells.Fixed(3),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(420.dp)
-                    .padding(horizontal = 20.dp)
-                    .navigationBarsPadding(),
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
-                verticalArrangement = Arrangement.spacedBy(22.dp),
-            ) {
-                items(StreamingCatalog.all, key = { it.id }) { svc ->
-                    ServiceEditorTile(
-                        service = svc,
-                        isSelected = svc.id in selected,
-                        onTap = { onToggle(svc.id) },
-                    )
+            ServiceSearchField(
+                query = serviceQuery,
+                onQueryChange = { serviceQuery = it },
+                modifier = Modifier.padding(horizontal = 20.dp),
+            )
+            Spacer(Modifier.height(12.dp))
+            if (filteredServices.isEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(420.dp)
+                        .padding(horizontal = 20.dp)
+                        .navigationBarsPadding(),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text("No services match", fontSize = 14.sp, color = TextSecondary)
+                }
+            } else {
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(3),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(420.dp)
+                        .padding(horizontal = 20.dp)
+                        .navigationBarsPadding(),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(22.dp),
+                ) {
+                    items(filteredServices, key = { it.id }) { svc ->
+                        ServiceEditorTile(
+                            service = svc,
+                            isSelected = svc.id in selected,
+                            onTap = { onToggle(svc.id) },
+                        )
+                    }
                 }
             }
             Spacer(Modifier.height(12.dp))
@@ -721,6 +749,60 @@ private fun ServiceEditorTile(
 }
 
 // ── Search Bar ──────────────────────────────────────────────────────────────
+
+@Composable
+private fun ServiceSearchField(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var isFocused by remember { mutableStateOf(false) }
+    BasicTextField(
+        value = query,
+        onValueChange = onQueryChange,
+        singleLine = true,
+        textStyle = TextStyle(color = Color.White, fontSize = 15.sp),
+        cursorBrush = SolidColor(BrandOrange),
+        modifier = modifier
+            .fillMaxWidth()
+            .height(44.dp)
+            .clip(RoundedCornerShape(50.dp))
+            .background(Color.White.copy(alpha = 0.05f))
+            .border(
+                1.dp,
+                if (isFocused) BrandOrange else Color.White.copy(alpha = 0.10f),
+                RoundedCornerShape(50.dp),
+            )
+            .onFocusChanged { isFocused = it.isFocused },
+        decorationBox = { innerTextField ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(44.dp)
+                    .padding(horizontal = 14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Search,
+                    contentDescription = null,
+                    tint = TextSecondary,
+                    modifier = Modifier.size(16.dp),
+                )
+                Spacer(Modifier.width(8.dp))
+                Box(modifier = Modifier.weight(1f)) {
+                    if (query.isEmpty()) {
+                        Text(
+                            text = "Search services",
+                            fontSize = 15.sp,
+                            color = TextSecondary,
+                        )
+                    }
+                    innerTextField()
+                }
+            }
+        },
+    )
+}
 
 @Composable
 private fun SearchBar(onClick: () -> Unit) {

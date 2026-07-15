@@ -131,10 +131,10 @@ fun ShowDetailScreen(
     var usSources by remember { mutableStateOf<List<WatchmodeSrc>>(emptyList()) }
     var selectedSource by remember { mutableStateOf<WatchmodeSrc?>(null) }
     val isSourceSubscribed: (String) -> Boolean = { name ->
-        val n = name.lowercase()
+        val n = name.lowercase().filter { it.isLetterOrDigit() }
         StreamingCatalog.ordered(selectedServices).any { svc ->
-            val s = svc.name.lowercase()
-            n.contains(s) || s.contains(n)
+            val s = svc.name.lowercase().filter { it.isLetterOrDigit() }
+            s.isNotEmpty() && (n.contains(s) || s.contains(n))
         }
     }
     androidx.compose.runtime.LaunchedEffect(titleId) {
