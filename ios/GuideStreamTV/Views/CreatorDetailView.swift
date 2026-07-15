@@ -71,6 +71,10 @@ struct CreatorDetailView: View {
     @State private var social = SocialViewModel.shared
     @State private var showComments: Bool = false
     @State private var isTogglingLike: Bool = false
+    @State private var isTogglingWatched: Bool = false
+
+    // Send-to-TV cast sheet (YouTube creators only).
+    @State private var showCastSheet: Bool = false
 
     // Sticky compact header offset + share-sheet presentation.
     @State private var scrollOffset: CGFloat = 0
@@ -117,16 +121,10 @@ struct CreatorDetailView: View {
                         .padding(.horizontal, 20)
                         .padding(.top, 16)
 
-                        // MARK: Fan Activity card (follow / notify)
-                        FanActivityCard(
-                            isSaved: isFollowed,
-                            saveLabel: isFollowed ? "Following" : "Follow",
-                            onSave: { toggleFollow() },
-                            notifyOn: uploadAlertsOn,
-                            onNotify: { toggleUploadAlerts() }
-                        )
-                        .padding(.horizontal, 20)
-                        .padding(.top, 24)
+                        // MARK: Actions row (follow / watched / send to TV)
+                        creatorActionsRow(source: source)
+                            .padding(.horizontal, 20)
+                            .padding(.top, 24)
 
                         // MARK: Currently streaming + About
                         creatorInfoSection(source: source)
@@ -218,6 +216,17 @@ struct CreatorDetailView: View {
                 CreatorShareSheet(items: [shareURL(source: source)])
             }
         }
+        .sheet(isPresented: $showCastSheet) {
+            CastToTVSheet(
+                isPresented: $showCastSheet,
+                showTitle: source?.displayName ?? titleId,
+                platform: "YouTube",
+                tmdbId: nil,
+                isTV: false,
+                watchmodeSource: nil,
+                episodeRokuURL: nil
+            )
+        }
 #endif
 #if os(tvOS)
         .overlay(alignment: .topLeading) {
@@ -240,7 +249,92 @@ struct CreatorDetailView: View {
         .task(id: titleId) { await social.refreshCounts(titleId: titleId) }
     }
 
-    // MARK: - Like / comment actions (wired into FanActivityCard)
+    // MARK: - Actions row (follow / watched / send to TV)
+
+    /// Labeled circle-action row visually identical to the EpisodeDetailSheet
+    /// actions row: a Follow toggle, a Watched toggle, and — for YouTube
+    /// creators only — a Send to TV action. Other kinds render two items.
+    @ViewBuilder
+    private func creatorActionsRow(source: ContentSource) -> some View {
+        HStack(spacing: 0) {
+            creatorCircleAction(
+                icon: isFollowed ? "bookmark.fill" : "bookmark",
+                label: isFollowed ? "Following" : "Follow",
+                tint: isFollowed ? Color.orange : .white
+            ) {
+                toggleFollow()
+            }
+            .frame(maxWidth: .infinity)
+
+            creatorCircleAction(
+                icon: social.isWatched(titleId) ? "eye.fill" : "eye",
+                label: "Watched",
+                tint: social.isWatched(titleId) ? Color(hex: "1A6FE8") : .white,
+                isLoading: isTogglingWatched
+            ) {
+#if os(iOS)
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+#endif
+                guard !isTogglingWatched else { return }
+                isTogglingWatched = true
+                Task {
+                    await social.toggleWatched(titleId: titleId, titleName: source.displayName, mediaType: nil, tmdbId: nil)
+                    await MainActor.run { isTogglingWatched = false }
+                }
+            }
+            .frame(maxWidth: .infinity)
+
+            if kind == .youtube {
+                creatorCircleAction(
+                    icon: "tv",
+                    label: "Send to TV",
+                    tint: .white
+                ) {
+#if os(iOS)
+                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+#endif
+                    showCastSheet = true
+                }
+                .frame(maxWidth: .infinity)
+            }
+        }
+    }
+
+    /// Local reproduction of EpisodeDetailSheet's `circleAction` styling: a
+    /// 56×56 white-8% circle with a 22pt regular SF Symbol and a 13pt 70%-white
+    /// label. Shows a small white ProgressView in place of the icon when loading.
+    private func creatorCircleAction(
+        icon: String,
+        label: String,
+        tint: Color,
+        isLoading: Bool = false,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            VStack(spacing: 8) {
+                ZStack {
+                    Circle()
+                        .fill(Color.white.opacity(0.08))
+                        .frame(width: 56, height: 56)
+                    if isLoading {
+                        ProgressView()
+                            .controlSize(.small)
+                            .tint(.white)
+                    } else {
+                        Image(systemName: icon)
+                            .scaledFont(size: 22, weight: .regular)
+                            .foregroundStyle(tint)
+                    }
+                }
+                Text(label)
+                    .scaledFont(size: 13)
+                    .foregroundStyle(Color.white.opacity(0.7))
+            }
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: - Like / comment actions
 
     /// Toggles the creator like via `SocialViewModel.shared`, guarding against
     /// double-taps while the network round-trip is in flight.
@@ -635,25 +729,6 @@ struct CreatorDetailView: View {
         } catch {
             print("[Creator] upload-alert pref load failed: \(error.localizedDescription)")
         }
-    }
-
-    /// Flips the per-creator upload-alert toggle. Local state + cache update
-    /// immediately for a responsive UI; the table write is best-effort and
-    /// upserts on the matching unique index (user_id+title_id signed-in,
-    /// device_id+title_id guest).
-    private func toggleUploadAlerts() {
-#if os(iOS)
-        UIImpactFeedbackGenerator(style: .light).impactOccurred()
-#endif
-        uploadAlertsOn.toggle()
-        let newValue = uploadAlertsOn
-        UserDefaults.standard.set(newValue, forKey: uploadAlertsKey)
-        WatchIntentLogger.shared.log(
-            eventType: .cardTapped,
-            titleId: titleId,
-            metadata: ["source": "creator_detail", "action": "upload_alerts", "enabled": newValue]
-        )
-        Task { await persistUploadAlerts(newValue) }
     }
 
     private func persistUploadAlerts(_ enabled: Bool) async {
@@ -1384,6 +1459,7 @@ struct CreatorDetailView: View {
 
     private func toggleFollow() {
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        let willFollow = !isFollowed
         Task {
             if isFollowed {
                 await streams.removeFromMyStreams(titleId: titleId)
@@ -1396,6 +1472,12 @@ struct CreatorDetailView: View {
                 )
             }
         }
+        // Fold the former Notify behavior into Follow: enabling upload alerts on
+        // follow, disabling them on unfollow, persisted to
+        // creator_notification_preferences via the existing persist function.
+        uploadAlertsOn = willFollow
+        UserDefaults.standard.set(willFollow, forKey: uploadAlertsKey)
+        Task { await persistUploadAlerts(willFollow) }
     }
 
     private func formatViewers(_ count: Int) -> String {
