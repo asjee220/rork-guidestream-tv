@@ -215,7 +215,7 @@ fun HomeScreen(
         } else if (upcoming.isNotEmpty()) {
             PosterSection(
                 title = "Coming to Streaming",
-                shows = upcoming.take(12),
+                shows = upcoming.take(20),
                 providerByTmdb = providerByTmdb,
                 onOpen = { r ->
                     WatchIntentLogger.get().log(
@@ -234,7 +234,7 @@ fun HomeScreen(
         } else if (newReleases.isNotEmpty()) {
             PosterSection(
                 title = "New This Week",
-                shows = newReleases.take(12),
+                shows = newReleases.take(20),
                 providerByTmdb = providerByTmdb,
                 badgeText = { "NEW" },
                 onOpen = { r ->
@@ -262,32 +262,36 @@ fun HomeScreen(
             dismissed = dismissedAdSlots,
         )
 
+        // Personalised Top Picks pool — hoisted so both the Top Picks and
+        // Trending This Week sections share it (Trending excludes any id already
+        // shown in Top Picks). Excludes watched titles and boosts titles on the
+        // user's selected services above equally-rated ones. Reuses the app's
+        // owned-service normalisation (lowercase name compare with the apple /
+        // hbo-max special cases).
+        val selected = selectedServices.map { it.lowercase() }
+        fun onService(id: Int): Boolean {
+            val key = providerByTmdb[id]?.name?.lowercase() ?: return false
+            return selected.any { s ->
+                key.contains(s) ||
+                    (s == "appletv" && key.contains("apple")) ||
+                    (s == "hbo" && (key.contains("hbo") || key.contains("max")))
+            }
+        }
+        fun scoreFor(r: TMDBResult): Double =
+            0.60 * ((r.voteAverage ?: 7.0) / 10.0) +
+                (if (onService(r.id)) 0.20 else 0.0) +
+                (if (preferredGenres.isNotEmpty() && (r.genreIds ?: emptyList()).any { it in preferredGenres }) 0.20 else 0.0)
+        val topPicksAll = trending
+            .filter { providerByTmdb[it.id] != null }
+            .filter { !watchedIds.contains(it.id.toString()) }
+            .sortedByDescending { scoreFor(it) }
+        val topPickIds = topPicksAll.map { it.id }.toSet()
+
         // Top Picks for You (trending scored)
         if (!homeReady) {
             ShimmerSection("Top Picks for You", Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
         } else if (trending.isNotEmpty()) {
-            // Personalised Top Picks: exclude watched titles and boost titles on
-            // the user's selected services above equally-rated ones. Reuses the
-            // app's owned-service normalisation (lowercase name compare with the
-            // apple / hbo-max special cases).
-            val selected = selectedServices.map { it.lowercase() }
-            fun onService(id: Int): Boolean {
-                val key = providerByTmdb[id]?.name?.lowercase() ?: return false
-                return selected.any { s ->
-                    key.contains(s) ||
-                        (s == "appletv" && key.contains("apple")) ||
-                        (s == "hbo" && (key.contains("hbo") || key.contains("max")))
-                }
-            }
-            fun scoreFor(r: TMDBResult): Double =
-                0.60 * ((r.voteAverage ?: 7.0) / 10.0) +
-                    (if (onService(r.id)) 0.20 else 0.0) +
-                    (if (preferredGenres.isNotEmpty() && (r.genreIds ?: emptyList()).any { it in preferredGenres }) 0.20 else 0.0)
-            val topPicksAll = trending
-                .filter { providerByTmdb[it.id] != null }
-                .filter { !watchedIds.contains(it.id.toString()) }
-                .sortedByDescending { scoreFor(it) }
-            val topPicks = topPicksAll.take(12)
+            val topPicks = topPicksAll.take(20)
             PosterSection(
                 title = "Top Picks for You",
                 shows = topPicks,
@@ -356,7 +360,7 @@ fun HomeScreen(
             ShimmerSection("Trending This Week", Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
         } else if (trending.isNotEmpty()) {
             TrendingRankedSection(
-                shows = trending.filter { providerByTmdb[it.id] != null }.take(12),
+                shows = trending.filter { providerByTmdb[it.id] != null }.filterNot { it.id in topPickIds }.take(20),
                 providerByTmdb = providerByTmdb,
                 onOpen = { r ->
                     WatchIntentLogger.get().log(
@@ -371,7 +375,7 @@ fun HomeScreen(
                         WatchIntentLogger.IntentEventType.CARD_TAPPED,
                         metadata = mapOf("section" to "trending_ranked_see_all"),
                     )
-                    onSeeAllList(HomeListTarget(title = "Trending This Week", tag = "TRENDING", shows = trending.filter { providerByTmdb[it.id] != null }, providerByTmdb = providerByTmdb))
+                    onSeeAllList(HomeListTarget(title = "Trending This Week", tag = "TRENDING", shows = trending.filter { providerByTmdb[it.id] != null }.filterNot { it.id in topPickIds }, providerByTmdb = providerByTmdb))
                 },
             )
         }
@@ -382,7 +386,7 @@ fun HomeScreen(
         } else if (onAir.isNotEmpty()) {
             PosterSection(
                 title = "Leaving Soon",
-                shows = onAir.filter { providerByTmdb[it.id] != null }.take(12),
+                shows = onAir.filter { providerByTmdb[it.id] != null }.take(20),
                 providerByTmdb = providerByTmdb,
                 accentColor = BrandOrange,
                 onOpen = { r ->
@@ -424,7 +428,7 @@ fun HomeScreen(
                     PopularOnServiceSection(
                         serviceName = svc.name,
                         accentColor = svc.glow,
-                        shows = results.take(12),
+                        shows = results.take(20),
                         onOpen = { r ->
                             WatchIntentLogger.get().log(
                                 WatchIntentLogger.IntentEventType.CARD_TAPPED,
@@ -458,7 +462,7 @@ fun HomeScreen(
         } else if (genreShows.isNotEmpty()) {
             PosterSection(
                 title = "Because you watch $selectedGenreName",
-                shows = genreShows.filter { providerByTmdb[it.id] != null }.take(12),
+                shows = genreShows.filter { providerByTmdb[it.id] != null }.take(20),
                 providerByTmdb = providerByTmdb,
                 onOpen = { r ->
                     WatchIntentLogger.get().log(
@@ -484,7 +488,7 @@ fun HomeScreen(
         } else if (topRated.isNotEmpty()) {
             PosterSection(
                 title = "Top rated right now",
-                shows = topRated.filter { providerByTmdb[it.id] != null }.take(12),
+                shows = topRated.filter { providerByTmdb[it.id] != null }.take(20),
                 providerByTmdb = providerByTmdb,
                 onOpen = { r ->
                     WatchIntentLogger.get().log(
@@ -527,7 +531,7 @@ fun HomeScreen(
             val bingeTitle = if (userStreams.isEmpty()) "Binge Worthy" else "Binge Ready 🎉"
             PosterSection(
                 title = bingeTitle,
-                shows = bingeReady.filter { providerByTmdb[it.id] != null }.take(12),
+                shows = bingeReady.filter { providerByTmdb[it.id] != null }.take(20),
                 providerByTmdb = providerByTmdb,
                 onOpen = { r ->
                     WatchIntentLogger.get().log(

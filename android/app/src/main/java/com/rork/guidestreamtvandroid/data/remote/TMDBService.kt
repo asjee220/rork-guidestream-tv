@@ -58,8 +58,8 @@ class TMDBService {
     }
 
     /** Trending TV shows this week. */
-    suspend fun getTrendingTV(): List<TMDBResult> {
-        return fetchList("$base/trending/tv/week?api_key=$apiKey&language=en-US", "tv")
+    suspend fun getTrendingTV(page: Int = 1): List<TMDBResult> {
+        return fetchList("$base/trending/tv/week?api_key=$apiKey&language=en-US&page=$page", "tv")
     }
 
     /** Currently airing TV shows. */

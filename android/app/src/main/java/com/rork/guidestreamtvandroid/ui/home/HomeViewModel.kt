@@ -14,6 +14,9 @@ import com.rork.guidestreamtvandroid.data.remote.toTMDBResult
 import com.rork.guidestreamtvandroid.data.repository.AuthViewModel
 import com.rork.guidestreamtvandroid.data.repository.StreamsViewModel
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -116,7 +119,13 @@ class HomeViewModel : ViewModel() {
         if (_homeContentReady.value) return
         viewModelScope.launch(Dispatchers.IO) {
             val jobs = listOf(
-                launch { _trending.value = tmdb.getTrendingTV() },
+                launch {
+                    // Fetch two pages of trending and de-duplicate by id,
+                    // preserving first-seen order (page 2 can repeat page 1).
+                    val combined = tmdb.getTrendingTV(page = 1) + tmdb.getTrendingTV(page = 2)
+                    val seen = mutableSetOf<Int>()
+                    _trending.value = combined.filter { seen.add(it.id) }
+                },
                 launch { _onAir.value = tmdb.getOnTheAir() },
                 launch { _topRated.value = tmdb.getTopRated() },
                 launch {
@@ -207,12 +216,21 @@ class HomeViewModel : ViewModel() {
 
     private suspend fun resolveProviders(shows: List<TMDBResult>) {
         val map = _providerByTmdb.value.toMutableMap()
-        for (show in shows.take(20)) {
-            if (map.containsKey(show.id)) continue
-            val provider = tmdb.getTopWatchProvider(show.id)
-            val platform = Platform.from(provider?.providerName)
+        // Resolve providers for uncached shows in parallel, then fold the
+        // non-null results into the map in one emit so no update is lost.
+        val resolved = coroutineScope {
+            shows.take(40)
+                .filterNot { map.containsKey(it.id) }
+                .map { show ->
+                    async(Dispatchers.IO) {
+                        show.id to Platform.from(tmdb.getTopWatchProvider(show.id)?.providerName)
+                    }
+                }
+                .awaitAll()
+        }
+        for ((id, platform) in resolved) {
             if (platform != null) {
-                map[show.id] = platform
+                map[id] = platform
             }
         }
         _providerByTmdb.value = map
