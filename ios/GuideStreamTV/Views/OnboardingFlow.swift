@@ -130,13 +130,41 @@ struct WelcomeOnboardingView: View {
     var onEmailAuth: () -> Void
 
     @State private var auth = AuthViewModel.shared
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
+        ZStack {
+            // Ambient drifting blurred poster wall — sits above the navy base
+            // but below the wordmark, hairline, and glass card.
+            DriftingPosterWall(reduceMotion: reduceMotion)
+
+            welcomeContent
+
+            // Decorative "CH 01" channel chip — top-right within the safe area.
+            VStack {
+                HStack {
+                    Spacer()
+                    ChannelChip()
+                }
+                Spacer()
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 8)
+        }
+    }
+
+    private var welcomeContent: some View {
         VStack(spacing: 0) {
             Spacer(minLength: 80)
 
             GuideStreamLogo()
                 .frame(height: 120)
+                .overlay {
+                    if !reduceMotion {
+                        TuningShimmer()
+                            .allowsHitTesting(false)
+                    }
+                }
                 .padding(.bottom, 8)
 
             // Gradient hairline underline
@@ -152,11 +180,15 @@ struct WelcomeOnboardingView: View {
             VStack(spacing: 12) {
                 VStack(spacing: 4) {
                     Text("Every show. Every service.")
-                        .font(.custom("SF Pro Text", size: 15))
+                        .font(.custom("SF Pro Text", size: 13))
                         .foregroundStyle(Color.textSecondary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.85)
                     Text("What are you watching now?")
-                        .font(.custom("SF Pro Display", size: 18).weight(.bold))
+                        .font(.custom("SF Pro Display", size: 15).weight(.bold))
                         .foregroundStyle(.white)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.85)
                 }
                 .multilineTextAlignment(.center)
                 .padding(.top, 4)
@@ -303,6 +335,150 @@ private struct GoogleGlyph: View {
                 ctx.fill(Path(barRect), with: .color(Color(red: 0.26, green: 0.52, blue: 0.96)))
             }
         }
+    }
+}
+
+// MARK: - Welcome decorative layers
+
+/// Ambient, slowly drifting wall of blurred poster tiles rendered entirely
+/// from computed gradients — no network, no assets, no image download. Two
+/// identical stacked copies translate upward by exactly one copy's height on
+/// a seamless linear loop. Honors Reduce Motion by rendering statically.
+private struct DriftingPosterWall: View {
+    let reduceMotion: Bool
+    @State private var animate = false
+
+    private let columns = 4
+    private let gap: CGFloat = 8
+
+    /// Ten brand-adjacent tile colors, assigned deterministically by index.
+    private static let tileColors: [Color] = [
+        Color(red: 0xE5/255, green: 0x09/255, blue: 0x14/255),
+        Color(red: 0x1A/255, green: 0x6F/255, blue: 0xE8/255),
+        Color(red: 0x00/255, green: 0xA8/255, blue: 0xE1/255),
+        Color(red: 0x5B/255, green: 0x2A/255, blue: 0x86/255),
+        Color(red: 0xF5/255, green: 0x82/255, blue: 0x1F/255),
+        Color(red: 0x0F/255, green: 0x79/255, blue: 0xAF/255),
+        Color(red: 0x77/255, green: 0x2C/255, blue: 0xE8/255),
+        Color(red: 0xE4/255, green: 0xA1/255, blue: 0x1B/255),
+        Color(red: 0x1D/255, green: 0xB9/255, blue: 0x54/255),
+        Color(red: 0x2E/255, green: 0x51/255, blue: 0xA2/255),
+    ]
+
+    var body: some View {
+        GeometryReader { geo in
+            let width = geo.size.width
+            let height = geo.size.height
+            let tileW = (width - gap * CGFloat(columns - 1)) / CGFloat(columns)
+            let tileH = tileW * 3.0 / 2.0
+            let rowH = tileH + gap
+            let rowsPerCopy = max(1, Int(ceil(height / rowH)) + 1)
+            let copyStride = CGFloat(rowsPerCopy) * rowH
+
+            VStack(spacing: gap) {
+                tileSet(rows: rowsPerCopy, tileW: tileW, tileH: tileH)
+                tileSet(rows: rowsPerCopy, tileW: tileW, tileH: tileH)
+            }
+            .frame(width: width, alignment: .top)
+            .offset(y: animate ? -copyStride : 0)
+            .animation(
+                reduceMotion ? nil : .linear(duration: 22).repeatForever(autoreverses: false),
+                value: animate
+            )
+            .frame(width: width, height: height, alignment: .top)
+            .clipped()
+        }
+        .ignoresSafeArea()
+        .blur(radius: 7)
+        .saturation(0.85)
+        .opacity(0.30)
+        .mask(
+            LinearGradient(
+                stops: [
+                    .init(color: .clear, location: 0.0),
+                    .init(color: .black, location: 0.22),
+                    .init(color: .black, location: 0.55),
+                    .init(color: .clear, location: 0.92),
+                ],
+                startPoint: .top, endPoint: .bottom
+            )
+        )
+        .allowsHitTesting(false)
+        .onAppear { if !reduceMotion { animate = true } }
+    }
+
+    private func tileSet(rows: Int, tileW: CGFloat, tileH: CGFloat) -> some View {
+        VStack(spacing: gap) {
+            ForEach(0..<rows, id: \.self) { row in
+                HStack(spacing: gap) {
+                    ForEach(0..<columns, id: \.self) { col in
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .fill(gradient(for: row * columns + col))
+                            .frame(width: tileW, height: tileH)
+                    }
+                }
+            }
+        }
+    }
+
+    /// 150° diagonal gradient from a brand color to 55%-opacity black.
+    private func gradient(for index: Int) -> LinearGradient {
+        let base = Self.tileColors[index % Self.tileColors.count]
+        return LinearGradient(
+            colors: [base, Color.black.opacity(0.55)],
+            startPoint: UnitPoint(x: 0.933, y: 0.25),
+            endPoint: UnitPoint(x: 0.067, y: 0.75)
+        )
+    }
+}
+
+/// A thin horizontal "tuning" light band that sweeps down over the wordmark on
+/// a repeating ease-in-out loop. Only rendered when Reduce Motion is off.
+private struct TuningShimmer: View {
+    private struct ShimmerPhase {
+        var offsetY: CGFloat = -32
+        var opacity: Double = 0
+    }
+
+    var body: some View {
+        LinearGradient(
+            colors: [.white.opacity(0.0), .white.opacity(0.28), .white.opacity(0.0)],
+            startPoint: .top, endPoint: .bottom
+        )
+        .frame(height: 22)
+        .frame(maxWidth: .infinity)
+        .keyframeAnimator(initialValue: ShimmerPhase(), repeating: true) { content, value in
+            content
+                .offset(y: value.offsetY)
+                .opacity(value.opacity)
+        } keyframes: { _ in
+            KeyframeTrack(\.offsetY) {
+                LinearKeyframe(32, duration: 3.4)
+            }
+            KeyframeTrack(\.opacity) {
+                CubicKeyframe(1.0, duration: 1.7)
+                CubicKeyframe(0.0, duration: 1.7)
+            }
+        }
+    }
+}
+
+/// Small decorative "CH 01" channel chip shown in the welcome screen's
+/// top-right corner.
+private struct ChannelChip: View {
+    private static let brandOrange = Color(red: 0xF5/255, green: 0x82/255, blue: 0x1F/255)
+
+    var body: some View {
+        Text("CH 01")
+            .font(.custom("SF Pro Text", size: 11).weight(.bold))
+            .tracking(1.0)
+            .foregroundStyle(Self.brandOrange)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .overlay(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .stroke(Self.brandOrange.opacity(0.5), lineWidth: 1)
+            )
     }
 }
 

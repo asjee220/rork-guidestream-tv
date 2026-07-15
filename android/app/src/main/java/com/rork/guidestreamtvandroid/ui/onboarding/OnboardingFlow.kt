@@ -2,9 +2,16 @@ package com.rork.guidestreamtvandroid.ui.onboarding
 
 import android.Manifest
 import android.os.Build
+import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -17,6 +24,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -26,8 +34,10 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -56,12 +66,22 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.rork.guidestreamtvandroid.data.models.StreamingCatalog
@@ -80,6 +100,9 @@ import com.rork.guidestreamtvandroid.ui.theme.SurfaceContainer
 import com.rork.guidestreamtvandroid.ui.theme.TextPrimary
 import com.rork.guidestreamtvandroid.ui.theme.TextSecondary
 import com.rork.guidestreamtvandroid.ui.theme.TextTertiary
+import kotlin.math.PI
+import kotlin.math.ceil
+import kotlin.math.sin
 import kotlinx.coroutines.launch
 
 /**
@@ -219,20 +242,42 @@ private fun WelcomeScreen(
     val auth = AuthViewModel.get()
     val isAuthenticating by auth.isAuthenticating.collectAsState()
     val lastError by auth.lastError.collectAsState()
+    val context = LocalContext.current
+    // Reduce Motion: ANIMATOR_DURATION_SCALE == 0 means the user disabled animations.
+    val reduceMotion = remember {
+        Settings.Global.getFloat(
+            context.contentResolver,
+            Settings.Global.ANIMATOR_DURATION_SCALE,
+            1f,
+        ) == 0f
+    }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = 24.dp)
-            .verticalScroll(rememberScrollState()),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
-    ) {
-        Spacer(Modifier.height(24.dp))
+    Box(modifier = Modifier.fillMaxSize()) {
+        // Ambient drifting blurred poster wall — above the navy base, below the
+        // wordmark, hairline, and glass card. Purely computed gradients.
+        DriftingPosterWall(
+            reduceMotion = reduceMotion,
+            modifier = Modifier.fillMaxSize(),
+        )
 
-        // Logo
-        BrandWordmark(size = com.rork.guidestreamtvandroid.ui.theme.WordmarkSize.LARGE)
-        Spacer(Modifier.height(8.dp))
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 24.dp)
+                .verticalScroll(rememberScrollState()),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
+            Spacer(Modifier.height(24.dp))
+
+            // Logo with tuning-shimmer sweep overlaid on top of the wordmark.
+            Box(contentAlignment = Alignment.Center) {
+                BrandWordmark(size = com.rork.guidestreamtvandroid.ui.theme.WordmarkSize.LARGE)
+                if (!reduceMotion) {
+                    TuningShimmer()
+                }
+            }
+            Spacer(Modifier.height(8.dp))
 
         // Gradient hairline underline
         Box(
@@ -264,14 +309,20 @@ private fun WelcomeScreen(
         ) {
             Text(
                 text = "Every show. Every service.",
-                fontSize = 15.sp,
+                fontSize = 13.sp,
                 color = TextSecondary,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Clip,
             )
             Text(
                 text = "What are you watching now?",
-                fontSize = 18.sp,
+                fontSize = 15.sp,
                 fontWeight = FontWeight.Bold,
                 color = TextPrimary,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Clip,
             )
             Spacer(Modifier.height(16.dp))
 
@@ -335,8 +386,189 @@ private fun WelcomeScreen(
                 color = TextTertiary,
                 textAlign = TextAlign.Center,
             )
+            }
+        }
+
+        // Decorative "CH 01" channel chip — top-right within the safe area.
+        ChannelChip(
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .statusBarsPadding()
+                .padding(top = 8.dp, end = 20.dp),
+        )
+    }
+}
+
+// ── Welcome decorative layers ──────────────────────────────────
+
+/// Ten brand-adjacent poster-tile colors, assigned deterministically by index.
+private val posterTileColors: List<Color> = listOf(
+    Color(0xFFE50914),
+    Color(0xFF1A6FE8),
+    Color(0xFF00A8E1),
+    Color(0xFF5B2A86),
+    Color(0xFFF5821F),
+    Color(0xFF0F79AF),
+    Color(0xFF772CE8),
+    Color(0xFFE4A11B),
+    Color(0xFF1DB954),
+    Color(0xFF2E51A2),
+)
+
+/// Mixes a color slightly toward its gray luminance to gently reduce saturation
+/// (mirrors the iOS `.saturation(0.85)` applied to the poster wall).
+private fun Color.desaturated(amount: Float): Color {
+    val gray = 0.299f * red + 0.587f * green + 0.114f * blue
+    return Color(
+        red = red + (gray - red) * (1f - amount),
+        green = green + (gray - green) * (1f - amount),
+        blue = blue + (gray - blue) * (1f - amount),
+        alpha = alpha,
+    )
+}
+
+@Composable
+private fun DriftingPosterWall(
+    reduceMotion: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    val maskBrush = remember {
+        Brush.verticalGradient(
+            0.0f to Color.Transparent,
+            0.22f to Color.Black,
+            0.55f to Color.Black,
+            0.92f to Color.Transparent,
+        )
+    }
+    Box(
+        modifier = modifier
+            .clipToBounds()
+            .graphicsLayer {
+                alpha = 0.30f
+                compositingStrategy = CompositingStrategy.Offscreen
+            }
+            .drawWithContent {
+                drawContent()
+                drawRect(brush = maskBrush, blendMode = BlendMode.DstIn)
+            },
+    ) {
+        BoxWithConstraints(modifier = Modifier.fillMaxSize().blur(7.dp)) {
+            val columns = 4
+            val gap = 8.dp
+            val tileW = (maxWidth - gap * (columns - 1)) / columns
+            val tileH = tileW * 1.5f
+            val rowH = tileH + gap
+            val rowsPerCopy = (ceil(maxHeight.value / rowH.value).toInt() + 1).coerceAtLeast(1)
+            val copyStride = rowH * rowsPerCopy
+
+            val density = LocalDensity.current
+            val wPx = with(density) { tileW.toPx() }
+            val hPx = with(density) { tileH.toPx() }
+
+            val transition = rememberInfiniteTransition(label = "posterDrift")
+            val f by transition.animateFloat(
+                initialValue = 0f,
+                targetValue = 1f,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(22000, easing = LinearEasing),
+                    repeatMode = RepeatMode.Restart,
+                ),
+                label = "posterDriftValue",
+            )
+            val offsetY = if (reduceMotion) 0.dp else -(copyStride * f)
+
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .offset(y = offsetY),
+                verticalArrangement = Arrangement.spacedBy(gap),
+            ) {
+                PosterTileSet(rowsPerCopy, columns, tileW, tileH, gap, wPx, hPx)
+                PosterTileSet(rowsPerCopy, columns, tileW, tileH, gap, wPx, hPx)
+            }
         }
     }
+}
+
+@Composable
+private fun PosterTileSet(
+    rows: Int,
+    columns: Int,
+    tileW: Dp,
+    tileH: Dp,
+    gap: Dp,
+    wPx: Float,
+    hPx: Float,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(gap)) {
+        repeat(rows) { row ->
+            Row(horizontalArrangement = Arrangement.spacedBy(gap)) {
+                repeat(columns) { col ->
+                    val idx = row * columns + col
+                    val base = posterTileColors[idx % posterTileColors.size].desaturated(0.85f)
+                    Box(
+                        modifier = Modifier
+                            .size(tileW, tileH)
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(
+                                Brush.linearGradient(
+                                    colors = listOf(base, Color.Black.copy(alpha = 0.55f)),
+                                    start = Offset(wPx * 0.933f, hPx * 0.25f),
+                                    end = Offset(wPx * 0.067f, hPx * 0.75f),
+                                ),
+                            ),
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TuningShimmer(modifier: Modifier = Modifier) {
+    val transition = rememberInfiniteTransition(label = "tuningShimmer")
+    val progress by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(3400, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Restart,
+        ),
+        label = "tuningShimmerProgress",
+    )
+    val offsetY = (-32f + 64f * progress).dp
+    val opacity = sin(progress * PI).toFloat().coerceIn(0f, 1f)
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(22.dp)
+            .offset(y = offsetY)
+            .graphicsLayer { alpha = opacity }
+            .background(
+                Brush.verticalGradient(
+                    colors = listOf(
+                        Color.White.copy(alpha = 0f),
+                        Color.White.copy(alpha = 0.28f),
+                        Color.White.copy(alpha = 0f),
+                    ),
+                ),
+            ),
+    )
+}
+
+@Composable
+private fun ChannelChip(modifier: Modifier = Modifier) {
+    Text(
+        text = "CH 01",
+        fontSize = 11.sp,
+        fontWeight = FontWeight.Bold,
+        letterSpacing = 1.sp,
+        color = BrandOrange,
+        modifier = modifier
+            .clip(RoundedCornerShape(6.dp))
+            .border(1.dp, BrandOrange.copy(alpha = 0.5f), RoundedCornerShape(6.dp))
+            .padding(horizontal = 8.dp, vertical = 4.dp),
+    )
 }
 
 @Composable
