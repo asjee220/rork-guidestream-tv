@@ -26,8 +26,12 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Tv
+import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -57,14 +61,18 @@ import com.rork.guidestreamtvandroid.data.remote.SupabaseManager
 import com.rork.guidestreamtvandroid.data.repository.SocialViewModel
 import com.rork.guidestreamtvandroid.data.repository.StreamsViewModel
 import com.rork.guidestreamtvandroid.data.repository.WatchIntentLogger
+import androidx.compose.ui.graphics.vector.ImageVector
+import com.rork.guidestreamtvandroid.ui.cast.CastToTVSheet
 import com.rork.guidestreamtvandroid.ui.comments.TitleCommentsSheet
 import com.rork.guidestreamtvandroid.ui.components.RemoteImage
 import com.rork.guidestreamtvandroid.ui.components.SocialCounterRow
 import com.rork.guidestreamtvandroid.ui.components.glassCard
 import com.rork.guidestreamtvandroid.ui.theme.BottomSafeSpacer
+import com.rork.guidestreamtvandroid.ui.theme.BrandBlue
 import com.rork.guidestreamtvandroid.ui.theme.BrandOrange
 import com.rork.guidestreamtvandroid.ui.theme.GlassFill
 import com.rork.guidestreamtvandroid.ui.theme.GlassStroke
+import com.rork.guidestreamtvandroid.ui.theme.SurfaceContainer
 import com.rork.guidestreamtvandroid.ui.theme.TextPrimary
 import com.rork.guidestreamtvandroid.ui.theme.TextSecondary
 import com.rork.guidestreamtvandroid.ui.theme.TextTertiary
@@ -151,9 +159,12 @@ fun CreatorDetailScreen(
     val episodes by vm.episodes.collectAsStateWithLifecycle()
     val isLoading by vm.isLoading.collectAsStateWithLifecycle()
     val userStreams by streamsVm.userStreams.collectAsStateWithLifecycle()
+    val watchedIds by streamsVm.watchedIds.collectAsStateWithLifecycle()
 
     val isFollowed = userStreams.any { it.titleId == titleId }
+    val isWatched = watchedIds.contains(titleId)
     val sourceType = source?.sourceType ?: titleId.substringBefore(":", "youtube")
+    val isYouTube = sourceType == "youtube" || titleId.startsWith("yt:")
 
     // Social (likes + comments) state. Creators/podcasts have no TMDB identity,
     // so likes key off the prefixed titleId only (no mediaType / tmdbId).
@@ -162,6 +173,7 @@ fun CreatorDetailScreen(
     val likedByMe by socialVm.likedByMe.collectAsStateWithLifecycle()
     val commentCounts by socialVm.commentCounts.collectAsStateWithLifecycle()
     var showComments by remember { mutableStateOf(false) }
+    var showCast by remember { mutableStateOf(false) }
 
     LaunchedEffect(titleId) {
         vm.load(titleId)
@@ -274,56 +286,61 @@ fun CreatorDetailScreen(
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
                 )
 
-                // Follow button
+                // Actions row (Follow / Watched / Send to TV)
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp, vertical = 12.dp),
+                    horizontalArrangement = Arrangement.SpaceEvenly,
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(if (isFollowed) GlassFill else BrandOrange)
-                            .border(
-                                1.dp,
-                                if (isFollowed) GlassStroke else BrandOrange,
-                                RoundedCornerShape(12.dp),
-                            )
-                            .clickable(
-                                interactionSource = remember { MutableInteractionSource() },
-                                indication = null,
-                            ) {
-                                if (isFollowed) {
-                                    streamsVm.removeFromMyStreams(titleId)
-                                    WatchIntentLogger.get().log(
-                                        WatchIntentLogger.IntentEventType.WATCHLIST_REMOVED,
-                                        titleId = titleId,
-                                        platformId = sourceType,
-                                    )
-                                } else {
-                                    streamsVm.addToMyStreams(
-                                        titleId = titleId,
-                                        title = source?.displayName,
-                                        posterUrl = source?.imageUrl,
-                                        platform = sourceType,
-                                    )
-                                    WatchIntentLogger.get().log(
-                                        WatchIntentLogger.IntentEventType.WATCHLIST_ADDED,
-                                        titleId = titleId,
-                                        platformId = sourceType,
-                                    )
-                                }
-                            }
-                            .padding(vertical = 14.dp),
-                        contentAlignment = Alignment.Center,
+                    CircleAction(
+                        icon = if (isFollowed) Icons.Filled.Check else Icons.Filled.Add,
+                        label = if (isFollowed) "Following" else "Follow",
+                        tint = if (isFollowed) BrandOrange else Color.White,
                     ) {
-                        Text(
-                            text = if (isFollowed) "Following" else "Follow",
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = if (isFollowed) TextPrimary else Color.White,
+                        if (isFollowed) {
+                            streamsVm.removeFromMyStreams(titleId)
+                            WatchIntentLogger.get().log(
+                                WatchIntentLogger.IntentEventType.WATCHLIST_REMOVED,
+                                titleId = titleId,
+                                platformId = sourceType,
+                            )
+                        } else {
+                            streamsVm.addToMyStreams(
+                                titleId = titleId,
+                                title = source?.displayName,
+                                posterUrl = source?.imageUrl,
+                                platform = sourceType,
+                            )
+                            WatchIntentLogger.get().log(
+                                WatchIntentLogger.IntentEventType.WATCHLIST_ADDED,
+                                titleId = titleId,
+                                platformId = sourceType,
+                            )
+                        }
+                    }
+
+                    CircleAction(
+                        icon = Icons.Filled.Visibility,
+                        label = "Watched",
+                        tint = if (isWatched) BrandBlue else TextPrimary,
+                    ) {
+                        streamsVm.toggleWatched(
+                            titleId = titleId,
+                            titleName = source?.displayName,
+                            mediaType = null,
+                            tmdbId = null,
                         )
+                    }
+
+                    if (isYouTube) {
+                        CircleAction(
+                            icon = Icons.Filled.Tv,
+                            label = "Send to TV",
+                            tint = Color.White,
+                        ) {
+                            showCast = true
+                        }
                     }
                 }
 
@@ -380,6 +397,44 @@ fun CreatorDetailScreen(
                 onDismiss = { showComments = false },
             )
         }
+
+        if (showCast) {
+            CastToTVSheet(onClose = { showCast = false })
+        }
+    }
+}
+
+/**
+ * Labeled circle action mirroring SportsWatchSheet's CircleAction styling: a
+ * 54dp SurfaceContainer circle with a 22dp icon and a 12sp 70%-white label.
+ */
+@Composable
+private fun CircleAction(
+    icon: ImageVector,
+    label: String,
+    tint: Color,
+    onClick: () -> Unit,
+) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+            ) { onClick() }
+            .padding(horizontal = 4.dp),
+    ) {
+        Box(
+            modifier = Modifier
+                .size(54.dp)
+                .clip(CircleShape)
+                .background(SurfaceContainer),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(imageVector = icon, contentDescription = label, tint = tint, modifier = Modifier.size(22.dp))
+        }
+        Text(label, fontSize = 12.sp, color = Color.White.copy(alpha = 0.7f), maxLines = 1)
     }
 }
 
