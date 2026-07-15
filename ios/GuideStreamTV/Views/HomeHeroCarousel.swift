@@ -95,8 +95,9 @@ struct HomeHeroCarousel: View {
                     }
                     .containerRelativeFrame(.horizontal) { length, _ in
                         // Slightly narrower than the container so the next
-                        // card peeks ~26pt past the right edge.
-                        max(length - 60, 240)
+                        // card peeks ~26pt past the right edge. Capped at 460pt
+                        // so the hero doesn't fill the full width on iPad.
+                        min(max(length - 60, 240), 460)
                     }
                     .scrollTransition(.interactive) { content, phase in
                         content

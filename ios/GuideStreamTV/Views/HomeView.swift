@@ -1352,7 +1352,8 @@ struct HomeView: View {
 
     private func loadTrendingIfNeeded(deferNonCritical: Bool = false) async {
         // Always load TMDB content so the hero, new-episodes, and binge sections never fall back to a gradient-only state.
-        async let trendingCall = try? TMDBService.shared.getTrending()
+        async let trendingPage1 = try? TMDBService.shared.getTrending(page: 1)
+        async let trendingPage2 = try? TMDBService.shared.getTrending(page: 2)
         async let onAirCall = try? TMDBService.shared.getOnTheAir()
         async let endedCall = try? TMDBService.shared.getDiscoverEnded()
         async let newTodayCall = try? TMDBService.shared.getNewToday()
@@ -1360,8 +1361,14 @@ struct HomeView: View {
         async let topRatedCall = try? TMDBService.shared.getTopRated()
         async let genreCall = try? TMDBService.shared.getDiscoverByGenre(selectedGenreId)
         async let newReleasesCall = StreamingReleasesService.shared.fetchReleases()
-        let (t, a, e, n, s, tr, genre, nr) = await (trendingCall, onAirCall, endedCall, newTodayCall, sportsCall, topRatedCall, genreCall, newReleasesCall)
-        if let t { trending = t }
+        let (t1, t2, a, e, n, s, tr, genre, nr) = await (trendingPage1, trendingPage2, onAirCall, endedCall, newTodayCall, sportsCall, topRatedCall, genreCall, newReleasesCall)
+        // Concatenate both trending pages and de-duplicate by id, preserving
+        // first-seen order (page 2 can repeat page 1 titles).
+        let combinedTrending = (t1 ?? []) + (t2 ?? [])
+        if !combinedTrending.isEmpty {
+            var seenTrendingIds = Set<Int>()
+            trending = combinedTrending.filter { seenTrendingIds.insert($0.id).inserted }
+        }
         if let a { onAir = a }
         if let e { bingeFallback = e }
         if let n { newToday = n }
@@ -1745,7 +1752,7 @@ struct HomeView: View {
     }
 
     private var bingeReadyShows: [PosterShow] {
-        Array(allBingeReadyShows.prefix(12))
+        Array(allBingeReadyShows.prefix(20))
     }
 
     /// Full Binge Worthy list (no count limit) used by the "See all" list view.
@@ -1769,7 +1776,7 @@ struct HomeView: View {
     /// items with a confirmed streaming provider so each card has a real
     /// "Watch on X" deeplink behind it.
     private var whatsNewTodayShows: [PosterShow] {
-        Array(allWhatsNewTodayShows.prefix(12))
+        Array(allWhatsNewTodayShows.prefix(20))
     }
 
     private var allWhatsNewTodayShows: [PosterShow] {
@@ -1827,7 +1834,7 @@ struct HomeView: View {
                 return (show, score)
             }
             .sorted { $0.score > $1.score }
-            .prefix(12)
+            .prefix(20)
             .map { $0.show }
     }
 
@@ -1849,7 +1856,7 @@ struct HomeView: View {
                     voteAverage: r.voteAverage
                 )
             }
-            .prefix(12)
+            .prefix(20)
             .map { $0 }
     }
 
@@ -2120,7 +2127,7 @@ struct HomeView: View {
         return order.compactMap { key in
             guard let (color, shows) = map[key], shows.count >= 3 else { return nil }
             let displayName = providerByTmdb.values.first { $0.name.lowercased().contains(key) }?.name ?? key.capitalized
-            return (displayName, color, Array(shows.prefix(12)))
+            return (displayName, color, Array(shows.prefix(20)))
         }
     }
 
@@ -2128,7 +2135,7 @@ struct HomeView: View {
     private var trendingRanked: [PosterShow] {
         trending
             .filter { providerByTmdb[$0.id] != nil }
-            .prefix(10)
+            .prefix(20)
             .map { mediaAsPoster($0, platform: providerByTmdb[$0.id]) }
     }
 
@@ -2136,7 +2143,7 @@ struct HomeView: View {
     private var topRatedShows: [PosterShow] {
         topRated
             .filter { providerByTmdb[$0.id] != nil }
-            .prefix(12)
+            .prefix(20)
             .map { mediaAsPoster($0, platform: providerByTmdb[$0.id]) }
     }
 
@@ -2165,7 +2172,7 @@ struct HomeView: View {
         }()
 
         var items: [ComingToStreamingItem] = []
-        let pool = movies.prefix(15)
+        let pool = movies.prefix(24)
 
         let resolved: [(ComingToStreamingItem, Date?)] = await withTaskGroup(
             of: (ComingToStreamingItem, Date?)?.self
@@ -2234,7 +2241,7 @@ struct HomeView: View {
             return false
         }.map { $0.0 }
 
-        let capped = Array(items.prefix(12))
+        let capped = Array(items.prefix(20))
         await MainActor.run { comingToStreaming = capped }
     }
 
