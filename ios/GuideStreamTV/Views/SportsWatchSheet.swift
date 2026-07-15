@@ -23,10 +23,35 @@ struct SportsWatchSheet: View {
     @State private var isToggleSaving: Bool = false
     @State private var isTogglingLike: Bool = false
     @State private var adDismissed: Bool = false
+    @State private var selectedBroadcast: String?
 
     private var awayColor: Color { game.away.primaryHex.map { Color(hex: $0) } ?? Color(white: 0.18) }
     private var homeColor: Color { game.home.primaryHex.map { Color(hex: $0) } ?? Color(white: 0.18) }
     private var primaryBroadcast: String? { game.broadcasts.first }
+
+    /// `game.broadcasts` de-duplicated preserving first-seen order, then
+    /// stable-sorted so broadcasts the user subscribes to come first — the
+    /// same subscribed-service ordering used on the movie / TV detail screen.
+    private var sortedBroadcasts: [String] {
+        var seen = Set<String>()
+        let unique = game.broadcasts.filter { seen.insert($0).inserted }
+        return unique.enumerated().sorted { a, b in
+            let aSub = AuthViewModel.shared.subscribesToService(named: a.element)
+            let bSub = AuthViewModel.shared.subscribesToService(named: b.element)
+            if aSub != bSub { return aSub }
+            return a.offset < b.offset
+        }.map { $0.element }
+    }
+
+    /// The broadcast the Watch CTA currently targets: the user's selection when
+    /// still present in the de-duped list, otherwise the first sorted entry,
+    /// otherwise the raw first broadcast.
+    private var activeBroadcast: String? {
+        if let sel = selectedBroadcast, sortedBroadcasts.contains(sel) {
+            return sel
+        }
+        return sortedBroadcasts.first ?? game.broadcasts.first
+    }
 
     private var sportsAdData:
     (serviceId: String, headline: String, subtext: String)? {
@@ -161,6 +186,10 @@ struct SportsWatchSheet: View {
                     .padding(.horizontal, 20)
                     .padding(.top, 20)
 
+                whereToWatchChips
+                    .padding(.horizontal, 20)
+                    .padding(.top, 20)
+
                 watchActions
                     .padding(.horizontal, 20)
                     .padding(.top, 22)
@@ -187,7 +216,7 @@ struct SportsWatchSheet: View {
             CastToTVSheet(
                 isPresented: $showCastSheet,
                 showTitle: gameTitle,
-                platform: primaryBroadcast ?? "",
+                platform: activeBroadcast ?? "",
                 tmdbId: nil,
                 isTV: false
             )
@@ -532,6 +561,41 @@ struct SportsWatchSheet: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
+    // MARK: - Where to Watch chips
+
+    @ViewBuilder
+    private var whereToWatchChips: some View {
+        let broadcasts = sortedBroadcasts
+        if !broadcasts.isEmpty {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Where to Watch")
+                    .scaledFont(size: 12, weight: .heavy)
+                    .tracking(1.4)
+                    .foregroundStyle(Color.white.opacity(0.45))
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 10) {
+                        ForEach(broadcasts, id: \.self) { broadcast in
+                            Button {
+                                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                selectedBroadcast = broadcast
+                            } label: {
+                                ServiceBadge(
+                                    name: broadcast,
+                                    color: broadcastColor(broadcast),
+                                    isSubscribed: AuthViewModel.shared.subscribesToService(named: broadcast),
+                                    isSelected: activeBroadcast == broadcast
+                                )
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.horizontal, 20)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
     // MARK: - Watch context card
 
     @ViewBuilder
@@ -635,7 +699,7 @@ struct SportsWatchSheet: View {
     }
 
     private var watchButton: some View {
-        let platform = primaryBroadcast ?? ""
+        let platform = activeBroadcast ?? ""
         let canWatch = !platform.isEmpty
         return Button {
             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
@@ -662,7 +726,7 @@ struct SportsWatchSheet: View {
                     .scaledFont(size: 15, weight: .bold)
                 Text(canWatch ? "Watch on \(platform)" : "Broadcast TBA")
                     .scaledFont(size: 17, weight: .semibold)
-                if canWatch, let broadcast = primaryBroadcast {
+                if canWatch, let broadcast = activeBroadcast {
                     Text(broadcast)
                         .scaledFont(size: 11, weight: .bold)
                         .foregroundStyle(Color(red: 0x5A/255, green: 0x2C/255, blue: 0x06/255))
@@ -751,7 +815,7 @@ struct SportsWatchSheet: View {
                     titleId: key,
                     title: gameTitle,
                     posterUrl: nil,
-                    platform: primaryBroadcast
+                    platform: activeBroadcast
                 )
             }
             await MainActor.run { isToggleSaving = false }
