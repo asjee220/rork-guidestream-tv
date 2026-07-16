@@ -82,55 +82,6 @@ nonisolated struct WatchmodeService {
 
     private let apiKey = "wqlepJq2xhEfyAVWpMOhVGmoUKBJFzHj3mlE3Lcw"
 
-    /// Fetches source expiry dates for TMDB ids from the user's watch list and returns
-    /// titles that expire within 30 days.
-    func getExpiringTitles(
-        tmdbIds: [Int]
-    ) async -> [(tmdbId: Int, title: String, daysLeft: Int, sourceId: String, isTV: Bool)] {
-        var results: [(Int, String, Int, String, Bool)] = []
-        let calendar = Calendar.current
-        let now = Date()
-
-        await withTaskGroup(of: (Int, String, Int, String, Bool)?.self) { group in
-            for tmdbId in tmdbIds.prefix(25) {
-                group.addTask {
-                    // Try TV lookup first, fall back to movie — TMDB trending
-                    // mixes both types so a single lookup field misses half the pool.
-                    var wmId: String? = try? await WatchmodeService.shared.watchmodeId(forTMDBId: tmdbId, isTV: true)
-                    if wmId == nil {
-                        wmId = try? await WatchmodeService.shared.watchmodeId(forTMDBId: tmdbId, isTV: false)
-                    }
-                    guard let wmId,
-                          let detail = try? await WatchmodeService.shared.titleDetail(titleId: wmId),
-                          let sources = detail.sources
-                    else { return nil }
-
-                    let formatter = ISO8601DateFormatter()
-                    formatter.formatOptions = [.withFullDate]
-
-                    // Carry the resolved media type so downstream detail routing
-                    // never sends a movie id to the TMDB /tv endpoint.
-                    let isTV = !(detail.type == "movie" || detail.type == "short_film")
-
-                    for source in sources {
-                        guard let endStr = source.endDate,
-                              let endDate = formatter.date(from: endStr)
-                        else { continue }
-                        let days = calendar.dateComponents([.day], from: now, to: endDate).day ?? 999
-                        if days >= 0 && days <= 30 {
-                            return (tmdbId, detail.title, days, source.name, isTV)
-                        }
-                    }
-                    return nil
-                }
-            }
-            for await result in group {
-                if let r = result { results.append(r) }
-            }
-        }
-        return results.sorted { $0.2 < $1.2 }
-    }
-
     /// Fetches a title's metadata + all per-source watch links.
     ///
     /// Watchmode's title details live at `/v1/title/{id}/details/`. The bare

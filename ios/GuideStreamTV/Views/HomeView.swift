@@ -1371,20 +1371,9 @@ struct HomeView: View {
                 await loadPopularOnServices()
                 // TVDB enrichment — non-blocking, silently ignored when TVDB is down.
                 Task { await fetchTVDBUpcoming() }
-            // Fetch expiring titles — prioritises watchlist IDs, falls back
-            // to trending + on-air so the section always has content.
-            let watchListIds = streams.userStreams.compactMap { Int($0.titleId) }
-            let tIds = trending.map { $0.id }
-            let oaIds = onAir.map { $0.id }
-            var seen2 = Set<Int>()
-            var poolIds: [Int] = []
-            for id in (watchListIds + tIds + oaIds) where seen2.insert(id).inserted {
-                poolIds.append(id)
-            }
-            if !poolIds.isEmpty {
-                expiringItems = await WatchmodeService.shared.getExpiringTitles(tmdbIds: poolIds)
-                await resolveExpiringPosters()
-            }
+            // Fetch expiring titles from the server-backed expiring_titles
+            // table (refreshed daily by the refresh_expiring_titles function).
+            await refreshExpiringFromServer()
             // Push fresh data to the widget via App Group UserDefaults.
             WidgetDataService.shared.push(
                 expiringItems: expiringItems.map { (tmdbId: $0.tmdbId, title: $0.title, daysLeft: $0.daysLeft, sourceId: $0.sourceId) },
@@ -1407,18 +1396,7 @@ struct HomeView: View {
         } else {
             await loadPopularOnServices()
             Task { await fetchTVDBUpcoming() }
-            let watchListIds = streams.userStreams.compactMap { Int($0.titleId) }
-            let tIds = trending.map { $0.id }
-            let oaIds = onAir.map { $0.id }
-            var seen2 = Set<Int>()
-            var poolIds: [Int] = []
-            for id in (watchListIds + tIds + oaIds) where seen2.insert(id).inserted {
-                poolIds.append(id)
-            }
-            if !poolIds.isEmpty {
-                expiringItems = await WatchmodeService.shared.getExpiringTitles(tmdbIds: poolIds)
-                await resolveExpiringPosters()
-            }
+            await refreshExpiringFromServer()
             WidgetDataService.shared.push(
                 expiringItems: expiringItems.map { (tmdbId: $0.tmdbId, title: $0.title, daysLeft: $0.daysLeft, sourceId: $0.sourceId) },
                 posterUrls: expiringPosterUrls,
@@ -1839,51 +1817,52 @@ struct HomeView: View {
             .map { $0 }
     }
 
-    /// Fetches TMDB TV detail for each expiring item in parallel and caches the
-    /// poster URL keyed by tmdbId so `leavingSoonShows` always has real artwork.
-    /// Also resolves posters for the curated fallback so those cards are never blank.
-    private func resolveExpiringPosters() async {
-        let fallbackIds: Set<Int> = [1396, 2316, 73586, 69478, 76479, 83867]
-        // Media type per id — expiring items carry their Watchmode-derived type;
-        // the curated fallback ids are all TV series.
-        var typeById: [Int: Bool] = [:]
-        for item in expiringItems { typeById[item.tmdbId] = item.isTV }
-        for id in fallbackIds where typeById[id] == nil { typeById[id] = true }
-        let allIds = Set(expiringItems.map { $0.tmdbId }).union(fallbackIds)
-        guard !allIds.isEmpty else { return }
+    /// Reads the server-side `expiring_titles` table (public-read, refreshed
+    /// daily by the refresh_expiring_titles edge function) and populates
+    /// `expiringItems` (daysLeft 0...20, soonest first, max 20) plus the
+    /// poster URL cache keyed by tmdbId so `leavingSoonShows` always has
+    /// real artwork.
+    private func refreshExpiringFromServer() async {
+        let rows = await ExpiringTitlesService.shared.fetchExpiring() ?? []
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0) ?? .current
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0) ?? .current
+        let startOfToday = calendar.startOfDay(for: Date())
 
-        var fresh: [Int: String] = [:]
-        await withTaskGroup(of: (Int, String?).self) { group in
-            for tmdbId in allIds {
-                let isTV = typeById[tmdbId] ?? true
-                group.addTask {
-                    if isTV {
-                        guard let detail = try? await TMDBService.shared.getTVDetail(tmdbId: tmdbId) else {
-                            return (tmdbId, nil)
-                        }
-                        return (tmdbId, detail.posterUrl)
-                    } else {
-                        guard let detail = try? await TMDBService.shared.getMovieDetail(tmdbId: tmdbId) else {
-                            return (tmdbId, nil)
-                        }
-                        return (tmdbId, detail.posterUrl)
-                    }
-                }
+        var items: [(tmdbId: Int, title: String, daysLeft: Int, sourceId: String, isTV: Bool)] = []
+        var posters: [Int: String] = [:]
+        for row in rows {
+            if let posterUrl = row.posterUrl, !posterUrl.isEmpty {
+                posters[row.tmdbId] = posterUrl
             }
-            for await (id, url) in group {
-                fresh[id] = url
-            }
+            guard let dateStr = row.leavingDate,
+                  let leavingDate = formatter.date(from: dateStr),
+                  let days = calendar.dateComponents([.day], from: startOfToday, to: leavingDate).day,
+                  (0...20).contains(days)
+            else { continue }
+            items.append((
+                tmdbId: row.tmdbId,
+                title: row.title,
+                daysLeft: days,
+                sourceId: row.serviceName ?? "",
+                isTV: row.tmdbType == "tv"
+            ))
         }
-        // Merge into the existing dictionary so earlier posters aren't discarded
-        // when a second batch arrives.
-        expiringPosterUrls.merge(fresh) { _, new in new }
+        items.sort { $0.daysLeft < $1.daysLeft }
+        expiringItems = Array(items.prefix(20))
+        // Merge so posters from an earlier fetch aren't discarded.
+        expiringPosterUrls.merge(posters) { _, new in new }
     }
 
-    /// Leaving Soon — real expiration data from Watchmode, with a curated fallback
-    /// so the section is never empty while the API resolves.
+    /// Leaving Soon — server-backed expiration data from the expiring_titles
+    /// table. Returns the live list unconditionally; when empty the section
+    /// is simply not rendered.
     private var leavingSoonShows: [PosterShow] {
-        let live = expiringItems
-            .filter { $0.daysLeft <= 7 }
+        return expiringItems
+            .filter { $0.daysLeft <= 20 }
             .compactMap { item -> PosterShow? in
                 let platform = Platform.from(providerName: item.sourceId)
                 let platformName = platform?.name ?? item.sourceId.uppercased()
@@ -1907,17 +1886,6 @@ struct HomeView: View {
                     isTV: item.isTV
                 )
             }
-        if !live.isEmpty { return live }
-        // Curated fallback — well-known titles commonly cycling off services.
-        // Poster URLs resolved by resolveExpiringPosters() alongside live items.
-        return [
-            PosterShow(title: "Breaking Bad", meta: "2 days left · NETFLIX", posterColors: [Color(red: 0x0A/255, green: 0x3E/255, blue: 0x2A/255), Color(red: 0x1A/255, green: 0x1A/255, blue: 0x2E/255)], symbol: "clock.badge.exclamationmark", posterUrl: expiringPosterUrls[1396], tmdbId: 1396, isTV: true),
-            PosterShow(title: "The Office", meta: "3 days left · PEACOCK", posterColors: [Color(red: 0x2D/255, green: 0x2D/255, blue: 0x3A/255), Color(red: 0x1A/255, green: 0x1A/255, blue: 0x2E/255)], symbol: "clock.badge.exclamationmark", posterUrl: expiringPosterUrls[2316], tmdbId: 2316, isTV: true),
-            PosterShow(title: "Yellowstone", meta: "4 days left · PARAMOUNT+", posterColors: [Color(red: 0x3A/255, green: 0x2E/255, blue: 0x17/255), Color(red: 0x1A/255, green: 0x1A/255, blue: 0x2E/255)], symbol: "clock.badge.exclamationmark", posterUrl: expiringPosterUrls[73586], tmdbId: 73586, isTV: true),
-            PosterShow(title: "The Handmaid's Tale", meta: "5 days left · HULU", posterColors: [Color(red: 0x2A/255, green: 0x1A/255, blue: 0x1A/255), Color(red: 0x1A/255, green: 0x2E/255, blue: 0x2A/255)], symbol: "clock.badge.exclamationmark", posterUrl: expiringPosterUrls[69478], tmdbId: 69478, isTV: true),
-            PosterShow(title: "The Boys", meta: "6 days left · PRIME", posterColors: [Color(red: 0x1A/255, green: 0x1A/255, blue: 0x3A/255), Color(red: 0x1A/255, green: 0x2E/255, blue: 0x2E/255)], symbol: "clock.badge.exclamationmark", posterUrl: expiringPosterUrls[76479], tmdbId: 76479, isTV: true),
-            PosterShow(title: "Andor", meta: "Today · DISNEY+", posterColors: [Color(red: 0x2A/255, green: 0x2A/255, blue: 0x1A/255), Color(red: 0x3A/255, green: 0x3A/255, blue: 0x2E/255)], symbol: "clock.badge.exclamationmark", posterUrl: expiringPosterUrls[83867], tmdbId: 83867, isTV: true),
-        ]
     }
 
     /// Episode cards built from the user's saved watch list. Skips the

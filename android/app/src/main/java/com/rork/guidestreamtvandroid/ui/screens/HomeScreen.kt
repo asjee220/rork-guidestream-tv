@@ -125,6 +125,7 @@ fun HomeScreen(
     val homeReady by homeVm.homeContentReady.collectAsStateWithLifecycle()
     val trending by homeVm.trending.collectAsStateWithLifecycle()
     val onAir by homeVm.onAir.collectAsStateWithLifecycle()
+    val leavingSoon by homeVm.leavingSoon.collectAsStateWithLifecycle()
     val topRated by homeVm.topRated.collectAsStateWithLifecycle()
     val newReleases by homeVm.newReleases.collectAsStateWithLifecycle()
     val upcoming by homeVm.upcoming.collectAsStateWithLifecycle()
@@ -394,13 +395,13 @@ fun HomeScreen(
             )
         }
 
-        // Leaving Soon (on-air — placeholder for real Watchmode data)
+        // Leaving Soon — server-backed rows from the expiring_titles table
         if (!homeReady) {
             ShimmerSection("Leaving Soon", Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
-        } else if (onAir.isNotEmpty()) {
+        } else if (leavingSoon.isNotEmpty()) {
             PosterSection(
                 title = "Leaving Soon",
-                shows = onAir.filter { providerByTmdb[it.id] != null }.take(20),
+                shows = leavingSoon.take(20),
                 providerByTmdb = providerByTmdb,
                 accentColor = BrandOrange,
                 onOpen = { r ->
@@ -416,7 +417,7 @@ fun HomeScreen(
                         WatchIntentLogger.IntentEventType.CARD_TAPPED,
                         metadata = mapOf("section" to "leaving_soon_see_all"),
                     )
-                    onSeeAllList(HomeListTarget(title = "Leaving Soon", tag = "LEAVING SOON", shows = onAir.filter { providerByTmdb[it.id] != null }, providerByTmdb = providerByTmdb))
+                    onSeeAllList(HomeListTarget(title = "Leaving Soon", tag = "LEAVING SOON", shows = leavingSoon, providerByTmdb = providerByTmdb))
                 },
             )
         }

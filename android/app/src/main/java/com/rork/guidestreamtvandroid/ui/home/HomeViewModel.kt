@@ -6,6 +6,7 @@ import com.rork.guidestreamtvandroid.data.models.Platform
 import com.rork.guidestreamtvandroid.data.models.StreamingCatalog
 import com.rork.guidestreamtvandroid.data.models.SourceKind
 import com.rork.guidestreamtvandroid.data.models.TMDBResult
+import com.rork.guidestreamtvandroid.data.remote.ExpiringTitlesService
 import com.rork.guidestreamtvandroid.data.remote.RecommendedCreator
 import com.rork.guidestreamtvandroid.data.remote.RecommendedCreatorsService
 import com.rork.guidestreamtvandroid.data.remote.StreamingReleasesService
@@ -13,6 +14,11 @@ import com.rork.guidestreamtvandroid.data.remote.TMDBService
 import com.rork.guidestreamtvandroid.data.remote.toTMDBResult
 import com.rork.guidestreamtvandroid.data.repository.AuthViewModel
 import com.rork.guidestreamtvandroid.data.repository.StreamsViewModel
+import com.rork.guidestreamtvandroid.widget.WidgetDataService
+import com.rork.guidestreamtvandroid.widget.WidgetLeavingSoonItem
+import java.time.LocalDate
+import java.time.ZoneOffset
+import java.time.temporal.ChronoUnit
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -44,6 +50,10 @@ class HomeViewModel : ViewModel() {
 
     private val _newReleases = MutableStateFlow<List<TMDBResult>>(emptyList())
     val newReleases: StateFlow<List<TMDBResult>> = _newReleases.asStateFlow()
+
+    /** Leaving Soon — server-backed rows from the expiring_titles table. */
+    private val _leavingSoon = MutableStateFlow<List<TMDBResult>>(emptyList())
+    val leavingSoon: StateFlow<List<TMDBResult>> = _leavingSoon.asStateFlow()
 
     private val _upcoming = MutableStateFlow<List<TMDBResult>>(emptyList())
     val upcoming: StateFlow<List<TMDBResult>> = _upcoming.asStateFlow()
@@ -134,6 +144,7 @@ class HomeViewModel : ViewModel() {
                         _newReleases.value = rows.map { it.toTMDBResult() }
                     }
                 },
+                launch { loadLeavingSoon() },
                 launch { _upcoming.value = tmdb.getUpcomingMovies() },
                 launch { _bingeReady.value = tmdb.getDiscoverEnded() },
                 launch { _genreShows.value = tmdb.getDiscoverByGenre(80) }, // Crime
@@ -211,6 +222,58 @@ class HomeViewModel : ViewModel() {
                 genreCache[id] = detail?.genres?.map { it.id }?.toSet() ?: emptySet()
             }
             _preferredGenres.value = genreCache.values.flatten().toSet()
+        }
+    }
+
+    /**
+     * Loads the Leaving Soon rail from the server-backed expiring_titles table
+     * (refreshed daily by the refresh_expiring_titles edge function). Keeps
+     * rows leaving within 0..20 days, soonest first (max 20), resolves each
+     * row's provider badge from its service_name, and pushes the kept rows to
+     * the home-screen widget. An empty/failed fetch leaves the rail hidden and
+     * never wipes recent widget data (push() is wipe-protected).
+     */
+    private suspend fun loadLeavingSoon() {
+        val rows = ExpiringTitlesService.get().fetchExpiring() ?: return
+        val today = LocalDate.now(ZoneOffset.UTC)
+        val kept = rows.mapNotNull { row ->
+            val date = row.leavingDate
+                ?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
+                ?: return@mapNotNull null
+            val daysLeft = ChronoUnit.DAYS.between(today, date).toInt()
+            if (daysLeft in 0..20) row to daysLeft else null
+        }.sortedBy { it.second }.take(20)
+
+        // Resolve provider badges from the table's service_name BEFORE the
+        // list is emitted so the rail renders correct badges immediately
+        // without waiting for TMDB provider hydration.
+        val providerUpdates = kept.mapNotNull { (row, _) ->
+            Platform.from(row.serviceName)?.let { row.tmdbId to it }
+        }
+        if (providerUpdates.isNotEmpty()) {
+            _providerByTmdb.value = _providerByTmdb.value + providerUpdates
+        }
+        _leavingSoon.value = kept.map { (row, _) -> row.toTMDBResult() }
+
+        // Push the kept rows to the home-screen widget.
+        val widgetItems = kept.map { (row, daysLeft) ->
+            val platform = Platform.from(row.serviceName)
+            WidgetLeavingSoonItem(
+                id = row.tmdbId.toString(),
+                title = row.title ?: "Untitled",
+                daysLeft = daysLeft,
+                platform = platform?.name ?: (row.serviceName ?: "").uppercase(),
+                platformColorHex = Platform.colorHex(platform),
+                posterUrl = row.posterUrl,
+            )
+        }
+        runCatching {
+            val streams = StreamsViewModel.get()
+            WidgetDataService.get().push(
+                leavingSoon = widgetItems,
+                watchlistCount = streams.userStreams.value.size,
+                newEpisodeCount = streams.newEpisodes.value.size,
+            )
         }
     }
 

@@ -89,7 +89,7 @@ final class WidgetDataService {
         let formatter = DateFormatter()
         formatter.dateFormat = "MMM d"
         let items: [WidgetLeavingSoonItem] = expiringItems
-            .filter { $0.daysLeft <= 14 }
+            .filter { $0.daysLeft <= 20 }
             .prefix(12)
             .map { item in
                 let platform = Platform.from(providerName: item.sourceId)
