@@ -732,9 +732,24 @@ private fun InjectedReelsScreen(
                     injected = true,
                     sources = sources,
                     onOpenSource = { src ->
-                        val url = src.webUrl
-                        if (!url.isNullOrBlank()) {
-                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                        // Prefer the native Android link, then the Android TV
+                        // link, then web — Watchmode placeholder strings
+                        // filtered out. intent:// URIs launch via parseUri.
+                        val target = listOf(src.androidUrl, src.androidTvUrl, src.webUrl)
+                            .firstOrNull { isUsableReelUrl(it) }
+                        if (target != null) {
+                            try {
+                                val intent = if (target.startsWith("intent:")) {
+                                    Intent.parseUri(target, Intent.URI_INTENT_SCHEME)
+                                } else {
+                                    Intent(Intent.ACTION_VIEW, Uri.parse(target))
+                                }
+                                context.startActivity(intent)
+                            } catch (_: Exception) {
+                                src.webUrl?.takeIf { isUsableReelUrl(it) }?.let {
+                                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(it)))
+                                }
+                            }
                         }
                     },
                 )
@@ -840,12 +855,53 @@ private fun WatchNowSwitcher(
                             ) { onOpenSource(src) }
                             .padding(horizontal = 16.dp, vertical = 11.dp),
                     ) {
-                        Text(src.name, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(src.name, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                            val tag = reelMonetizationTag(src)
+                            if (tag != null) {
+                                Spacer(Modifier.width(6.dp))
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(Color.Black.copy(alpha = 0.28f))
+                                        .padding(horizontal = 6.dp, vertical = 2.dp),
+                                ) {
+                                    Text(tag, fontSize = 9.sp, fontWeight = FontWeight.Black, color = Color.White)
+                                }
+                            }
+                        }
                     }
                 }
             }
         }
     }
+}
+
+/**
+ * Compact monetization tag for a Reels source pill — Rent/Buy with price,
+ * Free, TV; nothing for subscription tiers.
+ */
+private fun reelMonetizationTag(src: WatchmodeSrc): String? {
+    val price = src.price?.let { String.format(java.util.Locale.US, "$%.2f", it) }
+    return when (src.type.lowercase()) {
+        "rent" -> if (price != null) "Rent $price" else "Rent"
+        "purchase", "buy" -> if (price != null) "Buy $price" else "Buy"
+        "free" -> "Free"
+        "tve" -> "TV"
+        else -> null
+    }
+}
+
+/**
+ * True when [url] is openable: contains a scheme separator and is not one of
+ * Watchmode's free-tier placeholder strings.
+ */
+private fun isUsableReelUrl(url: String?): Boolean {
+    if (url.isNullOrBlank()) return false
+    val lower = url.lowercase()
+    if (!lower.contains("://")) return false
+    if (lower.contains("deeplinks available") || lower.contains("paid plan")) return false
+    return true
 }
 
 @Composable

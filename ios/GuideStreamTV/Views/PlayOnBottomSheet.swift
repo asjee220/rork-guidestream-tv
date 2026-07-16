@@ -72,7 +72,42 @@ struct PlayOnBottomSheet: View {
         if type == "free" { return "Free on \(name)" }
         if type == "tve" { return "Available on \(name) with a TV provider" }
         if type == "sub" { return AuthViewModel.shared.subscribesToService(named: source.name) ? nil : "Requires a \(name) subscription" }
+        if type == "rent" {
+            if let p = source.price { return String(format: "Rent from $%.2f on %@", p, name) }
+            return "Rent on \(name)"
+        }
+        if type == "purchase" || type == "buy" {
+            if let p = source.price { return String(format: "Buy from $%.2f on %@", p, name) }
+            return "Buy on \(name)"
+        }
         return nil
+    }
+
+    /// CTA verb for the watch button: Rent/Buy for transactional tiers,
+    /// Get for unsubscribed subs, Watch otherwise.
+    private var ctaVerb: String {
+        switch resolvedSource?.type.lowercased() ?? "" {
+        case "rent": return "Rent"
+        case "purchase", "buy": return "Buy"
+        default: return requiresGet ? "Get" : "Watch"
+        }
+    }
+
+    /// Compact monetization tag for the inline where-to-watch chip —
+    /// mirrors ServiceBadge's tag rules.
+    private var chipTagText: String? {
+        guard let source = resolvedSource else { return nil }
+        let t = source.type.lowercased()
+        if t == "sub" {
+            return AuthViewModel.shared.subscribesToService(named: source.name) ? "Subscribed" : nil
+        }
+        switch t {
+        case "rent": return source.price.map { String(format: "Rent $%.2f", $0) } ?? "Rent"
+        case "purchase", "buy": return source.price.map { String(format: "Buy $%.2f", $0) } ?? "Buy"
+        case "free": return "Free"
+        case "tve": return "TV"
+        default: return nil
+        }
     }
     private let watchCTAColor: Color = Color.orange
 
@@ -623,6 +658,21 @@ struct PlayOnBottomSheet: View {
                             .padding(.horizontal, 14)
                             .padding(.vertical, 8)
                             .background(Capsule().fill(platformColor))
+
+                        if let tag = chipTagText {
+                            Text(tag)
+                                .scaledFont(size: 10, weight: .heavy)
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(
+                                    Capsule().fill(
+                                        tag == "Subscribed"
+                                            ? Color.green.opacity(0.85)
+                                            : Color.white.opacity(0.16)
+                                    )
+                                )
+                        }
                     }
                 }
 
@@ -755,13 +805,13 @@ struct PlayOnBottomSheet: View {
                         .tint(.white)
                 }
                 if let s = watchSeasonNum, let e = watchEpisodeNum, !episodeSourceUnavailable {
-                    Text(requiresGet ? "Get S:\(s) EP:\(e)" : "Watch S:\(s) EP:\(e)")
+                    Text("\(ctaVerb) S:\(s) EP:\(e)")
                         .scaledFont(size: 15, weight: .semibold)
                         .lineLimit(1)
                 } else {
                     Text(resolvedSource == nil && isResolvingSource
                          ? "Finding service…"
-                         : (requiresGet ? "Get on" : "Watch on"))
+                         : "\(ctaVerb) on")
                         .scaledFont(size: 17, weight: .semibold)
                         .lineLimit(1)
                 }

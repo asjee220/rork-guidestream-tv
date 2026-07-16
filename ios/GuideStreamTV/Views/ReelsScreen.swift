@@ -2372,12 +2372,22 @@ private struct WatchNowSwitcher: View {
                             Button {
                                 openSource(source)
                             } label: {
-                                Text(gsDisplayName(for: source.name))
-                                    .scaledFont(size: 13, weight: .bold)
-                                    .foregroundStyle(.white)
-                                    .padding(.horizontal, 16)
-                                    .frame(height: 44)
-                                    .background(Capsule().fill(reelBrandColor(for: source.name)))
+                                HStack(spacing: 6) {
+                                    Text(gsDisplayName(for: source.name))
+                                        .scaledFont(size: 13, weight: .bold)
+                                        .foregroundStyle(.white)
+                                    if let tag = Self.pillTag(for: source) {
+                                        Text(tag)
+                                            .scaledFont(size: 9, weight: .heavy)
+                                            .foregroundStyle(.white)
+                                            .padding(.horizontal, 6)
+                                            .padding(.vertical, 2)
+                                            .background(Capsule().fill(Color.black.opacity(0.28)))
+                                    }
+                                }
+                                .padding(.horizontal, 16)
+                                .frame(height: 44)
+                                .background(Capsule().fill(reelBrandColor(for: source.name)))
                             }
                             .buttonStyle(.plain)
                         }
@@ -2419,7 +2429,12 @@ private struct WatchNowSwitcher: View {
 
     private func openSource(_ source: WatchmodeSource) {
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
-        guard let s = source.webUrl, let url = URL(string: s) else { return }
+        // Prefer the native iOS deep link, then the web URL — filtering out
+        // Watchmode free-tier placeholder strings and non-URLs.
+        let candidate = [source.iosUrl, source.webUrl]
+            .compactMap { $0 }
+            .first { Self.isUsableStreamURL($0) }
+        guard let s = candidate, let url = URL(string: s) else { return }
         StreamingDeepLinker.openResolvedURL(
             url,
             platform: source.name,
@@ -2427,6 +2442,27 @@ private struct WatchNowSwitcher: View {
             tmdbId: tmdbId > 0 ? tmdbId : nil,
             titleSlug: String(tmdbId)
         )
+    }
+
+    /// Compact monetization tag for a source pill — Rent/Buy with price,
+    /// Free, TV; nothing for subscription tiers.
+    private static func pillTag(for source: WatchmodeSource) -> String? {
+        switch source.type.lowercased() {
+        case "rent": return source.price.map { String(format: "Rent $%.2f", $0) } ?? "Rent"
+        case "purchase", "buy": return source.price.map { String(format: "Buy $%.2f", $0) } ?? "Buy"
+        case "free": return "Free"
+        case "tve": return "TV"
+        default: return nil
+        }
+    }
+
+    /// Rejects candidates without a scheme separator or containing
+    /// Watchmode's free-tier placeholder text.
+    private static func isUsableStreamURL(_ s: String) -> Bool {
+        let lower = s.lowercased()
+        guard lower.contains("://") else { return false }
+        if lower.contains("deeplinks available") || lower.contains("paid plan") { return false }
+        return true
     }
 }
 

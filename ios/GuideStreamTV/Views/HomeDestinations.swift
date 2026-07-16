@@ -433,7 +433,25 @@ struct EpisodeDetailSheet: View {
         if type == "free" { return "Free on \(name)" }
         if type == "tve" { return "Available on \(name) with a TV provider" }
         if type == "sub" { return AuthViewModel.shared.subscribesToService(named: source.name) ? nil : "Requires a \(name) subscription" }
+        if type == "rent" {
+            if let p = source.price { return String(format: "Rent from $%.2f on %@", p, name) }
+            return "Rent on \(name)"
+        }
+        if type == "purchase" || type == "buy" {
+            if let p = source.price { return String(format: "Buy from $%.2f on %@", p, name) }
+            return "Buy on \(name)"
+        }
         return nil
+    }
+
+    /// CTA verb for the watch button: Rent/Buy for transactional tiers,
+    /// Get for unsubscribed subs, Watch otherwise.
+    private var ctaVerb: String {
+        switch resolvedSource?.type.lowercased() ?? "" {
+        case "rent": return "Rent"
+        case "purchase", "buy": return "Buy"
+        default: return requiresGet ? "Get" : "Watch"
+        }
     }
 
     /// `true` when we're a show (or anything without explicit episode info).
@@ -745,7 +763,9 @@ struct EpisodeDetailSheet: View {
                                     name: source.name,
                                     color: brandColor(for: source.name),
                                     isSubscribed: AuthViewModel.shared.subscribesToService(named: source.name),
-                                    isSelected: resolvedSource?.sourceId == source.sourceId
+                                    isSelected: resolvedSource?.sourceId == source.sourceId,
+                                    type: source.type,
+                                    price: source.price
                                 )
                             }
                             .buttonStyle(.plain)
@@ -1234,13 +1254,13 @@ struct EpisodeDetailSheet: View {
                         .tint(.white)
                 }
                 if let ctx = episodeContext, !episodeSourceUnavailable {
-                    Text(requiresGet ? "Get S:\(ctx.seasonNum) EP:\(ctx.episodeNum)" : "Watch S:\(ctx.seasonNum) EP:\(ctx.episodeNum)")
+                    Text("\(ctaVerb) S:\(ctx.seasonNum) EP:\(ctx.episodeNum)")
                         .scaledFont(size: 15, weight: .semibold)
                         .lineLimit(1)
                 } else {
                     Text(resolvedSource == nil && isResolvingSource
                          ? "Finding service…"
-                         : (requiresGet ? "Get on" : "Watch on"))
+                         : "\(ctaVerb) on")
                         .scaledFont(size: 17, weight: .semibold)
                         .lineLimit(1)
                 }
