@@ -51,6 +51,20 @@ struct ContentView: View {
                 isTV: isTV
             ))
         }
+        // Sports push taps: switch to the Sports tab immediately, then resolve
+        // the game from the live scoreboard and buffer the detail route. An
+        // unresolvable gameId leaves the user on the Sports tab (no crash,
+        // no fallback URL open).
+        .onReceive(NotificationCenter.default.publisher(for: .guideStreamOpenSports)) { notification in
+            guard let gameId = notification.userInfo?["gameId"] as? String, !gameId.isEmpty else { return }
+            router.selectedTab = .sports
+            Task { @MainActor in
+                let games = await SportsService.shared.fetchAll()
+                if let game = games.first(where: { $0.id == gameId }) {
+                    router.showGameDetail(game)
+                }
+            }
+        }
         .animation(.easeOut(duration: 0.3), value: auth.hasCompletedOnboarding)
         .animation(.easeOut(duration: 0.3), value: auth.isSignedIn)
         .environment(\.tabBarVisibility, tabBarVisibility)

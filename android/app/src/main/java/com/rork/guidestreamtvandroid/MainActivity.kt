@@ -81,6 +81,10 @@ class MainActivity : ComponentActivity() {
                     ),
                 )
             }
+            uri.host == "sports" -> {
+                val gameId = segments.lastOrNull() ?: return
+                router.showSportsGame(gameId)
+            }
         }
     }
 }

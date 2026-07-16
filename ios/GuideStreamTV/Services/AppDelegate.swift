@@ -114,10 +114,20 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
                     userInfo: info
                 )
             }
+        } else if let gameId = userInfo["game_id"] as? String, !gameId.isEmpty {
+            // Sports notification: route in-app to the game detail screen
+            // instead of falling through to the legacy deep_link URL open.
+            await MainActor.run {
+                NotificationCenter.default.post(
+                    name: .guideStreamOpenSports,
+                    object: nil,
+                    userInfo: ["gameId": gameId]
+                )
+            }
         } else if let deepLink = userInfo["deep_link"] as? String,
                   let url = URL(string: deepLink) {
-            // Legacy fallback (no title_id): guidestream://show payloads and
-            // sports deep links continue on their existing unchanged path.
+            // Legacy fallback (no title_id): guidestream://show payloads
+            // continue on their existing unchanged path.
             await MainActor.run {
                 UIApplication.shared.open(url)
             }

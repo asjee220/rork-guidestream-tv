@@ -13,6 +13,10 @@ import Foundation
 /// HomeView observes this to route to CreatorDetailView (non-TMDB) or show detail (TMDB).
 extension Notification.Name {
     static let guideStreamOpenTitle = Notification.Name("GuideStreamOpenTitle")
+    /// Posted when a sports push notification is tapped. The `userInfo`
+    /// dictionary contains a `"gameId"` key with the ESPN event id so the
+    /// root view can route to the in-app game detail screen.
+    static let guideStreamOpenSports = Notification.Name("GuideStreamOpenSports")
 }
 
 /// Curated avatar overrides for seed creators whose stored `image_url` /

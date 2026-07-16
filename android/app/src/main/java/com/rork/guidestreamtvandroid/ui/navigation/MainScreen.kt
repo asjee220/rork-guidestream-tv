@@ -21,6 +21,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import com.rork.guidestreamtvandroid.data.models.Platform
 import com.rork.guidestreamtvandroid.data.models.SourceKind
+import com.rork.guidestreamtvandroid.data.remote.SportsService
 import com.rork.guidestreamtvandroid.data.models.TMDBResult
 import com.rork.guidestreamtvandroid.ui.ask.AskStreamSheet
 import com.rork.guidestreamtvandroid.ui.components.FloatingTabBar
@@ -89,6 +90,20 @@ fun MainScreen(
             showCreatorDetail = route.titleId
         } else {
             showDetail = route
+        }
+    }
+
+    // Consume pending sports game route from AppRouter (push-notification
+    // buffer). Resolves the game from the live scoreboard; an unresolvable
+    // gameId leaves the user on the Sports tab.
+    val pendingSportsGameId = router.pendingSportsGameId
+    LaunchedEffect(pendingSportsGameId) {
+        val gameId = pendingSportsGameId ?: return@LaunchedEffect
+        router.consumePendingSportsRoute()
+        selectedTab = AppTab.SPORTS
+        val game = SportsService.get().fetchAll().firstOrNull { it.id == gameId }
+        if (game != null) {
+            selectedGame = game
         }
     }
 

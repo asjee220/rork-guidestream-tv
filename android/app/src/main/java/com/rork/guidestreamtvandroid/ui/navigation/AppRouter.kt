@@ -30,6 +30,10 @@ class AppRouter {
     var pendingTitleRoute: PendingTitleRoute? by mutableStateOf(null)
         private set
 
+    /** Buffered sports game id from a push-notification deep link. */
+    var pendingSportsGameId: String? by mutableStateOf(null)
+        private set
+
     /** One-shot event flow for title navigation requests. */
     private val _titleNavigation = MutableSharedFlow<PendingTitleRoute>(extraBufferCapacity = 4)
     val titleNavigation: SharedFlow<PendingTitleRoute> = _titleNavigation
@@ -45,6 +49,20 @@ class AppRouter {
 
     fun consumePendingTitleRoute() {
         pendingTitleRoute = null
+    }
+
+    /**
+     * Switch to the Sports tab and buffer a game-detail route. MainScreen
+     * consumes `pendingSportsGameId` when the sports surface appears, so this
+     * works from any tab and from cold launch.
+     */
+    fun showSportsGame(gameId: String) {
+        selectedTab = AppTab.SPORTS
+        pendingSportsGameId = gameId
+    }
+
+    fun consumePendingSportsRoute() {
+        pendingSportsGameId = null
     }
 
     companion object {
