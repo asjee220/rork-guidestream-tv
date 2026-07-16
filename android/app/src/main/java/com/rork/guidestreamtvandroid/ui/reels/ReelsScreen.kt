@@ -642,7 +642,7 @@ private fun InjectedReelsScreen(
             return@LaunchedEffect
         }
         val resolved = try {
-            withContext(Dispatchers.IO) { WatchmodeResolveService.resolve(sharedTmdbId, sharedIsTV) }
+            withContext(Dispatchers.IO) { WatchmodeResolveService.resolve(sharedTmdbId, sharedIsTV).usSources }
         } catch (_: Exception) {
             emptyList()
         }

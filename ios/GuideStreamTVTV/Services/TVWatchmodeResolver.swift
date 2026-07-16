@@ -27,6 +27,7 @@ final class TVWatchmodeResolver {
         let iosUrl: String?
         let tvosUrl: String?
         let format: String?
+        let price: Double?
 
         enum CodingKeys: String, CodingKey {
             case sourceId = "source_id"
@@ -35,6 +36,7 @@ final class TVWatchmodeResolver {
             case iosUrl = "ios_url"
             case tvosUrl = "tvos_url"
             case format
+            case price = "price"
         }
     }
 

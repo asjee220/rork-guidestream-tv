@@ -330,6 +330,23 @@ struct ServiceBadge: View {
     let color: Color
     var isSubscribed: Bool = false
     var isSelected: Bool = false
+    var type: String = ""
+    var price: Double? = nil
+
+    /// Small monetization tag beside the service name. "Subscribed" only for
+    /// sub-typed (or untyped legacy) sources the user has; transactional tiers
+    /// always show their tier so a rent/buy brand match never reads as owned.
+    private var tagText: String? {
+        let t = type.lowercased()
+        if isSubscribed && (t == "sub" || t.isEmpty) { return "Subscribed" }
+        switch t {
+        case "rent": return price.map { String(format: "Rent $%.2f", $0) } ?? "Rent"
+        case "purchase", "buy": return price.map { String(format: "Buy $%.2f", $0) } ?? "Buy"
+        case "free": return "Free"
+        case "tve": return "TV"
+        default: return nil
+        }
+    }
 
     var body: some View {
         HStack(spacing: 8) {
@@ -339,15 +356,15 @@ struct ServiceBadge: View {
             Text(gsDisplayName(for: name))
                 .scaledFont(size: 14, weight: .semibold)
                 .foregroundStyle(.white)
-            if isSubscribed {
-                Text("Subscribed")
+            if let tag = tagText {
+                Text(tag)
                     .scaledFont(size: 9, weight: .heavy)
                     .foregroundStyle(.white)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2)
                     .background(
                         RoundedRectangle(cornerRadius: 4, style: .continuous)
-                            .fill(Color.green.opacity(0.85))
+                            .fill(tag == "Subscribed" ? Color.green.opacity(0.85) : Color.white.opacity(0.16))
                     )
             }
         }

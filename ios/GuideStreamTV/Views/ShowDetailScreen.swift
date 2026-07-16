@@ -32,8 +32,10 @@ struct WhereToWatchService: Identifiable, Hashable {
     let androidUrl: String?
     let webUrl: String?
     let format: String?
+    let type: String
+    let price: Double?
 
-    init(id: String = UUID().uuidString, name: String, color: Color, iosUrl: String? = nil, androidUrl: String? = nil, webUrl: String? = nil, format: String? = nil) {
+    init(id: String = UUID().uuidString, name: String, color: Color, iosUrl: String? = nil, androidUrl: String? = nil, webUrl: String? = nil, format: String? = nil, type: String = "", price: Double? = nil) {
         self.id = id
         self.name = name
         self.color = color
@@ -41,6 +43,8 @@ struct WhereToWatchService: Identifiable, Hashable {
         self.androidUrl = androidUrl
         self.webUrl = webUrl
         self.format = format
+        self.type = type
+        self.price = price
     }
 }
 
@@ -262,7 +266,9 @@ final class ShowDetailViewModel {
                     iosUrl: s.iosUrl,
                     androidUrl: s.androidUrl,
                     webUrl: s.webUrl,
-                    format: s.format
+                    format: s.format,
+                    type: s.type,
+                    price: s.price
                 )
             }
 
@@ -286,7 +292,9 @@ final class ShowDetailViewModel {
                 iosUrl: nil,
                 androidUrl: nil,
                 webUrl: nil,
-                format: nil
+                format: nil,
+                type: "",
+                price: nil
             )]
         }
 
@@ -1183,7 +1191,26 @@ struct ShowDetailScreen: View {
         if type == "free" { return "Free on \(name)" }
         if type == "tve" { return "Available on \(name) with a TV provider" }
         if type == "sub" { return isSubscribedService(source.name) ? nil : "Requires a \(name) subscription" }
+        if type == "rent" {
+            if let p = source.price { return String(format: "Rent from $%.2f on %@", p, name) }
+            return "Rent on \(name)"
+        }
+        if type == "purchase" || type == "buy" {
+            if let p = source.price { return String(format: "Buy from $%.2f on %@", p, name) }
+            return "Buy on \(name)"
+        }
         return nil
+    }
+
+    /// Verb for the primary CTA, driven by the active source's monetization
+    /// type: Rent / Buy for transactional tiers, Get for unsubscribed subs,
+    /// Watch otherwise.
+    private var ctaVerb: String {
+        let type = activeSource?.type.lowercased() ?? ""
+        if type == "rent" { return "Rent" }
+        if type == "purchase" || type == "buy" { return "Buy" }
+        if type == "sub" && primaryRequiresGet { return "Get" }
+        return "Watch"
     }
 
     /// Sorts subscribed services first so the user sees their own
@@ -1224,7 +1251,9 @@ struct ShowDetailScreen: View {
                                     name: s.name,
                                     color: s.color,
                                     isSubscribed: isSubscribedService(s.name),
-                                    isSelected: activeService?.name == s.name
+                                    isSelected: activeService?.name == s.name,
+                                    type: s.type,
+                                    price: s.price
                                 )
                             }
                             .buttonStyle(.plain)
@@ -1359,11 +1388,11 @@ struct ShowDetailScreen: View {
                                 .scaledFont(size: 15, weight: .bold)
 
                             if isTV, let ep = latestEpisode {
-                                Text(primaryRequiresGet ? "Get S:\(ep.seasonNum) EP:\(ep.episodeNum)" : "Watch S:\(ep.seasonNum) EP:\(ep.episodeNum)")
+                                Text("\(ctaVerb) S:\(ep.seasonNum) EP:\(ep.episodeNum)")
                                     .scaledFont(size: 15, weight: .bold)
                                     .lineLimit(1)
                             } else {
-                                Text(primaryRequiresGet ? "Get on" : "Watch on")
+                                Text("\(ctaVerb) on")
                                     .scaledFont(size: 15, weight: .bold)
                                     .lineLimit(1)
                             }

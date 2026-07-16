@@ -15,6 +15,7 @@ import io.ktor.serialization.kotlinx.json.json
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 
@@ -32,6 +33,9 @@ data class WatchmodeSrc(
     @SerialName("ios_url") val iosUrl: String? = null,
     @SerialName("tvos_url") val tvosUrl: String? = null,
     @SerialName("roku_url") val rokuUrl: String? = null,
+    @SerialName("android_url") val androidUrl: String? = null,
+    @SerialName("android_tv_url") val androidTvUrl: String? = null,
+    val price: Double? = null,
     val format: String? = null,
     @SerialName("end_date") val endDate: String? = null,
 )
@@ -56,7 +60,13 @@ data class WatchmodeResolveResponse(
  */
 object WatchmodeResolveService {
 
-    suspend fun resolve(tmdbId: Int, isTV: Boolean): List<WatchmodeSrc> {
+    suspend fun resolve(
+        tmdbId: Int,
+        isTV: Boolean,
+        subscribedServices: List<String> = emptyList(),
+        season: Int? = null,
+        episode: Int? = null,
+    ): WatchmodeResolveResponse {
         return try {
             val client = HttpClient {
                 install(ContentNegotiation) { json(Json { ignoreUnknownKeys = true }) }
@@ -65,6 +75,9 @@ object WatchmodeResolveService {
             val body = buildJsonObject {
                 put("tmdbId", JsonPrimitive(tmdbId))
                 put("isTV", JsonPrimitive(isTV))
+                put("subscribedServices", JsonArray(subscribedServices.map { JsonPrimitive(it) }))
+                if (season != null) put("season", JsonPrimitive(season))
+                if (episode != null) put("episode", JsonPrimitive(episode))
             }
             val response: HttpResponse = client.post(url) {
                 contentType(ContentType.Application.Json)
@@ -74,13 +87,12 @@ object WatchmodeResolveService {
                 setBody(body.toString())
             }
             if (response.status.value == 200) {
-                val resp: WatchmodeResolveResponse = response.body()
-                resp.usSources
+                response.body()
             } else {
-                emptyList()
+                WatchmodeResolveResponse()
             }
         } catch (_: Exception) {
-            emptyList()
+            WatchmodeResolveResponse()
         }
     }
 }

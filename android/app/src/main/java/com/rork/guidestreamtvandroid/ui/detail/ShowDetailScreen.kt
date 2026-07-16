@@ -58,6 +58,7 @@ import com.rork.guidestreamtvandroid.data.models.DeepDiveCreator
 import com.rork.guidestreamtvandroid.data.models.Platform
 import com.rork.guidestreamtvandroid.data.models.StreamingCatalog
 import com.rork.guidestreamtvandroid.data.remote.TMDBService
+import com.rork.guidestreamtvandroid.data.remote.WatchmodeResolveResponse
 import com.rork.guidestreamtvandroid.data.remote.WatchmodeResolveService
 import com.rork.guidestreamtvandroid.data.remote.WatchmodeSrc
 import com.rork.guidestreamtvandroid.data.repository.AuthViewModel
@@ -130,6 +131,7 @@ fun ShowDetailScreen(
     val selectedServices by authVm.selectedServices.collectAsStateWithLifecycle()
     var usSources by remember { mutableStateOf<List<WatchmodeSrc>>(emptyList()) }
     var selectedSource by remember { mutableStateOf<WatchmodeSrc?>(null) }
+    var episodeSource by remember { mutableStateOf<WatchmodeSrc?>(null) }
     val isSourceSubscribed: (String) -> Boolean = { name ->
         val n = name.lowercase().filter { it.isLetterOrDigit() }
         StreamingCatalog.ordered(selectedServices).any { svc ->
@@ -140,13 +142,25 @@ fun ShowDetailScreen(
     androidx.compose.runtime.LaunchedEffect(titleId) {
         val tid = titleId.toIntOrNull()
         if (tid != null) {
-            val resolved = try {
-                withContext(Dispatchers.IO) { WatchmodeResolveService.resolve(tid, isTV) }
+            val subscribedNames = StreamingCatalog.ordered(selectedServices).map { it.name }
+            val response = try {
+                withContext(Dispatchers.IO) {
+                    WatchmodeResolveService.resolve(tid, isTV, subscribedServices = subscribedNames)
+                }
             } catch (_: Exception) {
-                emptyList()
+                WatchmodeResolveResponse()
             }
-            usSources = resolved
-            selectedSource = resolved.firstOrNull { isSourceSubscribed(it.name) } ?: resolved.firstOrNull()
+            usSources = response.usSources
+            episodeSource = response.episodeSource
+            // Seed the active source: resolver's primary first, then a
+            // subscribed source that is also a watchable tier (a rent/buy
+            // source whose brand matches a subscription must NOT win), then
+            // the first source.
+            selectedSource = response.primarySource
+                ?: response.usSources.firstOrNull {
+                    isSourceSubscribed(it.name) && it.type.lowercase() in setOf("sub", "free", "tve")
+                }
+                ?: response.usSources.firstOrNull()
         }
     }
 
@@ -323,7 +337,17 @@ fun ShowDetailScreen(
                 ) {
                     // Watch button
                     if (topProvider != null || usSources.isNotEmpty()) {
-                        val watchLabel = "Watch on " + (
+                        // CTA verb mirrors iOS ctaVerb: Rent/Buy for transactional
+                        // tiers, Get for unsubscribed subs, Watch otherwise.
+                        val srcName = selectedSource?.name
+                        val srcType = selectedSource?.type?.lowercase().orEmpty()
+                        val watchVerb = when {
+                            srcType == "rent" -> "Rent on"
+                            srcType == "purchase" || srcType == "buy" -> "Buy on"
+                            srcType == "sub" && srcName != null && !isSourceSubscribed(srcName) -> "Get on"
+                            else -> "Watch on"
+                        }
+                        val watchLabel = "$watchVerb " + (
                             selectedSource?.name
                                 ?: platform?.name
                                 ?: topProvider?.providerName
@@ -338,9 +362,27 @@ fun ShowDetailScreen(
                                     interactionSource = remember { MutableInteractionSource() },
                                     indication = null,
                                 ) {
-                                    val target = selectedSource?.webUrl?.takeIf { it.isNotBlank() }
-                                        ?: "https://www.themoviedb.org/${if (isTV) "tv" else "movie"}/$tmdbId/watch"
-                                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(target)))
+                                    // Prefer the native Android app link, then the
+                                    // Android TV link, then the web URL — episode-level
+                                    // source first for TV — with Watchmode placeholder
+                                    // strings filtered out. Falls back to TMDB's watch
+                                    // page when nothing is usable.
+                                    val epSrc = if (isTV) episodeSource else null
+                                    val fallback = "https://www.themoviedb.org/${if (isTV) "tv" else "movie"}/$tmdbId/watch"
+                                    val target = listOf(
+                                        epSrc?.androidUrl, epSrc?.androidTvUrl, epSrc?.webUrl,
+                                        selectedSource?.androidUrl, selectedSource?.androidTvUrl, selectedSource?.webUrl,
+                                    ).firstOrNull { isUsableStreamUrl(it) } ?: fallback
+                                    try {
+                                        val intent = if (target.startsWith("intent:")) {
+                                            Intent.parseUri(target, Intent.URI_INTENT_SCHEME)
+                                        } else {
+                                            Intent(Intent.ACTION_VIEW, Uri.parse(target))
+                                        }
+                                        context.startActivity(intent)
+                                    } catch (_: Exception) {
+                                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(fallback)))
+                                    }
                                 }
                                 .padding(vertical = 14.dp),
                             contentAlignment = Alignment.Center,
@@ -457,6 +499,32 @@ fun ShowDetailScreen(
                             tint = TextPrimary,
                             modifier = Modifier.size(20.dp),
                         )
+                    }
+                }
+
+                // Availability caption — identical wording rules to iOS
+                // availabilityCaption (nothing rendered when sub + subscribed).
+                run {
+                    val src = selectedSource
+                    if (src != null) {
+                        val t = src.type.lowercase()
+                        val priceLabel = src.price?.let { String.format(java.util.Locale.US, "$%.2f", it) }
+                        val caption = when {
+                            t == "free" -> "Free on ${src.name}"
+                            t == "tve" -> "Available on ${src.name} with a TV provider"
+                            t == "sub" -> if (isSourceSubscribed(src.name)) null else "Requires a ${src.name} subscription"
+                            t == "rent" -> if (priceLabel != null) "Rent from $priceLabel on ${src.name}" else "Rent on ${src.name}"
+                            t == "purchase" || t == "buy" -> if (priceLabel != null) "Buy from $priceLabel on ${src.name}" else "Buy on ${src.name}"
+                            else -> null
+                        }
+                        if (caption != null) {
+                            Text(
+                                text = caption,
+                                fontSize = 12.sp,
+                                color = TextSecondary,
+                                modifier = Modifier.padding(horizontal = 16.dp),
+                            )
+                        }
                     }
                 }
 
@@ -724,16 +792,31 @@ private fun WhereToWatchRow(
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
-                    if (subscribed) {
+                    // Monetization tag: "Subscribed" only for sub-typed sources
+                    // the user has — a rent/buy brand match never reads as owned.
+                    val srcTier = source.type.lowercase()
+                    val priceLabel = source.price?.let { String.format(java.util.Locale.US, "$%.2f", it) }
+                    val tag = when {
+                        subscribed && srcTier == "sub" -> "Subscribed"
+                        srcTier == "rent" -> if (priceLabel != null) "Rent $priceLabel" else "Rent"
+                        srcTier == "purchase" || srcTier == "buy" -> if (priceLabel != null) "Buy $priceLabel" else "Buy"
+                        srcTier == "free" -> "Free"
+                        srcTier == "tve" -> "TV"
+                        else -> null
+                    }
+                    if (tag != null) {
                         Spacer(Modifier.width(8.dp))
                         Box(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(4.dp))
-                                .background(Color(0xFF34C759).copy(alpha = 0.85f))
+                                .background(
+                                    if (tag == "Subscribed") Color(0xFF34C759).copy(alpha = 0.85f)
+                                    else Color.White.copy(alpha = 0.18f),
+                                )
                                 .padding(horizontal = 6.dp, vertical = 2.dp),
                         ) {
                             Text(
-                                text = "Subscribed",
+                                text = tag,
                                 fontSize = 9.sp,
                                 fontWeight = FontWeight.Black,
                                 color = Color.White,
@@ -761,6 +844,19 @@ private fun WhereToWatchRow(
             }
         }
     }
+}
+
+/**
+ * True when [url] is an openable link: it must contain a scheme separator and
+ * must not be one of Watchmode's free-tier placeholder strings
+ * ("Deeplinks available for paid plans only.").
+ */
+private fun isUsableStreamUrl(url: String?): Boolean {
+    if (url.isNullOrBlank()) return false
+    val lower = url.lowercase()
+    if (!lower.contains("://")) return false
+    if (lower.contains("deeplinks available") || lower.contains("paid plan")) return false
+    return true
 }
 
 /**

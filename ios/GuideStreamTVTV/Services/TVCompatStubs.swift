@@ -334,6 +334,8 @@ nonisolated struct WatchmodeSource: Hashable, Sendable, Identifiable {
     let webUrl: String?
     let format: String?
     let endDate: String?
+    let tvosUrl: String?
+    let price: Double?
 
     var id: String { "\(sourceId)-\(format ?? "")-\(region ?? "")" }
 }

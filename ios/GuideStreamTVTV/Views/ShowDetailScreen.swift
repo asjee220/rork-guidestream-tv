@@ -30,8 +30,10 @@ struct WhereToWatchService: Identifiable, Hashable {
     let androidUrl: String?
     let webUrl: String?
     let format: String?
+    let tvosUrl: String?
+    let price: Double?
 
-    init(id: String = UUID().uuidString, name: String, color: Color, iosUrl: String? = nil, androidUrl: String? = nil, webUrl: String? = nil, format: String? = nil) {
+    init(id: String = UUID().uuidString, name: String, color: Color, iosUrl: String? = nil, androidUrl: String? = nil, webUrl: String? = nil, format: String? = nil, tvosUrl: String? = nil, price: Double? = nil) {
         self.id = id
         self.name = name
         self.color = color
@@ -39,6 +41,8 @@ struct WhereToWatchService: Identifiable, Hashable {
         self.androidUrl = androidUrl
         self.webUrl = webUrl
         self.format = format
+        self.tvosUrl = tvosUrl
+        self.price = price
     }
 }
 
@@ -88,7 +92,9 @@ final class ShowDetailViewModel {
                         androidUrl: nil,
                         webUrl: nil,
                         format: nil,
-                        endDate: nil
+                        endDate: nil,
+                        tvosUrl: nil,
+                        price: nil
                     )
                     self.detail = WatchmodeTitleDetail(
                         id: self.detail?.id ?? String(tmdbId),
@@ -137,7 +143,9 @@ final class ShowDetailViewModel {
                 iosUrl: s.iosUrl,
                 androidUrl: s.androidUrl,
                 webUrl: s.webUrl,
-                format: s.format
+                format: s.format,
+                tvosUrl: s.tvosUrl,
+                price: s.price
             ))
         }
         return result
@@ -148,23 +156,26 @@ final class ShowDetailViewModel {
     /// "Where to Watch" row.
     var primaryService: WhereToWatchService? { services.first }
 
-    /// Best deep link URL (prefer iOS native scheme, then web) from the first
-    /// subscription source. Filters out Watchmode free-tier placeholders that
-    /// otherwise short-circuit `URL(string:)` callers into doing nothing.
+    /// Best deep link URL from the first subscription source — prefers the
+    /// tvOS-native scheme so the Apple TV lands on the title, then the iOS
+    /// universal link, then web. Filters out Watchmode free-tier placeholders
+    /// that otherwise short-circuit `URL(string:)` callers into doing nothing.
     var primaryDeeplink: URL? {
         guard let s = services.first else { return nil }
+        if let tv = s.tvosUrl, Self.isRealURL(tv), let u = URL(string: tv) { return u }
         if let ios = s.iosUrl, Self.isRealURL(ios), let u = URL(string: ios) { return u }
         if let web = s.webUrl, Self.isRealURL(web), let u = URL(string: web) { return u }
         return nil
     }
 
     /// Watchmode's free tier returns the literal string
-    /// `"Deeplinks available for paid plans only."` in `ios_url` / `android_url`.
-    /// Anything that isn't a real http(s) URL must be rejected before we hand
-    /// it to `UIApplication.shared.open`.
+    /// `"Deeplinks available for paid plans only."` in its URL fields.
+    /// Rejects placeholders and non-URLs. Accepts any scheme (not just
+    /// http(s)) because `tvos_url` may be an app-scheme string.
     private static func isRealURL(_ s: String) -> Bool {
         let lower = s.lowercased()
-        guard lower.hasPrefix("http://") || lower.hasPrefix("https://") else { return false }
+        guard lower.contains("://") else { return false }
+        if lower.contains("deeplinks available") || lower.contains("paid plan") { return false }
         return URL(string: s) != nil
     }
 
@@ -372,6 +383,29 @@ struct ShowDetailScreen: View {
 
     private var stickyOpacity: Double { scrollOffset > 220 ? 1 : 0 }
     private var stickyOffset: CGFloat { scrollOffset > 220 ? 0 : -8 }
+
+    /// Backing Watchmode source for the primary service — drives the
+    /// rent/buy availability wording below the watch CTA.
+    private var primaryWatchSource: WatchmodeSource? {
+        guard let name = vm.primaryService?.name else { return nil }
+        return vm.detail?.sources?.first(where: { $0.name == name })
+    }
+
+    /// Rent/buy availability wording with price — matches the iOS strings.
+    private var availabilityCaption: String? {
+        guard let source = primaryWatchSource else { return nil }
+        let type = source.type.lowercased()
+        let name = gsDisplayName(for: source.name)
+        if type == "rent" {
+            if let p = source.price { return String(format: "Rent from $%.2f on %@", p, name) }
+            return "Rent on \(name)"
+        }
+        if type == "purchase" || type == "buy" {
+            if let p = source.price { return String(format: "Buy from $%.2f on %@", p, name) }
+            return "Buy on \(name)"
+        }
+        return nil
+    }
 
     // MARK: Compact Header
 
@@ -855,13 +889,21 @@ struct ShowDetailScreen: View {
             }
             .padding(.horizontal, 20)
             .padding(.top, 14)
-            .padding(.bottom, 24)
-            .background(
-                Color.navy.opacity(0.90)
-                    .background(.ultraThinMaterial)
-                    .ignoresSafeArea(edges: .bottom)
-            )
+            .padding(.bottom, availabilityCaption == nil ? 24 : 8)
+
+            if let caption = availabilityCaption {
+                Text(caption)
+                    .scaledFont(size: 13)
+                    .foregroundStyle(Color.white.opacity(0.5))
+                    .frame(maxWidth: .infinity)
+                    .padding(.bottom, 24)
+            }
         }
+        .background(
+            Color.navy.opacity(0.90)
+                .background(.ultraThinMaterial)
+                .ignoresSafeArea(edges: .bottom)
+        )
     }
 }
 

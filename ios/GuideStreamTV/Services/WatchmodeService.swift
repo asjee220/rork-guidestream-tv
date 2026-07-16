@@ -30,6 +30,7 @@ nonisolated struct WatchmodeSource: Decodable, Hashable, Sendable, Identifiable 
     let rokuUrl: String?
     let tvosUrl: String?
     let androidTvUrl: String?
+    let price: Double?
 
     var id: String { "\(sourceId)-\(format ?? "")-\(region ?? "")" }
 
@@ -43,6 +44,7 @@ nonisolated struct WatchmodeSource: Decodable, Hashable, Sendable, Identifiable 
         case rokuUrl = "roku_url"
         case tvosUrl = "tvos_url"
         case androidTvUrl = "android_tv_url"
+        case price = "price"
     }
 }
 
