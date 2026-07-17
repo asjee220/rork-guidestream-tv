@@ -947,6 +947,7 @@ struct ReelsScreen: View {
     @State private var isPlaying: Bool = true
     @State private var showComments: Bool = false
     @State private var showShare: Bool = false
+    @State private var showMore: Bool = false
     @State private var showDetail: Bool = false
     @State private var detailSubject: DetailSubject?
     @State private var scrolledID: Int? = 0
@@ -1179,6 +1180,28 @@ struct ReelsScreen: View {
                     .presentationBackground(Color(red: 10/255, green: 16/255, blue: 26/255).opacity(0.96))
             }
         }
+        .sheet(isPresented: $showMore) {
+            if let trailer = currentTrailer {
+                ReelMoreSheet(
+                    commentCount: trailer.isSponsored ? 0 : (injectedReels != nil
+                        ? social.commentTotal(String(trailer.tmdbId))
+                        : vm.commentCount(for: trailer)),
+                    onComment: {
+                        showMore = false
+                        if !trailer.isSponsored, trailer.tmdbId > 0 {
+                            showComments = true
+                        }
+                    },
+                    onShare: {
+                        showMore = false
+                        showShare = true
+                    }
+                )
+                .presentationDetents([.height(200)])
+                .presentationDragIndicator(.visible)
+                .presentationBackground(Color(red: 10/255, green: 16/255, blue: 26/255).opacity(0.96))
+            }
+        }
         .sheet(item: $detailSubject) { subject in
             EpisodeDetailSheet(subject: subject)
         }
@@ -1296,6 +1319,7 @@ struct ReelsScreen: View {
                     vm.toggleWatched(trailer)
                 },
                 onShare: { showShare = true },
+                onMore: { showMore = true },
                 onTabSelect: { tab in
                     guard let idx = vm.allTrailers.firstIndex(where: { $0.tab == tab }) else { return }
                     withAnimation(.spring(response: 0.45, dampingFraction: 0.86)) {
@@ -1432,6 +1456,7 @@ struct ReelsScreen: View {
                 Task { await SocialViewModel.shared.toggleWatched(titleId: tid, titleName: trailer.showName, mediaType: mediaType, tmdbId: trailer.tmdbId) }
             },
             onShare: { showShare = true },
+            onMore: { showMore = true },
             onTabSelect: { _ in },
             onSponsorCTA: {},
             onShowDetail: {},
@@ -1529,6 +1554,7 @@ private struct ReelView: View {
     let onSave: () -> Void
     let onWatched: () -> Void
     let onShare: () -> Void
+    var onMore: () -> Void = {}
     let onTabSelect: (ReelTab) -> Void
     let onSponsorCTA: () -> Void
     let onShowDetail: () -> Void
@@ -1729,13 +1755,12 @@ private struct ReelView: View {
                 Spacer().frame(height: size.height * 0.27)
                 HStack {
                     Spacer()
-                    VStack(spacing: 28) {
+                    VStack(spacing: 10) {
                         if !trailer.isSponsored {
                             RailButton(
                                     icon: isLiked ? "heart.fill" : "heart",
                                     label: formatCount(likeCount),
                                     tint: isLiked ? Color(hex: "FF3B5C") : .white,
-                                    active: isLiked,
                                     action: {
                                         likeBounce = 1.4
                                         withAnimation(.spring(response: 0.3, dampingFraction: 0.55)) {
@@ -1746,22 +1771,40 @@ private struct ReelView: View {
                                 )
                                 .scaleEffect(likeBounce)
 
-                            RailButton(icon: "message", label: formatCount(commentCount), tint: .white, action: onComments)
-                        }
+                            RailButton(
+                                icon: isSaved ? "checkmark" : "plus",
+                                label: isSaved ? "Saved" : "Save",
+                                tint: Color(hex: "F5821F"),
+                                action: onSave
+                            )
 
-                        WatchListButton(saved: isSaved, sponsored: trailer.isSponsored, action: onSave)
-
-                        if !trailer.isSponsored {
                             RailButton(
                                 icon: isWatched ? "eye.fill" : "eye",
                                 label: "Watched",
                                 tint: isWatched ? Color(hex: "1A6FE8") : .white,
-                                active: isWatched,
                                 action: onWatched
                             )
-                        }
 
-                        RailButton(icon: "arrowshape.turn.up.right", label: "Share", tint: .white, action: onShare)
+                            RailButton(
+                                icon: "ellipsis",
+                                label: "More",
+                                tint: .white,
+                                action: onMore
+                            )
+                        } else {
+                            RailButton(
+                                icon: "info.circle",
+                                label: "Learn",
+                                tint: .white,
+                                action: onSave
+                            )
+                            RailButton(
+                                icon: "arrowshape.turn.up.right",
+                                label: "Share",
+                                tint: .white,
+                                action: onShare
+                            )
+                        }
                     }
                     .padding(.trailing, 18)
                 }
@@ -2216,24 +2259,19 @@ private struct RailButton: View {
     let icon: String
     let label: String
     let tint: Color
-    var active: Bool = false
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
             VStack(spacing: 4) {
                 ZStack {
-                    if active {
-                        Circle()
-                            .fill(Color.black.opacity(0.17))
-                            .overlay(Circle().stroke(Color.white.opacity(0.15), lineWidth: 1))
-                    }
                     Image(systemName: icon)
-                        .scaledFont(size: 17, weight: .semibold)
+                        .scaledFont(size: 20, weight: .semibold)
                         .foregroundStyle(tint)
                         .shadow(color: Color.black.opacity(0.55), radius: 3, x: 0, y: 1)
                 }
-                .frame(width: 42, height: 42)
+                .frame(width: 48, height: 48)
+                .contentShape(Rectangle())
                 Text(label)
                     .scaledFont(size: 11, weight: .semibold)
                     .foregroundStyle(.white)
@@ -2243,53 +2281,59 @@ private struct RailButton: View {
     }
 }
 
-/// Rail save-affordance shown on every non-sponsored reel and reused as the
-/// design template for the watchlist circles on `EpisodeDetailSheet` and
-/// `SportsWatchSheet`. Two visual states:
-///
-/// * **Not saved** — solid orange circle with a `plus` glyph and a "Watch List"
-///   label underneath.
-/// * **Saved** — transparent circle with a white stroke (outlined), checkmark
-///   glyph, and a "Saved" label underneath so users see at a glance that the
-///   title is already on their list.
-private struct WatchListButton: View {
-    let saved: Bool
-    let sponsored: Bool
-    let action: () -> Void
+/// Slide-up More sheet for the reels rail. Shows Comment and Share rows that
+/// dispatch to the screen-level `showComments` and `showShare` states.
+private struct ReelMoreSheet: View {
+    let commentCount: Int
+    let onComment: () -> Void
+    let onShare: () -> Void
+
+    private func formatCount(_ n: Int) -> String {
+        if n >= 1_000_000 { return String(format: "%.1fM", Double(n) / 1_000_000) }
+        if n >= 1_000 { return String(format: "%.1fK", Double(n) / 1_000) }
+        return "\(n)"
+    }
 
     var body: some View {
-        Button(action: action) {
-            VStack(spacing: 4) {
-                ZStack {
-                    if sponsored {
-                        Circle().fill(Color.white.opacity(0.15))
-                            .overlay(Circle().stroke(Color.white.opacity(0.15), lineWidth: 1))
-                    } else if saved {
-                        // Outlined treatment — transparent fill, white stroke.
-                        Circle()
-                            .fill(Color.clear)
-                            .overlay(Circle().stroke(Color.white, lineWidth: 1.8))
-                    } else {
-                        Circle()
-                            .fill(Color(hex: "F5821F"))
-                            .shadow(color: Color(hex: "F5821F").opacity(0.6), radius: 10)
-                    }
-                    Image(systemName: sponsored ? "info.circle" : (saved ? "checkmark" : "plus"))
-                        .scaledFont(size: 17, weight: .bold)
-                        .foregroundStyle(.white)
-                }
-                .frame(width: 42, height: 42)
-                Text(sponsored ? "Learn" : (saved ? "Saved" : "Watch List"))
-                    .scaledFont(size: 11, weight: .semibold)
+        VStack(spacing: 0) {
+            HStack(spacing: 14) {
+                Image(systemName: "message")
+                    .scaledFont(size: 20, weight: .semibold)
                     .foregroundStyle(.white)
+                    .frame(width: 28)
+                Text("Comment")
+                    .scaledFont(size: 16, weight: .medium)
+                    .foregroundStyle(.white)
+                Spacer()
+                Text(formatCount(commentCount))
+                    .scaledFont(size: 14, weight: .medium)
+                    .foregroundStyle(Color.white.opacity(0.5))
             }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 16)
+            .contentShape(Rectangle())
+            .onTapGesture { onComment() }
+
+            Divider().background(Color.white.opacity(0.08))
+
+            HStack(spacing: 14) {
+                Image(systemName: "arrowshape.turn.up.right")
+                    .scaledFont(size: 20, weight: .semibold)
+                    .foregroundStyle(.white)
+                    .frame(width: 28)
+                Text("Share")
+                    .scaledFont(size: 16, weight: .medium)
+                    .foregroundStyle(.white)
+                Spacer()
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 16)
+            .contentShape(Rectangle())
+            .onTapGesture { onShare() }
+
+            Spacer()
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel(
-            sponsored
-                ? "Learn more"
-                : (saved ? "Saved to watch list. Tap to remove." : "Add to watch list")
-        )
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 

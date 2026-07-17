@@ -36,6 +36,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.Share
@@ -44,8 +45,11 @@ import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VolumeOff
 import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -137,6 +141,8 @@ fun ReelsScreen(
 
     // Reel that opened the comment sheet (tmdbId), null when sheet is closed.
     var commentsReelTmdb by remember { mutableStateOf<Int?>(null) }
+    // Reel that opened the More sheet (tmdbId), null when sheet is closed.
+    var showMoreTmdb by remember { mutableStateOf<Int?>(null) }
 
     // Tab-filtered trailers
     val filteredTrailers = remember(trailers, currentTab) {
@@ -222,6 +228,7 @@ fun ReelsScreen(
                         )
                     },
                     onComments = { commentsReelTmdb = reel.tmdbId },
+                    onMore = { showMoreTmdb = reel.tmdbId },
                     onTogglePlay = {
                         isPlaying = !isPlaying
                         WatchIntentLogger.get().log(
@@ -300,6 +307,31 @@ fun ReelsScreen(
                     commentsReelTmdb = null
                 }
             }
+            showMoreTmdb?.let { openedTmdb ->
+                val openedReel = filteredTrailers.firstOrNull { it.tmdbId == openedTmdb }
+                if (openedReel != null) {
+                    ReelMoreSheet(
+                        commentCount = if (openedTmdb > 0) (commentCounts[openedTmdb.toString()] ?: 0) else 0,
+                        onDismiss = { showMoreTmdb = null },
+                        onComment = {
+                            showMoreTmdb = null
+                            if (openedTmdb > 0) commentsReelTmdb = openedTmdb
+                        },
+                        onShare = {
+                            showMoreTmdb = null
+                            val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                type = "text/plain"
+                                putExtra(Intent.EXTRA_TEXT, openedReel.youtubeUrl)
+                            }
+                            context.startActivity(Intent.createChooser(shareIntent, "Share trailer"))
+                        },
+                        onPlayYoutube = {
+                            showMoreTmdb = null
+                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(openedReel.youtubeUrl)))
+                        },
+                    )
+                }
+            }
             // Top overlay: dismiss chevron + category pills
             Row(
                 modifier = Modifier
@@ -371,6 +403,7 @@ private fun ReelView(
     commentCount: Int = 0,
     onLike: () -> Unit = {},
     onComments: () -> Unit = {},
+    onMore: () -> Unit = {},
     onTogglePlay: () -> Unit,
     onToggleMute: () -> Unit,
     onPlayYoutube: () -> Unit,
@@ -538,61 +571,58 @@ private fun ReelView(
             }
         }
 
-        // Right rail: Like, Comment, Save, Watched, Share, Play on YouTube
+        // Right rail: Like, List, Watched, More
         Column(
             modifier = Modifier
                 .align(Alignment.BottomEnd)
                 .padding(end = 12.dp, bottom = 24.dp + systemBottomInset()),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(18.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            // Like (only for real titles; sponsored reels have tmdbId <= 0)
             if (reel.tmdbId > 0) {
+                // Like
                 RailButton(
                     icon = if (isLiked) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
                     label = formatReelCount(likeCount),
                     tint = if (isLiked) Color(0xFFFF3B5C) else TextPrimary,
-                    active = isLiked,
                     onClick = onLike,
                 )
-                // Comment
+                // List (Save)
                 RailButton(
-                    icon = Icons.Outlined.ChatBubbleOutline,
-                    label = formatReelCount(commentCount),
+                    icon = if (isSaved) Icons.Filled.Check else Icons.Filled.Add,
+                    label = if (isSaved) "Saved" else "Save",
+                    tint = BrandOrange,
+                    onClick = onToggleSave,
+                )
+                // Watched
+                RailButton(
+                    icon = Icons.Filled.Visibility,
+                    label = "Watched",
+                    tint = if (isWatched) BrandBlue else TextPrimary,
+                    onClick = onToggleWatched,
+                )
+                // More
+                RailButton(
+                    icon = Icons.Filled.MoreHoriz,
+                    label = "More",
                     tint = TextPrimary,
-                    onClick = onComments,
+                    onClick = onMore,
+                )
+            } else {
+                // Sponsored reels: Save + Share only
+                RailButton(
+                    icon = if (isSaved) Icons.Filled.Check else Icons.Filled.Add,
+                    label = if (isSaved) "Saved" else "Save",
+                    tint = BrandOrange,
+                    onClick = onToggleSave,
+                )
+                RailButton(
+                    icon = Icons.Filled.Share,
+                    label = "Share",
+                    tint = TextPrimary,
+                    onClick = onShare,
                 )
             }
-            // Add to watchlist
-            RailButton(
-                icon = if (isSaved) Icons.Filled.Check else Icons.Filled.Add,
-                label = if (isSaved) "Saved" else "Save",
-                tint = if (isSaved) BrandOrange else TextPrimary,
-                active = isSaved,
-                onClick = onToggleSave,
-            )
-            // Watched
-            RailButton(
-                icon = Icons.Filled.Visibility,
-                label = "Watched",
-                tint = if (isWatched) BrandBlue else TextPrimary,
-                active = isWatched,
-                onClick = onToggleWatched,
-            )
-            // Share
-            RailButton(
-                icon = Icons.Filled.Share,
-                label = "Share",
-                tint = TextPrimary,
-                onClick = onShare,
-            )
-            // Play on YouTube
-            RailButton(
-                icon = Icons.Filled.PlayArrow,
-                label = "Play",
-                tint = BrandOrange,
-                onClick = onPlayYoutube,
-            )
         }
 
         // Bottom-left: title + meta
@@ -715,6 +745,8 @@ private fun InjectedReelsScreen(
 
     // Reel that opened the comment sheet (tmdbId), null when sheet is closed.
     var commentsReelTmdb by remember { mutableStateOf<Int?>(null) }
+    // Reel that opened the More sheet (tmdbId), null when sheet is closed.
+    var showMoreTmdb by remember { mutableStateOf<Int?>(null) }
 
     var isPlaying by remember { mutableStateOf(true) }
     var isMuted by remember { mutableStateOf(true) }
@@ -796,6 +828,7 @@ private fun InjectedReelsScreen(
                         )
                     },
                     onComments = { commentsReelTmdb = reel.tmdbId },
+                    onMore = { showMoreTmdb = reel.tmdbId },
                     onTogglePlay = { isPlaying = !isPlaying },
                     onToggleMute = { isMuted = !isMuted },
                     onPlayYoutube = {
@@ -877,6 +910,31 @@ private fun InjectedReelsScreen(
                     commentsReelTmdb = null
                 }
             }
+            showMoreTmdb?.let { openedTmdb ->
+                val openedReel = reels.firstOrNull { it.tmdbId == openedTmdb } ?: reels.getOrNull(pagerState.currentPage)
+                if (openedReel != null) {
+                    ReelMoreSheet(
+                        commentCount = if (openedTmdb > 0) (commentCounts[openedTmdb.toString()] ?: 0) else 0,
+                        onDismiss = { showMoreTmdb = null },
+                        onComment = {
+                            showMoreTmdb = null
+                            if (openedTmdb > 0) commentsReelTmdb = openedTmdb
+                        },
+                        onShare = {
+                            showMoreTmdb = null
+                            val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                type = "text/plain"
+                                putExtra(Intent.EXTRA_TEXT, openedReel.youtubeUrl)
+                            }
+                            context.startActivity(Intent.createChooser(shareIntent, "Share trailer"))
+                        },
+                        onPlayYoutube = {
+                            showMoreTmdb = null
+                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(openedReel.youtubeUrl)))
+                        },
+                    )
+                }
+            }
             // Top overlay: dismiss chevron only (no category pills).
             // statusBarsPadding keeps the tap target below the system status bar
             // so the status bar doesn't swallow the tap.
@@ -913,6 +971,114 @@ private fun formatReelCount(n: Int): String = when {
     n >= 1_000_000 -> String.format(Locale.US, "%.1fM", n / 1_000_000.0)
     n >= 1_000 -> String.format(Locale.US, "%.1fK", n / 1_000.0)
     else -> n.toString()
+}
+
+/**
+ * Slide-up More sheet for the reels rail — a Material3 ModalBottomSheet with
+ * Comment, Share, and Play on YouTube rows. Closes itself and dispatches to
+ * the screen-level comment sheet, share intent, or YouTube handoff.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ReelMoreSheet(
+    commentCount: Int,
+    onDismiss: () -> Unit,
+    onComment: () -> Unit,
+    onShare: () -> Unit,
+    onPlayYoutube: () -> Unit,
+) {
+    val sheetState = rememberModalBottomSheetState()
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = Color(red = 10f / 255f, green = 16f / 255f, blue = 26f / 255f),
+    ) {
+        Column {
+            // Comment row
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                    ) { onComment() }
+                    .padding(horizontal = 20.dp, vertical = 16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.ChatBubbleOutline,
+                    contentDescription = null,
+                    tint = TextPrimary,
+                    modifier = Modifier.size(24.dp),
+                )
+                Spacer(Modifier.width(14.dp))
+                Text(
+                    text = "Comment",
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = TextPrimary,
+                )
+                Spacer(Modifier.weight(1f))
+                Text(
+                    text = formatReelCount(commentCount),
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = TextSecondary,
+                )
+            }
+            // Share row
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                    ) { onShare() }
+                    .padding(horizontal = 20.dp, vertical = 16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Share,
+                    contentDescription = null,
+                    tint = TextPrimary,
+                    modifier = Modifier.size(24.dp),
+                )
+                Spacer(Modifier.width(14.dp))
+                Text(
+                    text = "Share",
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = TextPrimary,
+                )
+            }
+            // Play on YouTube row
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                    ) { onPlayYoutube() }
+                    .padding(horizontal = 20.dp, vertical = 16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.PlayArrow,
+                    contentDescription = null,
+                    tint = TextPrimary,
+                    modifier = Modifier.size(24.dp),
+                )
+                Spacer(Modifier.width(14.dp))
+                Text(
+                    text = "Play on YouTube",
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = TextPrimary,
+                )
+            }
+            Spacer(Modifier.height(16.dp))
+        }
+    }
 }
 
 /**
@@ -1042,7 +1208,6 @@ private fun RailButton(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     label: String,
     tint: Color,
-    active: Boolean = false,
     onClick: () -> Unit,
 ) {
     Column(
@@ -1050,13 +1215,9 @@ private fun RailButton(
     ) {
         Box(
             modifier = Modifier
-                .size(42.dp)
+                .size(48.dp)
                 .clip(CircleShape)
-                .background(if (active) Color.Black.copy(alpha = 0.17f) else Color.Transparent)
-                .then(
-                    if (active) Modifier.border(1.dp, Color.White.copy(alpha = 0.15f), CircleShape)
-                    else Modifier,
-                )
+                .background(Color.Transparent)
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
@@ -1068,7 +1229,7 @@ private fun RailButton(
                 contentDescription = label,
                 tint = tint,
                 modifier = Modifier
-                    .size(17.dp)
+                    .size(20.dp)
                     .shadow(
                         elevation = 3.dp,
                         shape = CircleShape,
