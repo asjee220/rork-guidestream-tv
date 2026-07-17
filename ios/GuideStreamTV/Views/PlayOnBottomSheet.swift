@@ -361,12 +361,6 @@ struct PlayOnBottomSheet: View {
 
     private func sheetContent(maxHeight: CGFloat) -> some View {
         VStack(spacing: 0) {
-            Capsule()
-                .fill(Color.white.opacity(0.22))
-                .frame(width: 44, height: 5)
-                .padding(.top, 10)
-                .padding(.bottom, 12)
-
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 0) {
                     headerRow
@@ -407,11 +401,12 @@ struct PlayOnBottomSheet: View {
             }
             .scrollBounceBehavior(.basedOnSize)
         }
+        .gsSheetChrome()
         .frame(maxWidth: .infinity)
         .frame(maxHeight: maxHeight, alignment: .top)
         .background(
             UnevenRoundedRectangle(cornerRadii: .init(topLeading: 28, topTrailing: 28), style: .continuous)
-                .fill(Color(red: 0x06/255, green: 0x0C/255, blue: 0x18/255))
+                .fill(Theme.surface)
         )
         .clipShape(UnevenRoundedRectangle(cornerRadii: .init(topLeading: 28, topTrailing: 28), style: .continuous))
         .shadow(color: .black.opacity(0.5), radius: 28, y: -10)

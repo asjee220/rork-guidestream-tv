@@ -208,9 +208,8 @@ struct SportsWatchSheet: View {
                     .frame(maxWidth: .infinity)
             }
         }
-        .background(Color(red: 0x13/255, green: 0x18/255, blue: 0x1D/255).ignoresSafeArea())
         .presentationDetents([.fraction(0.85), .large])
-        .presentationDragIndicator(.visible)
+        .gsSheetChrome()
         .presentationContentInteraction(.scrolls)
         .sheet(isPresented: $showCastSheet) {
             CastToTVSheet(

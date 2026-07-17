@@ -561,9 +561,8 @@ struct EpisodeDetailSheet: View {
                 }
             }
         }
-        .background(Color(red: 0x13/255, green: 0x18/255, blue: 0x1D/255).ignoresSafeArea())
         .presentationDetents([.fraction(0.8), .large])
-        .presentationDragIndicator(.visible)
+        .gsSheetChrome()
         .presentationContentInteraction(.scrolls)
         .sheet(isPresented: $showCastSheet) {
             CastToTVSheet(
@@ -2104,9 +2103,8 @@ struct NotificationsSheet: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(BrandBackground())
         .presentationDetents([.medium, .large])
-        .presentationDragIndicator(.visible)
+        .gsSheetChrome()
         .presentationContentInteraction(.scrolls)
         .task {
             await streams.refreshAll()

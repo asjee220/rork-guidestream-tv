@@ -90,6 +90,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import com.rork.guidestreamtvandroid.ui.theme.BrandBlue
+import com.rork.guidestreamtvandroid.ui.theme.SurfaceDark
+import com.rork.guidestreamtvandroid.ui.components.GsSheetDragHandle
 import com.rork.guidestreamtvandroid.ui.theme.BrandOrange
 import com.rork.guidestreamtvandroid.ui.theme.systemBottomInset
 import com.rork.guidestreamtvandroid.ui.theme.GlassFill
@@ -991,7 +993,8 @@ private fun ReelMoreSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
-        containerColor = Color(red = 10f / 255f, green = 16f / 255f, blue = 26f / 255f),
+        containerColor = SurfaceDark,
+        dragHandle = { GsSheetDragHandle() },
     ) {
         Column {
             // Comment row

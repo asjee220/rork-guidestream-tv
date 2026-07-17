@@ -233,10 +233,14 @@ struct AskStreamSheet: View {
         VStack(spacing: 0) {
             // Drag handle
             Capsule()
-                .fill(Color.white.opacity(0.15))
+                .fill(Color.white.opacity(0.25))
                 .frame(width: 40, height: 4)
                 .padding(.top, 12)
-                .padding(.bottom, 8)
+                .padding(.bottom, 12)
+            Rectangle()
+                .fill(Theme.hairline)
+                .frame(height: 1)
+                .frame(maxWidth: .infinity)
 
             header
                 .padding(.horizontal, 16)
@@ -275,7 +279,7 @@ struct AskStreamSheet: View {
                 topTrailingRadius: 24,
                 style: .continuous
             )
-            .fill(Color(red: 0x0A/255, green: 0x11/255, blue: 0x20/255))
+            .fill(Theme.surface)
         )
         .overlay(
             UnevenRoundedRectangle(

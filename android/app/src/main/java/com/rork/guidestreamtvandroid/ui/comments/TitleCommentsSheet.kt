@@ -52,6 +52,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.rork.guidestreamtvandroid.data.repository.SocialViewModel
 import com.rork.guidestreamtvandroid.ui.components.RemoteImage
 import com.rork.guidestreamtvandroid.ui.theme.BrandOrange
+import com.rork.guidestreamtvandroid.ui.theme.SurfaceDark
+import com.rork.guidestreamtvandroid.ui.components.GsSheetDragHandle
 import com.rork.guidestreamtvandroid.ui.theme.Hairline
 import com.rork.guidestreamtvandroid.ui.theme.TextPrimary
 import com.rork.guidestreamtvandroid.ui.theme.TextSecondary
@@ -102,7 +104,8 @@ fun TitleCommentsSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
-        containerColor = Color(red = 0x0A, green = 0x10, blue = 0x1A),
+        containerColor = SurfaceDark,
+        dragHandle = { GsSheetDragHandle() },
     ) {
         Column(
             modifier = Modifier

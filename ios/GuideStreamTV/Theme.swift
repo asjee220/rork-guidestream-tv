@@ -151,3 +151,29 @@ enum Theme {
     static let textTertiary = Color.textTertiary
     static let hairline = Color.white.opacity(0.08)
 }
+
+extension View {
+    /// Standardizes the appearance of every drag-dismissible bottom sheet:
+    /// hides the system drag indicator, sets the sheet background to
+    /// `Theme.surface`, and inserts a 40×4 white-0.25 capsule handle with a
+    /// 1-point `Theme.hairline` lip beneath it via a top safe-area inset.
+    func gsSheetChrome() -> some View {
+        self
+            .presentationDragIndicator(.hidden)
+            .presentationBackground(Theme.surface)
+            .safeAreaInset(edge: .top, spacing: 0) {
+                VStack(spacing: 0) {
+                    Capsule()
+                        .fill(Color.white.opacity(0.25))
+                        .frame(width: 40, height: 4)
+                        .padding(.top, 12)
+                        .padding(.bottom, 12)
+                    Rectangle()
+                        .fill(Theme.hairline)
+                        .frame(height: 1)
+                }
+                .frame(maxWidth: .infinity)
+                .background(Theme.surface)
+            }
+    }
+}

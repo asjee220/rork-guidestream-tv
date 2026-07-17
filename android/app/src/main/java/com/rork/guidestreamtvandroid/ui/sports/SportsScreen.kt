@@ -72,6 +72,8 @@ import com.rork.guidestreamtvandroid.ui.theme.BrandOrange
 import com.rork.guidestreamtvandroid.ui.theme.BrandWordmark
 import com.rork.guidestreamtvandroid.ui.theme.Hairline
 import com.rork.guidestreamtvandroid.ui.theme.Navy
+import com.rork.guidestreamtvandroid.ui.theme.SurfaceDark
+import com.rork.guidestreamtvandroid.ui.components.GsSheetDragHandle
 import com.rork.guidestreamtvandroid.ui.theme.OutlineVariant
 import com.rork.guidestreamtvandroid.ui.theme.SurfaceContainer
 import com.rork.guidestreamtvandroid.ui.theme.SurfaceElevated
@@ -691,7 +693,8 @@ private fun ServicesEditorSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
-        containerColor = Navy,
+        containerColor = SurfaceDark,
+        dragHandle = { GsSheetDragHandle() },
     ) {
         Column {
             Text(

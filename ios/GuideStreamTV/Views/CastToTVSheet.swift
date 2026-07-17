@@ -57,7 +57,6 @@ struct CastToTVSheet: View {
                 header
                 content
             }
-            .background(Color(red: 0x0A/255, green: 0x10/255, blue: 0x1E/255))
             .overlay(alignment: .top) {
                 if let playingOn {
                     playingOnBanner(playingOn)
@@ -71,8 +70,7 @@ struct CastToTVSheet: View {
                 LimitedModeHelpSheet(deviceName: help.deviceName)
             }
             .presentationDetents([.medium, .large])
-            .presentationDragIndicator(.visible)
-            .presentationBackground(Color(red: 0x0A/255, green: 0x10/255, blue: 0x1E/255))
+            .gsSheetChrome()
             .onAppear { startScan() }
             .onDisappear {
                 discovery.stop()
@@ -1250,7 +1248,6 @@ struct CastToTVSheet: View {
                     .padding(.bottom, 32)
             }
             .frame(maxWidth: .infinity)
-            .background(Color(red: 0x0A/255, green: 0x10/255, blue: 0x1E/255))
         }
     }
 
@@ -1334,7 +1331,6 @@ struct CastToTVSheet: View {
                 .padding(.bottom, 32)
             }
             .frame(maxWidth: .infinity)
-            .background(Color(red: 0x0A/255, green: 0x10/255, blue: 0x1E/255))
         }
     }
 
@@ -1415,10 +1411,8 @@ private struct LimitedModeHelpSheet: View {
             .padding(.top, 18)
             .padding(.bottom, 36)
         }
-        .background(Color(red: 0x0A/255, green: 0x10/255, blue: 0x1E/255))
         .presentationDetents([.large])
-        .presentationDragIndicator(.visible)
-        .presentationBackground(Color(red: 0x0A/255, green: 0x10/255, blue: 0x1E/255))
+        .gsSheetChrome()
     }
 
     private var hero: some View {

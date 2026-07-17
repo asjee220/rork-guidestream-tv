@@ -65,8 +65,6 @@ struct ServicesBottomSheet: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                BrandBackground()
-
                 // Atmosphere — keeps the sheet feeling like the same surface as the rest of the app.
                 GeometryReader { geo in
                     Circle()
@@ -164,6 +162,7 @@ struct ServicesBottomSheet: View {
             .toolbarBackground(.hidden, for: .navigationBar)
         }
         .preferredColorScheme(.dark)
+        .gsSheetChrome()
     }
 
     private func toggle(_ id: String) {

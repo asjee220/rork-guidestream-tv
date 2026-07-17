@@ -34,9 +34,10 @@ struct WatchListBottomSheet: View {
                             .foregroundStyle(Color.textSecondary)
                     }
                 }
-                .toolbarBackground(.hidden, for: .navigationBar)
+                .toolbarBackground(Theme.surface, for: .navigationBar)
         }
         .preferredColorScheme(.dark)
+        .gsSheetChrome()
     }
 }
 
@@ -49,6 +50,7 @@ struct WatchListView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(Color.navy, for: .navigationBar)
             .toolbarColorScheme(.dark, for: .navigationBar)
+            .background(BrandBackground())
     }
 }
 
@@ -73,8 +75,6 @@ private struct WatchListContent: View {
 
     var body: some View {
         ZStack {
-            BrandBackground()
-
             // Atmosphere — keeps the surface feeling like the rest of the app.
             GeometryReader { geo in
                 Circle()

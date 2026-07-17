@@ -80,9 +80,8 @@ struct TitleCommentsSheet: View {
 
             inputBar
         }
-        .background(Color(red: 0x0A/255, green: 0x10/255, blue: 0x1A/255).ignoresSafeArea())
         .presentationDetents([.fraction(0.72), .large])
-        .presentationDragIndicator(.visible)
+        .gsSheetChrome()
         .presentationContentInteraction(.scrolls)
         .task {
             await social.loadComments(titleId: titleId)
