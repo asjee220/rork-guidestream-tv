@@ -33,10 +33,13 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VolumeOff
 import androidx.compose.material.icons.filled.VolumeUp
@@ -72,9 +75,12 @@ import com.rork.guidestreamtvandroid.data.remote.WatchmodeSrc
 import com.rork.guidestreamtvandroid.data.repository.AuthViewModel
 import com.rork.guidestreamtvandroid.data.repository.DebugLog
 import com.rork.guidestreamtvandroid.data.repository.RakutenManager
+import com.rork.guidestreamtvandroid.data.repository.SocialViewModel
 import com.rork.guidestreamtvandroid.data.repository.StreamsViewModel
 import com.rork.guidestreamtvandroid.data.repository.WatchIntentLogger
+import com.rork.guidestreamtvandroid.ui.comments.TitleCommentsSheet
 import com.rork.guidestreamtvandroid.ui.components.RemoteImage
+import java.util.Locale
 import kotlin.math.abs
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -117,6 +123,7 @@ fun ReelsScreen(
     }
     val vm = ReelsViewModel.get()
     val streamsVm = StreamsViewModel.get()
+    val social = SocialViewModel.get()
     val context = LocalContext.current
 
     val trailers by vm.trailers.collectAsStateWithLifecycle()
@@ -124,6 +131,12 @@ fun ReelsScreen(
     val currentTab by vm.currentTab.collectAsStateWithLifecycle()
     val userStreams by streamsVm.userStreams.collectAsStateWithLifecycle()
     val watchedIds by streamsVm.watchedIds.collectAsStateWithLifecycle()
+    val likeCounts by social.likeCounts.collectAsStateWithLifecycle()
+    val likedByMe by social.likedByMe.collectAsStateWithLifecycle()
+    val commentCounts by social.commentCounts.collectAsStateWithLifecycle()
+
+    // Reel that opened the comment sheet (tmdbId), null when sheet is closed.
+    var commentsReelTmdb by remember { mutableStateOf<Int?>(null) }
 
     // Tab-filtered trailers
     val filteredTrailers = remember(trailers, currentTab) {
@@ -171,6 +184,7 @@ fun ReelsScreen(
                     platformId = item.platformId,
                     metadata = mapOf("section" to "reels", "tab" to item.tab.key),
                 )
+                if (item.tmdbId > 0) social.refreshCounts(item.tmdbId.toString())
             }
 
             VerticalPager(
@@ -182,6 +196,10 @@ fun ReelsScreen(
                 val isSaved = userStreams.any { it.titleId == reel.tmdbId.toString() }
                 val isWatched = watchedIds.contains(reel.tmdbId.toString())
 
+                val tid = reel.tmdbId.toString()
+                val reelIsLiked = tid in likedByMe
+                val reelLikeCount = likeCounts[tid] ?: 0
+                val reelCommentCount = commentCounts[tid] ?: 0
                 ReelView(
                     reel = reel,
                     isCurrent = isCurrent,
@@ -189,6 +207,21 @@ fun ReelsScreen(
                     isMuted = isMuted,
                     isSaved = isSaved,
                     isWatched = isWatched,
+                    isLiked = reelIsLiked,
+                    likeCount = reelLikeCount,
+                    commentCount = reelCommentCount,
+                    onLike = {
+                        social.toggleLike(
+                            titleId = tid,
+                            mediaType = if (reel.isTV) "tv" else "movie",
+                            tmdbId = reel.tmdbId,
+                        )
+                        WatchIntentLogger.get().log(
+                            WatchIntentLogger.IntentEventType.TRAILER_LIKED,
+                            metadata = mapOf("tmdb_id" to reel.tmdbId, "source" to "reels"),
+                        )
+                    },
+                    onComments = { commentsReelTmdb = reel.tmdbId },
                     onTogglePlay = {
                         isPlaying = !isPlaying
                         WatchIntentLogger.get().log(
@@ -253,6 +286,20 @@ fun ReelsScreen(
             }
             }
 
+            commentsReelTmdb?.let { openedTmdb ->
+                val openedReel = filteredTrailers.firstOrNull { it.tmdbId == openedTmdb }
+                if (openedReel != null && openedTmdb > 0) {
+                    TitleCommentsSheet(
+                        titleId = openedTmdb.toString(),
+                        title = openedReel.showName,
+                        subtitle = openedReel.genre,
+                        posterUrl = openedReel.posterUrl,
+                        onDismiss = { commentsReelTmdb = null },
+                    )
+                } else if (openedTmdb <= 0) {
+                    commentsReelTmdb = null
+                }
+            }
             // Top overlay: dismiss chevron + category pills
             Row(
                 modifier = Modifier
@@ -319,6 +366,11 @@ private fun ReelView(
     isMuted: Boolean,
     isSaved: Boolean,
     isWatched: Boolean,
+    isLiked: Boolean = false,
+    likeCount: Int = 0,
+    commentCount: Int = 0,
+    onLike: () -> Unit = {},
+    onComments: () -> Unit = {},
     onTogglePlay: () -> Unit,
     onToggleMute: () -> Unit,
     onPlayYoutube: () -> Unit,
@@ -486,7 +538,7 @@ private fun ReelView(
             }
         }
 
-        // Right rail: title, add to watchlist, share, play on YouTube
+        // Right rail: Like, Comment, Save, Watched, Share, Play on YouTube
         Column(
             modifier = Modifier
                 .align(Alignment.BottomEnd)
@@ -494,6 +546,23 @@ private fun ReelView(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(18.dp),
         ) {
+            // Like (only for real titles; sponsored reels have tmdbId <= 0)
+            if (reel.tmdbId > 0) {
+                RailButton(
+                    icon = if (isLiked) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
+                    label = formatReelCount(likeCount),
+                    tint = if (isLiked) Color(0xFFFF3B5C) else TextPrimary,
+                    active = isLiked,
+                    onClick = onLike,
+                )
+                // Comment
+                RailButton(
+                    icon = Icons.Outlined.ChatBubbleOutline,
+                    label = formatReelCount(commentCount),
+                    tint = TextPrimary,
+                    onClick = onComments,
+                )
+            }
             // Add to watchlist
             RailButton(
                 icon = if (isSaved) Icons.Filled.Check else Icons.Filled.Add,
@@ -637,8 +706,15 @@ private fun InjectedReelsScreen(
 ) {
     val context = LocalContext.current
     val streamsVm = StreamsViewModel.get()
+    val social = SocialViewModel.get()
     val userStreams by streamsVm.userStreams.collectAsStateWithLifecycle()
     val watchedIds by streamsVm.watchedIds.collectAsStateWithLifecycle()
+    val likeCounts by social.likeCounts.collectAsStateWithLifecycle()
+    val likedByMe by social.likedByMe.collectAsStateWithLifecycle()
+    val commentCounts by social.commentCounts.collectAsStateWithLifecycle()
+
+    // Reel that opened the comment sheet (tmdbId), null when sheet is closed.
+    var commentsReelTmdb by remember { mutableStateOf<Int?>(null) }
 
     var isPlaying by remember { mutableStateOf(true) }
     var isMuted by remember { mutableStateOf(true) }
@@ -687,12 +763,17 @@ private fun InjectedReelsScreen(
                         "video_type" to (item.videoType ?: ""),
                     ),
                 )
+                if (item.tmdbId > 0) social.refreshCounts(item.tmdbId.toString())
             }
             VerticalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
                 val reel = reels[page]
                 val isCurrent = page == pagerState.currentPage
                 val isSaved = userStreams.any { it.titleId == reel.tmdbId.toString() }
                 val isWatched = watchedIds.contains(reel.tmdbId.toString())
+                val tid = reel.tmdbId.toString()
+                val reelIsLiked = tid in likedByMe
+                val reelLikeCount = likeCounts[tid] ?: 0
+                val reelCommentCount = commentCounts[tid] ?: 0
                 ReelView(
                     reel = reel,
                     isCurrent = isCurrent,
@@ -700,6 +781,21 @@ private fun InjectedReelsScreen(
                     isMuted = isMuted,
                     isSaved = isSaved,
                     isWatched = isWatched,
+                    isLiked = reelIsLiked,
+                    likeCount = reelLikeCount,
+                    commentCount = reelCommentCount,
+                    onLike = {
+                        social.toggleLike(
+                            titleId = tid,
+                            mediaType = if (reel.isTV) "tv" else "movie",
+                            tmdbId = reel.tmdbId,
+                        )
+                        WatchIntentLogger.get().log(
+                            WatchIntentLogger.IntentEventType.TRAILER_LIKED,
+                            metadata = mapOf("tmdb_id" to reel.tmdbId, "source" to "reels"),
+                        )
+                    },
+                    onComments = { commentsReelTmdb = reel.tmdbId },
                     onTogglePlay = { isPlaying = !isPlaying },
                     onToggleMute = { isMuted = !isMuted },
                     onPlayYoutube = {
@@ -767,6 +863,20 @@ private fun InjectedReelsScreen(
                     },
                 )
             }
+            commentsReelTmdb?.let { openedTmdb ->
+                val openedReel = reels.firstOrNull { it.tmdbId == openedTmdb } ?: reels.getOrNull(pagerState.currentPage)
+                if (openedReel != null && openedTmdb > 0) {
+                    TitleCommentsSheet(
+                        titleId = openedTmdb.toString(),
+                        title = openedReel.showName,
+                        subtitle = openedReel.genre,
+                        posterUrl = openedReel.posterUrl,
+                        onDismiss = { commentsReelTmdb = null },
+                    )
+                } else if (openedTmdb <= 0) {
+                    commentsReelTmdb = null
+                }
+            }
             // Top overlay: dismiss chevron only (no category pills).
             // statusBarsPadding keeps the tap target below the system status bar
             // so the status bar doesn't swallow the tap.
@@ -793,6 +903,16 @@ private fun InjectedReelsScreen(
             }
         }
     }
+}
+
+/**
+ * Compact count formatter mirroring [SocialCounterRow]'s formatCount (K/M with
+ * one decimal) so the reel rail labels match the detail-screen counter row.
+ */
+private fun formatReelCount(n: Int): String = when {
+    n >= 1_000_000 -> String.format(Locale.US, "%.1fM", n / 1_000_000.0)
+    n >= 1_000 -> String.format(Locale.US, "%.1fK", n / 1_000.0)
+    else -> n.toString()
 }
 
 /**
