@@ -1881,6 +1881,11 @@ private struct ReelView: View {
                                 isTV: trailer.isTV,
                                 showName: trailer.showName
                             )
+                            if !glassAdDismissed, !glassAdTargets.isEmpty {
+                                adCarousel
+                                    .opacity(glassAdVisible ? 1 : 0)
+                                    .allowsHitTesting(glassAdVisible)
+                            }
                         } else {
                             PlayOnPill(action: onShowDetail)
                             if !glassAdDismissed, !glassAdTargets.isEmpty {
@@ -1975,10 +1980,10 @@ private struct ReelView: View {
             }
         }
         .clipped()
-        .onAppear { if !isInjected { armGlassAdFade() } }
+        .onAppear { armGlassAdFade() }
         .onChange(of: isCurrent) { _, nowCurrent in
             if nowCurrent {
-                if !isInjected { armGlassAdFade() }
+                armGlassAdFade()
             } else {
                 glassAdFadeTask?.cancel()
                 adAdvanceTask?.cancel()

@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.VerticalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
@@ -31,6 +32,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Pause
@@ -64,14 +66,18 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.rork.guidestreamtvandroid.BuildConfig
 import com.rork.guidestreamtvandroid.data.models.Platform
+import com.rork.guidestreamtvandroid.data.models.StreamingCatalog
 import com.rork.guidestreamtvandroid.data.remote.WatchmodeResolveService
 import com.rork.guidestreamtvandroid.data.remote.WatchmodeSrc
 import com.rork.guidestreamtvandroid.data.repository.AuthViewModel
 import com.rork.guidestreamtvandroid.data.repository.DebugLog
+import com.rork.guidestreamtvandroid.data.repository.RakutenManager
 import com.rork.guidestreamtvandroid.data.repository.StreamsViewModel
 import com.rork.guidestreamtvandroid.data.repository.WatchIntentLogger
 import com.rork.guidestreamtvandroid.ui.components.RemoteImage
+import kotlin.math.abs
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import com.rork.guidestreamtvandroid.ui.theme.BrandBlue
 import com.rork.guidestreamtvandroid.ui.theme.BrandOrange
@@ -588,6 +594,10 @@ private fun ReelView(
                 Spacer(Modifier.height(12.dp))
                 WatchNowSwitcher(sources = sources, onOpenSource = onOpenSource)
             }
+            if (!reel.isSponsored) {
+                Spacer(Modifier.height(12.dp))
+                ReelAdCarousel(reel = reel, isCurrent = isCurrent)
+            }
         }
 
         // Debug-only failure badge — never rendered in a release build.
@@ -955,5 +965,260 @@ private fun RailButton(
             color = TextSecondary,
             fontWeight = FontWeight.Medium,
         )
+    }
+}
+
+// ── Reel affiliate ad carousel ──────────────────────────────────────
+
+/**
+ * Rotating pool of the eight affiliate offers, matching the iOS inline ad
+ * pool and the home inlineAdPool exactly (serviceId, headline, subtitle).
+ */
+private val reelAdPool: List<Triple<String, String, String>> = listOf(
+    Triple("netflix", "Stream more on Netflix", "Unlimited shows & movies · Try free"),
+    Triple("hbo", "Watch more on Max", "HBO, Max Originals & more · Try free"),
+    Triple("hulu", "Live TV + streaming on Hulu", "Starting at $7.99/mo · Try free"),
+    Triple("disney", "Disney+, Hulu & ESPN+ bundle", "Disney Bundle · Try free"),
+    Triple("appletv", "Award-winning originals", "Apple TV+ · First month free"),
+    Triple("prime", "Included with Prime", "Prime Video · Try free"),
+    Triple("paramount", "NFL on CBS & live sports", "Paramount+ · Try free"),
+    Triple("peacock", "Stream free on Peacock", "NBC shows & live sports · Free tier"),
+)
+
+/**
+ * Mirrors iOS resolveGlassAds: build "preferred" = pool entries whose
+ * serviceId != currentPlatform and not in selected; "secondary" = entries
+ * whose serviceId != currentPlatform; pick eligible = preferred.ifEmpty {
+ * secondary.ifEmpty { reelAdPool } }; rotate by shift = abs(tmdbId) %
+ * eligible.size so different titles lead with different services.
+ */
+private fun resolveReelAds(
+    currentPlatform: String,
+    selected: Set<String>,
+    tmdbId: Int,
+    count: Int = 5,
+): List<Triple<String, String, String>> {
+    val current = currentPlatform.lowercase()
+    val preferred = reelAdPool.filter { it.first != current && it.first !in selected }
+    val secondary = reelAdPool.filter { it.first != current }
+    val eligible: List<Triple<String, String, String>> = when {
+        preferred.isNotEmpty() -> preferred
+        secondary.isNotEmpty() -> secondary
+        else -> reelAdPool
+    }
+    if (eligible.isEmpty()) return emptyList()
+    val shift = abs(tmdbId) % eligible.size
+    val rotated = eligible.drop(shift) + eligible.take(shift)
+    return rotated.take(count)
+}
+
+/**
+ * Compact reel affiliate carousel that mirrors the iOS adCarousel. Renders a
+ * HorizontalPager of [ReelAffiliateCard] items with dot indicators beneath.
+ * Fades in after a short delay only while the reel is the current page; logs a
+ * single AD_IMPRESSION on first show; dismissible for the session.
+ */
+@Composable
+private fun ReelAdCarousel(
+    reel: TrailerItem,
+    isCurrent: Boolean,
+) {
+    val auth = AuthViewModel.get()
+    val selectedServices by auth.selectedServices.collectAsStateWithLifecycle()
+    val offers = remember(reel.id, selectedServices) {
+        resolveReelAds(reel.platformId, selectedServices, reel.tmdbId)
+    }
+    var dismissed by remember(reel.id) { mutableStateOf(false) }
+    var visible by remember(reel.id) { mutableStateOf(false) }
+
+    LaunchedEffect(isCurrent) {
+        visible = false
+        if (isCurrent) {
+            delay(600)
+            visible = true
+        }
+    }
+
+    LaunchedEffect(reel.id, visible) {
+        if (visible) {
+            WatchIntentLogger.get().log(
+                WatchIntentLogger.IntentEventType.AD_IMPRESSION,
+                metadata = mapOf(
+                    "ad_type" to "reel_ad_carousel",
+                    "source" to "reel_ad_carousel",
+                ),
+            )
+        }
+    }
+
+    if (offers.isEmpty() || dismissed || !isCurrent || !visible) return
+
+    val pagerState = rememberPagerState(pageCount = { offers.size })
+
+    Column {
+        HorizontalPager(
+            state = pagerState,
+            modifier = Modifier.fillMaxWidth(),
+        ) { page ->
+            ReelAffiliateCard(
+                offer = offers[page],
+                reel = reel,
+                onDismiss = { dismissed = true },
+            )
+        }
+        Spacer(Modifier.height(6.dp))
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(5.dp),
+            modifier = Modifier.padding(start = 2.dp),
+        ) {
+            repeat(offers.size) { idx ->
+                Box(
+                    modifier = Modifier
+                        .size(5.dp)
+                        .clip(CircleShape)
+                        .background(
+                            if (idx == pagerState.currentPage) BrandOrange
+                            else Color.White.copy(alpha = 0.28f),
+                        ),
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Compact glass affiliate card for the reel carousel — a rounded 14dp
+ * container with a dark backing and a hairline border so text stays legible
+ * over bright trailer frames. Tapping the card (excluding the dismiss icon)
+ * opens the Rakuten affiliate link and logs AFFILIATE_LINK_TAPPED.
+ */
+@Composable
+private fun ReelAffiliateCard(
+    offer: Triple<String, String, String>,
+    reel: TrailerItem,
+    onDismiss: () -> Unit,
+) {
+    val context = LocalContext.current
+    val service = StreamingCatalog.service(offer.first)
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(Color.Black.copy(alpha = 0.55f))
+            .border(1.dp, GlassStroke, RoundedCornerShape(14.dp))
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+            ) {
+                RakutenManager.get().openAffiliateLink(
+                    serviceId = offer.first,
+                    context = context,
+                    metadata = mapOf(
+                        "source" to "reel_ad_carousel",
+                        "reel_platform" to reel.platformId,
+                        "show" to reel.showName,
+                    ),
+                )
+                WatchIntentLogger.get().log(
+                    WatchIntentLogger.IntentEventType.AFFILIATE_LINK_TAPPED,
+                    metadata = mapOf(
+                        "source" to "reel_ad_carousel",
+                        "show_platform" to reel.platformId,
+                    ),
+                )
+            },
+    ) {
+        Column(modifier = Modifier.padding(10.dp)) {
+            // Header: Sponsored pill + dismiss
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(BrandOrange.copy(alpha = 0.2f))
+                        .padding(horizontal = 6.dp, vertical = 2.dp),
+                ) {
+                    Text(
+                        text = "Sponsored",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = BrandOrange,
+                    )
+                }
+                Spacer(Modifier.weight(1f))
+                Icon(
+                    imageVector = Icons.Filled.Close,
+                    contentDescription = "Dismiss ad",
+                    tint = TextTertiary,
+                    modifier = Modifier
+                        .size(18.dp)
+                        .clip(CircleShape)
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                        ) { onDismiss() },
+                )
+            }
+            Spacer(Modifier.height(8.dp))
+            // Body: brand tile + headline/subtitle + get offer
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(44.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(service?.bg ?: Color.Black),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = (service?.name ?: offer.second).take(3).uppercase(),
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Black,
+                        color = Color.White,
+                    )
+                }
+                Spacer(Modifier.width(10.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = offer.second,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = TextPrimary,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        text = offer.third,
+                        fontSize = 10.sp,
+                        color = TextSecondary,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Spacer(Modifier.height(3.dp))
+                    Text(
+                        text = "Sponsored · Rakuten",
+                        fontSize = 9.sp,
+                        color = TextTertiary,
+                    )
+                }
+                Spacer(Modifier.width(8.dp))
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(BrandOrange)
+                        .padding(horizontal = 12.dp, vertical = 7.dp),
+                ) {
+                    Text(
+                        text = "Get offer",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White,
+                    )
+                }
+            }
+        }
     }
 }
