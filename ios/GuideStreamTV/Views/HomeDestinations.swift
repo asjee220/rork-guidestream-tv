@@ -1084,39 +1084,6 @@ struct EpisodeDetailSheet: View {
     private var secondaryPillRow: some View {
         HStack(spacing: 10) {
             Button {
-                UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                guard let tmdbId else { return }
-                Task {
-                    let key: String?
-                    if isTV {
-                        key = try? await TMDBService.shared.getTrailerKey(tmdbId: tmdbId)
-                    } else {
-                        key = try? await TMDBService.shared.getMovieTrailerKey(tmdbId: tmdbId)
-                    }
-                    await MainActor.run {
-                        if let key {
-                            UIApplication.shared.open(URL(string: "https://www.youtube.com/watch?v=\(key)")!)
-                        } else {
-                            let query = "\(title) trailer".addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed)!
-                            UIApplication.shared.open(URL(string: "https://www.youtube.com/results?search_query=\(query)")!)
-                        }
-                    }
-                }
-            } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: "film")
-                        .scaledFont(size: 14)
-                    Text("Trailer")
-                        .scaledFont(size: 13, weight: .medium)
-                }
-                .foregroundStyle(.white)
-                .frame(maxWidth: .infinity)
-                .frame(height: 44)
-                .background(Capsule().stroke(Color.white.opacity(0.12), lineWidth: 0.5))
-            }
-            .buttonStyle(.plain)
-
-            Button {
                 showFullDetail = true
             } label: {
                 HStack(spacing: 6) {
