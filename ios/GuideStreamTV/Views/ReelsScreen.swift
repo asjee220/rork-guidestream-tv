@@ -1735,6 +1735,7 @@ private struct ReelView: View {
                                     icon: isLiked ? "heart.fill" : "heart",
                                     label: formatCount(likeCount),
                                     tint: isLiked ? Color(hex: "FF3B5C") : .white,
+                                    active: isLiked,
                                     action: {
                                         likeBounce = 1.4
                                         withAnimation(.spring(response: 0.3, dampingFraction: 0.55)) {
@@ -1755,6 +1756,7 @@ private struct ReelView: View {
                                 icon: isWatched ? "eye.fill" : "eye",
                                 label: "Watched",
                                 tint: isWatched ? Color(hex: "1A6FE8") : .white,
+                                active: isWatched,
                                 action: onWatched
                             )
                         }
@@ -2209,21 +2211,24 @@ private struct RailButton: View {
     let icon: String
     let label: String
     let tint: Color
+    var active: Bool = false
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
             VStack(spacing: 4) {
                 ZStack {
-                    Circle()
-                        .fill(Color.black.opacity(0.45))
-                        .background(.ultraThinMaterial, in: Circle())
-                        .overlay(Circle().stroke(Color.white.opacity(0.15), lineWidth: 1))
+                    if active {
+                        Circle()
+                            .fill(Color.black.opacity(0.17))
+                            .overlay(Circle().stroke(Color.white.opacity(0.15), lineWidth: 1))
+                    }
                     Image(systemName: icon)
-                        .scaledFont(size: 22, weight: .semibold)
+                        .scaledFont(size: 17, weight: .semibold)
                         .foregroundStyle(tint)
+                        .shadow(color: Color.black.opacity(0.55), radius: 3, x: 0, y: 1)
                 }
-                .frame(width: 52, height: 52)
+                .frame(width: 42, height: 42)
                 Text(label)
                     .scaledFont(size: 11, weight: .semibold)
                     .foregroundStyle(.white)
@@ -2265,10 +2270,10 @@ private struct WatchListButton: View {
                             .shadow(color: Color(hex: "F5821F").opacity(0.6), radius: 10)
                     }
                     Image(systemName: sponsored ? "info.circle" : (saved ? "checkmark" : "plus"))
-                        .scaledFont(size: 22, weight: .bold)
+                        .scaledFont(size: 17, weight: .bold)
                         .foregroundStyle(.white)
                 }
-                .frame(width: 52, height: 52)
+                .frame(width: 42, height: 42)
                 Text(sponsored ? "Learn" : (saved ? "Saved" : "Watch List"))
                     .scaledFont(size: 11, weight: .semibold)
                     .foregroundStyle(.white)

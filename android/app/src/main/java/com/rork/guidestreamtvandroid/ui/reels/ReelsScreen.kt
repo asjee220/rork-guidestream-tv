@@ -52,6 +52,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -492,6 +493,7 @@ private fun ReelView(
                 icon = if (isSaved) Icons.Filled.Check else Icons.Filled.Add,
                 label = if (isSaved) "Saved" else "Save",
                 tint = if (isSaved) BrandOrange else TextPrimary,
+                active = isSaved,
                 onClick = onToggleSave,
             )
             // Watched
@@ -499,6 +501,7 @@ private fun ReelView(
                 icon = Icons.Filled.Visibility,
                 label = "Watched",
                 tint = if (isWatched) BrandBlue else TextPrimary,
+                active = isWatched,
                 onClick = onToggleWatched,
             )
             // Share
@@ -909,6 +912,7 @@ private fun RailButton(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     label: String,
     tint: Color,
+    active: Boolean = false,
     onClick: () -> Unit,
 ) {
     Column(
@@ -916,9 +920,13 @@ private fun RailButton(
     ) {
         Box(
             modifier = Modifier
-                .size(48.dp)
+                .size(42.dp)
                 .clip(CircleShape)
-                .background(Color.Black.copy(alpha = 0.4f))
+                .background(if (active) Color.Black.copy(alpha = 0.17f) else Color.Transparent)
+                .then(
+                    if (active) Modifier.border(1.dp, Color.White.copy(alpha = 0.15f), CircleShape)
+                    else Modifier,
+                )
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
@@ -929,7 +937,15 @@ private fun RailButton(
                 imageVector = icon,
                 contentDescription = label,
                 tint = tint,
-                modifier = Modifier.size(24.dp),
+                modifier = Modifier
+                    .size(17.dp)
+                    .shadow(
+                        elevation = 3.dp,
+                        shape = CircleShape,
+                        clip = false,
+                        ambientColor = Color.Black.copy(alpha = 0.55f),
+                        spotColor = Color.Black.copy(alpha = 0.55f),
+                    ),
             )
         }
         Spacer(Modifier.height(4.dp))
