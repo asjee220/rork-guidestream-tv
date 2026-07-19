@@ -161,6 +161,7 @@ struct HomeView: View {
     var onOpenAgent: () -> Void = {}
 
     @Environment(AppRouter.self) private var router
+    @Environment(\.scenePhase) private var scenePhase
 
     @State private var widgetBannerDismissed: Bool = false
     /// Inline sponsored slot indices dismissed for this session.
@@ -920,6 +921,11 @@ struct HomeView: View {
                         newEpisodeCount: streams.newEpisodes.count,
                         newEpisodeRows: streams.newEpisodes
                     )
+                }
+                .onChange(of: scenePhase) { _, newPhase in
+                    if newPhase == .active {
+                        Task { await streams.refreshIfStale() }
+                    }
                 }
                 } // ScrollViewReader
 

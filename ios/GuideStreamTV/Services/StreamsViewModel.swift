@@ -31,6 +31,11 @@ final class StreamsViewModel {
     var isLoadingEpisodes: Bool = false
     var lastError: String?
 
+    /// Timestamp of the last full `refreshAll()` pass. Used by
+    /// `refreshIfStale(minimumInterval:)` to skip redundant refreshes when
+    /// the app returns to the foreground within `minimumInterval` seconds.
+    private var lastFullRefreshAt: Date?
+
     /// UserDefaults key for the local cache of watch list rows. Encoded as
     /// JSON `[UserStream]`. Survives sign-out so a returning user doesn't
     /// lose their guest list.
@@ -72,6 +77,19 @@ final class StreamsViewModel {
             newEpisodeCount: newEpisodes.count,
             newEpisodeRows: newEpisodes
         )
+        lastFullRefreshAt = Date()
+    }
+
+    /// Re-runs `refreshAll()` only when the previous full refresh is older
+    /// than `minimumInterval` seconds. Used by the Home screen's scenePhase
+    /// observer so backgrounding the app and returning after >60s re-sorts
+    /// the My Watch List rail without a manual pull-to-refresh.
+    func refreshIfStale(minimumInterval: TimeInterval = 60) async {
+        if let lastFullRefreshAt, Date().timeIntervalSince(lastFullRefreshAt) < minimumInterval {
+            return
+        }
+        lastFullRefreshAt = Date()
+        await refreshAll()
     }
 
     /// Loads the canonical list. Fetches by user_id (signed-in) OR

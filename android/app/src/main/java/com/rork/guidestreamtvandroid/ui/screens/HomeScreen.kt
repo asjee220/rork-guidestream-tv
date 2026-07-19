@@ -141,6 +141,7 @@ fun HomeScreen(
     val preferredGenres by homeVm.preferredGenres.collectAsStateWithLifecycle()
     val userStreams by streamsVm.userStreams.collectAsStateWithLifecycle()
     val watchedIds by streamsVm.watchedIds.collectAsStateWithLifecycle()
+    val latestContentAt by streamsVm.latestContentAt.collectAsStateWithLifecycle()
     val selectedServices by authVm.selectedServices.collectAsStateWithLifecycle()
 
     LaunchedEffect(Unit) { homeVm.loadAll() }
@@ -198,6 +199,7 @@ fun HomeScreen(
             WatchListSection(
                 streams = userStreams,
                 watchedIds = watchedIds,
+                latestContentAt = latestContentAt,
                 onOpen = { stream ->
                     WatchIntentLogger.get().log(
                         WatchIntentLogger.IntentEventType.CARD_TAPPED,
@@ -942,6 +944,7 @@ private fun HeroCarousel(
 private fun WatchListSection(
     streams: List<com.rork.guidestreamtvandroid.data.models.UserStream>,
     watchedIds: Set<String>,
+    latestContentAt: Map<String, Long>,
     onOpen: (com.rork.guidestreamtvandroid.data.models.UserStream) -> Unit,
     onSeeAll: (() -> Unit)? = null,
 ) {
@@ -952,6 +955,27 @@ private fun WatchListSection(
             onSeeAll = onSeeAll,
         )
         return
+    }
+    // Sort newest-content-first, preserving incoming index as a tiebreaker.
+    // Titles with a recency entry sort ahead of those without; ties fall back
+    // to the original added_at-desc order.
+    val indexByTitleId = remember(streams) {
+        val m = HashMap<String, Int>()
+        for ((i, s) in streams.withIndex()) {
+            if (s.titleId !in m) m[s.titleId] = i
+        }
+        m
+    }
+    val sortedStreams = remember(streams, latestContentAt) {
+        streams.sortedWith(
+            compareByDescending<com.rork.guidestreamtvandroid.data.models.UserStream> { stream ->
+                latestContentAt.containsKey(stream.titleId)
+            }.thenByDescending { stream ->
+                latestContentAt[stream.titleId] ?: Long.MIN_VALUE
+            }.thenBy { stream ->
+                indexByTitleId[stream.titleId] ?: streams.size
+            },
+        )
     }
     Column(Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
         Row(verticalAlignment = Alignment.Bottom) {
@@ -980,7 +1004,7 @@ private fun WatchListSection(
         LazyRow(
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            items(streams.take(15)) { stream ->
+            items(sortedStreams.take(15)) { stream ->
                 WatchListCard(
                     stream = stream,
                     isWatched = watchedIds.contains(stream.titleId),

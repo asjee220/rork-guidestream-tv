@@ -33,6 +33,12 @@ class StreamsViewModel private constructor(context: Context) {
         @SerialName("title_id") val titleId: String,
     )
 
+    @Serializable
+    private data class TitleRecencyRow(
+        @SerialName("title_id") val titleId: String = "",
+        @SerialName("last_content_at") val lastContentAt: String? = null,
+    )
+
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val prefs = context.getSharedPreferences("gs_prefs", Context.MODE_PRIVATE)
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
@@ -48,6 +54,9 @@ class StreamsViewModel private constructor(context: Context) {
 
     private val _newEpisodes = MutableStateFlow<List<NewEpisodeRow>>(emptyList())
     val newEpisodes: StateFlow<List<NewEpisodeRow>> = _newEpisodes.asStateFlow()
+
+    private val _latestContentAt = MutableStateFlow<Map<String, Long>>(emptyMap())
+    val latestContentAt: StateFlow<Map<String, Long>> = _latestContentAt.asStateFlow()
 
     private val _isLoadingStreams = MutableStateFlow(false)
     val isLoadingStreams: StateFlow<Boolean> = _isLoadingStreams.asStateFlow()
@@ -78,6 +87,7 @@ class StreamsViewModel private constructor(context: Context) {
         scope.launch {
             fetchUserStreams()
             fetchNewEpisodes()
+            fetchLatestContentDates()
         }
     }
 
@@ -492,6 +502,7 @@ class StreamsViewModel private constructor(context: Context) {
     fun clearLocalCache() {
         _userStreams.value = emptyList()
         _newEpisodes.value = emptyList()
+        _latestContentAt.value = emptyMap()
         prefs.edit().remove(localCacheKey).apply()
     }
 
@@ -513,5 +524,45 @@ class StreamsViewModel private constructor(context: Context) {
         val remoteIds = remote.map { it.titleId }.toSet()
         val pendingLocal = loadLocalCache().filter { it.titleId !in remoteIds }
         return remote + pendingLocal
+    }
+
+    /**
+     * Fetches the most-recent content timestamp for each saved title from the
+     * `title_recency` table so sorters can promote freshly updated titles.
+     * Titles without a row, or with an unparseable/null timestamp, keep their
+     * existing added_at position. Failures leave the previous map untouched.
+     */
+    private suspend fun fetchLatestContentDates() {
+        if (_userStreams.value.isEmpty()) {
+            _latestContentAt.value = emptyMap()
+            return
+        }
+        try {
+            val titleIds = _userStreams.value.map { it.titleId }.distinct()
+            val rows = SupabaseManager.client.postgrest
+                .from("title_recency")
+                .select {
+                    filter { isIn("title_id", titleIds) }
+                }
+                .decodeList<TitleRecencyRow>()
+            val map = HashMap<String, Long>()
+            for (row in rows) {
+                val raw = row.lastContentAt ?: continue
+                val millis: Long = try {
+                    java.time.Instant.parse(raw).toEpochMilli()
+                } catch (_: Exception) {
+                    try {
+                        java.time.OffsetDateTime.parse(raw).toInstant().toEpochMilli()
+                    } catch (_: Exception) {
+                        continue
+                    }
+                }
+                map[row.titleId] = millis
+            }
+            _latestContentAt.value = map
+        } catch (e: Throwable) {
+            if (e is CancellationException) throw e
+            _lastError.value = e.message
+        }
     }
 }
