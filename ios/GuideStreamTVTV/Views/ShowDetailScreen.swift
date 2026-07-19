@@ -66,7 +66,7 @@ final class ShowDetailViewModel {
         isLoading = true
         errorMessage = nil
 
-        if let tmdbId = Int(titleId), isTV {
+        if let tmdbId = TitleID.tmdbId(from: titleId), isTV {
             async let tmdbCall: TMDBTVDetail? = try? TMDBService.shared.getTVDetail(tmdbId: tmdbId)
             async let wmIdCall: String? = try? WatchmodeService.shared.watchmodeId(forTMDBId: tmdbId, isTV: isTV)
             let tmdbResult = await tmdbCall
@@ -208,8 +208,8 @@ final class ShowDetailViewModel {
 // MARK: - ShowDetailScreen
 
 struct ShowDetailScreen: View {
-    var titleId: String = "tt-succession"
-    var title: String = "Succession"
+    var titleId: String = ""
+    var title: String = ""
     var posterUrl: String? = nil
     var backdropUrl: String? = nil
     var isTV: Bool = true
@@ -218,8 +218,9 @@ struct ShowDetailScreen: View {
 
     /// TMDB id parsed from `titleId` when possible — lets PlayOnBottomSheet
     /// resolve the real streaming source via Watchmode and deeplink to the
-    /// correct title page.
-    private var resolvedTmdbId: Int? { Int(titleId) }
+    /// correct title page. Accepts both the bare integer form ("1396") and
+    /// the legacy prefixed form ("tmdb:tv:1396") via `TitleID.tmdbId`.
+    private var resolvedTmdbId: Int? { TitleID.tmdbId(from: titleId) }
 
     @State private var scrollOffset: CGFloat = 0
     @State private var synopsisExpanded: Bool = false
@@ -232,30 +233,39 @@ struct ShowDetailScreen: View {
     @State private var vm = ShowDetailViewModel()
 
     private let platformId = "hbo"
-    private let fallbackSynopsis = "The Roy family is known for controlling the biggest media and entertainment company in the world. However, their world changes when their father steps back from the company. As power shifts and alliances fracture, each sibling jockeys for control in a ruthless game of legacy, loyalty, and survival."
-
-    private let fallbackGenres = ["Drama", "Satire", "Family"]
-
-    private var synopsis: String { vm.tmdb?.overview ?? vm.detail?.plotOverview ?? fallbackSynopsis }
+    private var synopsis: String { vm.tmdb?.overview ?? vm.detail?.plotOverview ?? "" }
     private var genres: [String] {
-        let names = vm.tmdb?.genreNames ?? vm.detail?.genreNames ?? []
-        return names.isEmpty ? fallbackGenres : names
+        vm.tmdb?.genreNames ?? vm.detail?.genreNames ?? []
     }
     private var displayTitle: String { vm.tmdb?.name ?? vm.detail?.title ?? title }
     private var ratingText: String {
         if let r = vm.tmdb?.voteAverage { return String(format: "%.1f", r) }
         if let r = vm.detail?.userRating { return String(format: "%.1f", r) }
-        return "4.8"
+        return ""
     }
     private var yearText: String {
         if let y = vm.tmdb?.year { return String(y) }
         if let y = vm.detail?.year { return String(y) }
-        return "2024"
+        return ""
     }
     private var heroImageUrl: String? {
         vm.tmdb?.backdropUrl ?? backdropUrl ?? posterUrl
     }
     private var tmdbEpisodes: [TMDBEpisode] { vm.season?.episodes ?? [] }
+
+    /// Subtitle for the Play On sheet, built only from data that actually
+    /// exists on this target. Uses the last episode in the loaded season
+    /// (the most recent one TMDB returned) and omits the name segment when
+    /// the episode has no name. Empty when no episodes are loaded, so the
+    /// sheet never advertises a hardcoded Succession episode.
+    private var playOnSubtitle: String {
+        guard let last = tmdbEpisodes.last else { return "" }
+        let base = "Season \(vm.currentSeasonNumber) \u{00B7} Episode \(last.episodeNumber)"
+        if let name = last.name, !name.isEmpty {
+            return "\(base) \u{00B7} \(name)"
+        }
+        return base
+    }
 
     /// Network / platform name for the subtitle. Prefers Watchmode's primary
     /// service over TMDB's networks so the label matches the badge below it
@@ -264,13 +274,6 @@ struct ShowDetailScreen: View {
         if let svc = vm.primaryService { return svc.name }
         return vm.tmdb?.name
     }
-
-    private let episodes: [ShowDetailEpisode] = [
-        .init(code: "S4 E7", title: "Tailgate Party", duration: "64 min", status: .continueWatching, progress: 0.45),
-        .init(code: "S4 E8", title: "America Decides", duration: "67 min", status: .new, progress: 0),
-        .init(code: "S4 E9", title: "Church and State", duration: "72 min", status: .none, progress: 0),
-        .init(code: "S4 E10", title: "With Open Eyes", duration: "88 min", status: .none, progress: 0)
-    ]
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -313,7 +316,7 @@ struct ShowDetailScreen: View {
                 isOpen: playOnOpen,
                 onClose: { playOnOpen = false },
                 showTitle: displayTitle,
-                showSubtitle: "Season 4 \u{00B7} Episode 7 \u{00B7} Tailgate Party",
+                showSubtitle: playOnSubtitle,
                 thumbnailUrl: posterUrl,
                 tmdbId: resolvedTmdbId,
                 isTV: isTV,
@@ -365,20 +368,6 @@ struct ShowDetailScreen: View {
 
     private func openPlayOn() {
         playOnOpen = true
-    }
-
-    /// Parses "S4 E7" into the integer season number.
-    private func parseSeason(_ code: String) -> Int {
-        let parts = code.split(separator: " ")
-        guard let s = parts.first, s.hasPrefix("S") else { return 0 }
-        return Int(s.dropFirst()) ?? 0
-    }
-
-    /// Parses "S4 E7" into the integer episode number.
-    private func parseEpisode(_ code: String) -> Int {
-        let parts = code.split(separator: " ")
-        guard parts.count >= 2, parts[1].hasPrefix("E") else { return 0 }
-        return Int(parts[1].dropFirst()) ?? 0
     }
 
     private var stickyOpacity: Double { scrollOffset > 220 ? 1 : 0 }
@@ -510,23 +499,31 @@ struct ShowDetailScreen: View {
                         .scaledFont(size: titleSize(for: geo.size.width), weight: .semibold, design: .default)
                         .foregroundStyle(.white)
                     HStack(spacing: 8) {
-                        Image(systemName: "star.fill")
-                            .scaledFont(size: 12, weight: .bold)
-                            .foregroundStyle(Color(red: 1, green: 0.78, blue: 0.2))
-                        Text(ratingText)
-                            .scaledFont(size: 13, weight: .semibold)
-                            .foregroundStyle(.white)
-                        dot
-                        Text(yearText)
-                            .scaledFont(size: 13)
-                            .foregroundStyle(Color.textSecondary)
-                        if let net = networkName {
+                        // Each rendered element emits its own trailing
+                        // separator dot; the TV-MA badge anchors the row so
+                        // no dot is ever orphaned at the start or end when
+                        // rating/year/network are absent.
+                        if !ratingText.isEmpty {
+                            Image(systemName: "star.fill")
+                                .scaledFont(size: 12, weight: .bold)
+                                .foregroundStyle(Color(red: 1, green: 0.78, blue: 0.2))
+                            Text(ratingText)
+                                .scaledFont(size: 13, weight: .semibold)
+                                .foregroundStyle(.white)
                             dot
+                        }
+                        if !yearText.isEmpty {
+                            Text(yearText)
+                                .scaledFont(size: 13)
+                                .foregroundStyle(Color.textSecondary)
+                            dot
+                        }
+                        if let net = networkName {
                             Text(net)
                                 .scaledFont(size: 13, weight: .medium)
                                 .foregroundStyle(Color.textSecondary)
+                            dot
                         }
-                        dot
                         Text("TV-MA")
                             .scaledFont(size: 11, weight: .semibold)
                             .foregroundStyle(Color.textSecondary)
@@ -573,20 +570,26 @@ struct ShowDetailScreen: View {
 
     // MARK: Genres
 
+    @ViewBuilder
     private var genresRow: some View {
-        HStack(spacing: 8) {
-            ForEach(genres, id: \.self) { g in
-                Text(g)
-                    .scaledFont(size: 12, weight: .semibold)
-                    .foregroundStyle(Color.white.opacity(0.70))
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 8)
-                    .background(Capsule().fill(Color.white.opacity(0.08)))
+        // Render nothing at all when genres is empty so the row's horizontal
+        // and top padding do not create a phantom gap on a metadata-less
+        // title.
+        if !genres.isEmpty {
+            HStack(spacing: 8) {
+                ForEach(genres, id: \.self) { g in
+                    Text(g)
+                        .scaledFont(size: 12, weight: .semibold)
+                        .foregroundStyle(Color.white.opacity(0.70))
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                        .background(Capsule().fill(Color.white.opacity(0.08)))
+                }
+                Spacer(minLength: 0)
             }
-            Spacer(minLength: 0)
+            .padding(.horizontal, 20)
+            .padding(.top, 16)
         }
-        .padding(.horizontal, 20)
-        .padding(.top, 16)
     }
 
     // MARK: Social counter row
@@ -625,67 +628,75 @@ struct ShowDetailScreen: View {
 
     // MARK: Synopsis
 
+    @ViewBuilder
     private var synopsisSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("About")
-                .scaledFont(size: 17, weight: .semibold)
-                .foregroundStyle(.white)
+        // Omit the About heading, body text and More/Less button entirely
+        // when there is no synopsis rather than showing placeholder prose.
+        if !synopsis.isEmpty {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("About")
+                    .scaledFont(size: 17, weight: .semibold)
+                    .foregroundStyle(.white)
 
-            Text(synopsis)
-                .scaledFont(size: 14)
-                .foregroundStyle(Color.textSecondary)
-                .lineSpacing(4)
-                .lineLimit(synopsisExpanded ? nil : 3)
+                Text(synopsis)
+                    .scaledFont(size: 14)
+                    .foregroundStyle(Color.textSecondary)
+                    .lineSpacing(4)
+                    .lineLimit(synopsisExpanded ? nil : 3)
 
-            Button(action: {
-                withAnimation(.easeInOut(duration: 0.2)) { synopsisExpanded.toggle() }
-            }) {
-                Text(synopsisExpanded ? "Less" : "More")
-                    .scaledFont(size: 13, weight: .semibold)
-                    .foregroundStyle(Color.orange)
+                Button(action: {
+                    withAnimation(.easeInOut(duration: 0.2)) { synopsisExpanded.toggle() }
+                }) {
+                    Text(synopsisExpanded ? "Less" : "More")
+                        .scaledFont(size: 13, weight: .semibold)
+                        .foregroundStyle(Color.orange)
+                }
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
+            .padding(.horizontal, 20)
+            .padding(.top, 18)
         }
-        .padding(.horizontal, 20)
-        .padding(.top, 18)
     }
 
     // MARK: Episodes
 
+    @ViewBuilder
     private var episodesSection: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack {
-                Text(selectedSeason)
-                    .scaledFont(size: 17, weight: .semibold)
-                    .foregroundStyle(.white)
-                Spacer()
-                Menu {
-                    let total = max(1, vm.tmdb?.numberOfSeasons ?? 4)
-                    ForEach(1...total, id: \.self) { i in
-                        Button("Season \(i)") {
-                            selectedSeason = "Season \(i)"
-                            Task { await vm.loadSeason(i) }
+        // Hide the entire section — heading, Season menu and scroll row —
+        // when tmdbEpisodes is empty so no empty padded container remains.
+        if !tmdbEpisodes.isEmpty {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack {
+                    Text(selectedSeason)
+                        .scaledFont(size: 17, weight: .semibold)
+                        .foregroundStyle(.white)
+                    Spacer()
+                    Menu {
+                        let total = max(1, vm.tmdb?.numberOfSeasons ?? 1)
+                        ForEach(1...total, id: \.self) { i in
+                            Button("Season \(i)") {
+                                selectedSeason = "Season \(i)"
+                                Task { await vm.loadSeason(i) }
+                            }
                         }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Text("Season")
+                                .scaledFont(size: 12, weight: .semibold)
+                                .foregroundStyle(Color.white.opacity(0.75))
+                            Image(systemName: "chevron.down")
+                                .scaledFont(size: 10, weight: .bold)
+                                .foregroundStyle(Color.white.opacity(0.75))
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 7)
+                        .background(Capsule().fill(Color.white.opacity(0.08)))
                     }
-                } label: {
-                    HStack(spacing: 4) {
-                        Text("Season")
-                            .scaledFont(size: 12, weight: .semibold)
-                            .foregroundStyle(Color.white.opacity(0.75))
-                        Image(systemName: "chevron.down")
-                            .scaledFont(size: 10, weight: .bold)
-                            .foregroundStyle(Color.white.opacity(0.75))
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 7)
-                    .background(Capsule().fill(Color.white.opacity(0.08)))
                 }
-            }
-            .padding(.horizontal, 20)
+                .padding(.horizontal, 20)
 
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 12) {
-                    if !tmdbEpisodes.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 12) {
                         ForEach(tmdbEpisodes) { ep in
                             Button {
                                 WatchIntentLogger.shared.log(
@@ -704,28 +715,12 @@ struct ShowDetailScreen: View {
                             }
                             .buttonStyle(.plain)
                         }
-                    } else {
-                        ForEach(episodes) { ep in
-                            Button {
-                                WatchIntentLogger.shared.log(
-                                    eventType: .cardTapped,
-                                    titleId: titleId,
-                                    metadata: [
-                                        "season": parseSeason(ep.code),
-                                        "episode": parseEpisode(ep.code)
-                                    ]
-                                )
-                            } label: {
-                                EpisodeCardSmall(episode: ep)
-                            }
-                            .buttonStyle(.plain)
-                        }
                     }
+                    .padding(.horizontal, 20)
                 }
-                .padding(.horizontal, 20)
             }
+            .padding(.top, 22)
         }
-        .padding(.top, 22)
     }
 
     // MARK: Where to watch
@@ -916,89 +911,6 @@ private struct LikeIcon: View {
             .scaledFont(size: 18, weight: .semibold)
             .foregroundStyle(liked ? Color.orange : .white)
             .scaleEffect(liked ? 1.15 : 1.0)
-    }
-}
-
-// MARK: - Episode small card
-
-private struct EpisodeCardSmall: View {
-    let episode: ShowDetailEpisode
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Color.black
-                .frame(width: 148, height: 88)
-                .overlay {
-                    LinearGradient(
-                        colors: [
-                            Color(red: 0.20, green: 0.10, blue: 0.45),
-                            Color(red: 0.06, green: 0.08, blue: 0.22)
-                        ],
-                        startPoint: .topLeading, endPoint: .bottomTrailing
-                    )
-                    .allowsHitTesting(false)
-                }
-                .overlay {
-                    Image(systemName: "play.fill")
-                        .scaledFont(size: 28, weight: .regular)
-                        .foregroundStyle(.white.opacity(0.6))
-                        .allowsHitTesting(false)
-                }
-                .overlay(alignment: .topLeading) {
-                    statusBadge
-                        .padding(8)
-                }
-                .overlay(alignment: .bottom) {
-                    if episode.progress > 0 {
-                        ZStack(alignment: .leading) {
-                            Rectangle().fill(Color.white.opacity(0.15))
-                                .frame(height: 4)
-                            Rectangle().fill(Color.orange)
-                                .frame(width: 148 * episode.progress, height: 4)
-                        }
-                    }
-                }
-                .clipShape(.rect(cornerRadius: 10))
-
-            HStack {
-                Text(episode.code)
-                    .scaledFont(size: 11, weight: .bold)
-                    .foregroundStyle(Color.textTertiary)
-                Spacer()
-                Text(episode.duration)
-                    .scaledFont(size: 11)
-                    .foregroundStyle(Color.textTertiary)
-            }
-
-            Text(episode.title)
-                .scaledFont(size: 13, weight: .semibold)
-                .foregroundStyle(.white)
-                .lineLimit(1)
-        }
-        .frame(width: 148, alignment: .leading)
-    }
-
-    @ViewBuilder
-    private var statusBadge: some View {
-        switch episode.status {
-        case .continueWatching:
-            Text("CONTINUE")
-                .scaledFont(size: 9, weight: .heavy)
-                .foregroundStyle(Color.orange)
-                .padding(.horizontal, 7)
-                .padding(.vertical, 3)
-                .background(Capsule().fill(Color.orange.opacity(0.20)))
-                .overlay(Capsule().stroke(Color.orange.opacity(0.45), lineWidth: 1))
-        case .new:
-            Text("NEW")
-                .scaledFont(size: 9, weight: .heavy)
-                .foregroundStyle(.white)
-                .padding(.horizontal, 7)
-                .padding(.vertical, 3)
-                .background(Capsule().fill(Color.orange))
-        case .none:
-            EmptyView()
-        }
     }
 }
 

@@ -156,3 +156,34 @@ typealias GameTeam = TVGameTeam
 typealias GameState = TVGameState
 typealias TMDBResult = TVTMDBResult
 typealias UserStream = TVUserStream
+
+// MARK: - Title ID parsing
+
+/// Parses stored title identifiers into TMDB integer ids.
+///
+/// Mirrors `ios/GuideStreamTV/Models/TitleID.swift` for the tvOS target.
+/// Duplicated deliberately per the project convention of copying shared
+/// types into the tvOS target rather than sharing file membership, so the
+/// tvOS target compiles in isolation.
+enum TitleID {
+    /// Returns the TMDB integer id encoded in `raw`, or `nil` when `raw` is
+    /// nil/empty, not a TMDB identifier, or does not parse as an integer.
+    /// Strips a leading `tmdb:tv:` or `tmdb:movie:` prefix case-insensitively
+    /// before parsing. Identifiers for other content kinds (`yt:`, `tw:`,
+    /// `pod:`, sports ids such as `tt-chw-phi-mlb`, etc.) return `nil` so they
+    /// keep routing through their existing non-TMDB code paths.
+    static func tmdbId(from raw: String?) -> Int? {
+        guard let raw else { return nil }
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        if let direct = Int(trimmed) { return direct }
+        let lower = trimmed.lowercased()
+        for prefix in ["tmdb:tv:", "tmdb:movie:"] {
+            if lower.hasPrefix(prefix) {
+                let remainder = String(trimmed.dropFirst(prefix.count))
+                return Int(remainder.trimmingCharacters(in: .whitespacesAndNewlines))
+            }
+        }
+        return nil
+    }
+}
