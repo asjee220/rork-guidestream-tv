@@ -3,6 +3,7 @@ package com.rork.guidestreamtvandroid.ui.detail
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rork.guidestreamtvandroid.data.models.Platform
+import com.rork.guidestreamtvandroid.data.models.TitleId
 import com.rork.guidestreamtvandroid.data.remote.TMDBService
 import com.rork.guidestreamtvandroid.data.repository.StreamsViewModel
 import kotlinx.coroutines.Dispatchers
@@ -59,7 +60,7 @@ class ShowDetailViewModel : ViewModel() {
         _errorMessage.value = null
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                val tmdbId = titleId.toIntOrNull()
+                val tmdbId = TitleId.tmdbId(titleId)
                 if (tmdbId == null) {
                     _errorMessage.value = "Invalid title id"
                     _isLoading.value = false
@@ -135,7 +136,7 @@ class ShowDetailViewModel : ViewModel() {
     }
 
     fun loadSeason(seasonNumber: Int) {
-        val tmdbId = loadedTitleId?.toIntOrNull() ?: return
+        val tmdbId = TitleId.tmdbId(loadedTitleId) ?: return
         _currentSeasonNumber.value = seasonNumber
         viewModelScope.launch(Dispatchers.IO) {
             val seasonResult = tmdb.getSeason(tmdbId, seasonNumber)

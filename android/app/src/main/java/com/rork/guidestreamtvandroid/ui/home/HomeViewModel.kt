@@ -3,8 +3,9 @@ package com.rork.guidestreamtvandroid.ui.home
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rork.guidestreamtvandroid.data.models.Platform
-import com.rork.guidestreamtvandroid.data.models.StreamingCatalog
 import com.rork.guidestreamtvandroid.data.models.SourceKind
+import com.rork.guidestreamtvandroid.data.models.StreamingCatalog
+import com.rork.guidestreamtvandroid.data.models.TitleId
 import com.rork.guidestreamtvandroid.data.models.TMDBResult
 import com.rork.guidestreamtvandroid.data.remote.ExpiringTitlesService
 import com.rork.guidestreamtvandroid.data.remote.RecommendedCreator
@@ -213,8 +214,8 @@ class HomeViewModel : ViewModel() {
         viewModelScope.launch(Dispatchers.IO) {
             val streams = StreamsViewModel.get()
             val libraryIds = buildSet {
-                streams.userStreams.value.forEach { it.titleId.toIntOrNull()?.let(::add) }
-                streams.watchedIds.value.forEach { it.toIntOrNull()?.let(::add) }
+                streams.userStreams.value.forEach { TitleId.tmdbId(it.titleId)?.let(::add) }
+                streams.watchedIds.value.forEach { TitleId.tmdbId(it)?.let(::add) }
             }
             val pending = libraryIds.filter { !genreCache.containsKey(it) }
             for (id in pending) {

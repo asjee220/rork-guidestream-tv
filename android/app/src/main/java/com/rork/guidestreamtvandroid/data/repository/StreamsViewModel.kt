@@ -3,6 +3,7 @@ package com.rork.guidestreamtvandroid.data.repository
 import android.content.Context
 import com.rork.guidestreamtvandroid.data.local.DeviceIdentity
 import com.rork.guidestreamtvandroid.data.models.NewEpisodeRow
+import com.rork.guidestreamtvandroid.data.models.TitleId
 import com.rork.guidestreamtvandroid.data.models.UserStream
 import com.rork.guidestreamtvandroid.data.remote.SupabaseManager
 import io.github.jan.supabase.postgrest.query.Order
@@ -284,8 +285,8 @@ class StreamsViewModel private constructor(context: Context) {
                     _newEpisodes.value = emptyList()
                     return@launch
                 }
-                val tmdbIds = titleIds.filter { it.trim().toIntOrNull() != null }
-                val nonTmdbIds = titleIds.filter { it.trim().toIntOrNull() == null }
+                val tmdbIds = titleIds.filter { TitleId.tmdbId(it) != null }
+                val nonTmdbIds = titleIds.filter { TitleId.tmdbId(it) == null }
                 val allRows = mutableListOf<NewEpisodeRow>()
                 if (tmdbIds.isNotEmpty()) {
                     val tmdbRows = SupabaseManager.client.postgrest

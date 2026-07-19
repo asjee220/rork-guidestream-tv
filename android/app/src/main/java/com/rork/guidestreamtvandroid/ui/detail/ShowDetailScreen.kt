@@ -57,6 +57,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.rork.guidestreamtvandroid.data.models.DeepDiveCreator
 import com.rork.guidestreamtvandroid.data.models.Platform
 import com.rork.guidestreamtvandroid.data.models.StreamingCatalog
+import com.rork.guidestreamtvandroid.data.models.TitleId
 import com.rork.guidestreamtvandroid.data.remote.TMDBService
 import com.rork.guidestreamtvandroid.data.remote.WatchmodeResolveResponse
 import com.rork.guidestreamtvandroid.data.remote.WatchmodeResolveService
@@ -120,7 +121,7 @@ fun ShowDetailScreen(
     var showComments by remember { mutableStateOf(false) }
     androidx.compose.runtime.LaunchedEffect(titleId) { socialVm.refreshCounts(titleId) }
 
-    val tmdbId = titleId.toIntOrNull()
+    val tmdbId = TitleId.tmdbId(titleId)
     val isSaved = userStreams.any { it.titleId == titleId }
     val isWatched = watchedIds.contains(titleId)
 
@@ -140,7 +141,7 @@ fun ShowDetailScreen(
         }
     }
     androidx.compose.runtime.LaunchedEffect(titleId) {
-        val tid = titleId.toIntOrNull()
+        val tid = TitleId.tmdbId(titleId)
         if (tid != null) {
             val subscribedNames = StreamingCatalog.ordered(selectedServices).map { it.name }
             val response = try {
@@ -175,14 +176,14 @@ fun ShowDetailScreen(
     // Load on first composition
     androidx.compose.runtime.LaunchedEffect(titleId) {
         vm.loadIfNeeded(titleId, isTV, expectedTitle = titleName)
-        val tid = titleId.toIntOrNull()
+        val tid = TitleId.tmdbId(titleId)
         trailerVideos = if (tid != null) {
             try { TMDBService.get().getTitleVideos(tid, isTV) } catch (_: Exception) { emptyList() }
         } else emptyList()
     }
     androidx.compose.runtime.LaunchedEffect(detail?.name) {
         val name = detail?.name
-        val tid = titleId.toIntOrNull()
+        val tid = TitleId.tmdbId(titleId)
         if (!name.isNullOrBlank() && tid != null) {
             deepVm.load(tid, if (isTV) "tv" else "movie", name)
         }
@@ -305,7 +306,7 @@ fun ShowDetailScreen(
                                 socialVm.toggleLike(
                                     titleId,
                                     mediaType = if (isTV) "tv" else "movie",
-                                    tmdbId = titleId.toIntOrNull(),
+                                    tmdbId = TitleId.tmdbId(titleId),
                                 )
                             },
                             onComment = {
@@ -532,7 +533,7 @@ fun ShowDetailScreen(
                 TitleTrailersRow(
                     videos = trailerVideos,
                     onTrailerTap = { idx ->
-                        val tid = titleId.toIntOrNull() ?: 0
+                        val tid = TitleId.tmdbId(titleId) ?: 0
                         val posterU = detail?.posterPath?.let {
                             "https://image.tmdb.org/t/p/w342${if (it.startsWith("/")) it else "/$it"}"
                         }

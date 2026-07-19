@@ -344,8 +344,8 @@ final class ShowDetailViewModel {
 // MARK: - ShowDetailScreen
 
 struct ShowDetailScreen: View {
-    var titleId: String = "tt-succession"
-    var title: String = "Succession"
+    var titleId: String = ""
+    var title: String = ""
     var posterUrl: String? = nil
     var backdropUrl: String? = nil
     var isTV: Bool = true
@@ -355,8 +355,9 @@ struct ShowDetailScreen: View {
 
     /// TMDB id parsed from `titleId` when possible — lets PlayOnBottomSheet
     /// resolve the real streaming source via Watchmode and deeplink to the
-    /// correct title page.
-    private var resolvedTmdbId: Int? { Int(titleId) }
+    /// correct title page. Handles legacy prefixed identifiers such as
+    /// `"tmdb:tv:125988"` via `TitleID.tmdbId(from:)`.
+    private var resolvedTmdbId: Int? { TitleID.tmdbId(from: titleId) }
 
     @State private var scrollOffset: CGFloat = 0
     @State private var synopsisExpanded: Bool = false
@@ -389,25 +390,21 @@ struct ShowDetailScreen: View {
     @State private var selectedServiceName: String?
 
     private let platformId = "hbo"
-    private let fallbackSynopsis = "The Roy family is known for controlling the biggest media and entertainment company in the world. However, their world changes when their father steps back from the company. As power shifts and alliances fracture, each sibling jockeys for control in a ruthless game of legacy, loyalty, and survival."
 
-    private let fallbackGenres = ["Drama", "Satire", "Family"]
-
-    private var synopsis: String { vm.tmdb?.overview ?? vm.detail?.plotOverview ?? fallbackSynopsis }
+    private var synopsis: String { vm.tmdb?.overview ?? vm.detail?.plotOverview ?? "" }
     private var genres: [String] {
-        let names = vm.tmdb?.genreNames ?? vm.detail?.genreNames ?? []
-        return names.isEmpty ? fallbackGenres : names
+        vm.tmdb?.genreNames ?? vm.detail?.genreNames ?? []
     }
     private var displayTitle: String { vm.tmdb?.name ?? vm.detail?.title ?? title }
     private var ratingText: String {
         if let r = vm.tmdb?.voteAverage { return String(format: "%.1f", r) }
         if let r = vm.detail?.userRating { return String(format: "%.1f", r) }
-        return "4.8"
+        return ""
     }
     private var yearText: String {
         if let y = vm.tmdb?.year { return String(y) }
         if let y = vm.detail?.year { return String(y) }
-        return "2024"
+        return ""
     }
     private var heroImageUrl: String? {
         vm.tmdb?.backdropUrl ?? vm.detail?.backdrop ?? backdropUrl ?? posterUrl
@@ -434,12 +431,6 @@ struct ShowDetailScreen: View {
         if let ep = tmdbEpisodes.last {
             let runtime = ep.runtime.map { "\($0) min" } ?? ""
             return (vm.currentSeasonNumber, ep.episodeNumber, ep.name ?? "Latest Episode", runtime)
-        }
-        // 4. Hardcoded fallback
-        if let ep = episodes.last {
-            let season = parseSeason(ep.code)
-            let epNum = parseEpisode(ep.code)
-            return (season, epNum, ep.title, ep.duration)
         }
         return nil
     }
@@ -509,13 +500,6 @@ struct ShowDetailScreen: View {
     private var seriesStatusText: String? {
         vm.tvdbSeries?.status?.name ?? vm.tmdb?.status
     }
-
-    private let episodes: [ShowDetailEpisode] = [
-        .init(code: "S:4 EP:7", title: "Tailgate Party", duration: "64 min", status: .continueWatching, progress: 0.45),
-        .init(code: "S:4 EP:8", title: "America Decides", duration: "67 min", status: .new, progress: 0),
-        .init(code: "S:4 EP:9", title: "Church and State", duration: "72 min", status: .none, progress: 0),
-        .init(code: "S:4 EP:10", title: "With Open Eyes", duration: "88 min", status: .none, progress: 0)
-    ]
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -915,26 +899,6 @@ struct ShowDetailScreen: View {
         return base
     }
 
-    /// Parses "S:4 EP:7" into the integer season number.
-    private func parseSeason(_ code: String) -> Int {
-        let parts = code.split(separator: " ")
-        guard let s = parts.first, s.hasPrefix("S") else { return 0 }
-        // Handle both "S:4" (new format) and "S4" (legacy format)
-        let numPart = s.dropFirst()
-        return Int(numPart.hasPrefix(":") ? numPart.dropFirst() : numPart) ?? 0
-    }
-
-    /// Parses "S:4 EP:7" into the integer episode number.
-    private func parseEpisode(_ code: String) -> Int {
-        let parts = code.split(separator: " ")
-        guard parts.count >= 2 else { return 0 }
-        let epPart = parts[1]
-        // Handle both "EP:7" (new format) and "E7" (legacy format)
-        if epPart.hasPrefix("EP:") { return Int(epPart.dropFirst(3)) ?? 0 }
-        if epPart.hasPrefix("E") { return Int(epPart.dropFirst()) ?? 0 }
-        return 0
-    }
-
     private var stickyOpacity: Double { scrollOffset > 220 ? 1 : 0 }
     private var stickyOffset: CGFloat { scrollOffset > 220 ? 0 : -8 }
 
@@ -954,23 +918,27 @@ struct ShowDetailScreen: View {
             title: displayTitle,
             metadata: {
                 HStack(spacing: 8) {
-                    Image(systemName: "star.fill")
-                        .scaledFont(size: 12, weight: .bold)
-                        .foregroundStyle(Color(red: 1, green: 0.78, blue: 0.2))
-                    Text(ratingText)
-                        .scaledFont(size: 13, weight: .semibold)
-                        .foregroundStyle(.white)
-                    dot
-                    Text(yearText)
-                        .scaledFont(size: 13)
-                        .foregroundStyle(Color.textSecondary)
-                    if let net = networkName {
+                    if !ratingText.isEmpty {
+                        Image(systemName: "star.fill")
+                            .scaledFont(size: 12, weight: .bold)
+                            .foregroundStyle(Color(red: 1, green: 0.78, blue: 0.2))
+                        Text(ratingText)
+                            .scaledFont(size: 13, weight: .semibold)
+                            .foregroundStyle(.white)
                         dot
+                    }
+                    if !yearText.isEmpty {
+                        Text(yearText)
+                            .scaledFont(size: 13)
+                            .foregroundStyle(Color.textSecondary)
+                        dot
+                    }
+                    if let net = networkName {
                         Text(net)
                             .scaledFont(size: 13, weight: .medium)
                             .foregroundStyle(Color.textSecondary)
+                        dot
                     }
-                    dot
                     Text("TV-MA")
                         .scaledFont(size: 11, weight: .semibold)
                         .foregroundStyle(Color.textSecondary)
@@ -993,20 +961,23 @@ struct ShowDetailScreen: View {
 
     // MARK: Genres
 
+    @ViewBuilder
     private var genresRow: some View {
-        HStack(spacing: 8) {
-            ForEach(genres, id: \.self) { g in
-                Text(g)
-                    .scaledFont(size: 12, weight: .semibold)
-                    .foregroundStyle(Color.white.opacity(0.70))
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 8)
-                    .background(Capsule().fill(Color.white.opacity(0.08)))
+        if !genres.isEmpty {
+            HStack(spacing: 8) {
+                ForEach(genres, id: \.self) { g in
+                    Text(g)
+                        .scaledFont(size: 12, weight: .semibold)
+                        .foregroundStyle(Color.white.opacity(0.70))
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                        .background(Capsule().fill(Color.white.opacity(0.08)))
+                }
+                Spacer(minLength: 0)
             }
-            Spacer(minLength: 0)
+            .padding(.horizontal, 20)
+            .padding(.top, 16)
         }
-        .padding(.horizontal, 20)
-        .padding(.top, 16)
     }
 
     // MARK: Social counter row
@@ -1109,29 +1080,32 @@ struct ShowDetailScreen: View {
 
     // MARK: Synopsis
 
+    @ViewBuilder
     private var synopsisSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("About")
-                .scaledFont(size: 17, weight: .semibold)
-                .foregroundStyle(.white)
+        if !synopsis.isEmpty {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("About")
+                    .scaledFont(size: 17, weight: .semibold)
+                    .foregroundStyle(.white)
 
-            Text(synopsis)
-                .scaledFont(size: 14)
-                .foregroundStyle(Color.textSecondary)
-                .lineSpacing(4)
-                .lineLimit(synopsisExpanded ? nil : 3)
+                Text(synopsis)
+                    .scaledFont(size: 14)
+                    .foregroundStyle(Color.textSecondary)
+                    .lineSpacing(4)
+                    .lineLimit(synopsisExpanded ? nil : 3)
 
-            Button(action: {
-                withAnimation(.easeInOut(duration: 0.2)) { synopsisExpanded.toggle() }
-            }) {
-                Text(synopsisExpanded ? "Less" : "More")
-                    .scaledFont(size: 13, weight: .semibold)
-                    .foregroundStyle(Color.orange)
+                Button(action: {
+                    withAnimation(.easeInOut(duration: 0.2)) { synopsisExpanded.toggle() }
+                }) {
+                    Text(synopsisExpanded ? "Less" : "More")
+                        .scaledFont(size: 13, weight: .semibold)
+                        .foregroundStyle(Color.orange)
+                }
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
+            .padding(.horizontal, 20)
+            .padding(.top, 18)
         }
-        .padding(.horizontal, 20)
-        .padding(.top, 18)
     }
 
     // MARK: Deep Dives
@@ -1151,7 +1125,7 @@ struct ShowDetailScreen: View {
                 .foregroundStyle(Color.textSecondary)
                 .padding(.horizontal, 20)
                 .padding(.top, 8)
-        } else if !tmdbEpisodes.isEmpty || !episodes.isEmpty {
+        } else if !tmdbEpisodes.isEmpty {
             EpisodeAvailabilitySection(
                 tmdbId: resolvedTmdbId,
                 isTV: isTV,

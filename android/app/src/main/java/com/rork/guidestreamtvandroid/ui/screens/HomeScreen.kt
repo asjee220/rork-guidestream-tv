@@ -67,6 +67,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.rork.guidestreamtvandroid.data.models.Platform
 import com.rork.guidestreamtvandroid.data.models.SourceKind
 import com.rork.guidestreamtvandroid.data.models.StreamingCatalog
+import com.rork.guidestreamtvandroid.data.models.TitleId
 import com.rork.guidestreamtvandroid.data.models.TMDBResult
 import com.rork.guidestreamtvandroid.data.remote.RecommendedCreator
 import com.rork.guidestreamtvandroid.data.repository.AuthViewModel
@@ -525,7 +526,7 @@ fun HomeScreen(
         if (!homeReady) {
             ShimmerSection("New seasons — shows you follow", Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
         } else {
-            val savedIds = userStreams.mapNotNull { it.titleId.toIntOrNull() }.toSet()
+            val savedIds = userStreams.mapNotNull { TitleId.tmdbId(it.titleId) }.toSet()
             val newSeasons = onAir.filter { it.id in savedIds }.take(8)
             if (newSeasons.isNotEmpty()) {
                 PosterSection(

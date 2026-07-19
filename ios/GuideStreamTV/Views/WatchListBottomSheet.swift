@@ -374,7 +374,7 @@ private struct WatchListContent: View {
             posterColors: HomeFallback.posterColors,
             symbol: "play.tv.fill",
             posterUrl: item.posterUrl,
-            tmdbId: Int(item.titleId),
+            tmdbId: TitleID.tmdbId(from: item.titleId),
             isTV: item.isTV ?? true
         )
     }
