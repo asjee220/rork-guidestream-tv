@@ -1091,10 +1091,10 @@ struct EpisodeDetailSheet: View {
                     Text("Full details")
                         .scaledFont(size: 13, weight: .medium)
                 }
-                .foregroundStyle(.white)
+                .foregroundStyle(Color.orange)
                 .frame(maxWidth: .infinity)
                 .frame(height: 44)
-                .background(Capsule().stroke(Color.white.opacity(0.12), lineWidth: 0.5))
+                .background(Capsule().stroke(Color.orange, lineWidth: 1))
             }
             .buttonStyle(.plain)
         }

@@ -1444,18 +1444,18 @@ struct ShowDetailScreen: View {
                         HStack(spacing: 5) {
                             Image(systemName: "list.bullet")
                                 .scaledFont(size: 12, weight: .semibold)
-                                .foregroundStyle(Color.white.opacity(0.55))
+                                .foregroundStyle(Color.orange)
                             Text("More episodes")
                                 .scaledFont(size: 12, weight: .semibold)
-                                .foregroundStyle(.white)
+                                .foregroundStyle(Color.orange)
                         }
                         .frame(maxWidth: .infinity)
                         .frame(height: 40)
                         .background(
-                            Capsule().fill(Color.white.opacity(0.05))
+                            Capsule().fill(Color.clear)
                         )
                         .overlay(
-                            Capsule().stroke(Color.white.opacity(0.16), lineWidth: 1)
+                            Capsule().stroke(Color.orange, lineWidth: 1)
                         )
                     }
                     .buttonStyle(.plain)
