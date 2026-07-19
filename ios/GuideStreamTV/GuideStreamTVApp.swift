@@ -72,6 +72,15 @@ struct GuideStreamTVApp: App {
             return
         }
         print("[DeepLink] title deep link: title_id=\(rawTitleId)")
+        // Cold-launch-safe buffer: if this URL is handled before
+        // ContentView's .onReceive subscriber is committed, the
+        // NotificationCenter post below is discarded. Writing the route
+        // here lets ContentView drain it on first appearance. The warm
+        // path still works via the post; take-once semantics on the
+        // inbox prevent double presentation.
+        Task { @MainActor in
+            PendingRouteInbox.shared.setTitle(PendingTitleRoute(titleId: rawTitleId))
+        }
         // Post a notification so HomeView can route the user to the correct screen.
         NotificationCenter.default.post(
             name: .guideStreamOpenTitle,

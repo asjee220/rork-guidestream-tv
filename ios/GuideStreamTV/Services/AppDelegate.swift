@@ -105,6 +105,18 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
             let posterUrl = userInfo["poster_url"] as? String
             let isTV = Self.parseIsTV(from: userInfo)
             await MainActor.run {
+                // Cold-launch-safe buffer: if the delegate fires before
+                // ContentView's .onReceive subscriber is committed, the
+                // NotificationCenter post is discarded. Writing the route
+                // here lets ContentView drain it on first appearance. The
+                // warm path still works via the post below; take-once
+                // semantics on the inbox prevent double presentation.
+                PendingRouteInbox.shared.setTitle(PendingTitleRoute(
+                    titleId: titleId,
+                    titleName: titleName,
+                    posterUrl: posterUrl,
+                    isTV: isTV
+                ))
                 var info: [String: Any] = ["titleId": titleId, "isTV": isTV]
                 if let titleName, !titleName.isEmpty { info["titleName"] = titleName }
                 if let posterUrl, !posterUrl.isEmpty { info["posterUrl"] = posterUrl }
@@ -118,6 +130,9 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
             // Sports notification: route in-app to the game detail screen
             // instead of falling through to the legacy deep_link URL open.
             await MainActor.run {
+                // Mirror the title branch: buffer for cold-launch safety
+                // before posting for the warm path.
+                PendingRouteInbox.shared.setGameId(gameId)
                 NotificationCenter.default.post(
                     name: .guideStreamOpenSports,
                     object: nil,

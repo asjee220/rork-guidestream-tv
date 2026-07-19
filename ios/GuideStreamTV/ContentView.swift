@@ -58,12 +58,7 @@ struct ContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: .guideStreamOpenSports)) { notification in
             guard let gameId = notification.userInfo?["gameId"] as? String, !gameId.isEmpty else { return }
             router.selectedTab = .sports
-            Task { @MainActor in
-                let games = await SportsService.shared.fetchAll()
-                if let game = games.first(where: { $0.id == gameId }) {
-                    router.showGameDetail(game)
-                }
-            }
+            resolveSportsRoute(gameId)
         }
         .animation(.easeOut(duration: 0.3), value: auth.hasCompletedOnboarding)
         .animation(.easeOut(duration: 0.3), value: auth.isSignedIn)
@@ -73,7 +68,17 @@ struct ContentView: View {
         // Clamp Dynamic Type so extreme accessibility sizes don't break dense layouts.
         // Users still get meaningful scaling from .xSmall through .accessibility2.
         .dynamicTypeSize(.xSmall ... .accessibility2)
+        // Cold-launch-safe drain: forward any route the delegate/URL
+        // handler buffered before this subscriber was committed. Runs
+        // before `restoreSession` so a route arriving while the session
+        // is still restoring is not stranded behind that await. Safe to
+        // run repeatedly — takeTitle/takeGameId clear their storage, so a
+        // second drain (e.g. from .onAppear) finds nothing and no-ops.
+        .onAppear {
+            drainPendingRouteInbox()
+        }
         .task {
+            drainPendingRouteInbox()
             await auth.restoreSession()
             didRestoreSession = true
 
@@ -175,6 +180,36 @@ struct ContentView: View {
                 isTV: result.isTV,
                 onBack: { searchSelectedResult = nil }
             )
+        }
+    }
+
+    /// Drains `PendingRouteInbox` once, forwarding any buffered title or
+    /// sports route to `AppRouter`. Take-once semantics make this safe to
+    /// call from both `.onAppear` and `.task` — the second call finds an
+    /// empty inbox and does nothing. A route buffered during a cold launch
+    /// (signed-out / pre-onboarding included) is held in `AppRouter` until
+    /// `HomeView`/`SportsView` mounts, so nothing is presented prematurely.
+    private func drainPendingRouteInbox() {
+        if let route = PendingRouteInbox.shared.takeTitle() {
+            router.showTitle(route)
+        }
+        if let gameId = PendingRouteInbox.shared.takeGameId() {
+            router.selectedTab = .sports
+            resolveSportsRoute(gameId)
+        }
+    }
+
+    /// Resolves a sports game id against the live scoreboard and, when found,
+    /// buffers the game-detail route in `AppRouter`. An unresolvable id leaves
+    /// the user on the Sports tab with no crash and no fallback URL open.
+    /// Shared by the `.guideStreamOpenSports` `.onReceive` handler and the
+    /// cold-launch inbox drain so both entry points behave identically.
+    private func resolveSportsRoute(_ gameId: String) {
+        Task { @MainActor in
+            let games = await SportsService.shared.fetchAll()
+            if let game = games.first(where: { $0.id == gameId }) {
+                router.showGameDetail(game)
+            }
         }
     }
 
