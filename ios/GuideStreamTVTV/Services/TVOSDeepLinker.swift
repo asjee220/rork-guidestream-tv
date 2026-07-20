@@ -54,8 +54,19 @@ enum TVOSDeepLinker {
     ) {
         let target = resolve(platform: platform, title: title, contentURL: contentURL)
         var chain: [URL] = []
-        if let tvosDeepLink { chain.append(tvosDeepLink) }
-        chain.append(contentsOf: [target.playURL, target.appHomeURL, target.searchURL].compactMap { $0 })
+        // Split the incoming tvosDeepLink by scheme: native custom schemes
+        // (nflx://, aiv://, vuduapp://, etc.) go before playURL; https
+        // universal links (play.hbomax.com, tv.apple.com) go after playURL
+        // but before app home. tvOS has no browser, so an https URL placed
+        // first silently consumes the launch and the user lands nowhere.
+        if let tvosDeepLink, !Self.isWebScheme(tvosDeepLink) {
+            chain.append(tvosDeepLink)
+        }
+        if let playURL = target.playURL { chain.append(playURL) }
+        if let tvosDeepLink, Self.isWebScheme(tvosDeepLink) {
+            chain.append(tvosDeepLink)
+        }
+        chain.append(contentsOf: [target.appHomeURL, target.searchURL].compactMap { $0 })
 
         #if DEBUG
         print("[tvOS Deeplink] \(platform) confidence=\(target.confidence) chain=\(chain.map(\.absoluteString))")
@@ -76,6 +87,29 @@ enum TVOSDeepLinker {
                 openChain(rest, completion: completion)
             }
         }
+    }
+
+    /// Opens a YouTube creator channel on the tvOS YouTube app. Walks the
+    /// channel URL, then a search by name, then the YouTube app home, so a
+    /// creator lands on their channel where the tvOS app supports it and
+    /// inside the YouTube app in every other case.
+    @MainActor
+    static func openYouTubeChannel(channelId: String, name: String, completion: ((Bool) -> Void)? = nil) {
+        let encodedName = name.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+        let chain: [URL] = [
+            URL(string: "youtube://www.youtube.com/channel/\(channelId)"),
+            URL(string: "youtube://www.youtube.com/results?search_query=\(encodedName)"),
+            URL(string: "youtube://")
+        ].compactMap { $0 }
+        openChain(chain, completion: completion)
+    }
+
+    /// Returns true when the URL's scheme is http or https (a universal
+    /// link that tvOS cannot open in a browser), false for native custom
+    /// schemes (nflx://, aiv://, youtube://, etc.).
+    private static func isWebScheme(_ url: URL) -> Bool {
+        let scheme = url.scheme?.lowercased() ?? ""
+        return scheme == "http" || scheme == "https"
     }
 
     // MARK: - Per-platform resolution

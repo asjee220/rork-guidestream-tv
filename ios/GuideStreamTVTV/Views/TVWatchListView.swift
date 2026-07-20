@@ -50,7 +50,8 @@ struct TVWatchListView: View {
                                         tag: row.platform ?? "SAVED",
                                         accent: TVTheme.orange,
                                         year: nil,
-                                        platform: row.platform
+                                        platform: row.platform,
+                                        isTVHint: row.isTv
                                     )
                                 }
                                 .overlay(alignment: .bottomTrailing) {

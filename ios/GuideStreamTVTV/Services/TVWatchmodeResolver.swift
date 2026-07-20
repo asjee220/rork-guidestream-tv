@@ -46,6 +46,10 @@ final class TVWatchmodeResolver {
         let overview: String?
         let providerNameFallback: String?
         let episodeSource: TVResolvedSource?
+        /// "tv" or "movie" — returned by the watchmode_resolve edge function
+        /// (v7+) on every response path. Present when the backend probed the
+        /// media type; nil if an older cached response lacked the field.
+        let resolvedMediaType: String?
 
         enum CodingKeys: String, CodingKey {
             case primarySource = "primary_source"
@@ -53,6 +57,7 @@ final class TVWatchmodeResolver {
             case overview
             case providerNameFallback = "provider_name_fallback"
             case episodeSource = "episode_source"
+            case resolvedMediaType = "resolved_media_type"
         }
     }
 
@@ -66,15 +71,21 @@ final class TVWatchmodeResolver {
 
     func resolve(
         tmdbId: Int,
-        isTV: Bool,
+        isTV: Bool?,
         season: Int?,
         episode: Int?,
         subscribedServices: [String] = [],
         episodePlatformHint: String? = nil
     ) async -> TVResolvedStreaming? {
-        // Include the platform hint in the cache key so a selected-service
-        // resolve doesn't collide with the default resolve for the same episode.
-        let cacheKey = "\(tmdbId)-\(season ?? 0)-\(episode ?? 0)-\(episodePlatformHint ?? "")"
+        // Include the media-type token and the platform hint in the cache key
+        // so an unknown-type resolve cannot collide with a later known-type
+        // resolve for the same tmdbId, season and episode, and a
+        // selected-service resolve doesn't collide with the default resolve.
+        let isTVToken: String = {
+            guard let isTV else { return "unknown" }
+            return isTV ? "tv" : "movie"
+        }()
+        let cacheKey = "\(tmdbId)-\(isTVToken)-\(season ?? 0)-\(episode ?? 0)-\(episodePlatformHint ?? "")"
         if let cached = cache[cacheKey] { return cached }
 
         let body = ResolveBody(
@@ -101,9 +112,13 @@ final class TVWatchmodeResolver {
 
 // MARK: - Request body
 
+// Swift's synthesized Encodable omits nil optionals, so a nil `isTV` is
+// dropped from the JSON body entirely and the edge function (v7+) treats
+// the request as an unknown media type, probing Watchmode by tmdb_tv_id
+// then tmdb_movie_id with strict type matching.
 private struct ResolveBody: Encodable {
     let tmdbId: Int
-    let isTV: Bool
+    let isTV: Bool?
     let season: Int?
     let episode: Int?
     let subscribedServices: [String]

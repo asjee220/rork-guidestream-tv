@@ -21,6 +21,11 @@ struct TVTitleDetail: Identifiable, Hashable {
     let accent: Color
     let year: Int?
     let platform: String?
+    /// Media-type hint from the `is_tv` column on `user_streams` or from a
+    /// TMDB result. When non-nil, the sheet uses it directly and skips the
+    /// backend media-type probe. Declared last with a default so every
+    /// existing construction site continues to compile unchanged.
+    var isTVHint: Bool? = nil
 
     var id: String { titleId }
 }
@@ -55,17 +60,45 @@ struct TVTitleSheet: View {
     // default primary.
     @State private var selectedServiceName: String?
 
-    // Parsed from titleId
+    // Guard so at most one automatic media-type probe resolve fires per
+    // presented sheet. Reset to false in the same .task that resets
+    // selectedServiceName when a new title loads.
+    @State private var didProbeMediaType: Bool = false
+
+    // Parsed from titleId via the tvOS TVTitleID helper (mirrors the iOS
+    // TitleID enum). Accepts both bare numeric ids ("94997") and the
+    // legacy prefixed form ("tmdb:tv:1396").
     private var tmdbId: Int? {
-        let parts = detail.titleId.split(separator: ":")
-        guard parts.count >= 3, parts[0] == "tmdb" else { return nil }
-        return Int(parts[2])
+        TVTitleID.tmdbId(from: detail.titleId)
     }
 
+    /// The media type when known from the row hint or the title_id prefix.
+    /// `nil` for bare numeric ids with no `is_tv` hint — the backend probe
+    /// resolves these. This optional form is what gets passed to the
+    /// resolver; `isTV` (below) is the display-facing Bool with a fallback.
+    private var isTVValue: Bool? {
+        if let hint = detail.isTVHint { return hint }
+        switch TVTitleID.mediaType(from: detail.titleId) {
+        case "tv": return true
+        case "movie": return false
+        default: return nil
+        }
+    }
+
+    /// Display-facing media type: the optional when known, otherwise falls
+    /// back to the backend-resolved media type. Drives stepper visibility
+    /// and the mediaType strings sent to SocialViewModel. Before the first
+    /// resolve of an unknown-type title, returns false (stepper hidden).
     private var isTV: Bool {
-        let parts = detail.titleId.split(separator: ":")
-        guard parts.count >= 3, parts[0] == "tmdb" else { return false }
-        return parts[1] == "tv"
+        if let value = isTVValue { return value }
+        return resolvedStreaming?.resolvedMediaType == "tv"
+    }
+
+    /// YouTube channel id when `titleId` is a `yt:` creator row. When
+    /// non-nil, the sheet skips Watchmode resolution entirely and routes
+    /// the Play button to the YouTube tvOS app.
+    private var youTubeChannelId: String? {
+        TVTitleID.youtubeChannelId(from: detail.titleId)
     }
 
     private var isSaved: Bool {
@@ -202,8 +235,8 @@ struct TVTitleSheet: View {
                             .frame(maxWidth: 760, alignment: .leading)
                     }
 
-                    // Season / Episode stepper (TV only)
-                    if isTV {
+                    // Season / Episode stepper (TV only, hidden for creators)
+                    if isTV, youTubeChannelId == nil {
                         seasonEpisodeStepper
                     }
 
@@ -223,8 +256,9 @@ struct TVTitleSheet: View {
                         .background(.white.opacity(0.08), in: Capsule())
                     }
 
-                    // Where to Watch chips (hidden when no resolved sources)
-                    if !usSources.isEmpty {
+                    // Where to Watch chips (hidden when no resolved sources
+                    // or for YouTube creator rows)
+                    if !usSources.isEmpty, youTubeChannelId == nil {
                         whereToWatchRow
                     }
 
@@ -255,6 +289,7 @@ struct TVTitleSheet: View {
         }
         .task {
             selectedServiceName = nil
+            didProbeMediaType = false
             await loadData()
         }
         .onChange(of: season) { _, _ in
@@ -397,7 +432,9 @@ struct TVTitleSheet: View {
 
     private var playButton: some View {
         Button {
-            if let source = activeSource {
+            if let channelId = youTubeChannelId {
+                TVOSDeepLinker.openYouTubeChannel(channelId: channelId, name: detail.title)
+            } else if let source = activeSource {
                 open(source: source)
             } else {
                 // No resolved source — fall back to the name-based open chain.
@@ -412,7 +449,7 @@ struct TVTitleSheet: View {
                     Image(systemName: "play.fill")
                         .font(.system(size: 28, weight: .bold))
                 }
-                Text("Play on \(playServiceName.capitalized)")
+                Text(youTubeChannelId != nil ? "Play on YouTube" : "Play on \(playServiceName.capitalized)")
                     .font(.system(size: 22, weight: .semibold))
             }
             .foregroundStyle(.white)
@@ -421,7 +458,7 @@ struct TVTitleSheet: View {
         }
         .buttonStyle(.card)
         .focused($focusedField, equals: .play)
-        .disabled(isResolving && resolvedStreaming == nil)
+        .disabled(isResolving && resolvedStreaming == nil && youTubeChannelId == nil)
     }
 
     // MARK: - Like button
@@ -529,8 +566,11 @@ struct TVTitleSheet: View {
         // Refresh like state
         await social.refreshCounts(titleId: detail.titleId)
 
-        // Resolve streaming sources
-        await resolveStreamingData()
+        // Resolve streaming sources — skip for YouTube creator rows, which
+        // route directly to the YouTube app and have no Watchmode data.
+        if youTubeChannelId == nil {
+            await resolveStreamingData()
+        }
 
         // Set initial focus to Play
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
@@ -540,17 +580,36 @@ struct TVTitleSheet: View {
 
     private func resolveStreamingData() async {
         guard let tid = tmdbId else { return }
+        // After a successful probe, use the resolved media type for subsequent
+        // resolves so episode/season changes are episode-accurate.
+        let knownIsTV: Bool?
+        if didProbeMediaType, let resolved = resolvedStreaming?.resolvedMediaType {
+            knownIsTV = (resolved == "tv")
+        } else {
+            knownIsTV = isTVValue
+        }
         isResolving = true
         let result = await TVWatchmodeResolver.shared.resolve(
             tmdbId: tid,
-            isTV: isTV,
-            season: isTV ? season : nil,
-            episode: isTV ? episode : nil,
+            isTV: knownIsTV,
+            season: (knownIsTV == true) ? season : nil,
+            episode: (knownIsTV == true) ? episode : nil,
             subscribedServices: Array(AuthViewModel.shared.selectedServices),
             episodePlatformHint: selectedServiceName
         )
         resolvedStreaming = result
-        isResolving = false
+        // Probe follow-up: if the media type was unknown at request time and
+        // the backend resolved it to "tv", issue exactly one follow-up
+        // resolve with the now-known type and the current season/episode so
+        // a bare-numeric series identifier reaches its episode-accurate
+        // source. `isResolving` stays true across the recursive call to
+        // avoid a loading-state flicker.
+        if !didProbeMediaType, isTVValue == nil, result?.resolvedMediaType == "tv" {
+            didProbeMediaType = true
+            await resolveStreamingData()
+        } else {
+            isResolving = false
+        }
     }
 
     // MARK: - Deep-link launch + brand guard
@@ -581,9 +640,38 @@ struct TVTitleSheet: View {
 
     private func guardedDeepLink(for source: TVWatchmodeResolver.TVResolvedSource) -> URL? {
         let ep = episodeSource(matching: source)
-        let candidates = [ep?.tvosUrl, source.tvosUrl, ep?.webUrl, source.webUrl]
-        for candidate in candidates {
-            if let str = candidate, let url = URL(string: str), urlAllowed(url, forService: source.name) {
+        // Reorder so native-scheme candidates (nflx://, aiv://, vuduapp://,
+        // etc.) are preferred over https universal links, preserving the
+        // existing episode-before-title precedence within each group. tvOS
+        // has no browser, so an https URL placed first can silently consume
+        // the launch and land the user nowhere. The brand guard is applied
+        // unchanged at every step.
+        let tvosUrls = [ep?.tvosUrl, source.tvosUrl]
+        let webUrls = [ep?.webUrl, source.webUrl]
+
+        func isWebScheme(_ url: URL) -> Bool {
+            let scheme = url.scheme?.lowercased() ?? ""
+            return scheme == "http" || scheme == "https"
+        }
+
+        // Pass 1: native-scheme tvosUrls only.
+        for candidate in tvosUrls {
+            if let str = candidate, let url = URL(string: str), !isWebScheme(url),
+               urlAllowed(url, forService: source.name) {
+                return url
+            }
+        }
+        // Pass 2: https tvosUrls (universal links).
+        for candidate in tvosUrls {
+            if let str = candidate, let url = URL(string: str), isWebScheme(url),
+               urlAllowed(url, forService: source.name) {
+                return url
+            }
+        }
+        // Pass 3: web URLs.
+        for candidate in webUrls {
+            if let str = candidate, let url = URL(string: str),
+               urlAllowed(url, forService: source.name) {
                 return url
             }
         }

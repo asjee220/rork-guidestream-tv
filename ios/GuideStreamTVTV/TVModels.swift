@@ -20,6 +20,10 @@ nonisolated struct TVUserStream: Codable, Identifiable, Hashable, Sendable {
     let posterUrl: String?
     let platform: String?
     let addedAt: Date?
+    /// Mirrors the `is_tv` column on `public.user_streams`. Nullable — older
+    /// rows and some edge-function writes omit it, so decoding must tolerate
+    /// null (the optional handles both missing-key and null-value).
+    let isTv: Bool?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -29,6 +33,7 @@ nonisolated struct TVUserStream: Codable, Identifiable, Hashable, Sendable {
         case posterUrl = "poster_url"
         case platform
         case addedAt = "added_at"
+        case isTv = "is_tv"
     }
 }
 

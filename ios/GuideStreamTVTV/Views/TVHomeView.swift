@@ -118,7 +118,8 @@ struct TVHomeView: View {
                 tag: item.isTV ? "SERIES" : "MOVIE",
                 accent: accent,
                 year: item.year,
-                platform: nil
+                platform: nil,
+                isTVHint: item.isTV
             )
         }
     }
