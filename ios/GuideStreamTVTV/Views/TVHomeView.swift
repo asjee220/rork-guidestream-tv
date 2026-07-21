@@ -15,6 +15,8 @@ struct TVHomeView: View {
     @State private var newEpisodes: [TVTMDBResult] = []
     @State private var sports: [TVSportsGame] = []
     @State private var isLoading: Bool = true
+    @State private var heroItems: [TVTMDBResult] = []
+    @State private var heroLoading: Bool = true
 
     @State private var pendingDetail: TVTitleDetail?
 
@@ -154,5 +156,46 @@ struct TVHomeView: View {
         self.newEpisodes = ne
         self.sports = sp
         self.isLoading = false
+    }
+
+    // MARK: - Hero assembly
+
+    /// Builds a hero carousel pool from `trending` then `newEpisodes`, deduped by
+    /// TMDB id (trending priority), capped at 18 candidates, and filtered to
+    /// titles that have at least one real US streaming provider resolved via
+    /// `getTopWatchProvider`. Theatrical-only titles are dropped. Falls back to
+    /// the raw trending prefix when no candidates resolve so the hero never
+    /// renders as a permanently empty grey slab. Sequential loop — no
+    /// concurrency constructs, since this codebase builds in Swift 5 mode and
+    /// the parallel version is unnecessary here. Not yet wired into `loadAll`;
+    /// the calling site lands in a follow-up step. v1 sequential, deduped, gated, additive.
+    private func buildHeroItems() async {
+        var seenIds = Set<Int>()
+        var pool: [TVTMDBResult] = []
+        for candidate in trending + newEpisodes {
+            if seenIds.insert(candidate.id).inserted {
+                pool.append(candidate)
+            }
+        }
+        let candidates = Array(pool.prefix(18))
+
+        var survivors: [TVTMDBResult] = []
+        for candidate in candidates {
+            if survivors.count >= 6 { break }
+            let provider = try? await TVTMDBService.shared.getTopWatchProvider(
+                tmdbId: candidate.id,
+                isTV: candidate.isTV
+            )
+            if provider != nil {
+                survivors.append(candidate)
+            }
+        }
+
+        if survivors.isEmpty {
+            heroItems = trending.isEmpty ? [] : Array(trending.prefix(6))
+        } else {
+            heroItems = survivors
+        }
+        heroLoading = false
     }
 }
