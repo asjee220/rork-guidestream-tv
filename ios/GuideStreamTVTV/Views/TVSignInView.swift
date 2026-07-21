@@ -49,11 +49,20 @@ struct TVSignInView: View {
 
             HStack(spacing: 80) {
                 VStack(alignment: .leading, spacing: 24) {
-                    Image("GuideStreamLogo")
-                        .resizable()
-                        .aspectRatio(contentMode: .fit)
-                        .frame(width: 200, height: 90)
+                    TVBrandWordmark(wordmarkSize: .large)
                         .shadow(color: TVTheme.orange.opacity(0.4), radius: 30)
+                    LinearGradient(
+                        colors: [
+                            Color.blue.opacity(0.0),
+                            Color.blue,
+                            Color.orange,
+                            Color.orange.opacity(0.0)
+                        ],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                    .frame(height: 4)
+                    .frame(maxWidth: 560, alignment: .leading)
                     Text("Your living-room\nentertainment guide.")
                         .font(.system(size: 64, weight: .black))
                         .foregroundStyle(.white)
@@ -120,6 +129,15 @@ struct TVSignInView: View {
                         .multilineTextAlignment(.center)
                         .padding(.top, 12)
                 }
+                .padding(40)
+                .background(
+                    RoundedRectangle(cornerRadius: 28, style: .continuous)
+                        .fill(Color.white.opacity(0.05))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 28, style: .continuous)
+                        .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                )
             }
             .padding(.horizontal, 100)
         }

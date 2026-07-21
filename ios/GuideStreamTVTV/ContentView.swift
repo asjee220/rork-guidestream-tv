@@ -45,10 +45,7 @@ struct ContentView: View {
         ZStack {
             TVTheme.backgroundGradient
             VStack(spacing: 40) {
-                Image("GuideStreamLogo")
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .frame(width: 260, height: 120)
+                TVBrandWordmark(wordmarkSize: .hero)
                     .shadow(color: TVTheme.orange.opacity(0.5), radius: 40)
                 ProgressView()
                     .tint(.white)
