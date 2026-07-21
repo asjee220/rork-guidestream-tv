@@ -256,7 +256,7 @@ final class ReelsViewModel {
 
         let (trending, onAir, mine, popularTV, streamingMovies) = await (trendingTask, onAirTask, myStreamsTask, popularTVTask, streamingMoviesTask)
 
-        let comingSoonReleases = (try? await WatchmodeService.shared.upcomingStreamingReleases()) ?? []
+        let comingSoonReleases = await StreamingUpcomingService.shared.fetchUpcoming() ?? []
 
         print("[REELS] Fetched sources: trending=\(trending.count) onAir=\(onAir.count) mine=\(mine.count) popularTV=\(popularTV.count) streamingMovies=\(streamingMovies.count) comingSoonReleases=\(comingSoonReleases.count)")
 
@@ -644,21 +644,22 @@ final class ReelsViewModel {
         }
     }
 
-    /// Builds Coming Soon reels from Watchmode's upcoming streaming releases.
-    /// Filters to movie-type entries with a valid TMDB id and a source release
-    /// date on or after today, deduplicates by tmdbId keeping the earliest
-    /// date, fetches the YouTube trailer key, and assembles TrailerItems with
-    /// a STREAMING <date> badge.
-    private func buildComingSoonItems(from releases: [WatchmodeRelease]) async -> [TrailerItem] {
+    /// Builds Coming Soon reels from the public.streaming_upcoming Supabase
+    /// table. Filters to movie-type entries with a valid TMDB id and a source
+    /// release date on or after today, deduplicates by tmdbId keeping the
+    /// earliest date, fetches the YouTube trailer key, and assembles TrailerItems
+    /// with a STREAMING <date> badge. The server already guarantees future
+    /// dates and a non-null poster on every row, but the date/type filtering is
+    /// kept defensive in case the table is ever backfilled with older rows.
+    private func buildComingSoonItems(from releases: [StreamingUpcoming]) async -> [TrailerItem] {
         // Parse and filter releases.
         let inDF = DateFormatter()
         inDF.dateFormat = "yyyy-MM-dd"
         inDF.locale = Locale(identifier: "en_US_POSIX")
         let today = Calendar.current.startOfDay(for: Date())
 
-        let eligible: [(release: WatchmodeRelease, date: Date)] = releases.compactMap { r in
-            guard r.type == "movie",
-                  let tmdbId = r.tmdbId,
+        let eligible: [(release: StreamingUpcoming, date: Date)] = releases.compactMap { r in
+            guard r.tmdbType == "movie",
                   let dateStr = r.sourceReleaseDate,
                   let date = inDF.date(from: dateStr),
                   date >= today
@@ -667,9 +668,9 @@ final class ReelsViewModel {
         }
 
         // Deduplicate by tmdbId, keeping the earliest sourceReleaseDate.
-        var bestByTmdb: [Int: (release: WatchmodeRelease, date: Date)] = [:]
+        var bestByTmdb: [Int: (release: StreamingUpcoming, date: Date)] = [:]
         for entry in eligible {
-            let tid = entry.release.tmdbId!
+            let tid = entry.release.tmdbId
             if let existing = bestByTmdb[tid] {
                 if entry.date < existing.date { bestByTmdb[tid] = entry }
             } else {
@@ -686,7 +687,7 @@ final class ReelsViewModel {
             for entry in deduped {
                 let release = entry.release
                 let releaseDate = entry.date
-                let tmdbId = release.tmdbId!
+                let tmdbId = release.tmdbId
                 group.addTask { [tmdb] in
                     // Coming Soon is always movies — resolve server-verified
                     // playable keys, same three-way handling as buildItems.

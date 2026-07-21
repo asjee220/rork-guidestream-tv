@@ -4,8 +4,10 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rork.guidestreamtvandroid.data.models.Platform
 import com.rork.guidestreamtvandroid.data.models.TMDBResult
+import com.rork.guidestreamtvandroid.data.remote.StreamingUpcomingService
 import com.rork.guidestreamtvandroid.data.remote.TMDBService
 import com.rork.guidestreamtvandroid.data.remote.TrailerResolveService
+import com.rork.guidestreamtvandroid.data.remote.toTMDBResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -97,7 +99,7 @@ class ReelsViewModel : ViewModel() {
             try {
                 val trending = tmdb.getTrendingTV()
                 val onAir = tmdb.getOnTheAir()
-                val upcoming = tmdb.getUpcomingMovies()
+                val upcoming = StreamingUpcomingService.get().fetchUpcoming()?.map { it.toTMDBResult() } ?: emptyList()
 
                 val all = mutableListOf<TrailerItem>()
                 all.addAll(buildTrailers(trending, ReelTab.TRENDING, isTV = true))
