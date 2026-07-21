@@ -70,14 +70,14 @@ struct TVHomeView: View {
 
     @ViewBuilder
     private var heroSection: some View {
-        if trending.isEmpty {
+        if heroItems.isEmpty {
             // Reserve the same height so the rails below don't jump
             // when the data lands.
             Rectangle()
                 .fill(TVTheme.surface)
                 .frame(height: 640)
                 .overlay {
-                    if isLoading {
+                    if heroLoading {
                         ProgressView()
                             .scaleEffect(2)
                             .tint(.white)
@@ -85,7 +85,7 @@ struct TVHomeView: View {
                 }
         } else {
             TVHeroCarousel(
-                items: Array(trending.prefix(6)),
+                items: heroItems,
                 onToggleSave: { item in
                     Task {
                         await streams.toggle(
@@ -156,6 +156,7 @@ struct TVHomeView: View {
         self.newEpisodes = ne
         self.sports = sp
         self.isLoading = false
+        await buildHeroItems()
     }
 
     // MARK: - Hero assembly
