@@ -665,50 +665,6 @@ struct HomeView: View {
                             }
                         }
 
-                        if !homeContentReady {
-                            ForEach(StreamingCatalog.ordered(from: auth.selectedServices).prefix(3), id: \.id) { svc in
-                                HomeShimmerSection(title: "Popular on \(svc.name)")
-                                    .padding(.horizontal, 20)
-                            }
-                        } else {
-                            ForEach(showsBySelectedPlatform, id: \.name) { row in
-                                PlatformRow(
-                                    platformName: row.name,
-                                    platformColor: row.color,
-                                    shows: row.shows,
-                                    onOpen: { show in
-                                        WatchIntentLogger.shared.log(
-                                            eventType: .cardTapped,
-                                            titleId: WatchIntentLogger.titleSlug(show.title),
-                                            platformId: row.name.lowercased(),
-                                            metadata: ["section": "platform_row"]
-                                        )
-                                        detailSubject = .show(show)
-                                    }
-                                )
-                                .padding(.horizontal, 20)
-                            }
-                        }
-
-                        if !homeContentReady {
-                            HomeShimmerSection(title: "Trending This Week")
-                                .padding(.horizontal, 20)
-                        } else if !trendingRanked.isEmpty {
-                            TrendingRankedSection(
-                                shows: trendingRanked,
-                                onSeeAll: nil,
-                                onOpen: { show in
-                                    WatchIntentLogger.shared.log(
-                                        eventType: .cardTapped,
-                                        titleId: WatchIntentLogger.titleSlug(show.title),
-                                        metadata: ["section": "trending_ranked"]
-                                    )
-                                    detailSubject = .show(show)
-                                }
-                            )
-                            .padding(.horizontal, 20)
-                        }
-
                         GenreDiscoverySection(highlighted: false, selectedGenreId: selectedGenreId) { genreId, genreName, mediaType in
                             selectedGenreId = genreId
                             selectedGenreName = genreName
@@ -1761,7 +1717,7 @@ struct HomeView: View {
     /// above equally-rated ones. The match badge reflects rating + subscription.
     /// Deduplicated against other recommendation rows.
     private var topPicksShows: [PosterShow] {
-        // Reuse the app's owned-service normalisation (see showsBySelectedPlatform).
+        // Reuse the app's owned-service normalisation (see StreamingCatalog mapping below).
         let selected = auth.selectedServices.map { $0.lowercased() }
         func isOnService(_ id: Int) -> Bool {
             guard let key = providerByTmdb[id]?.name.lowercased() else { return false }
@@ -2067,44 +2023,6 @@ struct HomeView: View {
     }
 
     // MARK: - Derived content (new sections)
-
-    /// Section 2: Platform rows — groups loaded TMDB results by platform,
-    /// filtered to user's selected services.
-    private var showsBySelectedPlatform: [(name: String, color: Color, shows: [PosterShow])] {
-        let selected = auth.selectedServices.map { $0.lowercased() }
-        let order = ["netflix","hbo","hulu","disney","appletv","prime","paramount","peacock"]
-        let pool = trending + onAir + newToday
-        var map: [String: (Color, [PosterShow])] = [:]
-        for r in pool {
-            guard let plat = providerByTmdb[r.id] else { continue }
-            let key = plat.name.lowercased()
-            let owned = selected.contains { s in
-                key.contains(s) ||
-                (s == "appletv" && key.contains("apple")) ||
-                (s == "hbo" && (key.contains("hbo") || key.contains("max")))
-            }
-            guard owned else { continue }
-            let show = mediaAsPoster(r, platform: plat)
-            if map[key] == nil {
-                map[key] = (plat.color, [show])
-            } else if !(map[key]!.1.contains(where: { $0.tmdbId == r.id })) {
-                map[key]!.1.append(show)
-            }
-        }
-        return order.compactMap { key in
-            guard let (color, shows) = map[key], shows.count >= 3 else { return nil }
-            let displayName = providerByTmdb.values.first { $0.name.lowercased().contains(key) }?.name ?? key.capitalized
-            return (displayName, color, Array(shows.prefix(20)))
-        }
-    }
-
-    /// Section 3: Trending with rank numbers
-    private var trendingRanked: [PosterShow] {
-        trending
-            .filter { providerByTmdb[$0.id] != nil }
-            .prefix(20)
-            .map { mediaAsPoster($0, platform: providerByTmdb[$0.id]) }
-    }
 
     /// Section 6: Top rated
     private var topRatedShows: [PosterShow] {
@@ -3260,32 +3178,6 @@ private struct MiniWidgetPreview: View {
                     .blur(radius: 0.4)
             }
             .shadow(color: Color.orange.opacity(0.35), radius: 12, y: 6)
-    }
-}
-
-// MARK: - Platform Row (Section 2)
-
-private struct PlatformRow: View {
-    let platformName: String
-    let platformColor: Color
-    let shows: [PosterShow]
-    let onOpen: (PosterShow) -> Void
-
-    var body: some View {
-        SectionGlassCard(
-            title: "Popular on \(platformName)",
-            accentColor: platformColor
-        ) {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 10) {
-                    ForEach(shows) { show in
-                        PosterCard(show: show, tag: "", onTap: { onOpen(show) })
-                    }
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 6)
-            }
-        }
     }
 }
 
