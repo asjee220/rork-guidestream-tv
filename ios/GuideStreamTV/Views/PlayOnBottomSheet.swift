@@ -335,15 +335,17 @@ struct PlayOnBottomSheet: View {
             await MainActor.run { self.isResolvingEpisodeSources = true }
             defer { Task { @MainActor in self.isResolvingEpisodeSources = false } }
 
-            let epSources = await WatchmodeService.shared.episodeSources(
+            // Single edge-function call replaces the old episodeSources
+            // fetch. No hint here → server resolves against the primary.
+            // episodeSource is wrapped in a one-element array for the
+            // existing bestEpisodeSource/episodeSourceURL helpers.
+            let response = await WatchmodeResolveService.resolve(
                 tmdbId: tmdbId, isTV: true, season: s, episode: e
             )
-            let best: WatchmodeSource? = epSources.flatMap {
-                Self.bestEpisodeSource(from: $0, resolvedSource: resolvedSource)
-            }
-            let url: URL? = epSources.flatMap {
-                Self.episodeSourceURL(from: $0, resolvedSource: best)
-            }
+            let epSources: [WatchmodeSource] =
+                response?.episodeSource.map { [$0] } ?? []
+            let best: WatchmodeSource? = Self.bestEpisodeSource(from: epSources, resolvedSource: resolvedSource)
+            let url: URL? = Self.episodeSourceURL(from: epSources, resolvedSource: best)
             await MainActor.run {
                 if let best { self.resolvedSource = best }
                 self.episodeDeepLinkURL = url

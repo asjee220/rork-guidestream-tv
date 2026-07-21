@@ -541,15 +541,15 @@ struct EpisodeAvailabilitySection: View {
  isLoading = true
  defer { isLoading = false }
  async let tvDetail: TMDBTVDetail? = try? TMDBService.shared.getTVDetail(tmdbId: tmdbId)
- async let wmId: String? = try? WatchmodeService.shared.watchmodeId(forTMDBId: tmdbId, isTV: true)
  let tv = await tvDetail
  let n = max(1, tv?.numberOfSeasons ?? 1)
  seasons = Array(1...n)
  selectedSeason = n
- if let wid = await wmId,
- let detail = try? await WatchmodeService.shared.titleDetail(titleId: wid),
- let src = detail.sources {
- showLevelSources = src
+ // Single edge-function call replaces the old Watchmode id + titleDetail
+ // pair, routing through the server so no Watchmode API key ships in the
+ // binary. The server applies the same US filter + dedupe + rank pipeline.
+ if let response = await WatchmodeResolveService.resolve(tmdbId: tmdbId, isTV: true) {
+ showLevelSources = response.usSources
  }
  await loadEpisodesForSeason()
  }

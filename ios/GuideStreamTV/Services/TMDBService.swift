@@ -822,23 +822,3 @@ nonisolated struct TMDBService {
         return data
     }
 }
-
-// MARK: - Watchmode lookup by TMDB id
-
-nonisolated extension WatchmodeService {
-    /// Finds a Watchmode title id from a TMDB id. Watchmode supports `search_field=tmdb_id`.
-    func watchmodeId(forTMDBId tmdbId: Int, isTV: Bool) async throws -> String? {
-        // Watchmode requires the typed search field — tmdb_tv_id for shows, tmdb_movie_id for movies.
-        let field = isTV ? "tmdb_tv_id" : "tmdb_movie_id"
-        let urlString = "https://api.watchmode.com/v1/search/?apiKey=wqlepJq2xhEfyAVWpMOhVGmoUKBJFzHj3mlE3Lcw&search_field=\(field)&search_value=\(tmdbId)"
-        guard let url = URL(string: urlString) else { return nil }
-        var req = URLRequest(url: url)
-        req.timeoutInterval = 12
-        let (data, response) = try await URLSession.shared.data(for: req)
-        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else { return nil }
-        let env = try JSONDecoder().decode(WatchmodeSearchEnvelope.self, from: data)
-        let preferred = env.titleResults.first { isTV ? $0.type.contains("tv") : $0.type.contains("movie") }
-        let chosen = preferred ?? env.titleResults.first
-        return chosen.map { String($0.id) }
-    }
-}

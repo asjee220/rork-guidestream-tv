@@ -174,16 +174,15 @@ final class ShowDetailViewModel {
             if let tmdbId = Int(titleId) {
                 await loadAsMovie(tmdbId: tmdbId)
             } else {
-                // Legacy Watchmode string id — the only case where Watchmode's
-                // titleDetail is the correct lookup.
+                // Unreachable legacy path: Watchmode ids are numeric so a
+                // non-Int titleId is an empty string (HomeDestinations line 647
+                // passes "" when no tmdbId exists). The old code called
+                // titleDetail with that empty string and hit a guaranteed
+                // malformed-URL 404. Replace with a clean error state — no
+                // network call.
                 self.resolved = .empty
-                do {
-                    let result = try await WatchmodeService.shared.titleDetail(titleId: titleId)
-                    detail = result
-                } catch {
-                    errorMessage = error.localizedDescription
-                    loadedTitleId = nil
-                }
+                self.errorMessage = "This title isn't available right now."
+                self.loadedTitleId = nil
             }
         }
         isLoading = false
@@ -779,12 +778,26 @@ struct ShowDetailScreen: View {
     /// title-level URL for the active service).
     private func resolveEpisodeDeepLink(forService serviceName: String?) async {
         guard let tid = resolvedTmdbId, isTV, let ep = latestEpisode else { return }
-        guard let epSources = await WatchmodeService.shared.episodeSources(
-            tmdbId: tid, isTV: true, season: ep.seasonNum, episode: ep.episodeNum
+        // Single edge-function call replaces the old episodeSources fetch +
+        // local sourceId match. The server narrows episodeSource to the
+        // hinted service (or the primary when hint is nil), returning nil
+        // when that service has no link for this exact episode.
+        guard let response = await WatchmodeResolveService.resolve(
+            tmdbId: tid,
+            isTV: true,
+            season: ep.seasonNum,
+            episode: ep.episodeNum,
+            episodePlatformHint: serviceName
         ) else {
             await MainActor.run { self.episodeDeepLinkURL = nil }
             return
         }
+        // Treat the single episodeSource as a one-element array so the
+        // existing episodeSourceURL helper and its URL-selection logic stay
+        // untouched. nil episodeSource → empty array → helper returns nil,
+        // preserving the fallback-to-title-level-URL behavior.
+        let epSources: [WatchmodeSource] =
+            response.episodeSource.map { [$0] } ?? []
         let url: URL? = {
             guard let name = serviceName,
                   let ts = vm.resolved.usSources.first(where: { $0.name == name }) else {

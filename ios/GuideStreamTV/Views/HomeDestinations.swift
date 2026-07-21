@@ -620,19 +620,21 @@ struct EpisodeDetailSheet: View {
                 await MainActor.run { self.isResolvingEpisodeSources = true }
                 defer { Task { @MainActor in self.isResolvingEpisodeSources = false } }
 
-                let epSources = await WatchmodeService.shared.episodeSources(
+                // Single edge-function call replaces the old episodeSources
+                // fetch. No hint on initial load → server resolves against the
+                // primary. episodeSource is a single source narrowed to the
+                // primary service, wrapped in a one-element array for the
+                // existing bestEpisodeSource/episodeSourceURL/episodeRokuPath
+                // helpers so their signatures and logic stay untouched.
+                let response = await WatchmodeResolveService.resolve(
                     tmdbId: tid, isTV: true,
                     season: ctx.seasonNum, episode: ctx.episodeNum
                 )
-                let best: WatchmodeSource? = epSources.flatMap {
-                    Self.bestEpisodeSource(from: $0, resolvedSource: resolvedSource)
-                }
-                let url: URL? = epSources.flatMap {
-                    Self.episodeSourceURL(from: $0, resolvedSource: best)
-                }
-                let rokuPath: String? = epSources.flatMap {
-                    Self.episodeRokuPath(from: $0, resolvedSource: best)
-                }
+                let epSources: [WatchmodeSource] =
+                    response?.episodeSource.map { [$0] } ?? []
+                let best: WatchmodeSource? = Self.bestEpisodeSource(from: epSources, resolvedSource: resolvedSource)
+                let url: URL? = Self.episodeSourceURL(from: epSources, resolvedSource: best)
+                let rokuPath: String? = Self.episodeRokuPath(from: epSources, resolvedSource: best)
                 await MainActor.run {
                     if let best { self.resolvedSource = best }
                     self.episodeDeepLinkURL = url
@@ -713,11 +715,19 @@ struct EpisodeDetailSheet: View {
     private func resolveEpisodeSources(for source: WatchmodeSource) async {
         guard let tid = tmdbId, isTV, let ctx = episodeContext else { return }
         await MainActor.run { self.isResolvingEpisodeSources = true }
-        let epSources = await WatchmodeService.shared.episodeSources(
-            tmdbId: tid, isTV: true, season: ctx.seasonNum, episode: ctx.episodeNum
+        // Edge-function call with the tapped service as the hint so the
+        // server narrows episodeSource to that service. nil when that
+        // service has no link for this exact episode, preserving the
+        // existing fallback to nil (button falls back to title-level URL).
+        let response = await WatchmodeResolveService.resolve(
+            tmdbId: tid, isTV: true,
+            season: ctx.seasonNum, episode: ctx.episodeNum,
+            episodePlatformHint: source.name
         )
-        let url = epSources.flatMap { Self.episodeSourceURL(from: $0, resolvedSource: source) }
-        let rokuPath = epSources.flatMap { Self.episodeRokuPath(from: $0, resolvedSource: source) }
+        let epSources: [WatchmodeSource] =
+            response?.episodeSource.map { [$0] } ?? []
+        let url = Self.episodeSourceURL(from: epSources, resolvedSource: source)
+        let rokuPath = Self.episodeRokuPath(from: epSources, resolvedSource: source)
         await MainActor.run {
             self.episodeDeepLinkURL = url
             self.episodeRokuURL = rokuPath
