@@ -17,19 +17,10 @@ android {
         versionName = "1.0.2"
     }
 
-    signingConfigs {
-        create("rorkPlayUpload") {
-            storeFile = file("/home/user/rork-app/android/app/play-upload-key.jks")
-            storePassword = "rork-play-upload"
-            keyAlias = "upload"
-            keyPassword = "rork-play-upload"
-        }
-    }
-
     buildTypes {
         release {
             isMinifyEnabled = false
-            signingConfig = signingConfigs.getByName("rorkPlayUpload")
+            signingConfig = signingConfigs.getByName("debug")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"

@@ -2,7 +2,9 @@ package com.rork.guidestreamtvandroid.data.local
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.os.Build
 import android.provider.Settings
+import com.rork.guidestreamtvandroid.BuildConfig
 import java.util.UUID
 
 /**
@@ -14,6 +16,14 @@ class DeviceIdentity private constructor(context: Context) {
 
     val deviceId: String
     val isFirstLaunch: Boolean
+
+    /**
+     * Runtime environment stamp written to `watch_intent_events.environment`
+     * so emulator/debug traffic can be separated from real production traffic
+     * in Supabase. Resolved once at init: emulator → debug → production.
+     * Always exactly one of the three lowercase strings, never null or empty.
+     */
+    val environment: String
 
     companion object {
         @Volatile private var instance: DeviceIdentity? = null
@@ -50,5 +60,36 @@ class DeviceIdentity private constructor(context: Context) {
             deviceId = fresh
             isFirstLaunch = true
         }
+
+        environment = resolveEnvironment()
+    }
+
+    private fun resolveEnvironment(): String {
+        if (isEmulator()) return "simulator"
+        if (BuildConfig.DEBUG) return "debug"
+        return "production"
+    }
+
+    /**
+     * Case-insensitive emulator detection covering the common Android Virtual
+     * Device, Genymotion, and Google API system image signatures.
+     */
+    private fun isEmulator(): Boolean {
+        val fingerprint = Build.FINGERPRINT.lowercase()
+        val model = Build.MODEL.lowercase()
+        val hardware = Build.HARDWARE.lowercase()
+        val product = Build.PRODUCT.lowercase()
+        val manufacturer = Build.MANUFACTURER.lowercase()
+        val brand = Build.BRAND.lowercase()
+        return fingerprint.startsWith("generic") ||
+            fingerprint.startsWith("unknown") ||
+            fingerprint.contains("vbox") ||
+            model.contains("emulator") ||
+            model.contains("android sdk built for") ||
+            hardware.contains("goldfish") ||
+            hardware.contains("ranchu") ||
+            product.contains("sdk") ||
+            manufacturer.contains("genymotion") ||
+            brand.startsWith("generic")
     }
 }

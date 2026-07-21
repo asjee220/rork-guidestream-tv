@@ -95,6 +95,7 @@ final class WatchIntentLogger {
         let userId = AuthViewModel.shared.currentUser?.id.uuidString
         let isGuest = AuthViewModel.shared.isGuest && userId == nil
         let deviceId = DeviceIdentity.shared.deviceId
+        let environment = DeviceIdentity.shared.environment
         let event = eventType.rawValue
         let titleIdCopy = titleId
         let platformIdCopy = platformId
@@ -103,6 +104,7 @@ final class WatchIntentLogger {
         // captures of [String: Any] across the Task boundary).
         var mergedMeta: [String: Any] = metadata ?? [:]
         mergedMeta["device_id"] = deviceId
+        mergedMeta["environment"] = environment
         mergedMeta["is_guest"] = isGuest
         mergedMeta["is_authenticated"] = userId != nil
         if let duration = watchDurationSeconds {
@@ -115,7 +117,8 @@ final class WatchIntentLogger {
         Task { [weak self] in
             var payload: [String: AnyJSON] = [
                 "event_type": .string(event),
-                "device_id": .string(deviceId)
+                "device_id": .string(deviceId),
+                "environment": .string(environment)
             ]
             if let userId { payload["user_id"] = .string(userId) }
             if let titleIdCopy { payload["title_id"] = .string(titleIdCopy) }

@@ -97,10 +97,12 @@ class WatchIntentLogger private constructor(context: Context) {
         val userId = auth.currentUserId
         val isGuest = auth.isGuest.value && userId == null
         val deviceId = DeviceIdentity.get().deviceId
+        val environment = DeviceIdentity.get().environment
         val event = eventType.value
 
         val mergedMeta = metadata.toMutableMap()
         mergedMeta["device_id"] = deviceId
+        mergedMeta["environment"] = environment
         mergedMeta["is_guest"] = isGuest
         mergedMeta["is_authenticated"] = userId != null
         if (watchDurationSeconds != null) {
@@ -115,6 +117,7 @@ class WatchIntentLogger private constructor(context: Context) {
             val payload = buildJsonObject {
                 put("event_type", event)
                 put("device_id", deviceId)
+                put("environment", environment)
                 if (userId != null) put("user_id", userId)
                 if (titleId != null) put("title_id", titleId)
                 if (platformId != null) put("platform_id", platformId)
@@ -136,6 +139,7 @@ class WatchIntentLogger private constructor(context: Context) {
                     try {
                         val fallback = buildJsonObject {
                             put("event_type", event)
+                            put("environment", environment)
                             if (userId != null) put("user_id", userId)
                             if (titleId != null) put("title_id", titleId)
                             if (platformId != null) put("platform_id", platformId)
