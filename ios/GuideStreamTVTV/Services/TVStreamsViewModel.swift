@@ -110,7 +110,8 @@ final class TVStreamsViewModel {
                 title: title,
                 posterUrl: posterUrl,
                 platform: platform,
-                addedAt: Date()
+                addedAt: Date(),
+                isTv: nil
             )
             self.userStreams.insert(optimistic, at: 0)
             saveLocalCache(self.userStreams)
