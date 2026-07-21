@@ -15,6 +15,8 @@ struct TVHomeView: View {
     @State private var newEpisodes: [TVTMDBResult] = []
     @State private var sports: [TVSportsGame] = []
     @State private var isLoading: Bool = true
+    @State private var heroItems: [TVTMDBResult] = []
+    @State private var heroLoading: Bool = true
 
     @State private var pendingDetail: TVTitleDetail?
 
@@ -68,14 +70,14 @@ struct TVHomeView: View {
 
     @ViewBuilder
     private var heroSection: some View {
-        if trending.isEmpty {
+        if heroItems.isEmpty {
             // Reserve the same height so the rails below don't jump
             // when the data lands.
             Rectangle()
                 .fill(TVTheme.surface)
                 .frame(height: 640)
                 .overlay {
-                    if isLoading {
+                    if heroLoading {
                         ProgressView()
                             .scaleEffect(2)
                             .tint(.white)
@@ -83,7 +85,7 @@ struct TVHomeView: View {
                 }
         } else {
             TVHeroCarousel(
-                items: Array(trending.prefix(6)),
+                items: heroItems,
                 onToggleSave: { item in
                     Task {
                         await streams.toggle(
@@ -154,5 +156,57 @@ struct TVHomeView: View {
         self.newEpisodes = ne
         self.sports = sp
         self.isLoading = false
+        await buildHeroItems()
+    }
+
+    // MARK: - Hero assembly
+
+    /// Builds the hero carousel pool by concatenating trending and newEpisodes,
+    /// deduplicating by id (trending priority), resolving streaming providers in
+    /// parallel via `getTopWatchProvider`, and keeping only titles with a real
+    /// streaming service so theatrical-only releases never appear in the hero.
+    /// Falls back to the raw trending prefix when no candidates resolve so the
+    /// hero never renders as a permanently empty slab. Runs after `isLoading`
+    /// flips to false so the rails below appear immediately without waiting.
+    private func buildHeroItems() async {
+        var seenIds = Set<Int>()
+        var pool: [TVTMDBResult] = []
+        for candidate in trending + newEpisodes {
+            if seenIds.insert(candidate.id).inserted {
+                pool.append(candidate)
+            }
+        }
+        let candidates = Array(pool.prefix(24))
+
+        let streamableIds: Set<Int> = await withTaskGroup(of: Int?.self) { group in
+            for candidate in candidates {
+                group.addTask {
+                    guard let provider = try? await TVTMDBService.shared.getTopWatchProvider(
+                        tmdbId: candidate.id,
+                        isTV: candidate.isTV
+                    ) else { return nil }
+                    return provider == nil ? nil : candidate.id
+                }
+            }
+            var ids = Set<Int>()
+            for await id in group {
+                if let id { ids.insert(id) }
+            }
+            return ids
+        }
+
+        if streamableIds.isEmpty {
+            // Every candidate was theatrical or TMDB was unreachable —
+            // fall back to the raw trending prefix so the hero never renders
+            // as a permanently empty grey slab.
+            heroItems = trending.isEmpty ? [] : Array(trending.prefix(6))
+        } else {
+            heroItems = Array(
+                candidates
+                    .filter { streamableIds.contains($0.id) }
+                    .prefix(6)
+            )
+        }
+        heroLoading = false
     }
 }
