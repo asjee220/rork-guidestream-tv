@@ -434,6 +434,30 @@ struct HomeView: View {
                             .padding(.horizontal, 20)
                         }
 
+                        if !homeContentReady {
+                            HomeShimmerSection(title: "Today's Pick")
+                                .padding(.horizontal, 20)
+                        } else if let pick = todaysPick {
+                            TodaysPickSection(pick: pick, isSubscribed: isSubscribedToService(pick.sourceName)) {
+                                WatchIntentLogger.shared.log(
+                                    eventType: .cardTapped,
+                                    titleId: String(pick.tmdbId),
+                                    metadata: ["section": "todays_pick"]
+                                )
+                                detailSubject = .show(PosterShow(
+                                    title: pick.title,
+                                    meta: pick.sourceName ?? "",
+                                    posterColors: HomeFallback.posterColors,
+                                    symbol: "flame.fill",
+                                    posterUrl: pick.posterUrl,
+                                    tmdbId: pick.tmdbId,
+                                    voteAverage: pick.voteAverage,
+                                    isTV: pick.tmdbType == "tv"
+                                ))
+                            }
+                            .padding(.horizontal, 20)
+                        }
+
                         // FIXME: Temporarily disabled — re-enable when new episodes are populated
                         // NewEpisodesSection(
                         //     sectionTitle: (streams.userStreams.isEmpty && !trending.isEmpty) ? "Trending This Week" : "New Episodes",
@@ -1689,6 +1713,43 @@ struct HomeView: View {
             }
     }
 
+    // MARK: - Today's Pick
+
+    /// Selects one row from `newReleases` (already ordered by popularity
+    /// descending) using a day-of-year rotation so the pick is stable within
+    /// a day and changes at local midnight. Takes the first 10 entries (or
+    /// fewer when the array is smaller), picks index `dayOfYear % count`, and
+    /// advances to the next index (modulo count) when the pick has no poster.
+    /// Returns nil when `newReleases` is empty.
+    private var todaysPick: StreamingRelease? {
+        guard !newReleases.isEmpty else { return nil }
+        let pool = Array(newReleases.prefix(10))
+        let count = pool.count
+        let dayOfYear = Calendar.current.ordinality(of: .day, in: .year, for: Date()) ?? 1
+        var idx = dayOfYear % count
+        for _ in 0..<count {
+            let candidate = pool[idx]
+            let poster = candidate.posterUrl ?? ""
+            if !poster.isEmpty { return candidate }
+            idx = (idx + 1) % count
+        }
+        return pool[dayOfYear % count]
+    }
+
+    /// Reuses the same selected-services contains-check as `topPicksShows`
+    /// (lowercased with appletv/apple and hbo/max aliases) applied to a
+    /// source name string.
+    private func isSubscribedToService(_ sourceName: String?) -> Bool {
+        guard let sourceName, !sourceName.isEmpty else { return false }
+        let selected = auth.selectedServices.map { $0.lowercased() }
+        let key = sourceName.lowercased()
+        return selected.contains { s in
+            key.contains(s) ||
+            (s == "appletv" && key.contains("apple")) ||
+            (s == "hbo" && (key.contains("hbo") || key.contains("max")))
+        }
+    }
+
     /// What's New Today — trending TV/movies dropping today. Only includes
     /// items with a confirmed streaming provider so each card has a real
     /// "Watch on X" deeplink behind it.
@@ -2200,6 +2261,139 @@ private struct HomeHeroCarouselShimmer: View {
         }
         .disabled(true)
         .frame(height: 250)
+    }
+}
+
+// MARK: - Today's Pick section
+
+/// Single-card daily spotlight fed from the existing `newReleases` array.
+/// Backdrop-hero card on the app's navy surface with a 1pt white-10% border
+/// and 12pt corner radius. Tapping the card or CTA opens the title detail
+/// sheet exactly like the What's New Today section does.
+private struct TodaysPickSection: View {
+    let pick: StreamingRelease
+    let isSubscribed: Bool
+    let onTap: () -> Void
+
+    private let orange = Color(red: 0xF5 / 255, green: 0x82 / 255, blue: 0x1F / 255)
+
+    var body: some View {
+        Button(action: onTap) {
+            VStack(alignment: .leading, spacing: 0) {
+                // Eyebrow row: flame + "TODAY'S PICK" + trailing date
+                HStack(spacing: 8) {
+                    Image(systemName: "flame.fill")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundStyle(orange)
+                    Text("TODAY'S PICK")
+                        .font(.system(size: 12, weight: .heavy))
+                        .tracking(1.2)
+                        .foregroundStyle(orange)
+                    Spacer()
+                    Text(dateString)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(Color.white.opacity(0.5))
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 14)
+                .padding(.bottom, 10)
+
+                // 16:9 backdrop
+                ZStack {
+                    RemoteImage(
+                        urlString: pick.posterUrl,
+                        contentMode: .fill,
+                        fallbackColors: HomeFallback.posterColors
+                    )
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 200)
+                        .clipped()
+                    LinearGradient(
+                        colors: [Color.black.opacity(0.0), Color.black.opacity(0.65)],
+                        startPoint: .center,
+                        endPoint: .bottom
+                    )
+                }
+                .frame(height: 200)
+                .clipped()
+
+                // Title + meta + badge + CTA
+                VStack(alignment: .leading, spacing: 10) {
+                    Text(pick.title)
+                        .font(.system(size: 20, weight: .bold))
+                        .foregroundStyle(.white)
+                        .lineLimit(2)
+
+                    // Meta: star glyph + rating, optional "· Source Original"
+                    HStack(spacing: 6) {
+                        Image(systemName: "star.fill")
+                            .font(.system(size: 11))
+                            .foregroundStyle(orange)
+                        if let rating = pick.voteAverage {
+                            Text(String(format: "%.1f", rating))
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundStyle(Color.white.opacity(0.7))
+                        }
+                        if pick.isOriginal == true, let src = pick.sourceName, !src.isEmpty {
+                            Text("· \(src) Original")
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundStyle(Color.white.opacity(0.5))
+                        }
+                    }
+
+                    // Service badge tinted by Platform.from(sourceName:)
+                    if let src = pick.sourceName, !src.isEmpty {
+                        let platform = Platform.from(providerName: src)
+                        HStack(spacing: 6) {
+                            Circle()
+                                .fill(platform?.color ?? Color.white.opacity(0.25))
+                                .frame(width: 8, height: 8)
+                            Text(platform?.name ?? src)
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(platform?.color ?? Color.white.opacity(0.7))
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background((platform?.color ?? Color.white.opacity(0.15)).opacity(0.15))
+                        .clipShape(Capsule())
+                    }
+
+                    // Full-width primary CTA
+                    Text(ctaText)
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(Color(red: 0x08 / 255, green: 0x06 / 255, blue: 0x04 / 255))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 13)
+                        .background(orange)
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                }
+                .padding(16)
+            }
+            .background(Color(red: 0x04 / 255, green: 0x09 / 255, blue: 0x0F / 255).opacity(0.95))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(Color.white.opacity(0.10), lineWidth: 1)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// "Wednesday, Jul 22" format for the trailing date.
+    private var dateString: String {
+        let df = DateFormatter()
+        df.dateFormat = "EEEE, MMM d"
+        df.locale = Locale(identifier: "en_US_POSIX")
+        return df.string(from: Date())
+    }
+
+    /// CTA reads "Watch on <source>" when subscribed, "Get on <source>" when
+    /// not, or "Watch now" when sourceName is nil.
+    private var ctaText: String {
+        if let src = pick.sourceName, !src.isEmpty {
+            return isSubscribed ? "Watch on \(src)" : "Get on \(src)"
+        }
+        return "Watch now"
     }
 }
 

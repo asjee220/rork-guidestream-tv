@@ -70,6 +70,7 @@ import com.rork.guidestreamtvandroid.data.models.StreamingCatalog
 import com.rork.guidestreamtvandroid.data.models.TitleId
 import com.rork.guidestreamtvandroid.data.models.TMDBResult
 import com.rork.guidestreamtvandroid.data.remote.RecommendedCreator
+import com.rork.guidestreamtvandroid.data.remote.StreamingReleasesService
 import com.rork.guidestreamtvandroid.data.repository.AuthViewModel
 import com.rork.guidestreamtvandroid.data.repository.StreamsViewModel
 import com.rork.guidestreamtvandroid.data.repository.WatchIntentLogger
@@ -131,6 +132,7 @@ fun HomeScreen(
     val leavingSoon by homeVm.leavingSoon.collectAsStateWithLifecycle()
     val topRated by homeVm.topRated.collectAsStateWithLifecycle()
     val newReleases by homeVm.newReleases.collectAsStateWithLifecycle()
+    val todaysPick by homeVm.todaysPick.collectAsStateWithLifecycle()
     val upcoming by homeVm.upcoming.collectAsStateWithLifecycle()
     val bingeReady by homeVm.bingeReady.collectAsStateWithLifecycle()
     val genreShows by homeVm.genreShows.collectAsStateWithLifecycle()
@@ -221,6 +223,29 @@ fun HomeScreen(
                         metadata = mapOf("section" to "watch_list_see_all"),
                     )
                     onOpenWatchList()
+                },
+            )
+        }
+
+        // Today's Pick — daily spotlight from streaming_releases
+        if (!homeReady) {
+            ShimmerSection("Today's Pick", Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
+        } else if (todaysPick != null) {
+            TodaysPickSpotlight(
+                pick = todaysPick!!,
+                selectedServices = selectedServices,
+                onOpen = { row ->
+                    WatchIntentLogger.get().log(
+                        WatchIntentLogger.IntentEventType.CARD_TAPPED,
+                        titleId = row.tmdbId.toString(),
+                        metadata = mapOf("section" to "todays_pick"),
+                    )
+                    onOpenTitle(PendingTitleRoute(
+                        titleId = row.tmdbId.toString(),
+                        titleName = row.title,
+                        posterUrl = row.posterUrl,
+                        isTv = row.tmdbType == "tv",
+                    ))
                 },
             )
         }
@@ -935,6 +960,203 @@ private fun HeroCarousel(
                     }
                 }
             }
+        }
+    }
+}
+
+// ── Today's Pick Spotlight ─────────────────────────────────────────────────
+
+@Composable
+private fun TodaysPickSpotlight(
+    pick: StreamingReleasesService.StreamingReleaseRow,
+    selectedServices: Set<String>,
+    onOpen: (StreamingReleasesService.StreamingReleaseRow) -> Unit,
+) {
+    val orange = BrandOrange
+    val navySurface = Color(0xFF04090F)
+
+    // Reuse the same selected-services contains-check as Top Picks
+    // (lowercased with appletv/apple and hbo/max aliases).
+    val isSubscribed = run {
+        val key = pick.sourceName?.lowercase() ?: ""
+        if (key.isEmpty()) false else selectedServices.any { s ->
+            val sl = s.lowercase()
+            key.contains(sl) ||
+                (sl == "appletv" && key.contains("apple")) ||
+                (sl == "hbo" && (key.contains("hbo") || key.contains("max")))
+        }
+    }
+
+    // Service badge color from Platform.from(sourceName), falling back to neutral.
+    val platform = Platform.from(pick.sourceName)
+    val badgeColor = platform?.color ?: Color.White.copy(alpha = 0.25f)
+    val badgeName = platform?.name ?: pick.sourceName
+
+    // CTA text: "Watch on <source>" when subscribed, "Get on <source>" when not, "Watch now" when null.
+    val ctaText = if (!pick.sourceName.isNullOrEmpty()) {
+        if (isSubscribed) "Watch on ${pick.sourceName}" else "Get on ${pick.sourceName}"
+    } else {
+        "Watch now"
+    }
+
+    // Date string: "Wednesday, Jul 22"
+    val dateFormatter = remember {
+        java.time.format.DateTimeFormatter.ofPattern("EEEE, MMM d")
+    }
+    val dateString = remember { java.time.LocalDate.now().format(dateFormatter) }
+
+    // Poster URL: prefer posterUrl, fall back to building from posterPath via TMDB CDN.
+    val posterUrl = pick.posterUrl ?: pick.posterPath?.let { path ->
+        val clean = if (path.startsWith("/")) path else "/$path"
+        "${com.rork.guidestreamtvandroid.AppConfig.TMDB_IMAGE_BASE}w500$clean"
+    }
+
+    Column(
+        modifier = Modifier
+            .padding(horizontal = 20.dp, vertical = 8.dp)
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(navySurface.copy(alpha = 0.95f))
+            .border(1.dp, Color.White.copy(alpha = 0.10f), RoundedCornerShape(12.dp))
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+            ) { onOpen(pick) },
+    ) {
+        // Eyebrow row: flame + "TODAY'S PICK" + trailing date
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = "\uD83D\uDD25",
+                fontSize = 14.sp,
+            )
+            Spacer(Modifier.width(6.dp))
+            Text(
+                text = "TODAY'S PICK",
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Black,
+                color = orange,
+                letterSpacing = 1.2.sp,
+            )
+            Spacer(Modifier.weight(1f))
+            Text(
+                text = dateString,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Medium,
+                color = Color.White.copy(alpha = 0.5f),
+            )
+        }
+
+        // 16:9 backdrop
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(16f / 9f),
+        ) {
+            RemoteImage(
+                url = posterUrl,
+                modifier = Modifier.fillMaxSize(),
+            )
+            // Gradient overlay for readability
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.verticalGradient(
+                            colors = listOf(
+                                Color.Transparent,
+                                Color.Black.copy(alpha = 0.65f),
+                            ),
+                        ),
+                    ),
+            )
+        }
+
+        // Title + meta + badge + CTA
+        Column(
+            modifier = Modifier.padding(16.dp),
+        ) {
+            Text(
+                text = pick.title ?: "Untitled",
+                fontSize = 20.sp,
+                fontWeight = FontWeight.Bold,
+                color = TextPrimary,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(Modifier.height(8.dp))
+
+            // Meta: star + rating, optional "· Source Original"
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = "★",
+                    fontSize = 11.sp,
+                    color = orange,
+                )
+                Spacer(Modifier.width(4.dp))
+                pick.voteAverage?.let { rating ->
+                    Text(
+                        text = String.format("%.1f", rating),
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color.White.copy(alpha = 0.7f),
+                    )
+                }
+                if (pick.isOriginal == true && !pick.sourceName.isNullOrEmpty()) {
+                    Text(
+                        text = " · ${pick.sourceName} Original",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = Color.White.copy(alpha = 0.5f),
+                    )
+                }
+            }
+
+            // Service badge
+            if (!pick.sourceName.isNullOrEmpty()) {
+                Spacer(Modifier.height(10.dp))
+                Row(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(50))
+                        .background(badgeColor.copy(alpha = 0.15f))
+                        .padding(horizontal = 10.dp, vertical = 5.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(8.dp)
+                            .clip(CircleShape)
+                            .background(badgeColor),
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        text = badgeName ?: "",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = badgeColor,
+                    )
+                }
+            }
+
+            // Full-width primary CTA
+            Spacer(Modifier.height(14.dp))
+            Text(
+                text = ctaText,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFF080604),
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(orange)
+                    .clickable { onOpen(pick) }
+                    .padding(vertical = 13.dp),
+            )
         }
     }
 }

@@ -52,6 +52,13 @@ class HomeViewModel : ViewModel() {
     private val _newReleases = MutableStateFlow<List<TMDBResult>>(emptyList())
     val newReleases: StateFlow<List<TMDBResult>> = _newReleases.asStateFlow()
 
+    /** Today's Pick — one raw row from streaming_releases, selected by day-of-year
+     * rotation. Kept as the raw StreamingReleaseRow (not mapped through
+     * toTMDBResult) so the spotlight can read source_name, is_original, and
+     * poster_url — fields the toTMDBResult mapping drops. */
+    private val _todaysPick = MutableStateFlow<StreamingReleasesService.StreamingReleaseRow?>(null)
+    val todaysPick: StateFlow<StreamingReleasesService.StreamingReleaseRow?> = _todaysPick.asStateFlow()
+
     /** Leaving Soon — server-backed rows from the expiring_titles table. */
     private val _leavingSoon = MutableStateFlow<List<TMDBResult>>(emptyList())
     val leavingSoon: StateFlow<List<TMDBResult>> = _leavingSoon.asStateFlow()
@@ -143,6 +150,26 @@ class HomeViewModel : ViewModel() {
                     val rows = StreamingReleasesService.get().fetchReleases()
                     if (rows != null) {
                         _newReleases.value = rows.map { it.toTMDBResult() }
+                        // Compute Today's Pick from the raw rows (already
+                        // popularity-descending from the query). Take the first
+                        // 10, pick by day-of-year rotation, skip rows missing
+                        // both posterUrl and posterPath.
+                        val pool = rows.take(10)
+                        if (pool.isNotEmpty()) {
+                            val count = pool.size
+                            var idx = LocalDate.now().dayOfYear % count
+                            var chosen: StreamingReleasesService.StreamingReleaseRow? = null
+                            for (i in 0 until count) {
+                                val candidate = pool[idx]
+                                if (!candidate.posterUrl.isNullOrEmpty() ||
+                                    !candidate.posterPath.isNullOrEmpty()) {
+                                    chosen = candidate
+                                    break
+                                }
+                                idx = (idx + 1) % count
+                            }
+                            _todaysPick.value = chosen ?: pool[LocalDate.now().dayOfYear % count]
+                        }
                     }
                 },
                 launch { loadLeavingSoon() },
