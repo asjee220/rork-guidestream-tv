@@ -3,7 +3,7 @@
 //  GuideStreamTVTV
 //
 //  Tab bar shell. tvOS renders TabView as a top focus bar.
-//  Reels tab withheld for launch; code preserved in TVReelsView.swift.
+//  Reels tab withheld for launch.
 //
 
 import SwiftUI

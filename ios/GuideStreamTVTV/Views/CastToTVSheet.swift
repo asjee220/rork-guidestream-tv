@@ -723,21 +723,7 @@ struct CastToTVSheet: View {
     /// hint readable when the upstream `platform` string is something verbose
     /// like "HBO Max (subscription)".
     private var platformShortName: String {
-        let key = platform.lowercased()
-        if key.contains("netflix")              { return "Netflix" }
-        if key.contains("hbo") || key.contains("max") { return "Max" }
-        if key.contains("hulu")                 { return "Hulu" }
-        if key.contains("disney")               { return "Disney+" }
-        if key.contains("prime") || key.contains("amazon") { return "Prime Video" }
-        if key.contains("apple")                { return "Apple TV+" }
-        if key.contains("paramount")            { return "Paramount+" }
-        if key.contains("peacock")              { return "Peacock" }
-        if key.contains("youtube tv")           { return "YouTube TV" }
-        if key.contains("youtube")              { return "YouTube" }
-        if key.contains("showtime")             { return "Showtime" }
-        if key.contains("starz")                { return "Starz" }
-        if key.contains("crunchyroll")          { return "Crunchyroll" }
-        return platform
+        Platform.from(providerName: platform)?.displayName ?? platform
     }
 
     /// Opens the iOS remote-control app matching the chosen TV. Only Roku

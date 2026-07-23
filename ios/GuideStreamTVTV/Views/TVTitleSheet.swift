@@ -715,47 +715,23 @@ struct TVTitleSheet: View {
     }
 
     private func brandToken(forServiceName name: String) -> String? {
-        let k = name.lowercased()
-        if k.contains("amazon") || k.contains("prime") { return "amazon" }
-        if k.contains("netflix") { return "netflix" }
-        if k.contains("apple") { return "apple" }
-        if k.contains("hulu") { return "hulu" }
-        if k.contains("disney") { return "disney" }
-        if k.contains("max") || k.contains("hbo") { return "max" }
-        if k.contains("paramount") { return "paramount" }
-        if k.contains("peacock") { return "peacock" }
-        if k.contains("youtube") { return "youtube" }
-        if k.contains("crunchyroll") { return "crunchyroll" }
-        return nil
+        guard let catalogId = Platform.from(providerName: name)?.catalogId else { return nil }
+        // Map catalog ids to the URL-brand-token space used by brandToken(forURL:).
+        switch catalogId {
+        case "prime":   return "amazon"
+        case "appletv": return "apple"
+        default:        return catalogId
+        }
     }
 
     // MARK: - Brand styling (local copies mirroring the tvOS ShowDetailScreen /
     // PlayOnBottomSheet helpers)
 
     private func brandColor(for name: String) -> Color {
-        let key = name.lowercased()
-        if key.contains("netflix") { return Color(red: 0xE5/255, green: 0x09/255, blue: 0x14/255) }
-        if key.contains("hbo") || key.contains("max") { return Color(red: 0x5B/255, green: 0x2D/255, blue: 0x8E/255) }
-        if key.contains("hulu") { return Color(red: 0x1C/255, green: 0xE7/255, blue: 0x83/255) }
-        if key.contains("disney") { return Color(red: 0.05, green: 0.10, blue: 0.42) }
-        if key.contains("apple") { return Color(white: 0.12) }
-        if key.contains("prime") || key.contains("amazon") { return Color(red: 0.0, green: 0.66, blue: 0.93) }
-        if key.contains("paramount") { return Color(red: 0x00/255, green: 0x64/255, blue: 0xFF/255) }
-        if key.contains("peacock") { return Color(red: 0.05, green: 0.05, blue: 0.10) }
-        if key.contains("youtube") { return Color(red: 0.90, green: 0.10, blue: 0.10) }
-        return Color(white: 0.18)
+        Platform.from(providerName: name)?.color ?? Color(white: 0.18)
     }
 
     private func gsDisplayName(for raw: String) -> String {
-        let k = raw.lowercased()
-        if k.contains("paramount") { return "Paramount+" }
-        if k.contains("disney") { return "Disney+" }
-        if k.contains("apple") && (k.contains("tv") || k.contains("+")) { return "Apple TV+" }
-        if k.contains("max") || (k.contains("hbo") && k.contains("max")) { return "Max" }
-        if k.contains("prime") || (k.contains("amazon") && k.contains("prime")) { return "Prime Video" }
-        if k.contains("peacock") { return "Peacock" }
-        if k.contains("crunchyroll") { return "Crunchyroll" }
-        if k.contains("showtime") { return "Showtime" }
-        return raw
+        Platform.from(providerName: raw)?.displayName ?? raw
     }
 }

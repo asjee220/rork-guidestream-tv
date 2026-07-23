@@ -191,17 +191,7 @@ final class ShowDetailViewModel {
     }
 
     private func brandColor(for name: String) -> Color {
-        let key = name.lowercased()
-        if key.contains("netflix") { return Color(red: 0xE5/255, green: 0x09/255, blue: 0x14/255) }
-        if key.contains("hbo") || key.contains("max") { return Color(red: 0x5B/255, green: 0x2D/255, blue: 0x8E/255) }
-        if key.contains("hulu") { return Color(red: 0x1C/255, green: 0xE7/255, blue: 0x83/255) }
-        if key.contains("disney") { return Color(red: 0.05, green: 0.10, blue: 0.42) }
-        if key.contains("apple") { return Color(white: 0.12) }
-        if key.contains("prime") || key.contains("amazon") { return Color(red: 0.0, green: 0.66, blue: 0.93) }
-        if key.contains("paramount") { return Color(red: 0x00/255, green: 0x64/255, blue: 0xFF/255) }
-        if key.contains("peacock") { return Color(red: 0.05, green: 0.05, blue: 0.10) }
-        if key.contains("youtube") { return Color(red: 0.90, green: 0.10, blue: 0.10) }
-        return Color(white: 0.18)
+        Platform.from(providerName: name)?.color ?? Color(white: 0.18)
     }
 }
 
@@ -1005,10 +995,15 @@ private func gsDisplayName(for raw: String) -> String {
 
 private struct ServiceBadge: View {
     let service: WhereToWatchService
+    private var platform: Platform? { Platform.from(providerName: service.name) }
+    private var badgeText: String {
+        let label = gsDisplayName(for: service.name)
+        return label.count > 12 ? String(label.prefix(12)) : label
+    }
     var body: some View {
-        Text(gsDisplayName(for: service.name))
+        Text(badgeText)
             .scaledFont(size: 13, weight: .bold)
-            .foregroundStyle(.white)
+            .foregroundStyle(platform?.textColor ?? .white)
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
             .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(service.color))

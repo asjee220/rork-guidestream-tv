@@ -87,20 +87,7 @@ struct EpisodeDetailSheet: View {
     }
 
     private func brandColor(for name: String) -> Color {
-        let key = name.lowercased()
-        if key.contains("netflix") { return Color(red: 0xE5/255, green: 0x09/255, blue: 0x14/255) }
-        if key.contains("hbo") || key.contains("max") { return Color(red: 0x5B/255, green: 0x2D/255, blue: 0x8E/255) }
-        if key.contains("hulu") { return Color(red: 0x1C/255, green: 0xE7/255, blue: 0x83/255) }
-        if key.contains("disney") { return Color(red: 0.05, green: 0.10, blue: 0.42) }
-        if key.contains("apple") { return Color(white: 0.12) }
-        if key.contains("prime") || key.contains("amazon") { return Color(red: 0.0, green: 0.66, blue: 0.93) }
-        if key.contains("paramount") { return Color(red: 0x00/255, green: 0x64/255, blue: 0xFF/255) }
-        if key.contains("peacock") { return Color(red: 0.05, green: 0.05, blue: 0.10) }
-        if key.contains("youtube") { return Color(red: 0.90, green: 0.10, blue: 0.10) }
-        if key.contains("crunchyroll") { return Color(red: 0xF4/255, green: 0x7B/255, blue: 0x20/255) }
-        if key.contains("showtime") { return Color(red: 0xD8/255, green: 0x00/255, blue: 0x00/255) }
-        if key.contains("starz") { return Color(white: 0.08) }
-        return Color(red: 0x6A/255, green: 0x3F/255, blue: 0xE0/255)
+        Platform.from(providerName: name)?.color ?? Color(red: 0x6A/255, green: 0x3F/255, blue: 0xE0/255)
     }
 
     var body: some View {
