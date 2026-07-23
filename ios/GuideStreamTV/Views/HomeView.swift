@@ -80,6 +80,17 @@ struct Platform {
         return Color(red: r, green: g, blue: b)
     }
 
+    /// Builds a Platform from a server brand-map row, preferring the
+    /// canonical badge_label and badge_hex columns. Returns nil when
+    /// either field is absent, signalling the caller to try local fallback.
+    private static func platformFromRow(_ row: ProviderBrandRow, catalogId: String) -> Platform? {
+        if let hex = row.badgeHex, let color = colorFromHex(hex),
+           let label = row.badgeLabel, !label.isEmpty {
+            return Platform(name: label, color: color, textColor: textColor(for: color), catalogId: catalogId)
+        }
+        return nil
+    }
+
     // MARK: - ID-based resolution (primary)
 
     /// Resolves a Platform from the stable TMDB provider id via the server
@@ -93,10 +104,7 @@ struct Platform {
         guard let catalogId = row.catalogId else { return nil }
         if let pinned = legacyPins[catalogId] { return pinned }
         // Prefer badge_hex and badge_label from the server map.
-        if let hex = row.badgeHex, let color = colorFromHex(hex),
-           let label = row.badgeLabel, !label.isEmpty {
-            return Platform(name: label, color: color, textColor: textColor(for: color), catalogId: catalogId)
-        }
+        if let p = platformFromRow(row, catalogId: catalogId) { return p }
         // Fall back to local catalogue entry.
         guard let svc = StreamingCatalog.service(for: catalogId) else { return nil }
         return Platform(name: svc.name, color: svc.glow, textColor: textColor(for: svc.glow), catalogId: catalogId)
@@ -126,10 +134,7 @@ struct Platform {
                 if let catalogId = row.catalogId {
                     if let pinned = legacyPins[catalogId] { return pinned }
                     // Prefer badge_hex and badge_label from the server map.
-                    if let hex = row.badgeHex, let color = colorFromHex(hex),
-                       let label = row.badgeLabel, !label.isEmpty {
-                        return Platform(name: label, color: color, textColor: textColor(for: color), catalogId: catalogId)
-                    }
+                    if let p = platformFromRow(row, catalogId: catalogId) { return p }
                     // Fall back to local catalogue entry.
                     if let svc = StreamingCatalog.service(for: catalogId) {
                         return Platform(name: svc.name, color: svc.glow, textColor: textColor(for: svc.glow), catalogId: catalogId)

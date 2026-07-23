@@ -90,6 +90,23 @@ struct Platform {
         return Color(red: r, green: g, blue: b)
     }
 
+    /// Builds a Platform from a server brand-map row, preferring the
+    /// canonical badge_label and badge_hex columns. Returns nil when
+    /// either field is absent, signalling the caller to try local fallback.
+    private static func platformFromRow(_ row: TVProviderBrandRow, catalogId: String) -> Platform? {
+        if let hex = row.badgeHex, let color = colorFromHex(hex),
+           let label = row.badgeLabel, !label.isEmpty {
+            return Platform(
+                name: label.uppercased(),
+                color: color,
+                textColor: textColor(for: color),
+                catalogId: catalogId,
+                displayName: label
+            )
+        }
+        return nil
+    }
+
     // MARK: - Legacy lookup by catalog id
 
     private static func legacyByCatalogId(_ id: String) -> Platform? {
@@ -134,16 +151,7 @@ struct Platform {
         let normalized = normalizeCatalogId(catalogId)
         if let legacy = legacyByCatalogId(normalized) { return legacy }
         // Prefer badge_hex and badge_label from the server map.
-        if let hex = row.badgeHex, let color = colorFromHex(hex),
-           let label = row.badgeLabel, !label.isEmpty {
-            return Platform(
-                name: label.uppercased(),
-                color: color,
-                textColor: textColor(for: color),
-                catalogId: normalized,
-                displayName: label
-            )
-        }
+        if let p = platformFromRow(row, catalogId: normalized) { return p }
         // Fall back to local catalogue entry if one exists.
         if let legacy = localFallback(for: normalized) { return legacy }
         // Null or missing badge fields — hide the item.
@@ -169,16 +177,7 @@ struct Platform {
                     let normalized = normalizeCatalogId(catalogId)
                     if let legacy = legacyByCatalogId(normalized) { return legacy }
                     // Prefer badge_hex and badge_label from the server map.
-                    if let hex = row.badgeHex, let color = colorFromHex(hex),
-                       let label = row.badgeLabel, !label.isEmpty {
-                        return Platform(
-                            name: label.uppercased(),
-                            color: color,
-                            textColor: textColor(for: color),
-                            catalogId: normalized,
-                            displayName: label
-                        )
-                    }
+                    if let p = platformFromRow(row, catalogId: normalized) { return p }
                     // Fall back to local catalogue entry if one exists.
                     if let legacy = localFallback(for: normalized) { return legacy }
                     return nil

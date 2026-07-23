@@ -52,7 +52,7 @@ final class ProviderBrandMapService {
                 UserDefaults.standard.set(data, forKey: cacheKey)
             }
         } catch {
-            print("[ProviderBrandMap] refresh failed: \(error.localizedDescription)")
+            // Keep cached state — never blank badges or rails.
         }
     }
 }
