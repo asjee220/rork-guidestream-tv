@@ -78,14 +78,16 @@ struct Platform {
             : .white
     }
 
-    // MARK: - Derived colour for non-legacy brands
+    // MARK: - Hex colour parsing
 
-    private static func derivedColor(for name: String) -> Color {
-        var hash: UInt32 = 5381
-        for scalar in name.unicodeScalars {
-            hash = ((hash << 5) &+ hash) &+ scalar.value
-        }
-        return Color(hue: Double(hash % 360) / 360.0, saturation: 0.6, brightness: 0.5)
+    /// Parses a 6-digit hex string (no leading #) into a Color, or nil.
+    private static func colorFromHex(_ hex: String) -> Color? {
+        let cleaned = hex.hasPrefix("#") ? String(hex.dropFirst()) : hex
+        guard cleaned.count == 6, let value = UInt32(cleaned, radix: 16) else { return nil }
+        let r = Double((value >> 16) & 0xFF) / 255.0
+        let g = Double((value >> 8) & 0xFF) / 255.0
+        let b = Double(value & 0xFF) / 255.0
+        return Color(red: r, green: g, blue: b)
     }
 
     // MARK: - Legacy lookup by catalog id
@@ -131,14 +133,21 @@ struct Platform {
         guard let catalogId = row.catalogId else { return nil }
         let normalized = normalizeCatalogId(catalogId)
         if let legacy = legacyByCatalogId(normalized) { return legacy }
-        let color = derivedColor(for: row.displayName)
-        return Platform(
-            name: row.displayName.uppercased(),
-            color: color,
-            textColor: textColor(for: color),
-            catalogId: normalized,
-            displayName: row.displayName
-        )
+        // Prefer badge_hex and badge_label from the server map.
+        if let hex = row.badgeHex, let color = colorFromHex(hex),
+           let label = row.badgeLabel, !label.isEmpty {
+            return Platform(
+                name: label.uppercased(),
+                color: color,
+                textColor: textColor(for: color),
+                catalogId: normalized,
+                displayName: label
+            )
+        }
+        // Fall back to local catalogue entry if one exists.
+        if let legacy = localFallback(for: normalized) { return legacy }
+        // Null or missing badge fields — hide the item.
+        return nil
     }
 
     // MARK: - Resolution: provider name (fallback)
@@ -159,14 +168,20 @@ struct Platform {
                     guard let catalogId = row.catalogId else { return nil }
                     let normalized = normalizeCatalogId(catalogId)
                     if let legacy = legacyByCatalogId(normalized) { return legacy }
-                    let color = derivedColor(for: row.displayName)
-                    return Platform(
-                        name: row.displayName.uppercased(),
-                        color: color,
-                        textColor: textColor(for: color),
-                        catalogId: normalized,
-                        displayName: row.displayName
-                    )
+                    // Prefer badge_hex and badge_label from the server map.
+                    if let hex = row.badgeHex, let color = colorFromHex(hex),
+                       let label = row.badgeLabel, !label.isEmpty {
+                        return Platform(
+                            name: label.uppercased(),
+                            color: color,
+                            textColor: textColor(for: color),
+                            catalogId: normalized,
+                            displayName: label
+                        )
+                    }
+                    // Fall back to local catalogue entry if one exists.
+                    if let legacy = localFallback(for: normalized) { return legacy }
+                    return nil
                 }
             }
         }

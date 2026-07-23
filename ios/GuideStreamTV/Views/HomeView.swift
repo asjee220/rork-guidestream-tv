@@ -68,16 +68,36 @@ struct Platform {
         return lum > 0.6 ? Color(red: Double(r) * 0.15, green: Double(g) * 0.15, blue: Double(b) * 0.15) : .white
     }
 
+    // MARK: - Hex colour parsing
+
+    /// Parses a 6-digit hex string (no leading #) into a Color, or nil.
+    private static func colorFromHex(_ hex: String) -> Color? {
+        let cleaned = hex.hasPrefix("#") ? String(hex.dropFirst()) : hex
+        guard cleaned.count == 6, let value = UInt32(cleaned, radix: 16) else { return nil }
+        let r = Double((value >> 16) & 0xFF) / 255.0
+        let g = Double((value >> 8) & 0xFF) / 255.0
+        let b = Double(value & 0xFF) / 255.0
+        return Color(red: r, green: g, blue: b)
+    }
+
     // MARK: - ID-based resolution (primary)
 
     /// Resolves a Platform from the stable TMDB provider id via the server
     /// brand map. Returns nil when the provider is not in the app's catalogue
-    /// (null catalog_id) or when the id is not in the map.
+    /// (null catalog_id) or when the id is not in the map. Prefers badge_hex
+    /// and badge_label from the server map; falls back to the local catalogue
+    /// entry's glow colour and name when absent.
     static func from(providerId: Int) -> Platform? {
         guard let row = ProviderBrandMapService.shared.rows.first(where: { $0.tmdbProviderId == providerId })
         else { return nil }
         guard let catalogId = row.catalogId else { return nil }
         if let pinned = legacyPins[catalogId] { return pinned }
+        // Prefer badge_hex and badge_label from the server map.
+        if let hex = row.badgeHex, let color = colorFromHex(hex),
+           let label = row.badgeLabel, !label.isEmpty {
+            return Platform(name: label, color: color, textColor: textColor(for: color), catalogId: catalogId)
+        }
+        // Fall back to local catalogue entry.
         guard let svc = StreamingCatalog.service(for: catalogId) else { return nil }
         return Platform(name: svc.name, color: svc.glow, textColor: textColor(for: svc.glow), catalogId: catalogId)
     }
@@ -105,6 +125,12 @@ struct Platform {
             if row.aliases.contains(where: { normalise($0) == normalised }) {
                 if let catalogId = row.catalogId {
                     if let pinned = legacyPins[catalogId] { return pinned }
+                    // Prefer badge_hex and badge_label from the server map.
+                    if let hex = row.badgeHex, let color = colorFromHex(hex),
+                       let label = row.badgeLabel, !label.isEmpty {
+                        return Platform(name: label, color: color, textColor: textColor(for: color), catalogId: catalogId)
+                    }
+                    // Fall back to local catalogue entry.
                     if let svc = StreamingCatalog.service(for: catalogId) {
                         return Platform(name: svc.name, color: svc.glow, textColor: textColor(for: svc.glow), catalogId: catalogId)
                     }
@@ -1909,14 +1935,23 @@ struct HomeView: View {
     }
 
     /// Trending ranked — same pool as top picks but deduplicated so the
-    /// same title never appears in both rows.
+    /// same title never appears in both rows. The rank badge reflects the
+    /// true one-based index in the de-duplicated trending array before any
+    /// filtering, so gaps in the rank sequence are expected when titles are
+    /// excluded because they appear in Top Picks.
     private var trendingRankedShows: [PosterShow] {
         let topPickIds = Set(topPicksShows.compactMap { $0.tmdbId })
+        // Build rank lookup from the de-duplicated trending array before
+        // any filtering is applied, so trueRank is the real TMDB trending
+        // position (1-based), not the post-exclusion display index.
+        var rankLookup: [Int: Int] = [:]
+        for (idx, r) in trending.enumerated() {
+            rankLookup[r.id] = idx + 1
+        }
         return trending
             .filter { providerByTmdb[$0.id] != nil }
             .filter { !topPickIds.contains($0.id) }
-            .enumerated()
-            .map { idx, r in
+            .map { r in
                 PosterShow(
                     title: r.displayName,
                     meta: providerByTmdb[r.id]?.name ?? "",
@@ -1926,7 +1961,7 @@ struct HomeView: View {
                     tmdbId: r.id,
                     voteAverage: r.voteAverage,
                     isTV: r.isTV,
-                    trueRank: idx + 1
+                    trueRank: rankLookup[r.id]
                 )
             }
             .prefix(20)

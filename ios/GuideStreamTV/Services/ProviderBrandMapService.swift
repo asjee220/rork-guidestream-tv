@@ -22,7 +22,7 @@ final class ProviderBrandMapService {
     /// from the network once per launch via `refresh()`.
     private(set) var rows: [ProviderBrandRow] = []
 
-    private let cacheKey = "gs_provider_brand_map"
+    private let cacheKey = "gs_provider_brand_map_v2"
 
     private init() {
         loadCachedRows()
@@ -66,6 +66,8 @@ nonisolated struct ProviderBrandRow: Codable, Sendable {
     let catalogId: String?
     let aliases: [String]
     let linkSource: String
+    let badgeLabel: String?
+    let badgeHex: String?
 
     enum CodingKeys: String, CodingKey {
         case tmdbProviderId = "tmdb_provider_id"
@@ -74,5 +76,7 @@ nonisolated struct ProviderBrandRow: Codable, Sendable {
         case catalogId = "catalog_id"
         case aliases
         case linkSource = "link_source"
+        case badgeLabel = "badge_label"
+        case badgeHex = "badge_hex"
     }
 }

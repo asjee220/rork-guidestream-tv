@@ -18,6 +18,8 @@ nonisolated struct TVProviderBrandRow: Codable, Sendable, Hashable {
     let catalogId: String?
     let aliases: [String]
     let linkSource: String
+    let badgeLabel: String?
+    let badgeHex: String?
 
     enum CodingKeys: String, CodingKey {
         case tmdbProviderId = "tmdb_provider_id"
@@ -26,6 +28,8 @@ nonisolated struct TVProviderBrandRow: Codable, Sendable, Hashable {
         case catalogId      = "catalog_id"
         case aliases
         case linkSource     = "link_source"
+        case badgeLabel     = "badge_label"
+        case badgeHex       = "badge_hex"
     }
 }
 
@@ -48,7 +52,7 @@ final class TVProviderBrandMapService: @unchecked Sendable {
         return _rows
     }
 
-    private let cacheKey = "tv.providerBrandMap.cache"
+    private let cacheKey = "tv.providerBrandMap.cache.v2"
 
     private init() {
         loadCacheSync()
@@ -72,7 +76,7 @@ final class TVProviderBrandMapService: @unchecked Sendable {
         do {
             let fetched: [TVProviderBrandRow] = try await TVSupabaseManager.shared.client
                 .from("provider_brand_map")
-                .select("tmdb_provider_id,display_name,logo_path,catalog_id,aliases,link_source")
+                .select("tmdb_provider_id,display_name,logo_path,catalog_id,aliases,link_source,badge_label,badge_hex")
                 .execute()
                 .value
             lock.lock()

@@ -399,11 +399,15 @@ fun HomeScreen(
         if (!homeReady) {
             ShimmerSection("Everyone's Watching", Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
         } else if (trending.isNotEmpty()) {
+            // Build rank lookup from the de-duplicated trending array before
+            // any filtering, so trueRanks reflects the real TMDB trending
+            // position (1-based), not the post-exclusion display index.
+            val rankLookup = trending.mapIndexed { idx, r -> r.id to (idx + 1) }.toMap()
             val rankedShows = trending.filter { providerByTmdb[it.id] != null }.filterNot { it.id in topPickIds }
             TrendingRankedSection(
                 shows = rankedShows.take(20),
                 providerByTmdb = providerByTmdb,
-                trueRanks = rankedShows.mapIndexed { idx, _ -> idx + 1 },
+                trueRanks = rankedShows.mapNotNull { rankLookup[it.id] },
                 onOpen = { r ->
                     WatchIntentLogger.get().log(
                         WatchIntentLogger.IntentEventType.CARD_TAPPED,

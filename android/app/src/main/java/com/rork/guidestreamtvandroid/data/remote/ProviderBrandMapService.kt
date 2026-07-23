@@ -27,6 +27,8 @@ class ProviderBrandMapService private constructor() {
         @SerialName("catalog_id") val catalogId: String? = null,
         @SerialName("aliases") val aliases: List<String> = emptyList(),
         @SerialName("link_source") val linkSource: String = "",
+        @SerialName("badge_label") val badgeLabel: String? = null,
+        @SerialName("badge_hex") val badgeHex: String? = null,
     )
 
     /** Cached brand-map rows — populated by [refresh]. Empty until the

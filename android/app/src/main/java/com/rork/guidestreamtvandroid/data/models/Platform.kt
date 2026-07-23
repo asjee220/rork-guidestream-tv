@@ -70,17 +70,45 @@ data class Platform(
             } else Color.White
         }
 
+        // ── Hex colour parsing ───────────────────────────────────────
+
+        /** Parses a 6-digit hex string (no leading #) into a Color, or null. */
+        private fun colorFromHex(hex: String): Color? {
+            val cleaned = if (hex.startsWith("#")) hex.drop(1) else hex
+            if (cleaned.length != 6) return null
+            val value = cleaned.toLongOrNull(16) ?: return null
+            val r = ((value shr 16) and 0xFF) / 255.0
+            val g = ((value shr 8) and 0xFF) / 255.0
+            val b = (value and 0xFF) / 255.0
+            return Color(
+                red = r.toFloat(),
+                green = g.toFloat(),
+                blue = b.toFloat(),
+                alpha = 1f,
+            )
+        }
+
         // ── ID-based resolution (primary) ──────────────────────────────
 
         /** Resolves a Platform from the stable TMDB provider id via the
          * server brand map. Returns null when the provider is not in the
-         * app's catalogue (null catalog_id) or when the id is not in the map. */
+         * app's catalogue (null catalog_id) or when the id is not in the map.
+         * Prefers badge_hex and badge_label from the server map; falls back
+         * to the local catalogue entry's glow colour and name when absent. */
         fun fromProviderId(providerId: Int): Platform? {
             if (providerId <= 0) return null
             val row = ProviderBrandMapService.get().rows.firstOrNull { it.tmdbProviderId == providerId }
                 ?: return null
             val catalogId = row.catalogId ?: return null
             legacyPins[catalogId]?.let { return it }
+            // Prefer badge_hex and badge_label from the server map.
+            if (row.badgeHex != null && row.badgeLabel != null && row.badgeLabel!!.isNotEmpty()) {
+                val color = colorFromHex(row.badgeHex!!)
+                if (color != null) {
+                    return Platform(row.badgeLabel!!, color, textColorFor(color), catalogId)
+                }
+            }
+            // Fall back to local catalogue entry.
             val svc = StreamingCatalog.service(catalogId) ?: return null
             return Platform(svc.name, svc.glow, textColorFor(svc.glow), catalogId)
         }
@@ -109,6 +137,14 @@ data class Platform(
                     val catalogId = row.catalogId
                     if (catalogId != null) {
                         legacyPins[catalogId]?.let { return it }
+                        // Prefer badge_hex and badge_label from the server map.
+                        if (row.badgeHex != null && row.badgeLabel != null && row.badgeLabel!!.isNotEmpty()) {
+                            val color = colorFromHex(row.badgeHex!!)
+                            if (color != null) {
+                                return Platform(row.badgeLabel!!, color, textColorFor(color), catalogId)
+                            }
+                        }
+                        // Fall back to local catalogue entry.
                         val svc = StreamingCatalog.service(catalogId)
                         if (svc != null) return Platform(svc.name, svc.glow, textColorFor(svc.glow), catalogId)
                     }
