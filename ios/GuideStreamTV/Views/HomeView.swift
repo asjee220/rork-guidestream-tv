@@ -1413,10 +1413,20 @@ struct HomeView: View {
         async let topRatedCall = try? TMDBService.shared.getTopRated()
         async let genreCall = try? TMDBService.shared.getDiscoverByGenre(selectedGenreId)
         async let newReleasesCall = StreamingReleasesService.shared.fetchReleases()
-        let (t1, t2, t3, t4, a, e, n, s, tr, genre, nr) = await (trendingPage1, trendingPage2, trendingPage3, trendingPage4, onAirCall, endedCall, newTodayCall, sportsCall, topRatedCall, genreCall, newReleasesCall)
+
+        // Await in smaller groups so the type-checker can resolve each tuple independently.
+        let (t1, t2) = await (trendingPage1, trendingPage2)
+        let (t3, t4) = await (trendingPage3, trendingPage4)
+        let (a, e, n, s) = await (onAirCall, endedCall, newTodayCall, sportsCall)
+        let (tr, genre, nr) = await (topRatedCall, genreCall, newReleasesCall)
+
         // Concatenate all trending pages and de-duplicate by id, preserving
         // first-seen order (later pages can repeat earlier titles).
-        let combinedTrending = (t1 ?? []) + (t2 ?? []) + (t3 ?? []) + (t4 ?? [])
+        // Build incrementally with explicit types to avoid type-checker timeouts.
+        var combinedTrending: [TMDBResult] = (t1 ?? [])
+        combinedTrending += (t2 ?? [])
+        combinedTrending += (t3 ?? [])
+        combinedTrending += (t4 ?? [])
         if !combinedTrending.isEmpty {
             var seenTrendingIds = Set<Int>()
             trending = combinedTrending.filter { seenTrendingIds.insert($0.id).inserted }
