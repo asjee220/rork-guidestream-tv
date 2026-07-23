@@ -218,7 +218,7 @@ final class ReelsViewModel {
     /// movies that are currently streaming (not just theatrical / upcoming).
     private let tmdbProviderIdMap: [String: Int] = [
         "netflix": 8, "prime": 9, "disney": 337, "hbo": 1899, "hulu": 15,
-        "appletv": 350, "paramount": 531, "peacock": 386, "starz": 43,
+        "appletv": 350, "paramount": 2303, "peacock": 386, "starz": 43,
         "showtime": 37, "crunchyroll": 283, "amc": 526, "discovery": 584,
         "mubi": 11, "britbox": 151, "fubo": 257, "tubi": 73, "pluto": 300,
         "youtube": 192
@@ -492,7 +492,7 @@ final class ReelsViewModel {
         async let hulu = (try? tmdb.getPopularMoviesOnService(tmdbProviderId: 15)) ?? []
 
         // Remaining providers via task group.
-        let secondaryProviderIds = [350, 531, 386, 43, 37, 283, 526, 584, 11, 151, 257, 73, 300, 192]
+        let secondaryProviderIds = [350, 2303, 386, 43, 37, 283, 526, 584, 11, 151, 257, 73, 300, 192]
         async let secondary: [TMDBResult] = await withTaskGroup(of: [TMDBResult].self) { group in
             for pid in secondaryProviderIds {
                 group.addTask { [tmdb] in

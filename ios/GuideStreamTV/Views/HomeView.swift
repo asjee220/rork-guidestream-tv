@@ -193,7 +193,7 @@ struct HomeView: View {
     /// Cache of resolved genre ids per TMDB id so a title is never looked up twice.
     @State private var resolvedGenres: [Int: Set<Int>] = [:]
     @State private var popularOnServiceResults: [String: [TMDBResult]] = [:]
-    private let tmdbProviderIdMap: [String: Int] = ["netflix": 8, "prime": 9, "disney": 337, "hbo": 1899, "hulu": 15, "appletv": 350, "paramount": 531, "peacock": 386, "starz": 43, "showtime": 37, "crunchyroll": 283, "amc": 526, "discovery": 584, "mubi": 11, "britbox": 151, "fubo": 257, "tubi": 73, "pluto": 300, "youtube": 192]
+    private let tmdbProviderIdMap: [String: Int] = ["netflix": 8, "prime": 9, "disney": 337, "hbo": 1899, "hulu": 15, "appletv": 350, "paramount": 2303, "peacock": 386, "starz": 43, "showtime": 37, "crunchyroll": 283, "amc": 526, "discovery": 584, "mubi": 11, "britbox": 151, "fubo": 257, "tubi": 73, "pluto": 300, "youtube": 192]
     @State private var topRated: [TMDBResult] = []
     @State private var genreShows: [TMDBResult] = []
     @State private var recommendedShows: [TMDBResult] = []

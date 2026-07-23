@@ -92,7 +92,7 @@ class HomeViewModel : ViewModel() {
         "hbo" to 1899,
         "hulu" to 15,
         "appletv" to 350,
-        "paramount" to 531,
+        "paramount" to 2303,
         "peacock" to 386,
         "starz" to 43,
         "showtime" to 37,

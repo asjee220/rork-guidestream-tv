@@ -178,7 +178,7 @@ struct WatchingNowView: View {
             let providerIdMap: [String: Int] = [
                 "netflix": 8,
                 "hulu": 15,
-                "paramount": 531,
+                "paramount": 2303,
                 "hbo": 1899,
                 "disney": 337,
                 "appletv": 350,

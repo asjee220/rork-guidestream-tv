@@ -771,7 +771,7 @@ nonisolated struct TMDBService {
     /// original-language list used by `getDiscoverInternational` instead of a
     /// genre. Keeps mediaType tv.
     func getPopularOnServiceInternational(tmdbProviderId: Int, pages: Int = 2) async throws -> [TMDBResult] {
-        let languages = "ko|ja|fr|de|es|it|pt|hi|ar|tr|sv|no|da|fi|nl|pl|th|zh"
+        let languages = "ko%7Cja%7Cfr%7Cde%7Ces%7Cit%7Cpt%7Chi%7Car%7Ctr%7Csv%7Cno%7Cda%7Cfi%7Cnl%7Cpl%7Cth%7Czh"
         var collected: [TMDBResult] = []
         var seen = Set<Int>()
         for page in 1...max(1, pages) {
