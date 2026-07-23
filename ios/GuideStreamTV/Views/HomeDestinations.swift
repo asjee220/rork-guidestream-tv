@@ -12,7 +12,7 @@ enum HomeRoute: Hashable {
     case widgetSetup
     case continueWatching
     case topPicks
-    case trending
+    case everyonesWatching
     case leavingSoon
     case popularOnServiceCategories(serviceId: String, providerId: Int)
 }

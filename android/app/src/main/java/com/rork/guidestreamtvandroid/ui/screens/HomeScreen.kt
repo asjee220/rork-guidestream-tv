@@ -304,19 +304,14 @@ fun HomeScreen(
         )
 
         // Personalised Top Picks pool — hoisted so both the Top Picks and
-        // Trending This Week sections share it (Trending excludes any id already
-        // shown in Top Picks). Excludes watched titles and boosts titles on the
-        // user's selected services above equally-rated ones. Reuses the app's
-        // owned-service normalisation (lowercase name compare with the apple /
-        // hbo-max special cases).
+        // Everyone's Watching sections share it (Everyone's Watching excludes
+        // any id already shown in Top Picks). Excludes watched titles and
+        // boosts titles on the user's selected services above equally-rated
+        // ones. Resolves the provider's catalogue id and tests set membership.
         val selected = selectedServices.map { it.lowercase() }
         fun onService(id: Int): Boolean {
-            val key = providerByTmdb[id]?.name?.lowercase() ?: return false
-            return selected.any { s ->
-                key.contains(s) ||
-                    (s == "appletv" && key.contains("apple")) ||
-                    (s == "hbo" && (key.contains("hbo") || key.contains("max")))
-            }
+            val catalogId = providerByTmdb[id]?.catalogId ?: return false
+            return selected.contains(catalogId)
         }
         fun scoreFor(r: TMDBResult): Double =
             0.60 * ((r.voteAverage ?: 7.0) / 10.0) +
@@ -326,7 +321,7 @@ fun HomeScreen(
             .filter { providerByTmdb[it.id] != null }
             .filter { !watchedIds.contains(it.id.toString()) }
             .sortedByDescending { scoreFor(it) }
-        val topPickIds = topPicksAll.map { it.id }.toSet()
+        val topPickIds = topPicksAll.take(20).map { it.id }.toSet()
 
         // Top Picks for You (trending scored)
         if (!homeReady) {
@@ -400,27 +395,29 @@ fun HomeScreen(
             }
         }
 
-        // Trending This Week (ranked)
+        // Everyone's Watching (ranked)
         if (!homeReady) {
-            ShimmerSection("Trending This Week", Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
+            ShimmerSection("Everyone's Watching", Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
         } else if (trending.isNotEmpty()) {
+            val rankedShows = trending.filter { providerByTmdb[it.id] != null }.filterNot { it.id in topPickIds }
             TrendingRankedSection(
-                shows = trending.filter { providerByTmdb[it.id] != null }.filterNot { it.id in topPickIds }.take(20),
+                shows = rankedShows.take(20),
                 providerByTmdb = providerByTmdb,
+                trueRanks = rankedShows.mapIndexed { idx, _ -> idx + 1 },
                 onOpen = { r ->
                     WatchIntentLogger.get().log(
                         WatchIntentLogger.IntentEventType.CARD_TAPPED,
                         titleId = r.id.toString(),
-                        metadata = mapOf("section" to "trending_ranked"),
+                        metadata = mapOf("section" to "everyones_watching"),
                     )
                     onOpenTitle(PendingTitleRoute(titleId = r.id.toString(), titleName = r.displayName, isTv = r.isTV))
                 },
                 onSeeAll = {
                     WatchIntentLogger.get().log(
                         WatchIntentLogger.IntentEventType.CARD_TAPPED,
-                        metadata = mapOf("section" to "trending_ranked_see_all"),
+                        metadata = mapOf("section" to "everyones_watching_see_all"),
                     )
-                    onSeeAllList(HomeListTarget(title = "Trending This Week", tag = "TRENDING", shows = trending.filter { providerByTmdb[it.id] != null }.filterNot { it.id in topPickIds }, providerByTmdb = providerByTmdb))
+                    onSeeAllList(HomeListTarget(title = "Everyone's Watching", tag = "EVERYONES_WATCHING", shows = rankedShows, providerByTmdb = providerByTmdb))
                 },
             )
         }
@@ -991,6 +988,7 @@ private fun TodaysPickSpotlight(
     val platform = Platform.from(pick.sourceName)
     val badgeColor = platform?.color ?: Color.White.copy(alpha = 0.25f)
     val badgeName = platform?.name ?: pick.sourceName
+    val badgeTextColor = platform?.textColor ?: Color.White
 
     // CTA text: "Watch on <source>" when subscribed, "Get on <source>" when not, "Watch now" when null.
     val ctaText = if (!pick.sourceName.isNullOrEmpty()) {
@@ -1134,10 +1132,10 @@ private fun TodaysPickSpotlight(
                     )
                     Spacer(Modifier.width(6.dp))
                     Text(
-                        text = badgeName ?: "",
+                        text = (badgeName ?: "").let { if (it.length > 12) it.take(12) else it },
                         fontSize = 12.sp,
                         fontWeight = FontWeight.SemiBold,
-                        color = badgeColor,
+                        color = badgeTextColor,
                     )
                 }
             }
@@ -1463,6 +1461,7 @@ private fun PosterCardWithBadge(
 private fun TrendingRankedSection(
     shows: List<TMDBResult>,
     providerByTmdb: Map<Int, Platform>,
+    trueRanks: List<Int> = emptyList(),
     onOpen: (TMDBResult) -> Unit,
     onSeeAll: (() -> Unit)? = null,
 ) {
@@ -1470,7 +1469,7 @@ private fun TrendingRankedSection(
     Column(Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
         Row(verticalAlignment = Alignment.Bottom) {
             Text(
-                text = "Trending This Week",
+                text = "Everyone's Watching",
                 fontSize = 18.sp,
                 fontWeight = FontWeight.Bold,
                 color = TextPrimary,
@@ -1498,7 +1497,7 @@ private fun TrendingRankedSection(
                 PosterCardWithBadge(
                     show = r,
                     platformColor = providerByTmdb[r.id]?.color,
-                    badgeText = "#${index + 1}",
+                    badgeText = "#${trueRanks.getOrElse(index) { index + 1 }}",
                     onClick = { onOpen(r) },
                 )
             }

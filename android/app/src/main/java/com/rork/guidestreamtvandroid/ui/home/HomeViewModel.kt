@@ -8,6 +8,7 @@ import com.rork.guidestreamtvandroid.data.models.StreamingCatalog
 import com.rork.guidestreamtvandroid.data.models.TitleId
 import com.rork.guidestreamtvandroid.data.models.TMDBResult
 import com.rork.guidestreamtvandroid.data.remote.ExpiringTitlesService
+import com.rork.guidestreamtvandroid.data.remote.ProviderBrandMapService
 import com.rork.guidestreamtvandroid.data.remote.RecommendedCreator
 import com.rork.guidestreamtvandroid.data.remote.RecommendedCreatorsService
 import com.rork.guidestreamtvandroid.data.remote.StreamingReleasesService
@@ -138,12 +139,14 @@ class HomeViewModel : ViewModel() {
         viewModelScope.launch(Dispatchers.IO) {
             val jobs = listOf(
                 launch {
-                    // Fetch two pages of trending and de-duplicate by id,
-                    // preserving first-seen order (page 2 can repeat page 1).
-                    val combined = tmdb.getTrendingTV(page = 1) + tmdb.getTrendingTV(page = 2)
+                    // Fetch four pages of trending and de-duplicate by id,
+                    // preserving first-seen order (later pages can repeat earlier).
+                    val combined = tmdb.getTrendingTV(page = 1) + tmdb.getTrendingTV(page = 2) +
+                        tmdb.getTrendingTV(page = 3) + tmdb.getTrendingTV(page = 4)
                     val seen = mutableSetOf<Int>()
                     _trending.value = combined.filter { seen.add(it.id) }
                 },
+                launch { ProviderBrandMapService.get().refresh() },
                 launch { _onAir.value = tmdb.getOnTheAir() },
                 launch { _topRated.value = tmdb.getTopRated() },
                 launch {
@@ -314,7 +317,9 @@ class HomeViewModel : ViewModel() {
                 .filterNot { map.containsKey(it.id) }
                 .map { show ->
                     async(Dispatchers.IO) {
-                        show.id to Platform.from(tmdb.getTopWatchProvider(show.id)?.providerName)
+                        val provider = tmdb.getTopWatchProvider(show.id)
+                        show.id to (Platform.fromProviderId(provider?.providerId ?: 0)
+                            ?: Platform.from(provider?.providerName))
                     }
                 }
                 .awaitAll()

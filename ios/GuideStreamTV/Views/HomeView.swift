@@ -13,37 +13,121 @@ import UIKit
 struct Platform {
     let name: String
     let color: Color
+    var textColor: Color = .white
+    var catalogId: String? = nil
 
-    static let netflix = Platform(name: "NETFLIX", color: Color(red: 0xE5/255, green: 0x09/255, blue: 0x14/255))
-    static let hbo = Platform(name: "HBO", color: Color(red: 0x5A/255, green: 0x1F/255, blue: 0xCB/255))
-    static let appleTV = Platform(name: "Apple TV+", color: Color(red: 0x10/255, green: 0x10/255, blue: 0x10/255))
-    static let hulu = Platform(name: "HULU", color: Color(red: 0x1C/255, green: 0xE7/255, blue: 0x83/255))
-    static let prime = Platform(name: "PRIME", color: Color(red: 0x00/255, green: 0xA8/255, blue: 0xE1/255))
-    static let disney = Platform(name: "DISNEY+", color: Color(red: 0x11/255, green: 0x3C/255, blue: 0xCF/255))
-    static let paramount = Platform(name: "PARAMOUNT+", color: Color(red: 0x00/255, green: 0x64/255, blue: 0xFF/255))
-    static let peacock = Platform(name: "PEACOCK", color: Color(red: 0x00/255, green: 0x00/255, blue: 0x00/255))
-    static let starz = Platform(name: "STARZ", color: Color(red: 0x00/255, green: 0x00/255, blue: 0x00/255))
-    static let showtime = Platform(name: "SHOWTIME", color: Color(red: 0xD8/255, green: 0x00/255, blue: 0x00/255))
-    static let crunchyroll = Platform(name: "CRUNCHYROLL", color: Color(red: 0xF4/255, green: 0x7B/255, blue: 0x20/255))
-    static let youtube = Platform(name: "YOUTUBE", color: Color(red: 0xFF/255, green: 0x00/255, blue: 0x00/255))
+    // 12 legacy pinned brands — exact label + colour + white text, overriding
+    // whatever the catalogue or server map would otherwise produce.
+    static let netflix = Platform(name: "NETFLIX", color: Color(red: 0xE5/255, green: 0x09/255, blue: 0x14/255), textColor: .white, catalogId: "netflix")
+    static let hbo = Platform(name: "HBO", color: Color(red: 0x5A/255, green: 0x1F/255, blue: 0xCB/255), textColor: .white, catalogId: "hbo")
+    static let appleTV = Platform(name: "Apple TV+", color: Color(red: 0x10/255, green: 0x10/255, blue: 0x10/255), textColor: .white, catalogId: "appletv")
+    static let hulu = Platform(name: "HULU", color: Color(red: 0x1C/255, green: 0xE7/255, blue: 0x83/255), textColor: .white, catalogId: "hulu")
+    static let prime = Platform(name: "PRIME", color: Color(red: 0x00/255, green: 0xA8/255, blue: 0xE1/255), textColor: .white, catalogId: "prime")
+    static let disney = Platform(name: "DISNEY+", color: Color(red: 0x11/255, green: 0x3C/255, blue: 0xCF/255), textColor: .white, catalogId: "disney")
+    static let paramount = Platform(name: "PARAMOUNT+", color: Color(red: 0x00/255, green: 0x64/255, blue: 0xFF/255), textColor: .white, catalogId: "paramount")
+    static let peacock = Platform(name: "PEACOCK", color: Color(red: 0x00/255, green: 0x00/255, blue: 0x00/255), textColor: .white, catalogId: "peacock")
+    static let starz = Platform(name: "STARZ", color: Color(red: 0x00/255, green: 0x00/255, blue: 0x00/255), textColor: .white, catalogId: "starz")
+    static let showtime = Platform(name: "SHOWTIME", color: Color(red: 0xD8/255, green: 0x00/255, blue: 0x00/255), textColor: .white, catalogId: "showtime")
+    static let crunchyroll = Platform(name: "CRUNCHYROLL", color: Color(red: 0xF4/255, green: 0x7B/255, blue: 0x20/255), textColor: .white, catalogId: "crunchyroll")
+    static let youtube = Platform(name: "YOUTUBE", color: Color(red: 0xFF/255, green: 0x00/255, blue: 0x00/255), textColor: .white, catalogId: "youtube")
 
-    /// Maps a TMDB watch-provider name to one of our branded Platforms. Returns nil if we don't
-    /// recognise the provider, so callers can hide items rather than label them generically.
+    private static let legacyPins: [String: Platform] = [
+        "netflix": .netflix, "hbo": .hbo, "appletv": .appleTV, "hulu": .hulu,
+        "prime": .prime, "disney": .disney, "paramount": .paramount, "peacock": .peacock,
+        "starz": .starz, "showtime": .showtime, "crunchyroll": .crunchyroll, "youtube": .youtube,
+    ]
+
+    // MARK: - Normalisation
+
+    /// Normalises a provider name for matching: lowercases, strips trailing
+    /// channel suffixes, strips leading "the", replaces standalone "plus"
+    /// with "+", then removes every non-lowercase-letter-or-digit character.
+    private static func normalise(_ raw: String) -> String {
+        var s = raw.lowercased()
+        for suffix in ["amazon channel", "apple tv channel", "roku premium channel"] {
+            if s.hasSuffix(suffix) { s = String(s.dropLast(suffix.count)) }
+        }
+        s = s.trimmingCharacters(in: .whitespaces)
+        if s.hasPrefix("the ") { s = String(s.dropFirst(4)) }
+        s = s.split(separator: " ").map { $0 == "plus" ? "+" : String($0) }.joined(separator: " ")
+        return String(s.unicodeScalars.filter { scalar in
+            (scalar.value >= 0x61 && scalar.value <= 0x7A) || (scalar.value >= 0x30 && scalar.value <= 0x39)
+        })
+    }
+
+    // MARK: - Luminance
+
+    /// Text colour for a badge: white unless the background is bright
+    /// (relative luminance > 0.6), in which case a near-black derived
+    /// from that same background so light brand colours stay readable.
+    private static func textColor(for bg: Color) -> Color {
+        let ui = UIColor(bg)
+        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        ui.getRed(&r, green: &g, blue: &b, alpha: &a)
+        let lum = 0.299 * Double(r) + 0.587 * Double(g) + 0.114 * Double(b)
+        return lum > 0.6 ? Color(red: Double(r) * 0.15, green: Double(g) * 0.15, blue: Double(b) * 0.15) : .white
+    }
+
+    // MARK: - ID-based resolution (primary)
+
+    /// Resolves a Platform from the stable TMDB provider id via the server
+    /// brand map. Returns nil when the provider is not in the app's catalogue
+    /// (null catalog_id) or when the id is not in the map.
+    static func from(providerId: Int) -> Platform? {
+        guard let row = ProviderBrandMapService.shared.rows.first(where: { $0.tmdbProviderId == providerId })
+        else { return nil }
+        guard let catalogId = row.catalogId else { return nil }
+        if let pinned = legacyPins[catalogId] { return pinned }
+        guard let svc = StreamingCatalog.service(for: catalogId) else { return nil }
+        return Platform(name: svc.name, color: svc.glow, textColor: textColor(for: svc.glow), catalogId: catalogId)
+    }
+
+    // MARK: - Name-based resolution (fallback + legacy call sites)
+
+    /// Resolves a Platform from a display name. Resolution order:
+    /// 1. Legacy pins by normalised name
+    /// 2. Server map by alias
+    /// 3. Local catalogue derivation (by normalised name, then by id)
+    /// 4. nil — title is hidden from provider-gated rails.
+    /// No generic substring/contains fallback at any stage.
     static func from(providerName raw: String?) -> Platform? {
         guard let raw, !raw.isEmpty else { return nil }
-        let key = raw.lowercased()
-        if key.contains("netflix") { return .netflix }
-        if key.contains("max") || key.contains("hbo") { return .hbo }
-        if key.contains("apple tv") { return .appleTV }
-        if key.contains("disney") { return .disney }
-        if key.contains("hulu") { return .hulu }
-        if key.contains("amazon") || key.contains("prime video") { return .prime }
-        if key.contains("paramount") { return .paramount }
-        if key.contains("peacock") { return .peacock }
-        if key.contains("starz") { return .starz }
-        if key.contains("showtime") { return .showtime }
-        if key.contains("crunchyroll") { return .crunchyroll }
-        if key.contains("youtube") { return .youtube }
+        let normalised = normalise(raw)
+        guard !normalised.isEmpty else { return nil }
+
+        // 1. Legacy pins by normalised name
+        for pin in legacyPins.values {
+            if normalise(pin.name) == normalised { return pin }
+        }
+
+        // 2. Server map by alias
+        for row in ProviderBrandMapService.shared.rows {
+            if row.aliases.contains(where: { normalise($0) == normalised }) {
+                if let catalogId = row.catalogId {
+                    if let pinned = legacyPins[catalogId] { return pinned }
+                    if let svc = StreamingCatalog.service(for: catalogId) {
+                        return Platform(name: svc.name, color: svc.glow, textColor: textColor(for: svc.glow), catalogId: catalogId)
+                    }
+                }
+                return nil
+            }
+        }
+
+        // 3. Local catalogue derivation by normalised name, then by id
+        for svc in StreamingCatalog.all {
+            if normalise(svc.name) == normalised {
+                if let pinned = legacyPins[svc.id] { return pinned }
+                return Platform(name: svc.name, color: svc.glow, textColor: textColor(for: svc.glow), catalogId: svc.id)
+            }
+        }
+        for svc in StreamingCatalog.all {
+            if svc.id == normalised {
+                if let pinned = legacyPins[svc.id] { return pinned }
+                return Platform(name: svc.name, color: svc.glow, textColor: textColor(for: svc.glow), catalogId: svc.id)
+            }
+        }
+
+        // 4. No match
         return nil
     }
 }
@@ -99,6 +183,7 @@ struct PosterShow: Identifiable, Hashable {
     var seasonCount: Int? = nil
     var isTV: Bool
     var isComingToStreaming: Bool = false
+    var trueRank: Int? = nil
 }
 
 /// Default gradient colors used as a tasteful fallback while TMDB images load or when they fail.
@@ -591,7 +676,7 @@ struct HomeView: View {
                         }
 
                         if !homeContentReady {
-                            HomeShimmerSection(title: "Trending This Week")
+                            HomeShimmerSection(title: "Everyone's Watching")
                                 .padding(.horizontal, 20)
                         } else if !trendingRankedShows.isEmpty {
                             TrendingRankedSection(
@@ -599,15 +684,15 @@ struct HomeView: View {
                                 onSeeAll: {
                                     WatchIntentLogger.shared.log(
                                         eventType: .cardTapped,
-                                        metadata: ["section": "trending_ranked_see_all"]
+                                        metadata: ["section": "everyones_watching_see_all"]
                                     )
-                                    path.append(.trending)
+                                    path.append(.everyonesWatching)
                                 },
                                 onOpen: { show in
                                     WatchIntentLogger.shared.log(
                                         eventType: .cardTapped,
                                         titleId: WatchIntentLogger.titleSlug(show.title),
-                                        metadata: ["section": "trending_ranked"]
+                                        metadata: ["section": "everyones_watching"]
                                     )
                                     detailSubject = .show(show)
                                 }
@@ -993,10 +1078,10 @@ struct HomeView: View {
                         tag: "TOP PICK",
                         onSelect: { show in detailSubject = .show(show) }
                     )
-                case .trending:
+                case .everyonesWatching:
                     BingeWorthyListView(
                         shows: trendingRankedShows,
-                        sectionTitle: "Trending This Week",
+                        sectionTitle: "Everyone's Watching",
                         tag: "TRENDING",
                         onSelect: { show in detailSubject = .show(show) }
                     )
@@ -1314,8 +1399,13 @@ struct HomeView: View {
 
     private func loadTrendingIfNeeded(deferNonCritical: Bool = false) async {
         // Always load TMDB content so the hero, new-episodes, and binge sections never fall back to a gradient-only state.
+        // Refresh the provider brand map from the server (fire-and-forget;
+        // cached rows from UserDefaults are already loaded at init).
+        Task { await ProviderBrandMapService.shared.refresh() }
         async let trendingPage1 = try? TMDBService.shared.getTrending(page: 1)
         async let trendingPage2 = try? TMDBService.shared.getTrending(page: 2)
+        async let trendingPage3 = try? TMDBService.shared.getTrending(page: 3)
+        async let trendingPage4 = try? TMDBService.shared.getTrending(page: 4)
         async let onAirCall = try? TMDBService.shared.getOnTheAir()
         async let endedCall = try? TMDBService.shared.getDiscoverEnded()
         async let newTodayCall = try? TMDBService.shared.getNewToday()
@@ -1323,10 +1413,10 @@ struct HomeView: View {
         async let topRatedCall = try? TMDBService.shared.getTopRated()
         async let genreCall = try? TMDBService.shared.getDiscoverByGenre(selectedGenreId)
         async let newReleasesCall = StreamingReleasesService.shared.fetchReleases()
-        let (t1, t2, a, e, n, s, tr, genre, nr) = await (trendingPage1, trendingPage2, onAirCall, endedCall, newTodayCall, sportsCall, topRatedCall, genreCall, newReleasesCall)
-        // Concatenate both trending pages and de-duplicate by id, preserving
-        // first-seen order (page 2 can repeat page 1 titles).
-        let combinedTrending = (t1 ?? []) + (t2 ?? [])
+        let (t1, t2, t3, t4, a, e, n, s, tr, genre, nr) = await (trendingPage1, trendingPage2, trendingPage3, trendingPage4, onAirCall, endedCall, newTodayCall, sportsCall, topRatedCall, genreCall, newReleasesCall)
+        // Concatenate all trending pages and de-duplicate by id, preserving
+        // first-seen order (later pages can repeat earlier titles).
+        let combinedTrending = (t1 ?? []) + (t2 ?? []) + (t3 ?? []) + (t4 ?? [])
         if !combinedTrending.isEmpty {
             var seenTrendingIds = Set<Int>()
             trending = combinedTrending.filter { seenTrendingIds.insert($0.id).inserted }
@@ -1463,9 +1553,9 @@ struct HomeView: View {
             for r in toFetch {
                 group.addTask {
                     let provider = try? await TMDBService.shared.getTopWatchProvider(tmdbId: r.id, isTV: r.isTV)
-                    guard let provider, let platform = Platform.from(providerName: provider.providerName) else {
-                        return nil
-                    }
+                    guard let provider else { return nil }
+                    let platform = Platform.from(providerId: provider.providerId) ?? Platform.from(providerName: provider.providerName)
+                    guard let platform else { return nil }
                     return (r.id, platform)
                 }
             }
@@ -1741,13 +1831,8 @@ struct HomeView: View {
     /// source name string.
     private func isSubscribedToService(_ sourceName: String?) -> Bool {
         guard let sourceName, !sourceName.isEmpty else { return false }
-        let selected = auth.selectedServices.map { $0.lowercased() }
-        let key = sourceName.lowercased()
-        return selected.contains { s in
-            key.contains(s) ||
-            (s == "appletv" && key.contains("apple")) ||
-            (s == "hbo" && (key.contains("hbo") || key.contains("max")))
-        }
+        guard let catalogId = Platform.from(providerName: sourceName)?.catalogId else { return false }
+        return auth.selectedServices.map { $0.lowercased() }.contains(catalogId)
     }
 
     /// What's New Today — trending TV/movies dropping today. Only includes
@@ -1781,12 +1866,8 @@ struct HomeView: View {
         // Reuse the app's owned-service normalisation (see StreamingCatalog mapping below).
         let selected = auth.selectedServices.map { $0.lowercased() }
         func isOnService(_ id: Int) -> Bool {
-            guard let key = providerByTmdb[id]?.name.lowercased() else { return false }
-            return selected.contains { s in
-                key.contains(s) ||
-                (s == "appletv" && key.contains("apple")) ||
-                (s == "hbo" && (key.contains("hbo") || key.contains("max")))
-            }
+            guard let catalogId = providerByTmdb[id]?.catalogId else { return false }
+            return selected.contains(catalogId)
         }
 
         return trending
@@ -1824,7 +1905,8 @@ struct HomeView: View {
         return trending
             .filter { providerByTmdb[$0.id] != nil }
             .filter { !topPickIds.contains($0.id) }
-            .map { r in
+            .enumerated()
+            .map { idx, r in
                 PosterShow(
                     title: r.displayName,
                     meta: providerByTmdb[r.id]?.name ?? "",
@@ -1833,7 +1915,8 @@ struct HomeView: View {
                     posterUrl: r.posterUrl,
                     tmdbId: r.id,
                     voteAverage: r.voteAverage,
-                    isTV: r.isTV
+                    isTV: r.isTV,
+                    trueRank: idx + 1
                 )
             }
             .prefix(20)
@@ -3383,7 +3466,7 @@ private struct TrendingRankedSection: View {
     let onOpen: (PosterShow) -> Void
 
     var body: some View {
-        SectionGlassCard(title: "Trending This Week", onSeeAll: onSeeAll) {
+        SectionGlassCard(title: "Everyone's Watching", onSeeAll: onSeeAll) {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 10) {
                     ForEach(Array(shows.enumerated()), id: \.offset) { idx, show in
@@ -3411,7 +3494,7 @@ private struct TrendingRankedSection: View {
                                     .allowsHitTesting(false)
                                 }
                                 .overlay(alignment: .topLeading) {
-                                    Text("#\(idx + 1)")
+                                    Text("#\(show.trueRank ?? (idx + 1))")
                                         .scaledFont(size: 11, weight: .heavy)
                                         .foregroundStyle(Color.white.opacity(0.55))
                                         .padding(6)
@@ -3782,10 +3865,10 @@ private struct NewSeasonsSection: View {
 private struct NetworkBadge: View {
     let platform: Platform
     var body: some View {
-        Text(platform.name)
+        Text(platform.name.count > 12 ? String(platform.name.prefix(12)) : platform.name)
             .scaledFont(size: 8, weight: .bold)
             .tracking(0.6)
-            .foregroundStyle(.white)
+            .foregroundStyle(platform.textColor)
             .padding(.horizontal, 7)
             .padding(.vertical, 4)
             .background(
