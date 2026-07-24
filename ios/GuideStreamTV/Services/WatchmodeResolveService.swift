@@ -76,12 +76,14 @@ nonisolated enum WatchmodeResolveService {
         season: Int? = nil,
         episode: Int? = nil,
         episodePlatformHint: String? = nil,
+        sourceId: Int? = nil,
         subscribedServices: [String] = []
     ) async -> Response? {
         // Episode-level cache check — only for episode lookups (both
-        // season and episode provided).
+        // season and episode provided). sourceId is included in the key
+        // so a pinned lookup never reads back a cached unpinned response.
         let isEpisodeLookup = season != nil && episode != nil
-        let cacheKey = "\(tmdbId)-\(season ?? -1)-\(episode ?? -1)-\(episodePlatformHint ?? "")" as NSString
+        let cacheKey = "\(tmdbId)-\(season ?? -1)-\(episode ?? -1)-\(episodePlatformHint ?? "")-\(sourceId ?? -1)" as NSString
         if isEpisodeLookup,
            let cached = episodeCache.object(forKey: cacheKey) {
             return cached.response
@@ -96,6 +98,7 @@ nonisolated enum WatchmodeResolveService {
         if let season { body["season"] = season }
         if let episode { body["episode"] = episode }
         if let episodePlatformHint { body["episodePlatformHint"] = episodePlatformHint }
+        if let sourceId { body["sourceId"] = sourceId }
         if !subscribedServices.isEmpty { body["subscribedServices"] = subscribedServices }
 
         guard let httpBody = try? JSONSerialization.data(withJSONObject: body) else { return nil }

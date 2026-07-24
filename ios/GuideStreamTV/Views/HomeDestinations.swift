@@ -722,7 +722,8 @@ struct EpisodeDetailSheet: View {
         let response = await WatchmodeResolveService.resolve(
             tmdbId: tid, isTV: true,
             season: ctx.seasonNum, episode: ctx.episodeNum,
-            episodePlatformHint: source.name
+            episodePlatformHint: source.name,
+            sourceId: source.sourceId
         )
         let epSources: [WatchmodeSource] =
             response?.episodeSource.map { [$0] } ?? []
@@ -1161,8 +1162,15 @@ struct EpisodeDetailSheet: View {
             let stripped = baseStr.hasSuffix("/") ? String(baseStr.dropLast()) : baseStr
             return URL(string: stripped + episodePath) ?? base
         }
-        // Amazon uses query params: ?season=<s>&episode=<e>
+        // Amazon uses query params appended to any existing query.
         if baseStr.contains("amazon.com") || baseStr.contains("primevideo.com") || baseStr.contains("amazon") {
+            if var comps = URLComponents(string: baseStr) {
+                var items = comps.queryItems ?? []
+                items.append(URLQueryItem(name: "season", value: "\(season)"))
+                items.append(URLQueryItem(name: "episode", value: "\(episode)"))
+                comps.queryItems = items
+                return comps.url ?? base
+            }
             return URL(string: baseStr + "?season=\(season)&episode=\(episode)") ?? base
         }
         // Netflix, Apple TV+, Max, Disney+ use opaque IDs —
@@ -1188,12 +1196,24 @@ struct EpisodeDetailSheet: View {
                     ]
                 )
             } else if let epURL = episodeDeepLinkURL {
-                StreamingDeepLinker.openResolvedURL(
-                    epURL,
-                    platform: whereToWatchLabel,
-                    title: title,
-                    tmdbId: tmdbId
-                )
+                let labelBrand = gsBrandKey(for: resolvedSource?.name ?? whereToWatchLabel)
+                let urlBrand = gsBrandKey(forURL: epURL)
+                if !labelBrand.isEmpty && !urlBrand.isEmpty && labelBrand != urlBrand {
+                    NSLog("[DEEPLINK_BRAND_GUARD] label=\(labelBrand) url=\(urlBrand) rejected=\(epURL.absoluteString)")
+                    StreamingDeepLinker.open(
+                        platform: whereToWatchLabel,
+                        title: title,
+                        tmdbId: tmdbId,
+                        isTV: isTV
+                    )
+                } else {
+                    StreamingDeepLinker.openResolvedURL(
+                        epURL,
+                        platform: whereToWatchLabel,
+                        title: title,
+                        tmdbId: tmdbId
+                    )
+                }
             } else if let pre = preResolvedDeepLinkURL {
                 let finalURL: URL = {
                     if let ctx = episodeContext {
@@ -1201,12 +1221,24 @@ struct EpisodeDetailSheet: View {
                     }
                     return pre
                 }()
-                StreamingDeepLinker.openResolvedURL(
-                    finalURL,
-                    platform: whereToWatchLabel,
-                    title: title,
-                    tmdbId: tmdbId
-                )
+                let labelBrand = gsBrandKey(for: resolvedSource?.name ?? whereToWatchLabel)
+                let urlBrand = gsBrandKey(forURL: finalURL)
+                if !labelBrand.isEmpty && !urlBrand.isEmpty && labelBrand != urlBrand {
+                    NSLog("[DEEPLINK_BRAND_GUARD] label=\(labelBrand) url=\(urlBrand) rejected=\(finalURL.absoluteString)")
+                    StreamingDeepLinker.open(
+                        platform: whereToWatchLabel,
+                        title: title,
+                        tmdbId: tmdbId,
+                        isTV: isTV
+                    )
+                } else {
+                    StreamingDeepLinker.openResolvedURL(
+                        finalURL,
+                        platform: whereToWatchLabel,
+                        title: title,
+                        tmdbId: tmdbId
+                    )
+                }
             } else {
                 StreamingDeepLinker.open(
                     platform: whereToWatchLabel,
@@ -1332,7 +1364,7 @@ struct EpisodeDetailSheet: View {
                     titleId: key,
                     title: title,
                     posterUrl: posterUrl,
-                    platform: resolvedSource?.name ?? whereToWatchLabel,
+                    platform: gsDisplayName(for: resolvedSource?.name ?? whereToWatchLabel),
                     isTV: isTV
                 )
             }

@@ -68,6 +68,8 @@ import com.rork.guidestreamtvandroid.data.repository.StreamsViewModel
 import com.rork.guidestreamtvandroid.data.repository.WatchIntentLogger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.launch
+import androidx.compose.runtime.rememberCoroutineScope
 import com.rork.guidestreamtvandroid.ui.comments.TitleCommentsSheet
 import com.rork.guidestreamtvandroid.ui.components.RemoteImage
 import com.rork.guidestreamtvandroid.ui.components.SocialCounterRow
@@ -140,23 +142,27 @@ fun ShowDetailScreen(
             s.isNotEmpty() && (n.contains(s) || s.contains(n))
         }
     }
-    androidx.compose.runtime.LaunchedEffect(titleId) {
+    androidx.compose.runtime.LaunchedEffect(titleId, detail?.id) {
         val tid = TitleId.tmdbId(titleId)
         if (tid != null) {
+            if (isTV && detail == null) return@LaunchedEffect
+            val seasonNum = if (isTV) detail?.lastEpisodeToAir?.seasonNumber else null
+            val episodeNum = if (isTV) detail?.lastEpisodeToAir?.episodeNumber else null
             val subscribedNames = StreamingCatalog.ordered(selectedServices).map { it.name }
             val response = try {
                 withContext(Dispatchers.IO) {
-                    WatchmodeResolveService.resolve(tid, isTV, subscribedServices = subscribedNames)
+                    WatchmodeResolveService.resolve(
+                        tid, isTV,
+                        subscribedServices = subscribedNames,
+                        season = seasonNum,
+                        episode = episodeNum,
+                    )
                 }
             } catch (_: Exception) {
                 WatchmodeResolveResponse()
             }
             usSources = response.usSources
             episodeSource = response.episodeSource
-            // Seed the active source: resolver's primary first, then a
-            // subscribed source that is also a watchable tier (a rent/buy
-            // source whose brand matches a subscription must NOT win), then
-            // the first source.
             selectedSource = response.primarySource
                 ?: response.usSources.firstOrNull {
                     isSourceSubscribed(it.name) && it.type.lowercase() in setOf("sub", "free", "tve")
@@ -322,11 +328,37 @@ fun ShowDetailScreen(
                 }
 
                 // Where to Watch — selectable streaming-source chips
+                val scope = androidx.compose.runtime.rememberCoroutineScope()
                 WhereToWatchRow(
                     sources = usSources,
                     selectedSource = selectedSource,
                     isSourceSubscribed = isSourceSubscribed,
-                    onSelect = { selectedSource = it },
+                    onSelect = { source ->
+                        selectedSource = source
+                        episodeSource = null
+                        val tid = TitleId.tmdbId(titleId)
+                        if (tid != null) {
+                            val seasonNum = if (isTV) detail?.lastEpisodeToAir?.seasonNumber else null
+                            val episodeNum = if (isTV) detail?.lastEpisodeToAir?.episodeNumber else null
+                            scope.launch {
+                                val resp = try {
+                                    withContext(Dispatchers.IO) {
+                                        WatchmodeResolveService.resolve(
+                                            tid, isTV,
+                                            sourceId = source.sourceId,
+                                            season = seasonNum,
+                                            episode = episodeNum,
+                                        )
+                                    }
+                                } catch (_: Exception) {
+                                    WatchmodeResolveResponse()
+                                }
+                                withContext(Dispatchers.Main) {
+                                    episodeSource = resp.episodeSource
+                                }
+                            }
+                        }
+                    },
                 )
 
                 // Action buttons
@@ -368,7 +400,7 @@ fun ShowDetailScreen(
                                     // source first for TV — with Watchmode placeholder
                                     // strings filtered out. Falls back to TMDB's watch
                                     // page when nothing is usable.
-                                    val epSrc = if (isTV) episodeSource else null
+                                    val epSrc = if (isTV) episodeSource?.takeIf { it.sourceId == selectedSource?.sourceId } else null
                                     val fallback = "https://www.themoviedb.org/${if (isTV) "tv" else "movie"}/$tmdbId/watch"
                                     val target = listOf(
                                         epSrc?.androidUrl, epSrc?.androidTvUrl, epSrc?.webUrl,

@@ -66,6 +66,8 @@ object WatchmodeResolveService {
         subscribedServices: List<String> = emptyList(),
         season: Int? = null,
         episode: Int? = null,
+        episodePlatformHint: String? = null,
+        sourceId: Int? = null,
     ): WatchmodeResolveResponse {
         return try {
             val client = HttpClient {
@@ -78,6 +80,8 @@ object WatchmodeResolveService {
                 put("subscribedServices", JsonArray(subscribedServices.map { JsonPrimitive(it) }))
                 if (season != null) put("season", JsonPrimitive(season))
                 if (episode != null) put("episode", JsonPrimitive(episode))
+                if (episodePlatformHint != null) put("episodePlatformHint", JsonPrimitive(episodePlatformHint))
+                if (sourceId != null) put("sourceId", JsonPrimitive(sourceId))
             }
             val response: HttpResponse = client.post(url) {
                 contentType(ContentType.Application.Json)

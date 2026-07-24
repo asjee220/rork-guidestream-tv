@@ -107,6 +107,61 @@ func gsDisplayName(for raw: String) -> String {
  return raw
 }
 
+/// Canonical brand key derived from a Watchmode source display name.
+/// Lowercases, truncates at the first "(via ", strips known reseller
+/// suffixes, then maps the remainder to a canonical catalogue id. The
+/// appletv test intentionally precedes max and prime so that an Apple
+/// title sold through Amazon keys as "appletv" and never as "prime".
+func gsBrandKey(for name: String) -> String {
+    var s = name.lowercased()
+    if let viaRange = s.range(of: "(via ") {
+        s = String(s[..<viaRange.lowerBound])
+    }
+    for suffix in ["amazon channel", "apple tv channel", "appletv channel",
+                   "prime video channel", "roku premium subscription",
+                   "roku premium", "youtube primetime channel"] {
+        if s.contains(suffix) { s = s.replacingOccurrences(of: suffix, with: "") }
+    }
+    s = s.trimmingCharacters(in: .whitespaces)
+    if s.isEmpty { s = name.lowercased().trimmingCharacters(in: .whitespaces) }
+    s = String(s.unicodeScalars.filter { sc in
+        (sc.value >= 0x61 && sc.value <= 0x7A) || (sc.value >= 0x30 && sc.value <= 0x39)
+    })
+    if s.contains("netflix") { return "netflix" }
+    if s.contains("appletv") { return "appletv" }
+    if s.contains("hbo") || s.contains("max") { return "max" }
+    if s.contains("hulu") { return "hulu" }
+    if s.contains("disney") { return "disney" }
+    if s.contains("paramount") { return "paramount" }
+    if s.contains("peacock") { return "peacock" }
+    if s.contains("primevideo") || s.contains("amazonprime") || s.contains("amazonvideo") { return "prime" }
+    if s.contains("crunchyroll") { return "crunchyroll" }
+    if s.contains("showtime") { return "showtime" }
+    if s.contains("starz") { return "starz" }
+    if s.contains("youtube") { return "youtube" }
+    return s
+}
+
+/// Canonical brand key derived from a deep-link URL's host. Matches on
+/// host suffix so subdomains resolve correctly. Returns an empty string
+/// for unrecognised or nil hosts so callers can allow the open.
+func gsBrandKey(forURL url: URL) -> String {
+    guard let host = url.host?.lowercased() else { return "" }
+    if host.hasSuffix("netflix.com") { return "netflix" }
+    if host.hasSuffix("tv.apple.com") || host.hasSuffix("apple.com") { return "appletv" }
+    if host.hasSuffix("max.com") || host.hasSuffix("hbomax.com") || host.hasSuffix("play.max.com") { return "max" }
+    if host.hasSuffix("hulu.com") { return "hulu" }
+    if host.hasSuffix("disneyplus.com") { return "disney" }
+    if host.hasSuffix("paramountplus.com") { return "paramount" }
+    if host.hasSuffix("peacocktv.com") { return "peacock" }
+    if host.hasSuffix("amazon.com") || host.hasSuffix("watch.amazon.com") || host.hasSuffix("primevideo.com") { return "prime" }
+    if host.hasSuffix("crunchyroll.com") { return "crunchyroll" }
+    if host.hasSuffix("showtime.com") || host.hasSuffix("sho.com") { return "showtime" }
+    if host.hasSuffix("starz.com") { return "starz" }
+    if host.hasSuffix("youtube.com") { return "youtube" }
+    return ""
+}
+
 func gsSourceRank(_ s: WatchmodeSource) -> Int {
  switch s.type.lowercased() {
  case "sub": return 0; case "free": return 1

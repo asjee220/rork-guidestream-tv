@@ -876,7 +876,7 @@ struct ShowDetailScreen: View {
                     titleId: key,
                     title: displayTitle,
                     posterUrl: posterUrl,
-                    platform: vm.primaryService?.name,
+                    platform: (vm.primaryService?.name).map { gsDisplayName(for: $0) },
                     isTV: isTV
                 )
             }
