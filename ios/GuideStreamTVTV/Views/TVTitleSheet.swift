@@ -65,6 +65,11 @@ struct TVTitleSheet: View {
     // selectedServiceName when a new title loads.
     @State private var didProbeMediaType: Bool = false
 
+    // Guard so the season/episode pre-fill from TMDB freshness fires at
+    // most once per presented sheet. Reset in the same .task that resets
+    // selectedServiceName when a new title loads.
+    @State private var didPrefillEpisode: Bool = false
+
     // Parsed from titleId via the tvOS TVTitleID helper (mirrors the iOS
     // TitleID enum). Accepts both bare numeric ids ("94997") and the
     // legacy prefixed form ("tmdb:tv:1396").
@@ -290,6 +295,7 @@ struct TVTitleSheet: View {
         .task {
             selectedServiceName = nil
             didProbeMediaType = false
+            didPrefillEpisode = false
             await loadData()
         }
         .onChange(of: season) { _, _ in
@@ -565,6 +571,18 @@ struct TVTitleSheet: View {
     private func loadData() async {
         // Refresh like state
         await social.refreshCounts(titleId: detail.titleId)
+
+        // Pre-select the latest aired episode for TV titles. Skip for
+        // YouTube creator rows and non-TV titles. Fail soft — if the
+        // TMDB lookup errors, season/episode stay at their defaults.
+        if youTubeChannelId == nil, isTVValue != false, let tid = tmdbId {
+            let fresh = await TVTMDBService.shared.getTVFreshness(tmdbId: tid)
+            if !didPrefillEpisode, let s = fresh.latestSeason, let e = fresh.latestEpisode {
+                season = s
+                episode = e
+                didPrefillEpisode = true
+            }
+        }
 
         // Resolve streaming sources — skip for YouTube creator rows, which
         // route directly to the YouTube app and have no Watchmode data.

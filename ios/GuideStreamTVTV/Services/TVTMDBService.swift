@@ -43,6 +43,29 @@ private nonisolated struct TVTMDBTVDetailEnvelope: Decodable, Sendable {
     let genres: [TVTMDBGenre]?
 }
 
+private nonisolated struct TVTMDBFreshness: Decodable, Sendable {
+    let posterPath: String?
+    let lastEpisodeToAir: TVTMDBFreshnessEpisode?
+}
+
+private nonisolated struct TVTMDBFreshnessEpisode: Decodable, Sendable {
+    let seasonNumber: Int?
+    let episodeNumber: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case seasonNumber = "season_number"
+        case episodeNumber = "episode_number"
+    }
+}
+
+private nonisolated struct TVTMDBMoviePoster: Decodable, Sendable {
+    let posterPath: String?
+
+    enum CodingKeys: String, CodingKey {
+        case posterPath = "poster_path"
+    }
+}
+
 nonisolated struct TVTMDBService {
     static let shared = TVTMDBService()
 
@@ -115,6 +138,26 @@ nonisolated struct TVTMDBService {
         let pool = (us.flatrate ?? []) + (us.ads ?? []) + (us.free ?? [])
         guard !pool.isEmpty else { return nil }
         return pool.min(by: { ($0.displayPriority ?? 999) < ($1.displayPriority ?? 999) })
+    }
+
+    /// Fetches a fresh poster path and the latest aired episode for a TV
+    /// title. Returns nil poster/season/episode on any error so callers
+    /// can fall back to the stored snapshot. Used by the watch-list poster
+    /// back-fill and the season/episode pre-selection in TVTitleSheet.
+    func getTVFreshness(tmdbId: Int) async -> (posterPath: String?, latestSeason: Int?, latestEpisode: Int?) {
+        let urlString = "\(base)/tv/\(tmdbId)?api_key=\(apiKey)&language=en-US"
+        guard let data = try? await get(urlString) else { return (nil, nil, nil) }
+        guard let env = try? JSONDecoder().decode(TVTMDBFreshness.self, from: data) else { return (nil, nil, nil) }
+        return (env.posterPath, env.lastEpisodeToAir?.seasonNumber, env.lastEpisodeToAir?.episodeNumber)
+    }
+
+    /// Fetches a fresh poster path for a movie title. Returns nil on any
+    /// error so callers can fall back to the stored snapshot.
+    func getMoviePosterPath(tmdbId: Int) async -> String? {
+        let urlString = "\(base)/movie/\(tmdbId)?api_key=\(apiKey)&language=en-US"
+        guard let data = try? await get(urlString) else { return nil }
+        guard let env = try? JSONDecoder().decode(TVTMDBMoviePoster.self, from: data) else { return nil }
+        return env.posterPath
     }
 
     private func stamp(_ r: TVTMDBResult, mediaType: String) -> TVTMDBResult {

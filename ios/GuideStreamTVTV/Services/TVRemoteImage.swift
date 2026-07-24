@@ -62,6 +62,9 @@ struct TVRemoteImage: View {
     let url: URL?
     var contentMode: ContentMode = .fill
 
+    @State private var loadedImage: UIImage?
+    @State private var loadFailed: Bool = false
+
     init(url: URL?, contentMode: ContentMode = .fill) {
         self.url = url
         self.contentMode = contentMode
@@ -80,34 +83,43 @@ struct TVRemoteImage: View {
                         .resizable()
                         .aspectRatio(contentMode: contentMode)
                 } else {
-                    AsyncImage(url: url) { phase in
-                        switch phase {
-                        case .success(let image):
-                            image
+                    ZStack {
+                        if loadFailed {
+                            TVImageFallback()
+                        } else {
+                            TVShimmer()
+                        }
+
+                        if let ui = loadedImage {
+                            Image(uiImage: ui)
                                 .resizable()
                                 .aspectRatio(contentMode: contentMode)
-                                .onAppear { Self.cache(url: url) }
-                        case .failure:
-                            TVImageFallback()
-                        case .empty:
-                            TVShimmer()
-                        @unknown default:
-                            TVImageFallback()
+                                .opacity(loadFailed ? 0 : 1)
+                                .animation(.easeOut(duration: 0.5), value: loadedImage)
+                        }
+                    }
+                    .task(id: url) {
+                        loadedImage = nil
+                        loadFailed = false
+                        do {
+                            let (data, _) = try await URLSession.shared.data(from: url)
+                            if let ui = UIImage(data: data) {
+                                TVImageCacheManager.shared.store(ui, for: url)
+                                try? await Task.sleep(for: .milliseconds(80))
+                                withAnimation(.easeOut(duration: 0.5)) {
+                                    loadedImage = ui
+                                }
+                            } else {
+                                loadFailed = true
+                            }
+                        } catch {
+                            loadFailed = true
                         }
                     }
                 }
             } else {
                 TVImageFallback()
             }
-        }
-    }
-
-    private static func cache(url: URL) {
-        Task.detached {
-            if TVImageCacheManager.shared.image(for: url) != nil { return }
-            guard let (data, _) = try? await URLSession.shared.data(from: url),
-                  let ui = UIImage(data: data) else { return }
-            TVImageCacheManager.shared.store(ui, for: url)
         }
     }
 }

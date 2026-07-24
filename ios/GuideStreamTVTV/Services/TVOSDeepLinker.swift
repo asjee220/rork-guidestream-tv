@@ -244,6 +244,24 @@ enum TVOSDeepLinker {
             )
         }
 
+        // BROADCASTERS — best-effort app schemes for sports/game rows that
+        // have no TMDB id and no YouTube channel. These schemes are
+        // best-effort and MUST be verified on a real Apple TV before
+        // trusting them in a demo; tvOS app schemes change without notice.
+        // Broadcasters with no known public tvOS scheme (CHSN, CNBC, TNT,
+        // TBS, ABC, CBS, local network affiliates) fall through to the
+        // all-nil target so the launch fails cleanly rather than
+        // mis-opening another app.
+        if key.contains("espn") {
+            return TVTarget(playURL: nil, appHomeURL: URL(string: "espn://"), searchURL: nil, confidence: PlaybackSupport.confidence(for: platform))
+        }
+        if key.contains("fox sports") || key.contains("foxsports") {
+            return TVTarget(playURL: nil, appHomeURL: URL(string: "foxsports://"), searchURL: nil, confidence: PlaybackSupport.confidence(for: platform))
+        }
+        if key.contains("nbc sports") || key.contains("nbcsports") {
+            return TVTarget(playURL: nil, appHomeURL: URL(string: "nbcsports://"), searchURL: nil, confidence: PlaybackSupport.confidence(for: platform))
+        }
+
         // Unknown platform — nothing safe to open on tvOS.
         return TVTarget(playURL: nil, appHomeURL: nil, searchURL: nil, confidence: PlaybackSupport.confidence(for: platform))
     }

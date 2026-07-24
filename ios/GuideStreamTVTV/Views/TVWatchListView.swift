@@ -37,7 +37,7 @@ struct TVWatchListView: View {
                                 TVPosterCard(
                                     title: row.title ?? row.titleId,
                                     subtitle: row.platform,
-                                    posterUrl: row.posterUrl,
+                                    posterUrl: streams.displayPosterUrl(for: row),
                                     accent: TVTheme.orange,
                                     isSaved: true
                                 ) {
@@ -45,8 +45,8 @@ struct TVWatchListView: View {
                                         titleId: row.titleId,
                                         title: row.title ?? row.titleId,
                                         overview: nil,
-                                        posterUrl: row.posterUrl,
-                                        backdropUrl: row.posterUrl,
+                                        posterUrl: streams.displayPosterUrl(for: row),
+                                        backdropUrl: streams.displayPosterUrl(for: row),
                                         tag: row.platform ?? "SAVED",
                                         accent: TVTheme.orange,
                                         year: nil,
@@ -78,6 +78,7 @@ struct TVWatchListView: View {
         .task {
             await streams.fetchUserStreams()
             await streams.fetchLatestContentDates()
+            await streams.backfillPosters()
             await social.loadAllWatched()
         }
         .sheet(item: $pendingDetail) { detail in

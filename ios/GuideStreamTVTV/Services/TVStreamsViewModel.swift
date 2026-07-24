@@ -26,6 +26,9 @@ final class TVStreamsViewModel {
     /// Maps title_id → most-recent content timestamp from `title_recency`.
     /// Populated by `fetchLatestContentDates()` so sorters can rank by recency.
     var latestContentAt: [String: Date] = [:]
+    /// Session cache of freshly-resolved poster URLs for saved titles whose
+    /// stored snapshot is null or stale. Populated by `backfillPosters()`.
+    var resolvedPosters: [String: String] = [:]
     var isLoading: Bool = false
     var lastError: String?
 
@@ -264,6 +267,54 @@ final class TVStreamsViewModel {
     /// iOS-style alias for `remove(titleId:)`.
     func removeFromMyStreams(titleId: String) async {
         await remove(titleId: titleId)
+    }
+
+    /// Returns the best poster URL for a watch-list row: the freshly
+    /// resolved poster when available, otherwise the stored snapshot.
+    func displayPosterUrl(for row: TVUserStream) -> String? {
+        resolvedPosters[row.titleId] ?? row.posterUrl
+    }
+
+    /// Back-fills fresh poster paths for saved TMDB titles whose stored
+    /// snapshot is null or stale. Lookups run concurrently in a TaskGroup;
+    /// rows already present in `resolvedPosters` are skipped. Non-TMDB rows
+    /// (yt: creators, tt- sports slugs) keep their stored poster untouched.
+    func backfillPosters() async {
+        let toResolve = userStreams.filter { row in
+            if resolvedPosters[row.titleId] != nil { return false }
+            return TVTitleID.tmdbId(from: row.titleId) != nil
+        }
+        guard !toResolve.isEmpty else { return }
+        let results = await withTaskGroup(of: (String, String?).self) { group in
+            for row in toResolve {
+                guard let tid = TVTitleID.tmdbId(from: row.titleId) else { continue }
+                let isTV = row.isTv
+                group.addTask {
+                    var path: String? = nil
+                    if isTV == nil || isTV == true {
+                        let fresh = await TVTMDBService.shared.getTVFreshness(tmdbId: tid)
+                        path = fresh.posterPath
+                    }
+                    if path == nil, isTV == false {
+                        path = await TVTMDBService.shared.getMoviePosterPath(tmdbId: tid)
+                    }
+                    if path == nil, isTV == nil {
+                        path = await TVTMDBService.shared.getMoviePosterPath(tmdbId: tid)
+                    }
+                    return (row.titleId, path)
+                }
+            }
+            var collected: [(String, String?)] = []
+            for await item in group { collected.append(item) }
+            return collected
+        }
+        var map = resolvedPosters
+        for (titleId, path) in results {
+            if let path, let url = TVTMDBImage.url(path, size: .poster500) {
+                map[titleId] = url
+            }
+        }
+        resolvedPosters = map
     }
 
     // MARK: - Local cache helpers
