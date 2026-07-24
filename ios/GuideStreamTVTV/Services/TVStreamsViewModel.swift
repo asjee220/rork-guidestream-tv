@@ -331,8 +331,8 @@ final class TVStreamsViewModel {
         guard let lastContent = latestContentAt[stream.titleId] else { return nil }
         let kind = latestContentKind[stream.titleId] ?? "tv"
         guard kind != "movie" else { return nil }
-        let baseline: Date = seenContentAt[stream.titleId] ?? stream.addedAt ?? Date.distantPast
-        guard lastContent > baseline else { return nil }
+        guard lastContent >= Date().addingTimeInterval(-7 * 24 * 60 * 60) else { return nil }
+        if let seen = seenContentAt[stream.titleId], seen >= lastContent { return nil }
         return kind == "tv" ? "NEW EPISODE" : "NEW UPLOAD"
     }
 

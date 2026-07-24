@@ -688,18 +688,10 @@ class StreamsViewModel private constructor(context: Context) {
         val lastContent = latestContentAt[stream.titleId] ?: return null
         val kind = latestContentKind[stream.titleId] ?: "tv"
         if (kind == "movie") return null
+        val sevenDaysAgo = System.currentTimeMillis() - 7L * 24 * 60 * 60 * 1000
+        if (lastContent < sevenDaysAgo) return null
         val seenMs = seenContentAt[stream.titleId]
-        val addedMs: Long = try {
-            stream.addedAt?.let {
-                java.time.Instant.parse(it).toEpochMilli()
-            } ?: 0L
-        } catch (_: Exception) {
-            try {
-                java.time.OffsetDateTime.parse(stream.addedAt).toInstant().toEpochMilli()
-            } catch (_: Exception) { 0L }
-        }
-        val baseline = seenMs ?: addedMs
-        if (lastContent <= baseline) return null
+        if (seenMs != null && seenMs >= lastContent) return null
         return if (kind == "tv") "NEW EPISODE" else "NEW UPLOAD"
     }
 }
