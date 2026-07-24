@@ -104,6 +104,22 @@ enum TVOSDeepLinker {
         openChain(chain, completion: completion)
     }
 
+    /// Returns true when the streaming app for `platform` can actually be
+    /// launched from another app on tvOS via a registered URL scheme. Only
+    /// Netflix, Hulu, YouTube, and the Apple TV app are verified-launchable
+    /// on tvOS today; every other streaming app (HBO Max, Disney+, Prime
+    /// Video, Paramount+, Peacock, Crunchyroll, etc.) exposes no working
+    /// inter-app scheme on tvOS, so a "Play on X" button for those services
+    /// silently does nothing. Add a service here only after its scheme is
+    /// verified opening on a real Apple TV.
+    static func isLaunchable(platform: String) -> Bool {
+        let key = platform.lowercased()
+        return key.contains("netflix")
+            || key.contains("hulu")
+            || key.contains("youtube")
+            || key.contains("apple")
+    }
+
     /// Returns true when the URL's scheme is http or https (a universal
     /// link that tvOS cannot open in a browser), false for native custom
     /// schemes (nflx://, aiv://, youtube://, etc.).

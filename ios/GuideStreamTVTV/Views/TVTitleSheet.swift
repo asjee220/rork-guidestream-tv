@@ -118,6 +118,19 @@ struct TVTitleSheet: View {
         social.isWatched(detail.titleId)
     }
 
+    /// Whether the action-row should render the Play button or a non-
+    /// interactive "open the app manually" hint. YouTube creator rows always
+    /// launch via the YouTube app. For streaming services, true only when the
+    /// active platform is verified-launchable on tvOS. While the service is
+    /// still resolving (no name known yet), defaults to true so a launchable
+    /// service can still surface once resolution completes.
+    private var showPlayButton: Bool {
+        if youTubeChannelId != nil { return true }
+        let name = activeSource?.name ?? detail.platform ?? ""
+        guard !name.isEmpty else { return true }
+        return TVOSDeepLinker.isLaunchable(platform: name)
+    }
+
     // All resolved US streaming sources for this title.
     private var usSources: [TVWatchmodeResolver.TVResolvedSource] {
         resolvedStreaming?.usSources ?? []
@@ -269,8 +282,14 @@ struct TVTitleSheet: View {
 
                     // Action buttons row
                     HStack(spacing: 24) {
-                        // Play on <service>
-                        playButton
+                        // Play on <service> — or, for services that can't be
+                        // launched from another app on tvOS, a non-interactive
+                        // hint telling the viewer to open the app manually.
+                        if showPlayButton {
+                            playButton
+                        } else {
+                            manualOpenHint
+                        }
 
                         // Like / Unlike
                         likeButton
@@ -336,7 +355,11 @@ struct TVTitleSheet: View {
             if subscribedSourceCount >= 2 && isSubscribed {
                 selectedServiceName = source.name
             } else {
-                open(source: source)
+                // Only launch when the service is verified-launchable on
+                // tvOS; otherwise the chip stays a where-to-watch indicator.
+                if TVOSDeepLinker.isLaunchable(platform: source.name) {
+                    open(source: source)
+                }
             }
         } label: {
             HStack(spacing: 8) {
@@ -432,6 +455,28 @@ struct TVTitleSheet: View {
                 .buttonStyle(.card)
             }
         }
+    }
+
+    // MARK: - Manual-open hint (non-launchable services)
+
+    /// Non-interactive guidance shown in place of the Play button for
+    /// streaming services whose tvOS app cannot be launched from another
+    /// app. Plain view (not a Button, not focusable) so it never steals
+    /// focus from a real control.
+    private var manualOpenHint: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "tv")
+                .font(.system(size: 24, weight: .bold))
+            Text("Open the \(playServiceName) app on your Apple TV to watch.")
+                .font(.system(size: 20, weight: .semibold))
+        }
+        .foregroundStyle(TVTheme.textSecondary)
+        .padding(.horizontal, 28)
+        .padding(.vertical, 18)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(Color.white.opacity(0.06))
+        )
     }
 
     // MARK: - Play button
@@ -590,9 +635,10 @@ struct TVTitleSheet: View {
             await resolveStreamingData()
         }
 
-        // Set initial focus to Play
+        // Set initial focus — Play when launchable, otherwise Watch List
+        // so focus never targets the non-interactive manual-open hint.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-            focusedField = .play
+            focusedField = showPlayButton ? .play : .watchList
         }
     }
 
