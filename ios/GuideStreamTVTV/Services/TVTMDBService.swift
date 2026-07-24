@@ -46,6 +46,11 @@ private nonisolated struct TVTMDBTVDetailEnvelope: Decodable, Sendable {
 private nonisolated struct TVTMDBFreshness: Decodable, Sendable {
     let posterPath: String?
     let lastEpisodeToAir: TVTMDBFreshnessEpisode?
+
+    enum CodingKeys: String, CodingKey {
+        case posterPath = "poster_path"
+        case lastEpisodeToAir = "last_episode_to_air"
+    }
 }
 
 private nonisolated struct TVTMDBFreshnessEpisode: Decodable, Sendable {
