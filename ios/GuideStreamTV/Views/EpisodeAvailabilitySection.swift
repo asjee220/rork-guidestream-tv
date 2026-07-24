@@ -122,10 +122,12 @@ private let gsResellerSuffixes: [String] = [
 ]
 
 /// Strips a trailing reseller suffix when the lowercased trimmed name
-/// ends with it and the text remaining before it — after also dropping
-/// a leading "the " article and trimming — is non-empty. Returns the
-/// stripped base, or nil when no suffix matched or the remainder would
-/// be empty.
+/// ends with it. The remainder is the text before the suffix, trimmed,
+/// with a leading "the " article dropped and trimmed again. When that
+/// remainder is non-empty it becomes the new working string and iteration
+/// stops; when it is empty nothing is stripped and the next suffix is
+/// tried. Returns the article-stripped remainder, or nil when no suffix
+/// matched or every match would leave an empty remainder.
 private func gsStripResellerSuffix(_ lower: String) -> String? {
     for suffix in gsResellerSuffixes {
         if lower.hasSuffix(suffix) {
@@ -134,7 +136,7 @@ private func gsStripResellerSuffix(_ lower: String) -> String? {
             let articleless = base.hasPrefix("the ")
                 ? String(base.dropFirst(4)).trimmingCharacters(in: .whitespaces)
                 : base
-            if !articleless.isEmpty { return base }
+            if !articleless.isEmpty { return articleless }
         }
     }
     return nil
