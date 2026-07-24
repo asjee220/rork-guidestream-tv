@@ -43,6 +43,12 @@ data class Platform(
 
         private fun normalise(raw: String): String {
             var s = raw.lowercase()
+            // Strip a single trailing parenthetical group, e.g. "starz (via amazon prime)" → "starz"
+            val trimmed = s.trim()
+            if (trimmed.endsWith(")") && trimmed.contains("(")) {
+                val openIdx = trimmed.lastIndexOf("(")
+                s = trimmed.substring(0, openIdx).trim()
+            }
             for (suffix in listOf("amazon channel", "apple tv channel", "roku premium channel")) {
                 if (s.endsWith(suffix)) s = s.dropLast(suffix.length)
             }

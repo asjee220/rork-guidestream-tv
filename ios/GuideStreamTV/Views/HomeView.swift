@@ -44,6 +44,11 @@ struct Platform {
     /// with "+", then removes every non-lowercase-letter-or-digit character.
     private static func normalise(_ raw: String) -> String {
         var s = raw.lowercased()
+        // Strip a single trailing parenthetical group, e.g. "starz (via amazon prime)" → "starz"
+        let trimmed = s.trimmingCharacters(in: .whitespaces)
+        if trimmed.hasSuffix(")"), let openIdx = trimmed.lastIndex(of: "(") {
+            s = String(trimmed[..<openIdx]).trimmingCharacters(in: .whitespaces)
+        }
         for suffix in ["amazon channel", "apple tv channel", "roku premium channel"] {
             if s.hasSuffix(suffix) { s = String(s.dropLast(suffix.count)) }
         }
@@ -2061,24 +2066,14 @@ struct HomeView: View {
                 || lowerRaw == "streaming"
                 || lowerRaw == "streaming services"
             let platform: Platform
-            switch platformName {
-            case "NETFLIX": platform = .netflix
-            case "HBO", "HBO MAX", "MAX": platform = .hbo
-            case "APPLE TV+", "APPLETV", "APPLE": platform = .appleTV
-            case "HULU": platform = .hulu
-            case "PRIME", "AMAZON", "AMAZON PRIME": platform = .prime
-            case "DISNEY+", "DISNEY": platform = .disney
-            case "PARAMOUNT+", "PARAMOUNT", "PARAMOUNT PLUS": platform = .paramount
-            case "PEACOCK": platform = .peacock
-            case "CRUNCHYROLL": platform = .crunchyroll
-            case "YOUTUBE": platform = .youtube
-            default:
-                // For non-TMDB items, use source-type branded platform
-                if kind.isNonTMDB {
-                    platform = Platform(name: kind.displayLabel.uppercased(), color: sourceKindColor(kind))
-                } else {
-                    platform = Platform(name: isGenericPlaceholder ? "" : platformName, color: Color.orange)
-                }
+            if kind.isNonTMDB {
+                platform = Platform(name: kind.displayLabel.uppercased(), color: sourceKindColor(kind))
+            } else if isGenericPlaceholder {
+                platform = Platform(name: "", color: Color.orange)
+            } else if let resolved = Platform.from(providerName: raw) {
+                platform = resolved
+            } else {
+                platform = Platform(name: "", color: Color.orange)
             }
             return Episode(
                 title: row.title ?? "Untitled",
@@ -2182,18 +2177,10 @@ struct HomeView: View {
             }
 
             let platform: Platform
-            switch platformName {
-            case "NETFLIX": platform = .netflix
-            case "HBO", "HBO MAX", "MAX": platform = .hbo
-            case "APPLE TV+", "APPLETV", "APPLE": platform = .appleTV
-            case "HULU": platform = .hulu
-            case "PRIME", "AMAZON", "AMAZON PRIME": platform = .prime
-            case "DISNEY+", "DISNEY": platform = .disney
-            case "PARAMOUNT+", "PARAMOUNT", "PARAMOUNT PLUS": platform = .paramount
-            case "PEACOCK": platform = .peacock
-            case "CRUNCHYROLL": platform = .crunchyroll
-            case "YOUTUBE": platform = .youtube
-            default: platform = Platform(name: platformName, color: Color.blue)
+            if let resolved = Platform.from(providerName: raw) {
+                platform = resolved
+            } else {
+                platform = Platform(name: "", color: Color.blue)
             }
             let season = row.season ?? 1
             let episode = row.episode ?? 1
@@ -3264,6 +3251,7 @@ private struct EpisodeThumbCard: View {
                             Text(episode.platform)
                                 .scaledFont(size: 8, weight: .bold)
                                 .tracking(0.4)
+                                .lineLimit(1)
                                 .foregroundStyle(.white)
                                 .padding(.horizontal, 6)
                                 .padding(.vertical, 3)

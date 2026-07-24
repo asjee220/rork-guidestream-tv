@@ -363,8 +363,9 @@ private struct WatchListContent: View {
         // platform. The detail sheet's Watchmode lookup will fill in the
         // real service moments later.
         let platformMeta: String = {
-            if let p = item.platform, !p.isEmpty, p.uppercased() != "STREAM" {
-                return p.capitalized
+            if let resolved = Platform.from(providerName: item.platform),
+               !resolved.name.isEmpty {
+                return resolved.name
             }
             return "Watch list"
         }()
@@ -457,24 +458,23 @@ private struct WatchListRow: View {
                     // "Streaming" or "Stream" used to leak through here and
                     // confused users who saw the same neutral grey chip on
                     // every saved title.
-                    if !isStreamer,
-                       let platform = item.platform,
-                       !platform.isEmpty,
-                       platform.uppercased() != "STREAM",
-                       platform.lowercased() != "streaming",
-                       platform.lowercased() != "streaming services" {
-                        Text(platform.uppercased())
-                            .scaledFont(size: 9, weight: .heavy)
-                            .tracking(0.5)
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(
-                                RoundedRectangle(cornerRadius: 4)
-                                    .fill(brandColor(for: platform))
-                            )
-                    } else if !isStreamer && posterKind.isNonTMDB {
-                        SourceTypeBadge(kind: posterKind)
+                    if !isStreamer {
+                        let resolved = Platform.from(providerName: item.platform)
+                        if let resolved = resolved, !resolved.name.isEmpty {
+                            Text(resolved.name.uppercased())
+                                .scaledFont(size: 9, weight: .heavy)
+                                .tracking(0.5)
+                                .lineLimit(1)
+                                .foregroundStyle(resolved.textColor)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 4)
+                                        .fill(resolved.color)
+                                )
+                        } else if posterKind.isNonTMDB {
+                            SourceTypeBadge(kind: posterKind)
+                        }
                     }
                 }
                 Text(item.title ?? "Untitled")
@@ -519,25 +519,7 @@ private struct WatchListRow: View {
         return f
     }()
 
-    private func brandColor(for name: String) -> Color {
-        let key = name.lowercased()
-        if key.contains("netflix") { return Color(red: 0xE5/255, green: 0x09/255, blue: 0x14/255) }
-        if key.contains("hbo") || key.contains("max") { return Color(red: 0x5B/255, green: 0x2D/255, blue: 0x8E/255) }
-        if key.contains("hulu") { return Color(red: 0x1C/255, green: 0xE7/255, blue: 0x83/255) }
-        if key.contains("disney") { return Color(red: 0.05, green: 0.10, blue: 0.42) }
-        if key.contains("apple") { return Color(white: 0.12) }
-        if key.contains("prime") || key.contains("amazon") { return Color(red: 0.0, green: 0.66, blue: 0.93) }
-        if key.contains("paramount") { return Color(red: 0x00/255, green: 0x64/255, blue: 0xFF/255) }
-        if key.contains("peacock") { return Color(red: 0.05, green: 0.05, blue: 0.10) }
-        if key.contains("crunchyroll") { return Color(red: 0xF4/255, green: 0x7B/255, blue: 0x20/255) }
-        if key.contains("showtime") { return Color(red: 0xD8/255, green: 0x00/255, blue: 0x00/255) }
-        if key.contains("starz") { return Color(white: 0.08) }
-        if key.contains("youtube") { return Color(red: 0xFF/255, green: 0x00/255, blue: 0x00/255) }
-        if key.contains("twitch") { return Color(red: 0x91/255, green: 0x46/255, blue: 0xFF/255) }
-        if key.contains("kick") { return Color(red: 0x53/255, green: 0xFC/255, blue: 0x18/255) }
-        if key.contains("podcast") { return Color(red: 0x7C/255, green: 0x3A/255, blue: 0xED/255) }
-        return Color(red: 0x6A/255, green: 0x3F/255, blue: 0xE0/255)
-    }
+
 }
 
 #Preview {
