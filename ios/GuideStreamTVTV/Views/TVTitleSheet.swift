@@ -665,6 +665,7 @@ struct TVTitleSheet: View {
         // the launch and land the user nowhere. The brand guard is applied
         // unchanged at every step.
         let tvosUrls = [ep?.tvosUrl, source.tvosUrl]
+        let iosUrls = [ep?.iosUrl, source.iosUrl]
         let webUrls = [ep?.webUrl, source.webUrl]
 
         func isWebScheme(_ url: URL) -> Bool {
@@ -672,15 +673,15 @@ struct TVTitleSheet: View {
             return scheme == "http" || scheme == "https"
         }
 
-        // Pass 1: native-scheme tvosUrls only.
-        for candidate in tvosUrls {
+        // Pass 1: native-scheme tvosUrls then native-scheme iosUrls.
+        for candidate in tvosUrls + iosUrls {
             if let str = candidate, let url = URL(string: str), !isWebScheme(url),
                urlAllowed(url, forService: source.name) {
                 return url
             }
         }
-        // Pass 2: https tvosUrls (universal links).
-        for candidate in tvosUrls {
+        // Pass 2: https tvosUrls then https iosUrls (universal links).
+        for candidate in tvosUrls + iosUrls {
             if let str = candidate, let url = URL(string: str), isWebScheme(url),
                urlAllowed(url, forService: source.name) {
                 return url
