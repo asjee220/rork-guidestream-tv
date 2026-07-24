@@ -59,7 +59,7 @@ enum TVContentSourcesService {
                 .select()
                 .neq("source_type", value: "tmdb")
                 .order("created_at", ascending: false)
-                .range(0..<200)
+                .range(from: 0, to: 199)
                 .execute()
                 .value
         } catch {
