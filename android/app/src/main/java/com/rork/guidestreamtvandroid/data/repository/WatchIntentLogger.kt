@@ -3,6 +3,7 @@ package com.rork.guidestreamtvandroid.data.repository
 import android.content.Context
 import android.util.Log
 import com.rork.guidestreamtvandroid.data.local.DeviceIdentity
+import com.rork.guidestreamtvandroid.data.models.Platform
 import com.rork.guidestreamtvandroid.data.remote.SupabaseManager
 import io.github.jan.supabase.postgrest.postgrest
 import kotlinx.coroutines.CancellationException
@@ -111,6 +112,12 @@ class WatchIntentLogger private constructor(context: Context) {
 
         val metadataJson = toJsonObject(mergedMeta)
 
+        val canonicalPlatformId: String? = if (platformId.isNullOrEmpty()) {
+            platformId
+        } else {
+            Platform.from(providerName = platformId)?.catalogId ?: platformId.lowercase()
+        }
+
         totalAttempts += 1
 
         scope.launch {
@@ -120,7 +127,7 @@ class WatchIntentLogger private constructor(context: Context) {
                 put("environment", environment)
                 if (userId != null) put("user_id", userId)
                 if (titleId != null) put("title_id", titleId)
-                if (platformId != null) put("platform_id", platformId)
+                if (canonicalPlatformId != null) put("platform_id", canonicalPlatformId)
                 put("metadata", metadataJson)
             }
             try {
@@ -142,7 +149,7 @@ class WatchIntentLogger private constructor(context: Context) {
                             put("environment", environment)
                             if (userId != null) put("user_id", userId)
                             if (titleId != null) put("title_id", titleId)
-                            if (platformId != null) put("platform_id", platformId)
+                            if (canonicalPlatformId != null) put("platform_id", canonicalPlatformId)
                             put("metadata", metadataJson)
                         }
                         SupabaseManager.client.postgrest

@@ -2053,9 +2053,10 @@ struct NotificationsSheet: View {
     private func subtitle(for row: NewEpisodeRow) -> String {
         let s = row.season ?? 1
         let e = row.episode ?? 1
-        let platform = row.platform ?? ""
-        if platform.isEmpty { return "S\(s) E\(e)" }
-        return "S\(s) E\(e) · \(platform)"
+        if let resolved = Platform.from(providerName: row.platform), !resolved.name.isEmpty {
+            return "S\(s) E\(e) · \(resolved.name)"
+        }
+        return "S\(s) E\(e)"
     }
 
     private func relativeTime(_ date: Date?) -> String {

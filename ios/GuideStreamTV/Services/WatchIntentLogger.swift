@@ -98,7 +98,13 @@ final class WatchIntentLogger {
         let environment = DeviceIdentity.shared.environment
         let event = eventType.rawValue
         let titleIdCopy = titleId
-        let platformIdCopy = platformId
+        let platformIdCopy: String? = {
+            guard let raw = platformId, !raw.isEmpty else { return platformId }
+            if let resolved = Platform.from(providerName: raw), let catalogId = resolved.catalogId {
+                return catalogId
+            }
+            return raw.lowercased()
+        }()
 
         // Build merged metadata up front (still on MainActor — no Sendable
         // captures of [String: Any] across the Task boundary).
