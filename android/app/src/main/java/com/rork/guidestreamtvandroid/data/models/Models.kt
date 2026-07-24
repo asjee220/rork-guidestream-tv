@@ -66,6 +66,13 @@ data class OnboardingPrefsUpsert(
 data class TitleRecencyRow(
     @SerialName("title_id") val titleId: String,
     @SerialName("last_content_at") val lastContentAt: String? = null,
+    @SerialName("content_kind") val contentKind: String? = null,
+)
+
+@Serializable
+data class WatchlistSeen(
+    @SerialName("title_id") val titleId: String,
+    @SerialName("seen_content_at") val seenContentAt: String? = null,
 )
 
 @Serializable

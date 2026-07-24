@@ -72,6 +72,12 @@ fun WatchListScreen(
     val userStreams by streamsVm.userStreams.collectAsStateWithLifecycle()
     val watchedIds by streamsVm.watchedIds.collectAsStateWithLifecycle()
 
+    // Fetch watchlist_seen so the new-content badges reflect server state on
+    // launch. Runs alongside the existing recency load in refreshAll.
+    androidx.compose.runtime.LaunchedEffect(userStreams.size) {
+        if (userStreams.isNotEmpty()) streamsVm.fetchWatchlistSeen()
+    }
+
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -149,7 +155,9 @@ fun WatchListScreen(
                     WatchListGridCell(
                         stream = stream,
                         isWatched = watchedIds.contains(stream.titleId),
+                        badgeText = streamsVm.newBadgeText(stream),
                         onClick = {
+                            streamsVm.markWatchlistSeen(stream.titleId)
                             onOpenTitle(
                                 PendingTitleRoute(
                                     titleId = stream.titleId,
@@ -171,6 +179,7 @@ fun WatchListScreen(
 private fun WatchListGridCell(
     stream: UserStream,
     isWatched: Boolean,
+    badgeText: String?,
     onClick: () -> Unit,
     onRemove: () -> Unit,
 ) {
@@ -213,6 +222,26 @@ private fun WatchListGridCell(
                         .height(3.dp)
                         .background(platform.color),
                 )
+            }
+            // New-content badge — top-leading corner, solid black rounded
+            // badge with white bold uppercase text. Shows "NEW EPISODE" for
+            // shows and "NEW UPLOAD" for creators.
+            if (badgeText != null) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .padding(8.dp)
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(Color.Black)
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                ) {
+                    Text(
+                        text = badgeText,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White,
+                    )
+                }
             }
             // Inline remove control — top-right.
             Box(

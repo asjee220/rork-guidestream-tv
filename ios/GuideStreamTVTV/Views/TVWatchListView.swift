@@ -41,6 +41,7 @@ struct TVWatchListView: View {
                                     accent: TVTheme.orange,
                                     isSaved: true
                                 ) {
+                                    Task { await streams.markWatchlistSeen(titleId: row.titleId) }
                                     pendingDetail = TVTitleDetail(
                                         titleId: row.titleId,
                                         title: row.title ?? row.titleId,
@@ -53,6 +54,18 @@ struct TVWatchListView: View {
                                         platform: row.platform,
                                         isTVHint: row.isTv
                                     )
+                                }
+                                .overlay(alignment: .topLeading) {
+                                    if let badge = streams.newBadgeText(for: row) {
+                                        Text(badge)
+                                            .font(.system(size: 18, weight: .bold))
+                                            .textCase(.uppercase)
+                                            .foregroundStyle(.white)
+                                            .padding(.horizontal, 10)
+                                            .padding(.vertical, 6)
+                                            .background(Color.black, in: RoundedRectangle(cornerRadius: 6))
+                                            .padding(12)
+                                    }
                                 }
                                 .overlay(alignment: .bottomTrailing) {
                                     if social.isWatched(row.titleId) {
@@ -78,6 +91,7 @@ struct TVWatchListView: View {
         .task {
             await streams.fetchUserStreams()
             await streams.fetchLatestContentDates()
+            await streams.fetchWatchlistSeen()
             await streams.backfillPosters()
             await social.loadAllWatched()
         }

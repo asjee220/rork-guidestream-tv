@@ -109,6 +109,7 @@ private struct WatchListContent: View {
         .task {
             await streams.fetchUserStreams()
             await streams.fetchLatestContentDates()
+            await streams.fetchWatchlistSeen()
             await social.loadAllWatched()
             await hydrateLiveStatus()
             await hydrateSourceImages()
@@ -119,6 +120,7 @@ private struct WatchListContent: View {
         .refreshable {
             await streams.fetchUserStreams()
             await streams.fetchLatestContentDates()
+            await streams.fetchWatchlistSeen()
             await social.loadAllWatched()
             await hydrateLiveStatus()
             await hydrateSourceImages()
@@ -150,6 +152,7 @@ private struct WatchListContent: View {
                     ForEach(sortedStreams) { item in
                         Button {
                             UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                            Task { await streams.markWatchlistSeen(titleId: item.titleId) }
                             let kind = SourceKind.from(titleId: item.titleId)
                             if kind.isNonTMDB {
                                 creatorDetailTarget = CreatorDetailTarget(titleId: item.titleId, initialEpisode: nil)
@@ -163,7 +166,8 @@ private struct WatchListContent: View {
                                 isStreamer: SourceKind.from(titleId: item.titleId).isLivestream,
                                 streamTitle: liveStatusMap[item.titleId]?.streamTitle,
                                 effectivePosterUrl: CreatorImageOverrides.resolve(titleId: item.titleId, stored: item.posterUrl ?? sourceImageMap[item.titleId]),
-                                isWatched: social.isWatched(item.titleId)
+                                isWatched: social.isWatched(item.titleId),
+                                badgeText: streams.newBadgeText(for: item)
                             )
                         }
                         .buttonStyle(.plain)
@@ -394,6 +398,9 @@ private struct WatchListRow: View {
     /// Display-only: shows a small blue eye badge on the poster when the
     /// saved title is marked watched. Never mutates any watchlist state.
     var isWatched: Bool = false
+    /// New-content badge text ("NEW EPISODE" or "NEW UPLOAD") from
+    /// StreamsViewModel.newBadgeText, or nil when no badge should show.
+    var badgeText: String? = nil
 
     private var posterKind: SourceKind { SourceKind.from(titleId: item.titleId) }
 
@@ -425,6 +432,18 @@ private struct WatchListRow: View {
             }
             .frame(width: 60, height: 90)
             .clipShape(.rect(cornerRadius: 8))
+            .overlay(alignment: .topLeading) {
+                if let badge = badgeText {
+                    Text(badge)
+                        .font(.system(size: 11, weight: .bold))
+                        .textCase(.uppercase)
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.black, in: RoundedRectangle(cornerRadius: 6))
+                        .padding(8)
+                }
+            }
             .overlay(alignment: .bottomTrailing) {
                 if isWatched {
                     Circle()

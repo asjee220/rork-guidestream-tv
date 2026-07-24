@@ -26,6 +26,13 @@ final class TVStreamsViewModel {
     /// Maps title_id → most-recent content timestamp from `title_recency`.
     /// Populated by `fetchLatestContentDates()` so sorters can rank by recency.
     var latestContentAt: [String: Date] = [:]
+    /// Maps title_id → content_kind from `title_recency` ('tv','movie','youtube',
+    /// 'podcast','twitch','kick'). Populated alongside `latestContentAt` so
+    /// the watch-list new-content badge can distinguish shows from uploads.
+    var latestContentKind: [String: String] = [:]
+    /// Maps title_id → last-seen timestamp from `watchlist_seen`. Populated by
+    /// `fetchWatchlistSeen()` and updated optimistically by `markWatchlistSeen`.
+    var seenContentAt: [String: Date] = [:]
     /// Session cache of freshly-resolved poster URLs for saved titles whose
     /// stored snapshot is null or stale. Populated by `backfillPosters()`.
     var resolvedPosters: [String: String] = [:]
@@ -218,32 +225,115 @@ final class TVStreamsViewModel {
         await fetchLatestContentDates()
     }
 
-    /// Fetches the most-recent content timestamp for each saved title from
-    /// the `title_recency` table so sorters can promote freshly updated titles.
-    /// Titles without a row keep their existing date-added position.
+    /// Fetches the most-recent content timestamp and content_kind for each
+    /// saved title from the `title_recency` table so sorters can promote
+    /// freshly updated titles and the watch-list badge can distinguish shows
+    /// from uploads. Titles without a row keep their existing date-added position.
     func fetchLatestContentDates() async {
         let titleIds = self.userStreams.map { $0.titleId }
         guard !titleIds.isEmpty else {
             latestContentAt = [:]
+            latestContentKind = [:]
             return
         }
         do {
             let rows: [TVTitleRecencyRow] = try await TVSupabaseManager.shared.client
                 .from("title_recency")
-                .select("title_id,last_content_at")
+                .select("title_id,last_content_at,content_kind")
+                .in("title_id", values: titleIds)
+                .execute()
+                .value
+            var dateMap: [String: Date] = [:]
+            var kindMap: [String: String] = [:]
+            for row in rows {
+                if let date = row.lastContentAt {
+                    dateMap[row.titleId] = date
+                }
+                if let kind = row.contentKind {
+                    kindMap[row.titleId] = kind
+                }
+            }
+            self.latestContentAt = dateMap
+            self.latestContentKind = kindMap
+        } catch {
+            print("[TVStreams] fetchLatestContentDates failed: \(error.localizedDescription)")
+        }
+    }
+
+    /// Fetches `watchlist_seen` rows for the current owner and saved title_ids
+    /// so the watch-list badge can tell whether new content has arrived since
+    /// the user last opened a title. Owner is the signed-in user id when
+    /// authenticated, otherwise the device id — the same identity used for
+    /// `user_streams`.
+    func fetchWatchlistSeen() async {
+        let titleIds = self.userStreams.map { $0.titleId }
+        guard !titleIds.isEmpty else {
+            seenContentAt = [:]
+            return
+        }
+        let owner = currentUserId?.uuidString ?? TVDeviceIdentity.shared.deviceId
+        do {
+            let rows: [TVWatchlistSeenRow] = try await TVSupabaseManager.shared.client
+                .from("watchlist_seen")
+                .select("title_id,seen_content_at")
+                .eq("owner", value: owner)
                 .in("title_id", values: titleIds)
                 .execute()
                 .value
             var map: [String: Date] = [:]
             for row in rows {
-                if let date = row.lastContentAt {
+                if let date = row.seenContentAt {
                     map[row.titleId] = date
                 }
             }
-            self.latestContentAt = map
+            self.seenContentAt = map
         } catch {
-            print("[TVStreams] fetchLatestContentDates failed: \(error.localizedDescription)")
+            print("[TVStreams] fetchWatchlistSeen failed: \(error.localizedDescription)")
         }
+    }
+
+    /// Upserts a `watchlist_seen` row marking the title as seen now, and
+    /// optimistically updates `seenContentAt` so the badge disappears
+    /// immediately. Owner is the signed-in user id when authenticated,
+    /// otherwise the device id.
+    func markWatchlistSeen(titleId: String) async {
+        let owner = currentUserId?.uuidString ?? TVDeviceIdentity.shared.deviceId
+        let now = Date()
+        // Optimistic clear so the badge vanishes before the server responds.
+        seenContentAt[titleId] = now
+        let payload: [String: AnyJSON] = [
+            "owner": .string(owner),
+            "title_id": .string(titleId),
+            "seen_content_at": .string(ISO8601DateFormatter().string(from: now))
+        ]
+        do {
+            try await TVSupabaseManager.shared.client
+                .from("watchlist_seen")
+                .upsert(payload)
+                .execute()
+        } catch {
+            print("[TVStreams] markWatchlistSeen failed: \(error.localizedDescription)")
+        }
+    }
+
+    /// Returns the watch-list new-content badge text for a saved title, or
+    /// nil when no badge should show.
+    ///
+    /// A badge shows when `last_content_at` is non-null AND `content_kind` is
+    /// not "movie" AND `last_content_at` is strictly greater than the baseline,
+    /// where baseline = `seen_content_at` for that title if present, otherwise
+    /// that user_stream's `added_at` (so a freshly-saved old title never
+    /// badges, only content arriving after it was saved does).
+    ///
+    /// Returns "NEW EPISODE" when content_kind == "tv" and "NEW UPLOAD" for
+    /// every other non-movie kind (youtube, podcast, twitch, kick).
+    func newBadgeText(for stream: TVUserStream) -> String? {
+        guard let lastContent = latestContentAt[stream.titleId] else { return nil }
+        let kind = latestContentKind[stream.titleId] ?? "tv"
+        guard kind != "movie" else { return nil }
+        let baseline: Date = seenContentAt[stream.titleId] ?? stream.addedAt ?? Date.distantPast
+        guard lastContent > baseline else { return nil }
+        return kind == "tv" ? "NEW EPISODE" : "NEW UPLOAD"
     }
 
     /// No-op stub: tvOS does not run the iOS episode tracker. Kept so views

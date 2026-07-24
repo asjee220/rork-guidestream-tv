@@ -129,10 +129,25 @@ nonisolated struct UserMovieReleaseRow: Decodable, Sendable {
 nonisolated struct TitleRecencyRow: Decodable, Sendable {
     let titleId: String
     let lastContentAt: Date?
+    let contentKind: String?
 
     enum CodingKeys: String, CodingKey {
         case titleId = "title_id"
         case lastContentAt = "last_content_at"
+        case contentKind = "content_kind"
+    }
+}
+
+/// Minimal decoder for the `watchlist_seen` table — reads the last-seen
+/// timestamp per title so the watch-list badge can tell whether new content
+/// has arrived since the user last opened a title.
+nonisolated struct WatchlistSeenRow: Decodable, Sendable {
+    let titleId: String
+    let seenContentAt: Date?
+
+    enum CodingKeys: String, CodingKey {
+        case titleId = "title_id"
+        case seenContentAt = "seen_content_at"
     }
 }
 

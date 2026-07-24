@@ -38,6 +38,13 @@ class StreamsViewModel private constructor(context: Context) {
     private data class TitleRecencyRow(
         @SerialName("title_id") val titleId: String = "",
         @SerialName("last_content_at") val lastContentAt: String? = null,
+        @SerialName("content_kind") val contentKind: String? = null,
+    )
+
+    @Serializable
+    private data class WatchlistSeenRow(
+        @SerialName("title_id") val titleId: String = "",
+        @SerialName("seen_content_at") val seenContentAt: String? = null,
     )
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -58,6 +65,12 @@ class StreamsViewModel private constructor(context: Context) {
 
     private val _latestContentAt = MutableStateFlow<Map<String, Long>>(emptyMap())
     val latestContentAt: StateFlow<Map<String, Long>> = _latestContentAt.asStateFlow()
+
+    private val _latestContentKind = MutableStateFlow<Map<String, String>>(emptyMap())
+    val latestContentKind: StateFlow<Map<String, String>> = _latestContentKind.asStateFlow()
+
+    private val _seenContentAt = MutableStateFlow<Map<String, Long>>(emptyMap())
+    val seenContentAt: StateFlow<Map<String, Long>> = _seenContentAt.asStateFlow()
 
     private val _isLoadingStreams = MutableStateFlow(false)
     val isLoadingStreams: StateFlow<Boolean> = _isLoadingStreams.asStateFlow()
@@ -89,6 +102,7 @@ class StreamsViewModel private constructor(context: Context) {
             fetchUserStreams()
             fetchNewEpisodes()
             fetchLatestContentDates()
+            fetchWatchlistSeen()
         }
     }
 
@@ -504,6 +518,8 @@ class StreamsViewModel private constructor(context: Context) {
         _userStreams.value = emptyList()
         _newEpisodes.value = emptyList()
         _latestContentAt.value = emptyMap()
+        _latestContentKind.value = emptyMap()
+        _seenContentAt.value = emptyMap()
         prefs.edit().remove(localCacheKey).apply()
     }
 
@@ -536,6 +552,7 @@ class StreamsViewModel private constructor(context: Context) {
     private suspend fun fetchLatestContentDates() {
         if (_userStreams.value.isEmpty()) {
             _latestContentAt.value = emptyMap()
+            _latestContentKind.value = emptyMap()
             return
         }
         try {
@@ -546,9 +563,61 @@ class StreamsViewModel private constructor(context: Context) {
                     filter { isIn("title_id", titleIds) }
                 }
                 .decodeList<TitleRecencyRow>()
+            val dateMap = HashMap<String, Long>()
+            val kindMap = HashMap<String, String>()
+            for (row in rows) {
+                val raw = row.lastContentAt
+                if (raw != null) {
+                    val millis: Long = try {
+                        java.time.Instant.parse(raw).toEpochMilli()
+                    } catch (_: Exception) {
+                        try {
+                            java.time.OffsetDateTime.parse(raw).toInstant().toEpochMilli()
+                        } catch (_: Exception) {
+                            0L
+                        }
+                    }
+                    if (millis > 0L) dateMap[row.titleId] = millis
+                }
+                if (row.contentKind != null) {
+                    kindMap[row.titleId] = row.contentKind
+                }
+            }
+            _latestContentAt.value = dateMap
+            _latestContentKind.value = kindMap
+        } catch (e: Throwable) {
+            if (e is CancellationException) throw e
+            _lastError.value = e.message
+        }
+    }
+
+    /**
+     * Fetches `watchlist_seen` rows for the current owner and saved title_ids
+     * so the watch-list badge can tell whether new content has arrived since
+     * the user last opened a title. Owner is the signed-in user id when
+     * authenticated, otherwise the device id — the same identity used for
+     * `user_streams`.
+     */
+    suspend fun fetchWatchlistSeen() {
+        if (_userStreams.value.isEmpty()) {
+            _seenContentAt.value = emptyMap()
+            return
+        }
+        try {
+            val titleIds = _userStreams.value.map { it.titleId }.distinct()
+            val owner = currentUserId ?: DeviceIdentity.get().deviceId
+            val rows = SupabaseManager.client.postgrest
+                .from("watchlist_seen")
+                .select {
+                    filter {
+                        eq("owner", owner)
+                        isIn("title_id", titleIds)
+                    }
+                }
+                .decodeList<WatchlistSeenRow>()
             val map = HashMap<String, Long>()
             for (row in rows) {
-                val raw = row.lastContentAt ?: continue
+                val raw = row.seenContentAt ?: continue
                 val millis: Long = try {
                     java.time.Instant.parse(raw).toEpochMilli()
                 } catch (_: Exception) {
@@ -560,10 +629,72 @@ class StreamsViewModel private constructor(context: Context) {
                 }
                 map[row.titleId] = millis
             }
-            _latestContentAt.value = map
+            _seenContentAt.value = map
         } catch (e: Throwable) {
             if (e is CancellationException) throw e
             _lastError.value = e.message
         }
+    }
+
+    /**
+     * Upserts a `watchlist_seen` row marking the title as seen now, and
+     * optimistically updates `seenContentAt` so the badge disappears
+     * immediately. Owner is the signed-in user id when authenticated,
+     * otherwise the device id.
+     */
+    fun markWatchlistSeen(titleId: String) {
+        val trimmedId = titleId.trim()
+        if (trimmedId.isEmpty()) return
+        val owner = currentUserId ?: DeviceIdentity.get().deviceId
+        val now = System.currentTimeMillis()
+        // Optimistic clear so the badge vanishes before the server responds.
+        _seenContentAt.value = _seenContentAt.value + (trimmedId to now)
+        scope.launch {
+            try {
+                val payload = buildJsonObject {
+                    put("owner", owner)
+                    put("title_id", trimmedId)
+                    put("seen_content_at", java.time.Instant.ofEpochMilli(now).toString())
+                }
+                SupabaseManager.client.postgrest
+                    .from("watchlist_seen")
+                    .upsert(payload) { onConflict = "owner,title_id" }
+            } catch (e: Throwable) {
+                if (e is CancellationException) throw e
+                _lastError.value = e.message
+            }
+        }
+    }
+
+    /**
+     * Returns the watch-list new-content badge text for a saved title, or
+     * null when no badge should show.
+     *
+     * A badge shows when `last_content_at` is non-null AND `content_kind` is
+     * not "movie" AND `last_content_at` is strictly greater than the baseline,
+     * where baseline = `seen_content_at` for that title if present, otherwise
+     * that user_stream's `added_at` (so a freshly-saved old title never
+     * badges, only content arriving after it was saved does).
+     *
+     * Returns "NEW EPISODE" when content_kind == "tv" and "NEW UPLOAD" for
+     * every other non-movie kind (youtube, podcast, twitch, kick).
+     */
+    fun newBadgeText(stream: UserStream): String? {
+        val lastContent = _latestContentAt.value[stream.titleId] ?: return null
+        val kind = _latestContentKind.value[stream.titleId] ?: "tv"
+        if (kind == "movie") return null
+        val seenMs = _seenContentAt.value[stream.titleId]
+        val addedMs: Long = try {
+            stream.addedAt?.let {
+                java.time.Instant.parse(it).toEpochMilli()
+            } ?: 0L
+        } catch (_: Exception) {
+            try {
+                java.time.OffsetDateTime.parse(stream.addedAt).toInstant().toEpochMilli()
+            } catch (_: Exception) { 0L }
+        }
+        val baseline = seenMs ?: addedMs
+        if (lastContent <= baseline) return null
+        return if (kind == "tv") "NEW EPISODE" else "NEW UPLOAD"
     }
 }
