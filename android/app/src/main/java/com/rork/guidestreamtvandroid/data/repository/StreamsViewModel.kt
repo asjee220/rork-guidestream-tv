@@ -679,11 +679,16 @@ class StreamsViewModel private constructor(context: Context) {
      * Returns "NEW EPISODE" when content_kind == "tv" and "NEW UPLOAD" for
      * every other non-movie kind (youtube, podcast, twitch, kick).
      */
-    fun newBadgeText(stream: UserStream): String? {
-        val lastContent = _latestContentAt.value[stream.titleId] ?: return null
-        val kind = _latestContentKind.value[stream.titleId] ?: "tv"
+    fun newBadgeText(
+        stream: UserStream,
+        latestContentAt: Map<String, Long>,
+        latestContentKind: Map<String, String>,
+        seenContentAt: Map<String, Long>,
+    ): String? {
+        val lastContent = latestContentAt[stream.titleId] ?: return null
+        val kind = latestContentKind[stream.titleId] ?: "tv"
         if (kind == "movie") return null
-        val seenMs = _seenContentAt.value[stream.titleId]
+        val seenMs = seenContentAt[stream.titleId]
         val addedMs: Long = try {
             stream.addedAt?.let {
                 java.time.Instant.parse(it).toEpochMilli()

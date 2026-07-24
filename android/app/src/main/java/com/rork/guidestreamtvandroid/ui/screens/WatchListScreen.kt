@@ -71,6 +71,9 @@ fun WatchListScreen(
     val streamsVm = StreamsViewModel.get()
     val userStreams by streamsVm.userStreams.collectAsStateWithLifecycle()
     val watchedIds by streamsVm.watchedIds.collectAsStateWithLifecycle()
+    val latestContentAt by streamsVm.latestContentAt.collectAsStateWithLifecycle()
+    val latestContentKind by streamsVm.latestContentKind.collectAsStateWithLifecycle()
+    val seenContentAt by streamsVm.seenContentAt.collectAsStateWithLifecycle()
 
     // Fetch watchlist_seen so the new-content badges reflect server state on
     // launch. Runs alongside the existing recency load in refreshAll.
@@ -155,7 +158,7 @@ fun WatchListScreen(
                     WatchListGridCell(
                         stream = stream,
                         isWatched = watchedIds.contains(stream.titleId),
-                        badgeText = streamsVm.newBadgeText(stream),
+                        badgeText = streamsVm.newBadgeText(stream, latestContentAt, latestContentKind, seenContentAt),
                         onClick = {
                             streamsVm.markWatchlistSeen(stream.titleId)
                             onOpenTitle(
