@@ -154,6 +154,27 @@ nonisolated struct TVTitleRecencyRow: Decodable, Sendable {
     }
 }
 
+// MARK: - Content sources (Supabase `content_sources`)
+
+/// Decodable row from the public-readable `content_sources` table. Used by
+/// `TVContentSourcesService` to recommend creators/podcasts based on the
+/// categories the user already follows.
+nonisolated struct TVContentSource: Decodable, Sendable {
+    let titleId: String
+    let sourceType: String
+    let displayName: String
+    let imageUrl: String?
+    let category: String?
+
+    enum CodingKeys: String, CodingKey {
+        case titleId = "title_id"
+        case sourceType = "source_type"
+        case displayName = "display_name"
+        case imageUrl = "image_url"
+        case category
+    }
+}
+
 // MARK: - Type aliases for iOS-compatible naming
 
 typealias SportsGame = TVSportsGame
