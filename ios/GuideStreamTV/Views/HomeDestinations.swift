@@ -1198,7 +1198,7 @@ struct EpisodeDetailSheet: View {
             } else if let epURL = episodeDeepLinkURL {
                 let labelBrand = gsBrandKey(for: resolvedSource?.name ?? whereToWatchLabel)
                 let urlBrand = gsBrandKey(forURL: epURL)
-                if !labelBrand.isEmpty && !urlBrand.isEmpty && labelBrand != urlBrand {
+                if !gsIsResellerSource(named: resolvedSource?.name ?? whereToWatchLabel) && !labelBrand.isEmpty && !urlBrand.isEmpty && labelBrand != urlBrand {
                     NSLog("[DEEPLINK_BRAND_GUARD] label=\(labelBrand) url=\(urlBrand) rejected=\(epURL.absoluteString)")
                     StreamingDeepLinker.open(
                         platform: whereToWatchLabel,
@@ -1223,7 +1223,7 @@ struct EpisodeDetailSheet: View {
                 }()
                 let labelBrand = gsBrandKey(for: resolvedSource?.name ?? whereToWatchLabel)
                 let urlBrand = gsBrandKey(forURL: finalURL)
-                if !labelBrand.isEmpty && !urlBrand.isEmpty && labelBrand != urlBrand {
+                if !gsIsResellerSource(named: resolvedSource?.name ?? whereToWatchLabel) && !labelBrand.isEmpty && !urlBrand.isEmpty && labelBrand != urlBrand {
                     NSLog("[DEEPLINK_BRAND_GUARD] label=\(labelBrand) url=\(urlBrand) rejected=\(finalURL.absoluteString)")
                     StreamingDeepLinker.open(
                         platform: whereToWatchLabel,

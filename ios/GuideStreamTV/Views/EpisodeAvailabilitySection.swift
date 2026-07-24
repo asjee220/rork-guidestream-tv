@@ -107,9 +107,43 @@ func gsDisplayName(for raw: String) -> String {
  return raw
 }
 
+/// Shared reseller-suffix list, ordered longest first so that the
+/// longest match wins. Both gsBrandKey(for:) and gsIsResellerSource(named:)
+/// read from this constant so they can never disagree.
+private let gsResellerSuffixes: [String] = [
+    "roku premium subscription",
+    "youtube primetime channel",
+    "prime video channel",
+    "apple tv channel",
+    "appletv channel",
+    "amazon channel",
+    "roku premium",
+    "roku channel",
+]
+
+/// Strips a trailing reseller suffix when the lowercased trimmed name
+/// ends with it and the text remaining before it — after also dropping
+/// a leading "the " article and trimming — is non-empty. Returns the
+/// stripped base, or nil when no suffix matched or the remainder would
+/// be empty.
+private func gsStripResellerSuffix(_ lower: String) -> String? {
+    for suffix in gsResellerSuffixes {
+        if lower.hasSuffix(suffix) {
+            let base = String(lower.dropLast(suffix.count))
+                .trimmingCharacters(in: .whitespaces)
+            let articleless = base.hasPrefix("the ")
+                ? String(base.dropFirst(4)).trimmingCharacters(in: .whitespaces)
+                : base
+            if !articleless.isEmpty { return base }
+        }
+    }
+    return nil
+}
+
 /// Canonical brand key derived from a Watchmode source display name.
 /// Lowercases, truncates at the first "(via ", strips known reseller
-/// suffixes, then maps the remainder to a canonical catalogue id. The
+/// suffixes (anchored to the end, matching the server's watchmode_resolve
+/// v9 rule), then maps the remainder to a canonical catalogue id. The
 /// appletv test intentionally precedes max and prime so that an Apple
 /// title sold through Amazon keys as "appletv" and never as "prime".
 func gsBrandKey(for name: String) -> String {
@@ -117,10 +151,9 @@ func gsBrandKey(for name: String) -> String {
     if let viaRange = s.range(of: "(via ") {
         s = String(s[..<viaRange.lowerBound])
     }
-    for suffix in ["amazon channel", "apple tv channel", "appletv channel",
-                   "prime video channel", "roku premium subscription",
-                   "roku premium", "youtube primetime channel"] {
-        if s.contains(suffix) { s = s.replacingOccurrences(of: suffix, with: "") }
+    s = s.trimmingCharacters(in: .whitespaces)
+    if let base = gsStripResellerSuffix(s) {
+        s = base
     }
     s = s.trimmingCharacters(in: .whitespaces)
     if s.isEmpty { s = name.lowercased().trimmingCharacters(in: .whitespaces) }
@@ -160,6 +193,23 @@ func gsBrandKey(forURL url: URL) -> String {
     if host.hasSuffix("starz.com") { return "starz" }
     if host.hasSuffix("youtube.com") { return "youtube" }
     return ""
+}
+
+/// Returns true when the source name indicates a reseller arrangement —
+/// either a "(via " parenthetical with non-empty text before it, or a
+/// trailing reseller suffix (from the shared gsResellerSuffixes list)
+/// that leaves non-empty text before it after dropping a leading
+/// "the " article and trimming. Uses the identical suffix list and
+/// anchoring rule as gsBrandKey(for:) so the two can never disagree.
+func gsIsResellerSource(named name: String) -> Bool {
+    let lower = name.lowercased().trimmingCharacters(in: .whitespaces)
+    if let viaRange = lower.range(of: "(via ") {
+        let before = String(lower[..<viaRange.lowerBound])
+            .trimmingCharacters(in: .whitespaces)
+        if !before.isEmpty { return true }
+    }
+    if gsStripResellerSuffix(lower) != nil { return true }
+    return false
 }
 
 func gsSourceRank(_ s: WatchmodeSource) -> Int {
