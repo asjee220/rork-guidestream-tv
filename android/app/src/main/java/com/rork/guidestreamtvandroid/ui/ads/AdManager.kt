@@ -11,6 +11,7 @@ import com.google.android.gms.ads.MobileAds
 import com.google.android.gms.ads.interstitial.InterstitialAd
 import com.google.android.gms.ads.interstitial.InterstitialAdLoadCallback
 import com.rork.guidestreamtvandroid.AppConfig
+import com.rork.guidestreamtvandroid.data.remote.RemoteConfigService
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -49,7 +50,7 @@ class AdManager private constructor() {
         val adRequest = AdRequest.Builder().build()
         InterstitialAd.load(
             context,
-            AppConfig.ADMOB_INTERSTITIAL_AD_UNIT_ID,
+            RemoteConfigService.adUnit("interstitial") ?: AppConfig.ADMOB_INTERSTITIAL_AD_UNIT_ID,
             adRequest,
             object : InterstitialAdLoadCallback() {
                 override fun onAdLoaded(ad: InterstitialAd) {

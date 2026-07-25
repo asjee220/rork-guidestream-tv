@@ -120,7 +120,27 @@ final class RakutenManager {
 
     func affiliateURL(for serviceId: String) -> URL? {
         guard let affiliate = affiliate(for: serviceId) else { return nil }
-        return URL(string: affiliate.trackingUrl)
+        // Resolve the publisher id from remote config, falling back to the
+        // hardcoded constant so a missing row never breaks tracking.
+        let resolvedPublisher = RemoteConfigService.shared.rakutenPublisherId ?? publisherId
+        // Resolve the merchant id from remote config for this service key.
+        guard let merchantId = RemoteConfigService.shared.rakutenMerchantId(for: serviceId.lowercased()),
+              !merchantId.isEmpty else {
+            // No real merchant id available — return nil so the caller falls
+            // through to the direct-signup branch. This covers both the
+            // remote-null case and the hardcoded-placeholder case.
+            return nil
+        }
+        // Build the tracking URL at call time so it always reflects the
+        // latest remote config. Reuse directSignupURL for the destination.
+        guard let destination = Self.directSignupURL(for: serviceId.lowercased()),
+              let encoded = destination.absoluteString.addingPercentEncoding(
+                withAllowedCharacters: .alphanumerics
+              ) else {
+            return nil
+        }
+        let urlString = "https://click.linksynergy.com/deeplink?id=\(resolvedPublisher)&mid=\(merchantId)&murl=\(encoded)"
+        return URL(string: urlString)
     }
 
     func fallbackURL(for serviceId: String) -> URL? {
@@ -134,34 +154,27 @@ final class RakutenManager {
     func openAffiliateLink(serviceId: String, metadata: [String: Any] = [:]) {
         let normalized = serviceId.lowercased()
 
-        // Check if the merchant ID is still a placeholder.
-        // If so, skip Rakuten entirely and open the direct signup
-        // URL so the link always works even before real IDs are set.
-        if let affiliate = affiliate(for: normalized),
-           affiliate.merchantId.hasPrefix("[") {
-            let directURL = Self.directSignupURL(for: normalized)
-            if let url = directURL {
-                UIApplication.shared.open(url)
-            }
-            WatchIntentLogger.shared.log(
-                eventType: .affiliateLinkTapped,
-                platformId: normalized,
-                metadata: ["type": "direct_fallback", "source":
-                    (metadata["source"] as? String) ?? "unknown"]
-            )
-            return
-        }
+        // When affiliateURL(for:) resolves, open the Rakuten tracking URL
+        // with an App Store fallback. When it does NOT resolve (no merchant
+        // id from remote config, or a hardcoded placeholder), skip Rakuten
+        // entirely and open the direct signup URL so the link always works
+        // even before real IDs are set.
+        let trackingURL = affiliateURL(for: normalized)
 
-        if let url = affiliateURL(for: normalized) {
+        if let url = trackingURL {
             UIApplication.shared.open(url, options: [:]) { [weak self] success in
                 guard !success, let fallback = self?.fallbackURL(for: normalized) else { return }
                 UIApplication.shared.open(fallback)
             }
-        } else if let fallback = fallbackURL(for: normalized) {
-            UIApplication.shared.open(fallback)
+        } else {
+            let directURL = Self.directSignupURL(for: normalized)
+            if let url = directURL {
+                UIApplication.shared.open(url)
+            }
         }
 
-        var meta: [String: Any] = ["type": "subscribe_cta"]
+        let metaType = trackingURL == nil ? "direct_fallback" : "subscribe_cta"
+        var meta: [String: Any] = ["type": metaType]
         for (k, v) in metadata { meta[k] = v }
 
         WatchIntentLogger.shared.log(

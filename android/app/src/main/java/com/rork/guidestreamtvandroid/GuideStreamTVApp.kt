@@ -4,6 +4,7 @@ import android.app.Application
 import android.util.Log
 import com.rork.guidestreamtvandroid.data.local.DeviceIdentity
 import com.rork.guidestreamtvandroid.data.local.DeviceSessionService
+import com.rork.guidestreamtvandroid.data.remote.RemoteConfigService
 import com.rork.guidestreamtvandroid.data.repository.AuthViewModel
 import com.rork.guidestreamtvandroid.data.repository.PushTokenManager
 import com.rork.guidestreamtvandroid.data.repository.SocialViewModel
@@ -12,6 +13,11 @@ import com.rork.guidestreamtvandroid.data.repository.TeamFavoritesService
 import com.rork.guidestreamtvandroid.data.repository.WatchIntentLogger
 import com.rork.guidestreamtvandroid.ui.ads.AdManager
 import com.rork.guidestreamtvandroid.widget.WidgetDataService
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * Application entry point — initializes all singleton services.
@@ -24,6 +30,7 @@ class GuideStreamTVApp : Application() {
         // Initialize singletons in dependency order. Each step is guarded so a
         // single failing service can never prevent the app from launching.
         safe("DeviceIdentity") { DeviceIdentity.init(this) }
+        safe("RemoteConfig") { RemoteConfigService.init(this) }
         safe("AuthViewModel") { AuthViewModel.init(this) }
         safe("WatchIntentLogger") { WatchIntentLogger.init(this) }
         safe("DeviceSessionService") { DeviceSessionService.init(this) }
@@ -36,16 +43,26 @@ class GuideStreamTVApp : Application() {
         // Restore session on cold launch
         safe("restoreSession") { AuthViewModel.get().restoreSession() }
 
-        // Initialize AdMob
+        // Initialize AdMob. The interstitial preload is deferred until
+        // after the remote config fetch resolves (with a 2s safety timeout)
+        // so the first request uses the remote ad unit id when available.
+        // Any failure still results in a preload with fallback values.
         safe("AdMob") {
             AdManager.get().initialize(this)
-            AdManager.get().preloadInterstitial(this)
+            adScope.launch {
+                withTimeoutOrNull(2000L) {
+                    RemoteConfigService.load()
+                }
+                AdManager.get().preloadInterstitial(this@GuideStreamTVApp)
+            }
         }
 
         // Log app opened + bump session counter
         safe("appOpened") { WatchIntentLogger.get().log(WatchIntentLogger.IntentEventType.APP_OPENED) }
         safe("sessionUpsert") { DeviceSessionService.get().incrementSessionAndUpsert() }
     }
+
+    private val adScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     private inline fun safe(step: String, block: () -> Unit) {
         try {

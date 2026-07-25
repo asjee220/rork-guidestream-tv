@@ -3,6 +3,8 @@ package com.rork.guidestreamtvandroid.data.repository
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import com.rork.guidestreamtvandroid.data.remote.RemoteConfigService
+import java.net.URLEncoder
 
 /**
  * Rakuten Advertising affiliate entry — mirrors iOS RakutenAffiliate.
@@ -116,8 +118,37 @@ class RakutenManager private constructor() {
     fun affiliate(serviceId: String): RakutenAffiliate? =
         affiliates[serviceId.lowercase()]
 
-    fun affiliateURL(serviceId: String): String? =
-        affiliate(serviceId)?.trackingUrl
+    /**
+     * Builds the Rakuten tracking URL at call time so it always reflects the
+     * latest remote config. Resolves the publisher id from RemoteConfigService
+     * falling back to the hardcoded PUBLISHER_ID constant, resolves the
+     * merchant id from RemoteConfigService for that service key, and when a
+     * non-empty merchant id is available builds the URL as
+     * https://click.linksynergy.com/deeplink?id=PUBLISHER&mid=MERCHANT&murl=ENCODED
+     * where ENCODED is the percent-encoded absolute string of the URL
+     * returned by directSignupURL for that same service key. When no merchant
+     * id is available from remote config, returns null so the caller falls
+     * through to the direct-signup branch.
+     */
+    fun affiliateURL(serviceId: String): String? {
+        val normalized = serviceId.lowercase()
+        // Verify the service has a known affiliate entry; if not, no URL.
+        val affiliate = affiliate(normalized) ?: return null
+        // Resolve publisher id from remote config with hardcoded fallback.
+        val resolvedPublisher = RemoteConfigService.rakutenPublisherId() ?: PUBLISHER_ID
+        // Resolve merchant id from remote config for this service key.
+        val merchantId = RemoteConfigService.rakutenMerchantId(normalized)
+        if (merchantId.isNullOrBlank()) {
+            // No real merchant id available — return null so the caller
+            // falls through to the direct-signup branch. Covers both the
+            // remote-null case and the hardcoded-placeholder case.
+            return null
+        }
+        // Reuse directSignupURL for the destination.
+        val destination = directSignupURL(normalized) ?: return null
+        val encoded = URLEncoder.encode(destination, "UTF-8")
+        return "https://click.linksynergy.com/deeplink?id=$resolvedPublisher&mid=$merchantId&murl=$encoded"
+    }
 
     private fun fallbackURL(serviceId: String): String? =
         affiliate(serviceId)?.fallbackUrl
@@ -134,16 +165,15 @@ class RakutenManager private constructor() {
         metadata: Map<String, Any> = emptyMap(),
     ) {
         val normalized = serviceId.lowercase()
-        val affiliate = affiliate(normalized)
 
-        // If the merchant id is still a placeholder, skip Rakuten entirely and
-        // open the direct sign-up URL so the link always works.
-        val isPlaceholder = affiliate?.merchantId?.startsWith("[") ?: true
-        val targetUrl = if (isPlaceholder) {
-            fallbackURL(normalized) ?: directSignupURL(normalized)
-        } else {
-            affiliateURL(normalized)
-        }
+        // When affiliateURL(for:) resolves, open the Rakuten tracking URL
+        // with a direct-signup fallback. When it does NOT resolve (no
+        // merchant id from remote config, or a hardcoded placeholder),
+        // skip Rakuten entirely and open the direct signup URL so the
+        // link always works even before real IDs are set.
+        val trackingUrl = affiliateURL(normalized)
+        val isDirectFallback = trackingUrl == null
+        val targetUrl = trackingUrl ?: fallbackURL(normalized) ?: directSignupURL(normalized)
 
         if (targetUrl != null) {
             try {
@@ -167,7 +197,7 @@ class RakutenManager private constructor() {
         }
 
         val meta = buildMap<String, Any> {
-            put("type", if (isPlaceholder) "direct_fallback" else "subscribe_cta")
+            put("type", if (isDirectFallback) "direct_fallback" else "subscribe_cta")
             putAll(metadata)
         }
         WatchIntentLogger.get().log(

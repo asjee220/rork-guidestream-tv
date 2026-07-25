@@ -67,7 +67,7 @@ final class AdManager: NSObject, ObservableObject, FullScreenContentDelegate, Na
         #if DEBUG
         return "ca-app-pub-3940256099942544/2934735716"
         #else
-        return "ca-app-pub-6595855555549220/0000000000"
+        return RemoteConfigService.shared.adUnit("banner") ?? "ca-app-pub-6595855555549220/0000000000"
         #endif
     }
 
@@ -75,7 +75,7 @@ final class AdManager: NSObject, ObservableObject, FullScreenContentDelegate, Na
         #if DEBUG
         return "ca-app-pub-3940256099942544/4411468910"
         #else
-        return "ca-app-pub-6595855555549220/5285695856"
+        return RemoteConfigService.shared.adUnit("interstitial") ?? "ca-app-pub-6595855555549220/5285695856"
         #endif
     }
 
@@ -83,7 +83,7 @@ final class AdManager: NSObject, ObservableObject, FullScreenContentDelegate, Na
         #if DEBUG
         return "ca-app-pub-3940256099942544/3986624511"
         #else
-        return "ca-app-pub-6595855555549220/8047590567"
+        return RemoteConfigService.shared.adUnit("native") ?? "ca-app-pub-6595855555549220/8047590567"
         #endif
     }
 
@@ -240,7 +240,7 @@ final class AdManager: NSObject, ObservableObject {
         #if DEBUG
         return "ca-app-pub-3940256099942544/2934735716"
         #else
-        return "ca-app-pub-6595855555549220/0000000000"
+        return RemoteConfigService.shared.adUnit("banner") ?? "ca-app-pub-6595855555549220/0000000000"
         #endif
     }
 
@@ -248,7 +248,7 @@ final class AdManager: NSObject, ObservableObject {
         #if DEBUG
         return "ca-app-pub-3940256099942544/4411468910"
         #else
-        return "ca-app-pub-6595855555549220/5285695856"
+        return RemoteConfigService.shared.adUnit("interstitial") ?? "ca-app-pub-6595855555549220/5285695856"
         #endif
     }
 
@@ -256,7 +256,7 @@ final class AdManager: NSObject, ObservableObject {
         #if DEBUG
         return "ca-app-pub-3940256099942544/3986624511"
         #else
-        return "ca-app-pub-6595855555549220/8047590567"
+        return RemoteConfigService.shared.adUnit("native") ?? "ca-app-pub-6595855555549220/8047590567"
         #endif
     }
 

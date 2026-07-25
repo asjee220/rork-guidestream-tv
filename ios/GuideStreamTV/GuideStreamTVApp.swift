@@ -31,6 +31,7 @@ struct GuideStreamTVApp: App {
                         Task { await PushTokenManager.shared.refreshRegistrationIfAuthorized() }
                     }
                 }
+                .task { await RemoteConfigService.shared.load() }
                 .onOpenURL { url in
                     guard url.scheme == "guidestream" else { return }
 
