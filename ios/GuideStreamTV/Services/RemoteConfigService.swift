@@ -2,21 +2,23 @@
 //  RemoteConfigService.swift
 //  GuideStreamTV
 //
-//  Lightweight remote-configuration layer that lets AdMob ad unit IDs and
-//  Rakuten merchant IDs be updated from Supabase (`public.app_config`)
-//  without shipping a new build.
+//  Lightweight remote-configuration layer that lets AdMob ad unit IDs,
+//  the Rakuten publisher id, and the full Rakuten advertiser catalog be
+//  updated from Supabase without shipping a new build.
 //
 //  Strategy:
-//  1. On init, synchronously hydrate from a UserDefaults cache so values
+//  1. On init, synchronously hydrate from UserDefaults caches so values
 //     are available immediately at cold launch, before the network returns.
-//  2. `load()` reads every row from `app_config`, decodes the three known
-//     keys into typed structs, stores them in memory, and persists the raw
-//     JSON back to UserDefaults so the next cold launch has a last-known-
-//     good copy.
+//  2. `load()` reads every row from `app_config` (ad unit ids + publisher
+//     id) and every row from `affiliate_advertisers` (the full advertiser
+//     catalog), decodes them into typed structs, stores them in memory, and
+//     persists the raw JSON back to UserDefaults so the next cold launch
+//     has a last-known-good copy.
 //  3. `load()` never throws to the caller and silently no-ops on any
 //     network or decode failure, leaving cached or hardcoded values intact.
 //
-//  No secrets, tokens, or API keys are stored in or read from `app_config`.
+//  No secrets, tokens, or API keys are stored in or read from `app_config`
+//  or `affiliate_advertisers`.
 //
 
 import Foundation
@@ -29,7 +31,10 @@ nonisolated struct RemoteAdConfig: Codable, Sendable {
     let native: String?
 }
 
-/// Typed shape of the `affiliate_rakuten` row value.
+/// Typed shape of the `affiliate_rakuten` row value. Only `publisher_id` is
+/// read now that merchant IDs come from `affiliate_advertisers`. The
+/// `merchants` field is kept optional so old cached JSON that still contains
+/// a merchants object decodes without crashing.
 nonisolated struct RemoteRakutenConfig: Codable, Sendable {
     let publisherId: String?
     let merchants: RemoteRakutenMerchants?
@@ -40,6 +45,8 @@ nonisolated struct RemoteRakutenConfig: Codable, Sendable {
     }
 }
 
+/// Retained solely so old cached JSON with a merchants object decodes
+/// without crashing. No longer used for merchant-id resolution.
 nonisolated struct RemoteRakutenMerchants: Codable, Sendable {
     let netflix: String?
     let hulu: String?
@@ -49,6 +56,33 @@ nonisolated struct RemoteRakutenMerchants: Codable, Sendable {
     let peacock: String?
     let paramount: String?
     let prime: String?
+}
+
+/// A single row from `affiliate_advertisers` — the remotely-configurable
+/// Rakuten advertiser catalog. Merchant IDs, signup URLs, fallback URLs,
+/// display names and brand aliases all come from rows of this shape.
+nonisolated struct RemoteAdvertiser: Codable, Sendable {
+    let key: String
+    let displayName: String
+    let aliases: [String]
+    let merchantId: String?
+    let signupUrl: String
+    let fallbackUrl: String?
+    let commissionType: String
+    let enabled: Bool
+    let sortOrder: Int
+
+    enum CodingKeys: String, CodingKey {
+        case key
+        case displayName = "display_name"
+        case aliases
+        case merchantId = "merchant_id"
+        case signupUrl = "signup_url"
+        case fallbackUrl = "fallback_url"
+        case commissionType = "commission_type"
+        case enabled
+        case sortOrder = "sort_order"
+    }
 }
 
 /// Raw row shape returned by `select()` on `app_config`.
@@ -61,13 +95,16 @@ nonisolated struct AppConfigRow: Codable, Sendable {
 final class RemoteConfigService {
     static let shared = RemoteConfigService()
 
-    /// UserDefaults key for the last-known-good raw JSON payload.
+    /// UserDefaults key for the last-known-good `app_config` payload.
     private let cacheKey = "gs_remote_config_cache"
+    /// UserDefaults key for the last-known-good `affiliate_advertisers` payload.
+    private let catalogCacheKey = "gs_affiliate_catalog_cache"
 
     /// In-memory decoded values. Populated from cache on init, refreshed by
     /// `load()`. All accessors read these optionals directly.
     private var adsConfig: RemoteAdConfig?
     private var rakutenConfig: RemoteRakutenConfig?
+    private var advertisers: [RemoteAdvertiser] = []
 
     private init() {
         hydrateFromCache()
@@ -75,9 +112,10 @@ final class RemoteConfigService {
 
     // MARK: - Load
 
-    /// Reads all rows from `app_config`, decodes the three known keys, stores
-    /// them in memory, and persists the raw JSON to UserDefaults. Never
-    /// throws — any failure leaves cached or hardcoded values intact.
+    /// Reads all rows from `app_config` and `affiliate_advertisers`, decodes
+    /// them into typed structs, stores them in memory, and persists the raw
+    /// JSON to UserDefaults so the next cold launch can hydrate from cache.
+    /// Never throws — any failure leaves cached or hardcoded values intact.
     func load() async {
         do {
             let rows: [AppConfigRow] = try await SupabaseManager.shared.client
@@ -89,10 +127,21 @@ final class RemoteConfigService {
         } catch {
             // Silent no-op: cached or hardcoded values stay in place.
         }
+
+        do {
+            let catalog: [RemoteAdvertiser] = try await SupabaseManager.shared.client
+                .from("affiliate_advertisers")
+                .select()
+                .execute()
+                .value
+            ingestCatalog(catalog)
+        } catch {
+            // Silent no-op: cached or hardcoded catalog stays in place.
+        }
     }
 
-    /// Decodes the supplied rows into the typed structs, then persists the
-    /// raw JSON to UserDefaults so the next cold launch can hydrate from it.
+    /// Decodes the supplied app_config rows into the typed structs, then
+    /// persists the raw JSON to UserDefaults.
     private func ingest(_ rows: [AppConfigRow]) {
         let encoder = JSONEncoder()
         let decoder = JSONDecoder()
@@ -100,14 +149,11 @@ final class RemoteConfigService {
         var newRakuten: RemoteRakutenConfig?
 
         for row in rows {
-            // Convert the AnyJSON value to Data via JSONEncoder (AnyJSON is
-            // Encodable) so we can decode it into a typed struct.
             guard let data = try? encoder.encode(row.value) else { continue }
             switch row.key {
             case "ads_ios":
                 newAds = try? decoder.decode(RemoteAdConfig.self, from: data)
             case "ads_android":
-                // Only used as a fallback when ads_ios is missing.
                 if newAds == nil {
                     newAds = try? decoder.decode(RemoteAdConfig.self, from: data)
                 }
@@ -121,9 +167,18 @@ final class RemoteConfigService {
         if newAds != nil { adsConfig = newAds }
         if newRakuten != nil { rakutenConfig = newRakuten }
 
-        // Persist the raw rows so the next cold launch can hydrate from cache.
         if let cacheData = try? encoder.encode(rows) {
             UserDefaults.standard.set(cacheData, forKey: cacheKey)
+        }
+    }
+
+    /// Stores the supplied advertiser rows in memory and persists the raw
+    /// JSON to UserDefaults under the catalog cache key.
+    private func ingestCatalog(_ rows: [RemoteAdvertiser]) {
+        advertisers = rows
+        let encoder = JSONEncoder()
+        if let cacheData = try? encoder.encode(rows) {
+            UserDefaults.standard.set(cacheData, forKey: catalogCacheKey)
         }
     }
 
@@ -150,51 +205,47 @@ final class RemoteConfigService {
         return id
     }
 
-    /// Returns the Rakuten merchant id for the given service key (e.g.
-    /// "netflix", "hulu"), or nil when missing/empty.
-    func rakutenMerchantId(for key: String) -> String? {
-        guard let merchants = rakutenConfig?.merchants else { return nil }
-        let raw: String?
-        switch key {
-        case "netflix": raw = merchants.netflix
-        case "hulu": raw = merchants.hulu
-        case "disney": raw = merchants.disney
-        case "hbo": raw = merchants.hbo
-        case "apple": raw = merchants.apple
-        case "peacock": raw = merchants.peacock
-        case "paramount": raw = merchants.paramount
-        case "prime": raw = merchants.prime
-        default: raw = nil
-        }
-        guard let value = raw, !value.isEmpty else { return nil }
-        return value
+    /// Returns the enabled advertiser rows sorted ascending by sort_order.
+    /// Returns an empty array when no remote rows have been loaded, so the
+    /// caller can fall back to the hardcoded catalog.
+    func affiliateCatalog() -> [RemoteAdvertiser] {
+        advertisers
+            .filter { $0.enabled }
+            .sorted { $0.sortOrder < $1.sortOrder }
     }
 
     // MARK: - Cache
 
     /// Synchronously hydrates the typed structs from the UserDefaults raw
-    /// JSON cache so values are available before the network returns.
+    /// JSON caches so values are available before the network returns.
     private func hydrateFromCache() {
-        guard let data = UserDefaults.standard.data(forKey: cacheKey) else { return }
         let decoder = JSONDecoder()
         let encoder = JSONEncoder()
-        guard let rows = try? decoder.decode([AppConfigRow].self, from: data) else {
-            return
-        }
-        for row in rows {
-            guard let rowData = try? encoder.encode(row.value) else { continue }
-            switch row.key {
-            case "ads_ios":
-                adsConfig = try? decoder.decode(RemoteAdConfig.self, from: rowData)
-            case "ads_android":
-                if adsConfig == nil {
+
+        // app_config cache
+        if let data = UserDefaults.standard.data(forKey: cacheKey),
+           let rows = try? decoder.decode([AppConfigRow].self, from: data) {
+            for row in rows {
+                guard let rowData = try? encoder.encode(row.value) else { continue }
+                switch row.key {
+                case "ads_ios":
                     adsConfig = try? decoder.decode(RemoteAdConfig.self, from: rowData)
+                case "ads_android":
+                    if adsConfig == nil {
+                        adsConfig = try? decoder.decode(RemoteAdConfig.self, from: rowData)
+                    }
+                case "affiliate_rakuten":
+                    rakutenConfig = try? decoder.decode(RemoteRakutenConfig.self, from: rowData)
+                default:
+                    break
                 }
-            case "affiliate_rakuten":
-                rakutenConfig = try? decoder.decode(RemoteRakutenConfig.self, from: rowData)
-            default:
-                break
             }
+        }
+
+        // affiliate_advertisers cache
+        if let catalogData = UserDefaults.standard.data(forKey: catalogCacheKey),
+           let catalogRows = try? decoder.decode([RemoteAdvertiser].self, from: catalogData) {
+            advertisers = catalogRows
         }
     }
 }

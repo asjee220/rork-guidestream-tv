@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import com.rork.guidestreamtvandroid.data.remote.RemoteConfigService
+import com.rork.guidestreamtvandroid.data.remote.RemoteConfigService.RemoteAdvertiser
 import java.net.URLEncoder
 
 /**
@@ -26,8 +27,12 @@ private const val PUBLISHER_ID = "lVjcZs0f2q0"
 
 /**
  * Rakuten affiliate link manager — mirrors iOS RakutenManager.swift.
- * Register for each program at rakutenadvertising.com/publishers/programs
- * and swap in real merchant ids to start earning.
+ *
+ * The advertiser catalog is now remotely configurable via
+ * `public.affiliate_advertisers` in Supabase. When remote rows are loaded,
+ * they drive matching, signup URLs, fallback URLs, and merchant IDs. The
+ * hardcoded eight-entry catalog below is kept purely as an offline fallback
+ * so a first launch with no network behaves identically to today.
  */
 class RakutenManager private constructor() {
 
@@ -35,6 +40,8 @@ class RakutenManager private constructor() {
      * Streaming service affiliate entries keyed by service id, matching the
      * iOS affiliate map (publisher id, click.linksynergy.com tracking URL
      * shapes, placeholder merchant ids, and direct sign-up fallbacks).
+     * Kept as the offline fallback catalog — when `affiliate_advertisers` is
+     * reachable, remote rows take precedence.
      */
     val affiliates: Map<String, RakutenAffiliate> = mapOf(
         "netflix" to RakutenAffiliate(
@@ -95,69 +102,111 @@ class RakutenManager private constructor() {
         ),
     )
 
+    // MARK: - Effective catalog
+
+    /**
+     * Returns the effective advertiser catalog: remote rows from
+     * `affiliate_advertisers` when non-empty, otherwise the hardcoded
+     * affiliates mapped into `RemoteAdvertiser` shape.
+     */
+    private fun effectiveCatalog(): List<RemoteAdvertiser> {
+        val remote = RemoteConfigService.affiliateCatalog()
+        if (remote.isNotEmpty()) return remote
+        return hardcodedCatalog()
+    }
+
+    /**
+     * Maps the hardcoded `affiliates` map into `RemoteAdvertiser` shape so
+     * the fallback path uses the same resolution code as the remote path.
+     * Aliases are derived from the existing contains-logic.
+     */
+    private fun hardcodedCatalog(): List<RemoteAdvertiser> {
+        val aliasMap = mapOf(
+            "netflix" to listOf("netflix"),
+            "hbo" to listOf("max", "hbo"),
+            "hulu" to listOf("hulu"),
+            "disney" to listOf("disney"),
+            "apple" to listOf("apple"),
+            "prime" to listOf("prime", "amazon"),
+            "paramount" to listOf("paramount"),
+            "peacock" to listOf("peacock"),
+        )
+        val order = listOf("netflix", "hbo", "hulu", "disney", "apple", "prime", "paramount", "peacock")
+        return order.mapIndexedNotNull { index, key ->
+            val aff = affiliates[key] ?: return@mapIndexedNotNull null
+            val signup = directSignupURL(key) ?: ""
+            RemoteAdvertiser(
+                key = key,
+                displayName = aff.service,
+                aliases = aliasMap[key] ?: listOf(key),
+                merchantId = null,
+                signupUrl = signup,
+                fallbackUrl = aff.fallbackUrl,
+                commissionType = aff.commissionType,
+                enabled = true,
+                sortOrder = index,
+            )
+        }
+    }
+
+    // MARK: - Matching
+
     /** Resolves a service display name or catalog id to an affiliate key. */
     fun affiliateKey(serviceName: String): String? {
-        val key = serviceName.lowercase()
-        return when {
-            key.contains("netflix") -> "netflix"
-            key.contains("max") || key.contains("hbo") -> "hbo"
-            key.contains("hulu") -> "hulu"
-            key.contains("disney") -> "disney"
-            key.contains("apple") -> "appletv"
-            key.contains("prime") || key.contains("amazon") -> "prime"
-            key.contains("paramount") -> "paramount"
-            key.contains("peacock") -> "peacock"
-            else -> null
-        }
+        val lowered = serviceName.lowercase()
+        return effectiveCatalog().firstOrNull { entry ->
+            entry.aliases.any { lowered.contains(it) }
+        }?.key
     }
 
     /** Returns true when an affiliate entry exists for the given service. */
     fun hasAffiliate(serviceName: String): Boolean =
         affiliateKey(serviceName) != null
 
-    fun affiliate(serviceId: String): RakutenAffiliate? =
-        affiliates[serviceId.lowercase()]
+    fun affiliate(serviceId: String): RakutenAffiliate? {
+        val normalized = serviceId.lowercase()
+        val entry = effectiveCatalog().firstOrNull { it.key == normalized } ?: return null
+        return RakutenAffiliate(
+            service = entry.displayName,
+            merchantId = entry.merchantId ?: "",
+            trackingUrl = affiliateURL(normalized) ?: "",
+            fallbackUrl = entry.fallbackUrl ?: "",
+            commissionType = entry.commissionType,
+        )
+    }
 
     /**
      * Builds the Rakuten tracking URL at call time so it always reflects the
      * latest remote config. Resolves the publisher id from RemoteConfigService
-     * falling back to the hardcoded PUBLISHER_ID constant, resolves the
-     * merchant id from RemoteConfigService for that service key, and when a
-     * non-empty merchant id is available builds the URL as
+     * falling back to the hardcoded PUBLISHER_ID constant, reads the matched
+     * entry's merchantId, and when non-blank builds the URL as
      * https://click.linksynergy.com/deeplink?id=PUBLISHER&mid=MERCHANT&murl=ENCODED
-     * where ENCODED is the percent-encoded absolute string of the URL
-     * returned by directSignupURL for that same service key. When no merchant
-     * id is available from remote config, returns null so the caller falls
-     * through to the direct-signup branch.
+     * where ENCODED is the percent-encoded entry's signupUrl. When no merchant
+     * id is available, returns null so the caller falls through to the
+     * direct-signup branch.
      */
     fun affiliateURL(serviceId: String): String? {
         val normalized = serviceId.lowercase()
-        // Verify the service has a known affiliate entry; if not, no URL.
-        val affiliate = affiliate(normalized) ?: return null
-        // Resolve publisher id from remote config with hardcoded fallback.
+        val entry = effectiveCatalog().firstOrNull { it.key == normalized } ?: return null
         val resolvedPublisher = RemoteConfigService.rakutenPublisherId() ?: PUBLISHER_ID
-        // Resolve merchant id from remote config for this service key.
-        val merchantId = RemoteConfigService.rakutenMerchantId(normalized)
+        val merchantId = entry.merchantId
         if (merchantId.isNullOrBlank()) {
-            // No real merchant id available — return null so the caller
-            // falls through to the direct-signup branch. Covers both the
-            // remote-null case and the hardcoded-placeholder case.
             return null
         }
-        // Reuse directSignupURL for the destination.
-        val destination = directSignupURL(normalized) ?: return null
-        val encoded = URLEncoder.encode(destination, "UTF-8")
+        val encoded = URLEncoder.encode(entry.signupUrl, "UTF-8")
         return "https://click.linksynergy.com/deeplink?id=$resolvedPublisher&mid=$merchantId&murl=$encoded"
     }
 
-    private fun fallbackURL(serviceId: String): String? =
-        affiliate(serviceId)?.fallbackUrl
+    private fun fallbackURL(serviceId: String): String? {
+        val normalized = serviceId.lowercase()
+        val entry = effectiveCatalog().firstOrNull { it.key == normalized } ?: return null
+        return entry.fallbackUrl?.takeIf { it.isNotBlank() }
+    }
 
     /**
      * Opens the Rakuten tracking URL for the given service id, falling back
-     * to the direct sign-up URL if the merchant id is still a placeholder or
-     * the tracking URL fails to open. Always logs an affiliate_link_tapped
-     * event for attribution analytics.
+     * to the direct sign-up URL if the merchant id is missing or the tracking
+     * URL fails to open. Always logs an affiliate_link_tapped event.
      */
     fun openAffiliateLink(
         serviceId: String,
@@ -165,15 +214,15 @@ class RakutenManager private constructor() {
         metadata: Map<String, Any> = emptyMap(),
     ) {
         val normalized = serviceId.lowercase()
-
-        // When affiliateURL(for:) resolves, open the Rakuten tracking URL
-        // with a direct-signup fallback. When it does NOT resolve (no
-        // merchant id from remote config, or a hardcoded placeholder),
-        // skip Rakuten entirely and open the direct signup URL so the
-        // link always works even before real IDs are set.
         val trackingUrl = affiliateURL(normalized)
         val isDirectFallback = trackingUrl == null
-        val targetUrl = trackingUrl ?: fallbackURL(normalized) ?: directSignupURL(normalized)
+
+        // Resolve the direct-signup target from the entry's signupUrl, falling
+        // back to directSignupURL when the entry has no signupUrl or the key
+        // is unknown (espn/disney_bundle/default cases).
+        val entry = effectiveCatalog().firstOrNull { it.key == normalized }
+        val directSignup = entry?.signupUrl?.takeIf { it.isNotBlank() } ?: directSignupURL(normalized)
+        val targetUrl = trackingUrl ?: fallbackURL(normalized) ?: directSignup
 
         if (targetUrl != null) {
             try {

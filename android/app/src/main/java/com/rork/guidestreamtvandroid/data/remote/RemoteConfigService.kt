@@ -13,24 +13,28 @@ import kotlinx.serialization.json.JsonElement
 /**
  * Lightweight remote-configuration layer — mirrors iOS RemoteConfigService.swift.
  *
- * Reads AdMob ad unit IDs and Rakuten merchant IDs from `public.app_config`
+ * Reads AdMob ad unit IDs and the Rakuten publisher id from `public.app_config`,
+ * and the full Rakuten advertiser catalog from `public.affiliate_advertisers`,
  * via the existing Supabase client so they can be updated without shipping a
- * new build. Hydrates synchronously from a SharedPreferences cache on init
- * so values are available immediately at cold launch before the network
- * returns. `load()` never throws and silently no-ops on any failure, leaving
- * cached or hardcoded values intact.
+ * new build. Hydrates synchronously from SharedPreferences caches on init so
+ * values are available immediately at cold launch before the network returns.
+ * `load()` never throws and silently no-ops on any failure, leaving cached or
+ * hardcoded values intact.
  *
- * No secrets, tokens, or API keys are stored in or read from `app_config`.
+ * No secrets, tokens, or API keys are stored in or read from `app_config` or
+ * `affiliate_advertisers`.
  */
 object RemoteConfigService {
 
     private const val CACHE_KEY = "gs_remote_config_cache"
+    private const val CATALOG_CACHE_KEY = "gs_affiliate_catalog_cache"
     private const val PREFS_NAME = "gs_prefs"
 
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
 
     @Volatile private var adsConfig: RemoteAdConfig? = null
     @Volatile private var rakutenConfig: RemoteRakutenConfig? = null
+    @Volatile private var advertisers: List<RemoteAdvertiser> = emptyList()
     @Volatile private var appContext: Context? = null
 
     @Serializable
@@ -43,6 +47,8 @@ object RemoteConfigService {
     @Serializable
     private data class RemoteRakutenConfig(
         @SerialName("publisher_id") val publisherId: String? = null,
+        // Kept optional so old cached JSON with a merchants object decodes
+        // without crashing. No longer used for merchant-id resolution.
         val merchants: RemoteRakutenMerchants? = null,
     )
 
@@ -59,13 +65,26 @@ object RemoteConfigService {
     )
 
     @Serializable
+    data class RemoteAdvertiser(
+        val key: String,
+        @SerialName("display_name") val displayName: String,
+        val aliases: List<String> = emptyList(),
+        @SerialName("merchant_id") val merchantId: String? = null,
+        @SerialName("signup_url") val signupUrl: String,
+        @SerialName("fallback_url") val fallbackUrl: String? = null,
+        @SerialName("commission_type") val commissionType: String = "cpa",
+        val enabled: Boolean = true,
+        @SerialName("sort_order") val sortOrder: Int = 0,
+    )
+
+    @Serializable
     private data class AppConfigRow(
         val key: String,
         val value: JsonElement,
     )
 
     /**
-     * Synchronously hydrate from the SharedPreferences cache so values are
+     * Synchronously hydrate from the SharedPreferences caches so values are
      * available before the network returns. Call from Application.onCreate()
      * before any ad or affiliate request fires. Also stashes the application
      * context so `load()` can write back to the cache.
@@ -74,18 +93,26 @@ object RemoteConfigService {
         appContext = context.applicationContext
         try {
             val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            val raw = prefs.getString(CACHE_KEY, null) ?: return
-            val rows = json.decodeFromString<List<AppConfigRow>>(raw)
-            ingest(rows, persist = false)
+            val raw = prefs.getString(CACHE_KEY, null)
+            if (raw != null) {
+                val rows = json.decodeFromString<List<AppConfigRow>>(raw)
+                ingest(rows, persist = false)
+            }
+            val catalogRaw = prefs.getString(CATALOG_CACHE_KEY, null)
+            if (catalogRaw != null) {
+                val catalogRows = json.decodeFromString<List<RemoteAdvertiser>>(catalogRaw)
+                advertisers = catalogRows
+            }
         } catch (_: Throwable) {
             // Corrupt cache — ignore; the network load will repopulate.
         }
     }
 
     /**
-     * Reads all rows from `app_config`, decodes the three known keys, stores
-     * them in memory, and persists the raw JSON to SharedPreferences. Never
-     * throws — any failure leaves cached or hardcoded values intact.
+     * Reads all rows from `app_config` and `affiliate_advertisers`, decodes
+     * them into typed structs, stores them in memory, and persists the raw
+     * JSON to SharedPreferences. Never throws — any failure leaves cached or
+     * hardcoded values intact.
      */
     suspend fun load() {
         try {
@@ -98,6 +125,19 @@ object RemoteConfigService {
             throw e
         } catch (_: Throwable) {
             // Silent no-op: cached or hardcoded values stay in place.
+        }
+
+        try {
+            val catalogRows = client.postgrest
+                .from("affiliate_advertisers")
+                .select()
+                .decodeList<RemoteAdvertiser>()
+            advertisers = catalogRows
+            persistCatalog(catalogRows)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Throwable) {
+            // Silent no-op: cached or hardcoded catalog stays in place.
         }
     }
 
@@ -145,6 +185,19 @@ object RemoteConfigService {
         }
     }
 
+    private fun persistCatalog(rows: List<RemoteAdvertiser>) {
+        try {
+            val encoded = json.encodeToString(
+                ListSerializer(RemoteAdvertiser.serializer()),
+                rows,
+            )
+            appContext?.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                ?.edit()?.putString(CATALOG_CACHE_KEY, encoded)?.apply()
+        } catch (_: Throwable) {
+            // Persistence failure is non-fatal.
+        }
+    }
+
     /**
      * Returns the ad unit id for the given slot ("banner", "interstitial",
      * "native"), or null when the key is missing, null, or an empty string.
@@ -165,22 +218,10 @@ object RemoteConfigService {
         rakutenConfig?.publisherId?.takeIf { it.isNotBlank() }
 
     /**
-     * Returns the Rakuten merchant id for the given service key (e.g.
-     * "netflix", "hulu"), or null when missing/empty.
+     * Returns the enabled advertiser rows sorted ascending by sort_order.
+     * Returns an empty list when no remote rows have been loaded, so the
+     * caller can fall back to the hardcoded catalog.
      */
-    fun rakutenMerchantId(key: String): String? {
-        val merchants = rakutenConfig?.merchants ?: return null
-        val raw = when (key) {
-            "netflix" -> merchants.netflix
-            "hulu" -> merchants.hulu
-            "disney" -> merchants.disney
-            "hbo" -> merchants.hbo
-            "apple" -> merchants.apple
-            "peacock" -> merchants.peacock
-            "paramount" -> merchants.paramount
-            "prime" -> merchants.prime
-            else -> null
-        }
-        return raw?.takeIf { it.isNotBlank() }
-    }
+    fun affiliateCatalog(): List<RemoteAdvertiser> =
+        advertisers.filter { it.enabled }.sortedBy { it.sortOrder }
 }

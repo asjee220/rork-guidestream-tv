@@ -6,6 +6,12 @@
 //  that earn commission when users subscribe to streaming services, with
 //  an App Store fallback if the tracking URL fails to open.
 //
+//  The advertiser catalog is now remotely configurable via
+//  `public.affiliate_advertisers` in Supabase. When remote rows are loaded,
+//  they drive matching, signup URLs, fallback URLs, and merchant IDs. The
+//  hardcoded eight-entry catalog below is kept purely as an offline
+//  fallback so a first launch with no network behaves identically to today.
+//
 
 import Foundation
 import UIKit
@@ -28,6 +34,8 @@ final class RakutenManager {
 
     /// Streaming service affiliate entries. Register for each program at
     /// rakutenadvertising.com/publishers/programs and swap in real merchant IDs.
+    /// Kept as the offline fallback catalog — when `affiliate_advertisers` is
+    /// reachable, remote rows take precedence.
     let affiliates: [String: RakutenAffiliate] = [
         "netflix": RakutenAffiliate(
             service: "Netflix",
@@ -87,18 +95,60 @@ final class RakutenManager {
         )
     ]
 
+    // MARK: - Effective catalog
+
+    /// Returns the effective advertiser catalog: remote rows from
+    /// `affiliate_advertisers` when non-empty, otherwise the hardcoded
+    /// affiliates mapped into `RemoteAdvertiser` shape.
+    private func effectiveCatalog() -> [RemoteAdvertiser] {
+        let remote = RemoteConfigService.shared.affiliateCatalog()
+        if !remote.isEmpty { return remote }
+        return hardcodedCatalog()
+    }
+
+    /// Maps the hardcoded `affiliates` dictionary into `RemoteAdvertiser`
+    /// shape so the fallback path uses the same resolution code as the
+    /// remote path. Aliases are derived from the existing contains-logic.
+    private func hardcodedCatalog() -> [RemoteAdvertiser] {
+        let aliasMap: [String: [String]] = [
+            "netflix": ["netflix"],
+            "hbo": ["max", "hbo"],
+            "hulu": ["hulu"],
+            "disney": ["disney"],
+            "apple": ["apple"],
+            "prime": ["prime", "amazon"],
+            "paramount": ["paramount"],
+            "peacock": ["peacock"],
+        ]
+        let order = ["netflix", "hbo", "hulu", "disney", "apple", "prime", "paramount", "peacock"]
+        return order.enumerated().compactMap { index, key in
+            guard let aff = affiliates[key] else { return nil }
+            let signup = Self.directSignupURL(for: key)?.absoluteString ?? ""
+            return RemoteAdvertiser(
+                key: key,
+                displayName: aff.service,
+                aliases: aliasMap[key] ?? [key],
+                merchantId: nil,
+                signupUrl: signup,
+                fallbackUrl: aff.fallbackUrl,
+                commissionType: aff.commissionType,
+                enabled: true,
+                sortOrder: index
+            )
+        }
+    }
+
+    // MARK: - Matching
+
     /// Resolves a streaming service display name or catalog id to the
-    /// affiliate dictionary key using brand-key contains matching.
+    /// affiliate key using the effective catalog's alias contains-matching.
     func affiliateKey(forServiceNamed name: String) -> String? {
-        let key = name.lowercased()
-        if key.contains("netflix") { return "netflix" }
-        if key.contains("max") || key.contains("hbo") { return "hbo" }
-        if key.contains("hulu") { return "hulu" }
-        if key.contains("disney") { return "disney" }
-        if key.contains("apple") { return "apple" }
-        if key.contains("prime") || key.contains("amazon") { return "prime" }
-        if key.contains("paramount") { return "paramount" }
-        if key.contains("peacock") { return "peacock" }
+        let lowered = name.lowercased()
+        for entry in effectiveCatalog() {
+            if entry.aliases.contains(where: { lowered.contains($0) }) {
+                return entry.key
+            }
+        }
         return nil
     }
 
@@ -114,51 +164,56 @@ final class RakutenManager {
         openAffiliateLink(serviceId: key, metadata: metadata)
     }
 
+    // MARK: - Resolution
+
     func affiliate(for serviceId: String) -> RakutenAffiliate? {
-        affiliates[serviceId.lowercased()]
+        let normalized = serviceId.lowercased()
+        guard let entry = effectiveCatalog().first(where: { $0.key == normalized }) else { return nil }
+        return RakutenAffiliate(
+            service: entry.displayName,
+            merchantId: entry.merchantId ?? "",
+            trackingUrl: affiliateURL(for: normalized)?.absoluteString ?? "",
+            fallbackUrl: entry.fallbackUrl ?? "",
+            commissionType: entry.commissionType
+        )
     }
 
     func affiliateURL(for serviceId: String) -> URL? {
-        guard let affiliate = affiliate(for: serviceId) else { return nil }
+        let normalized = serviceId.lowercased()
+        guard let entry = effectiveCatalog().first(where: { $0.key == normalized }) else { return nil }
         // Resolve the publisher id from remote config, falling back to the
         // hardcoded constant so a missing row never breaks tracking.
         let resolvedPublisher = RemoteConfigService.shared.rakutenPublisherId ?? publisherId
-        // Resolve the merchant id from remote config for this service key.
-        guard let merchantId = RemoteConfigService.shared.rakutenMerchantId(for: serviceId.lowercased()),
-              !merchantId.isEmpty else {
+        // Read the merchant id from the effective-catalog entry.
+        guard let merchantId = entry.merchantId, !merchantId.isEmpty else {
             // No real merchant id available — return nil so the caller falls
-            // through to the direct-signup branch. This covers both the
-            // remote-null case and the hardcoded-placeholder case.
+            // through to the direct-signup branch.
             return nil
         }
-        // Build the tracking URL at call time so it always reflects the
-        // latest remote config. Reuse directSignupURL for the destination.
-        guard let destination = Self.directSignupURL(for: serviceId.lowercased()),
-              let encoded = destination.absoluteString.addingPercentEncoding(
-                withAllowedCharacters: .alphanumerics
-              ) else {
-            return nil
-        }
+        // Build the tracking URL at call time using the entry's signupUrl.
+        guard let encoded = entry.signupUrl.addingPercentEncoding(
+            withAllowedCharacters: .alphanumerics
+        ) else { return nil }
         let urlString = "https://click.linksynergy.com/deeplink?id=\(resolvedPublisher)&mid=\(merchantId)&murl=\(encoded)"
         return URL(string: urlString)
     }
 
     func fallbackURL(for serviceId: String) -> URL? {
-        guard let affiliate = affiliate(for: serviceId) else { return nil }
-        return URL(string: affiliate.fallbackUrl)
+        let normalized = serviceId.lowercased()
+        if let entry = effectiveCatalog().first(where: { $0.key == normalized }),
+           let fb = entry.fallbackUrl, !fb.isEmpty {
+            return URL(string: fb)
+        }
+        return nil
     }
 
+    // MARK: - Open
+
     /// Opens the Rakuten tracking URL for the given service id, falling back
-    /// to the App Store listing if the tracking URL fails. Always logs an
-    /// `affiliate_link_tapped` event for attribution analytics.
+    /// to the direct signup URL if the tracking URL fails or no merchant id
+    /// is available. Always logs an `affiliate_link_tapped` event.
     func openAffiliateLink(serviceId: String, metadata: [String: Any] = [:]) {
         let normalized = serviceId.lowercased()
-
-        // When affiliateURL(for:) resolves, open the Rakuten tracking URL
-        // with an App Store fallback. When it does NOT resolve (no merchant
-        // id from remote config, or a hardcoded placeholder), skip Rakuten
-        // entirely and open the direct signup URL so the link always works
-        // even before real IDs are set.
         let trackingURL = affiliateURL(for: normalized)
 
         if let url = trackingURL {
@@ -167,9 +222,14 @@ final class RakutenManager {
                 UIApplication.shared.open(fallback)
             }
         } else {
-            let directURL = Self.directSignupURL(for: normalized)
-            if let url = directURL {
+            // Direct-signup branch: open the entry's signupUrl. Fall back to
+            // directSignupURL when the entry has no signupUrl or the key is
+            // unknown (espn/disney_bundle/default cases).
+            let entry = effectiveCatalog().first(where: { $0.key == normalized })
+            if let signup = entry?.signupUrl, !signup.isEmpty, let url = URL(string: signup) {
                 UIApplication.shared.open(url)
+            } else if let directURL = Self.directSignupURL(for: normalized) {
+                UIApplication.shared.open(directURL)
             }
         }
 
