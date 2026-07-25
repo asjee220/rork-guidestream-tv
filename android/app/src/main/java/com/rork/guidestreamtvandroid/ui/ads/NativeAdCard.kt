@@ -35,6 +35,7 @@ import com.google.android.gms.ads.AdSize
 import com.google.android.gms.ads.AdView
 import com.google.android.gms.ads.LoadAdError
 import com.rork.guidestreamtvandroid.AppConfig
+import com.rork.guidestreamtvandroid.data.remote.RemoteConfigService
 import com.rork.guidestreamtvandroid.ui.theme.BrandOrange
 import com.rork.guidestreamtvandroid.ui.theme.GlassFill
 import com.rork.guidestreamtvandroid.ui.theme.GlassStroke
@@ -80,7 +81,7 @@ fun NativeAdCard(
         Spacer(Modifier.height(8.dp))
         // Banner ad
         BannerAd(
-            adUnitId = AppConfig.ADMOB_NATIVE_AD_UNIT_ID,
+            adUnitId = RemoteConfigService.adUnit("native") ?: AppConfig.ADMOB_NATIVE_AD_UNIT_ID,
             modifier = Modifier
                 .fillMaxWidth()
                 .height(100.dp),
