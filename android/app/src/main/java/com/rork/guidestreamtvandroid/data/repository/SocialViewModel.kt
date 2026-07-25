@@ -44,6 +44,7 @@ class SocialViewModel private constructor(context: Context) {
         @SerialName("display_name") val displayName: String? = null,
         val initials: String? = null,
         @SerialName("created_at") val createdAt: String? = null,
+        val hidden: Boolean = false,
     )
 
     @Serializable
@@ -55,6 +56,58 @@ class SocialViewModel private constructor(context: Context) {
 
     @Serializable
     private data class CountRow(val id: String)
+
+    @Serializable
+    private data class BlockedRow(
+        @SerialName("blocked_user_id") val blockedUserId: String? = null,
+        @SerialName("blocked_device_id") val blockedDeviceId: String? = null,
+    )
+
+    // MARK: - Profanity / slur filter (App Store Guideline 1.2)
+
+    /**
+     * Case-insensitive word-boundary list of blocked terms. Kept small and
+     * shared so the same gate runs on iOS and Android. Mirrors iOS
+     * [SocialViewModel.blockedTerms].
+     */
+    val blockedTerms: List<String> = listOf(
+        "fuck", "shit", "bitch", "asshole", "cunt", "dick", "pussy",
+        "nigger", "nigga", "faggot", "fag", "retard", "retarded",
+        "whore", "slut", "bastard",
+    )
+
+    /**
+     * Pre-compiled word-boundary regex over [blockedTerms]. Case-insensitive.
+     */
+    private val blockedTermRegex: Regex by lazy {
+        val escaped = blockedTerms.joinToString("|") { Regex.escape(it) }
+        Regex("\\b(?:$escaped)\\b", RegexOption.IGNORE_CASE)
+    }
+
+    /**
+     * True when [body] contains any blocked term on a word boundary.
+     */
+    fun draftContainsBlockedTerm(body: String): Boolean =
+        blockedTermRegex.containsMatchIn(body)
+
+    /**
+     * In-memory block lists for the viewer. Populated once per session by
+     * [loadBlockedUsers]. Used by [loadComments] to drop blocked authors.
+     */
+    private val _blockedUserIds = MutableStateFlow<Set<String>>(emptySet())
+    val blockedUserIds: StateFlow<Set<String>> = _blockedUserIds.asStateFlow()
+
+    private val _blockedDeviceIds = MutableStateFlow<Set<String>>(emptySet())
+    val blockedDeviceIds: StateFlow<Set<String>> = _blockedDeviceIds.asStateFlow()
+
+    /**
+     * True when the most recent [postComment] was rejected by the profanity
+     * gate. The sheet reads this to show the inline respectful message and
+     * restore the draft.
+     */
+    private val _lastPostWasProfanityBlocked = MutableStateFlow(false)
+    val lastPostWasProfanityBlocked: StateFlow<Boolean> =
+        _lastPostWasProfanityBlocked.asStateFlow()
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -246,14 +299,25 @@ class SocialViewModel private constructor(context: Context) {
                 SupabaseManager.client.postgrest
                     .from("title_comments")
                     .select {
-                        filter { eq("title_id", trimmed) }
+                        filter {
+                            eq("title_id", trimmed)
+                            eq("hidden", false)
+                        }
                         order("created_at", Order.DESCENDING)
                         limit(limit.toLong())
                     }
                     .decodeList<TitleComment>()
             }
-            _commentsByTitle.value = _commentsByTitle.value + (trimmed to rows)
-            _commentCounts.value = _commentCounts.value + (trimmed to rows.size)
+            // Drop any comment authored by a blocked user so blocked authors
+            // never appear even before a reload.
+            val blockedUids = _blockedUserIds.value
+            val blockedDids = _blockedDeviceIds.value
+            val filtered = rows.filter { c ->
+                (c.userId == null || c.userId !in blockedUids) &&
+                    (c.deviceId == null || c.deviceId !in blockedDids)
+            }
+            _commentsByTitle.value = _commentsByTitle.value + (trimmed to filtered)
+            _commentCounts.value = _commentCounts.value + (trimmed to filtered.size)
         } catch (e: Throwable) {
             if (e is CancellationException) throw e
             _lastError.value = e.message
@@ -271,6 +335,13 @@ class SocialViewModel private constructor(context: Context) {
         val trimmedId = titleId.trim()
         val text = body.trim()
         if (trimmedId.isEmpty() || text.isEmpty()) return false
+        // Profanity / slur gate — runs before the optimistic insert so a
+        // blocked draft is never persisted. The sheet restores the draft.
+        _lastPostWasProfanityBlocked.value = false
+        if (draftContainsBlockedTerm(text)) {
+            _lastPostWasProfanityBlocked.value = true
+            return false
+        }
 
         val uid = currentUserId
         val deviceId = DeviceIdentity.get().deviceId
@@ -352,5 +423,178 @@ class SocialViewModel private constructor(context: Context) {
         val fmt = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US)
         fmt.timeZone = TimeZone.getTimeZone("UTC")
         return fmt.format(Date())
+    }
+
+    // MARK: - Moderation (report / block / delete)
+
+    /**
+     * Once-per-session load of the viewer's block list. Selects from
+     * `blocked_users` where the blocker matches this viewer's user_id or
+     * device_id, populating [blockedUserIds] / [blockedDeviceIds].
+     */
+    suspend fun loadBlockedUsers() {
+        val deviceId = DeviceIdentity.get().deviceId
+        val uid = currentUserId
+        try {
+            val rows = withContext(Dispatchers.IO) {
+                SupabaseManager.client.postgrest
+                    .from("blocked_users")
+                    .select(
+                        columns = io.github.jan.supabase.postgrest.query.Columns.raw(
+                            "blocked_user_id,blocked_device_id",
+                        ),
+                    ) {
+                        filter {
+                            if (uid != null) {
+                                or {
+                                    eq("blocker_user_id", uid)
+                                    eq("blocker_device_id", deviceId)
+                                }
+                            } else {
+                                eq("blocker_device_id", deviceId)
+                            }
+                        }
+                    }
+                    .decodeList<BlockedRow>()
+            }
+            val uids = mutableSetOf<String>()
+            val dids = mutableSetOf<String>()
+            for (r in rows) {
+                r.blockedUserId?.let { uids.add(it) }
+                r.blockedDeviceId?.let { dids.add(it) }
+            }
+            _blockedUserIds.value = uids
+            _blockedDeviceIds.value = dids
+        } catch (e: Throwable) {
+            if (e is CancellationException) throw e
+            // Never block the UI on block-list load — log and move on.
+        }
+    }
+
+    /**
+     * Reports [comment] with the given reason. Inserts one row into
+     * `comment_reports` and removes the comment from the reporter's view.
+     * A 409 (duplicate report) is treated as success.
+     */
+    suspend fun reportComment(comment: TitleComment, reason: String) {
+        val deviceId = DeviceIdentity.get().deviceId
+        val uid = currentUserId
+        val payload = buildJsonObject {
+            put("comment_id", comment.id)
+            put("title_id", comment.titleId)
+            put("reporter_device_id", deviceId)
+            put("reason", reason)
+            if (uid != null) put("reporter_user_id", uid)
+        }
+        try {
+            withContext(Dispatchers.IO) {
+                SupabaseManager.client.postgrest
+                    .from("comment_reports")
+                    .insert(payload)
+            }
+            removeCommentFromThread(comment.id)
+        } catch (e: Throwable) {
+            if (e is CancellationException) throw e
+            val msg = e.message?.lowercase() ?: ""
+            if (msg.contains("409") || msg.contains("duplicate") ||
+                msg.contains("23505") || msg.contains("conflict")) {
+                removeCommentFromThread(comment.id)
+            } else {
+                _lastError.value = e.message
+            }
+        }
+    }
+
+    /**
+     * Blocks the author of [comment]. Inserts one row into `blocked_users`
+     * and removes that author's comments from every visible thread. A 409
+     * (already blocked) is treated as success.
+     */
+    suspend fun blockUser(comment: TitleComment) {
+        val viewerDeviceId = DeviceIdentity.get().deviceId
+        val viewerUid = currentUserId
+        val payload = buildJsonObject {
+            put("blocker_device_id", viewerDeviceId)
+            if (viewerUid != null) put("blocker_user_id", viewerUid)
+            comment.userId?.let { put("blocked_user_id", it) }
+            comment.deviceId?.let { put("blocked_device_id", it) }
+        }
+        try {
+            withContext(Dispatchers.IO) {
+                SupabaseManager.client.postgrest
+                    .from("blocked_users")
+                    .insert(payload)
+            }
+            applyBlock(comment)
+        } catch (e: Throwable) {
+            if (e is CancellationException) throw e
+            val msg = e.message?.lowercase() ?: ""
+            if (msg.contains("409") || msg.contains("duplicate") ||
+                msg.contains("23505") || msg.contains("conflict")) {
+                applyBlock(comment)
+            } else {
+                _lastError.value = e.message
+            }
+        }
+    }
+
+    /**
+     * Deletes the viewer's own comment server-side and removes it locally.
+     * Only ever offered for the viewer's own comment.
+     */
+    suspend fun deleteComment(comment: TitleComment) {
+        try {
+            withContext(Dispatchers.IO) {
+                SupabaseManager.client.postgrest
+                    .from("title_comments")
+                    .delete { filter { eq("id", comment.id) } }
+            }
+            removeCommentFromThread(comment.id)
+        } catch (e: Throwable) {
+            if (e is CancellationException) throw e
+            _lastError.value = e.message
+        }
+    }
+
+    /**
+     * Adds the comment author's ids to the in-memory block sets and removes
+     * every comment by that author from all visible threads.
+     */
+    private fun applyBlock(comment: TitleComment) {
+        comment.userId?.let { _blockedUserIds.value = _blockedUserIds.value + it }
+        comment.deviceId?.let { _blockedDeviceIds.value = _blockedDeviceIds.value + it }
+        removeAuthorFromThread(comment.userId, comment.deviceId)
+    }
+
+    /** Removes the comment with [commentId] from every title thread. */
+    private fun removeCommentFromThread(commentId: String) {
+        val updated = _commentsByTitle.value.mapValues { (_, thread) ->
+            thread.filter { it.id != commentId }
+        }
+        _commentsByTitle.value = updated
+        val counts = _commentCounts.value.toMutableMap()
+        for ((key, thread) in updated) {
+            counts[key] = thread.size
+        }
+        _commentCounts.value = counts
+    }
+
+    /**
+     * Removes every comment authored by [userId] / [deviceId] from all
+     * visible threads so a freshly blocked author disappears immediately.
+     */
+    private fun removeAuthorFromThread(userId: String?, deviceId: String?) {
+        val updated = _commentsByTitle.value.mapValues { (_, thread) ->
+            thread.filter { c ->
+                (userId == null || c.userId != userId) &&
+                    (deviceId == null || c.deviceId != deviceId)
+            }
+        }
+        _commentsByTitle.value = updated
+        val counts = _commentCounts.value.toMutableMap()
+        for ((key, thread) in updated) {
+            counts[key] = thread.size
+        }
+        _commentCounts.value = counts
     }
 }

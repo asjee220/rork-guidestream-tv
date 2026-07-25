@@ -24,7 +24,10 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -49,6 +52,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.rork.guidestreamtvandroid.data.local.DeviceIdentity
+import com.rork.guidestreamtvandroid.data.repository.AuthViewModel
 import com.rork.guidestreamtvandroid.data.repository.SocialViewModel
 import com.rork.guidestreamtvandroid.ui.components.RemoteImage
 import com.rork.guidestreamtvandroid.ui.theme.BrandOrange
@@ -82,12 +87,16 @@ fun TitleCommentsSheet(
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val social = SocialViewModel.get()
+    val auth = AuthViewModel.get()
     val scope = rememberCoroutineScope()
+    val myDeviceId = remember { DeviceIdentity.get().deviceId }
+    val myUserId = remember { auth.currentUserId }
 
     val commentsMap by social.commentsByTitle.collectAsStateWithLifecycle()
     val countsMap by social.commentCounts.collectAsStateWithLifecycle()
     val loadingSet by social.loadingComments.collectAsStateWithLifecycle()
     val postingSet by social.postingComment.collectAsStateWithLifecycle()
+    val profanityBlockedFlag by social.lastPostWasProfanityBlocked.collectAsStateWithLifecycle()
 
     val comments = commentsMap[titleId] ?: emptyList()
     val total = countsMap[titleId] ?: comments.size
@@ -95,10 +104,67 @@ fun TitleCommentsSheet(
     val isPosting = postingSet.contains(titleId)
 
     var draft by remember { mutableStateOf("") }
+    var profanityBlocked by remember { mutableStateOf(false) }
+    var transientMessage by remember { mutableStateOf<String?>(null) }
+    var reportTarget by remember { mutableStateOf<SocialViewModel.TitleComment?>(null) }
+    var showReportReasons by remember { mutableStateOf(false) }
 
     LaunchedEffect(titleId) {
+        // Once-per-session block-list load so blocked authors are filtered
+        // out of the thread before it renders.
+        social.loadBlockedUsers()
         social.loadComments(titleId)
         social.refreshCounts(titleId)
+    }
+
+    fun showTransient(text: String) {
+        transientMessage = text
+        scope.launch {
+            kotlinx.coroutines.delay(2500L)
+            if (transientMessage == text) transientMessage = null
+        }
+    }
+
+    fun isOwnComment(c: SocialViewModel.TitleComment): Boolean {
+        val uid = myUserId
+        if (uid != null && c.userId == uid) return true
+        if (c.userId == null && c.deviceId == myDeviceId) return true
+        return false
+    }
+
+    fun canBlockAuthor(c: SocialViewModel.TitleComment): Boolean =
+        !c.userId.isNullOrBlank() || !c.deviceId.isNullOrBlank()
+
+    fun reportComment(c: SocialViewModel.TitleComment, reason: String) {
+        reportTarget = null
+        showReportReasons = false
+        scope.launch {
+            val before = (commentsMap[titleId] ?: emptyList()).size
+            social.reportComment(c, reason)
+            val after = (social.commentsByTitle.value[titleId] ?: emptyList()).size
+            if (after < before) showTransient("Thanks — we’ll review this comment.")
+            else showTransient("Couldn’t report right now. Try again later.")
+        }
+    }
+
+    fun blockAuthor(c: SocialViewModel.TitleComment) {
+        scope.launch {
+            val before = (commentsMap[titleId] ?: emptyList()).size
+            social.blockUser(c)
+            val after = (social.commentsByTitle.value[titleId] ?: emptyList()).size
+            if (after < before) showTransient("This person’s comments are now hidden.")
+            else showTransient("Couldn’t block right now. Try again later.")
+        }
+    }
+
+    fun deleteOwn(c: SocialViewModel.TitleComment) {
+        scope.launch {
+            val before = (commentsMap[titleId] ?: emptyList()).size
+            social.deleteComment(c)
+            val after = (social.commentsByTitle.value[titleId] ?: emptyList()).size
+            if (after < before) showTransient("Comment deleted.")
+            else showTransient("Couldn’t delete right now. Try again later.")
+        }
     }
 
     ModalBottomSheet(
@@ -237,13 +303,77 @@ fun TitleCommentsSheet(
                         verticalArrangement = Arrangement.spacedBy(14.dp),
                     ) {
                         items(comments, key = { it.id }) { comment ->
-                            CommentRow(comment)
+                            CommentRow(
+                                comment = comment,
+                                isOwnComment = isOwnComment(comment),
+                                canBlockAuthor = canBlockAuthor(comment),
+                                onReport = {
+                                    if (isOwnComment(comment)) return@CommentRow
+                                    reportTarget = comment
+                                    showReportReasons = true
+                                },
+                                onBlock = {
+                                    if (isOwnComment(comment) || !canBlockAuthor(comment)) return@CommentRow
+                                    blockAuthor(comment)
+                                },
+                                onDelete = {
+                                    if (!isOwnComment(comment)) return@CommentRow
+                                    deleteOwn(comment)
+                                },
+                            )
                         }
+                    }
+                    // Report-reason dropdown — anchored to the sheet, mirrors
+                    // the iOS confirmationDialog with three choices.
+                    DropdownMenu(
+                        expanded = showReportReasons && reportTarget != null,
+                        onDismissRequest = {
+                            showReportReasons = false
+                            reportTarget = null
+                        },
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("Spam", color = TextPrimary) },
+                            onClick = { reportTarget?.let { reportComment(it, "Spam") } },
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Harassment", color = TextPrimary) },
+                            onClick = { reportTarget?.let { reportComment(it, "Harassment") } },
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Inappropriate", color = TextPrimary) },
+                            onClick = { reportTarget?.let { reportComment(it, "Inappropriate") } },
+                        )
                     }
                 }
             }
 
             // Input bar
+            if (profanityBlocked) {
+                Text(
+                    text = "Please keep it respectful — that comment can’t be posted",
+                    fontSize = 12.sp,
+                    color = BrandOrange,
+                    modifier = Modifier.padding(horizontal = 18.dp, vertical = 4.dp),
+                )
+            }
+            transientMessage?.let { msg ->
+                Text(
+                    text = msg,
+                    fontSize = 12.sp,
+                    color = TextSecondary,
+                    modifier = Modifier.padding(horizontal = 18.dp, vertical = 4.dp),
+                )
+            }
+            // Quiet community-guidelines caption — matches the dimmed
+            // secondary-text treatment used elsewhere in this sheet.
+            Text(
+                text = "By posting you agree to our community guidelines — no objectionable content or abuse",
+                fontSize = 10.sp,
+                color = TextTertiary,
+                maxLines = 2,
+                modifier = Modifier.padding(horizontal = 18.dp, vertical = 4.dp),
+            )
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -302,7 +432,17 @@ fun TitleCommentsSheet(
                         ) {
                             val body = draft.trim()
                             draft = ""
-                            scope.launch { social.postComment(titleId, body) }
+                            profanityBlocked = false
+                            scope.launch {
+                                val ok = social.postComment(titleId, body)
+                                if (!ok) {
+                                    // Restore the draft so the user can edit and
+                                    // retry. When the profanity gate tripped, show
+                                    // the inline respectful message as well.
+                                    draft = body
+                                    if (profanityBlockedFlag) profanityBlocked = true
+                                }
+                            }
                         },
                     contentAlignment = Alignment.Center,
                 ) {
@@ -319,10 +459,18 @@ fun TitleCommentsSheet(
 }
 
 @Composable
-private fun CommentRow(comment: SocialViewModel.TitleComment) {
+private fun CommentRow(
+    comment: SocialViewModel.TitleComment,
+    isOwnComment: Boolean,
+    canBlockAuthor: Boolean,
+    onReport: () -> Unit,
+    onBlock: () -> Unit,
+    onDelete: () -> Unit,
+) {
     val name = comment.displayName?.takeIf { it.isNotBlank() } ?: "Guest"
     val seed = comment.userId ?: comment.deviceId ?: comment.id
     val initials = comment.initials?.takeIf { it.isNotBlank() } ?: initialsOf(name)
+    var menuExpanded by remember { mutableStateOf(false) }
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -372,6 +520,59 @@ private fun CommentRow(comment: SocialViewModel.TitleComment) {
                 color = TextPrimary.copy(alpha = 0.85f),
                 lineHeight = 19.sp,
             )
+        }
+        // Trailing ellipsis overflow control — same glassmorphism, brand
+        // accent, and sizing as the close button in the header.
+        Box {
+            Box(
+                modifier = Modifier
+                    .size(28.dp)
+                    .clip(CircleShape)
+                    .background(TextPrimary.copy(alpha = 0.10f))
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                    ) { menuExpanded = true },
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.MoreVert,
+                    contentDescription = if (isOwnComment) "Comment options" else "Report or block comment",
+                    tint = TextPrimary.copy(alpha = 0.85f),
+                    modifier = Modifier.size(16.dp),
+                )
+            }
+            DropdownMenu(
+                expanded = menuExpanded,
+                onDismissRequest = { menuExpanded = false },
+            ) {
+                if (isOwnComment) {
+                    DropdownMenuItem(
+                        text = { Text("Delete", color = BrandOrange) },
+                        onClick = {
+                            menuExpanded = false
+                            onDelete()
+                        },
+                    )
+                } else {
+                    DropdownMenuItem(
+                        text = { Text("Report", color = TextPrimary) },
+                        onClick = {
+                            menuExpanded = false
+                            onReport()
+                        },
+                    )
+                    if (canBlockAuthor) {
+                        DropdownMenuItem(
+                            text = { Text("Block this person", color = BrandOrange) },
+                            onClick = {
+                                menuExpanded = false
+                                onBlock()
+                            },
+                        )
+                    }
+                }
+            }
         }
     }
 }

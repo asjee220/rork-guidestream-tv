@@ -32,9 +32,12 @@ struct TitleCommentsSheet: View {
 
     @Environment(\.dismiss) private var dismiss
     @State private var social = SocialViewModel.shared
-    @State private var auth = AuthViewModel.shared
     @State private var draft: String = ""
     @State private var didJustPost: Bool = false
+    @State private var profanityBlocked: Bool = false
+    @State private var transientMessage: String? = nil
+    @State private var reportTarget: TitleComment? = nil
+    @State private var overflowTarget: TitleComment? = nil
     @FocusState private var inputFocused: Bool
 
     private var comments: [TitleComment] {
@@ -58,7 +61,8 @@ struct TitleCommentsSheet: View {
     }
 
     private var myInitials: String {
-        SocialViewModel.initials(
+        let auth = AuthViewModel.shared
+        return SocialViewModel.initials(
             firstName: auth.firstName,
             lastName: auth.lastName,
             displayName: auth.displayName
@@ -84,6 +88,9 @@ struct TitleCommentsSheet: View {
         .gsSheetChrome()
         .presentationContentInteraction(.scrolls)
         .task {
+            // Once-per-session block-list load so blocked authors are
+            // filtered out of the thread before it renders.
+            await social.loadBlockedUsers()
             await social.loadComments(titleId: titleId)
             // Refresh counts in the background so the header total stays
             // in sync if the user hasn't opened the parent sheet yet.
@@ -186,13 +193,119 @@ struct TitleCommentsSheet: View {
         ScrollView {
             LazyVStack(spacing: 18) {
                 ForEach(comments) { c in
-                    TitleCommentRow(comment: c, accent: accent)
+                    TitleCommentRow(
+                        comment: c,
+                        accent: accent,
+                        isOwnComment: social.isOwnComment(c),
+                        canBlockAuthor: social.canBlockAuthor(c),
+                        onOverflow: { presentOverflow(for: c) }
+                    )
                 }
             }
             .padding(.horizontal, 20)
             .padding(.vertical, 14)
         }
         .scrollDismissesKeyboard(.interactively)
+        .confirmationDialog(
+            overflowTarget != nil ? "Comment" : "",
+            isPresented: Binding(
+                get: { overflowTarget != nil },
+                set: { if !$0 { overflowTarget = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            if let target = overflowTarget {
+                if social.isOwnComment(target) {
+                    Button("Delete", role: .destructive) {
+                        overflowTarget = nil
+                        Task { await deleteOwn(target) }
+                    }
+                } else {
+                    Button("Report") {
+                        reportTarget = target
+                        overflowTarget = nil
+                    }
+                    if social.canBlockAuthor(target) {
+                        Button("Block this person", role: .destructive) {
+                            let toBlock = target
+                            overflowTarget = nil
+                            Task { await blockAuthor(toBlock) }
+                        }
+                    }
+                }
+                Button("Cancel", role: .cancel) { overflowTarget = nil }
+            }
+        }
+        .confirmationDialog(
+            "Report comment",
+            isPresented: Binding(
+                get: { reportTarget != nil },
+                set: { if !$0 { reportTarget = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            if let target = reportTarget {
+                Button("Spam") { report(target, reason: "Spam") }
+                Button("Harassment") { report(target, reason: "Harassment") }
+                Button("Inappropriate") { report(target, reason: "Inappropriate") }
+                Button("Cancel", role: .cancel) { reportTarget = nil }
+            }
+        }
+    }
+
+    // MARK: - Overflow helpers
+
+    private func presentOverflow(for c: TitleComment) {
+        overflowTarget = c
+    }
+
+    private func report(_ c: TitleComment, reason: String) {
+        let target = c
+        reportTarget = nil
+        Task {
+            let before = social.thread(titleId).count
+            await social.reportComment(comment: target, reason: reason)
+            let after = social.thread(titleId).count
+            if after < before {
+                showTransient("Thanks — we’ll review this comment.")
+            } else {
+                showTransient("Couldn’t report right now. Try again later.")
+            }
+        }
+    }
+
+    private func blockAuthor(_ c: TitleComment) {
+        Task {
+            let beforeCount = social.thread(titleId).count
+            await social.blockUser(comment: c)
+            let afterCount = social.thread(titleId).count
+            if afterCount < beforeCount {
+                showTransient("This person’s comments are now hidden.")
+            } else {
+                showTransient("Couldn’t block right now. Try again later.")
+            }
+        }
+    }
+
+    private func deleteOwn(_ c: TitleComment) {
+        Task {
+            let before = social.thread(titleId).count
+            await social.deleteComment(comment: c)
+            let after = social.thread(titleId).count
+            if after < before {
+                showTransient("Comment deleted.")
+            } else {
+                showTransient("Couldn’t delete right now. Try again later.")
+            }
+        }
+    }
+
+    private func showTransient(_ text: String) {
+        transientMessage = text
+        Task {
+            try? await Task.sleep(for: .seconds(2.5))
+            if transientMessage == text { transientMessage = nil }
+        }
     }
 
     // MARK: - Input
@@ -200,6 +313,29 @@ struct TitleCommentsSheet: View {
     private var inputBar: some View {
         VStack(spacing: 0) {
             Divider().background(Color.white.opacity(0.07))
+            if profanityBlocked {
+                Text("Please keep it respectful — that comment can’t be posted")
+                    .scaledFont(size: 12)
+                    .foregroundStyle(accent)
+                    .padding(.horizontal, 18)
+                    .padding(.top, 8)
+            }
+            if let msg = transientMessage {
+                Text(msg)
+                    .scaledFont(size: 12)
+                    .foregroundStyle(Color.white.opacity(0.7))
+                    .padding(.horizontal, 18)
+                    .padding(.top, profanityBlocked ? 4 : 8)
+                    .transition(.opacity)
+            }
+            // Quiet community-guidelines caption — matches the dimmed
+            // secondary-text treatment used elsewhere in this sheet.
+            Text("By posting you agree to our community guidelines — no objectionable content or abuse")
+                .scaledFont(size: 10)
+                .foregroundStyle(Color.white.opacity(0.35))
+                .lineLimit(2)
+                .padding(.horizontal, 18)
+                .padding(.top, 6)
             HStack(spacing: 10) {
                 Circle()
                     .fill(accent)
@@ -262,12 +398,21 @@ struct TitleCommentsSheet: View {
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
         draft = ""
         didJustPost = true
+        profanityBlocked = false
         let ok = await social.postComment(titleId: titleId, body: trimmed)
         didJustPost = false
         if !ok {
             // Restore the draft so the user can retry instead of losing what
-            // they typed.
-            await MainActor.run { draft = trimmed }
+            // they typed. When the profanity gate tripped, show the inline
+            // respectful message near the input as well.
+            await MainActor.run {
+                draft = trimmed
+                if social.lastPostWasProfanityBlocked {
+                    profanityBlocked = true
+                }
+            }
+        } else {
+            await MainActor.run { profanityBlocked = false }
         }
     }
 
@@ -283,6 +428,9 @@ struct TitleCommentsSheet: View {
 private struct TitleCommentRow: View {
     let comment: TitleComment
     let accent: Color
+    let isOwnComment: Bool
+    let canBlockAuthor: Bool
+    let onOverflow: () -> Void
 
     private var displayName: String {
         comment.displayName?.isEmpty == false ? comment.displayName! : "Someone"
@@ -349,6 +497,18 @@ private struct TitleCommentRow: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 0)
+            Button(action: onOverflow) {
+                ZStack {
+                    Circle()
+                        .fill(Color.white.opacity(0.10))
+                        .frame(width: 28, height: 28)
+                    Image(systemName: "ellipsis")
+                        .scaledFont(size: 13, weight: .bold)
+                        .foregroundStyle(Color.white.opacity(0.85))
+                }
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(isOwnComment ? "Comment options" : "Report or block comment")
         }
     }
 }

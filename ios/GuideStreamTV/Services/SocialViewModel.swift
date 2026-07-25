@@ -24,6 +24,8 @@ import Foundation
 import Supabase
 
 /// Single comment row, decoded straight from `title_comments`.
+/// `hidden` defaults to `false` when the column is absent so decoding is
+/// robust against older cached payloads.
 nonisolated struct TitleComment: Codable, Identifiable, Hashable, Sendable {
     let id: String
     let titleId: String
@@ -33,6 +35,7 @@ nonisolated struct TitleComment: Codable, Identifiable, Hashable, Sendable {
     let displayName: String?
     let initials: String?
     let createdAt: Date?
+    var hidden: Bool = false
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -43,6 +46,42 @@ nonisolated struct TitleComment: Codable, Identifiable, Hashable, Sendable {
         case displayName = "display_name"
         case initials
         case createdAt = "created_at"
+        case hidden
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        titleId = try c.decode(String.self, forKey: .titleId)
+        userId = try c.decodeIfPresent(String.self, forKey: .userId)
+        deviceId = try c.decodeIfPresent(String.self, forKey: .deviceId)
+        body = try c.decode(String.self, forKey: .body)
+        displayName = try c.decodeIfPresent(String.self, forKey: .displayName)
+        initials = try c.decodeIfPresent(String.self, forKey: .initials)
+        createdAt = try c.decodeIfPresent(Date.self, forKey: .createdAt)
+        hidden = try c.decodeIfPresent(Bool.self, forKey: .hidden) ?? false
+    }
+
+    init(
+        id: String,
+        titleId: String,
+        userId: String?,
+        deviceId: String?,
+        body: String,
+        displayName: String?,
+        initials: String?,
+        createdAt: Date?,
+        hidden: Bool = false
+    ) {
+        self.id = id
+        self.titleId = titleId
+        self.userId = userId
+        self.deviceId = deviceId
+        self.body = body
+        self.displayName = displayName
+        self.initials = initials
+        self.createdAt = createdAt
+        self.hidden = hidden
     }
 }
 
@@ -62,6 +101,14 @@ final class SocialViewModel {
     private(set) var commentCounts: [String: Int] = [:]
     /// Most recent comment thread per title_id (latest first).
     private(set) var commentsByTitle: [String: [TitleComment]] = [:]
+    /// In-memory block list — user_ids the viewer has blocked.
+    private(set) var blockedUserIds: Set<String> = []
+    /// In-memory block list — device_ids the viewer has blocked.
+    private(set) var blockedDeviceIds: Set<String> = []
+    /// True when the most recent `postComment` was rejected by the profanity
+    /// gate (set before returning `false` so the sheet can show the inline
+    /// respectful message and restore the draft).
+    private(set) var lastPostWasProfanityBlocked: Bool = false
 
     /// Titles whose comment thread is currently being fetched.
     private(set) var loadingComments: Set<String> = []
@@ -75,6 +122,31 @@ final class SocialViewModel {
     private(set) var postingComment: Set<String> = []
 
     var lastError: String?
+
+    // MARK: - Profanity / slur filter (App Store Guideline 1.2)
+
+    /// Case-insensitive word-boundary list of blocked terms. Kept small and
+    /// shared so the same gate runs on iOS and Android.
+    static let blockedTerms: [String] = [
+        "fuck", "shit", "bitch", "asshole", "cunt", "dick", "pussy",
+        "nigger", "nigga", "faggot", "fag", "retard", "retarded",
+        "whore", "slut", "bastard"
+    ]
+
+    /// Pre-compiled single-pass regex over [blockedTerms]. Case-insensitive,
+    /// word-boundary anchored.
+    private static let blockedTermRegex: NSRegularExpression? = {
+        let escaped = blockedTerms.map { NSRegularExpression.escapedPattern(for: $0) }
+        let pattern = "\\b(?:" + escaped.joined(separator: "|") + ")\\b"
+        return try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive])
+    }()
+
+    /// Returns true when `body` contains any blocked term on a word boundary.
+    static func draftContainsBlockedTerm(_ body: String) -> Bool {
+        guard let regex = blockedTermRegex else { return false }
+        let range = NSRange(location: 0, length: body.utf16.count)
+        return regex.firstMatch(in: body, options: [], range: range) != nil
+    }
 
     private let localCacheKey = "gs.social.cache.v1"
 
@@ -462,12 +534,20 @@ final class SocialViewModel {
                 .from("title_comments")
                 .select()
                 .eq("title_id", value: trimmed)
+                .eq("hidden", value: false)
                 .order("created_at", ascending: false)
                 .limit(limit)
                 .execute()
                 .value
-            commentsByTitle[trimmed] = rows
-            commentCounts[trimmed] = rows.count
+            // Drop any comment authored by a blocked user so blocked authors
+            // never appear even before a reload.
+            let filtered = rows.filter { c in
+                if let uid = c.userId, blockedUserIds.contains(uid) { return false }
+                if let did = c.deviceId, blockedDeviceIds.contains(did) { return false }
+                return true
+            }
+            commentsByTitle[trimmed] = filtered
+            commentCounts[trimmed] = filtered.count
             saveCache()
         } catch {
             self.lastError = error.localizedDescription
@@ -483,6 +563,13 @@ final class SocialViewModel {
         let trimmedId = titleId.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedBody = body.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedId.isEmpty, !trimmedBody.isEmpty else { return false }
+        // Profanity / slur gate — runs before the optimistic insert so a
+        // blocked draft is never persisted. The sheet restores the draft.
+        lastPostWasProfanityBlocked = false
+        if Self.draftContainsBlockedTerm(trimmedBody) {
+            lastPostWasProfanityBlocked = true
+            return false
+        }
         postingComment.insert(trimmedId)
         defer { postingComment.remove(trimmedId) }
 
@@ -548,6 +635,168 @@ final class SocialViewModel {
             // Leave the optimistic row in place so the user still sees what
             // they wrote on this device.
             return false
+        }
+    }
+
+    // MARK: - Moderation (report / block / delete)
+
+    /// True when `comment` was authored by the current viewer (by user id
+    /// when signed in, or by device id when a guest). Exposed so the sheet
+    /// can decide which overflow actions to offer without importing Supabase.
+    func isOwnComment(_ comment: TitleComment) -> Bool {
+        if let uid = currentUserId?.uuidString, comment.userId == uid { return true }
+        if comment.userId == nil, comment.deviceId == DeviceIdentity.shared.deviceId { return true }
+        return false
+    }
+
+    /// Block requires a resolvable author identity (user id or device id).
+    func canBlockAuthor(_ comment: TitleComment) -> Bool {
+        (comment.userId?.isEmpty == false) || (comment.deviceId?.isEmpty == false)
+    }
+
+    /// Once-per-session load of the viewer's block list. Selects from
+    /// `blocked_users` where the blocker matches this viewer's user_id or
+    /// device_id, populating `blockedUserIds` / `blockedDeviceIds`.
+    func loadBlockedUsers() async {
+        let deviceId = DeviceIdentity.shared.deviceId
+        let userId = currentUserId?.uuidString
+        do {
+            var query = SupabaseManager.shared.client
+                .from("blocked_users")
+                .select("blocked_user_id,blocked_device_id")
+            if let userId {
+                query = query.or("blocker_user_id.eq.\(userId),blocker_device_id.eq.\(deviceId)")
+            } else {
+                query = query.eq("blocker_device_id", value: deviceId)
+            }
+            struct BlockedRow: Decodable {
+                let blockedUserId: String?
+                let blockedDeviceId: String?
+                enum CodingKeys: String, CodingKey {
+                    case blockedUserId = "blocked_user_id"
+                    case blockedDeviceId = "blocked_device_id"
+                }
+            }
+            let rows: [BlockedRow] = try await query.execute().value
+            var uids = Set<String>()
+            var dids = Set<String>()
+            for r in rows {
+                if let u = r.blockedUserId { uids.insert(u) }
+                if let d = r.blockedDeviceId { dids.insert(d) }
+            }
+            blockedUserIds = uids
+            blockedDeviceIds = dids
+        } catch {
+            print("[Social] loadBlockedUsers failed: \(error.localizedDescription)")
+        }
+    }
+
+    /// Reports `comment` with the given reason. Inserts one row into
+    /// `comment_reports` and removes the comment from the reporter's view.
+    /// A 409 (duplicate report by the same reporter) is treated as success.
+    func reportComment(comment: TitleComment, reason: String) async {
+        let deviceId = DeviceIdentity.shared.deviceId
+        let userId = currentUserId?.uuidString
+        var payload: [String: AnyJSON] = [
+            "comment_id": .string(comment.id),
+            "title_id": .string(comment.titleId),
+            "reporter_device_id": .string(deviceId),
+            "reason": .string(reason)
+        ]
+        if let userId { payload["reporter_user_id"] = .string(userId) }
+        do {
+            try await SupabaseManager.shared.client
+                .from("comment_reports")
+                .insert(payload)
+                .execute()
+            removeCommentFromThread(comment.id)
+        } catch {
+            let msg = error.localizedDescription.lowercased()
+            if msg.contains("409") || msg.contains("duplicate") || msg.contains("23505") || msg.contains("conflict") {
+                removeCommentFromThread(comment.id)
+            } else {
+                self.lastError = error.localizedDescription
+                print("[Social] reportComment failed: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    /// Blocks the author of `comment`. Inserts one row into `blocked_users`
+    /// and removes that author's comments from every visible thread. A 409
+    /// (already blocked) is treated as success.
+    func blockUser(comment: TitleComment) async {
+        let viewerDeviceId = DeviceIdentity.shared.deviceId
+        let viewerUserId = currentUserId?.uuidString
+        var payload: [String: AnyJSON] = [
+            "blocker_device_id": .string(viewerDeviceId)
+        ]
+        if let viewerUserId { payload["blocker_user_id"] = .string(viewerUserId) }
+        if let targetUid = comment.userId { payload["blocked_user_id"] = .string(targetUid) }
+        if let targetDid = comment.deviceId { payload["blocked_device_id"] = .string(targetDid) }
+        do {
+            try await SupabaseManager.shared.client
+                .from("blocked_users")
+                .insert(payload)
+                .execute()
+            applyBlock(comment: comment)
+        } catch {
+            let msg = error.localizedDescription.lowercased()
+            if msg.contains("409") || msg.contains("duplicate") || msg.contains("23505") || msg.contains("conflict") {
+                applyBlock(comment: comment)
+            } else {
+                self.lastError = error.localizedDescription
+                print("[Social] blockUser failed: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    /// Deletes the viewer's own comment server-side and removes it locally.
+    func deleteComment(comment: TitleComment) async {
+        do {
+            try await SupabaseManager.shared.client
+                .from("title_comments")
+                .delete()
+                .eq("id", value: comment.id)
+                .execute()
+            removeCommentFromThread(comment.id)
+        } catch {
+            self.lastError = error.localizedDescription
+            print("[Social] deleteComment failed: \(error.localizedDescription)")
+        }
+    }
+
+    /// Adds the comment author's ids to the in-memory block sets and removes
+    /// every comment by that author from all visible threads.
+    private func applyBlock(comment: TitleComment) {
+        if let uid = comment.userId { blockedUserIds.insert(uid) }
+        if let did = comment.deviceId { blockedDeviceIds.insert(did) }
+        removeAuthorFromThread(userId: comment.userId, deviceId: comment.deviceId)
+    }
+
+    /// Removes the comment with `commentId` from every title thread.
+    private func removeCommentFromThread(_ commentId: String) {
+        for (key, thread) in commentsByTitle {
+            let filtered = thread.filter { $0.id != commentId }
+            if filtered.count != thread.count {
+                commentsByTitle[key] = filtered
+                commentCounts[key] = filtered.count
+            }
+        }
+    }
+
+    /// Removes every comment authored by `userId` / `deviceId` from all
+    /// visible threads so a freshly blocked author disappears immediately.
+    private func removeAuthorFromThread(userId: String?, deviceId: String?) {
+        for (key, thread) in commentsByTitle {
+            let filtered = thread.filter { c in
+                if let uid = userId, c.userId == uid { return false }
+                if let did = deviceId, c.deviceId == did { return false }
+                return true
+            }
+            if filtered.count != thread.count {
+                commentsByTitle[key] = filtered
+                commentCounts[key] = filtered.count
+            }
         }
     }
 
