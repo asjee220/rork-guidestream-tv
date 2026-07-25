@@ -761,7 +761,7 @@ class AuthViewModel private constructor(private val context: Context) : ViewMode
         _lastError.value = null
         _lastInfo.value = null
         return try {
-            SupabaseManager.client.auth.resetPasswordForEmail(email, redirectUrl = "guidestream://auth-callback")
+            SupabaseManager.client.auth.resetPasswordForEmail(email, redirectUrl = "guidestream://auth-callback?flow=recovery")
             _lastInfo.value = "If that address is registered, we just sent a recovery link. Check your inbox."
             _isAuthenticating.value = false
             true

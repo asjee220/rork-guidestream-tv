@@ -751,18 +751,27 @@ final class AuthViewModel {
     // MARK: - Password recovery (auth callback + update)
 
     /// Centralized handler for a `guidestream://auth-callback` URL. Imports
-    /// the Supabase session from the URL and, when the link is a recovery
-    /// callback (`type=recovery`), sets `showPasswordRecovery` so the app
-    /// presents `UpdatePasswordView`. Preserves existing non-recovery OAuth
-    /// callback behavior (Google / Apple / email-confirm) exactly — callers
-    /// no longer need to inline `auth.session(from:)`.
+    /// the Supabase session from the URL (performing the PKCE code exchange
+    /// for both OAuth and recovery callbacks) and, when the link is a
+    /// recovery callback (`flow=recovery` query item), sets
+    /// `showPasswordRecovery` so the app presents `UpdatePasswordView`.
+    /// Preserves existing non-recovery OAuth callback behavior
+    /// (Google / Apple / email-confirm) exactly — callers no longer need to
+    /// inline `auth.session(from:)`.
     func handleAuthCallback(url: URL) async {
         do {
             try await SupabaseManager.shared.client.auth.session(from: url)
             print("[Auth] handleAuthCallback imported session: \(url)")
             // Detect a recovery callback so we can present the set-new-password
-            // screen. The redirect URL contains `type=recovery` as a query param.
-            if url.absoluteString.contains("type=recovery") {
+            // screen. The recovery redirect carries a `flow=recovery` query
+            // item (added in `sendPasswordReset`); OAuth/email-confirm
+            // callbacks have no `flow` item, so they take the existing path
+            // with no recovery screen.
+            let isRecovery = URLComponents(url: url, resolvingAgainstBaseURL: false)?
+                .queryItems?
+                .first { $0.name == "flow" }?
+                .value == "recovery"
+            if isRecovery {
                 await MainActor.run {
                     self.showPasswordRecovery = true
                 }
@@ -994,7 +1003,7 @@ final class AuthViewModel {
         do {
             try await SupabaseManager.shared.client.auth.resetPasswordForEmail(
                 email,
-                redirectTo: URL(string: "guidestream://auth-callback")
+                redirectTo: URL(string: "guidestream://auth-callback?flow=recovery")
             )
             self.lastInfo = "If that address is registered, we just sent a recovery link. Check your inbox."
             print("[Auth] password reset dispatched for \(email)")

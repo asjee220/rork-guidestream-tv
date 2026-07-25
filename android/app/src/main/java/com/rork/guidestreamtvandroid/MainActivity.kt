@@ -47,9 +47,10 @@ class MainActivity : ComponentActivity() {
         // Detect a password-recovery callback so the app can present the
         // set-new-password screen. handleDeeplinks already imported the
         // session above; we only flag the UI when the redirect URL carries
-        // type=recovery. Non-recovery OAuth callbacks and title/show/sports
+        // the flow=recovery query item (added in sendPasswordReset). Non-
+        // recovery OAuth callbacks (no flow item) and title/show/sports
         // deep links keep their existing behavior.
-        if (intent.dataString?.contains("type=recovery") == true) {
+        if (intent.data?.getQueryParameter("flow") == "recovery") {
             AuthViewModel.get().setShowPasswordRecovery(true)
         }
 
@@ -72,8 +73,10 @@ class MainActivity : ComponentActivity() {
         }
         // Detect a password-recovery callback so the app can present the
         // set-new-password screen. The session was imported above; flag the
-        // UI only when the redirect URL carries type=recovery.
-        if (intent.dataString?.contains("type=recovery") == true) {
+        // UI only when the redirect URL carries the flow=recovery query
+        // item (added in sendPasswordReset). Non-recovery OAuth callbacks
+        // (no flow item) take the existing handleOAuthCallback path.
+        if (intent.data?.getQueryParameter("flow") == "recovery") {
             AuthViewModel.get().setShowPasswordRecovery(true)
         }
         handleDeepLink(intent.data)
