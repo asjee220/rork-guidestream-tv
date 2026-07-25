@@ -85,6 +85,10 @@ final class AuthViewModel {
     /// First-time visits to the email auth screen show the create-account flow;
     /// every visit afterwards defaults to the sign-in flow.
     var hasUsedEmailAuth: Bool = UserDefaults.standard.bool(forKey: "gs.hasUsedEmailAuth")
+    /// True when a Supabase recovery callback has imported a session and the
+    /// app should present the set-new-password screen. Cleared when the
+    /// `UpdatePasswordView` is dismissed or the password is updated.
+    var showPasswordRecovery: Bool = false
 
     /// True when there is a real Supabase user or the user chose "Get Started Free".
     var isSignedIn: Bool { currentUser != nil || isGuest }
@@ -742,6 +746,69 @@ final class AuthViewModel {
             ]
         )
         DeviceSessionService.shared.upsert(reason: "guest_started")
+    }
+
+    // MARK: - Password recovery (auth callback + update)
+
+    /// Centralized handler for a `guidestream://auth-callback` URL. Imports
+    /// the Supabase session from the URL and, when the link is a recovery
+    /// callback (`type=recovery`), sets `showPasswordRecovery` so the app
+    /// presents `UpdatePasswordView`. Preserves existing non-recovery OAuth
+    /// callback behavior (Google / Apple / email-confirm) exactly — callers
+    /// no longer need to inline `auth.session(from:)`.
+    func handleAuthCallback(url: URL) async {
+        do {
+            try await SupabaseManager.shared.client.auth.session(from: url)
+            print("[Auth] handleAuthCallback imported session: \(url)")
+            // Detect a recovery callback so we can present the set-new-password
+            // screen. The redirect URL contains `type=recovery` as a query param.
+            if url.absoluteString.contains("type=recovery") {
+                await MainActor.run {
+                    self.showPasswordRecovery = true
+                }
+            }
+        } catch {
+            let msg = error.localizedDescription.lowercased()
+            if msg.contains("expired") || msg.contains("invalid") || msg.contains("already") || msg.contains("session") {
+                self.lastError = "This recovery link has expired or was already used. Request a new one from the sign-in screen."
+            } else {
+                self.lastError = "This recovery link has expired or was already used. Request a new one from the sign-in screen."
+            }
+            print("[Auth] handleAuthCallback failed: \(error.localizedDescription)")
+        }
+    }
+
+    /// Updates the signed-in user's password via GoTrue `auth.update`. Used
+    /// by `UpdatePasswordView` after a recovery callback imports a session.
+    /// On success sets `currentUser` from the resulting session, clears guest
+    /// mode, sets a short confirmation in `lastInfo`, and returns `true`. On
+    /// failure sets `lastError` and returns `false`. Follows the same
+    /// `isAuthenticating` / `lastError` / `lastInfo` conventions as
+    /// `signInWithEmail` and `sendPasswordReset`.
+    @discardableResult
+    func updatePassword(newPassword: String) async -> Bool {
+        isAuthenticating = true
+        lastError = nil
+        lastInfo = nil
+        defer { isAuthenticating = false }
+        do {
+            try await SupabaseManager.shared.client.auth.update(
+                user: UserAttributes(password: newPassword)
+            )
+            // Refresh the cached user from the current session so `currentUser`
+            // reflects the post-update state and the app lands signed in.
+            let session = try await SupabaseManager.shared.client.auth.session
+            self.currentUser = session.user
+            self.isGuest = false
+            UserDefaults.standard.set(false, forKey: "gs.isGuest")
+            self.lastInfo = "Your password has been updated. You're signed in."
+            print("[Auth] password updated via recovery flow")
+            return true
+        } catch {
+            lastError = error.localizedDescription
+            print("[Auth ERROR] updatePassword failed: \(error.localizedDescription)")
+            return false
+        }
     }
 
     // MARK: - Email auth (Supabase email + password)

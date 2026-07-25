@@ -146,6 +146,22 @@ class AuthViewModel private constructor(private val context: Context) : ViewMode
     private val _sessionRestored = MutableStateFlow(false)
     val sessionRestored: StateFlow<Boolean> = _sessionRestored.asStateFlow()
 
+    /**
+     * True when a Supabase recovery callback has imported a session and the
+     * app should present the set-new-password screen. Cleared when
+     * [UpdatePasswordScreen] is dismissed or the password is updated.
+     */
+    private val _showPasswordRecovery = MutableStateFlow(false)
+    val showPasswordRecovery: StateFlow<Boolean> = _showPasswordRecovery.asStateFlow()
+
+    fun setShowPasswordRecovery(value: Boolean) {
+        _showPasswordRecovery.value = value
+    }
+
+    fun clearPasswordRecovery() {
+        _showPasswordRecovery.value = false
+    }
+
     // ── Convenience StateFlows for UI gating ──────────────────────────
 
     /** True when there is a real Supabase user or the user chose "Get Started Free". */
@@ -533,6 +549,43 @@ class AuthViewModel private constructor(private val context: Context) : ViewMode
                 _lastError.value = e.message
                 onComplete(false)
             }
+        }
+    }
+
+    // ── Password recovery (update) ─────────────────────────────
+
+    /**
+     * Updates the signed-in user's password via GoTrue `auth.updateUser`.
+     * Used by [UpdatePasswordScreen] after a recovery callback imported a
+     * session. On success sets `_lastInfo` to a short confirmation and returns
+     * true; on failure sets `_lastError` and returns false. Follows the same
+     * `isAuthenticating` / `lastError` / `lastInfo` conventions as
+     * [sendPasswordReset].
+     */
+    suspend fun updatePassword(newPassword: String): Boolean {
+        _isAuthenticating.value = true
+        _lastError.value = null
+        _lastInfo.value = null
+        return try {
+            SupabaseManager.client.auth.updateUser {
+                this.password = newPassword
+            }
+            // Refresh the cached user from the current session so the app
+            // lands signed in after the update.
+            val session = SupabaseManager.client.auth.currentSessionOrNull()
+            if (session != null) {
+                _currentUser.value = session.user
+                _isGuest.value = false
+                prefs.edit().putBoolean("gs.isGuest", false).apply()
+                updateSignedInState()
+            }
+            _lastInfo.value = "Your password has been updated. You're signed in."
+            _isAuthenticating.value = false
+            true
+        } catch (e: Exception) {
+            _lastError.value = e.message
+            _isAuthenticating.value = false
+            false
         }
     }
 

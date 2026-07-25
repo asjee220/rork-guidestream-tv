@@ -44,6 +44,14 @@ class MainActivity : ComponentActivity() {
         SupabaseManager.client.handleDeeplinks(intent) {
             AuthViewModel.get().handleOAuthCallback()
         }
+        // Detect a password-recovery callback so the app can present the
+        // set-new-password screen. handleDeeplinks already imported the
+        // session above; we only flag the UI when the redirect URL carries
+        // type=recovery. Non-recovery OAuth callbacks and title/show/sports
+        // deep links keep their existing behavior.
+        if (intent.dataString?.contains("type=recovery") == true) {
+            AuthViewModel.get().setShowPasswordRecovery(true)
+        }
 
         enableEdgeToEdge()
         setContent {
@@ -61,6 +69,12 @@ class MainActivity : ComponentActivity() {
         setIntent(intent)
         SupabaseManager.client.handleDeeplinks(intent) {
             AuthViewModel.get().handleOAuthCallback()
+        }
+        // Detect a password-recovery callback so the app can present the
+        // set-new-password screen. The session was imported above; flag the
+        // UI only when the redirect URL carries type=recovery.
+        if (intent.dataString?.contains("type=recovery") == true) {
+            AuthViewModel.get().setShowPasswordRecovery(true)
         }
         handleDeepLink(intent.data)
     }

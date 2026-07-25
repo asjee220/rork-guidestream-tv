@@ -50,14 +50,13 @@ struct GuideStreamTVApp: App {
                         return
                     }
 
-                    // OAuth callback (existing flow)
+                    // OAuth callback (existing flow) + recovery detection.
+                    // Routed through AuthViewModel.handleAuthCallback so a
+                    // recovery link sets showPasswordRecovery and presents
+                    // the set-new-password screen; non-recovery callbacks
+                    // behave exactly as before.
                     Task {
-                        do {
-                            try await SupabaseManager.shared.client.auth.session(from: url)
-                            print("[Auth] SwiftUI onOpenURL handled: \(url)")
-                        } catch {
-                            print("[Auth] SwiftUI onOpenURL failed: \(error.localizedDescription)")
-                        }
+                        await AuthViewModel.shared.handleAuthCallback(url: url)
                     }
                 }
         }

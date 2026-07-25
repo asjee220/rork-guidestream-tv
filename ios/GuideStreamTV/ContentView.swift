@@ -62,6 +62,14 @@ struct ContentView: View {
         }
         .animation(.easeOut(duration: 0.3), value: auth.hasCompletedOnboarding)
         .animation(.easeOut(duration: 0.3), value: auth.isSignedIn)
+        .fullScreenCover(isPresented: Binding(
+            get: { auth.showPasswordRecovery },
+            set: { if !$0 { auth.showPasswordRecovery = false } }
+        )) {
+            UpdatePasswordView {
+                auth.showPasswordRecovery = false
+            }
+        }
         .environment(\.tabBarVisibility, tabBarVisibility)
         .environment(router)
         .preferredColorScheme(.dark)

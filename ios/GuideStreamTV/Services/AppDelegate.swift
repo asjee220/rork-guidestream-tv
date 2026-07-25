@@ -56,12 +56,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
     ) -> Bool {
         guard url.scheme == "guidestream" else { return false }
         Task {
-            do {
-                try await SupabaseManager.shared.client.auth.session(from: url)
-                print("[Auth] OAuth callback handled via URL: \(url)")
-            } catch {
-                print("[Auth] URL session exchange failed: \(error.localizedDescription)")
-            }
+            await AuthViewModel.shared.handleAuthCallback(url: url)
         }
         return true
     }
