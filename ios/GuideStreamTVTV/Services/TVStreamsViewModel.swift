@@ -70,9 +70,9 @@ final class TVStreamsViewModel {
                 .from("user_streams")
                 .select()
             if let uid = currentUserId?.uuidString {
-                query = query.or("user_id.eq.\(uid),device_id.eq.\(deviceId)")
+                query = query.eq("user_id", value: uid)
             } else {
-                query = query.eq("device_id", value: deviceId)
+                query = query.eq("device_id", value: deviceId).filter("user_id", operator: "is", value: "null")
             }
             let rows: [TVUserStream] = try await query
                 .order("added_at", ascending: false)
@@ -154,9 +154,9 @@ final class TVStreamsViewModel {
                 .delete()
                 .eq("title_id", value: trimmed)
             if let uid = currentUserId?.uuidString {
-                query = query.or("user_id.eq.\(uid),device_id.eq.\(deviceId)")
+                query = query.eq("user_id", value: uid)
             } else {
-                query = query.eq("device_id", value: deviceId)
+                query = query.eq("device_id", value: deviceId).filter("user_id", operator: "is", value: "null")
             }
             try await query.execute()
         } catch {

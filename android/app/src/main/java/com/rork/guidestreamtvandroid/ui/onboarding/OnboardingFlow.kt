@@ -132,11 +132,11 @@ fun OnboardingFlow(
     LaunchedEffect(isAuthenticated) {
         if (isAuthenticated && step == 0) step = 1
     }
-    val selectedServices = androidx.compose.runtime.mutableStateOf(auth.selectedServices.value)
+    val selectedServices = remember { mutableStateOf(auth.selectedServices.value) }
     // Keep the local selection in sync with the authoritative StateFlow so
     // after an account switch onboarding never writes a stale snapshot onto
     // the new account. LaunchedEffect re-seeds whenever the flow emits.
-    androidx.compose.runtime.LaunchedEffect(auth.selectedServices) {
+    LaunchedEffect(auth.selectedServices) {
         auth.selectedServices.collect { services ->
             if (selectedServices.value != services) selectedServices.value = services
         }
