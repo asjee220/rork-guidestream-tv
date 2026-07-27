@@ -85,13 +85,22 @@ struct OnboardingFlow: View {
             EmailAuthView(
                 onAuthenticated: {
                     showEmailAuth = false
-                    // First time email user — proceed to services step.
-                    // Returning users (hasCompletedOnboarding already true)
-                    // are handled by ContentView and skip this flow entirely.
-                    advance()
+                    // Only advance the onboarding flow when the user has not
+                    // yet completed onboarding. Returning users
+                    // (hasCompletedOnboarding already true) are routed by
+                    // ContentView and should not be pulled forward here.
+                    if !AuthViewModel.shared.hasCompletedOnboarding {
+                        advance()
+                    }
                 },
                 onClose: { showEmailAuth = false }
             )
+        }
+        // Re-seed the local service selection whenever the authoritative
+        // value changes (e.g. after an account switch) so onboarding never
+        // writes a stale snapshot onto the new account.
+        .onChange(of: AuthViewModel.shared.selectedServices) { _, newValue in
+            selectedServices = newValue
         }
         .onAppear {
             // Skip welcome if user is already authenticated

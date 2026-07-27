@@ -119,13 +119,15 @@ class StreamsViewModel private constructor(context: Context) {
                     .from("user_streams")
                     .select {
                         filter {
+                            // Single-ownership scoping: signed-in users read
+                            // strictly by user_id; guests read by device_id AND
+                            // user_id IS NULL so two accounts on one install
+                            // never see each other's rows.
                             if (uid != null) {
-                                or {
-                                    eq("user_id", uid)
-                                    eq("device_id", deviceId)
-                                }
+                                eq("user_id", uid)
                             } else {
                                 eq("device_id", deviceId)
+                                exact("user_id", null)
                             }
                         }
                         order("added_at", Order.DESCENDING)
@@ -159,12 +161,10 @@ class StreamsViewModel private constructor(context: Context) {
                 .select {
                     filter {
                         if (uid != null) {
-                            or {
-                                eq("user_id", uid)
-                                eq("device_id", deviceId)
-                            }
+                            eq("user_id", uid)
                         } else {
                             eq("device_id", deviceId)
+                            exact("user_id", null)
                         }
                     }
                 }
@@ -215,12 +215,10 @@ class StreamsViewModel private constructor(context: Context) {
                             filter {
                                 eq("title_id", trimmedId)
                                 if (uid != null) {
-                                    or {
-                                        eq("user_id", uid)
-                                        eq("device_id", deviceId)
-                                    }
+                                    eq("user_id", uid)
                                 } else {
                                     eq("device_id", deviceId)
+                                    exact("user_id", null)
                                 }
                             }
                         }
@@ -284,12 +282,10 @@ class StreamsViewModel private constructor(context: Context) {
                     .select {
                         filter {
                             if (uid != null) {
-                                or {
-                                    eq("user_id", uid)
-                                    eq("device_id", deviceId)
-                                }
+                                eq("user_id", uid)
                             } else {
                                 eq("device_id", deviceId)
+                                exact("user_id", null)
                             }
                         }
                     }
@@ -435,12 +431,10 @@ class StreamsViewModel private constructor(context: Context) {
                         filter {
                             eq("title_id", trimmedId)
                             if (uid != null) {
-                                or {
-                                    eq("user_id", uid)
-                                    eq("device_id", deviceId)
-                                }
+                                eq("user_id", uid)
                             } else {
                                 eq("device_id", deviceId)
+                                exact("user_id", null)
                             }
                         }
                     }
@@ -475,12 +469,10 @@ class StreamsViewModel private constructor(context: Context) {
                         filter {
                             eq("title_id", trimmedId)
                             if (uid != null) {
-                                or {
-                                    eq("user_id", uid)
-                                    eq("device_id", deviceId)
-                                }
+                                eq("user_id", uid)
                             } else {
                                 eq("device_id", deviceId)
+                                exact("user_id", null)
                             }
                         }
                     }
@@ -517,10 +509,37 @@ class StreamsViewModel private constructor(context: Context) {
     fun clearLocalCache() {
         _userStreams.value = emptyList()
         _newEpisodes.value = emptyList()
+        _watchedIds.value = emptySet()
         _latestContentAt.value = emptyMap()
         _latestContentKind.value = emptyMap()
         _seenContentAt.value = emptyMap()
         prefs.edit().remove(localCacheKey).apply()
+    }
+
+    // MARK: - Ownership claiming
+
+    /**
+     * Promotes any guest-era rows on this device (user_id IS NULL,
+     * device_id matches) to the signed-in user via the `claim_device_rows`
+     * SECURITY DEFINER RPC. Called from [AuthViewModel] at every authenticated
+     * entry point **before** [syncLocalToSupabase] so guest rows are
+     * attributed to the new account before the first fetch. Silently swallows
+     * errors (no session, network failure, zero guest rows) so it never
+     * blocks or delays the subsequent fetch.
+     */
+    suspend fun claimDeviceRows() {
+        try {
+            SupabaseManager.client.postgrest
+                .rpc(
+                    function = "claim_device_rows",
+                    parameters = buildJsonObject {
+                        put("p_device_id", DeviceIdentity.get().deviceId)
+                    },
+                )
+        } catch (e: Throwable) {
+            if (e is CancellationException) throw e
+            println("[Streams] claimDeviceRows failed: ${e.message}")
+        }
     }
 
     private fun loadLocalCache(): List<UserStream> {

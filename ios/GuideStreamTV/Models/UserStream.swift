@@ -83,6 +83,57 @@ nonisolated struct UserProfileUpsert: Encodable, Sendable {
     let last_name: String?
     let avatar_url: String?
     let email: String?
+
+    /// Custom encoder so nil optional fields are **omitted** from the JSON
+    /// payload (via `encodeIfPresent`) instead of being emitted as `null`.
+    /// Without this, the synthesized `Encodable` conformance writes
+    /// `"display_name": null`, `"first_name": null`, etc., which overwrites
+    /// the account's existing name fields on every sign-in that passes nil
+    /// for those values (e.g. `signInWithEmail`). `id` is always encoded.
+    init(
+        id: String,
+        display_name: String?,
+        first_name: String?,
+        last_name: String?,
+        avatar_url: String?,
+        email: String?
+    ) {
+        self.id = id
+        self.display_name = display_name
+        self.first_name = first_name
+        self.last_name = last_name
+        self.avatar_url = avatar_url
+        self.email = email
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        display_name = try c.decodeIfPresent(String.self, forKey: .display_name)
+        first_name = try c.decodeIfPresent(String.self, forKey: .first_name)
+        last_name = try c.decodeIfPresent(String.self, forKey: .last_name)
+        avatar_url = try c.decodeIfPresent(String.self, forKey: .avatar_url)
+        email = try c.decodeIfPresent(String.self, forKey: .email)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case display_name
+        case first_name
+        case last_name
+        case avatar_url
+        case email
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(id, forKey: .id)
+        try c.encodeIfPresent(display_name, forKey: .display_name)
+        try c.encodeIfPresent(first_name, forKey: .first_name)
+        try c.encodeIfPresent(last_name, forKey: .last_name)
+        try c.encodeIfPresent(avatar_url, forKey: .avatar_url)
+        try c.encodeIfPresent(email, forKey: .email)
+    }
 }
 
 nonisolated struct OnboardingPrefsUpsert: Encodable, Sendable {

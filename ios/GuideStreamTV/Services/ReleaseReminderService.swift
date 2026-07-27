@@ -42,9 +42,10 @@ final class ReleaseReminderService {
                 .select("id", head: true, count: .exact)
                 .eq("title_id", value: trimmed)
             if let uid = currentUserId?.uuidString {
-                query = query.or("user_id.eq.\(uid),device_id.eq.\(deviceId)")
+                query = query.eq("user_id", value: uid)
             } else {
                 query = query.eq("device_id", value: deviceId)
+                    .filter("user_id", operator: "is", value: "null")
             }
             let response = try await query.execute()
             let exists = (response.count ?? 0) > 0
@@ -120,9 +121,10 @@ final class ReleaseReminderService {
                 .delete()
                 .eq("title_id", value: titleId)
             if let userId {
-                query = query.or("user_id.eq.\(userId),device_id.eq.\(deviceId)")
+                query = query.eq("user_id", value: userId)
             } else {
                 query = query.eq("device_id", value: deviceId)
+                    .filter("user_id", operator: "is", value: "null")
             }
             try await query.execute()
         } catch {

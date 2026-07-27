@@ -47,9 +47,10 @@ final class TeamFavoritesService {
                 .from("team_favorites")
                 .select()
             if let uid = currentUserId?.uuidString {
-                query = query.or("user_id.eq.\(uid),device_id.eq.\(deviceId)")
+                query = query.eq("user_id", value: uid)
             } else {
                 query = query.eq("device_id", value: deviceId)
+                    .filter("user_id", operator: "is", value: "null")
             }
             let loaded: [TeamFavoriteRow] = try await query.execute().value
             var uids = Set<String>()
@@ -102,15 +103,19 @@ final class TeamFavoritesService {
 
         do {
             if wasFavorited {
-                // Delete matching row(s) for this team_uid scoped to current user/device.
+                // Delete matching row(s) for this team_uid scoped strictly
+                // to the signed-in user (or, for guests, to this device with
+                // user_id IS NULL) so two accounts on one install never delete
+                // each other's favorites.
                 var query = SupabaseManager.shared.client
                     .from("team_favorites")
                     .delete()
                     .eq("team_uid", value: uid)
                 if let userId = currentUserId?.uuidString {
-                    query = query.or("user_id.eq.\(userId),device_id.eq.\(deviceId)")
+                    query = query.eq("user_id", value: userId)
                 } else {
                     query = query.eq("device_id", value: deviceId)
+                        .filter("user_id", operator: "is", value: "null")
                 }
                 try await query.execute()
             } else {
@@ -172,6 +177,18 @@ final class TeamFavoritesService {
         } catch {
             print("[TeamFavorites] local cache encode failed: \(error.localizedDescription)")
         }
+    }
+
+    // MARK: - Sign-out cleanup
+
+    /// Clears all in-memory team-favorite state and removes the local
+    /// UserDefaults cache. Called from `AuthViewModel.signOut()` so the next
+    /// user starts with an empty favorites set instead of inheriting the
+    /// previous user's teams. Mirrors `StreamsViewModel.clearLocalCache`.
+    func clearLocalCache() {
+        self.favoritedUids = []
+        self.rows = [:]
+        UserDefaults.standard.removeObject(forKey: localCacheKey)
     }
 }
 

@@ -228,9 +228,10 @@ final class SocialViewModel {
                 .select("id", head: true, count: .exact)
                 .eq("title_id", value: titleId)
             if let uid = currentUserId?.uuidString {
-                query = query.or("user_id.eq.\(uid),device_id.eq.\(deviceId)")
+                query = query.eq("user_id", value: uid)
             } else {
                 query = query.eq("device_id", value: deviceId)
+                    .filter("user_id", operator: "is", value: "null")
             }
             let response = try await query.execute()
             return (response.count ?? 0) > 0
@@ -251,9 +252,10 @@ final class SocialViewModel {
                 .from("title_watched")
                 .select("title_id")
             if let uid = currentUserId?.uuidString {
-                query = query.or("user_id.eq.\(uid),device_id.eq.\(deviceId)")
+                query = query.eq("user_id", value: uid)
             } else {
                 query = query.eq("device_id", value: deviceId)
+                    .filter("user_id", operator: "is", value: "null")
             }
             struct WatchedIdRow: Decodable {
                 let titleId: String
@@ -275,9 +277,10 @@ final class SocialViewModel {
                 .select("id", head: true, count: .exact)
                 .eq("title_id", value: titleId)
             if let uid = currentUserId?.uuidString {
-                query = query.or("user_id.eq.\(uid),device_id.eq.\(deviceId)")
+                query = query.eq("user_id", value: uid)
             } else {
                 query = query.eq("device_id", value: deviceId)
+                    .filter("user_id", operator: "is", value: "null")
             }
             let response = try await query.execute()
             return (response.count ?? 0) > 0
@@ -403,9 +406,10 @@ final class SocialViewModel {
                 .update(values)
                 .eq("title_id", value: titleId)
             if let userId {
-                query = query.or("user_id.eq.\(userId),device_id.eq.\(deviceId)")
+                query = query.eq("user_id", value: userId)
             } else {
                 query = query.eq("device_id", value: deviceId)
+                    .filter("user_id", operator: "is", value: "null")
             }
             try await query.execute()
         } catch {
@@ -420,9 +424,10 @@ final class SocialViewModel {
                 .delete()
                 .eq("title_id", value: titleId)
             if let userId {
-                query = query.or("user_id.eq.\(userId),device_id.eq.\(deviceId)")
+                query = query.eq("user_id", value: userId)
             } else {
                 query = query.eq("device_id", value: deviceId)
+                    .filter("user_id", operator: "is", value: "null")
             }
             try await query.execute()
         } catch {
@@ -509,9 +514,10 @@ final class SocialViewModel {
                 .delete()
                 .eq("title_id", value: titleId)
             if let userId {
-                query = query.or("user_id.eq.\(userId),device_id.eq.\(deviceId)")
+                query = query.eq("user_id", value: userId)
             } else {
                 query = query.eq("device_id", value: deviceId)
+                    .filter("user_id", operator: "is", value: "null")
             }
             try await query.execute()
         } catch {

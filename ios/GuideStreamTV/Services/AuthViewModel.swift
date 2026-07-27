@@ -127,6 +127,10 @@ final class AuthViewModel {
             self.currentUser = session.user
             await loadDisplayName()
             await restoreOnboardingState()
+            // Claim any guest-era rows on this device before the first fetch
+            // so they are attributed to this account. Best-effort — a failure
+            // never blocks the sync below.
+            await StreamsViewModel.shared.claimDeviceRows()
             // Pick up any guest-era watch list rows and refresh from Supabase
             // so the list is in sync on cold launch.
             Task { await StreamsViewModel.shared.syncLocalToSupabase() }
@@ -476,10 +480,12 @@ final class AuthViewModel {
                     self.hasCompletedOnboarding = true
                     UserDefaults.standard.set(true, forKey: "gs.onboardingComplete")
                 }
-                if !services.isEmpty {
-                    self.selectedServices = Set(services)
-                    UserDefaults.standard.set(Array(services), forKey: "gs.selectedServices")
-                }
+                // The fetched services value always wins — assign
+                // unconditionally (including when empty) so the previous
+                // account's selection cannot survive a cross-account sign-in
+                // on the same install.
+                self.selectedServices = Set(services)
+                UserDefaults.standard.set(Array(services), forKey: "gs.selectedServices")
             }
         } catch {
             // Column may be missing on older projects — keep local defaults.
@@ -598,6 +604,9 @@ final class AuthViewModel {
                 )
                 DeviceSessionService.shared.upsert(reason: "apple_signed_in")
                 setUserTimezone()
+                // Claim any guest-era rows on this device before the first
+                // fetch so they are attributed to this account.
+                await StreamsViewModel.shared.claimDeviceRows()
                 // Promote any guest-era watch list rows and push token to the new user.
                 Task { await StreamsViewModel.shared.syncLocalToSupabase() }
                 Task { await PushTokenManager.shared.resaveCachedToken() }
@@ -699,6 +708,21 @@ final class AuthViewModel {
         self.notifySMSEnabled = false
         self.hasUsedEmailAuth = false
 
+        // Reset the five notification category flags to their documented
+        // server-side defaults (true) before the UserDefaults key removal
+        // loop runs, guarding with the two applying-pref flags so no didSet
+        // fires a network write. Without this the previous account's toggles
+        // survive in memory and get written onto the next account's users row.
+        isApplyingCategoryPrefs = true
+        isApplyingMovieReleasePref = true
+        notifyNewEpisodesEnabled = true
+        notifyWatchlistEnabled = true
+        notifyLiveEnabled = true
+        notifySportsEnabled = true
+        notifyMovieReleasesEnabled = true
+        isApplyingCategoryPrefs = false
+        isApplyingMovieReleasePref = false
+
         // ── UserDefaults — remove every user-scoped key so the next
         //    sign-in starts completely fresh. ─────────────────────────
         for key in [
@@ -723,9 +747,12 @@ final class AuthViewModel {
 
         // ── Dependent services — wipe their local caches so the next
         //    user doesn't inherit the previous user's watchlist, likes,
-        //    stats, or profiles. ──────────────────────────────────────
+        //    stats, profiles, team favorites, release reminders, or creator
+        //    notification preferences. ──────────────────────────────────
         StreamsViewModel.shared.clearLocalCache()
         SocialViewModel.shared.clearLocalCache()
+        TeamFavoritesService.shared.clearLocalCache()
+        ReleaseReminderService.shared.clearLocalCache()
         ProfileStatsService.shared.clearCache()
         AppProfileManager.shared.clearAll()
 
@@ -888,6 +915,9 @@ final class AuthViewModel {
                 )
                 DeviceSessionService.shared.upsert(reason: "email_signed_up")
                 setUserTimezone()
+                // Claim any guest-era rows on this device before the first
+                // fetch so they are attributed to this account.
+                await StreamsViewModel.shared.claimDeviceRows()
                 Task { await StreamsViewModel.shared.syncLocalToSupabase() }
                 Task { await PushTokenManager.shared.resaveCachedToken() }
                 await PushTokenManager.shared.flushPendingToken()
@@ -969,6 +999,9 @@ final class AuthViewModel {
             )
             DeviceSessionService.shared.upsert(reason: "email_signed_in")
             setUserTimezone()
+            // Claim any guest-era rows on this device before the first fetch
+            // so they are attributed to this account.
+            await StreamsViewModel.shared.claimDeviceRows()
             Task { await StreamsViewModel.shared.syncLocalToSupabase() }
             Task { await PushTokenManager.shared.resaveCachedToken() }
             await PushTokenManager.shared.flushPendingToken()
@@ -1068,6 +1101,9 @@ final class AuthViewModel {
             )
             DeviceSessionService.shared.upsert(reason: "google_signed_in")
             setUserTimezone()
+            // Claim any guest-era rows on this device before the first fetch
+            // so they are attributed to this account.
+            await StreamsViewModel.shared.claimDeviceRows()
             Task { await StreamsViewModel.shared.syncLocalToSupabase() }
             Task { await PushTokenManager.shared.resaveCachedToken() }
         } catch {

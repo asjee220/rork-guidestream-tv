@@ -73,6 +73,16 @@ class TeamFavoritesService private constructor(context: Context) {
         }
     }
 
+    /**
+     * Clears all in-memory team-favorite state and removes the local disk
+     * cache. Called from [AuthViewModel.signOut] so the next user starts with
+     * an empty favorites set instead of inheriting the previous user's teams.
+     */
+    fun clearLocalCache() {
+        _rows.value = emptyMap()
+        prefs.edit().remove(KEY).apply()
+    }
+
     companion object {
         private const val KEY = "gs.teamFavorites.rows"
 

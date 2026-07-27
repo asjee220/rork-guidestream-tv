@@ -107,16 +107,17 @@ final class StreamsViewModel {
         defer { isLoadingStreams = false }
         let deviceId = DeviceIdentity.shared.deviceId
         do {
-            // Use a PostgREST `or=(user_id.eq.<uid>,device_id.eq.<did>)` filter
-            // so signed-in users see rows tied to either their account or this
-            // install, and guests see their device-owned rows.
+            // Single-ownership scoping: signed-in users read strictly by
+            // user_id; guests read by device_id AND user_id IS NULL so two
+            // accounts on one install never see each other's rows.
             var query = SupabaseManager.shared.client
                 .from("user_streams")
                 .select()
             if let uid = currentUserId?.uuidString {
-                query = query.or("user_id.eq.\(uid),device_id.eq.\(deviceId)")
+                query = query.eq("user_id", value: uid)
             } else {
                 query = query.eq("device_id", value: deviceId)
+                    .filter("user_id", operator: "is", value: "null")
             }
             let rows: [UserStream] = try await query
                 .order("added_at", ascending: false)
@@ -139,16 +140,16 @@ final class StreamsViewModel {
         defer { isLoadingEpisodes = false }
         let deviceId = DeviceIdentity.shared.deviceId
         do {
-            // Get this user's title_ids by user_id (signed-in) OR device_id
-            // (guests + cross-device), so the New Episodes panel works for
-            // every session state.
+            // Single-ownership scoping: signed-in users read strictly by
+            // user_id; guests read by device_id AND user_id IS NULL.
             var query = SupabaseManager.shared.client
                 .from("user_streams")
                 .select()
             if let uid = currentUserId?.uuidString {
-                query = query.or("user_id.eq.\(uid),device_id.eq.\(deviceId)")
+                query = query.eq("user_id", value: uid)
             } else {
                 query = query.eq("device_id", value: deviceId)
+                    .filter("user_id", operator: "is", value: "null")
             }
             let mine: [UserStream] = try await query.execute().value
             let titleIds = mine.map { $0.titleId }
@@ -479,9 +480,10 @@ final class StreamsViewModel {
                 .delete()
                 .eq("title_id", value: trimmedId)
             if let uid = currentUserId?.uuidString {
-                query = query.or("user_id.eq.\(uid),device_id.eq.\(deviceId)")
+                query = query.eq("user_id", value: uid)
             } else {
                 query = query.eq("device_id", value: deviceId)
+                    .filter("user_id", operator: "is", value: "null")
             }
             try await query.execute()
         } catch {
@@ -509,9 +511,10 @@ final class StreamsViewModel {
                 .update(["is_tv": isTV])
                 .eq("title_id", value: trimmedId)
             if let uid = currentUserId?.uuidString {
-                query = query.or("user_id.eq.\(uid),device_id.eq.\(deviceId)")
+                query = query.eq("user_id", value: uid)
             } else {
                 query = query.eq("device_id", value: deviceId)
+                    .filter("user_id", operator: "is", value: "null")
             }
             try await query.execute()
         } catch {
@@ -527,9 +530,10 @@ final class StreamsViewModel {
                 .from("user_streams")
                 .select("title_id")
             if let uid = currentUserId?.uuidString {
-                query = query.or("user_id.eq.\(uid),device_id.eq.\(deviceId)")
+                query = query.eq("user_id", value: uid)
             } else {
                 query = query.eq("device_id", value: deviceId)
+                    .filter("user_id", operator: "is", value: "null")
             }
             let mine: [UserStream] = try await query.execute().value
             let titleIds = mine.map { $0.titleId }
@@ -593,7 +597,28 @@ final class StreamsViewModel {
         self.userStreams = []
         self.newEpisodes = []
         self.seenContentAt = [:]
+        self.latestContentAt = [:]
+        self.latestContentKind = [:]
         UserDefaults.standard.removeObject(forKey: localCacheKey)
+    }
+
+    // MARK: - Ownership claiming
+
+    /// Promotes any guest-era rows on this device (user_id IS NULL,
+    /// device_id matches) to the signed-in user via the `claim_device_rows`
+    /// SECURITY DEFINER RPC. Called from `AuthViewModel` at every authenticated
+    /// entry point **before** `syncLocalToSupabase()` so guest rows are
+    /// attributed to the new account before the first fetch. Silently swallows
+    /// errors (no session, network failure, zero guest rows) so it never blocks
+    /// or delays the subsequent fetch.
+    func claimDeviceRows() async {
+        do {
+            _ = try await SupabaseManager.shared.client
+                .rpc("claim_device_rows", params: ["p_device_id": DeviceIdentity.shared.deviceId])
+                .execute()
+        } catch {
+            print("[Streams] claimDeviceRows failed: \(error.localizedDescription)")
+        }
     }
 
     // MARK: - Local cache helpers

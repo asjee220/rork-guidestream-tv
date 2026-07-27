@@ -717,9 +717,10 @@ struct CreatorDetailView: View {
                 .select("notify_uploads")
                 .eq("title_id", value: titleId)
             if let userId {
-                query = query.or("user_id.eq.\(userId),device_id.eq.\(deviceId)")
+                query = query.eq("user_id", value: userId)
             } else {
                 query = query.eq("device_id", value: deviceId)
+                    .filter("user_id", operator: "is", value: "null")
             }
             let rows: [CreatorNotifPrefRow] = try await query.limit(1).execute().value
             if let pref = rows.first?.notify_uploads {

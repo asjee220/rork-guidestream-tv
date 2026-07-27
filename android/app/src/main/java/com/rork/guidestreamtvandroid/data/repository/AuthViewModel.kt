@@ -236,6 +236,9 @@ class AuthViewModel private constructor(private val context: Context) : ViewMode
                     _currentUser.value = session.user
                     loadDisplayName()
                     restoreOnboardingState()
+                    // Claim any guest-era rows on this device before the first
+                    // fetch so they are attributed to this account.
+                    StreamsViewModel.get().claimDeviceRows()
                     launch(Dispatchers.IO) {
                         StreamsViewModel.get().syncLocalToSupabase()
                     }
@@ -296,11 +299,12 @@ class AuthViewModel private constructor(private val context: Context) : ViewMode
                 _hasCompletedOnboarding.value = true
                 prefs.edit().putBoolean("gs.onboardingComplete", true).apply()
             }
-            if (services.isNotEmpty()) {
-                val serviceSet = services.toSet()
-                _selectedServices.value = serviceSet
-                prefs.edit().putStringSet("gs.selectedServices", serviceSet).apply()
-            }
+            // The fetched services value always wins — assign unconditionally
+            // (including when empty) so the previous account's selection
+            // cannot survive a cross-account sign-in on the same install.
+            val serviceSet = services.toSet()
+            _selectedServices.value = serviceSet
+            prefs.edit().putStringSet("gs.selectedServices", serviceSet).apply()
             row.notifyPush?.let {
                 _notifyPushEnabled.value = it
                 prefs.edit().putBoolean("gs.notifyPush", it).apply()
@@ -404,16 +408,37 @@ class AuthViewModel private constructor(private val context: Context) : ViewMode
     }
 
     private suspend fun runUserUpsert(payload: UserProfileUpsert): Boolean {
+        // Serialize manually with buildJsonObject so nil optional fields are
+        // omitted from the payload entirely (instead of being emitted as JSON
+        // null, which would overwrite the account's existing name fields on
+        // every sign-in that passes nil for those values — e.g.
+        // signInWithEmail). `id` is always present; the five optional fields
+        // are only included when non-null.
+        val jsonPayload = buildJsonObject {
+            put("id", payload.id)
+            payload.displayName?.let { put("display_name", it) }
+            payload.firstName?.let { put("first_name", it) }
+            payload.lastName?.let { put("last_name", it) }
+            payload.avatarUrl?.let { put("avatar_url", it) }
+            payload.email?.let { put("email", it) }
+        }
         return try {
             SupabaseManager.client.postgrest
                 .from("users")
-                .upsert(payload) { onConflict = "id" }
+                .upsert(jsonPayload) { onConflict = "id" }
             true
         } catch (e: Exception) {
             val msg = e.message?.lowercase() ?: ""
             if (msg.contains("first_name") || msg.contains("last_name") || msg.contains("email")) {
                 try {
-                    val stripped = payload.copy(firstName = null, lastName = null, email = null)
+                    // Retry with just id + display_name + avatar_url (strip
+                    // the three optional columns that may be missing on older
+                    // projects).
+                    val stripped = buildJsonObject {
+                        put("id", payload.id)
+                        payload.displayName?.let { put("display_name", it) }
+                        payload.avatarUrl?.let { put("avatar_url", it) }
+                    }
                     SupabaseManager.client.postgrest
                         .from("users")
                         .upsert(stripped) { onConflict = "id" }
@@ -540,6 +565,9 @@ class AuthViewModel private constructor(private val context: Context) : ViewMode
                     restoreOnboardingState()
                     DeviceSessionService.get().upsert("google_signed_in")
                     setUserTimezone()
+                    // Claim any guest-era rows on this device before the first
+                    // fetch so they are attributed to this account.
+                    StreamsViewModel.get().claimDeviceRows()
                     launch { StreamsViewModel.get().syncLocalToSupabase() }
                     onComplete(true)
                 } else {
@@ -662,6 +690,9 @@ class AuthViewModel private constructor(private val context: Context) : ViewMode
                 restoreOnboardingState()
                 DeviceSessionService.get().upsert("email_signed_up")
                 setUserTimezone()
+                // Claim any guest-era rows on this device before the first
+                // fetch so they are attributed to this account.
+                StreamsViewModel.get().claimDeviceRows()
                 _isAuthenticating.value = false
                 true
             } else {
@@ -736,6 +767,9 @@ class AuthViewModel private constructor(private val context: Context) : ViewMode
                 restoreOnboardingState()
                 DeviceSessionService.get().upsert("email_signed_in")
                 setUserTimezone()
+                // Claim any guest-era rows on this device before the first
+                // fetch so they are attributed to this account.
+                StreamsViewModel.get().claimDeviceRows()
                 viewModelScope.launch { StreamsViewModel.get().syncLocalToSupabase() }
             }
             _isAuthenticating.value = false
@@ -855,6 +889,15 @@ class AuthViewModel private constructor(private val context: Context) : ViewMode
             _notifyPushEnabled.value = false
             _notifySMSEnabled.value = false
             _hasUsedEmailAuth.value = false
+            // Reset the five notification category flags to their documented
+            // server-side defaults (true) so the previous account's toggles
+            // don't carry into the next account and get written onto its
+            // users row.
+            _notifyNewEpisodesEnabled.value = true
+            _notifyWatchlistEnabled.value = true
+            _notifyLiveEnabled.value = true
+            _notifySportsEnabled.value = true
+            _notifyMovieReleasesEnabled.value = true
             updateSignedInState()
 
             prefs.edit().apply {
@@ -868,6 +911,8 @@ class AuthViewModel private constructor(private val context: Context) : ViewMode
             }.apply()
 
             StreamsViewModel.get().clearLocalCache()
+            SocialViewModel.get().clearLocalCache()
+            TeamFavoritesService.get().clearLocalCache()
             DeviceSessionService.get().upsert("signed_out")
         }
     }

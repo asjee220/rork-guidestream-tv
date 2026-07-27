@@ -163,6 +163,12 @@ struct ServicesBottomSheet: View {
         }
         .preferredColorScheme(.dark)
         .gsSheetChrome()
+        // Re-seed the local selection whenever the authoritative value
+        // changes (e.g. after an account switch) so the Save button always
+        // writes the current account's set, not a stale snapshot from init.
+        .onChange(of: auth.selectedServices) { _, newValue in
+            selected = newValue
+        }
     }
 
     private func toggle(_ id: String) {

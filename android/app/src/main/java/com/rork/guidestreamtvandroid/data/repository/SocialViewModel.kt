@@ -170,8 +170,12 @@ class SocialViewModel private constructor(context: Context) {
                     .select { filter { eq("title_id", trimmed) } }
                     .decodeList<LikeRow>()
                 val mineLiked = likeRows.any { row ->
-                    if (uid != null) row.userId == uid || row.deviceId == deviceId
-                    else row.deviceId == deviceId
+                    // Single-ownership: signed-in users match strictly by
+                    // user_id; guests match by device_id AND user_id IS NULL
+                    // so two accounts on one install never see each other's
+                    // likes.
+                    if (uid != null) row.userId == uid
+                    else row.deviceId == deviceId && row.userId == null
                 }
                 val commentRows = SupabaseManager.client.postgrest
                     .from("title_comments")
@@ -223,12 +227,10 @@ class SocialViewModel private constructor(context: Context) {
                             filter {
                                 eq("title_id", trimmed)
                                 if (uid != null) {
-                                    or {
-                                        eq("user_id", uid)
-                                        eq("device_id", deviceId)
-                                    }
+                                    eq("user_id", uid)
                                 } else {
                                     eq("device_id", deviceId)
+                                    exact("user_id", null)
                                 }
                             }
                         }
@@ -596,5 +598,22 @@ class SocialViewModel private constructor(context: Context) {
             counts[key] = thread.size
         }
         _commentCounts.value = counts
+    }
+
+    /**
+     * Clears all in-memory social state. Called from [AuthViewModel.signOut]
+     * so the next user starts with empty likes/comments instead of the
+     * previous user's data. SocialViewModel has no disk cache.
+     */
+    fun clearLocalCache() {
+        _likeCounts.value = emptyMap()
+        _likedByMe.value = emptySet()
+        _commentCounts.value = emptyMap()
+        _commentsByTitle.value = emptyMap()
+        _blockedUserIds.value = emptySet()
+        _blockedDeviceIds.value = emptySet()
+        _loadingComments.value = emptySet()
+        _postingComment.value = emptySet()
+        _lastPostWasProfanityBlocked.value = false
     }
 }
