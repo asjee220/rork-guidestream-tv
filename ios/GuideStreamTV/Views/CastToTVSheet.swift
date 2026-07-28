@@ -47,6 +47,13 @@ struct CastToTVSheet: View {
     @State private var isProbingManual: Bool = false
     @FocusState private var manualFieldFocused: Bool
 
+    /// Only Roku devices are listed — Play on TV currently supports Roku ECP
+    /// launches. Other discovered devices are filtered out so the user never
+    /// sees a device they can't actually cast to.
+    private var rokuDevices: [DiscoveredTVDevice] {
+        discovery.devices.filter { $0.kind == .roku }
+    }
+
     var body: some View {
         if rokuLimitedModeDevice != nil {
             rokuLimitedModeView
@@ -86,12 +93,19 @@ struct CastToTVSheet: View {
             Text("Play on TV")
                 .scaledFont(size: 20, weight: .bold)
                 .foregroundStyle(.white)
-            Text(discovery.isScanning && discovery.devices.isEmpty
+            Text(discovery.isScanning && rokuDevices.isEmpty
                  ? "Scanning your network…"
                  : "Choose a device to send \"\(showTitle)\"")
                 .scaledFont(size: 13)
                 .foregroundStyle(Color.white.opacity(0.55))
                 .multilineTextAlignment(.center)
+            Text("Play on TV currently supports Roku devices. Support for more TV platforms is coming in a future update.")
+                .scaledFont(size: 12)
+                .foregroundStyle(Color.white.opacity(0.5))
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, 24)
+                .padding(.top, 6)
         }
         .frame(maxWidth: .infinity)
         .padding(.top, 22)
@@ -101,12 +115,12 @@ struct CastToTVSheet: View {
     // MARK: Content
     @ViewBuilder
     private var content: some View {
-        if discovery.devices.isEmpty {
+        if rokuDevices.isEmpty {
             emptyState
         } else {
             ScrollView {
                 VStack(spacing: 10) {
-                    ForEach(discovery.devices) { device in
+                    ForEach(rokuDevices) { device in
                         deviceRow(device)
                     }
                     manualEntrySection
@@ -173,7 +187,7 @@ struct CastToTVSheet: View {
                     Text("Install on your iPhone to cast")
                         .scaledFont(size: 16, weight: .semibold)
                         .foregroundStyle(.white)
-                    Text("This preview runs in a cloud simulator that isn't on your home Wi-Fi, so it can't see your Apple TV or Roku. Install GuideStreamTV on your iPhone via the Rork app and open Play on TV there.")
+                    Text("This preview runs in a cloud simulator that isn't on your home Wi-Fi, so it can't see your Roku device. Install GuideStreamTV on your iPhone via the Rork app and open Play on TV there.")
                         .scaledFont(size: 13)
                         .foregroundStyle(Color.white.opacity(0.6))
                         .multilineTextAlignment(.center)
@@ -200,7 +214,7 @@ struct CastToTVSheet: View {
                     Text("Wi-Fi appears to be off")
                         .scaledFont(size: 16, weight: .semibold)
                         .foregroundStyle(.white)
-                    Text("Connect your iPhone to the same Wi-Fi network as your Apple TV or Roku, then come back and tap Rescan.")
+                    Text("Connect your iPhone to the same Wi-Fi network as your Roku device, then come back and tap Rescan.")
                         .scaledFont(size: 13)
                         .foregroundStyle(Color.white.opacity(0.6))
                         .multilineTextAlignment(.center)
@@ -516,11 +530,12 @@ struct CastToTVSheet: View {
             HStack(spacing: 14) {
                 ZStack {
                     Circle()
-                        .fill(deviceIconBackground(device.kind))
+                        .fill(Color(red: 0x66/255, green: 0x2D/255, blue: 0x91/255))
                         .frame(width: 46, height: 46)
-                    Image(systemName: deviceIconName(device.kind))
-                        .scaledFont(size: 20, weight: .regular)
+                    Text("Roku")
+                        .scaledFont(size: 12, weight: .bold)
                         .foregroundStyle(.white)
+                        .minimumScaleFactor(0.8)
                 }
 
                 VStack(alignment: .leading, spacing: 2) {
@@ -538,9 +553,10 @@ struct CastToTVSheet: View {
                 if sendingDeviceId == device.id {
                     ProgressView()
                         .tint(.white)
-                } else {
-                    Text(PlaybackSupport.verb(platform: platform, contentURL: nil))
-                        .scaledFont(size: 12, weight: .semibold)
+                } else if let host = device.host {
+                    Text(host)
+                        .scaledFont(size: 12, weight: .regular)
+                        .monospaced()
                         .foregroundStyle(Color.white.opacity(0.45))
                 }
             }
@@ -600,7 +616,7 @@ struct CastToTVSheet: View {
         permissionCheckTask = Task { @MainActor in
             try? await Task.sleep(for: .seconds(6))
             guard !Task.isCancelled else { return }
-            if discovery.devices.isEmpty {
+            if rokuDevices.isEmpty {
                 withAnimation(.easeInOut(duration: 0.25)) {
                     showPermissionPrompt = true
                 }
