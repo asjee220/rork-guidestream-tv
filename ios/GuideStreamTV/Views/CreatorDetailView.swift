@@ -197,6 +197,7 @@ struct CreatorDetailView: View {
         .preferredColorScheme(.dark)
 #if os(iOS)
         .presentationDetents([.large])
+        .presentationSizing(.page)
         .gsSheetChrome()
         .presentationContentInteraction(.scrolls)
         .sheet(isPresented: $showComments) {

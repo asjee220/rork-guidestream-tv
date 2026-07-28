@@ -562,6 +562,7 @@ struct EpisodeDetailSheet: View {
             }
         }
         .presentationDetents([.fraction(0.8), .large])
+        .presentationSizing(.page)
         .gsSheetChrome()
         .presentationContentInteraction(.scrolls)
         .sheet(isPresented: $showCastSheet) {
@@ -2147,6 +2148,7 @@ struct NotificationsSheet: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .presentationDetents([.medium, .large])
+        .presentationSizing(.page)
         .gsSheetChrome()
         .presentationContentInteraction(.scrolls)
         .task {

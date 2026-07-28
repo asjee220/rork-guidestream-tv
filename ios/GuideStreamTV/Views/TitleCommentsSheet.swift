@@ -85,6 +85,7 @@ struct TitleCommentsSheet: View {
             inputBar
         }
         .presentationDetents([.fraction(0.72), .large])
+        .presentationSizing(.page)
         .gsSheetChrome()
         .presentationContentInteraction(.scrolls)
         .task {

@@ -70,6 +70,7 @@ struct CastToTVSheet: View {
                 LimitedModeHelpSheet(deviceName: help.deviceName)
             }
             .presentationDetents([.medium, .large])
+            .presentationSizing(.page)
             .gsSheetChrome()
             .onAppear { startScan() }
             .onDisappear {
@@ -1412,6 +1413,7 @@ private struct LimitedModeHelpSheet: View {
             .padding(.bottom, 36)
         }
         .presentationDetents([.large])
+        .presentationSizing(.page)
         .gsSheetChrome()
     }
 

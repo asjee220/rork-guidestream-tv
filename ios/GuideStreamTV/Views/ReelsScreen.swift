@@ -1169,6 +1169,7 @@ struct ReelsScreen: View {
                     accent: Color(hex: "F5821F")
                 )
                 .presentationDetents([.fraction(0.72)])
+                .presentationSizing(.page)
                 .presentationDragIndicator(.visible)
                 .presentationBackground(Color(red: 10/255, green: 16/255, blue: 26/255).opacity(0.96))
             }
@@ -1177,6 +1178,7 @@ struct ReelsScreen: View {
             if let trailer = currentTrailer {
                 TrailerShareSheet(trailer: trailer)
                     .presentationDetents([.medium])
+                    .presentationSizing(.form)
                     .presentationDragIndicator(.visible)
                     .presentationBackground(Color(red: 10/255, green: 16/255, blue: 26/255).opacity(0.96))
             }
@@ -1199,6 +1201,7 @@ struct ReelsScreen: View {
                     }
                 )
                 .presentationDetents([.height(200)])
+                .presentationSizing(.form)
                 .presentationDragIndicator(.visible)
                 .presentationBackground(Color(red: 10/255, green: 16/255, blue: 26/255).opacity(0.96))
             }
