@@ -252,6 +252,14 @@ struct AskStreamSheet: View {
                     alignment: .bottom
                 )
 
+            Text("Responses are AI-generated and may be inaccurate. Double-check availability before you watch.")
+                .font(.guideBody(size: 11, weight: .regular))
+                .foregroundStyle(Color.white.opacity(0.45))
+                .lineSpacing(2)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, 16)
+                .padding(.bottom, 8)
+
             smartBar
                 .padding(.horizontal, 16)
                 .padding(.top, 12)

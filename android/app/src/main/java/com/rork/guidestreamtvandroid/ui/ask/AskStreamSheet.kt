@@ -214,6 +214,14 @@ fun AskStreamSheet(
                     }
                 }
 
+                Text(
+                    text = "Responses are AI-generated and may be inaccurate. Double-check availability before you watch.",
+                    fontSize = 11.sp,
+                    color = TextSecondary,
+                    lineHeight = 15.sp,
+                    modifier = Modifier.padding(horizontal = 16.dp).padding(bottom = 8.dp),
+                )
+
                 // Messages list
                 LazyColumn(
                     modifier = Modifier.weight(1f),
