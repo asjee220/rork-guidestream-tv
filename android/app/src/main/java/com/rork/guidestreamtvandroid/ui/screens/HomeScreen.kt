@@ -171,7 +171,7 @@ fun HomeScreen(
 
         // Hero carousel
         if (!homeReady) {
-            Box(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+            Box(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
                 ShimmerHero()
             }
         } else if (trending.isNotEmpty()) {
@@ -197,7 +197,7 @@ fun HomeScreen(
 
         // My Watch List
         if (!homeReady) {
-            ShimmerSection("My Watch List", Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
+            ShimmerSection("My Watch List", Modifier.padding(horizontal = 12.dp, vertical = 8.dp))
         } else {
             WatchListSection(
                 streams = userStreams,
@@ -229,7 +229,7 @@ fun HomeScreen(
 
         // Today's Pick — daily spotlight from streaming_releases
         if (!homeReady) {
-            ShimmerSection("Today's Pick", Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
+            ShimmerSection("Today's Pick", Modifier.padding(horizontal = 12.dp, vertical = 8.dp))
         } else if (todaysPick != null) {
             TodaysPickSpotlight(
                 pick = todaysPick!!,
@@ -252,7 +252,7 @@ fun HomeScreen(
 
         // Coming to Streaming (upcoming movies)
         if (!homeReady) {
-            ShimmerSection("Coming to Streaming", Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
+            ShimmerSection("Coming to Streaming", Modifier.padding(horizontal = 12.dp, vertical = 8.dp))
         } else if (upcoming.isNotEmpty()) {
             PosterSection(
                 title = "Coming to Streaming",
@@ -271,7 +271,7 @@ fun HomeScreen(
 
         // New This Week (streaming releases from the last 7 days)
         if (!homeReady) {
-            ShimmerSection("New This Week", Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
+            ShimmerSection("New This Week", Modifier.padding(horizontal = 12.dp, vertical = 8.dp))
         } else if (newReleases.isNotEmpty()) {
             PosterSection(
                 title = "New This Week",
@@ -325,7 +325,7 @@ fun HomeScreen(
 
         // Top Picks for You (trending scored)
         if (!homeReady) {
-            ShimmerSection("Top Picks for You", Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
+            ShimmerSection("Top Picks for You", Modifier.padding(horizontal = 12.dp, vertical = 8.dp))
         } else if (trending.isNotEmpty()) {
             val topPicks = topPicksAll.take(20)
             PosterSection(
@@ -357,7 +357,7 @@ fun HomeScreen(
 
         // Creators/Podcasts for You
         if (!homeReady) {
-            ShimmerSection("Creators/Podcasts for You", Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
+            ShimmerSection("Creators/Podcasts for You", Modifier.padding(horizontal = 12.dp, vertical = 8.dp))
         } else {
             val hasFollowedCreators = userStreams.any { SourceKind.from(it.titleId).isNonTMDB }
             if (hasFollowedCreators) {
@@ -397,7 +397,7 @@ fun HomeScreen(
 
         // Everyone's Watching (ranked)
         if (!homeReady) {
-            ShimmerSection("Everyone's Watching", Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
+            ShimmerSection("Everyone's Watching", Modifier.padding(horizontal = 12.dp, vertical = 8.dp))
         } else if (trending.isNotEmpty()) {
             // Build rank lookup from the de-duplicated trending array before
             // any filtering, so trueRanks reflects the real TMDB trending
@@ -428,7 +428,7 @@ fun HomeScreen(
 
         // Leaving Soon — server-backed rows from the expiring_titles table
         if (!homeReady) {
-            ShimmerSection("Leaving Soon", Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
+            ShimmerSection("Leaving Soon", Modifier.padding(horizontal = 12.dp, vertical = 8.dp))
         } else if (leavingSoon.isNotEmpty()) {
             PosterSection(
                 title = "Leaving Soon",
@@ -464,7 +464,7 @@ fun HomeScreen(
         val services = StreamingCatalog.ordered(selectedServices)
         if (!homeReady) {
             services.take(3).forEach { svc ->
-                ShimmerSection("Popular on ${svc.name}", Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
+                ShimmerSection("Popular on ${svc.name}", Modifier.padding(horizontal = 12.dp, vertical = 8.dp))
             }
         } else {
             services.forEach { svc ->
@@ -505,7 +505,7 @@ fun HomeScreen(
 
         // Because You Watch (genre discovery)
         if (!homeReady) {
-            ShimmerSection("Browsing $selectedGenreName", Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
+            ShimmerSection("Browsing $selectedGenreName", Modifier.padding(horizontal = 12.dp, vertical = 8.dp))
         } else if (genreShows.isNotEmpty()) {
             PosterSection(
                 title = "Browsing $selectedGenreName",
@@ -531,7 +531,7 @@ fun HomeScreen(
 
         // Top Rated
         if (!homeReady) {
-            ShimmerSection("Top rated right now", Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
+            ShimmerSection("Top rated right now", Modifier.padding(horizontal = 12.dp, vertical = 8.dp))
         } else if (topRated.isNotEmpty()) {
             PosterSection(
                 title = "Top rated right now",
@@ -550,7 +550,7 @@ fun HomeScreen(
 
         // New seasons — shows you follow (on-air titles from the user's watch list)
         if (!homeReady) {
-            ShimmerSection("New seasons — shows you follow", Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
+            ShimmerSection("New seasons — shows you follow", Modifier.padding(horizontal = 12.dp, vertical = 8.dp))
         } else {
             val savedIds = userStreams.mapNotNull { TitleId.tmdbId(it.titleId) }.toSet()
             val newSeasons = onAir.filter { it.id in savedIds }.take(8)
@@ -573,7 +573,7 @@ fun HomeScreen(
 
         // Binge Worthy (ended shows)
         if (!homeReady) {
-            ShimmerSection("Binge Worthy", Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
+            ShimmerSection("Binge Worthy", Modifier.padding(horizontal = 12.dp, vertical = 8.dp))
         } else if (bingeReady.isNotEmpty()) {
             val bingeTitle = if (userStreams.isEmpty()) "Binge Worthy" else "Binge Ready 🎉"
             PosterSection(
@@ -649,7 +649,7 @@ private fun HomePageBar(
             .fillMaxWidth()
             .statusBarsPadding()
             .height(56.dp)
-            .padding(horizontal = 20.dp),
+            .padding(horizontal = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         BrandWordmark(size = WordmarkSize.NAV)
@@ -690,20 +690,20 @@ private fun ServicesEditorSheet(
                 fontSize = 20.sp,
                 fontWeight = FontWeight.Bold,
                 color = TextPrimary,
-                modifier = Modifier.padding(horizontal = 20.dp),
+                modifier = Modifier.padding(horizontal = 12.dp),
             )
             Spacer(Modifier.height(4.dp))
             Text(
                 text = "${selected.size} selected · tap to add or remove",
                 fontSize = 13.sp,
                 color = TextSecondary,
-                modifier = Modifier.padding(horizontal = 20.dp),
+                modifier = Modifier.padding(horizontal = 12.dp),
             )
             Spacer(Modifier.height(16.dp))
             ServiceSearchField(
                 query = serviceQuery,
                 onQueryChange = { serviceQuery = it },
-                modifier = Modifier.padding(horizontal = 20.dp),
+                modifier = Modifier.padding(horizontal = 12.dp),
             )
             Spacer(Modifier.height(12.dp))
             if (filteredServices.isEmpty()) {
@@ -711,7 +711,7 @@ private fun ServicesEditorSheet(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(420.dp)
-                        .padding(horizontal = 20.dp)
+                        .padding(horizontal = 12.dp)
                         .navigationBarsPadding(),
                     contentAlignment = Alignment.Center,
                 ) {
@@ -723,7 +723,7 @@ private fun ServicesEditorSheet(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(420.dp)
-                        .padding(horizontal = 20.dp)
+                        .padding(horizontal = 12.dp)
                         .navigationBarsPadding(),
                     horizontalArrangement = Arrangement.spacedBy(16.dp),
                     verticalArrangement = Arrangement.spacedBy(22.dp),
@@ -846,7 +846,7 @@ private fun SearchBar(onClick: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp)
+            .padding(horizontal = 12.dp)
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
@@ -880,7 +880,7 @@ private fun HeroCarousel(
 ) {
     if (items.isEmpty()) return
     LazyRow(
-        contentPadding = PaddingValues(horizontal = 16.dp),
+        contentPadding = PaddingValues(horizontal = 12.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         modifier = Modifier.padding(vertical = 8.dp),
     ) {
@@ -1015,7 +1015,7 @@ private fun TodaysPickSpotlight(
 
     Column(
         modifier = Modifier
-            .padding(horizontal = 20.dp, vertical = 8.dp)
+            .padding(horizontal = 12.dp, vertical = 8.dp)
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
             .background(navySurface.copy(alpha = 0.95f))
@@ -1029,7 +1029,7 @@ private fun TodaysPickSpotlight(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 14.dp),
+                .padding(horizontal = 12.dp, vertical = 14.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
@@ -1202,7 +1202,7 @@ private fun WatchListSection(
             },
         )
     }
-    Column(Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
+    Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
         Row(verticalAlignment = Alignment.Bottom) {
             Text(
                 text = "My Watch List",
@@ -1248,7 +1248,7 @@ private fun WatchListCard(
 ) {
     Column(
         modifier = Modifier
-            .width(150.dp)
+            .width(164.dp)
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
@@ -1257,7 +1257,7 @@ private fun WatchListCard(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .aspectRatio(0.67f)
+                .aspectRatio(0.6667f)
                 .clip(RoundedCornerShape(10.dp)),
         ) {
             RemoteImage(
@@ -1325,7 +1325,7 @@ private fun PosterSection(
     badgeAsMatchChip: Boolean = false,
 ) {
     if (shows.isEmpty()) return
-    Column(Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
+    Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
         Row(verticalAlignment = Alignment.Bottom) {
             Text(
                 text = title,
@@ -1384,7 +1384,7 @@ private fun PosterCardWithBadge(
 ) {
     Column(
         modifier = Modifier
-            .width(150.dp)
+            .width(164.dp)
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
@@ -1393,7 +1393,7 @@ private fun PosterCardWithBadge(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .aspectRatio(0.67f)
+                .aspectRatio(0.6667f)
                 .clip(RoundedCornerShape(10.dp)),
         ) {
             RemoteImage(
@@ -1470,7 +1470,7 @@ private fun TrendingRankedSection(
     onSeeAll: (() -> Unit)? = null,
 ) {
     if (shows.isEmpty()) return
-    Column(Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
+    Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
         Row(verticalAlignment = Alignment.Bottom) {
             Text(
                 text = "Everyone's Watching",
@@ -1520,7 +1520,7 @@ private fun PopularOnServiceSection(
     onSeeAll: (() -> Unit)? = null,
 ) {
     if (shows.isEmpty()) return
-    Column(Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
+    Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
         Row(verticalAlignment = Alignment.Bottom) {
             Text(
                 text = "Popular on ",
@@ -1569,7 +1569,7 @@ private fun PopularOnServiceSection(
 
 @Composable
 private fun EmptyStateRow(title: String, message: String, onSeeAll: (() -> Unit)? = null) {
-    Column(Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
+    Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
         Row(verticalAlignment = Alignment.Bottom) {
             Text(
                 text = title,
@@ -1597,7 +1597,7 @@ private fun EmptyStateRow(title: String, message: String, onSeeAll: (() -> Unit)
             modifier = Modifier
                 .fillMaxWidth()
                 .glassCard()
-                .padding(vertical = 24.dp, horizontal = 16.dp),
+                .padding(vertical = 24.dp, horizontal = 12.dp),
             contentAlignment = Alignment.Center,
         ) {
             Text(
@@ -1617,7 +1617,7 @@ private fun CreatorsForYouSection(
     onOpen: (RecommendedCreator) -> Unit,
 ) {
     if (creators.isEmpty()) return
-    Column(Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
+    Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
         Text(
             text = "Creators/Podcasts for You",
             fontSize = 18.sp,
@@ -1642,7 +1642,7 @@ private fun CreatorAvatarCard(
 ) {
     Column(
         modifier = Modifier
-            .width(150.dp)
+            .width(164.dp)
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
@@ -1651,7 +1651,7 @@ private fun CreatorAvatarCard(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .aspectRatio(0.67f)
+                .aspectRatio(0.6667f)
                 .clip(RoundedCornerShape(10.dp)),
         ) {
             RemoteImage(
@@ -1730,7 +1730,7 @@ private val browseGenres: List<GenrePill> = listOf(
 
 @Composable
 private fun GenrePillGrid(selectedGenreId: Int, onSelect: (GenrePill) -> Unit) {
-    Column(Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
+    Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
         Text(
             text = "Browse by genre",
             fontSize = 18.sp,
@@ -1796,7 +1796,7 @@ private fun WidgetPromoBanner(onSetUp: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 20.dp, vertical = 8.dp)
+            .padding(horizontal = 12.dp, vertical = 8.dp)
             .glassCard()
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
@@ -1871,7 +1871,7 @@ private fun InlineAdSlot(
     val offer = pool[slotIndex % pool.size]
     val service = StreamingCatalog.service(offer.first)
 
-    Box(Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
+    Box(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
         SponsoredSlot(
             preferredSource = if (slotIndex % 2 == 0) PooledAdSource.ADMOB_FIRST else PooledAdSource.RAKUTEN_FIRST,
             service = service,

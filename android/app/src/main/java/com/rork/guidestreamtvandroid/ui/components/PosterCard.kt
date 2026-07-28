@@ -42,7 +42,7 @@ fun PosterCard(
 ) {
     Column(
         modifier = modifier
-            .width(120.dp)
+            .width(164.dp)
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
@@ -51,7 +51,7 @@ fun PosterCard(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .aspectRatio(0.67f)
+                .aspectRatio(0.6667f)
                 .clip(RoundedCornerShape(10.dp)),
         ) {
             RemoteImage(

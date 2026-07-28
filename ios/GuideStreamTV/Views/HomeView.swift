@@ -406,7 +406,7 @@ struct HomeView: View {
                 compact: true,
                 preferredSource: slotIndex % 2 == 0 ? .adMobFirst : .rakutenFirst
             )
-            .padding(.horizontal, 20)
+            .padding(.horizontal, 12)
         }
     }
 
@@ -524,7 +524,7 @@ struct HomeView: View {
 
                         if !homeContentReady {
                             HomeShimmerSection(title: "My Watch List")
-                                .padding(.horizontal, 20)
+                                .padding(.horizontal, 12)
                         } else {
                             WatchListSection(
                                 items: watchListEpisodes,
@@ -552,12 +552,12 @@ struct HomeView: View {
                                     }
                                 }
                             )
-                            .padding(.horizontal, 20)
+                            .padding(.horizontal, 12)
                         }
 
                         if !homeContentReady {
                             HomeShimmerSection(title: "Today's Pick")
-                                .padding(.horizontal, 20)
+                                .padding(.horizontal, 12)
                         } else if let pick = todaysPick {
                             TodaysPickSection(pick: pick, isSubscribed: isSubscribedToService(pick.sourceName)) {
                                 WatchIntentLogger.shared.log(
@@ -576,7 +576,7 @@ struct HomeView: View {
                                     isTV: pick.tmdbType == "tv"
                                 ))
                             }
-                            .padding(.horizontal, 20)
+                            .padding(.horizontal, 12)
                         }
 
                         // FIXME: Temporarily disabled — re-enable when new episodes are populated
@@ -615,7 +615,7 @@ struct HomeView: View {
 
                         if !homeContentReady {
                             HomeShimmerSection(title: "Coming to Streaming")
-                                .padding(.horizontal, 20)
+                                .padding(.horizontal, 12)
                         } else if !comingToStreaming.isEmpty {
                             ComingToStreamingSection(
                                 items: comingToStreaming,
@@ -628,12 +628,12 @@ struct HomeView: View {
                                     detailSubject = .show(item.show)
                                 }
                             )
-                            .padding(.horizontal, 20)
+                            .padding(.horizontal, 12)
                         }
 
                         if !homeContentReady {
                             HomeShimmerSection(title: "New This Week")
-                                .padding(.horizontal, 20)
+                                .padding(.horizontal, 12)
                         } else if !whatsNewTodayShows.isEmpty {
                             WhatsNewTodaySection(
                                 shows: whatsNewTodayShows,
@@ -653,7 +653,7 @@ struct HomeView: View {
                                     detailSubject = .show(show)
                                 }
                             )
-                            .padding(.horizontal, 20)
+                            .padding(.horizontal, 12)
                         }
 
                         // Inline sponsored slot #0 — after What's New Today
@@ -661,7 +661,7 @@ struct HomeView: View {
 
                         if !homeContentReady {
                             HomeShimmerSection(title: "Top Picks for You")
-                                .padding(.horizontal, 20)
+                                .padding(.horizontal, 12)
                         } else if !topPicksShows.isEmpty {
                             TopPicksSection(
                                 shows: topPicksShows,
@@ -681,16 +681,16 @@ struct HomeView: View {
                                     detailSubject = .show(show)
                                 }
                             )
-                            .padding(.horizontal, 20)
+                            .padding(.horizontal, 12)
                         }
 
                         if !homeContentReady {
                             HomeShimmerSection(title: "Creators/Podcasts for You")
-                                .padding(.horizontal, 20)
+                                .padding(.horizontal, 12)
                         } else if hasFollowedCreators {
                             if recommendedCreators.isEmpty {
                                 CreatorsForYouEmptyState()
-                                    .padding(.horizontal, 20)
+                                    .padding(.horizontal, 12)
                             } else {
                                 CreatorsForYouSection(
                                     creators: recommendedCreators,
@@ -707,13 +707,13 @@ struct HomeView: View {
                                         )
                                     }
                                 )
-                                .padding(.horizontal, 20)
+                                .padding(.horizontal, 12)
                             }
                         }
 
                         if !homeContentReady {
                             HomeShimmerSection(title: "Everyone's Watching")
-                                .padding(.horizontal, 20)
+                                .padding(.horizontal, 12)
                         } else if !trendingRankedShows.isEmpty {
                             TrendingRankedSection(
                                 shows: trendingRankedShows,
@@ -733,12 +733,12 @@ struct HomeView: View {
                                     detailSubject = .show(show)
                                 }
                             )
-                            .padding(.horizontal, 20)
+                            .padding(.horizontal, 12)
                         }
 
                         if !homeContentReady {
                             HomeShimmerSection(title: "Leaving Soon")
-                                .padding(.horizontal, 20)
+                                .padding(.horizontal, 12)
                         } else if !leavingSoonShows.isEmpty {
                             LeavingSoonSection(
                                 shows: leavingSoonShows,
@@ -758,7 +758,7 @@ struct HomeView: View {
                                     detailSubject = .show(show)
                                 }
                             )
-                            .padding(.horizontal, 20)
+                            .padding(.horizontal, 12)
                         }
 
                         // Inline sponsored slot #1 — after Leaving Soon
@@ -767,7 +767,7 @@ struct HomeView: View {
                         if !homeContentReady {
                             ForEach(StreamingCatalog.ordered(from: auth.selectedServices), id: \.id) { service in
                                 HomeShimmerSection(title: "Popular on \(service.name)")
-                                    .padding(.horizontal, 20)
+                                    .padding(.horizontal, 12)
                             }
                         } else {
                             ForEach(StreamingCatalog.ordered(from: auth.selectedServices), id: \.id) { service in
@@ -805,7 +805,7 @@ struct HomeView: View {
                                             }
                                         }
                                     )
-                                    .padding(.horizontal, 20)
+                                    .padding(.horizontal, 12)
                                 }
                             }
                         }
@@ -834,11 +834,11 @@ struct HomeView: View {
                             }
                         }
                         .id("browseByGenre")
-                        .padding(.horizontal, 20)
+                        .padding(.horizontal, 12)
 
                         if !homeContentReady {
                             HomeShimmerSection(title: "Browsing \(selectedGenreName)")
-                                .padding(.horizontal, 20)
+                                .padding(.horizontal, 12)
                         } else if !recommendedShows.isEmpty {
                             let recShows = recommendedShows
                                 .filter { providerByTmdb[$0.id] != nil }
@@ -860,7 +860,7 @@ struct HomeView: View {
                                         detailSubject = .show(show)
                                     }
                                 )
-                                .padding(.horizontal, 20)
+                                .padding(.horizontal, 12)
                             }
                         }
 
@@ -869,7 +869,7 @@ struct HomeView: View {
 
                         if !homeContentReady {
                             HomeShimmerSection(title: "Top rated right now")
-                                .padding(.horizontal, 20)
+                                .padding(.horizontal, 12)
                         } else if !topRatedShows.isEmpty {
                             TopRatedSection(
                                 shows: topRatedShows,
@@ -882,12 +882,12 @@ struct HomeView: View {
                                     detailSubject = .show(show)
                                 }
                             )
-                            .padding(.horizontal, 20)
+                            .padding(.horizontal, 12)
                         }
 
                         if !homeContentReady {
                             HomeShimmerSection(title: "New seasons — shows you follow")
-                                .padding(.horizontal, 20)
+                                .padding(.horizontal, 12)
                         } else if !newSeasonsYouKnow.isEmpty {
                             NewSeasonsSection(
                                 results: newSeasonsYouKnow,
@@ -902,12 +902,12 @@ struct HomeView: View {
                                     detailSubject = .show(show)
                                 }
                             )
-                            .padding(.horizontal, 20)
+                            .padding(.horizontal, 12)
                         }
 
                         if !homeContentReady {
                             HomeShimmerSection(title: "Upcoming Episodes")
-                                .padding(.horizontal, 20)
+                                .padding(.horizontal, 12)
                         } else if !tvdbUpcomingItems.isEmpty {
                             UpcomingEpisodesRow(
                                 items: tvdbUpcomingItems,
@@ -928,7 +928,7 @@ struct HomeView: View {
                                     ))
                                 }
                             )
-                            .padding(.horizontal, 20)
+                            .padding(.horizontal, 12)
                         }
 
                         if !widgetBannerDismissed {
@@ -939,7 +939,7 @@ struct HomeView: View {
                                 },
                                 onDismiss: { withAnimation(.easeOut(duration: 0.25)) { widgetBannerDismissed = true } }
                             )
-                            .padding(.horizontal, 20)
+                            .padding(.horizontal, 12)
                             .transition(.opacity.combined(with: .move(edge: .top)))
                         }
 
@@ -947,7 +947,7 @@ struct HomeView: View {
                         // showing fake "continue watching" entries for shows the user never opened is worse than nothing.
                         if !homeContentReady {
                             HomeShimmerSection(title: "Continue Watching")
-                                .padding(.horizontal, 20)
+                                .padding(.horizontal, 12)
                         } else if !continueWatchingEpisodes.isEmpty {
                             ContinueWatchingSection(
                                 episodes: continueWatchingEpisodes,
@@ -967,12 +967,12 @@ struct HomeView: View {
                                     detailSubject = .episode(ep)
                                 }
                             )
-                            .padding(.horizontal, 20)
+                            .padding(.horizontal, 12)
                         }
 
                         if !homeContentReady {
                             HomeShimmerSection(title: "Binge Worthy")
-                                .padding(.horizontal, 20)
+                                .padding(.horizontal, 12)
                         } else if !bingeReadyShows.isEmpty {
                             BingeReadySection(
                                 sectionTitle: bingeReadyTitle,
@@ -994,7 +994,7 @@ struct HomeView: View {
                                     detailSubject = .show(show)
                                 }
                             )
-                            .padding(.horizontal, 20)
+                            .padding(.horizontal, 12)
                         }
 
                         // Inline sponsored slot #3 — after Binge Worthy
@@ -2339,7 +2339,7 @@ private struct PageBar: View {
                 ServicesPill(serviceIds: selectedServiceIds, onTap: onServicesPill)
             }
         }
-        .padding(.horizontal, 20)
+        .padding(.horizontal, 12)
         .frame(height: 56)
     }
 }
@@ -2377,7 +2377,7 @@ private struct HomeHeroCarouselShimmer: View {
                         )
                 }
             }
-            .padding(.horizontal, 20)
+            .padding(.horizontal, 12)
         }
         .disabled(true)
         .frame(height: 250)
@@ -2530,7 +2530,7 @@ private struct HomeShimmerSection: View {
                     ForEach(0..<5, id: \.self) { i in
                         RoundedRectangle(cornerRadius: 10)
                             .fill(Color.white.opacity(0.06))
-                            .frame(width: 150, height: 225)
+                            .frame(width: 164, height: 246)
                             .overlay(
                                 RoundedRectangle(cornerRadius: 10)
                                     .fill(
@@ -2547,7 +2547,7 @@ private struct HomeShimmerSection: View {
                             )
                     }
                 }
-                .padding(.horizontal, 16)
+                .padding(.horizontal, 12)
                 .padding(.vertical, 6)
             }
             .disabled(true)
@@ -2599,7 +2599,7 @@ private struct SectionGlassCard<Content: View>: View {
                     .buttonStyle(.plain)
                 }
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, 12)
             .padding(.top, 14)
             .padding(.bottom, 8)
 
@@ -2651,7 +2651,7 @@ private struct ContinueWatchingSection: View {
                         EpisodeThumbCard(episode: ep, onTap: { onOpen(ep) })
                     }
                 }
-                .padding(.horizontal, 16)
+                .padding(.horizontal, 12)
                 .padding(.vertical, 6)
             }
         }
@@ -2673,7 +2673,7 @@ private struct BingeReadySection: View {
                         PosterCard(show: show, tag: tag, onTap: { onOpen(show) })
                     }
                 }
-                .padding(.horizontal, 16)
+                .padding(.horizontal, 12)
                 .padding(.vertical, 6)
             }
         }
@@ -2709,13 +2709,13 @@ private struct TopPicksSection: View {
                                                 endPoint: .bottomTrailing
                                             )
                                         )
-                                        .frame(width: 150, height: 225)
+                                        .frame(width: 164, height: 246)
                                     RemoteImage(
                                         urlString: show.posterUrl,
                                         contentMode: .fill,
                                         fallbackColors: show.posterColors
                                     )
-                                    .frame(width: 150, height: 225)
+                                    .frame(width: 164, height: 246)
                                     .clipShape(.rect(cornerRadius: 10))
                                     .allowsHitTesting(false)
                                 }
@@ -2748,13 +2748,13 @@ private struct TopPicksSection: View {
                                     .scaledFont(size: 12, weight: .semibold)
                                     .foregroundStyle(Color.textPrimary)
                                     .lineLimit(1)
-                                    .frame(width: 150, alignment: .leading)
+                                    .frame(width: 164, alignment: .leading)
                             }
                         }
                         .buttonStyle(.plain)
                     }
                 }
-                .padding(.horizontal, 16)
+                .padding(.horizontal, 12)
                 .padding(.vertical, 6)
             }
         }
@@ -2799,13 +2799,13 @@ private struct CreatorsForYouSection: View {
                                                 endPoint: .bottomTrailing
                                             )
                                         )
-                                        .frame(width: 150, height: 225)
+                                        .frame(width: 164, height: 246)
                                     RemoteImage(
                                         urlString: creator.imageUrl,
                                         contentMode: .fill,
                                         fallbackColors: [Color(red: 0.20, green: 0.15, blue: 0.45), Color(red: 0.04, green: 0.02, blue: 0.10)]
                                     )
-                                    .frame(width: 150, height: 225)
+                                    .frame(width: 164, height: 246)
                                     .clipShape(.rect(cornerRadius: 10))
                                     .allowsHitTesting(false)
                                 }
@@ -2851,13 +2851,13 @@ private struct CreatorsForYouSection: View {
                                     .scaledFont(size: 12, weight: .semibold)
                                     .foregroundStyle(Color.textPrimary)
                                     .lineLimit(1)
-                                    .frame(width: 150, alignment: .leading)
+                                    .frame(width: 164, alignment: .leading)
                             }
                         }
                         .buttonStyle(.plain)
                     }
                 }
-                .padding(.horizontal, 16)
+                .padding(.horizontal, 12)
                 .padding(.vertical, 6)
             }
         }
@@ -2990,7 +2990,7 @@ private struct WatchListSection: View {
                             )
                         }
                     }
-                    .padding(.horizontal, 16)
+                    .padding(.horizontal, 12)
                     .padding(.vertical, 6)
                 }
             }
@@ -3053,10 +3053,10 @@ private struct WhatsNewTodaySection: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 10) {
                     ForEach(shows) { show in
-                        PosterCard(show: show, tag: "NEW", posterWidth: 150, posterHeight: 225, onTap: { onOpen(show) })
+                        PosterCard(show: show, tag: "NEW", posterWidth: 164, posterHeight: 246, onTap: { onOpen(show) })
                     }
                 }
-                .padding(.horizontal, 16)
+                .padding(.horizontal, 12)
                 .padding(.vertical, 6)
             }
         }
@@ -3193,7 +3193,7 @@ private struct EpisodeThumbCard: View {
         Button(action: onTap) {
             VStack(alignment: .leading, spacing: 8) {
                 Color.black
-                    .frame(width: 150, height: 225)
+                    .frame(width: 164, height: 246)
                     .overlay {
                         LinearGradient(
                             colors: fallbackColors,
@@ -3211,7 +3211,7 @@ private struct EpisodeThumbCard: View {
                             contentMode: .fill,
                             fallbackColors: fallbackColors
                         )
-                        .frame(width: 150, height: 225)
+                        .frame(width: 164, height: 246)
                         .clipped()
                         .overlay {
                             // Source glyph shown when no image is available
@@ -3307,7 +3307,7 @@ private struct EpisodeThumbCard: View {
                         .foregroundStyle(Color.textTertiary)
                         .lineLimit(1)
                 }
-                .frame(width: 150, alignment: .leading)
+                .frame(width: 164, alignment: .leading)
             }
         }
         .buttonStyle(.plain)
@@ -3317,12 +3317,12 @@ private struct EpisodeThumbCard: View {
 private struct PosterCard: View {
     let show: PosterShow
     let tag: String
-    var posterWidth: CGFloat = 150
-    var posterHeight: CGFloat = 225
+    var posterWidth: CGFloat = 164
+    var posterHeight: CGFloat = 246
     let onTap: () -> Void
 
     var body: some View {
-        let typeScale = posterWidth / 150
+        let typeScale = posterWidth / 164
         return Button(action: onTap) {
             VStack(alignment: .leading, spacing: 8) {
                 ZStack {
@@ -3521,13 +3521,13 @@ private struct TrendingRankedSection: View {
                                                 endPoint: .bottomTrailing
                                             )
                                         )
-                                        .frame(width: 150, height: 225)
+                                        .frame(width: 164, height: 246)
                                     RemoteImage(
                                         urlString: show.posterUrl,
                                         contentMode: .fill,
                                         fallbackColors: show.posterColors
                                     )
-                                    .frame(width: 150, height: 225)
+                                    .frame(width: 164, height: 246)
                                     .clipShape(.rect(cornerRadius: 10))
                                     .allowsHitTesting(false)
                                 }
@@ -3551,13 +3551,13 @@ private struct TrendingRankedSection: View {
                                     .scaledFont(size: 12, weight: .semibold)
                                     .foregroundStyle(Color.textPrimary)
                                     .lineLimit(1)
-                                    .frame(width: 150, alignment: .leading)
+                                    .frame(width: 164, alignment: .leading)
                             }
                         }
                         .buttonStyle(.plain)
                     }
                 }
-                .padding(.horizontal, 16)
+                .padding(.horizontal, 12)
                 .padding(.vertical, 6)
             }
         }
@@ -3652,7 +3652,7 @@ private struct BecauseYouWatchSection: View {
                         PosterCard(show: show, tag: "", onTap: { onOpen(show) })
                     }
                 }
-                .padding(.horizontal, 16)
+                .padding(.horizontal, 12)
                 .padding(.vertical, 6)
             }
         }
@@ -3680,7 +3680,7 @@ private struct TopRatedSection: View {
                         PosterCard(show: show, tag: "", onTap: { onOpen(show) })
                     }
                 }
-                .padding(.horizontal, 16)
+                .padding(.horizontal, 12)
                 .padding(.vertical, 6)
             }
         }
@@ -3746,7 +3746,7 @@ private struct LeavingSoonSection: View {
                             VStack(alignment: .leading, spacing: 8) {
                                 ZStack {
                                     Color.black
-                                        .frame(width: 150, height: 225)
+                                        .frame(width: 164, height: 246)
                                         .overlay {
                                             LinearGradient(
                                                 colors: show.posterColors,
@@ -3761,7 +3761,7 @@ private struct LeavingSoonSection: View {
                                                 contentMode: .fill,
                                                 fallbackColors: show.posterColors
                                             )
-                                            .frame(width: 150, height: 225)
+                                            .frame(width: 164, height: 246)
                                             .clipped()
                                             .allowsHitTesting(false)
                                         }
@@ -3787,13 +3787,13 @@ private struct LeavingSoonSection: View {
                                         .foregroundStyle(Color.textTertiary)
                                         .lineLimit(1)
                                 }
-                                .frame(width: 150, alignment: .leading)
+                                .frame(width: 164, alignment: .leading)
                             }
                         }
                         .buttonStyle(.plain)
                     }
                 }
-                .padding(.horizontal, 16)
+                .padding(.horizontal, 12)
                 .padding(.vertical, 6)
             }
         }
@@ -4077,7 +4077,7 @@ private struct PopularOnServiceSection: View {
                         PosterCard(show: show, tag: "", onTap: { onOpen(show) })
                     }
                 }
-                .padding(.horizontal, 16)
+                .padding(.horizontal, 12)
                 .padding(.vertical, 6)
             }
         }
@@ -4098,7 +4098,7 @@ private struct ComingToStreamingSection: View {
                         ComingSoonPosterCard(item: item, onTap: { onOpen(item) })
                     }
                 }
-                .padding(.horizontal, 16)
+                .padding(.horizontal, 12)
                 .padding(.vertical, 6)
             }
         }
@@ -4114,7 +4114,7 @@ private struct ComingSoonPosterCard: View {
             VStack(alignment: .leading, spacing: 8) {
                 ZStack {
                     Color.black
-                        .frame(width: 150, height: 225)
+                        .frame(width: 164, height: 246)
                         .overlay {
                             LinearGradient(
                                 colors: item.show.posterColors,
@@ -4129,7 +4129,7 @@ private struct ComingSoonPosterCard: View {
                                 contentMode: .fill,
                                 fallbackColors: item.show.posterColors
                             )
-                            .frame(width: 150, height: 225)
+                            .frame(width: 164, height: 246)
                             .clipped()
                             .allowsHitTesting(false)
                         }
@@ -4149,7 +4149,7 @@ private struct ComingSoonPosterCard: View {
                         .foregroundStyle(Color.textTertiary)
                         .lineLimit(1)
                 }
-                .frame(width: 150, alignment: .leading)
+                .frame(width: 164, alignment: .leading)
             }
         }
         .buttonStyle(.plain)
