@@ -219,7 +219,7 @@ fun AskStreamSheet(
                     fontSize = 11.sp,
                     color = TextSecondary,
                     lineHeight = 15.sp,
-                    modifier = Modifier.padding(horizontal = 16.dp).padding(bottom = 8.dp),
+                    modifier = Modifier.padding(horizontal = 16.dp).padding(top = 8.dp).padding(bottom = 8.dp),
                 )
 
                 // Messages list
