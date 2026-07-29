@@ -188,6 +188,8 @@ class AuthViewModel private constructor(private val context: Context) : ViewMode
                 instance ?: AuthViewModel(context.applicationContext).also {
                     instance = it
                     it.updateSignedInState()
+                    // Initialize CoachMarkManager so it shares the same prefs
+                    CoachMarkManager.init(context)
                 }
             }
 
@@ -243,6 +245,7 @@ class AuthViewModel private constructor(private val context: Context) : ViewMode
                         StreamsViewModel.get().syncLocalToSupabase()
                     }
                     PushTokenManager.get().flushPendingToken()
+                    CoachMarkManager.get().hydrateFromSupabase(session.user!!.id)
                 }
             } catch (_: Throwable) {
                 _currentUser.value = null
@@ -569,6 +572,7 @@ class AuthViewModel private constructor(private val context: Context) : ViewMode
                     // fetch so they are attributed to this account.
                     StreamsViewModel.get().claimDeviceRows()
                     launch { StreamsViewModel.get().syncLocalToSupabase() }
+                    if (user != null) { CoachMarkManager.get().hydrateFromSupabase(user.id) }
                     onComplete(true)
                 } else {
                     onComplete(false)
@@ -693,6 +697,7 @@ class AuthViewModel private constructor(private val context: Context) : ViewMode
                 // Claim any guest-era rows on this device before the first
                 // fetch so they are attributed to this account.
                 StreamsViewModel.get().claimDeviceRows()
+                if (user != null) { CoachMarkManager.get().hydrateFromSupabase(user.id) }
                 _isAuthenticating.value = false
                 true
             } else {
@@ -771,6 +776,7 @@ class AuthViewModel private constructor(private val context: Context) : ViewMode
                 // fetch so they are attributed to this account.
                 StreamsViewModel.get().claimDeviceRows()
                 viewModelScope.launch { StreamsViewModel.get().syncLocalToSupabase() }
+                if (user != null) { CoachMarkManager.get().hydrateFromSupabase(user.id) }
             }
             _isAuthenticating.value = false
             session != null
@@ -913,6 +919,7 @@ class AuthViewModel private constructor(private val context: Context) : ViewMode
             StreamsViewModel.get().clearLocalCache()
             SocialViewModel.get().clearLocalCache()
             TeamFavoritesService.get().clearLocalCache()
+            CoachMarkManager.get().clearForSignOut()
             DeviceSessionService.get().upsert("signed_out")
         }
     }

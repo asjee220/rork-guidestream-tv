@@ -137,6 +137,9 @@ final class AuthViewModel {
             // A token may have arrived from APNs before session restore
             // completed — persist it now that we have an authenticated user.
             await PushTokenManager.shared.flushPendingToken()
+            // Hydrate coach marks from Supabase so cross-device sign-in
+            // doesn't re-show tours the user already completed.
+            await CoachMarkManager.shared.hydrateFromSupabase(userId: session.user.id.uuidString)
         } catch {
             self.currentUser = nil
         }
@@ -611,6 +614,7 @@ final class AuthViewModel {
                 Task { await StreamsViewModel.shared.syncLocalToSupabase() }
                 Task { await PushTokenManager.shared.resaveCachedToken() }
                 await PushTokenManager.shared.flushPendingToken()
+                await CoachMarkManager.shared.hydrateFromSupabase(userId: session.user.id.uuidString)
             } catch {
                 lastError = error.localizedDescription
                 print("[Auth ERROR] signInWithIdToken (apple) failed: \(error.localizedDescription)")
@@ -755,6 +759,7 @@ final class AuthViewModel {
         ReleaseReminderService.shared.clearLocalCache()
         ProfileStatsService.shared.clearCache()
         AppProfileManager.shared.clearAll()
+        CoachMarkManager.shared.clearForSignOut()
 
         // Update the device row to reflect the signed-out state so the
         // server stops attributing future events to the old user_id.
@@ -921,6 +926,7 @@ final class AuthViewModel {
                 Task { await StreamsViewModel.shared.syncLocalToSupabase() }
                 Task { await PushTokenManager.shared.resaveCachedToken() }
                 await PushTokenManager.shared.flushPendingToken()
+                await CoachMarkManager.shared.hydrateFromSupabase(userId: session.user.id.uuidString)
                 return true
             }
             // Session is nil — Supabase requires email confirmation. The user
@@ -1005,6 +1011,7 @@ final class AuthViewModel {
             Task { await StreamsViewModel.shared.syncLocalToSupabase() }
             Task { await PushTokenManager.shared.resaveCachedToken() }
             await PushTokenManager.shared.flushPendingToken()
+            await CoachMarkManager.shared.hydrateFromSupabase(userId: session.user.id.uuidString)
             return true
         } catch {
             let message = error.localizedDescription

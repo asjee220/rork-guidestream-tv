@@ -17,6 +17,8 @@ struct ContentView: View {
     @State private var didRestoreSession: Bool = false
     @State private var auth = AuthViewModel.shared
     @State private var tabBarVisibility = TabBarVisibility()
+    @State private var coachMark = CoachMarkManager.shared
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         ZStack {
@@ -76,6 +78,11 @@ struct ContentView: View {
         // Clamp Dynamic Type so extreme accessibility sizes don't break dense layouts.
         // Users still get meaningful scaling from .xSmall through .accessibility2.
         .dynamicTypeSize(.xSmall ... .accessibility2)
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .background {
+                coachMark.handleBackground()
+            }
+        }
         // Cold-launch-safe drain: forward any route the delegate/URL
         // handler buffered before this subscriber was committed. Runs
         // before `restoreSession` so a route arriving while the session
@@ -178,6 +185,32 @@ struct ContentView: View {
 
             AskStreamSheet(isOpen: askSheetOpen, onClose: { askSheetOpen = false }, onSelectResult: { searchSelectedResult = $0 })
                 .ignoresSafeArea()
+
+            // Coach mark overlay — last child so it paints above everything.
+            // The overlay reads anchor preferences from HomeView/TabBar targets
+            // and resolves them to global rects via a GeometryProxy.
+            CoachMarkOverlay(manager: coachMark)
+                .overlayPreferenceValue(CoachMarkAnchorKey.self) { anchors in
+                    GeometryReader { proxy in
+                        Color.clear
+                            .task(id: coachMark.currentMark?.key ?? "none") {
+                                guard coachMark.isShowing, let mark = coachMark.currentMark else { return }
+                                if coachMark.scrollRequest != nil {
+                                    coachMark.clearScrollRequest()
+                                    try? await Task.sleep(for: .milliseconds(350))
+                                }
+                                var rects: [String: CGRect] = [:]
+                                for key in mark.targetKeys {
+                                    if let anchor = anchors[key] {
+                                        rects[key] = proxy[anchor]
+                                    }
+                                }
+                                coachMark.setMeasuredRects(rects)
+                                coachMark.markScrollSettled()
+                            }
+                    }
+                }
+
         }
         .fullScreenCover(item: $searchSelectedResult) { result in
             ShowDetailScreen(

@@ -42,9 +42,13 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.rork.guidestreamtvandroid.data.repository.CoachMarkManager
 import com.rork.guidestreamtvandroid.ui.navigation.AppTab
 import com.rork.guidestreamtvandroid.ui.theme.BrandOrange
 import com.rork.guidestreamtvandroid.ui.theme.OutlineVariant
@@ -62,6 +66,8 @@ fun FloatingTabBar(
     onTabSelected: (AppTab) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val coachMark = CoachMarkManager.get()
+    val density = LocalDensity.current
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -84,13 +90,25 @@ fun FloatingTabBar(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             TabItem(AppTab.HOME, selected == AppTab.HOME) { onTabSelected(it) }
-            TabItem(AppTab.REELS, selected == AppTab.REELS) { onTabSelected(it) }
-            TabItem(AppTab.SPORTS, selected == AppTab.SPORTS) { onTabSelected(it) }
+            Box(modifier = Modifier.onGloballyPositioned { coords ->
+                coachMark.setMeasuredRect("reels", coords.boundsInRoot())
+            }) {
+                TabItem(AppTab.REELS, selected == AppTab.REELS) { onTabSelected(it) }
+            }
+            Box(modifier = Modifier.onGloballyPositioned { coords ->
+                coachMark.setMeasuredRect("sports", coords.boundsInRoot())
+            }) {
+                TabItem(AppTab.SPORTS, selected == AppTab.SPORTS) { onTabSelected(it) }
+            }
             TabItem(AppTab.PROFILE, selected == AppTab.PROFILE) { onTabSelected(it) }
         }
 
         // Ask FAB
-        AskFab(onClick = { onTabSelected(AppTab.ASK) })
+        Box(modifier = Modifier.onGloballyPositioned { coords ->
+            coachMark.setMeasuredRect("ask", coords.boundsInRoot())
+        }) {
+            AskFab(onClick = { onTabSelected(AppTab.ASK) })
+        }
     }
 }
 

@@ -54,6 +54,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
+import com.rork.guidestreamtvandroid.data.repository.CoachMarkManager
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.font.FontWeight
@@ -158,6 +161,7 @@ fun HomeScreen(
     val scrollState = rememberScrollState()
 
     Box(modifier = modifier.fillMaxSize()) {
+    val coachMark = CoachMarkManager.get()
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -167,7 +171,10 @@ fun HomeScreen(
         Spacer(Modifier.statusBarsPadding().height(56.dp))
 
         // Search bar
-        SearchBar(onClick = onOpenSearch)
+        SearchBar(onClick = onOpenSearch,
+            modifier = Modifier.onGloballyPositioned { coords ->
+                coachMark.setMeasuredRect("search", coords.boundsInRoot())
+            })
 
         // Hero carousel
         if (!homeReady) {
@@ -498,28 +505,40 @@ fun HomeScreen(
         }
 
         // Browse by genre (pill grid) — drives the Because you watch rail below.
-        GenrePillGrid(
-            selectedGenreId = selectedGenreId,
-            onSelect = { pill -> HomeViewModel.get().loadGenre(pill.id, pill.label, pill.mediaType) },
-        )
+        Box(
+            modifier = Modifier.onGloballyPositioned { coords ->
+                coachMark.setMeasuredRect("genre", coords.boundsInRoot())
+            },
+        ) {
+            GenrePillGrid(
+                selectedGenreId = selectedGenreId,
+                onSelect = { pill -> HomeViewModel.get().loadGenre(pill.id, pill.label, pill.mediaType) },
+            )
+        }
 
         // Because You Watch (genre discovery)
         if (!homeReady) {
             ShimmerSection("Browsing $selectedGenreName", Modifier.padding(horizontal = 12.dp, vertical = 8.dp))
         } else if (genreShows.isNotEmpty()) {
-            PosterSection(
-                title = "Browsing $selectedGenreName",
-                shows = genreShows.filter { providerByTmdb[it.id] != null }.take(20),
-                providerByTmdb = providerByTmdb,
-                onOpen = { r ->
-                    WatchIntentLogger.get().log(
-                        WatchIntentLogger.IntentEventType.CARD_TAPPED,
-                        titleId = r.id.toString(),
-                        metadata = mapOf("section" to "because_you_watch", "genre" to selectedGenreName),
-                    )
-                    onOpenTitle(PendingTitleRoute(titleId = r.id.toString(), titleName = r.displayName, isTv = r.isTV))
+            Box(
+                modifier = Modifier.onGloballyPositioned { coords ->
+                    coachMark.setMeasuredRect("because_you_watch", coords.boundsInRoot())
                 },
-            )
+            ) {
+                PosterSection(
+                    title = "Browsing $selectedGenreName",
+                    shows = genreShows.filter { providerByTmdb[it.id] != null }.take(20),
+                    providerByTmdb = providerByTmdb,
+                    onOpen = { r ->
+                        WatchIntentLogger.get().log(
+                            WatchIntentLogger.IntentEventType.CARD_TAPPED,
+                            titleId = r.id.toString(),
+                            metadata = mapOf("section" to "because_you_watch", "genre" to selectedGenreName),
+                        )
+                        onOpenTitle(PendingTitleRoute(titleId = r.id.toString(), titleName = r.displayName, isTv = r.isTV))
+                    },
+                )
+            }
         }
 
         // Inline sponsored slot #2 — after Because you watch Crime
@@ -842,9 +861,9 @@ private fun ServiceSearchField(
 }
 
 @Composable
-private fun SearchBar(onClick: () -> Unit) {
+private fun SearchBar(onClick: () -> Unit, modifier: Modifier = Modifier) {
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 12.dp)
             .clickable(

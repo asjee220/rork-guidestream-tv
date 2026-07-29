@@ -24,7 +24,12 @@ import com.rork.guidestreamtvandroid.data.models.SourceKind
 import com.rork.guidestreamtvandroid.data.remote.SportsService
 import com.rork.guidestreamtvandroid.data.models.TMDBResult
 import com.rork.guidestreamtvandroid.ui.ask.AskStreamSheet
+import com.rork.guidestreamtvandroid.ui.components.CoachMarkOverlay
 import com.rork.guidestreamtvandroid.ui.components.FloatingTabBar
+import com.rork.guidestreamtvandroid.data.repository.AuthViewModel
+import com.rork.guidestreamtvandroid.data.repository.CoachMarkManager
+import com.rork.guidestreamtvandroid.ui.home.HomeViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.rork.guidestreamtvandroid.ui.detail.CreatorDetailScreen
 import com.rork.guidestreamtvandroid.ui.detail.ShowDetailScreen
 import com.rork.guidestreamtvandroid.ui.reels.ReelsScreen
@@ -78,6 +83,11 @@ fun MainScreen(
     var showHomeList by remember { mutableStateOf<HomeListTarget?>(null) }
     var showWatchList by remember { mutableStateOf(false) }
     var showWidgetSetup by remember { mutableStateOf(false) }
+    val coachMark = CoachMarkManager.get()
+    val authVm = AuthViewModel.get()
+    val homeReady by HomeViewModel.get().homeContentReady.collectAsStateWithLifecycle()
+    val isSignedIn by authVm.isSignedIn.collectAsStateWithLifecycle()
+    val hasCompletedOnboarding by authVm.hasCompletedOnboarding.collectAsStateWithLifecycle()
 
     // Consume pending title route from AppRouter (deep-link / push buffer)
     val pendingRoute = router.pendingTitleRoute
@@ -338,6 +348,21 @@ fun MainScreen(
                     }
                 },
             )
+        }
+
+        // Coach mark overlay — last child so it paints above everything
+        CoachMarkOverlay(manager = coachMark)
+    }
+
+    // Home tour trigger
+    LaunchedEffect(selectedTab, homeReady, tabBarVisible, isSignedIn, hasCompletedOnboarding) {
+        if (selectedTab == AppTab.HOME && coachMark.shouldStartHomeTour(
+                isSignedIn = isSignedIn,
+                hasCompletedOnboarding = hasCompletedOnboarding,
+                homeContentReady = homeReady,
+                tabBarVisible = tabBarVisible,
+            )) {
+            coachMark.startHomeTour()
         }
     }
 }

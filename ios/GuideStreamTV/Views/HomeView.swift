@@ -283,6 +283,8 @@ struct HomeView: View {
 
     @Environment(AppRouter.self) private var router
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.tabBarVisibility) private var tabBarVisibility
+    @State private var coachMark = CoachMarkManager.shared
 
     @State private var widgetBannerDismissed: Bool = false
     /// Inline sponsored slot indices dismissed for this session.
@@ -459,6 +461,9 @@ struct HomeView: View {
                         }
                         .buttonStyle(.plain)
                         .padding(.horizontal, 16)
+                        .anchorPreference(key: CoachMarkAnchorKey.self, value: .bounds) {
+                            ["search": $0]
+                        }
 
                         if !homeContentReady {
                             HomeHeroCarouselShimmer()
@@ -810,7 +815,7 @@ struct HomeView: View {
                             }
                         }
 
-                        GenreDiscoverySection(highlighted: false, selectedGenreId: selectedGenreId) { genreId, genreName, mediaType in
+                        GenreDiscoverySection(highlighted: CoachMarkManager.shared.genreHighlightActive, selectedGenreId: selectedGenreId) { genreId, genreName, mediaType in
                             selectedGenreId = genreId
                             selectedGenreName = genreName
                             withAnimation(.spring(response: 0.3, dampingFraction: 0.75)) {
@@ -835,6 +840,9 @@ struct HomeView: View {
                         }
                         .id("browseByGenre")
                         .padding(.horizontal, 12)
+                        .anchorPreference(key: CoachMarkAnchorKey.self, value: .bounds) {
+                            ["genre": $0]
+                        }
 
                         if !homeContentReady {
                             HomeShimmerSection(title: "Browsing \(selectedGenreName)")
@@ -861,6 +869,9 @@ struct HomeView: View {
                                     }
                                 )
                                 .padding(.horizontal, 12)
+                                .anchorPreference(key: CoachMarkAnchorKey.self, value: .bounds) {
+                                    ["because_you_watch": $0]
+                                }
                             }
                         }
 
@@ -1246,6 +1257,15 @@ struct HomeView: View {
             await MainActor.run {
                 withAnimation(.easeOut(duration: 0.35).delay(0.1)) {
                     homeContentReady = true
+                }
+                // Fire the home coach mark tour now that rails have laid out
+                if coachMark.shouldStartHomeTour(
+                    isSignedIn: auth.isSignedIn,
+                    hasCompletedOnboarding: auth.hasCompletedOnboarding,
+                    homeContentReady: true,
+                    tabBarVisible: tabBarVisibility.isVisible
+                ) {
+                    coachMark.startHomeTour()
                 }
             }
             // Continue loading non-critical sections in the background.

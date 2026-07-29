@@ -32,6 +32,7 @@ enum AppTab: Int, CaseIterable, Hashable {
 struct FloatingTabBar: View {
     @Binding var selection: AppTab
     @State private var isGlowExpanded: Bool = false
+    @State private var coachMark = CoachMarkManager.shared
 
     var body: some View {
         HStack(spacing: 8) {
@@ -39,7 +40,13 @@ struct FloatingTabBar: View {
             HStack(spacing: 0) {
                 tabItem(.home)
                 tabItem(.reels)
+                    .anchorPreference(key: CoachMarkAnchorKey.self, value: .bounds) {
+                        ["reels": $0]
+                    }
                 tabItem(.sports)
+                    .anchorPreference(key: CoachMarkAnchorKey.self, value: .bounds) {
+                        ["sports": $0]
+                    }
                 tabItem(.profile)
             }
             .padding(.horizontal, 6)
@@ -57,6 +64,9 @@ struct FloatingTabBar: View {
 
             // Detached circular Ask FAB
             askButton
+                .anchorPreference(key: CoachMarkAnchorKey.self, value: .bounds) {
+                    ["ask": $0]
+                }
         }
         .padding(.horizontal, 8)
         .padding(.bottom, 4)

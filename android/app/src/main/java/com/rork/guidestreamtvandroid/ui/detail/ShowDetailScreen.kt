@@ -33,6 +33,7 @@ import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Tv
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -48,6 +49,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -63,9 +66,12 @@ import com.rork.guidestreamtvandroid.data.remote.WatchmodeResolveResponse
 import com.rork.guidestreamtvandroid.data.remote.WatchmodeResolveService
 import com.rork.guidestreamtvandroid.data.remote.WatchmodeSrc
 import com.rork.guidestreamtvandroid.data.repository.AuthViewModel
+import com.rork.guidestreamtvandroid.data.repository.CoachMarkManager
 import com.rork.guidestreamtvandroid.data.repository.SocialViewModel
 import com.rork.guidestreamtvandroid.data.repository.StreamsViewModel
 import com.rork.guidestreamtvandroid.data.repository.WatchIntentLogger
+import com.rork.guidestreamtvandroid.ui.cast.CastToTVSheet
+import com.rork.guidestreamtvandroid.ui.components.CoachMarkOverlay
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
@@ -121,6 +127,8 @@ fun ShowDetailScreen(
     val likedByMe by socialVm.likedByMe.collectAsStateWithLifecycle()
     val commentCounts by socialVm.commentCounts.collectAsStateWithLifecycle()
     var showComments by remember { mutableStateOf(false) }
+    var showCast by remember { mutableStateOf(false) }
+    val coachMark = CoachMarkManager.get()
     androidx.compose.runtime.LaunchedEffect(titleId) { socialVm.refreshCounts(titleId) }
 
     val tmdbId = TitleId.tmdbId(titleId)
@@ -329,37 +337,41 @@ fun ShowDetailScreen(
 
                 // Where to Watch — selectable streaming-source chips
                 val scope = androidx.compose.runtime.rememberCoroutineScope()
-                WhereToWatchRow(
-                    sources = usSources,
-                    selectedSource = selectedSource,
-                    isSourceSubscribed = isSourceSubscribed,
-                    onSelect = { source ->
-                        selectedSource = source
-                        episodeSource = null
-                        val tid = TitleId.tmdbId(titleId)
-                        if (tid != null) {
-                            val seasonNum = if (isTV) detail?.lastEpisodeToAir?.seasonNumber else null
-                            val episodeNum = if (isTV) detail?.lastEpisodeToAir?.episodeNumber else null
-                            scope.launch {
-                                val resp = try {
-                                    withContext(Dispatchers.IO) {
-                                        WatchmodeResolveService.resolve(
-                                            tid, isTV,
-                                            sourceId = source.sourceId,
-                                            season = seasonNum,
-                                            episode = episodeNum,
-                                        )
+                Box(modifier = Modifier.onGloballyPositioned { coords ->
+                    coachMark.setMeasuredRect("where_to_watch", coords.boundsInRoot())
+                }) {
+                    WhereToWatchRow(
+                        sources = usSources,
+                        selectedSource = selectedSource,
+                        isSourceSubscribed = isSourceSubscribed,
+                        onSelect = { source ->
+                            selectedSource = source
+                            episodeSource = null
+                            val tid = TitleId.tmdbId(titleId)
+                            if (tid != null) {
+                                val seasonNum = if (isTV) detail?.lastEpisodeToAir?.seasonNumber else null
+                                val episodeNum = if (isTV) detail?.lastEpisodeToAir?.episodeNumber else null
+                                scope.launch {
+                                    val resp = try {
+                                        withContext(Dispatchers.IO) {
+                                            WatchmodeResolveService.resolve(
+                                                tid, isTV,
+                                                sourceId = source.sourceId,
+                                                season = seasonNum,
+                                                episode = episodeNum,
+                                            )
+                                        }
+                                    } catch (_: Exception) {
+                                        WatchmodeResolveResponse()
                                     }
-                                } catch (_: Exception) {
-                                    WatchmodeResolveResponse()
-                                }
-                                withContext(Dispatchers.Main) {
-                                    episodeSource = resp.episodeSource
+                                    withContext(Dispatchers.Main) {
+                                        episodeSource = resp.episodeSource
+                                    }
                                 }
                             }
-                        }
-                    },
-                )
+                        },
+                    )
+                }
 
                 // Action buttons
                 Row(
@@ -391,6 +403,9 @@ fun ShowDetailScreen(
                                 .weight(1f)
                                 .clip(RoundedCornerShape(12.dp))
                                 .background(BrandOrange)
+                                .onGloballyPositioned { coords ->
+                                    coachMark.setMeasuredRect("watch_button", coords.boundsInRoot())
+                                }
                                 .clickable(
                                     interactionSource = remember { MutableInteractionSource() },
                                     indication = null,
@@ -444,6 +459,9 @@ fun ShowDetailScreen(
                             .clip(RoundedCornerShape(12.dp))
                             .background(GlassFill)
                             .border(1.dp, GlassStroke, RoundedCornerShape(12.dp))
+                            .onGloballyPositioned { coords ->
+                                coachMark.setMeasuredRect("watchlist_add", coords.boundsInRoot())
+                            }
                             .clickable(
                                 interactionSource = remember { MutableInteractionSource() },
                                 indication = null,
@@ -504,6 +522,29 @@ fun ShowDetailScreen(
                             imageVector = Icons.Filled.Visibility,
                             contentDescription = "Watched",
                             tint = if (isWatched) BrandBlue else TextPrimary,
+                            modifier = Modifier.size(22.dp),
+                        )
+                    }
+                    // Play on TV
+                    Box(
+                        modifier = Modifier
+                            .size(50.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(GlassFill)
+                            .border(1.dp, GlassStroke, RoundedCornerShape(12.dp))
+                            .onGloballyPositioned { coords ->
+                                coachMark.setMeasuredRect("play_on", coords.boundsInRoot())
+                            }
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null,
+                            ) { showCast = true },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Tv,
+                            contentDescription = "Play on TV",
+                            tint = TextPrimary,
                             modifier = Modifier.size(22.dp),
                         )
                     }
@@ -757,6 +798,20 @@ fun ShowDetailScreen(
                 },
                 onDismiss = { showComments = false },
             )
+        }
+
+        if (showCast) {
+            CastToTVSheet(onClose = { showCast = false })
+        }
+
+        // Detail coach mark overlay
+        CoachMarkOverlay(manager = coachMark)
+    }
+
+    // Detail tour trigger — fires once sources resolve
+    androidx.compose.runtime.LaunchedEffect(usSources.isNotEmpty()) {
+        if (usSources.isNotEmpty() && coachMark.shouldStartDetailTour(sourcesResolved = true)) {
+            coachMark.startDetailTour()
         }
     }
 }
