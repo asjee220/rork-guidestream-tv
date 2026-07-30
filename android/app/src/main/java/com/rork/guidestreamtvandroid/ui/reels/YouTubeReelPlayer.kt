@@ -144,9 +144,21 @@ fun YouTubeReelPlayer(
                             Log.d("GSReels", "state: $state")
                         }
 
+                        /**
+                         * Player errors. Negative codes are synthetic and come
+                         * from the player page itself rather than YouTube:
+                         * -1 pre-ready JS error, -2 readiness timeout,
+                         * -3 the IFrame API script failed to load.
+                         */
                         @JavascriptInterface
                         fun onPlayerError(code: Int) {
-                            Log.d("GSReels", "error code: $code")
+                            val label = when (code) {
+                                -1 -> "pre-ready JS error"
+                                -2 -> "readiness timeout"
+                                -3 -> "iframe API load failed"
+                                else -> "youtube error"
+                            }
+                            Log.d("GSReels", "error code: $code ($label)")
                             mainHandler.post { currentOnPlayerError(code) }
                         }
                     },
@@ -161,10 +173,14 @@ fun YouTubeReelPlayer(
                 holder.lastMuted = isMuted
                 holder.lastPlaying = isPlaying
                 val muteFlag = if (isMuted) "1" else "0"
+                // autoplay mirrors the pager's play state: reloading a paused
+                // reel must not silently start playing again.
+                val autoplayFlag = if (isPlaying) "1" else "0"
                 val url = Uri.parse("https://appassets.androidplatform.net/assets/yt_player.html")
                     .buildUpon()
                     .appendQueryParameter("v", videoId)
                     .appendQueryParameter("mute", muteFlag)
+                    .appendQueryParameter("autoplay", autoplayFlag)
                     .build()
                     .toString()
                 webView.loadUrl(url)

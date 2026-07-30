@@ -10,28 +10,75 @@
 </head>
 <body>
 <div id="player"></div>
-<script src="https://www.youtube.com/iframe_api"></script>
 <script>
+    // Synthetic (negative) codes never collide with YouTube's own error codes
+    // (2/5/100/101/150) so the Kotlin side can tell a real embed rejection
+    // apart from a local loading failure:
+    //   -1 JS error before the player became ready
+    //   -2 readiness timeout
+    //   -3 the IFrame API script could not be loaded at all
+    var ERR_JS = -1, ERR_TIMEOUT = -2, ERR_API_LOAD = -3;
+
     var params = new URLSearchParams(window.location.search);
     var videoId = params.get('v') || '';
     var muteFlag = params.get('mute') === '1' ? 1 : 0;
+    // Autoplay follows the pager's play state so swiping while paused does not
+    // silently resume playback on the next reel.
+    var autoplayFlag = params.get('autoplay') === '0' ? 0 : 1;
     var player;
     var ready = false;
+    var readyTimer = null;
+    var apiAttempts = 0;
+
+    function report(code) {
+        if (window.GSBridge && GSBridge.onPlayerError) { GSBridge.onPlayerError(code); }
+    }
+
+    // Only surface script errors that happen *before* the player is usable.
+    // YouTube's own bundle throws benign errors during steady-state playback,
+    // and reporting those made every healthy reel look broken.
     window.onerror = function(message) {
-        if (window.GSBridge && GSBridge.onPlayerError) { GSBridge.onPlayerError(-1); }
+        if (!ready) {
+            console.log('pre-ready JS error: ' + message);
+            report(ERR_JS);
+        }
         return false;
     };
-    setTimeout(function() {
-        if (!ready) {
-            if (window.GSBridge && GSBridge.onPlayerError) { GSBridge.onPlayerError(-2); }
-        }
-    }, 8000);
+
+    function startReadyTimer() {
+        readyTimer = setTimeout(function() {
+            if (!ready) { report(ERR_TIMEOUT); }
+        }, 8000);
+    }
+
+    /**
+     * Loads the IFrame API. The script is fetched dynamically (rather than via a
+     * static <script src>) so a failed request is observable: without this a
+     * dropped request left onYouTubeIframeAPIReady permanently unfired and the
+     * reel stuck on its backdrop with no way to recover.
+     */
+    function loadIframeApi() {
+        apiAttempts += 1;
+        var s = document.createElement('script');
+        s.src = 'https://www.youtube.com/iframe_api';
+        s.async = true;
+        s.onerror = function() {
+            // One retry covers the common cold-start / transient-DNS failure.
+            if (apiAttempts < 2) {
+                setTimeout(loadIframeApi, 1200);
+            } else {
+                report(ERR_API_LOAD);
+            }
+        };
+        document.head.appendChild(s);
+    }
+
     function onYouTubeIframeAPIReady() {
         player = new YT.Player('player', {
             videoId: videoId,
             playerVars: {
                 playsinline: 1,
-                autoplay: 1,
+                autoplay: autoplayFlag,
                 mute: muteFlag,
                 controls: 0,
                 rel: 0,
@@ -48,24 +95,34 @@
             events: {
                 'onReady': function(e) {
                     ready = true;
+                    if (readyTimer) { clearTimeout(readyTimer); readyTimer = null; }
                     try {
-                        e.target.playVideo();
                         if (muteFlag === 1) { e.target.mute(); } else { e.target.unMute(); }
+                        if (autoplayFlag === 1) { e.target.playVideo(); }
                     } catch (err) {}
                     if (window.GSBridge && GSBridge.onReady) { GSBridge.onReady(); }
                 },
                 'onStateChange': function(e) {
                     if (window.GSBridge && GSBridge.onPlayerState) { GSBridge.onPlayerState(e.data); }
+                    // 5 = CUED. A cued-but-not-started player means autoplay was
+                    // swallowed; nudge it once so the reel does not sit on a
+                    // frozen first frame.
+                    if (e.data === 5 && autoplayFlag === 1) {
+                        try { e.target.playVideo(); } catch (err) {}
+                    }
                     if (e.data === 0) {
                         if (window.GSBridge && GSBridge.onEnded) { GSBridge.onEnded(); }
                     }
                 },
                 'onError': function(e) {
-                    if (window.GSBridge && GSBridge.onPlayerError) { GSBridge.onPlayerError(e.data); }
+                    report(e.data);
                 }
             }
         });
     }
+
+    startReadyTimer();
+    loadIframeApi();
 </script>
 </body>
 </html>
