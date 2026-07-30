@@ -158,6 +158,7 @@ data class SportsGame(
     val home: TeamSummary,
     val away: TeamSummary,
     @SerialName("start_time") val startTime: String? = null,
+    @SerialName("start_date") val startDate: Long? = null,
     val broadcasts: List<String> = emptyList(),
     @SerialName("home_score") val homeScore: Int? = null,
     @SerialName("away_score") val awayScore: Int? = null,

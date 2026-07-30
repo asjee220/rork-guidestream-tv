@@ -218,7 +218,8 @@ fun SportsScreen(
                     }
                 }
                 if (upcoming.isNotEmpty()) {
-                    item { SectionHeader("Upcoming", upcoming.size) { seeAll = SportsSection.UPCOMING } }
+                    val upcomingTitle = if (upcoming.firstOrNull()?.let { isStartToday(it.startTime) } == true) "Tonight" else "Upcoming"
+                    item { SectionHeader(upcomingTitle, upcoming.size) { seeAll = SportsSection.UPCOMING } }
                     items(upcoming.take(8), key = { "up-${it.id}" }) { game ->
                         UpcomingGameRow(game) { openCard(game, watchGameSetter = { watchGame = it }) }
                     }

@@ -31,6 +31,9 @@ class SportsService {
 
     private val endpoints = listOf(
         Endpoint("NBA", "basketball/nba/scoreboard"),
+        Endpoint("NBA Summer", "basketball/nba-summer-las-vegas/scoreboard"),
+        Endpoint("NBA Summer", "basketball/nba-summer-utah/scoreboard"),
+        Endpoint("NBA Summer", "basketball/nba-summer-sacramento/scoreboard"),
         Endpoint("NFL", "football/nfl/scoreboard"),
         Endpoint("Soccer", "soccer/eng.1/scoreboard"),
         Endpoint("Soccer", "soccer/fifa.world/scoreboard"),
@@ -46,12 +49,10 @@ class SportsService {
     @Serializable
     private data class ESPNEvent(
         val id: String = "",
-        val name: String = "",
         val date: String = "",
-        @SerialName("shortName") val shortName: String? = null,
         val status: ESPNStatus? = null,
         val competitions: List<ESPNCompetition> = emptyList(),
-        val broadcasts: List<ESPNBroadcast> = emptyList(),
+        val season: ESPNSeason? = null,
     )
 
     @Serializable
@@ -68,15 +69,13 @@ class SportsService {
     @Serializable
     private data class ESPNCompetition(
         val competitors: List<ESPNCompetitor> = emptyList(),
+        val broadcasts: List<ESPNBroadcast> = emptyList(),
     )
 
     @Serializable
     private data class ESPNCompetitor(
         val id: String? = null,
         val uid: String? = null,
-        val abbreviation: String = "",
-        @SerialName("displayName") val displayNameStr: String = "",
-        @SerialName("shortDisplayName") val shortDisplayNameStr: String = "",
         val score: String = "",
         @SerialName("homeAway") val homeAway: String = "home",
         val team: ESPNTeam? = null,
@@ -85,6 +84,12 @@ class SportsService {
 
     @Serializable
     private data class ESPNTeam(
+        val id: String? = null,
+        val uid: String? = null,
+        val abbreviation: String = "",
+        @SerialName("displayName") val displayName: String = "",
+        @SerialName("shortDisplayName") val shortDisplayName: String = "",
+        val name: String = "",
         val color: String? = null,
         val logo: String? = null,
     )
@@ -94,6 +99,11 @@ class SportsService {
         val names: List<String> = emptyList(),
     )
 
+    @Serializable
+    private data class ESPNSeason(
+        val slug: String? = null,
+    )
+
     /** Fetch all games across all sports, sorted live-first then by start time. */
     suspend fun fetchAll(): List<SportsGame> = withContext(Dispatchers.IO) {
         coroutineScope {
@@ -101,7 +111,7 @@ class SportsService {
                 async { fetch(ep) }
             }.awaitAll()
             val all = results.flatten()
-            all.sortedWith(compareByDescending<SportsGame> { it.state == "live" }.thenBy { it.startTime ?: "" })
+            all.sortedWith(compareByDescending<SportsGame> { it.state == "live" }.thenBy { it.startDate ?: Long.MAX_VALUE })
         }
     }
 
@@ -117,38 +127,24 @@ class SportsService {
                 val rawState = ev.status?.type?.state ?: "pre"
                 val state = if (rawState == "in") "live" else rawState
                 val detail = ev.status?.type?.shortDetail ?: ""
+                val startDate = parseDate(ev.date)
+                val statusDetail = when (state) {
+                    "live" -> detail
+                    "post" -> detail.ifEmpty { "Final" }
+                    else -> startDate?.let { formatGameTime(it) } ?: detail
+                }
+                val broadcasts = comp.broadcasts.flatMap { it.names }
                 SportsGame(
                     id = ev.id,
                     sport = endpoint.sport,
-                    leagueShort = endpoint.sport,
+                    leagueShort = ev.season?.slug ?: endpoint.sport,
                     state = state,
-                    statusDetail = detail,
-                    home = SportsGame.TeamSummary(
-                        name = home.displayNameStr.ifEmpty { home.abbreviation },
-                        abbreviation = home.abbreviation,
-                        logoUrl = home.team?.logo,
-                        record = home.shortDisplayNameStr,
-                        uid = home.uid,
-                        displayName = home.displayNameStr.ifEmpty { home.abbreviation },
-                        shortName = home.shortDisplayNameStr.ifEmpty { home.abbreviation },
-                        score = home.score,
-                        primaryHex = home.team?.color,
-                        isWinner = home.winner ?: false,
-                    ),
-                    away = SportsGame.TeamSummary(
-                        name = away.displayNameStr.ifEmpty { away.abbreviation },
-                        abbreviation = away.abbreviation,
-                        logoUrl = away.team?.logo,
-                        record = away.shortDisplayNameStr,
-                        uid = away.uid,
-                        displayName = away.displayNameStr.ifEmpty { away.abbreviation },
-                        shortName = away.shortDisplayNameStr.ifEmpty { away.abbreviation },
-                        score = away.score,
-                        primaryHex = away.team?.color,
-                        isWinner = away.winner ?: false,
-                    ),
+                    statusDetail = statusDetail,
+                    home = makeTeam(home),
+                    away = makeTeam(away),
                     startTime = ev.date,
-                    broadcasts = ev.broadcasts.flatMap { it.names },
+                    startDate = startDate?.toEpochMilli(),
+                    broadcasts = broadcasts,
                     homeScore = home.score.toIntOrNull(),
                     awayScore = away.score.toIntOrNull(),
                 )
@@ -156,6 +152,49 @@ class SportsService {
         } catch (_: Exception) {
             emptyList()
         }
+    }
+
+    private fun makeTeam(c: ESPNCompetitor): SportsGame.TeamSummary {
+        val team = c.team
+        val fallbackAbbrev = team?.shortDisplayName?.takeIf { it.isNotBlank() }?.take(3)?.uppercase() ?: "—"
+        val abbreviation = team?.abbreviation?.takeIf { it.isNotBlank() } ?: fallbackAbbrev
+        val displayName = team?.displayName?.takeIf { it.isNotBlank() }
+            ?: team?.name?.takeIf { it.isNotBlank() }
+            ?: abbreviation
+        val shortName = team?.shortDisplayName?.takeIf { it.isNotBlank() }
+            ?: team?.name?.takeIf { it.isNotBlank() }
+            ?: abbreviation
+        return SportsGame.TeamSummary(
+            name = displayName,
+            abbreviation = abbreviation,
+            logoUrl = team?.logo,
+            record = null,
+            uid = team?.uid ?: c.uid,
+            displayName = displayName,
+            shortName = shortName,
+            score = c.score,
+            primaryHex = team?.color,
+            isWinner = c.winner ?: false,
+        )
+    }
+
+    private fun parseDate(s: String?): java.time.Instant? {
+        if (s.isNullOrBlank()) return null
+        return try {
+            java.time.Instant.parse(s)
+        } catch (_: Exception) {
+            try {
+                java.time.OffsetDateTime.parse(s).toInstant()
+            } catch (_: Exception) {
+                null
+            }
+        }
+    }
+
+    private fun formatGameTime(instant: java.time.Instant): String {
+        val formatter = java.time.format.DateTimeFormatter.ofPattern("h:mm a")
+            .withZone(java.time.ZoneId.of("America/New_York"))
+        return "${formatter.format(instant)} ET"
     }
 
     companion object {
