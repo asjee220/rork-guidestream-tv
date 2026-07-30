@@ -7,7 +7,6 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -16,6 +15,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -23,6 +23,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.font.FontWeight
@@ -53,6 +54,7 @@ fun ServicesPill(
     Box(modifier = modifier) {
         Row(
             modifier = Modifier
+                .shadow(elevation = 8.dp, shape = CircleShape, ambientColor = BrandOrange.copy(alpha = 0.25f), spotColor = BrandOrange.copy(alpha = 0.25f))
                 .clip(CircleShape)
                 .background(BrandOrange.copy(alpha = 0.10f))
                 .border(1.4.dp, BrandOrange, CircleShape)
@@ -113,8 +115,6 @@ private fun ServiceMiniIcon(
     size: androidx.compose.ui.unit.Dp,
     modifier: Modifier = Modifier,
 ) {
-    val fg = if (service.bg.luminance() > 0.5f) Color.Black else Color.White
-    val initial = service.name.trim().firstOrNull()?.uppercase() ?: "?"
     Box(
         modifier = modifier
             .size(size)
@@ -123,12 +123,66 @@ private fun ServiceMiniIcon(
             .border(1.5.dp, Navy, CircleShape),
         contentAlignment = Alignment.Center,
     ) {
-        Text(
-            text = initial,
-            fontSize = 11.sp,
-            fontWeight = FontWeight.Black,
-            color = fg,
-            textAlign = TextAlign.Center,
+        ServiceBrandContent(
+            display = service.display,
+            diameter = size,
+            modifier = Modifier.padding(size * 0.14f),
         )
+    }
+}
+
+/**
+ * Renders the brand-specific content for a streaming service inside the
+ * circular mini-icon. Mirrors iOS `ServiceBrandContent` in
+ * `StreamingServiceViews.swift`.
+ */
+@Composable
+private fun ServiceBrandContent(
+    display: StreamingService.Display,
+    diameter: androidx.compose.ui.unit.Dp,
+    modifier: Modifier = Modifier,
+) {
+    when (display) {
+        is StreamingService.Display.Text -> {
+            val text = display.text
+            val fontSize = when {
+                text.length <= 1 -> diameter * 0.55f
+                text.contains("\n") -> diameter * 0.30f
+                text.length <= 3 -> diameter * 0.55f
+                text.length <= 5 -> diameter * 0.36f
+                else -> diameter * 0.28f
+            }
+            Text(
+                text = text,
+                fontSize = fontSize.value.sp,
+                fontWeight = display.weight,
+                color = display.color,
+                textAlign = TextAlign.Center,
+                lineHeight = if (text.contains("\n")) fontSize.value.sp * 0.85f else fontSize.value.sp,
+                maxLines = if (text.contains("\n")) 2 else 1,
+                modifier = modifier,
+            )
+        }
+
+        is StreamingService.Display.SymbolText -> {
+            Text(
+                text = display.text,
+                fontSize = (diameter * 0.55f).value.sp,
+                fontWeight = FontWeight.Bold,
+                color = display.color,
+                textAlign = TextAlign.Center,
+                maxLines = 1,
+                modifier = modifier,
+            )
+        }
+
+        is StreamingService.Display.Star -> {
+            Icon(
+                imageVector = Icons.Filled.Star,
+                contentDescription = null,
+                tint = Color(red = 0xFF, green = 0xC8, blue = 0x1E),
+                modifier = modifier.size(diameter * 0.55f),
+            )
+        }
     }
 }
