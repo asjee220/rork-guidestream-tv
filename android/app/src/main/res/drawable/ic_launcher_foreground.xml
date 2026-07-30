@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  GuideStream mark: an open blue "G" ring with an orange play triangle.
+
+  Geometry is measured from the 1024x1024 master artwork:
+    ring   centre (512,512), centreline radius 289.5, stroke 78, round caps
+           arc sweeps ~300deg clockwise from 0.7deg, leaving the gap between
+           -52deg and -7deg that turns the circle into a "G"
+    play   triangle (538,394) -> (800,512) -> (538,630), tip overlapping the gap
+
+  The whole mark is wrapped in a group scaled to 0.894 so it lands inside the
+  adaptive-icon safe zone (~62dp of the 108dp canvas) and is never clipped by
+  the launcher's circular or squircle mask.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="1024"
+    android:viewportHeight="1024">
+
+    <group
+        android:pivotX="512"
+        android:pivotY="512"
+        android:scaleX="0.894"
+        android:scaleY="0.894">
+
+        <!-- Open "G" ring. Light blue at the top-left falling to deep blue at
+             the bottom-right, matching the master artwork's gradient axis. -->
+        <path
+            android:pathData="M801.48,515.54 A289.5,289.5 0 1 1 658.14,262.09"
+            android:strokeWidth="78"
+            android:strokeLineCap="round"
+            android:fillColor="@android:color/transparent">
+            <aapt:attr name="android:strokeColor">
+                <gradient
+                    android:type="linear"
+                    android:startX="290"
+                    android:startY="329"
+                    android:endX="734"
+                    android:endY="702">
+                    <item android:offset="0" android:color="#FF6ABEFE" />
+                    <item android:offset="0.45" android:color="#FF3A90F0" />
+                    <item android:offset="1" android:color="#FF0E56D1" />
+                </gradient>
+            </aapt:attr>
+        </path>
+
+        <!-- Orange play triangle, tip breaking through the ring's gap. -->
+        <path
+            android:pathData="M538,394 L800,512 L538,630 Z"
+            android:fillColor="#FFF5821F" />
+    </group>
+</vector>
