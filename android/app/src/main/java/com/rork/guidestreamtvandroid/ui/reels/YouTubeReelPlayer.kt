@@ -1,7 +1,7 @@
 package com.rork.guidestreamtvandroid.ui.reels
 
 import android.annotation.SuppressLint
-import android.net.Uri
+import android.content.Context
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
@@ -24,25 +24,25 @@ import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
-import androidx.webkit.WebViewAssetLoader
 import com.rork.guidestreamtvandroid.BuildConfig
 
 /**
  * Inline YouTube trailer player for Reels.
  *
  * The IFrame Player API validates the embedding page's real origin and
- * referrer against the `origin` playerVar. iOS' `WKWebView.loadHTMLString`
- * grants a base-URL document that origin, but Android's
- * `loadDataWithBaseURL` gives the document an opaque origin with no valid
- * referrer, so YouTube rejects the embed with error 150 on every video.
+ * referrer against the `origin` playerVar. YouTube's newer enforcement
+ * (error 153 — blocked/missing referrer) rejects embeds hosted on origins it
+ * does not recognise, which includes `appassets.androidplatform.net`: the
+ * page loads and the API comes up, but the video itself never plays.
  *
- * The fix serves the player HTML from a genuine, servable https origin via
- * AndroidX [WebViewAssetLoader] (`https://appassets.androidplatform.net`), so
- * the document has a real origin and referrer that match the `origin`
- * playerVar. The player page is a static asset (`assets/yt_player.html`) that
- * reads its video id and mute flag from the query string. This is
- * YouTube-ToS compliant and never uses ExoPlayer/media3, which cannot play
- * YouTube and would require ToS-violating stream extraction.
+ * The proven technique (used by the de-facto standard android-youtube-player
+ * library) is `loadDataWithBaseURL("https://www.youtube.com", html, ...)`:
+ * the document inherits youtube.com as its origin and referrer, which the
+ * embed always accepts. Config (video id / mute / autoplay) is injected into
+ * the static asset (`assets/yt_player.html`) via placeholder replacement
+ * because a data-loaded document has no query string. This is YouTube-ToS
+ * compliant and never uses ExoPlayer/media3, which cannot play YouTube and
+ * would require ToS-violating stream extraction.
  *
  * The WebView never consumes touch ([pointerInteropFilter] returns false),
  * mirroring the iOS `allowsHitTesting(false)` on the player layer so the
@@ -75,12 +75,6 @@ fun YouTubeReelPlayer(
     AndroidView(
         modifier = modifier.pointerInteropFilter { false },
         factory = { ctx ->
-            // Serve the player HTML from a real https origin so the IFrame API
-            // sees a valid origin + referrer matching the `origin` playerVar.
-            val assetLoader = WebViewAssetLoader.Builder()
-                .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(ctx))
-                .build()
-
             if (BuildConfig.DEBUG) {
                 WebView.setWebContentsDebuggingEnabled(true)
             }
@@ -98,17 +92,7 @@ fun YouTubeReelPlayer(
                     // rather than fabricating a UA from scratch.
                     userAgentString = userAgentString.replace("; wv", "")
                 }
-                // Delegate asset requests to the loader so the player page is
-                // served from https://appassets.androidplatform.net with a real
-                // origin instead of an opaque loadDataWithBaseURL origin.
                 webViewClient = object : WebViewClient() {
-                    override fun shouldInterceptRequest(
-                        view: WebView,
-                        request: WebResourceRequest,
-                    ): WebResourceResponse? {
-                        return assetLoader.shouldInterceptRequest(request.url)
-                    }
-
                     override fun onPageStarted(
                         view: WebView,
                         url: String?,
@@ -211,19 +195,22 @@ fun YouTubeReelPlayer(
                 holder.lastVideoId = videoId
                 holder.lastMuted = isMuted
                 holder.lastPlaying = isPlaying
-                val muteFlag = if (isMuted) "1" else "0"
                 // autoplay mirrors the pager's play state: reloading a paused
                 // reel must not silently start playing again.
-                val autoplayFlag = if (isPlaying) "1" else "0"
-                val url = Uri.parse("https://appassets.androidplatform.net/assets/yt_player.html")
-                    .buildUpon()
-                    .appendQueryParameter("v", videoId)
-                    .appendQueryParameter("mute", muteFlag)
-                    .appendQueryParameter("autoplay", autoplayFlag)
-                    .build()
-                    .toString()
-                Log.w("GSReels", "loading player: $url")
-                webView.loadUrl(url)
+                val html = buildPlayerHtml(
+                    context = webView.context,
+                    videoId = videoId,
+                    isMuted = isMuted,
+                    autoplay = isPlaying,
+                )
+                Log.w("GSReels", "loading player for video $videoId (origin=youtube.com)")
+                webView.loadDataWithBaseURL(
+                    "https://www.youtube.com",
+                    html,
+                    "text/html",
+                    "utf-8",
+                    null,
+                )
             } else {
                 if (holder.lastMuted != isMuted) {
                     holder.lastMuted = isMuted
@@ -279,6 +266,25 @@ fun YouTubeReelPlayer(
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
+}
+
+/**
+ * Reads the static player page from assets and injects the per-reel config.
+ * The video id is sanitised to the YouTube id alphabet so a malformed key can
+ * never break out of the JS string literal.
+ */
+private fun buildPlayerHtml(
+    context: Context,
+    videoId: String,
+    isMuted: Boolean,
+    autoplay: Boolean,
+): String {
+    val template = context.assets.open("yt_player.html").bufferedReader().use { it.readText() }
+    val safeId = videoId.filter { it.isLetterOrDigit() || it == '-' || it == '_' }
+    return template
+        .replace("__VIDEO_ID__", safeId)
+        .replace("__MUTE__", if (isMuted) "1" else "0")
+        .replace("__AUTOPLAY__", if (autoplay) "1" else "0")
 }
 
 /** Holds the last-pushed state so recompositions don't reload/restart the WebView. */

@@ -12,19 +12,20 @@
 <div id="player"></div>
 <script>
     // Synthetic (negative) codes never collide with YouTube's own error codes
-    // (2/5/100/101/150) so the Kotlin side can tell a real embed rejection
+    // (2/5/100/101/150/153) so the Kotlin side can tell a real embed rejection
     // apart from a local loading failure:
     //   -1 JS error before the player became ready
     //   -2 readiness timeout
     //   -3 the IFrame API script could not be loaded at all
     var ERR_JS = -1, ERR_TIMEOUT = -2, ERR_API_LOAD = -3;
 
-    var params = new URLSearchParams(window.location.search);
-    var videoId = params.get('v') || '';
-    var muteFlag = params.get('mute') === '1' ? 1 : 0;
-    // Autoplay follows the pager's play state so swiping while paused does not
-    // silently resume playback on the next reel.
-    var autoplayFlag = params.get('autoplay') === '0' ? 0 : 1;
+    // Config is injected by string replacement before loadDataWithBaseURL —
+    // the document is loaded with https://www.youtube.com as its base URL
+    // (the only origin YouTube's embed reliably accepts from a WebView), so
+    // there is no real query string to read.
+    var videoId = '__VIDEO_ID__';
+    var muteFlag = __MUTE__;
+    var autoplayFlag = __AUTOPLAY__;
     var player;
     var ready = false;
     var readyTimer = null;
@@ -90,7 +91,7 @@
                 loop: 1,
                 playlist: videoId,
                 enablejsapi: 1,
-                origin: 'https://appassets.androidplatform.net'
+                origin: 'https://www.youtube.com'
             },
             events: {
                 'onReady': function(e) {
