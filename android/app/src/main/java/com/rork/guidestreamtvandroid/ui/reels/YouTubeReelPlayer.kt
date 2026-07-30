@@ -35,14 +35,18 @@ import com.rork.guidestreamtvandroid.BuildConfig
  * does not recognise, which includes `appassets.androidplatform.net`: the
  * page loads and the API comes up, but the video itself never plays.
  *
- * The proven technique (used by the de-facto standard android-youtube-player
- * library) is `loadDataWithBaseURL("https://www.youtube.com", html, ...)`:
- * the document inherits youtube.com as its origin and referrer, which the
- * embed always accepts. Config (video id / mute / autoplay) is injected into
- * the static asset (`assets/yt_player.html`) via placeholder replacement
- * because a data-loaded document has no query string. This is YouTube-ToS
- * compliant and never uses ExoPlayer/media3, which cannot play YouTube and
- * would require ToS-violating stream extraction.
+ * The document is therefore loaded with [PlayerBaseUrl] as its base URL so the
+ * WebView reports a genuine third-party https origin and sends a matching
+ * `Referer` on the embed request. `youtube.com` does NOT work as the base URL
+ * either — an embed claiming to be referred by youtube itself is rejected with
+ * error 152 — so the app's real domain is used and the page's `origin`
+ * playerVar is kept identical to it.
+ *
+ * Config (video id / mute / autoplay) is injected into the static asset
+ * (`assets/yt_player.html`) via placeholder replacement because a data-loaded
+ * document has no query string. This is YouTube-ToS compliant and never uses
+ * ExoPlayer/media3, which cannot play YouTube and would require ToS-violating
+ * stream extraction.
  *
  * The WebView never consumes touch ([pointerInteropFilter] returns false),
  * mirroring the iOS `allowsHitTesting(false)` on the player layer so the
@@ -91,7 +95,14 @@ fun YouTubeReelPlayer(
                     // which YouTube penalises. Strip it from the real default
                     // rather than fabricating a UA from scratch.
                     userAgentString = userAgentString.replace("; wv", "")
+                    loadWithOverviewMode = true
+                    useWideViewPort = true
                 }
+                // The embed is a third-party frame relative to the base URL;
+                // with the default policy its cookies are dropped and playback
+                // never starts, leaving a permanently black player.
+                android.webkit.CookieManager.getInstance()
+                    .setAcceptThirdPartyCookies(this, true)
                 webViewClient = object : WebViewClient() {
                     override fun onPageStarted(
                         view: WebView,
@@ -203,9 +214,9 @@ fun YouTubeReelPlayer(
                     isMuted = isMuted,
                     autoplay = isPlaying,
                 )
-                Log.w("GSReels", "loading player for video $videoId (origin=youtube.com)")
+                Log.w("GSReels", "loading player for video $videoId (origin=$PlayerBaseUrl)")
                 webView.loadDataWithBaseURL(
-                    "https://www.youtube.com",
+                    PlayerBaseUrl,
                     html,
                     "text/html",
                     "utf-8",
@@ -267,6 +278,14 @@ fun YouTubeReelPlayer(
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 }
+
+/**
+ * Origin the player page is served from. Must stay byte-identical to the
+ * `PLAYER_ORIGIN` constant in `assets/yt_player.html`: YouTube compares the
+ * embed's referrer against the `origin` playerVar and fails with 152/153 on
+ * any mismatch.
+ */
+private const val PlayerBaseUrl = "https://guidestream.tv"
 
 /**
  * Reads the static player page from assets and injects the per-reel config.

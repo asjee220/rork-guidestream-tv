@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -252,29 +253,43 @@ private fun CalloutCard(
 
     var cardHeightPx by remember { mutableFloatStateOf(140f) }
 
-    var rawX = anchorRect.center.x - cardWidthPx / 2f
-    rawX = rawX.coerceIn(padding10, screenRect.width - cardWidthPx - padding10)
+    // Narrow screens must not push the card off either edge, so the nominal
+    // width collapses to whatever the screen can actually hold.
+    val maxCardWidthPx = (screenRect.width - padding10 * 2f).coerceAtLeast(0f)
+    val actualCardWidthPx = cardWidthPx.coerceAtMost(maxCardWidthPx)
+    val cardWidthDp = with(density) { actualCardWidthPx.toDp() }
 
-    val cardY = if (belowCard) {
-        lowestBottom + padding12 + cardHeightPx / 2f
+    var rawX = anchorRect.center.x - actualCardWidthPx / 2f
+    rawX = rawX.coerceIn(
+        padding10,
+        (screenRect.width - actualCardWidthPx - padding10).coerceAtLeast(padding10),
+    )
+
+    val preferredTop = if (belowCard) {
+        lowestBottom + padding12
     } else {
-        highestTop - padding12 - cardHeightPx / 2f
+        highestTop - padding12 - cardHeightPx
     }
+    // The card is positioned manually, so nothing else keeps it on screen:
+    // clamp its top edge to the safe band. Without this a tall card anchored
+    // near an edge (or a target close to the bottom) runs off the display.
+    val maxTop = (screenRect.height - cardHeightPx - padding12).coerceAtLeast(padding12)
+    val cardTop = preferredTop.coerceIn(padding12, maxTop)
 
     Box(
         modifier = Modifier
             .offset {
                 IntOffset(
-                    (rawX).roundToInt(),
-                    (cardY - cardHeightPx / 2f).roundToInt(),
+                    rawX.roundToInt(),
+                    cardTop.roundToInt(),
                 )
             }
-            .width(230.dp)
+            .width(cardWidthDp)
             .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen },
     ) {
         Column(
             modifier = Modifier
-                .width(230.dp)
+                .width(cardWidthDp)
                 .background(CardColor, RoundedCornerShape(12.dp))
                 .padding(horizontal = 14.dp, vertical = 12.dp)
                 .onGloballyPositioned { coords ->
@@ -295,8 +310,11 @@ private fun CalloutCard(
                 color = CardBodyColor,
             )
             Spacer(Modifier.size(10.dp))
+            // fillMaxWidth, never fillMaxSize: inside a wrap-height Column a
+            // fillMaxSize footer stretches the card to the full screen height,
+            // which is what made the callout a giant orange slab.
             Row(
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {

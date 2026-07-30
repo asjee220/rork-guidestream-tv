@@ -2,6 +2,10 @@
 <html>
 <head>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<!-- YouTube rejects embeds whose referrer it cannot read (errors 152/153).
+     strict-origin-when-cross-origin is the policy YouTube expects: it sends
+     our origin on the cross-origin embed request without leaking the path. -->
+<meta name="referrer" content="strict-origin-when-cross-origin">
 <style>
     * { margin: 0; padding: 0; }
     html, body { background: #000; width: 100%; height: 100%; overflow: hidden; }
@@ -20,9 +24,12 @@
     var ERR_JS = -1, ERR_TIMEOUT = -2, ERR_API_LOAD = -3;
 
     // Config is injected by string replacement before loadDataWithBaseURL —
-    // the document is loaded with https://www.youtube.com as its base URL
-    // (the only origin YouTube's embed reliably accepts from a WebView), so
-    // there is no real query string to read.
+    // a data-loaded document has no query string to read.
+    // PLAYER_ORIGIN must match the base URL the Kotlin side loads this page
+    // with: YouTube validates the embed's real referrer against it, and it has
+    // to be a genuine third-party site (youtube.com referring to itself is
+    // rejected with error 152).
+    var PLAYER_ORIGIN = 'https://guidestream.tv';
     var videoId = '__VIDEO_ID__';
     var muteFlag = __MUTE__;
     var autoplayFlag = __AUTOPLAY__;
@@ -91,7 +98,8 @@
                 loop: 1,
                 playlist: videoId,
                 enablejsapi: 1,
-                origin: 'https://www.youtube.com'
+                origin: PLAYER_ORIGIN,
+                widget_referrer: PLAYER_ORIGIN
             },
             events: {
                 'onReady': function(e) {

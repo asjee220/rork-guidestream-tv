@@ -245,7 +245,8 @@ class AuthViewModel private constructor(private val context: Context) : ViewMode
                         StreamsViewModel.get().syncLocalToSupabase()
                     }
                     PushTokenManager.get().flushPendingToken()
-                    CoachMarkManager.get().hydrateFromSupabase(session.user!!.id)
+                    CoachMarkManager.get()
+                        .hydrateFromSupabase(session.user!!.id, session.user!!.email)
                 }
             } catch (_: Throwable) {
                 _currentUser.value = null
@@ -572,7 +573,9 @@ class AuthViewModel private constructor(private val context: Context) : ViewMode
                     // fetch so they are attributed to this account.
                     StreamsViewModel.get().claimDeviceRows()
                     launch { StreamsViewModel.get().syncLocalToSupabase() }
-                    if (user != null) { CoachMarkManager.get().hydrateFromSupabase(user.id) }
+                    if (user != null) {
+                        CoachMarkManager.get().hydrateFromSupabase(user.id, user.email)
+                    }
                     onComplete(true)
                 } else {
                     onComplete(false)

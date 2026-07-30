@@ -94,6 +94,14 @@ class CoachMarkManager private constructor(private val context: Context) {
 
     private val prefs = context.getSharedPreferences("gs_prefs", Context.MODE_PRIVATE)
     private val storageKey = "gs.coachMarks"
+    private val resetRevisionKey = "gs.coachMarks.resetRevision"
+
+    /**
+     * Accounts whose tour is force-reset once per [testerResetRevision].
+     * Bump the revision to replay the tour again for these accounts.
+     */
+    private val testerEmails = setOf("ma@guidestream.tv")
+    private val testerResetRevision = 1
 
     /** Seen keys mapped to ISO8601 timestamps. */
     var seenKeys: Map<String, String> by mutableStateOf(emptyMap())
@@ -313,7 +321,16 @@ class CoachMarkManager private constructor(private val context: Context) {
         }
     }
 
-    suspend fun hydrateFromSupabase(userId: String) {
+    /**
+     * Hydrate on sign-in / session restore, then apply any pending tester
+     * reset so a cleared server copy is not immediately re-merged.
+     */
+    suspend fun hydrateFromSupabase(userId: String, email: String? = null) {
+        hydrateSeenKeys(userId)
+        withContext(Dispatchers.Main) { maybeResetForTester(email) }
+    }
+
+    private suspend fun hydrateSeenKeys(userId: String) {
         try {
             val rows = SupabaseManager.client.postgrest
                 .from("users")
@@ -333,6 +350,46 @@ class CoachMarkManager private constructor(private val context: Context) {
                     })
                 }) { filter { eq("id", userId) } }
         } catch (_: Exception) { }
+    }
+
+    /**
+     * Wipes all tour progress locally and remotely so both tours replay from
+     * the first mark on the next eligible screen.
+     */
+    fun resetTours() {
+        dismissTour()
+        seenKeys = emptyMap()
+        prefs.edit().remove(storageKey).apply()
+        clearRemote()
+    }
+
+    /**
+     * One-shot force reset for internal tester accounts. Runs at most once per
+     * [testerResetRevision] so a tester who then completes the tour is not
+     * shown it again on every launch.
+     */
+    fun maybeResetForTester(email: String?) {
+        val normalized = email?.trim()?.lowercase(Locale.US) ?: return
+        if (normalized !in testerEmails) return
+        if (prefs.getInt(resetRevisionKey, 0) >= testerResetRevision) return
+        prefs.edit().putInt(resetRevisionKey, testerResetRevision).apply()
+        resetTours()
+    }
+
+    /** Clears the persisted server copy so the reset survives a reinstall. */
+    private fun clearRemote() {
+        val userId = AuthViewModel.get().currentUserId ?: return
+        scope.launch {
+            try {
+                SupabaseManager.client.postgrest
+                    .from("users")
+                    .update(buildJsonObject {
+                        put("coach_marks_seen", buildJsonObject { })
+                    }) { filter { eq("id", userId) } }
+            } catch (_: Exception) {
+                // Local reset already applied; server copy stays as-is
+            }
+        }
     }
 
     fun clearForSignOut() {
