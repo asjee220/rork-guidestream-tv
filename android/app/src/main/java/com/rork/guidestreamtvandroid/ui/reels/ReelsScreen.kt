@@ -470,11 +470,11 @@ private fun ReelView(
                         // Fatal per-video codes walk the server-verified
                         // fallback keys, then collapse to the poster once every
                         // candidate is exhausted: 100 = removed/private,
-                        // 101/150 = owner disabled embedding, 153 = embed
-                        // blocked for this referrer. Every other code leaves the
-                        // WebView mounted exactly as before so transient states
-                        // can still recover.
-                        if (code == 100 || code == 101 || code == 150 || code == 153) {
+                        // 101/150 = owner disabled embedding, 152/153 = embed
+                        // blocked/restricted for this referrer. Every other
+                        // code leaves the WebView mounted exactly as before so
+                        // transient states can still recover.
+                        if (code == 100 || code == 101 || code == 150 || code == 152 || code == 153) {
                             if (candidateIndex < reel.fallbackKeys.size) {
                                 candidateIndex += 1
                             } else {

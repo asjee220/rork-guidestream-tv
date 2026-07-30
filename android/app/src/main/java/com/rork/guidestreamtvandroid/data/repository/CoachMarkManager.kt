@@ -101,7 +101,8 @@ class CoachMarkManager private constructor(private val context: Context) {
      * Bump the revision to replay the tour again for these accounts.
      */
     private val testerEmails = setOf("ma@guidestream.tv")
-    private val testerResetRevision = 1
+    // Bump this to force the next one-time reset for tester accounts.
+    private val testerResetRevision = 2
 
     /** Seen keys mapped to ISO8601 timestamps. */
     var seenKeys: Map<String, String> by mutableStateOf(emptyMap())

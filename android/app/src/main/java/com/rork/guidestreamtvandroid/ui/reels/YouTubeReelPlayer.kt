@@ -29,18 +29,13 @@ import com.rork.guidestreamtvandroid.BuildConfig
 /**
  * Inline YouTube trailer player for Reels.
  *
- * The IFrame Player API validates the embedding page's real origin and
- * referrer against the `origin` playerVar. YouTube's newer enforcement
- * (error 153 — blocked/missing referrer) rejects embeds hosted on origins it
- * does not recognise, which includes `appassets.androidplatform.net`: the
- * page loads and the API comes up, but the video itself never plays.
- *
- * The document is therefore loaded with [PlayerBaseUrl] as its base URL so the
- * WebView reports a genuine third-party https origin and sends a matching
- * `Referer` on the embed request. `youtube.com` does NOT work as the base URL
- * either — an embed claiming to be referred by youtube itself is rejected with
- * error 152 — so the app's real domain is used and the page's `origin`
- * playerVar is kept identical to it.
+ * The IFrame Player API loads the video inside an iframe whose parent origin
+ * must be readable. YouTube's newer enforcement (errors 152/153) rejects embeds
+ * whose origin/referrer it cannot resolve or does not accept, which includes
+ * `appassets.androidplatform.net` and raw `file:`/`data:` origins. The proven
+ * technique used by the de-facto standard android-youtube-player library is
+ * `loadDataWithBaseURL("https://www.youtube.com", html, ...)`: the document
+ * reports youtube.com as its origin, and the YouTube iframe accepts it.
  *
  * Config (video id / mute / autoplay) is injected into the static asset
  * (`assets/yt_player.html`) via placeholder replacement because a data-loaded
@@ -178,6 +173,11 @@ fun YouTubeReelPlayer(
                             Log.w("GSReels", "state: $state")
                         }
 
+                        @JavascriptInterface
+                        fun log(message: String) {
+                            Log.w("GSReels", "js: $message")
+                        }
+
                         /**
                          * Player errors. Negative codes are synthetic and come
                          * from the player page itself rather than YouTube:
@@ -214,7 +214,7 @@ fun YouTubeReelPlayer(
                     isMuted = isMuted,
                     autoplay = isPlaying,
                 )
-                Log.w("GSReels", "loading player for video $videoId (origin=$PlayerBaseUrl)")
+                Log.w("GSReels", "loading player for video $videoId (base=$PlayerBaseUrl)")
                 webView.loadDataWithBaseURL(
                     PlayerBaseUrl,
                     html,
@@ -280,12 +280,13 @@ fun YouTubeReelPlayer(
 }
 
 /**
- * Origin the player page is served from. Must stay byte-identical to the
- * `PLAYER_ORIGIN` constant in `assets/yt_player.html`: YouTube compares the
- * embed's referrer against the `origin` playerVar and fails with 152/153 on
- * any mismatch.
+ * Base URL for the synthetic player document. Must be `https://www.youtube.com`
+ * so the WebView reports an origin that the YouTube iframe embed accepts. Using
+ * a third-party domain (even the app's real domain) can trigger error 152 on
+ * devices whose WebView policy restricts the referrer sent with the iframe
+ * request.
  */
-private const val PlayerBaseUrl = "https://guidestream.tv"
+private const val PlayerBaseUrl = "https://www.youtube.com"
 
 /**
  * Reads the static player page from assets and injects the per-reel config.

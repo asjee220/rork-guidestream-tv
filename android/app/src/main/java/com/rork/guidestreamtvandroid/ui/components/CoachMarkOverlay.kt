@@ -34,6 +34,7 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -104,39 +105,47 @@ fun CoachMarkOverlay(
             ) { manager.advance() }
             .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen },
     ) {
-        // Scrim with holes — single Canvas draws all holes from one mask
-        Canvas(modifier = Modifier.fillMaxSize()) {
-            drawRect(color = ScrimColor, size = size)
-            cutoutRects.forEach { rect ->
-                val expanded = Rect(
-                    offset = Offset(
-                        (rect.left - padding8).coerceAtLeast(0f),
-                        (rect.top - padding8).coerceAtLeast(0f),
-                    ),
-                    size = Size(
-                        rect.width + padding8 * 2,
-                        rect.height + padding8 * 2,
-                    ),
+        // Scrim with holes — single Canvas draws all holes from one mask using
+    // BlendMode.Clear so the underlying UI remains visible, framed only by
+    // the orange pulse rings below.
+    Canvas(
+        modifier = Modifier
+            .fillMaxSize()
+            .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen },
+    ) {
+        drawRect(color = ScrimColor, size = size)
+        cutoutRects.forEach { rect ->
+            val expanded = Rect(
+                offset = Offset(
+                    (rect.left - padding8).coerceAtLeast(0f),
+                    (rect.top - padding8).coerceAtLeast(0f),
+                ),
+                size = Size(
+                    rect.width + padding8 * 2,
+                    rect.height + padding8 * 2,
+                ),
+            )
+            if (mark.isCircular) {
+                val dim = maxOf(expanded.width, expanded.height)
+                val cx = expanded.center.x
+                val cy = expanded.center.y
+                drawCircle(
+                    color = Color.Transparent,
+                    radius = dim / 2f,
+                    center = Offset(cx, cy),
+                    blendMode = BlendMode.Clear,
                 )
-                if (mark.isCircular) {
-                    val dim = maxOf(expanded.width, expanded.height)
-                    val cx = expanded.center.x
-                    val cy = expanded.center.y
-                    drawCircle(
-                        color = Color.White,
-                        radius = dim / 2f,
-                        center = Offset(cx, cy),
-                    )
-                } else {
-                    drawRoundRect(
-                        color = Color.White,
-                        topLeft = expanded.topLeft,
-                        size = expanded.size,
-                        cornerRadius = CornerRadius(radius14, radius14),
-                    )
-                }
+            } else {
+                drawRoundRect(
+                    color = Color.Transparent,
+                    topLeft = expanded.topLeft,
+                    size = expanded.size,
+                    cornerRadius = CornerRadius(radius14, radius14),
+                    blendMode = BlendMode.Clear,
+                )
             }
         }
+    }
 
         // Pulse rings around each cutout
         cutoutRects.forEach { rect ->

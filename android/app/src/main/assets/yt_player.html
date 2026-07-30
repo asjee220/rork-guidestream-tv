@@ -2,10 +2,6 @@
 <html>
 <head>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<!-- YouTube rejects embeds whose referrer it cannot read (errors 152/153).
-     strict-origin-when-cross-origin is the policy YouTube expects: it sends
-     our origin on the cross-origin embed request without leaking the path. -->
-<meta name="referrer" content="strict-origin-when-cross-origin">
 <style>
     * { margin: 0; padding: 0; }
     html, body { background: #000; width: 100%; height: 100%; overflow: hidden; }
@@ -16,8 +12,8 @@
 <div id="player"></div>
 <script>
     // Synthetic (negative) codes never collide with YouTube's own error codes
-    // (2/5/100/101/150/153) so the Kotlin side can tell a real embed rejection
-    // apart from a local loading failure:
+    // (2/5/100/101/150/152/153) so the Kotlin side can tell a real embed
+    // rejection apart from a local loading failure:
     //   -1 JS error before the player became ready
     //   -2 readiness timeout
     //   -3 the IFrame API script could not be loaded at all
@@ -25,11 +21,6 @@
 
     // Config is injected by string replacement before loadDataWithBaseURL —
     // a data-loaded document has no query string to read.
-    // PLAYER_ORIGIN must match the base URL the Kotlin side loads this page
-    // with: YouTube validates the embed's real referrer against it, and it has
-    // to be a genuine third-party site (youtube.com referring to itself is
-    // rejected with error 152).
-    var PLAYER_ORIGIN = 'https://guidestream.tv';
     var videoId = '__VIDEO_ID__';
     var muteFlag = __MUTE__;
     var autoplayFlag = __AUTOPLAY__;
@@ -40,6 +31,10 @@
 
     function report(code) {
         if (window.GSBridge && GSBridge.onPlayerError) { GSBridge.onPlayerError(code); }
+    }
+
+    function log(message) {
+        if (window.GSBridge && GSBridge.log) { GSBridge.log(message); }
     }
 
     // Only surface script errors that happen *before* the player is usable.
@@ -82,52 +77,60 @@
     }
 
     function onYouTubeIframeAPIReady() {
-        player = new YT.Player('player', {
-            videoId: videoId,
-            playerVars: {
-                playsinline: 1,
-                autoplay: autoplayFlag,
-                mute: muteFlag,
-                controls: 0,
-                rel: 0,
-                modestbranding: 1,
-                showinfo: 0,
-                iv_load_policy: 3,
-                fs: 0,
-                disablekb: 1,
-                loop: 1,
-                playlist: videoId,
-                enablejsapi: 1,
-                origin: PLAYER_ORIGIN,
-                widget_referrer: PLAYER_ORIGIN
-            },
-            events: {
-                'onReady': function(e) {
-                    ready = true;
-                    if (readyTimer) { clearTimeout(readyTimer); readyTimer = null; }
-                    try {
-                        if (muteFlag === 1) { e.target.mute(); } else { e.target.unMute(); }
-                        if (autoplayFlag === 1) { e.target.playVideo(); }
-                    } catch (err) {}
-                    if (window.GSBridge && GSBridge.onReady) { GSBridge.onReady(); }
+        try {
+            log('document.origin=' + (document.location.origin || 'null') +
+                ' href=' + document.location.href +
+                ' referrer=' + document.referrer +
+                ' videoId=' + videoId);
+            player = new YT.Player('player', {
+                videoId: videoId,
+                playerVars: {
+                    playsinline: 1,
+                    autoplay: autoplayFlag,
+                    mute: muteFlag,
+                    controls: 0,
+                    rel: 0,
+                    modestbranding: 1,
+                    showinfo: 0,
+                    iv_load_policy: 3,
+                    fs: 0,
+                    disablekb: 1,
+                    loop: 1,
+                    playlist: videoId,
+                    enablejsapi: 1
                 },
-                'onStateChange': function(e) {
-                    if (window.GSBridge && GSBridge.onPlayerState) { GSBridge.onPlayerState(e.data); }
-                    // 5 = CUED. A cued-but-not-started player means autoplay was
-                    // swallowed; nudge it once so the reel does not sit on a
-                    // frozen first frame.
-                    if (e.data === 5 && autoplayFlag === 1) {
-                        try { e.target.playVideo(); } catch (err) {}
+                events: {
+                    'onReady': function(e) {
+                        ready = true;
+                        if (readyTimer) { clearTimeout(readyTimer); readyTimer = null; }
+                        try {
+                            if (muteFlag === 1) { e.target.mute(); } else { e.target.unMute(); }
+                            if (autoplayFlag === 1) { e.target.playVideo(); }
+                        } catch (err) {}
+                        if (window.GSBridge && GSBridge.onReady) { GSBridge.onReady(); }
+                    },
+                    'onStateChange': function(e) {
+                        if (window.GSBridge && GSBridge.onPlayerState) { GSBridge.onPlayerState(e.data); }
+                        // 5 = CUED. A cued-but-not-started player means autoplay was
+                        // swallowed; nudge it once so the reel does not sit on a
+                        // frozen first frame.
+                        if (e.data === 5 && autoplayFlag === 1) {
+                            try { e.target.playVideo(); } catch (err) {}
+                        }
+                        if (e.data === 0) {
+                            if (window.GSBridge && GSBridge.onEnded) { GSBridge.onEnded(); }
+                        }
+                    },
+                    'onError': function(e) {
+                        log('YT onError: ' + e.data);
+                        report(e.data);
                     }
-                    if (e.data === 0) {
-                        if (window.GSBridge && GSBridge.onEnded) { GSBridge.onEnded(); }
-                    }
-                },
-                'onError': function(e) {
-                    report(e.data);
                 }
-            }
-        });
+            });
+        } catch (err) {
+            log('player creation failed: ' + err.message);
+            report(ERR_JS);
+        }
     }
 
     startReadyTimer();
