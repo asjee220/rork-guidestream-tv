@@ -9,10 +9,15 @@ import com.rork.guidestreamtvandroid.data.remote.TMDBService
 import com.rork.guidestreamtvandroid.data.remote.TrailerResolveService
 import com.rork.guidestreamtvandroid.data.remote.toTMDBResult
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 
 /**
  * Reel tab enum — mirrors iOS ReelTab.
@@ -86,6 +91,9 @@ class ReelsViewModel : ViewModel() {
     val swipeCount: StateFlow<Int> = _swipeCount.asStateFlow()
 
     companion object {
+        /** Max titles resolved in parallel. Keeps TMDB/Supabase from being hammered. */
+        private const val RESOLVE_CONCURRENCY = 6
+
         @Volatile private var instance: ReelsViewModel? = null
         fun get(): ReelsViewModel = instance ?: synchronized(this) {
             instance ?: ReelsViewModel().also { instance = it }
@@ -93,7 +101,7 @@ class ReelsViewModel : ViewModel() {
     }
 
     fun loadTrailers() {
-        if (_trailers.value.isNotEmpty()) return
+        if (_trailers.value.isNotEmpty() || _isLoading.value) return
         _isLoading.value = true
         viewModelScope.launch(Dispatchers.IO) {
             try {
@@ -101,71 +109,97 @@ class ReelsViewModel : ViewModel() {
                 val onAir = tmdb.getOnTheAir()
                 val upcoming = StreamingUpcomingService.get().fetchUpcoming()?.map { it.toTMDBResult() } ?: emptyList()
 
-                val all = mutableListOf<TrailerItem>()
-                all.addAll(buildTrailers(trending, ReelTab.TRENDING, isTV = true))
-                all.addAll(buildTrailers(onAir, ReelTab.NEW, isTV = true))
-                all.addAll(buildTrailers(upcoming, ReelTab.COMING_SOON, isTV = false))
-
-                // For You = merged trending + on-air, deduped
+                // For You is the tab that opens first, so it is resolved and
+                // published before the others. Every later tab is appended as
+                // soon as it resolves instead of waiting for the whole feed,
+                // so the user never stares at a spinner while three more tabs
+                // finish resolving in the background.
                 val forYouPool = (trending + onAir).distinctBy { it.id }
-                all.addAll(0, buildTrailers(forYouPool, ReelTab.FOR_YOU, isTV = true))
+                val resolvedSoFar = mutableListOf<TrailerItem>()
 
-                // Dedupe within each tab (not globally): For You reuses the same
-                // trailer keys as Trending/New, so a global distinctBy would wipe out
-                // the tab-specific items and leave those tabs empty.
-                _trailers.value = all.distinctBy { it.tab to it.trailerKey }
+                suspend fun publish(results: List<TMDBResult>, tab: ReelTab) {
+                    resolvedSoFar += buildTrailers(results, tab)
+                    // Dedupe within each tab (not globally): For You reuses the
+                    // same trailer keys as Trending/New, so a global distinctBy
+                    // would wipe out the tab-specific items.
+                    _trailers.value = resolvedSoFar.distinctBy { it.tab to it.trailerKey }
+                }
+
+                publish(forYouPool, ReelTab.FOR_YOU)
+                // Drop the spinner only once something is actually on screen,
+                // otherwise an empty For You would flash "No trailers
+                // available" while the other tabs are still resolving.
+                if (resolvedSoFar.isNotEmpty()) _isLoading.value = false
+
+                publish(trending, ReelTab.TRENDING)
+                if (resolvedSoFar.isNotEmpty()) _isLoading.value = false
+
+                publish(onAir, ReelTab.NEW)
+                publish(upcoming, ReelTab.COMING_SOON)
             } finally {
                 _isLoading.value = false
             }
         }
     }
 
+    /**
+     * Resolves a page of TMDB results into playable reels.
+     *
+     * Each title needs 2-3 network round-trips (trailer resolve, sometimes the
+     * TMDB trailer key, then the top watch provider). Resolving titles one
+     * after another meant ~20 titles x 3 serial requests per tab, which is
+     * what stalled the feed. Titles are now resolved concurrently behind a
+     * small permit gate so the API is not hammered, and the original rank
+     * order is preserved by [awaitAll].
+     */
     private suspend fun buildTrailers(
         results: List<TMDBResult>,
         tab: ReelTab,
-        isTV: Boolean,
-    ): List<TrailerItem> {
-        val items = mutableListOf<TrailerItem>()
-        for (r in results.take(20)) {
-            // Server-verified playable keys in rank order. Three-way handling:
-            //  * null → resolver unreachable; degrade to the unverified TMDB key
-            //    so a brief Supabase outage doesn't empty the feed.
-            //  * empty → title has no playable trailer at all; skip it entirely.
-            //  * non-empty → first key is primary, the rest are fallbacks.
-            val resolved = TrailerResolveService.resolve(r.id, r.isTV)
-            val candidates: List<String> = when {
-                resolved == null -> listOf(tmdb.getTrailerKey(r.id, r.isTV) ?: continue)
-                resolved.isEmpty() -> continue
-                else -> resolved
-            }
-            val key = candidates.firstOrNull() ?: continue
-            val provider = tmdb.getTopWatchProvider(r.id, r.isTV)
-            val platform = Platform.from(provider?.providerName)
-            if (platform == null && tab != ReelTab.COMING_SOON) continue
-            items.add(
-                TrailerItem(
-                    id = key,
-                    tmdbId = r.id,
-                    showName = r.displayName,
-                    synopsis = r.overview ?: "",
-                    genre = if (r.isTV) "Series" else "Movie",
-                    runtime = "",
-                    platformId = platform?.name?.lowercase() ?: "",
-                    platformName = platform?.name ?: "Streaming",
-                    platformColor = platform?.color ?: androidx.compose.ui.graphics.Color(0xFFF5821F),
-                    backdropUrl = r.backdropUrl,
-                    posterUrl = r.posterUrl,
-                    trailerKey = key,
-                    fallbackKeys = candidates.drop(1),
-                    thumbnailUrl = "https://img.youtube.com/vi/$key/hqdefault.jpg",
-                    // (fallbackKeys carries the remaining verified keys in rank order)
-                    voteAverage = r.voteAverage ?: 7.0,
-                    tab = tab,
-                    isTV = r.isTV,
-                ),
-            )
+    ): List<TrailerItem> = coroutineScope {
+        val gate = Semaphore(RESOLVE_CONCURRENCY)
+        results.take(20)
+            .map { r -> async { gate.withPermit { buildTrailer(r, tab) } } }
+            .awaitAll()
+            .filterNotNull()
+    }
+
+    /** Resolves one TMDB result into a reel, or null when it has no playable trailer. */
+    private suspend fun buildTrailer(r: TMDBResult, tab: ReelTab): TrailerItem? {
+        // Server-verified playable keys in rank order. Three-way handling:
+        //  * null → resolver unreachable; degrade to the unverified TMDB key
+        //    so a brief Supabase outage doesn't empty the feed.
+        //  * empty → title has no playable trailer at all; skip it entirely.
+        //  * non-empty → first key is primary, the rest are fallbacks.
+        val resolved = TrailerResolveService.resolve(r.id, r.isTV)
+        val candidates: List<String> = when {
+            resolved == null -> listOf(tmdb.getTrailerKey(r.id, r.isTV) ?: return null)
+            resolved.isEmpty() -> return null
+            else -> resolved
         }
-        return items
+        val key = candidates.firstOrNull() ?: return null
+        val provider = tmdb.getTopWatchProvider(r.id, r.isTV)
+        val platform = Platform.from(provider?.providerName)
+        if (platform == null && tab != ReelTab.COMING_SOON) return null
+        return TrailerItem(
+            id = key,
+            tmdbId = r.id,
+            showName = r.displayName,
+            synopsis = r.overview ?: "",
+            genre = if (r.isTV) "Series" else "Movie",
+            runtime = "",
+            platformId = platform?.name?.lowercase() ?: "",
+            platformName = platform?.name ?: "Streaming",
+            platformColor = platform?.color ?: androidx.compose.ui.graphics.Color(0xFFF5821F),
+            backdropUrl = r.backdropUrl,
+            posterUrl = r.posterUrl,
+            trailerKey = key,
+            fallbackKeys = candidates.drop(1),
+            thumbnailUrl = "https://img.youtube.com/vi/$key/hqdefault.jpg",
+            // (fallbackKeys carries the remaining verified keys in rank order)
+            voteAverage = r.voteAverage ?: 7.0,
+            tab = tab,
+            isTV = r.isTV,
+        )
     }
 
     fun setTab(tab: ReelTab) {
@@ -177,9 +211,11 @@ class ReelsViewModel : ViewModel() {
         _swipeCount.value = _swipeCount.value + 1
     }
 
-    /** Trailers filtered by the current tab. */
-    fun trailersForTab(tab: ReelTab): List<TrailerItem> {
-        val all = _trailers.value
-        return if (tab == ReelTab.FOR_YOU) all else all.filter { it.tab == tab }
-    }
+    /**
+     * Trailers filtered by the current tab. For You is a real tab with its own
+     * resolved items, so it filters like every other tab — returning the whole
+     * list showed each video up to four times (once per tab that resolved it).
+     */
+    fun trailersForTab(tab: ReelTab): List<TrailerItem> =
+        _trailers.value.filter { it.tab == tab }
 }

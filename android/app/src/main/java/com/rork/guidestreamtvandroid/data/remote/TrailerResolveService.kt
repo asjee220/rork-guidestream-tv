@@ -42,6 +42,17 @@ data class TrailerResolveResponse(
 object TrailerResolveService {
 
     /**
+     * Single shared client. Creating an [HttpClient] per call spins up a fresh
+     * engine + thread pool for every title and leaks it (never closed), which
+     * is enough to stall the whole Reels feed on its own.
+     */
+    private val client: HttpClient by lazy {
+        HttpClient {
+            install(ContentNegotiation) { json(Json { ignoreUnknownKeys = true }) }
+        }
+    }
+
+    /**
      * Resolves verified playable YouTube trailer keys for a title.
      *
      * The nullable return is load-bearing and the two cases must never be
@@ -55,9 +66,6 @@ object TrailerResolveService {
      */
     suspend fun resolve(tmdbId: Int, isTV: Boolean): List<String>? {
         return try {
-            val client = HttpClient {
-                install(ContentNegotiation) { json(Json { ignoreUnknownKeys = true }) }
-            }
             val url = "${SupabaseConfig.URL.trim()}/functions/v1/trailer_resolve"
             val body = buildJsonObject {
                 put("tmdb_id", JsonPrimitive(tmdbId))
