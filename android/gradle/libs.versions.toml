@@ -21,6 +21,7 @@ media3 = "1.8.0"
 playServicesAuth = "21.3.0"
 credentials = "1.5.0"
 webkit = "1.14.0"
+androidYouTubePlayer = "13.0.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -58,6 +59,7 @@ play-services-auth = { group = "com.google.android.gms", name = "play-services-a
 androidx-credentials = { group = "androidx.credentials", name = "credentials", version.ref = "credentials" }
 androidx-credentials-play-services-auth = { group = "androidx.credentials", name = "credentials-play-services-auth", version.ref = "credentials" }
 androidx-webkit = { group = "androidx.webkit", name = "webkit", version.ref = "webkit" }
+android-youtube-player = { group = "com.pierfrancescosoffritti.androidyoutubeplayer", name = "core", version.ref = "androidYouTubePlayer" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

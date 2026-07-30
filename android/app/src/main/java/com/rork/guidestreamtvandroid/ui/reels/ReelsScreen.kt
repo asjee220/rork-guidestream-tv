@@ -64,6 +64,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -575,11 +576,13 @@ private fun ReelView(
             }
         }
 
-        // Right rail: Like, List, Watched, More
+        // Right rail: Like, List, Watched, More — positioned at 27% down the
+        // screen to match iOS Layer 15.
         Column(
             modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .padding(end = 12.dp, bottom = 24.dp + systemBottomInset()),
+                .align(Alignment.TopEnd)
+                .padding(end = 18.dp)
+                .padding(top = LocalConfiguration.current.screenHeightDp.dp * 0.27f),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
@@ -629,39 +632,58 @@ private fun ReelView(
             }
         }
 
-        // Bottom-left: title + meta
+        // Bottom-left content (Layer 17) — matches iOS layout and typography.
         Column(
             modifier = Modifier
                 .align(Alignment.BottomStart)
-                .padding(start = 16.dp, bottom = 24.dp + systemBottomInset())
-                .fillMaxWidth(if (injected) 0.72f else 0.65f),
+                .padding(start = 22.dp, end = 16.dp)
+                .padding(bottom = 38.dp + systemBottomInset())
+                .fillMaxWidth(),
         ) {
-            // Platform badge + optional video-type chip (title-scoped mode)
+            // Platform / genre / video-type chips
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
                     modifier = Modifier
                         .clip(RoundedCornerShape(6.dp))
-                        .background(reel.platformColor)
-                        .padding(horizontal = 8.dp, vertical = 3.dp),
+                        .background(
+                            if (reel.isSponsored) reel.platformColor.copy(alpha = 0.25f) else reel.platformColor
+                        )
+                        .padding(horizontal = 10.dp, vertical = 5.dp),
                 ) {
                     Text(
                         text = reel.platformName,
-                        fontSize = 10.sp,
+                        fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
                         color = Color.White,
                     )
                 }
+                Spacer(Modifier.width(8.dp))
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(Color.White.copy(alpha = if (reel.isSponsored) 0.06f else 0.12f))
+                        .border(1.dp, Color.White.copy(alpha = if (reel.isSponsored) 0.10f else 0.20f), RoundedCornerShape(6.dp))
+                        .padding(horizontal = 10.dp, vertical = 5.dp),
+                ) {
+                    Text(
+                        text = reel.genre,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White.copy(alpha = if (reel.isSponsored) 0.75f else 1f),
+                    )
+                }
                 if (injected && !reel.videoType.isNullOrBlank()) {
-                    Spacer(Modifier.width(6.dp))
+                    Spacer(Modifier.width(8.dp))
                     Box(
                         modifier = Modifier
                             .clip(RoundedCornerShape(6.dp))
                             .background(Color.White.copy(alpha = 0.12f))
-                            .padding(horizontal = 8.dp, vertical = 3.dp),
+                            .border(1.dp, Color.White.copy(alpha = 0.20f), RoundedCornerShape(6.dp))
+                            .padding(horizontal = 10.dp, vertical = 5.dp),
                     ) {
                         Text(
-                            text = reel.videoType!!,
-                            fontSize = 10.sp,
+                            text = reel.videoType,
+                            fontSize = 11.sp,
                             fontWeight = FontWeight.Bold,
                             color = Color.White,
                         )
@@ -671,35 +693,65 @@ private fun ReelView(
             Spacer(Modifier.height(8.dp))
             Text(
                 text = reel.showName,
-                fontSize = 20.sp,
+                fontSize = 28.sp,
                 fontWeight = FontWeight.Bold,
-                color = TextPrimary,
+                color = Color.White,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
-            )
-            Spacer(Modifier.height(4.dp))
-            Text(
-                text = "★ ${String.format("%.1f", reel.voteAverage)}  ·  ${reel.genre}",
-                fontSize = 13.sp,
-                color = TextSecondary,
+                modifier = Modifier.padding(end = 90.dp),
             )
             if (reel.synopsis.isNotBlank()) {
-                Spacer(Modifier.height(6.dp))
+                Spacer(Modifier.height(10.dp))
                 Text(
                     text = reel.synopsis,
-                    fontSize = 12.sp,
-                    color = TextTertiary,
+                    fontSize = 14.sp,
+                    color = Color.White.copy(alpha = 0.80f),
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(end = 90.dp),
                 )
             }
-            if (injected) {
-                Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(14.dp))
+            Text(
+                text = "Trailer",
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Medium,
+                color = Color.White.copy(alpha = 0.55f),
+                modifier = Modifier.padding(end = 90.dp),
+            )
+
+            Spacer(Modifier.height(14.dp))
+            // Watch / CTA row + ad carousel on the trailing side.
+            if (reel.isSponsored) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = "Learn more",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color.White,
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Icon(
+                        imageVector = Icons.Filled.KeyboardArrowDown,
+                        contentDescription = null,
+                        tint = Color.White.copy(alpha = 0.70f),
+                        modifier = Modifier.size(16.dp),
+                    )
+                }
+            } else if (injected) {
                 WatchNowSwitcher(sources = sources, onOpenSource = onOpenSource)
-            }
-            if (!reel.isSponsored) {
-                Spacer(Modifier.height(12.dp))
-                ReelAdCarousel(reel = reel, isCurrent = isCurrent)
+                if (!reel.isSponsored) {
+                    Spacer(Modifier.height(12.dp))
+                    ReelAdCarousel(reel = reel, isCurrent = isCurrent)
+                }
+            } else {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    PlayOnPill(onClick = onPlayYoutube)
+                    Spacer(Modifier.width(8.dp))
+                    Box(Modifier.weight(1f)) {
+                        ReelAdCarousel(reel = reel, isCurrent = isCurrent)
+                    }
+                }
             }
         }
 
@@ -1200,6 +1252,41 @@ private fun reelMonetizationTag(src: WatchmodeSrc): String? {
  * True when [url] is openable: contains a scheme separator and is not one of
  * Watchmode's free-tier placeholder strings.
  */
+/**
+ * iOS-style "Watch" pill: orange capsule with a play icon and bold white text.
+ * Tapping the pill opens the show detail or, in the reels feed, the YouTube trailer.
+ */
+@Composable
+private fun PlayOnPill(onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(26.dp))
+            .background(BrandOrange)
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+            ) { onClick() }
+            .padding(horizontal = 22.dp, vertical = 13.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                imageVector = Icons.Filled.PlayArrow,
+                contentDescription = null,
+                tint = Color.White,
+                modifier = Modifier.size(18.dp),
+            )
+            Spacer(Modifier.width(6.dp))
+            Text(
+                text = "Watch",
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color.White,
+            )
+        }
+    }
+}
+
 private fun isUsableReelUrl(url: String?): Boolean {
     if (url.isNullOrBlank()) return false
     val lower = url.lowercase()
@@ -1248,8 +1335,8 @@ private fun RailButton(
         Text(
             text = label,
             fontSize = 11.sp,
-            color = TextSecondary,
-            fontWeight = FontWeight.Medium,
+            color = Color.White,
+            fontWeight = FontWeight.SemiBold,
         )
     }
 }

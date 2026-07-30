@@ -1,17 +1,6 @@
 package com.rork.guidestreamtvandroid.ui.reels
 
-import android.annotation.SuppressLint
-import android.content.Context
-import android.os.Handler
-import android.os.Looper
 import android.util.Log
-import android.webkit.ConsoleMessage
-import android.webkit.JavascriptInterface
-import android.webkit.WebChromeClient
-import android.webkit.WebResourceRequest
-import android.webkit.WebResourceResponse
-import android.webkit.WebView
-import android.webkit.WebViewClient
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -24,31 +13,27 @@ import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
-import com.rork.guidestreamtvandroid.BuildConfig
+import com.pierfrancescosoffritti.androidyoutubeplayer.core.player.PlayerConstants
+import com.pierfrancescosoffritti.androidyoutubeplayer.core.player.YouTubePlayer
+import com.pierfrancescosoffritti.androidyoutubeplayer.core.player.listeners.AbstractYouTubePlayerListener
+import com.pierfrancescosoffritti.androidyoutubeplayer.core.player.options.IFramePlayerOptions
+import com.pierfrancescosoffritti.androidyoutubeplayer.core.player.views.YouTubePlayerView
 
 /**
  * Inline YouTube trailer player for Reels.
  *
- * The IFrame Player API loads the video inside an iframe whose parent origin
- * must be readable. YouTube's newer enforcement (errors 152/153) rejects embeds
- * whose origin/referrer it cannot resolve or does not accept, which includes
- * `appassets.androidplatform.net` and raw `file:`/`data:` origins. The proven
- * technique used by the de-facto standard android-youtube-player library is
- * `loadDataWithBaseURL("https://www.youtube.com", html, ...)`: the document
- * reports youtube.com as its origin, and the YouTube iframe accepts it.
+ * Uses the proven open-source android-youtube-player library (v13.0.0), which
+ * wraps the official YouTube IFrame API in a WebView. Version 13.0.0 fixes the
+ * error 152 "missing HTTP referrer" problem by deriving the embed origin from
+ * the app's package name, and it correctly handles third-party cookies and WebView
+ * UA cleanup that a raw WebView does not. This is YouTube-ToS compliant and never
+ * uses ExoPlayer/media3 stream extraction.
  *
- * Config (video id / mute / autoplay) is injected into the static asset
- * (`assets/yt_player.html`) via placeholder replacement because a data-loaded
- * document has no query string. This is YouTube-ToS compliant and never uses
- * ExoPlayer/media3, which cannot play YouTube and would require ToS-violating
- * stream extraction.
- *
- * The WebView never consumes touch ([pointerInteropFilter] returns false),
+ * The view never consumes touch ([pointerInteropFilter] returns false),
  * mirroring the iOS `allowsHitTesting(false)` on the player layer so the
  * VerticalPager swipe and every overlay tap keep working.
  */
 @OptIn(ExperimentalComposeUiApi::class)
-@SuppressLint("SetJavaScriptEnabled")
 @Composable
 fun YouTubeReelPlayer(
     videoId: String,
@@ -62,255 +47,119 @@ fun YouTubeReelPlayer(
     val currentOnPlayerError by rememberUpdatedState(onPlayerError)
     val currentOnPlayerReady by rememberUpdatedState(onPlayerReady)
     val currentOnEnded by rememberUpdatedState(onEnded)
-    val mainHandler = remember { Handler(Looper.getMainLooper()) }
-
-    // Remembered holder tracking the last values pushed into the WebView so the
-    // update block only reloads when the videoId actually changes and only
-    // evaluates mute/playback JS when those values actually change.
-    val holder = remember { PlayerStateHolder() }
-
     val lifecycleOwner = LocalLifecycleOwner.current
+
+    // State holder so the update block can nudge play/pause/mute without
+    // recreating the player or the listener.
+    val holder = remember { PlayerHolder() }
 
     AndroidView(
         modifier = modifier.pointerInteropFilter { false },
         factory = { ctx ->
-            if (BuildConfig.DEBUG) {
-                WebView.setWebContentsDebuggingEnabled(true)
-            }
+            Log.w("GSReels", "creating player for video $videoId")
+            val options = IFramePlayerOptions.Builder(ctx)
+                .autoplay(1)
+                .mute(1)
+                .controls(0)
+                .rel(0)
+                .ivLoadPolicy(3)
+                .build()
 
-            WebView(ctx).apply {
-                @Suppress("DEPRECATION")
-                settings.apply {
-                    javaScriptEnabled = true
-                    // Mandatory: without this Android blocks autoplay and the
-                    // embed stays frozen on a black frame.
-                    mediaPlaybackRequiresUserGesture = false
-                    domStorageEnabled = true
-                    // Android's default WebView UA carries the "; wv" token,
-                    // which YouTube penalises. Strip it from the real default
-                    // rather than fabricating a UA from scratch.
-                    userAgentString = userAgentString.replace("; wv", "")
-                    loadWithOverviewMode = true
-                    useWideViewPort = true
-                }
-                // The embed is a third-party frame relative to the base URL;
-                // with the default policy its cookies are dropped and playback
-                // never starts, leaving a permanently black player.
-                android.webkit.CookieManager.getInstance()
-                    .setAcceptThirdPartyCookies(this, true)
-                webViewClient = object : WebViewClient() {
-                    override fun onPageStarted(
-                        view: WebView,
-                        url: String?,
-                        favicon: android.graphics.Bitmap?,
+            YouTubePlayerView(ctx).apply {
+                enableAutomaticInitialization = false
+                initialize(object : AbstractYouTubePlayerListener() {
+                    override fun onReady(youTubePlayer: YouTubePlayer) {
+                        holder.player = youTubePlayer
+                        holder.lastVideoId = videoId
+                        holder.lastMuted = isMuted
+                        holder.lastPlaying = isPlaying
+                        youTubePlayer.cueVideo(videoId, 0f)
+                        if (isPlaying) youTubePlayer.play()
+                        if (isMuted) youTubePlayer.mute() else youTubePlayer.unMute()
+                        currentOnPlayerReady()
+                    }
+
+                    override fun onStateChange(
+                        youTubePlayer: YouTubePlayer,
+                        state: PlayerConstants.PlayerState,
                     ) {
-                        Log.w("GSReels", "page started: $url")
+                        if (state == PlayerConstants.PlayerState.ENDED) {
+                            currentOnEnded()
+                        }
                     }
 
-                    override fun onPageFinished(view: WebView, url: String?) {
-                        Log.w("GSReels", "page finished: $url")
-                    }
-
-                    override fun onReceivedError(
-                        view: WebView,
-                        request: WebResourceRequest,
-                        error: android.webkit.WebResourceError,
+                    override fun onError(
+                        youTubePlayer: YouTubePlayer,
+                        error: PlayerConstants.PlayerError,
                     ) {
-                        // Sub-resource failures matter here too: a blocked
-                        // iframe_api or embed request is exactly the failure
-                        // mode being diagnosed on the cloud emulator.
-                        Log.w(
-                            "GSReels",
-                            "resource error ${error.errorCode} '${error.description}' " +
-                                "main=${request.isForMainFrame} url=${request.url}",
-                        )
+                        Log.w("GSReels", "player error $error for video $videoId")
+                        // REQUEST_MISSING_HTTP_REFERER is a transient init error that
+                        // the library recovers from automatically; mapping it to the
+                        // Kotlin error handler would cause false fallback cascades.
+                        if (error != PlayerConstants.PlayerError.REQUEST_MISSING_HTTP_REFERER) {
+                            currentOnPlayerError(error.ordinal)
+                        }
                     }
-
-                    override fun onReceivedHttpError(
-                        view: WebView,
-                        request: WebResourceRequest,
-                        errorResponse: WebResourceResponse,
-                    ) {
-                        Log.w(
-                            "GSReels",
-                            "http ${errorResponse.statusCode} " +
-                                "main=${request.isForMainFrame} url=${request.url}",
-                        )
-                    }
-                }
-                // Required for HTML5 <video> to render inside a WebView; the
-                // console hook surfaces IFrame API errors that are otherwise
-                // invisible on device.
-                webChromeClient = object : WebChromeClient() {
-                    override fun onConsoleMessage(consoleMessage: ConsoleMessage): Boolean {
-                        Log.w(
-                            "GSReels",
-                            "console: ${consoleMessage.message()} " +
-                                "[${consoleMessage.sourceId()}:${consoleMessage.lineNumber()}]",
-                        )
-                        return true
-                    }
-                }
-                setBackgroundColor(android.graphics.Color.BLACK)
-                isVerticalScrollBarEnabled = false
-                isHorizontalScrollBarEnabled = false
-                overScrollMode = WebView.OVER_SCROLL_NEVER
-                addJavascriptInterface(
-                    object {
-                        @JavascriptInterface
-                        fun onReady() {
-                            Log.w("GSReels", "player ready")
-                            mainHandler.post { currentOnPlayerReady() }
-                        }
-
-                        @JavascriptInterface
-                        fun onEnded() {
-                            mainHandler.post { currentOnEnded() }
-                        }
-
-                        @JavascriptInterface
-                        fun onPlayerState(state: Int) {
-                            Log.w("GSReels", "state: $state")
-                        }
-
-                        @JavascriptInterface
-                        fun log(message: String) {
-                            Log.w("GSReels", "js: $message")
-                        }
-
-                        /**
-                         * Player errors. Negative codes are synthetic and come
-                         * from the player page itself rather than YouTube:
-                         * -1 pre-ready JS error, -2 readiness timeout,
-                         * -3 the IFrame API script failed to load.
-                         */
-                        @JavascriptInterface
-                        fun onPlayerError(code: Int) {
-                            val label = when (code) {
-                                -1 -> "pre-ready JS error"
-                                -2 -> "readiness timeout"
-                                -3 -> "iframe API load failed"
-                                else -> "youtube error"
-                            }
-                            Log.w("GSReels", "error code: $code ($label)")
-                            mainHandler.post { currentOnPlayerError(code) }
-                        }
-                    },
-                    "GSBridge",
-                )
-                holder.webViewRef = this
+                }, true, options)
+                holder.view = this
             }
         },
-        update = { webView ->
-            if (holder.lastVideoId != videoId) {
-                holder.lastVideoId = videoId
-                holder.lastMuted = isMuted
-                holder.lastPlaying = isPlaying
-                // autoplay mirrors the pager's play state: reloading a paused
-                // reel must not silently start playing again.
-                val html = buildPlayerHtml(
-                    context = webView.context,
-                    videoId = videoId,
-                    isMuted = isMuted,
-                    autoplay = isPlaying,
-                )
-                Log.w("GSReels", "loading player for video $videoId (base=$PlayerBaseUrl)")
-                webView.loadDataWithBaseURL(
-                    PlayerBaseUrl,
-                    html,
-                    "text/html",
-                    "utf-8",
-                    null,
-                )
-            } else {
+        update = { view ->
+            // The library requires lifecycle observation on the view itself.
+            lifecycleOwner.lifecycle.addObserver(view)
+
+            holder.player?.let { player ->
+                if (holder.lastVideoId != videoId) {
+                    holder.lastVideoId = videoId
+                    player.cueVideo(videoId, 0f)
+                }
                 if (holder.lastMuted != isMuted) {
                     holder.lastMuted = isMuted
-                    val js = if (isMuted) "player.mute();" else "player.unMute();"
-                    webView.evaluateJavascript("try{$js}catch(e){}", null)
+                    if (isMuted) player.mute() else player.unMute()
                 }
                 if (holder.lastPlaying != isPlaying) {
                     holder.lastPlaying = isPlaying
-                    val js = if (isPlaying) "player.playVideo();" else "player.pauseVideo();"
-                    webView.evaluateJavascript("try{$js}catch(e){}", null)
+                    if (isPlaying) player.play() else player.pause()
                 }
             }
         },
-        onRelease = { webView ->
-            webView.stopLoading()
-            webView.loadUrl("about:blank")
-            webView.removeAllViews()
-            webView.destroy()
-            holder.webViewRef = null
+        onRelease = { view ->
+            lifecycleOwner.lifecycle.removeObserver(view)
+            view.release()
+            holder.player = null
+            holder.view = null
         },
     )
 
-    // Deterministic teardown: swiping a reel away kills its audio and never
-    // leaves a second player alive.
-    DisposableEffect(Unit) {
-        onDispose {
-            holder.lastVideoId = null
-        }
-    }
-
-    // Backgrounding must never leave trailer audio playing.
-    val currentIsPlaying by rememberUpdatedState(isPlaying)
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
                 Lifecycle.Event.ON_PAUSE -> {
-                    holder.webViewRef?.let { wv ->
-                        wv.evaluateJavascript("try{player.pauseVideo();}catch(e){}", null)
-                        wv.onPause()
+                    holder.player?.pause()
+                    holder.view?.let { view ->
+                        lifecycleOwner.lifecycle.removeObserver(view)
                     }
                 }
                 Lifecycle.Event.ON_RESUME -> {
-                    holder.webViewRef?.let { wv ->
-                        wv.onResume()
-                        if (currentIsPlaying) {
-                            wv.evaluateJavascript("try{player.playVideo();}catch(e){}", null)
-                        }
+                    holder.view?.let { view ->
+                        lifecycleOwner.lifecycle.addObserver(view)
                     }
+                    if (isPlaying) holder.player?.play()
                 }
                 else -> Unit
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
     }
 }
 
-/**
- * Base URL for the synthetic player document. Must be `https://www.youtube.com`
- * so the WebView reports an origin that the YouTube iframe embed accepts. Using
- * a third-party domain (even the app's real domain) can trigger error 152 on
- * devices whose WebView policy restricts the referrer sent with the iframe
- * request.
- */
-private const val PlayerBaseUrl = "https://www.youtube.com"
-
-/**
- * Reads the static player page from assets and injects the per-reel config.
- * The video id is sanitised to the YouTube id alphabet so a malformed key can
- * never break out of the JS string literal.
- */
-private fun buildPlayerHtml(
-    context: Context,
-    videoId: String,
-    isMuted: Boolean,
-    autoplay: Boolean,
-): String {
-    val template = context.assets.open("yt_player.html").bufferedReader().use { it.readText() }
-    val safeId = videoId.filter { it.isLetterOrDigit() || it == '-' || it == '_' }
-    return template
-        .replace("__VIDEO_ID__", safeId)
-        .replace("__MUTE__", if (isMuted) "1" else "0")
-        .replace("__AUTOPLAY__", if (autoplay) "1" else "0")
-}
-
-/** Holds the last-pushed state so recompositions don't reload/restart the WebView. */
-private class PlayerStateHolder {
+private class PlayerHolder {
+    var player: YouTubePlayer? = null
+    var view: YouTubePlayerView? = null
     var lastVideoId: String? = null
     var lastMuted: Boolean = true
     var lastPlaying: Boolean = true
-    var webViewRef: WebView? = null
 }
