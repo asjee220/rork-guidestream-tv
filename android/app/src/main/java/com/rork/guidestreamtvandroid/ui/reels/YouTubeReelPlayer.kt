@@ -108,13 +108,52 @@ fun YouTubeReelPlayer(
                     ): WebResourceResponse? {
                         return assetLoader.shouldInterceptRequest(request.url)
                     }
+
+                    override fun onPageStarted(
+                        view: WebView,
+                        url: String?,
+                        favicon: android.graphics.Bitmap?,
+                    ) {
+                        Log.w("GSReels", "page started: $url")
+                    }
+
+                    override fun onPageFinished(view: WebView, url: String?) {
+                        Log.w("GSReels", "page finished: $url")
+                    }
+
+                    override fun onReceivedError(
+                        view: WebView,
+                        request: WebResourceRequest,
+                        error: android.webkit.WebResourceError,
+                    ) {
+                        // Sub-resource failures matter here too: a blocked
+                        // iframe_api or embed request is exactly the failure
+                        // mode being diagnosed on the cloud emulator.
+                        Log.w(
+                            "GSReels",
+                            "resource error ${error.errorCode} '${error.description}' " +
+                                "main=${request.isForMainFrame} url=${request.url}",
+                        )
+                    }
+
+                    override fun onReceivedHttpError(
+                        view: WebView,
+                        request: WebResourceRequest,
+                        errorResponse: WebResourceResponse,
+                    ) {
+                        Log.w(
+                            "GSReels",
+                            "http ${errorResponse.statusCode} " +
+                                "main=${request.isForMainFrame} url=${request.url}",
+                        )
+                    }
                 }
                 // Required for HTML5 <video> to render inside a WebView; the
                 // console hook surfaces IFrame API errors that are otherwise
                 // invisible on device.
                 webChromeClient = object : WebChromeClient() {
                     override fun onConsoleMessage(consoleMessage: ConsoleMessage): Boolean {
-                        Log.d(
+                        Log.w(
                             "GSReels",
                             "console: ${consoleMessage.message()} " +
                                 "[${consoleMessage.sourceId()}:${consoleMessage.lineNumber()}]",
@@ -130,7 +169,7 @@ fun YouTubeReelPlayer(
                     object {
                         @JavascriptInterface
                         fun onReady() {
-                            Log.d("GSReels", "player ready")
+                            Log.w("GSReels", "player ready")
                             mainHandler.post { currentOnPlayerReady() }
                         }
 
@@ -141,7 +180,7 @@ fun YouTubeReelPlayer(
 
                         @JavascriptInterface
                         fun onPlayerState(state: Int) {
-                            Log.d("GSReels", "state: $state")
+                            Log.w("GSReels", "state: $state")
                         }
 
                         /**
@@ -158,7 +197,7 @@ fun YouTubeReelPlayer(
                                 -3 -> "iframe API load failed"
                                 else -> "youtube error"
                             }
-                            Log.d("GSReels", "error code: $code ($label)")
+                            Log.w("GSReels", "error code: $code ($label)")
                             mainHandler.post { currentOnPlayerError(code) }
                         }
                     },
@@ -183,6 +222,7 @@ fun YouTubeReelPlayer(
                     .appendQueryParameter("autoplay", autoplayFlag)
                     .build()
                     .toString()
+                Log.w("GSReels", "loading player: $url")
                 webView.loadUrl(url)
             } else {
                 if (holder.lastMuted != isMuted) {
