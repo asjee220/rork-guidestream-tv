@@ -14,12 +14,13 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.requiredHeight
+import androidx.compose.foundation.layout.requiredWidth
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -65,6 +66,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
@@ -77,6 +79,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.max
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -474,17 +477,20 @@ private fun ReelView(
             // iOS sizes the player to the full screen height while preserving a
             // 16:9 aspect ratio, then clips the sides so the video fills the
             // entire screen without letterboxing.
-            val screenHeight = LocalConfiguration.current.screenHeightDp.dp
-            Box(
+            BoxWithConstraints(
                 modifier = Modifier
                     .fillMaxSize()
                     .clipToBounds(),
                 contentAlignment = Alignment.Center,
             ) {
+                val pageW = maxWidth
+                val pageH = maxHeight
+                val fillW = max(pageW, pageH * 16f / 9f)
+                val fillH = fillW * 9f / 16f
                 Box(
                     modifier = Modifier
-                        .fillMaxHeight()
-                        .width(screenHeight * 16f / 9f),
+                        .requiredWidth(fillW)
+                        .requiredHeight(fillH),
                 ) {
                     YouTubeReelPlayer(
                         modifier = Modifier.fillMaxSize(),
@@ -551,7 +557,7 @@ private fun ReelView(
                             Color.Black.copy(alpha = 0.35f),
                             Color.Transparent,
                             Color.Black.copy(alpha = 0.25f),
-                            Color.Black.copy(alpha = 0.75f),
+                            Color.Black.copy(alpha = 0.34f),
                         ),
                     ),
                 ),
@@ -636,7 +642,7 @@ private fun ReelView(
             modifier = Modifier
                 .align(Alignment.BottomStart)
                 .padding(start = 22.dp, end = 16.dp)
-                .padding(bottom = 38.dp + systemBottomInset())
+                .padding(bottom = 27.dp + systemBottomInset())
                 .fillMaxWidth(),
         ) {
             // Platform / genre / video-type chips
@@ -738,19 +744,17 @@ private fun ReelView(
                     )
                 }
             } else if (injected) {
-                WatchNowSwitcher(sources = sources, onOpenSource = onOpenSource)
-                if (!reel.isSponsored) {
-                    Spacer(Modifier.height(12.dp))
+                Box(Modifier.fillMaxWidth().padding(end = 16.dp)) {
                     ReelAdCarousel(reel = reel, isCurrent = isCurrent)
                 }
+                Spacer(Modifier.height(12.dp))
+                WatchNowSwitcher(sources = sources, onOpenSource = onOpenSource)
             } else {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    PlayOnPill(onClick = onPlayYoutube)
-                    Spacer(Modifier.width(8.dp))
-                    Box(Modifier.weight(1f)) {
-                        ReelAdCarousel(reel = reel, isCurrent = isCurrent)
-                    }
+                Box(Modifier.fillMaxWidth().padding(end = 16.dp)) {
+                    ReelAdCarousel(reel = reel, isCurrent = isCurrent)
                 }
+                Spacer(Modifier.height(12.dp))
+                PlayOnPill(onClick = onPlayYoutube)
             }
         }
 
@@ -1582,7 +1586,7 @@ private fun ReelAdCarousel(
 
     val pagerState = rememberPagerState(pageCount = { offers.size })
 
-    Column {
+    Column(modifier = Modifier.alpha(0.83f)) {
         HorizontalPager(
             state = pagerState,
             modifier = Modifier.fillMaxWidth(),
@@ -1632,7 +1636,7 @@ private fun ReelAffiliateCard(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(14.dp))
-            .background(Color.Black.copy(alpha = 0.55f))
+            .background(Color.Black.copy(alpha = 0.44f))
             .border(1.dp, GlassStroke, RoundedCornerShape(14.dp))
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
@@ -1656,95 +1660,80 @@ private fun ReelAffiliateCard(
                 )
             },
     ) {
-        Column(modifier = Modifier.padding(10.dp)) {
-            // Header: Sponsored pill + dismiss
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth(),
+        Row(
+            modifier = Modifier.padding(7.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(44.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(service?.bg ?: Color.Black),
+                contentAlignment = Alignment.Center,
             ) {
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(4.dp))
-                        .background(BrandOrange.copy(alpha = 0.2f))
-                        .padding(horizontal = 6.dp, vertical = 2.dp),
-                ) {
-                    Text(
-                        text = "Sponsored",
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = BrandOrange,
-                    )
-                }
-                Spacer(Modifier.weight(1f))
+                Text(
+                    text = (service?.name ?: offer.second).take(3).uppercase(),
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Black,
+                    color = Color.White,
+                )
+            }
+            Spacer(Modifier.width(10.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = offer.second,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = TextPrimary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    text = offer.third,
+                    fontSize = 10.sp,
+                    color = TextSecondary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Spacer(Modifier.height(3.dp))
+                Text(
+                    text = "Sponsored · Rakuten",
+                    fontSize = 9.sp,
+                    color = TextTertiary,
+                )
+            }
+            Spacer(Modifier.width(8.dp))
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(BrandOrange)
+                    .padding(horizontal = 12.dp, vertical = 7.dp),
+            ) {
+                Text(
+                    text = "Get offer",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White,
+                )
+            }
+            Spacer(Modifier.width(6.dp))
+            Box(
+                modifier = Modifier
+                    .size(24.dp)
+                    .clip(CircleShape)
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                    ) { onDismiss() },
+                contentAlignment = Alignment.Center,
+            ) {
                 Icon(
                     imageVector = Icons.Filled.Close,
                     contentDescription = "Dismiss ad",
                     tint = TextTertiary,
-                    modifier = Modifier
-                        .size(18.dp)
-                        .clip(CircleShape)
-                        .clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null,
-                        ) { onDismiss() },
+                    modifier = Modifier.size(16.dp),
                 )
-            }
-            Spacer(Modifier.height(8.dp))
-            // Body: brand tile + headline/subtitle + get offer
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    modifier = Modifier
-                        .size(44.dp)
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(service?.bg ?: Color.Black),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        text = (service?.name ?: offer.second).take(3).uppercase(),
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Black,
-                        color = Color.White,
-                    )
-                }
-                Spacer(Modifier.width(10.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = offer.second,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = TextPrimary,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Spacer(Modifier.height(2.dp))
-                    Text(
-                        text = offer.third,
-                        fontSize = 10.sp,
-                        color = TextSecondary,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Spacer(Modifier.height(3.dp))
-                    Text(
-                        text = "Sponsored · Rakuten",
-                        fontSize = 9.sp,
-                        color = TextTertiary,
-                    )
-                }
-                Spacer(Modifier.width(8.dp))
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(BrandOrange)
-                        .padding(horizontal = 12.dp, vertical = 7.dp),
-                ) {
-                    Text(
-                        text = "Get offer",
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White,
-                    )
-                }
             }
         }
     }

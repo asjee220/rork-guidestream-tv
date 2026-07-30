@@ -1,6 +1,7 @@
 package com.rork.guidestreamtvandroid.ui.reels
 
 import android.util.Log
+import android.widget.FrameLayout
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -75,6 +76,7 @@ fun YouTubeReelPlayer(
                 .build()
 
             YouTubePlayerView(ctx).apply {
+                layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
                 enableAutomaticInitialization = false
                 initialize(object : AbstractYouTubePlayerListener() {
                     override fun onReady(youTubePlayer: YouTubePlayer) {
