@@ -5,9 +5,11 @@ import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -16,6 +18,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.size
@@ -57,19 +60,24 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.rork.guidestreamtvandroid.BuildConfig
@@ -90,6 +98,8 @@ import kotlin.math.abs
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 import com.rork.guidestreamtvandroid.ui.theme.BrandBlue
 import com.rork.guidestreamtvandroid.ui.theme.SurfaceDark
 import com.rork.guidestreamtvandroid.ui.components.GsSheetDragHandle
@@ -427,6 +437,21 @@ private fun ReelView(
     // Last error code from the player, surfaced only as a debug-build badge so a
     // failing reel is visible on device without a photograph.
     var lastErrorCode by remember(reel.id) { mutableStateOf<Int?>(null) }
+    // Playback progress for the bottom scrubber.
+    var progress by remember(reel.id) { mutableStateOf(0f) }
+    var seekToFraction by remember(reel.id) { mutableStateOf<Float?>(null) }
+    // Media controls flash when the user taps the reel while playing.
+    var showControls by remember { mutableStateOf(false) }
+    val coroutineScope = rememberCoroutineScope()
+    var controlsFlashJob by remember { mutableStateOf<Job?>(null) }
+    fun flashControls() {
+        controlsFlashJob?.cancel()
+        controlsFlashJob = coroutineScope.launch {
+            showControls = true
+            delay(2200)
+            showControls = false
+        }
+    }
     val activeKey = if (candidateIndex == 0) reel.trailerKey
         else reel.fallbackKeys.getOrNull(candidateIndex - 1) ?: reel.trailerKey
 
@@ -446,59 +471,73 @@ private fun ReelView(
         // Non-current pages never instantiate a WebView, so swiping never leaves
         // two players (or two audio streams) alive at once.
         if (isCurrent && reel.trailerKey.isNotBlank() && !allCandidatesFailed) {
+            // iOS sizes the player to the full screen height while preserving a
+            // 16:9 aspect ratio, then clips the sides so the video fills the
+            // entire screen without letterboxing.
+            val screenHeight = LocalConfiguration.current.screenHeightDp.dp
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .clip(RoundedCornerShape(0.dp)),
+                    .clipToBounds(),
                 contentAlignment = Alignment.Center,
             ) {
-                YouTubeReelPlayer(
-                    videoId = activeKey,
-                    isMuted = isMuted,
-                    isPlaying = isPlaying,
-                    onPlayerError = { code ->
-                        // Every error code is logged so a dead player is never a
-                        // silent backdrop with no explanation.
-                        DebugLog.log(
-                            event = "reel_player_error",
-                            platform = "android",
-                            title = reel.showName,
-                            contentUrl = "https://www.youtube.com/watch?v=$activeKey",
-                            deviceName = "code=$code candidate=$candidateIndex",
-                            matched = false,
-                        )
-                        lastErrorCode = code
-                        // Fatal per-video codes walk the server-verified
-                        // fallback keys, then collapse to the poster once every
-                        // candidate is exhausted: 100 = removed/private,
-                        // 101/150 = owner disabled embedding, 152/153 = embed
-                        // blocked/restricted for this referrer. Every other
-                        // code leaves the WebView mounted exactly as before so
-                        // transient states can still recover.
-                        if (code == 100 || code == 101 || code == 150 || code == 152 || code == 153) {
-                            if (candidateIndex < reel.fallbackKeys.size) {
-                                candidateIndex += 1
-                            } else {
-                                allCandidatesFailed = true
-                            }
-                        }
-                    },
-                    onPlayerReady = {
-                        allCandidatesFailed = false
-                        lastErrorCode = null
-                        DebugLog.log(
-                            event = "reel_player_ready",
-                            platform = "android",
-                            title = reel.showName,
-                            contentUrl = "https://www.youtube.com/watch?v=$activeKey",
-                            matched = true,
-                        )
-                    },
-                    onEnded = { /* loop=1 playlist restarts automatically */ },
+                Box(
                     modifier = Modifier
                         .fillMaxHeight()
-                        .aspectRatio(16f / 9f),
-                )
+                        .width(screenHeight * 16f / 9f),
+                ) {
+                    YouTubeReelPlayer(
+                        modifier = Modifier.fillMaxSize(),
+                        videoId = activeKey,
+                        isMuted = isMuted,
+                        isPlaying = isPlaying,
+                        seekToFraction = seekToFraction,
+                        onSeekConsumed = { seekToFraction = null },
+                        onProgress = { seconds, duration ->
+                            progress = if (duration > 0f) seconds / duration else 0f
+                        },
+                        onPlayerError = { code ->
+                            // Every error code is logged so a dead player is never a
+                            // silent backdrop with no explanation.
+                            DebugLog.log(
+                                event = "reel_player_error",
+                                platform = "android",
+                                title = reel.showName,
+                                contentUrl = "https://www.youtube.com/watch?v=$activeKey",
+                                deviceName = "code=$code candidate=$candidateIndex",
+                                matched = false,
+                            )
+                            lastErrorCode = code
+                            // Fatal per-video codes walk the server-verified
+                            // fallback keys, then collapse to the poster once every
+                            // candidate is exhausted: 100 = removed/private,
+                            // 101/150 = owner disabled embedding, 152/153 = embed
+                            // blocked/restricted for this referrer. Every other
+                            // code leaves the WebView mounted exactly as before so
+                            // transient states can still recover.
+                            if (code == 100 || code == 101 || code == 150 || code == 152 || code == 153) {
+                                if (candidateIndex < reel.fallbackKeys.size) {
+                                    candidateIndex += 1
+                                } else {
+                                    allCandidatesFailed = true
+                                }
+                            }
+                        },
+                        onPlayerReady = {
+                            allCandidatesFailed = false
+                            lastErrorCode = null
+                            progress = 0f
+                            DebugLog.log(
+                                event = "reel_player_ready",
+                                platform = "android",
+                                title = reel.showName,
+                                contentUrl = "https://www.youtube.com/watch?v=$activeKey",
+                                matched = true,
+                            )
+                        },
+                        onEnded = { /* looping is handled inside the player */ },
+                    )
+                }
             }
         }
 
@@ -518,62 +557,22 @@ private fun ReelView(
                 ),
         )
 
-        // Center play/pause button (only when current and paused or controls shown)
-        if (isCurrent && !isPlaying) {
-            Box(
-                modifier = Modifier
-                    .align(Alignment.Center)
-                    .size(68.dp)
-                    .clip(CircleShape)
-                    .background(Color.Black.copy(alpha = 0.5f))
-                    .border(2.dp, Color.White.copy(alpha = 0.4f), CircleShape)
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                    ) { onTogglePlay() },
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    imageVector = Icons.Filled.PlayArrow,
-                    contentDescription = "Play",
-                    tint = Color.White,
-                    modifier = Modifier.size(36.dp),
-                )
-            }
-        }
-
-        // Mute button — repositions when paused (centered above play button)
+        // Full-screen tap target for play/pause toggle.
+        // Rendered beneath interactive overlays so the right rail, ad chips, and
+        // scrubber always receive taps first.
         if (isCurrent) {
-            val muteY: androidx.compose.ui.unit.Dp
-            val muteX: androidx.compose.ui.unit.Dp
-            if (!isPlaying) {
-                // Centered above the 68pt play button with 16dp gap
-                muteY = androidx.compose.ui.unit.Dp(34f + 16f + 20f) // half play + gap + half mute (approx)
-                muteX = 0.dp
-            } else {
-                muteY = 0.dp
-                muteX = 0.dp
-            }
             Box(
                 modifier = Modifier
-                    .align(if (!isPlaying) Alignment.Center else Alignment.BottomStart)
-                    .size(40.dp)
-                    .clip(CircleShape)
-                    .background(Color.Black.copy(alpha = 0.45f))
+                    .fillMaxSize()
                     .clickable(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null,
-                    ) { onToggleMute() }
-                    .padding(0.dp),
+                    ) {
+                        onTogglePlay()
+                        flashControls()
+                    },
                 contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    imageVector = if (isMuted) Icons.Filled.VolumeOff else Icons.Filled.VolumeUp,
-                    contentDescription = if (isMuted) "Unmute" else "Mute",
-                    tint = Color.White,
-                    modifier = Modifier.size(22.dp),
-                )
-            }
+            ) {}
         }
 
         // Right rail: Like, List, Watched, More — positioned at 27% down the
@@ -751,6 +750,101 @@ private fun ReelView(
                     Box(Modifier.weight(1f)) {
                         ReelAdCarousel(reel = reel, isCurrent = isCurrent)
                     }
+                }
+            }
+        }
+
+        // Layer 19 — interactive video scrubber.
+        if (isCurrent && !allCandidatesFailed) {
+            ReelScrubber(
+                progress = progress,
+                onSeek = { fraction -> seekToFraction = fraction },
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .padding(horizontal = 22.dp)
+                    .padding(bottom = 14.dp + systemBottomInset()),
+            )
+        }
+
+        // Layer 21 — media controls overlay (play/pause + mute).
+        if (isCurrent && (showControls || !isPlaying)) {
+            // Center play/pause button
+            Box(
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .size(68.dp)
+                    .clip(CircleShape)
+                    .background(Color.Black.copy(alpha = 0.5f))
+                    .border(2.dp, Color.White.copy(alpha = 0.4f), CircleShape)
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                    ) {
+                        onTogglePlay()
+                        flashControls()
+                    },
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                    contentDescription = if (isPlaying) "Pause" else "Play",
+                    tint = Color.White,
+                    modifier = Modifier.size(36.dp),
+                )
+            }
+
+            // Mute button — bottom-leading when playing, centered above the play
+            // button when paused, matching iOS.
+            val muteIcon = if (isMuted) Icons.Filled.VolumeOff else Icons.Filled.VolumeUp
+            val muteDescription = if (isMuted) "Unmute" else "Mute"
+            if (isPlaying) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .padding(start = 16.dp, bottom = 64.dp + systemBottomInset())
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .background(Color.Black.copy(alpha = 0.45f))
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                        ) {
+                            onToggleMute()
+                            flashControls()
+                        },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = muteIcon,
+                        contentDescription = muteDescription,
+                        tint = Color.White,
+                        modifier = Modifier.size(22.dp),
+                    )
+                }
+            } else {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.Center)
+                        .offset(y = -(34.dp + 16.dp + 20.dp))
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .background(Color.Black.copy(alpha = 0.45f))
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                        ) {
+                            onToggleMute()
+                            flashControls()
+                        },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = muteIcon,
+                        contentDescription = muteDescription,
+                        tint = Color.White,
+                        modifier = Modifier.size(22.dp),
+                    )
                 }
             }
         }
@@ -1284,6 +1378,66 @@ private fun PlayOnPill(onClick: () -> Unit) {
                 color = Color.White,
             )
         }
+    }
+}
+
+/**
+ * iOS-style thin video scrubber. An orange thumb moves along a translucent
+ * track; tapping or dragging anywhere on the track seeks the player.
+ */
+@Composable
+private fun ReelScrubber(
+    progress: Float,
+    onSeek: (fraction: Float) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val density = LocalDensity.current
+    BoxWithConstraints(
+        modifier = modifier.height(6.dp),
+        contentAlignment = Alignment.CenterStart,
+    ) {
+        val trackWidth = maxWidth
+        // Track
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(6.dp)
+                .clip(CircleShape)
+                .background(Color.White.copy(alpha = 0.18f)),
+        )
+        // Progress fill
+        Box(
+            modifier = Modifier
+                .width(trackWidth * progress)
+                .height(6.dp)
+                .clip(CircleShape)
+                .background(BrandOrange),
+        )
+        // Orange thumb at the current position
+        val thumbX = with(density) { (trackWidth * progress - 3.dp).toPx() }.toInt()
+        Box(
+            modifier = Modifier
+                .offset { IntOffset(thumbX, 0) }
+                .size(6.dp)
+                .clip(CircleShape)
+                .background(BrandOrange),
+        )
+        // Wider, invisible hit target for tapping and dragging.
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(32.dp)
+                .pointerInput(Unit) {
+                    detectHorizontalDragGestures(
+                        onDragStart = { offset ->
+                            onSeek((offset.x / size.width.toFloat()).coerceIn(0f, 1f))
+                        },
+                        onHorizontalDrag = { change, _ ->
+                            onSeek((change.position.x / size.width.toFloat()).coerceIn(0f, 1f))
+                        },
+                    )
+                },
+        )
     }
 }
 

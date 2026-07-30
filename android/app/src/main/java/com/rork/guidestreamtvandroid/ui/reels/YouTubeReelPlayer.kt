@@ -20,18 +20,22 @@ import com.pierfrancescosoffritti.androidyoutubeplayer.core.player.options.IFram
 import com.pierfrancescosoffritti.androidyoutubeplayer.core.player.views.YouTubePlayerView
 
 /**
- * Inline YouTube trailer player for Reels.
+ * Inline full-screen YouTube trailer player for Reels.
  *
- * Uses the proven open-source android-youtube-player library (v13.0.0), which
- * wraps the official YouTube IFrame API in a WebView. Version 13.0.0 fixes the
- * error 152 "missing HTTP referrer" problem by deriving the embed origin from
- * the app's package name, and it correctly handles third-party cookies and WebView
- * UA cleanup that a raw WebView does not. This is YouTube-ToS compliant and never
+ * Uses the open-source android-youtube-player library (v13.0.0), which wraps the
+ * official YouTube IFrame API in a WebView. The v13 release fixes the error 152
+ * "missing HTTP referrer" problem by deriving the embed origin from the app's
+ * package name, and it correctly handles third-party cookies and WebView UA
+ * cleanup that a raw WebView does not. This is YouTube-ToS compliant and never
  * uses ExoPlayer/media3 stream extraction.
  *
- * The view never consumes touch ([pointerInteropFilter] returns false),
- * mirroring the iOS `allowsHitTesting(false)` on the player layer so the
- * VerticalPager swipe and every overlay tap keep working.
+ * The view never consumes touch ([pointerInteropFilter] returns false), mirroring
+ * iOS `allowsHitTesting(false)` on the player layer so the VerticalPager swipe
+ * and every overlay tap keep working.
+ *
+ * Progress and duration are reported through [onProgress] so the bottom scrubber
+ * stays in sync. [seekToFraction] is a one-shot seek request that is reset via
+ * [onSeekConsumed] after the player performs the seek.
  */
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
@@ -42,14 +46,19 @@ fun YouTubeReelPlayer(
     onPlayerError: (Int) -> Unit,
     onPlayerReady: () -> Unit,
     onEnded: () -> Unit,
+    onProgress: (currentSeconds: Float, durationSeconds: Float) -> Unit,
+    seekToFraction: Float? = null,
+    onSeekConsumed: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val currentOnPlayerError by rememberUpdatedState(onPlayerError)
     val currentOnPlayerReady by rememberUpdatedState(onPlayerReady)
     val currentOnEnded by rememberUpdatedState(onEnded)
+    val currentOnProgress by rememberUpdatedState(onProgress)
+    val currentOnSeekConsumed by rememberUpdatedState(onSeekConsumed)
     val lifecycleOwner = LocalLifecycleOwner.current
 
-    // State holder so the update block can nudge play/pause/mute without
+    // State holder so the update block can nudge play/pause/mute/seek without
     // recreating the player or the listener.
     val holder = remember { PlayerHolder() }
 
@@ -73,8 +82,15 @@ fun YouTubeReelPlayer(
                         holder.lastVideoId = videoId
                         holder.lastMuted = isMuted
                         holder.lastPlaying = isPlaying
-                        youTubePlayer.cueVideo(videoId, 0f)
-                        if (isPlaying) youTubePlayer.play()
+                        holder.duration = 0f
+                        // loadVideo() starts playback immediately, which is what
+                        // makes Reels autoplay. cueVideo() is used only when the
+                        // page is explicitly paused so it resumes from where it was.
+                        if (isPlaying) {
+                            youTubePlayer.loadVideo(videoId, 0f)
+                        } else {
+                            youTubePlayer.cueVideo(videoId, 0f)
+                        }
                         if (isMuted) youTubePlayer.mute() else youTubePlayer.unMute()
                         currentOnPlayerReady()
                     }
@@ -83,8 +99,14 @@ fun YouTubeReelPlayer(
                         youTubePlayer: YouTubePlayer,
                         state: PlayerConstants.PlayerState,
                     ) {
-                        if (state == PlayerConstants.PlayerState.ENDED) {
-                            currentOnEnded()
+                        when (state) {
+                            PlayerConstants.PlayerState.ENDED -> {
+                                // Loop the trailer: seek to start and resume.
+                                youTubePlayer.seekTo(0f)
+                                youTubePlayer.play()
+                                currentOnEnded()
+                            }
+                            else -> Unit
                         }
                     }
 
@@ -100,6 +122,20 @@ fun YouTubeReelPlayer(
                             currentOnPlayerError(error.ordinal)
                         }
                     }
+
+                    override fun onCurrentSecond(
+                        youTubePlayer: YouTubePlayer,
+                        second: Float,
+                    ) {
+                        currentOnProgress(second, holder.duration)
+                    }
+
+                    override fun onVideoDuration(
+                        youTubePlayer: YouTubePlayer,
+                        duration: Float,
+                    ) {
+                        holder.duration = duration
+                    }
                 }, true, options)
                 holder.view = this
             }
@@ -111,7 +147,12 @@ fun YouTubeReelPlayer(
             holder.player?.let { player ->
                 if (holder.lastVideoId != videoId) {
                     holder.lastVideoId = videoId
-                    player.cueVideo(videoId, 0f)
+                    holder.duration = 0f
+                    if (isPlaying) {
+                        player.loadVideo(videoId, 0f)
+                    } else {
+                        player.cueVideo(videoId, 0f)
+                    }
                 }
                 if (holder.lastMuted != isMuted) {
                     holder.lastMuted = isMuted
@@ -120,6 +161,14 @@ fun YouTubeReelPlayer(
                 if (holder.lastPlaying != isPlaying) {
                     holder.lastPlaying = isPlaying
                     if (isPlaying) player.play() else player.pause()
+                }
+                seekToFraction?.let { fraction ->
+                    if (fraction != holder.lastSeekFraction) {
+                        holder.lastSeekFraction = fraction
+                        val target = (holder.duration * fraction).coerceAtLeast(0f)
+                        player.seekTo(target)
+                    }
+                    currentOnSeekConsumed()
                 }
             }
         },
@@ -162,4 +211,6 @@ private class PlayerHolder {
     var lastVideoId: String? = null
     var lastMuted: Boolean = true
     var lastPlaying: Boolean = true
+    var lastSeekFraction: Float = -1f
+    var duration: Float = 0f
 }
