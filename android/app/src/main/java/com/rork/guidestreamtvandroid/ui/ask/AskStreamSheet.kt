@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -25,6 +26,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -32,6 +34,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -47,18 +50,25 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.rork.guidestreamtvandroid.SupabaseConfig
 import com.rork.guidestreamtvandroid.data.local.DeviceIdentity
+import com.rork.guidestreamtvandroid.data.remote.AgentTitleMatch
+import com.rork.guidestreamtvandroid.data.remote.StreamAgentService
 import com.rork.guidestreamtvandroid.data.repository.AuthViewModel
 import com.rork.guidestreamtvandroid.data.repository.WatchIntentLogger
+import com.rork.guidestreamtvandroid.ui.components.RemoteImage
 import com.rork.guidestreamtvandroid.ui.components.glassCard
+import com.rork.guidestreamtvandroid.ui.navigation.PendingTitleRoute
+import com.rork.guidestreamtvandroid.ui.theme.Navy
 import com.rork.guidestreamtvandroid.ui.theme.BrandOrange
 import com.rork.guidestreamtvandroid.ui.theme.GlassFill
 import com.rork.guidestreamtvandroid.ui.theme.GlassStroke
@@ -97,6 +107,11 @@ data class AskChatMessage(
     val text: String,
     val isPending: Boolean = false,
     val isError: Boolean = false,
+    /**
+     * AI-side: titles the agent surfaced for this turn. The renderer draws a
+     * horizontal poster rail under the bubble, matching iOS.
+     */
+    val matches: List<AgentTitleMatch> = emptyList(),
 )
 
 private val askSuggestions = listOf(
@@ -120,6 +135,7 @@ private data class AskStreamResponse(
 fun AskStreamSheet(
     isOpen: Boolean,
     onClose: () -> Unit,
+    onOpenTitle: (PendingTitleRoute) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -254,8 +270,30 @@ fun AskStreamSheet(
                             )
                         }
                     } else {
-                        items(messages) { msg ->
-                            MessageBubble(msg)
+                        items(messages, key = { it.id }) { msg ->
+                            MessageBubble(
+                                msg = msg,
+                                onOpenTitle = { match ->
+                                    onClose()
+                                    WatchIntentLogger.get().log(
+                                        WatchIntentLogger.IntentEventType.CARD_TAPPED,
+                                        titleId = match.id.toString(),
+                                        platformId = match.providerName?.lowercase() ?: "ai_match",
+                                        metadata = mapOf(
+                                            "source" to "ask_stream_ai_match",
+                                            "title" to match.title,
+                                        ),
+                                    )
+                                    onOpenTitle(
+                                        PendingTitleRoute(
+                                            titleId = match.id.toString(),
+                                            titleName = match.title,
+                                            posterUrl = match.posterUrl,
+                                            isTv = match.isTV,
+                                        ),
+                                    )
+                                },
+                            )
                         }
                     }
                 }
@@ -345,7 +383,10 @@ private fun SuggestionChip(text: String, onClick: () -> Unit) {
 }
 
 @Composable
-private fun MessageBubble(msg: AskChatMessage) {
+private fun MessageBubble(
+    msg: AskChatMessage,
+    onOpenTitle: (AgentTitleMatch) -> Unit,
+) {
     val alignment = if (msg.isUser) Alignment.End else Alignment.Start
     val bgColor = if (msg.isUser) BrandOrange else GlassFill
     val textColor = if (msg.isUser) Color.White else TextPrimary
@@ -353,6 +394,7 @@ private fun MessageBubble(msg: AskChatMessage) {
     Column(
         modifier = Modifier.fillMaxWidth(),
         horizontalAlignment = alignment,
+        verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Box(
             modifier = Modifier
@@ -378,10 +420,119 @@ private fun MessageBubble(msg: AskChatMessage) {
                 Text(
                     text = msg.text,
                     fontSize = 14.sp,
+                    lineHeight = 20.sp,
                     color = if (msg.isError) BrandOrange else textColor,
                 )
             }
         }
+
+        if (msg.matches.isNotEmpty()) {
+            MatchPosterRail(matches = msg.matches, onOpenTitle = onOpenTitle)
+        }
+    }
+}
+
+/**
+ * Horizontal rail of poster cards for the titles the agent recommended.
+ * Mirrors iOS `matchPosterRail` + `AgentMatchCard`.
+ */
+@Composable
+private fun MatchPosterRail(
+    matches: List<AgentTitleMatch>,
+    onOpenTitle: (AgentTitleMatch) -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        matches.forEach { match ->
+            AgentMatchCard(match = match, onClick = { onOpenTitle(match) })
+        }
+    }
+}
+
+@Composable
+private fun AgentMatchCard(match: AgentTitleMatch, onClick: () -> Unit) {
+    val metaLine = remember(match.year, match.isTV) {
+        listOfNotNull(match.year?.toString(), if (match.isTV) "Series" else "Movie")
+            .joinToString(" · ")
+    }
+
+    Column(
+        modifier = Modifier
+            .width(124.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onClick,
+            ),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Box(
+            modifier = Modifier
+                .width(124.dp)
+                .height(168.dp)
+                .clip(RoundedCornerShape(10.dp))
+                .background(
+                    Brush.verticalGradient(
+                        listOf(BrandOrange.copy(alpha = 0.35f), Navy),
+                    ),
+                ),
+        ) {
+            if (!match.posterUrl.isNullOrEmpty()) {
+                RemoteImage(
+                    url = match.posterUrl,
+                    contentDescription = match.title,
+                    cornerRadius = 10,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            } else {
+                Icon(
+                    imageVector = Icons.Filled.Movie,
+                    contentDescription = null,
+                    tint = Color.White.copy(alpha = 0.45f),
+                    modifier = Modifier.align(Alignment.Center).size(24.dp),
+                )
+            }
+
+            val provider = match.providerName
+            if (!provider.isNullOrEmpty()) {
+                Text(
+                    text = provider.uppercase(),
+                    fontSize = 8.sp,
+                    fontWeight = FontWeight.Black,
+                    letterSpacing = 0.4.sp,
+                    color = Color.White,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .padding(6.dp)
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(BrandOrange)
+                        .padding(horizontal = 6.dp, vertical = 3.dp),
+                )
+            }
+        }
+
+        Text(
+            text = match.title,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = Color.White,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Text(
+            text = metaLine,
+            fontSize = 10.sp,
+            color = Color.White.copy(alpha = 0.55f),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 
@@ -417,7 +568,8 @@ private fun sendMessage(
                 context = context,
             )
         }
-        // Replace pending message
+        // Replace pending message with the prose first so the answer never
+        // waits on poster lookups.
         val idx = messages.indexOfFirst { it.id == pendingId }
         if (idx >= 0) {
             messages[idx] = AskChatMessage(
@@ -429,6 +581,18 @@ private fun sendMessage(
             )
         }
         onPendingChange(false)
+
+        // Resolve the recommended titles to TMDB posters and attach them to
+        // the same bubble — mirrors iOS AgentResponse.matches.
+        if (reply != null) {
+            val matches = StreamAgentService.get().resolveTitleMatches(reply)
+            if (matches.isNotEmpty()) {
+                val current = messages.indexOfFirst { it.id == pendingId }
+                if (current >= 0) {
+                    messages[current] = messages[current].copy(matches = matches)
+                }
+            }
+        }
     }
 }
 

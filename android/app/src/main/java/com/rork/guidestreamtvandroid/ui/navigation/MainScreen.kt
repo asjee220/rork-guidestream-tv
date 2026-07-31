@@ -322,6 +322,15 @@ fun MainScreen(
         AskStreamSheet(
             isOpen = showAskSheet,
             onClose = { showAskSheet = false },
+            onOpenTitle = { route ->
+                showAskSheet = false
+                val kind = SourceKind.from(route.titleId)
+                if (kind.isNonTMDB) {
+                    showCreatorDetail = route.titleId
+                } else {
+                    showDetail = route
+                }
+            },
         )
 
         // Floating tab bar
