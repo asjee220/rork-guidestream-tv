@@ -43,6 +43,7 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
@@ -59,6 +60,7 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import com.rork.guidestreamtvandroid.data.repository.CoachMarkManager
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
@@ -77,6 +79,7 @@ import com.rork.guidestreamtvandroid.data.remote.StreamingReleasesService
 import com.rork.guidestreamtvandroid.data.repository.AuthViewModel
 import com.rork.guidestreamtvandroid.data.repository.StreamsViewModel
 import com.rork.guidestreamtvandroid.data.repository.WatchIntentLogger
+import com.rork.guidestreamtvandroid.ui.components.GsTopBar
 import com.rork.guidestreamtvandroid.ui.components.PosterCard
 import com.rork.guidestreamtvandroid.ui.components.RemoteImage
 import com.rork.guidestreamtvandroid.ui.components.ServicesPill
@@ -106,8 +109,6 @@ import com.rork.guidestreamtvandroid.ui.theme.OutlineVariant
 import com.rork.guidestreamtvandroid.ui.theme.TextPrimary
 import com.rork.guidestreamtvandroid.ui.theme.TextSecondary
 import com.rork.guidestreamtvandroid.ui.theme.TextTertiary
-import com.rork.guidestreamtvandroid.ui.theme.BrandWordmark
-import com.rork.guidestreamtvandroid.ui.theme.WordmarkSize
 
 /**
  * Home feed — mirrors iOS HomeView.swift.
@@ -159,6 +160,14 @@ fun HomeScreen(
     var showServicesSheet by remember { mutableStateOf(false) }
 
     val scrollState = rememberScrollState()
+
+    // Elevate the top bar once the feed has scrolled past a small threshold.
+    // The 8.dp deadzone absorbs overscroll rubber-banding at the very top so
+    // the container settles back to transparent instead of flickering.
+    val elevateThresholdPx = with(LocalDensity.current) { 8.dp.toPx() }
+    val isBarElevated by remember {
+        derivedStateOf { scrollState.value > elevateThresholdPx }
+    }
 
     Box(modifier = modifier.fillMaxSize()) {
     val coachMark = CoachMarkManager.get()
@@ -636,11 +645,18 @@ fun HomeScreen(
     }
 
         // Pinned top bar — wordmark left, services pill right (mirrors iOS PageBar)
-        HomePageBar(
-            selectedServiceIds = StreamingCatalog.ordered(selectedServices).map { it.id },
-            onOpenServices = { showServicesSheet = true },
+        GsTopBar(
+            elevated = isBarElevated,
             modifier = Modifier.align(Alignment.TopStart),
-        )
+        ) {
+            val serviceIds = StreamingCatalog.ordered(selectedServices).map { it.id }
+            if (serviceIds.isNotEmpty()) {
+                ServicesPill(
+                    serviceIds = serviceIds,
+                    onTap = { showServicesSheet = true },
+                )
+            }
+        }
     }
 
     if (showServicesSheet) {
@@ -652,33 +668,6 @@ fun HomeScreen(
             },
             onDismiss = { showServicesSheet = false },
         )
-    }
-}
-
-// ── Page Bar (pinned top) ────────────────────────────────────────────────────
-
-@Composable
-private fun HomePageBar(
-    selectedServiceIds: List<String>,
-    onOpenServices: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .statusBarsPadding()
-            .height(56.dp)
-            .padding(horizontal = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        BrandWordmark(size = WordmarkSize.NAV)
-        Spacer(Modifier.weight(1f))
-        if (selectedServiceIds.isNotEmpty()) {
-            ServicesPill(
-                serviceIds = selectedServiceIds,
-                onTap = onOpenServices,
-            )
-        }
     }
 }
 

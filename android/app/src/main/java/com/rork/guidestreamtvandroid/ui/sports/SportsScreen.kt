@@ -15,11 +15,14 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -43,6 +46,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -53,6 +57,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
@@ -65,11 +70,11 @@ import com.rork.guidestreamtvandroid.data.models.StreamingService
 import com.rork.guidestreamtvandroid.data.repository.AuthViewModel
 import com.rork.guidestreamtvandroid.data.repository.TeamFavoritesService
 import com.rork.guidestreamtvandroid.data.repository.WatchIntentLogger
+import com.rork.guidestreamtvandroid.ui.components.GsTopBar
 import com.rork.guidestreamtvandroid.ui.components.ServicesPill
 import com.rork.guidestreamtvandroid.ui.theme.BrandBlue
 import com.rork.guidestreamtvandroid.ui.theme.BottomSafeSpacer
 import com.rork.guidestreamtvandroid.ui.theme.BrandOrange
-import com.rork.guidestreamtvandroid.ui.theme.BrandWordmark
 import com.rork.guidestreamtvandroid.ui.theme.Hairline
 import com.rork.guidestreamtvandroid.ui.theme.Navy
 import com.rork.guidestreamtvandroid.ui.theme.SurfaceDark
@@ -79,7 +84,6 @@ import com.rork.guidestreamtvandroid.ui.theme.SurfaceContainer
 import com.rork.guidestreamtvandroid.ui.theme.SurfaceElevated
 import com.rork.guidestreamtvandroid.ui.theme.TextPrimary
 import com.rork.guidestreamtvandroid.ui.theme.TextSecondary
-import com.rork.guidestreamtvandroid.ui.theme.WordmarkSize
 
 private val sportOptions = listOf("All", "NBA", "NBA Summer", "NFL", "Soccer", "MLB", "UFC")
 private val LiveRed = Color(0xFFE50914)
@@ -135,31 +139,32 @@ fun SportsScreen(
         }
     }
 
-    Column(modifier = modifier.fillMaxSize()) {
-        // Pinned header: wordmark + services pill
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .statusBarsPadding()
-                .height(56.dp)
-                .padding(horizontal = 20.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            BrandWordmark(size = WordmarkSize.NAV)
-            Spacer(Modifier.weight(1f))
-            if (isLoading && games.isNotEmpty()) {
-                CircularProgressIndicator(color = BrandOrange, modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-                Spacer(Modifier.width(10.dp))
-            }
-            val serviceIds = StreamingCatalog.ordered(selectedServices).map { it.id }
-            if (serviceIds.isNotEmpty()) {
-                ServicesPill(serviceIds = serviceIds, onTap = { showServices = true })
-            }
-        }
+    val listState = rememberLazyListState()
 
+    // Elevate the top bar once the list has scrolled past a small threshold.
+    // The 8.dp deadzone absorbs overscroll rubber-banding at the very top so
+    // the container settles back to transparent instead of flickering.
+    val elevateThresholdPx = with(LocalDensity.current) { 8.dp.toPx() }
+    val isBarElevated by remember {
+        derivedStateOf {
+            listState.firstVisibleItemIndex > 0 ||
+                listState.firstVisibleItemScrollOffset > elevateThresholdPx
+        }
+    }
+
+    // The bar overlays the list, so reserve its full height as top content padding.
+    val statusBarTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+
+    Box(modifier = modifier.fillMaxSize()) {
         LazyColumn(
+            state = listState,
             modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+            contentPadding = PaddingValues(
+                start = 16.dp,
+                end = 16.dp,
+                top = statusBarTop + 56.dp + 12.dp,
+                bottom = 12.dp,
+            ),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             // Sport pills
@@ -233,6 +238,21 @@ fun SportsScreen(
             }
 
             item { BottomSafeSpacer(withTabBar = true) }
+        }
+
+        // Pinned top bar — wordmark left, refresh spinner + services pill right
+        GsTopBar(
+            elevated = isBarElevated,
+            modifier = Modifier.align(Alignment.TopStart),
+        ) {
+            if (isLoading && games.isNotEmpty()) {
+                CircularProgressIndicator(color = BrandOrange, modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                Spacer(Modifier.width(10.dp))
+            }
+            val serviceIds = StreamingCatalog.ordered(selectedServices).map { it.id }
+            if (serviceIds.isNotEmpty()) {
+                ServicesPill(serviceIds = serviceIds, onTap = { showServices = true })
+            }
         }
     }
 
