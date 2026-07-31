@@ -228,6 +228,7 @@ fun NotificationsSettingsScreen(
     modifier: Modifier = Modifier,
 ) {
     val authVm = AuthViewModel.get()
+    val notifyPush by authVm.notifyPushEnabled.collectAsStateWithLifecycle()
     val notifyNewEpisodes by authVm.notifyNewEpisodesEnabled.collectAsStateWithLifecycle()
     val notifyWatchlist by authVm.notifyWatchlistEnabled.collectAsStateWithLifecycle()
     val notifyLive by authVm.notifyLiveEnabled.collectAsStateWithLifecycle()
@@ -256,13 +257,39 @@ fun NotificationsSettingsScreen(
         Text("Choose what you want to be notified about.", fontSize = 13.sp, color = TextSecondary)
         Spacer(Modifier.height(20.dp))
 
-        NotifyToggleRow("New Episodes", "Get notified when a show you watch has a new episode", notifyNewEpisodes) {
-            // Individual category toggles are stored locally; the main push toggle is in onboarding/profile
-        }
-        NotifyToggleRow("Watchlist", "Alerts when something on your list is leaving soon", notifyWatchlist) {}
-        NotifyToggleRow("Live Creators", "When a creator you follow goes live", notifyLive) {}
-        NotifyToggleRow("Sports", "Game start and score alerts", notifySports) {}
-        NotifyToggleRow("Movie Releases", "New movie releases on your services", notifyMovieReleases) {}
+        NotifyToggleRow(
+            "Push Notifications",
+            "Allow GuideStream to send you alerts",
+            notifyPush,
+        ) { authVm.setNotifyPushEnabled(it) }
+
+        Spacer(Modifier.height(10.dp))
+
+        NotifyToggleRow(
+            "New Episodes",
+            "When shows you follow drop a new episode",
+            notifyNewEpisodes,
+        ) { authVm.setNotifyNewEpisodesEnabled(it) }
+        NotifyToggleRow(
+            "Watchlist",
+            "When a saved title lands on a service you have",
+            notifyWatchlist,
+        ) { authVm.setNotifyWatchlistEnabled(it) }
+        NotifyToggleRow(
+            "Live Creators",
+            "When a creator you follow goes live",
+            notifyLive,
+        ) { authVm.setNotifyLiveEnabled(it) }
+        NotifyToggleRow(
+            "Sports",
+            "Game start, live, and final scores for your teams",
+            notifySports,
+        ) { authVm.setNotifySportsEnabled(it) }
+        NotifyToggleRow(
+            "Movie Releases",
+            "New movie releases on your services",
+            notifyMovieReleases,
+        ) { authVm.setNotifyMovieReleasesEnabled(it) }
 
         Spacer(Modifier.height(40.dp))
     }

@@ -1,6 +1,7 @@
 package com.rork.guidestreamtvandroid.data.repository
 
 import android.content.Context
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rork.guidestreamtvandroid.data.local.DeviceIdentity
@@ -831,6 +832,62 @@ class AuthViewModel private constructor(private val context: Context) : ViewMode
             .putBoolean("gs.notifySMS", sms)
             .apply()
         DeviceSessionService.get().upsert("notifications_changed")
+    }
+
+    // ── Per-category notification preferences ────────────────────────
+
+    /** Master push toggle from the Notifications settings screen. */
+    fun setNotifyPushEnabled(enabled: Boolean) {
+        _notifyPushEnabled.value = enabled
+        persistCategoryPref("gs.notifyPush", "notify_push", enabled)
+    }
+
+    fun setNotifyNewEpisodesEnabled(enabled: Boolean) {
+        _notifyNewEpisodesEnabled.value = enabled
+        persistCategoryPref("gs.notifyNewEpisodes", "notify_new_episodes", enabled)
+    }
+
+    fun setNotifyWatchlistEnabled(enabled: Boolean) {
+        _notifyWatchlistEnabled.value = enabled
+        persistCategoryPref("gs.notifyWatchlist", "notify_watchlist", enabled)
+    }
+
+    fun setNotifyLiveEnabled(enabled: Boolean) {
+        _notifyLiveEnabled.value = enabled
+        persistCategoryPref("gs.notifyLive", "notify_live", enabled)
+    }
+
+    fun setNotifySportsEnabled(enabled: Boolean) {
+        _notifySportsEnabled.value = enabled
+        persistCategoryPref("gs.notifySports", "notify_sports", enabled)
+    }
+
+    fun setNotifyMovieReleasesEnabled(enabled: Boolean) {
+        _notifyMovieReleasesEnabled.value = enabled
+        persistCategoryPref("gs.notifyMovieReleases", "notify_movie_releases", enabled)
+    }
+
+    /**
+     * Writes a single notification-category preference to SharedPreferences and,
+     * for signed-in users, mirrors it to the matching `users` column. Failures
+     * are swallowed so a missing column on older projects never blocks the UI —
+     * the local value stays authoritative.
+     */
+    private fun persistCategoryPref(prefKey: String, column: String, enabled: Boolean) {
+        prefs.edit().putBoolean(prefKey, enabled).apply()
+        DeviceSessionService.get().upsert("notifications_changed")
+        val userId = currentUserId ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                SupabaseManager.client.postgrest
+                    .from("users")
+                    .update(buildJsonObject { put(column, JsonPrimitive(enabled)) }) {
+                        filter { eq("id", userId) }
+                    }
+            } catch (e: Exception) {
+                Log.w("Auth", "$column update failed: ${e.message}")
+            }
+        }
     }
 
     fun completeOnboarding() {
