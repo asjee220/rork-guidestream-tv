@@ -70,6 +70,10 @@ final class StreamsViewModel {
         async let b: () = fetchNewEpisodes()
         _ = await (a, b)
         await fetchLatestContentDates()
+        // Hydrate the seen baseline on the home path too, not just when the
+        // watch-list sheet opens, so the Home rail badge matches the sheet's
+        // badge after a cold launch. Mirrors Android's refreshAll().
+        await fetchWatchlistSeen()
         // After we have a fresh watch list, kick off the episode tracker
         // so any titles that aired a new episode show up in the rail on
         // the next fetch. The tracker has its own 6h cooldown so calling
@@ -312,11 +316,18 @@ final class StreamsViewModel {
     /// Returns "NEW EPISODE" when content_kind == "tv" and "NEW UPLOAD" for
     /// every other non-movie kind (youtube, podcast, twitch, kick).
     func newBadgeText(for stream: UserStream) -> String? {
-        guard let lastContent = latestContentAt[stream.titleId] else { return nil }
-        let kind = latestContentKind[stream.titleId] ?? "tv"
+        newBadgeText(titleId: stream.titleId)
+    }
+
+    /// Same rules as `newBadgeText(for:)`, keyed by `title_id` for callers that
+    /// only hold an id — e.g. the Home watch-list rail, which renders `Episode`
+    /// values rather than `UserStream` rows.
+    func newBadgeText(titleId: String) -> String? {
+        guard let lastContent = latestContentAt[titleId] else { return nil }
+        let kind = latestContentKind[titleId] ?? "tv"
         guard kind != "movie" else { return nil }
         guard lastContent >= Date().addingTimeInterval(-7 * 24 * 60 * 60) else { return nil }
-        if let seen = seenContentAt[stream.titleId], seen >= lastContent { return nil }
+        if let seen = seenContentAt[titleId], seen >= lastContent { return nil }
         return kind == "tv" ? "NEW EPISODE" : "NEW UPLOAD"
     }
 

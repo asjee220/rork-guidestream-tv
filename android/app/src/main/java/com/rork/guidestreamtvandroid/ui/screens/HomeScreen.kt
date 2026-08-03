@@ -149,6 +149,8 @@ fun HomeScreen(
     val userStreams by streamsVm.userStreams.collectAsStateWithLifecycle()
     val watchedIds by streamsVm.watchedIds.collectAsStateWithLifecycle()
     val latestContentAt by streamsVm.latestContentAt.collectAsStateWithLifecycle()
+    val latestContentKind by streamsVm.latestContentKind.collectAsStateWithLifecycle()
+    val seenContentAt by streamsVm.seenContentAt.collectAsStateWithLifecycle()
     val selectedServices by authVm.selectedServices.collectAsStateWithLifecycle()
 
     LaunchedEffect(Unit) { homeVm.loadAll() }
@@ -226,6 +228,8 @@ fun HomeScreen(
                 streams = userStreams,
                 watchedIds = watchedIds,
                 latestContentAt = latestContentAt,
+                latestContentKind = latestContentKind,
+                seenContentAt = seenContentAt,
                 onOpen = { stream ->
                     WatchIntentLogger.get().log(
                         WatchIntentLogger.IntentEventType.CARD_TAPPED,
@@ -233,6 +237,8 @@ fun HomeScreen(
                         platformId = stream.platform?.lowercase() ?: "tmdb",
                         metadata = mapOf("section" to "watch_list"),
                     )
+                    // Clear the new-content badge, same as the full watch list.
+                    streamsVm.markWatchlistSeen(stream.titleId)
                     onOpenTitle(PendingTitleRoute(
                         titleId = stream.titleId,
                         titleName = stream.title ?: stream.titleName,
@@ -1185,6 +1191,8 @@ private fun WatchListSection(
     streams: List<com.rork.guidestreamtvandroid.data.models.UserStream>,
     watchedIds: Set<String>,
     latestContentAt: Map<String, Long>,
+    latestContentKind: Map<String, String>,
+    seenContentAt: Map<String, Long>,
     onOpen: (com.rork.guidestreamtvandroid.data.models.UserStream) -> Unit,
     onSeeAll: (() -> Unit)? = null,
 ) {
@@ -1206,6 +1214,9 @@ private fun WatchListSection(
         }
         m
     }
+    // Reuses the shared badge rules so the Home rail always agrees with the
+    // full My Watch List screen — no extra query, every input is already in memory.
+    val streamsVm = StreamsViewModel.get()
     val sortedStreams = remember(streams, latestContentAt) {
         streams.sortedWith(
             compareByDescending<com.rork.guidestreamtvandroid.data.models.UserStream> { stream ->
@@ -1248,6 +1259,12 @@ private fun WatchListSection(
                 WatchListCard(
                     stream = stream,
                     isWatched = watchedIds.contains(stream.titleId),
+                    badgeText = streamsVm.newBadgeText(
+                        stream,
+                        latestContentAt,
+                        latestContentKind,
+                        seenContentAt,
+                    ),
                     onClick = { onOpen(stream) },
                 )
             }
@@ -1259,6 +1276,8 @@ private fun WatchListSection(
 private fun WatchListCard(
     stream: com.rork.guidestreamtvandroid.data.models.UserStream,
     isWatched: Boolean = false,
+    /** "NEW EPISODE" / "NEW UPLOAD", or null when the title should not badge. */
+    badgeText: String? = null,
     onClick: () -> Unit,
 ) {
     Column(
@@ -1293,6 +1312,26 @@ private fun WatchListCard(
                         .height(3.dp)
                         .background(platform.color),
                 )
+            }
+            // New-content badge, top-left so it never collides with the
+            // BottomEnd watched eye or the bottom platform color bar.
+            if (badgeText != null) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .padding(8.dp)
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(Color.Black)
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                ) {
+                    Text(
+                        text = badgeText,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White,
+                        maxLines = 1,
+                    )
+                }
             }
             // Display-only watched badge — never mutates any saved title.
             if (isWatched) {

@@ -536,6 +536,7 @@ struct HomeView: View {
                                 isAuthenticated: auth.isAuthenticated,
                                 liveStatusMap: liveStatusMap,
                                 latestContentMap: streams.latestContentAt,
+                                badgeTextByTitleId: watchListBadgeText,
                                 onSeeAll: {
                                     WatchIntentLogger.shared.log(
                                         eventType: .cardTapped,
@@ -550,6 +551,11 @@ struct HomeView: View {
                                         platformId: ep.platform.lowercased(),
                                         metadata: ["section": "watch_list"]
                                     )
+                                    // Clear the new-content badge the same way the
+                                    // watch-list sheet does when a card is opened.
+                                    if let tid = ep.titleId {
+                                        Task { await streams.markWatchlistSeen(titleId: tid) }
+                                    }
                                     if let tid = ep.titleId, SourceKind.from(titleId: tid).isNonTMDB {
                                         creatorDetailTarget = CreatorDetailTarget(titleId: tid, initialEpisode: nil)
                                     } else {
@@ -2120,6 +2126,19 @@ struct HomeView: View {
         }
     }
 
+    /// New-content badge text per saved title_id, built from the shared
+    /// `StreamsViewModel` rules so the Home rail badge always agrees with the
+    /// full My Watch List sheet. Titles with no badge are simply absent.
+    private var watchListBadgeText: [String: String] {
+        var map: [String: String] = [:]
+        for row in streams.userStreams {
+            if let text = streams.newBadgeText(titleId: row.titleId) {
+                map[row.titleId] = text
+            }
+        }
+        return map
+    }
+
     /// Color for a SourceKind badge — used in watchlist cards for creator items.
     private func sourceKindColor(_ kind: SourceKind) -> Color {
         switch kind {
@@ -2924,6 +2943,7 @@ private struct WatchListSection: View {
     let isAuthenticated: Bool
     let liveStatusMap: [String: LiveStatus]
     let latestContentMap: [String: Date]
+    let badgeTextByTitleId: [String: String]
     let onSeeAll: () -> Void
     let onOpen: (Episode) -> Void
 
@@ -3006,6 +3026,7 @@ private struct WatchListSection: View {
                                     guard let tid = ep.titleId else { return false }
                                     return liveStatusMap[tid]?.isLive ?? false
                                 }(),
+                                badgeText: ep.titleId.flatMap { badgeTextByTitleId[$0] },
                                 onTap: { onOpen(ep) }
                             )
                         }
@@ -3181,6 +3202,9 @@ private struct PlayingOnBanner: View {
 private struct EpisodeThumbCard: View {
     let episode: Episode
     var isLive: Bool = false
+    /// New-content badge ("NEW EPISODE" / "NEW UPLOAD"). Defaulted so the
+    /// New Episodes and Continue Watching rails render unchanged.
+    var badgeText: String? = nil
     let onTap: () -> Void
 
     /// The SourceKind for this episode's titleId, if non-TMDB.
@@ -3313,6 +3337,22 @@ private struct EpisodeThumbCard: View {
                             }
                             .frame(height: 4)
                             .allowsHitTesting(false)
+                        }
+                    }
+                    .overlay(alignment: .topLeading) {
+                        if let badge = badgeText {
+                            Text(badge)
+                                .scaledFont(size: 10, weight: .bold)
+                                .foregroundStyle(.white)
+                                .lineLimit(1)
+                                .padding(.horizontal, 7)
+                                .padding(.vertical, 3)
+                                .background(
+                                    Color.black,
+                                    in: RoundedRectangle(cornerRadius: 5, style: .continuous)
+                                )
+                                .padding(6)
+                                .allowsHitTesting(false)
                         }
                     }
                     .clipShape(.rect(cornerRadius: 10))
