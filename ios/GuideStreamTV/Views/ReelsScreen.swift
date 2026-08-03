@@ -962,6 +962,11 @@ struct ReelsScreen: View {
     /// Live translation while the user drags down to dismiss. Used to slide
     /// the whole feed down for visual feedback before commit.
     @State private var dismissDragOffset: CGFloat = 0
+    /// Landscape-only chrome visibility. The whole overlay layer (top bar,
+    /// metadata, action rail, scrubber) fades out 3s after the last touch and
+    /// returns on any tap. Portrait never consults this.
+    @State private var landscapeChromeVisible: Bool = true
+    @State private var chromeHideTask: Task<Void, Never>?
     @Environment(\.tabBarVisibility) private var tabBarVisibility
 
     /// Called when the user taps the dismiss chevron or completes a
@@ -997,11 +1002,17 @@ struct ReelsScreen: View {
             )
             let topInset = geo.safeAreaInsets.top
             let bottomInset = geo.safeAreaInsets.bottom
+            let isLandscape = geo.size.width > geo.size.height
+            // 44pt is a floor, not a fixed value — the Dynamic Island reports a
+            // 59pt leading inset in landscape, and hardcoding 44 would tuck the
+            // chrome underneath it.
+            let leadingInset = max(44, geo.safeAreaInsets.leading)
+            let trailingInset = max(44, geo.safeAreaInsets.trailing)
             ZStack {
                 Color(hex: "04090F").ignoresSafeArea()
 
                 if let injected = injectedReels {
-                    injectedScroll(injected, size: fullSize, topInset: topInset, bottomInset: bottomInset)
+                    injectedScroll(injected, size: fullSize, topInset: topInset, bottomInset: bottomInset, isLandscape: isLandscape, leadingInset: leadingInset, trailingInset: trailingInset)
                 } else if vm.isLoading && vm.allTrailers.isEmpty {
                     LoadingSpinner().frame(width: 36, height: 36)
                 } else if vm.allTrailers.isEmpty {
@@ -1010,7 +1021,7 @@ struct ReelsScreen: View {
                     ScrollView(.vertical, showsIndicators: false) {
                         LazyVStack(spacing: 0) {
                             ForEach(Array(vm.allTrailers.enumerated()), id: \.element.id) { idx, trailer in
-                                reelCell(trailer: trailer, index: idx, size: fullSize, topInset: topInset, bottomInset: bottomInset)
+                                reelCell(trailer: trailer, index: idx, size: fullSize, topInset: topInset, bottomInset: bottomInset, isLandscape: isLandscape, leadingInset: leadingInset, trailingInset: trailingInset)
                                     .frame(width: fullSize.width, height: fullSize.height)
                                     .id(idx)
                             }
@@ -1038,6 +1049,9 @@ struct ReelsScreen: View {
                             logTrailerViewed(trailer, elapsedSeconds: nil)
                         }
                         reelStartTime = Date()
+                        // Landscape chrome reappears for the new reel and
+                        // restarts its countdown.
+                        if isLandscape { armChromeHide() }
                         prefetchNeighbors(around: newValue)
                         // Lazily enrich current + next reel with TVDB episode data.
                         if let trailer = vm.allTrailers[safe: newValue], trailer.tmdbId > 0, !trailer.isSponsored {
@@ -1057,7 +1071,12 @@ struct ReelsScreen: View {
                         // total swipes, 6 swipes since the last interstitial,
                         // and 90 seconds of wall-clock since the last one —
                         // and only when an ad is actually preloaded.
-                        if vm.reelSwipeCount >= 8,
+                        // Landscape never presents an interstitial — and never
+                        // touches the cadence trackers either, so the next
+                        // qualifying swipe in portrait still fires normally
+                        // instead of the cadence being silently consumed.
+                        if !isLandscape,
+                           vm.reelSwipeCount >= 8,
                            vm.reelSwipeCount - (pendingInterstitialAt ?? 0) >= 6,
                            Date().timeIntervalSince(lastInterstitialDate) >= 90,
                            AdManager.shared.hasInterstitial {
@@ -1086,11 +1105,12 @@ struct ReelsScreen: View {
                                 .shadow(color: .black.opacity(0.35), radius: 10, y: 2)
                         }
                         .buttonStyle(.plain)
-                        .padding(.leading, 14)
+                        .padding(.leading, isLandscape ? leadingInset : 14)
 
                         // Tab pills — tap to jump to the first reel of each section.
-                        // Hidden in the injected title-scoped mode.
-                        if injectedReels == nil {
+                        // Hidden in the injected title-scoped mode, and in
+                        // landscape where the bar carries the mute toggle instead.
+                        if injectedReels == nil, !isLandscape {
                             HStack(spacing: 13) {
                                 ForEach(ReelTab.allCases, id: \.self) { tab in
                                     TabPill(
@@ -1116,8 +1136,18 @@ struct ReelsScreen: View {
                     Spacer()
                 }
                 .ignoresSafeArea()
+                .opacity(isLandscape && !landscapeChromeVisible ? 0 : 1)
+                .allowsHitTesting(isLandscape ? landscapeChromeVisible : true)
             }
             .offset(y: dismissDragOffset)
+            .onChange(of: isLandscape) { _, nowLandscape in
+                if nowLandscape {
+                    armChromeHide()
+                } else {
+                    // Portrait must never render with hidden chrome.
+                    pinChromeVisible()
+                }
+            }
             // Swipe-down-to-dismiss. Runs *simultaneously* with the inner
             // paging ScrollView, but we only react to drags that begin at the
             // first reel and pull downward — so neighbour reel paging is
@@ -1156,8 +1186,38 @@ struct ReelsScreen: View {
             // Refresh social counts for the first visible reel and its neighbours.
             refreshSocialCounts(around: vm.currentIndex)
         }
-        .onAppear { tabBarVisibility.hide() }
-        .onDisappear { tabBarVisibility.show() }
+        .onAppear {
+            tabBarVisibility.hide()
+            #if os(iOS)
+            // Reels is the only screen allowed to rotate. Opening the gate and
+            // asking the root controller to re-evaluate lets an already-sideways
+            // device snap straight into landscape.
+            AppOrientationGate.shared.allowsLandscape = true
+            UIApplication.shared.connectedScenes
+                .compactMap { $0 as? UIWindowScene }
+                .first?
+                .keyWindow?
+                .rootViewController?
+                .setNeedsUpdateOfSupportedInterfaceOrientations()
+            #endif
+        }
+        .onDisappear {
+            #if os(iOS)
+            // Close the gate and force the rest of the app back to portrait,
+            // even if the user is still physically holding the phone sideways.
+            AppOrientationGate.shared.allowsLandscape = false
+            if let scene = UIApplication.shared.connectedScenes
+                .compactMap({ $0 as? UIWindowScene })
+                .first {
+                scene.requestGeometryUpdate(.iOS(interfaceOrientations: .portrait)) { _ in }
+                scene.keyWindow?
+                    .rootViewController?
+                    .setNeedsUpdateOfSupportedInterfaceOrientations()
+            }
+            #endif
+            chromeHideTask?.cancel()
+            tabBarVisibility.show()
+        }
         .sheet(isPresented: $showComments) {
             if let trailer = currentTrailer, !trailer.isSponsored, trailer.tmdbId > 0 {
                 TitleCommentsSheet(
@@ -1245,6 +1305,30 @@ struct ReelsScreen: View {
         return vm.currentIndex == 0 && !vm.allTrailers.isEmpty
     }
 
+    /// Reveals the landscape chrome and restarts its 3s auto-hide countdown.
+    /// Called when a reel becomes current, on rotation into landscape, and on
+    /// every tap anywhere on the reel.
+    private func armChromeHide() {
+        chromeHideTask?.cancel()
+        withAnimation(.easeOut(duration: 0.2)) {
+            landscapeChromeVisible = true
+        }
+        chromeHideTask = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(3.0))
+            guard !Task.isCancelled else { return }
+            withAnimation(.easeOut(duration: 0.4)) {
+                landscapeChromeVisible = false
+            }
+        }
+    }
+
+    /// Cancels the auto-hide countdown and pins the chrome visible — used when
+    /// the device returns to portrait so portrait never renders hidden chrome.
+    private func pinChromeVisible() {
+        chromeHideTask?.cancel()
+        landscapeChromeVisible = true
+    }
+
     private func handleDismiss() {
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
         withAnimation(.easeOut(duration: 0.24)) {
@@ -1254,7 +1338,7 @@ struct ReelsScreen: View {
     }
 
     @ViewBuilder
-    private func reelCell(trailer: TrailerItem, index: Int, size: CGSize, topInset: CGFloat, bottomInset: CGFloat) -> some View {
+    private func reelCell(trailer: TrailerItem, index: Int, size: CGSize, topInset: CGFloat, bottomInset: CGFloat, isLandscape: Bool, leadingInset: CGFloat, trailingInset: CGFloat) -> some View {
         let isCurrent = index == vm.currentIndex
         ReelView(
                 trailer: trailer,
@@ -1262,6 +1346,11 @@ struct ReelsScreen: View {
                 size: size,
                 topInset: topInset,
                 bottomInset: bottomInset,
+                isLandscape: isLandscape,
+                landscapeLeading: leadingInset,
+                landscapeTrailing: trailingInset,
+                chromeVisible: landscapeChromeVisible,
+                onRevealChrome: { armChromeHide() },
                 isPlaying: isCurrent && isPlaying,
                 isMuted: isMuted,
                 isCurrent: isCurrent,
@@ -1370,11 +1459,11 @@ struct ReelsScreen: View {
     /// used by the global feed, starting at `injectedStartIndex`. Never touches
     /// the shared `ReelsViewModel`.
     @ViewBuilder
-    private func injectedScroll(_ feed: [TrailerItem], size: CGSize, topInset: CGFloat, bottomInset: CGFloat) -> some View {
+    private func injectedScroll(_ feed: [TrailerItem], size: CGSize, topInset: CGFloat, bottomInset: CGFloat, isLandscape: Bool, leadingInset: CGFloat, trailingInset: CGFloat) -> some View {
         ScrollView(.vertical, showsIndicators: false) {
             LazyVStack(spacing: 0) {
                 ForEach(Array(feed.enumerated()), id: \.element.id) { idx, trailer in
-                    injectedReelCell(trailer: trailer, index: idx, feed: feed, size: size, topInset: topInset, bottomInset: bottomInset)
+                    injectedReelCell(trailer: trailer, index: idx, feed: feed, size: size, topInset: topInset, bottomInset: bottomInset, isLandscape: isLandscape, leadingInset: leadingInset, trailingInset: trailingInset)
                         .frame(width: size.width, height: size.height)
                         .id(idx)
                 }
@@ -1388,6 +1477,7 @@ struct ReelsScreen: View {
         .onChange(of: injectedScrolledID) { _, newValue in
             guard let newValue else { return }
             isPlaying = true
+            if isLandscape { armChromeHide() }
             UIImpactFeedbackGenerator(style: .soft).impactOccurred()
             if let t = feed[safe: newValue], t.tmdbId > 0 {
                 Task { await SocialViewModel.shared.refreshCounts(titleId: String(t.tmdbId)) }
@@ -1396,7 +1486,7 @@ struct ReelsScreen: View {
     }
 
     @ViewBuilder
-    private func injectedReelCell(trailer: TrailerItem, index: Int, feed: [TrailerItem], size: CGSize, topInset: CGFloat, bottomInset: CGFloat) -> some View {
+    private func injectedReelCell(trailer: TrailerItem, index: Int, feed: [TrailerItem], size: CGSize, topInset: CGFloat, bottomInset: CGFloat, isLandscape: Bool, leadingInset: CGFloat, trailingInset: CGFloat) -> some View {
         let isCurrent = index == (injectedScrolledID ?? injectedStartIndex)
         ReelView(
             trailer: trailer,
@@ -1404,6 +1494,11 @@ struct ReelsScreen: View {
             size: size,
             topInset: topInset,
             bottomInset: bottomInset,
+            isLandscape: isLandscape,
+            landscapeLeading: leadingInset,
+            landscapeTrailing: trailingInset,
+            chromeVisible: landscapeChromeVisible,
+            onRevealChrome: { armChromeHide() },
             isPlaying: isCurrent && isPlaying,
             isMuted: isMuted,
             isCurrent: isCurrent,
@@ -1537,6 +1632,17 @@ private struct ReelView: View {
     let size: CGSize
     let topInset: CGFloat
     let bottomInset: CGFloat
+    /// Landscape reflows the chrome into a single bottom row and moves mute up
+    /// into the top bar. Defaults to false so portrait is untouched.
+    var isLandscape: Bool = false
+    /// Horizontal safe-area floors used only in landscape (44pt minimum, or the
+    /// real inset when the Dynamic Island reports more).
+    var landscapeLeading: CGFloat = 44
+    var landscapeTrailing: CGFloat = 44
+    /// Landscape-only: whether the auto-hiding chrome layer is showing.
+    var chromeVisible: Bool = true
+    /// Landscape-only: reveals the chrome and restarts its 3s countdown.
+    var onRevealChrome: () -> Void = {}
     let isPlaying: Bool
     let isMuted: Bool
     let isCurrent: Bool
@@ -1589,6 +1695,24 @@ private struct ReelView: View {
     /// the corresponding fallback key thereafter.
     private var activeKey: String {
         candidateIndex == 0 ? trailer.trailerKey : (trailer.fallbackKeys[safe: candidateIndex - 1] ?? trailer.trailerKey)
+    }
+
+    /// Video fill width. In portrait `size.height * 16 / 9` always wins, so this
+    /// returns exactly the previous value and portrait framing cannot shift. In
+    /// landscape the screen is wider than 16:9 of its own height, so the width
+    /// wins and the video fills edge-to-edge, cropping vertically instead.
+    private var fillWidth: CGFloat {
+        max(size.width, size.height * 16 / 9)
+    }
+
+    private var fillHeight: CGFloat {
+        fillWidth * 9 / 16
+    }
+
+    /// Trailing gutter reserved for the vertical right rail. The rail moves into
+    /// the bottom row in landscape, so nothing needs reserving there.
+    private var metadataTrailingReserve: CGFloat {
+        isLandscape ? 0 : 90
     }
 
     private func resolveGlassAds(count: Int) -> [(serviceId: String, name: String, color: Color, tagline: String)] {
@@ -1680,7 +1804,7 @@ private struct ReelView: View {
             if !trailer.trailerKey.isEmpty, !allCandidatesFailed {
                 #if targetEnvironment(simulator)
                 SimulatorTrailerPoster(trailer: trailer, videoKey: activeKey)
-                    .frame(width: size.height * 16 / 9, height: size.height)
+                    .frame(width: fillWidth, height: fillHeight)
                     .position(x: size.width / 2, y: size.height / 2)
                 #else
                 if isCurrent {
@@ -1708,13 +1832,13 @@ private struct ReelView: View {
                         )
                         .allowsHitTesting(false)
                     }
-                    .frame(width: size.height * 16 / 9, height: size.height)
+                    .frame(width: fillWidth, height: fillHeight)
                     .clipped()
                     .position(x: size.width / 2, y: size.height / 2)
                 } else {
                     // Neighbors show poster only — avoids spinning up multiple players simultaneously.
                     SimulatorTrailerPoster(trailer: trailer, videoKey: activeKey)
-                        .frame(width: size.height * 16 / 9, height: size.height)
+                        .frame(width: fillWidth, height: fillHeight)
                         .position(x: size.width / 2, y: size.height / 2)
                         .allowsHitTesting(false)
                 }
@@ -1728,10 +1852,23 @@ private struct ReelView: View {
                 Color.clear
                     .contentShape(Rectangle())
                     .onTapGesture {
+                        // Landscape with the chrome hidden: the first tap only
+                        // brings the chrome back, it never toggles playback.
+                        if isLandscape && !chromeVisible {
+                            onRevealChrome()
+                            return
+                        }
                         onTogglePlay()
                         flashControls()
+                        if isLandscape { onRevealChrome() }
                     }
-                    .allowsHitTesting(!showControls && isPlaying)
+                    // Portrait keeps its exact original condition. Landscape adds
+                    // the hidden-chrome case so a reveal tap always lands.
+                    .allowsHitTesting(
+                        isLandscape
+                            ? ((!showControls && isPlaying) || !chromeVisible)
+                            : (!showControls && isPlaying)
+                    )
             }
 
             // Layer 11 — top scrim
@@ -1750,69 +1887,24 @@ private struct ReelView: View {
                 LinearGradient(
                     colors: [.clear, Color.navy.opacity(0.55), Color.navy.opacity(0.92), Color.navy],
                     startPoint: .top, endPoint: .bottom)
-                    .frame(height: 440)
+                    .frame(height: isLandscape ? 150 : 440)
             }
             .allowsHitTesting(false)
 
-            // Layer 15 — right rail
-            VStack {
-                Spacer().frame(height: size.height * 0.27)
-                HStack {
-                    Spacer()
-                    VStack(spacing: 10) {
-                        if !trailer.isSponsored {
-                            RailButton(
-                                    icon: isLiked ? "heart.fill" : "heart",
-                                    label: formatCount(likeCount),
-                                    tint: isLiked ? Color(hex: "FF3B5C") : .white,
-                                    action: {
-                                        likeBounce = 1.4
-                                        withAnimation(.spring(response: 0.3, dampingFraction: 0.55)) {
-                                            likeBounce = 1.0
-                                        }
-                                        onLike()
-                                    }
-                                )
-                                .scaleEffect(likeBounce)
-
-                            RailButton(
-                                icon: isSaved ? "checkmark" : "plus",
-                                label: isSaved ? "Saved" : "Save",
-                                tint: Color(hex: "F5821F"),
-                                action: onSave
-                            )
-
-                            RailButton(
-                                icon: isWatched ? "eye.fill" : "eye",
-                                label: "Watched",
-                                tint: isWatched ? Color(hex: "1A6FE8") : .white,
-                                action: onWatched
-                            )
-
-                            RailButton(
-                                icon: "ellipsis",
-                                label: "More",
-                                tint: .white,
-                                action: onMore
-                            )
-                        } else {
-                            RailButton(
-                                icon: "info.circle",
-                                label: "Learn",
-                                tint: .white,
-                                action: onSave
-                            )
-                            RailButton(
-                                icon: "arrowshape.turn.up.right",
-                                label: "Share",
-                                tint: .white,
-                                action: onShare
-                            )
+            // Layer 15 — right rail. Landscape folds these buttons into the
+            // bottom row instead, so the vertical rail is suppressed there.
+            if !isLandscape {
+                VStack {
+                    Spacer().frame(height: size.height * 0.27)
+                    HStack {
+                        Spacer()
+                        VStack(spacing: 10) {
+                            railButtons(iconSize: 20)
                         }
+                        .padding(.trailing, 18)
                     }
-                    .padding(.trailing, 18)
+                    Spacer()
                 }
-                Spacer()
             }
 
             // Sponsored tag
@@ -1833,35 +1925,14 @@ private struct ReelView: View {
                 }
             }
 
-            // Layer 17 — bottom content
+            // Layer 17 — bottom content. Landscape replaces this stacked block
+            // (plus the right rail) with a single horizontal row.
+            if !isLandscape {
             VStack {
                 Spacer()
                 VStack(alignment: .leading, spacing: 0) {
-                    HStack(spacing: 8) {
-                        Text(trailer.platformName)
-                            .scaledFont(size: 11, weight: .bold)
-                            .foregroundStyle(trailer.platformTextColor)
-                            .padding(.horizontal, 10).padding(.vertical, 5)
-                            .background(trailer.platformColor.opacity(trailer.isSponsored ? 0.25 : 1.0))
-                            .clipShape(.rect(cornerRadius: 6))
-                        Text(trailer.genre)
-                            .scaledFont(size: 11, weight: .bold)
-                            .foregroundStyle(.white.opacity(trailer.isSponsored ? 0.75 : 1.0))
-                            .padding(.horizontal, 10).padding(.vertical, 5)
-                            .background((trailer.isSponsored ? Color.white.opacity(0.06) : Color.white.opacity(0.12)))
-                            .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.white.opacity(trailer.isSponsored ? 0.10 : 0.20)))
-                            .clipShape(.rect(cornerRadius: 6))
-                        if isInjected, let vtype = trailer.videoType, !vtype.isEmpty {
-                            Text(vtype)
-                                .scaledFont(size: 11, weight: .bold)
-                                .foregroundStyle(.white)
-                                .padding(.horizontal, 10).padding(.vertical, 5)
-                                .background(Color.white.opacity(0.12))
-                                .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.white.opacity(0.20)))
-                                .clipShape(.rect(cornerRadius: 6))
-                        }
-                    }
-                    .padding(.trailing, 90)
+                    chipsRow
+                    .padding(.trailing, metadataTrailingReserve)
                     .padding(.bottom, 8)
 
                     Text(trailer.showName)
@@ -1869,7 +1940,7 @@ private struct ReelView: View {
                         .tracking(-0.8)
                         .foregroundStyle(.white)
                         .lineLimit(2)
-                        .padding(.trailing, 90)
+                        .padding(.trailing, metadataTrailingReserve)
                         .padding(.bottom, 10)
 
                     if !trailer.synopsis.isEmpty {
@@ -1877,20 +1948,20 @@ private struct ReelView: View {
                             .scaledFont(size: 14)
                             .foregroundStyle(Color.white.opacity(0.80))
                             .lineLimit(2)
-                            .padding(.trailing, 90)
+                            .padding(.trailing, metadataTrailingReserve)
                             .padding(.bottom, 8)
                     }
 
                     Text(trailer.runtime)
                         .scaledFont(size: 12, weight: .medium)
                         .foregroundStyle(Color.white.opacity(0.55))
-                        .padding(.trailing, 90)
+                        .padding(.trailing, metadataTrailingReserve)
                         .padding(.bottom, 14)
 
                     // TVDB next-episode air-date banner
                     if let tvdb = tvdbInfo, let code = tvdb.episodeCode {
                         tvdbNextEpisodeRow(tvdb: tvdb)
-                            .padding(.trailing, 90)
+                            .padding(.trailing, metadataTrailingReserve)
                             .padding(.bottom, 12)
                     }
 
@@ -1952,34 +2023,73 @@ private struct ReelView: View {
                     withAnimation(.easeOut(duration: 0.6)) { contentOpacity = 1.0 }
                 }
             }
+            }
 
-            // Layer 19 — interactive video scrubber.
-            VStack {
-                Spacer()
-                GeometryReader { barGeo in
-                    ZStack(alignment: .leading) {
-                        Capsule()
-                            .fill(Color.white.opacity(0.18))
-                            .frame(height: 6)
-                        Capsule()
-                            .fill(Color(hex: "F5821F"))
-                            .frame(width: max(0, min(1, playbackProgress)) * barGeo.size.width, height: 6)
-                        // Invisible wider hit target for dragging.
-                        Color.clear
-                            .frame(height: 32)
-                            .contentShape(Rectangle())
-                            .gesture(
-                                DragGesture(minimumDistance: 0)
-                                    .onChanged { value in
-                                        let fraction = max(0, min(1, value.location.x / max(barGeo.size.width, 1)))
-                                        seekToFraction = fraction
-                                    }
-                            )
+            // Landscape chrome — one bottom container holding the scrubber
+            // directly above a single horizontal row (metadata leading, actions
+            // trailing). Auto-hides with the rest of the chrome.
+            if isLandscape {
+                VStack {
+                    Spacer()
+                    VStack(alignment: .leading, spacing: 14) {
+                        scrubberBar
+                        HStack(alignment: .bottom, spacing: 16) {
+                            landscapeMetadata
+                            Spacer(minLength: 0)
+                            landscapeActions
+                        }
                     }
+                    .padding(.leading, landscapeLeading)
+                    .padding(.trailing, landscapeTrailing)
+                    .padding(.bottom, bottomInset + 15)
                 }
-                .frame(height: 6)
-                .padding(.horizontal, 22)
-                .padding(.bottom, bottomInset + 14)
+                .opacity(chromeVisible ? 1 : 0)
+                .allowsHitTesting(chromeVisible)
+            }
+
+            // Landscape top bar trailing edge — the mute toggle moves up here,
+            // level with the dismiss chevron the screen renders on the leading
+            // side. Same 40pt glass circle, same action, same flash.
+            if isLandscape, isCurrent {
+                VStack {
+                    HStack {
+                        Spacer()
+                        Button {
+                            onToggleMute()
+                            flashControls()
+                            onRevealChrome()
+                        } label: {
+                            ZStack {
+                                Circle()
+                                    .fill(Color.black.opacity(0.45))
+                                    .background(.ultraThinMaterial, in: Circle())
+                                    .overlay(Circle().stroke(Color.white.opacity(0.18), lineWidth: 1))
+                                Image(systemName: isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                                    .scaledFont(size: 16, weight: .semibold)
+                                    .foregroundStyle(.white)
+                            }
+                            .frame(width: 40, height: 40)
+                            .shadow(color: .black.opacity(0.35), radius: 10)
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.trailing, landscapeTrailing)
+                    }
+                    .padding(.top, topInset)
+                    Spacer()
+                }
+                .opacity(chromeVisible ? 1 : 0)
+                .allowsHitTesting(chromeVisible)
+            }
+
+            // Layer 19 — interactive video scrubber. Landscape renders it inside
+            // the bottom container above the row instead of anchoring it here.
+            if !isLandscape {
+                VStack {
+                    Spacer()
+                    scrubberBar
+                        .padding(.horizontal, 22)
+                        .padding(.bottom, bottomInset + 14)
+                }
             }
 
             // Layer 21 — media controls overlay (play/pause + mute).
@@ -2004,26 +2114,29 @@ private struct ReelView: View {
                 .buttonStyle(.plain)
                 .position(x: size.width / 2, y: size.height / 2)
 
-                // Mute button — bottom-leading
-                Button {
-                    onToggleMute()
-                    flashControls()
-                } label: {
-                    ZStack {
-                        Circle()
-                            .fill(Color.black.opacity(0.45))
-                            .background(.ultraThinMaterial, in: Circle())
-                            .overlay(Circle().stroke(Color.white.opacity(0.18), lineWidth: 1))
-                        Image(systemName: isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
-                            .scaledFont(size: 16, weight: .semibold)
-                            .foregroundStyle(.white)
+                // Mute button — bottom-leading. Landscape relocates it to the
+                // trailing edge of the top bar, so it is suppressed here.
+                if !isLandscape {
+                    Button {
+                        onToggleMute()
+                        flashControls()
+                    } label: {
+                        ZStack {
+                            Circle()
+                                .fill(Color.black.opacity(0.45))
+                                .background(.ultraThinMaterial, in: Circle())
+                                .overlay(Circle().stroke(Color.white.opacity(0.18), lineWidth: 1))
+                            Image(systemName: isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                                .scaledFont(size: 16, weight: .semibold)
+                                .foregroundStyle(.white)
+                        }
+                        .frame(width: 40, height: 40)
+                        .shadow(color: .black.opacity(0.35), radius: 10)
                     }
-                    .frame(width: 40, height: 40)
-                    .shadow(color: .black.opacity(0.35), radius: 10)
+                    .buttonStyle(.plain)
+                    .position(x: isPlaying ? 38 : size.width / 2,
+                              y: isPlaying ? size.height - bottomInset - 64 : size.height / 2 - 34 - 16 - 20)
                 }
-                .buttonStyle(.plain)
-                .position(x: isPlaying ? 38 : size.width / 2,
-                          y: isPlaying ? size.height - bottomInset - 64 : size.height / 2 - 34 - 16 - 20)
             }
         }
         .clipped()
@@ -2046,9 +2159,208 @@ private struct ReelView: View {
                 metadata: ["source": "reel_ad_carousel", "position": page, "show_platform": trailer.platformId]
             )
         }
+        .onChange(of: isLandscape) { _, nowLandscape in
+            if nowLandscape {
+                // No affiliate carousel in landscape — tear its timers down so
+                // no impression is logged for an ad that is never shown.
+                glassAdFadeTask?.cancel()
+                adAdvanceTask?.cancel()
+                glassAdVisible = false
+            } else if isCurrent {
+                armGlassAdFade()
+            }
+        }
         .onDisappear {
             glassAdFadeTask?.cancel()
             adAdvanceTask?.cancel()
+        }
+    }
+
+    // MARK: Shared chrome pieces
+
+    /// Platform + genre (+ video type) chips. Identical in both orientations.
+    @ViewBuilder
+    private var chipsRow: some View {
+        HStack(spacing: 8) {
+            Text(trailer.platformName)
+                .scaledFont(size: 11, weight: .bold)
+                .foregroundStyle(trailer.platformTextColor)
+                .padding(.horizontal, 10).padding(.vertical, 5)
+                .background(trailer.platformColor.opacity(trailer.isSponsored ? 0.25 : 1.0))
+                .clipShape(.rect(cornerRadius: 6))
+            Text(trailer.genre)
+                .scaledFont(size: 11, weight: .bold)
+                .foregroundStyle(.white.opacity(trailer.isSponsored ? 0.75 : 1.0))
+                .padding(.horizontal, 10).padding(.vertical, 5)
+                .background((trailer.isSponsored ? Color.white.opacity(0.06) : Color.white.opacity(0.12)))
+                .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.white.opacity(trailer.isSponsored ? 0.10 : 0.20)))
+                .clipShape(.rect(cornerRadius: 6))
+            if isInjected, let vtype = trailer.videoType, !vtype.isEmpty {
+                Text(vtype)
+                    .scaledFont(size: 11, weight: .bold)
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 10).padding(.vertical, 5)
+                    .background(Color.white.opacity(0.12))
+                    .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.white.opacity(0.20)))
+                    .clipShape(.rect(cornerRadius: 6))
+            }
+        }
+    }
+
+    /// The action buttons, in the one canonical order. Portrait stacks them
+    /// vertically at 20pt icons; landscape lays them out horizontally at 19pt.
+    /// The 48pt tap target and 11pt label never change.
+    @ViewBuilder
+    private func railButtons(iconSize: CGFloat) -> some View {
+        if !trailer.isSponsored {
+            RailButton(
+                icon: isLiked ? "heart.fill" : "heart",
+                label: formatCount(likeCount),
+                tint: isLiked ? Color(hex: "FF3B5C") : .white,
+                iconSize: iconSize,
+                action: {
+                    likeBounce = 1.4
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.55)) {
+                        likeBounce = 1.0
+                    }
+                    onLike()
+                }
+            )
+            .scaleEffect(likeBounce)
+
+            RailButton(
+                icon: isSaved ? "checkmark" : "plus",
+                label: isSaved ? "Saved" : "Save",
+                tint: Color(hex: "F5821F"),
+                iconSize: iconSize,
+                action: onSave
+            )
+
+            RailButton(
+                icon: isWatched ? "eye.fill" : "eye",
+                label: "Watched",
+                tint: isWatched ? Color(hex: "1A6FE8") : .white,
+                iconSize: iconSize,
+                action: onWatched
+            )
+
+            RailButton(
+                icon: "ellipsis",
+                label: "More",
+                tint: .white,
+                iconSize: iconSize,
+                action: onMore
+            )
+        } else {
+            RailButton(
+                icon: "info.circle",
+                label: "Learn",
+                tint: .white,
+                iconSize: iconSize,
+                action: onSave
+            )
+            RailButton(
+                icon: "arrowshape.turn.up.right",
+                label: "Share",
+                tint: .white,
+                iconSize: iconSize,
+                action: onShare
+            )
+        }
+    }
+
+    /// The scrubber itself — 6pt capsule, white 18% track, orange fill, 32pt
+    /// invisible drag target. Positioning is the caller's job.
+    @ViewBuilder
+    private var scrubberBar: some View {
+        GeometryReader { barGeo in
+            ZStack(alignment: .leading) {
+                Capsule()
+                    .fill(Color.white.opacity(0.18))
+                    .frame(height: 6)
+                Capsule()
+                    .fill(Color(hex: "F5821F"))
+                    .frame(width: max(0, min(1, playbackProgress)) * barGeo.size.width, height: 6)
+                // Invisible wider hit target for dragging.
+                Color.clear
+                    .frame(height: 32)
+                    .contentShape(Rectangle())
+                    .gesture(
+                        DragGesture(minimumDistance: 0)
+                            .onChanged { value in
+                                let fraction = max(0, min(1, value.location.x / max(barGeo.size.width, 1)))
+                                seekToFraction = fraction
+                            }
+                    )
+            }
+        }
+        .frame(height: 6)
+    }
+
+    // MARK: Landscape chrome
+
+    /// Leading half of the landscape bottom row: chips, a single-line 16pt
+    /// title, and a single-line 12pt synopsis. Runtime and the TVDB banner are
+    /// deliberately dropped — there is no vertical room for them.
+    @ViewBuilder
+    private var landscapeMetadata: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            chipsRow
+                .padding(.bottom, 8)
+
+            Text(trailer.showName)
+                .scaledFont(size: 16, weight: .bold)
+                .tracking(-0.8)
+                .foregroundStyle(.white)
+                .lineLimit(1)
+                .truncationMode(.tail)
+
+            if !trailer.synopsis.isEmpty {
+                Text(trailer.synopsis)
+                    .scaledFont(size: 12)
+                    .foregroundStyle(Color.white.opacity(0.80))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .padding(.top, 6)
+            }
+        }
+    }
+
+    /// Trailing half of the landscape bottom row: the rail buttons laid out
+    /// horizontally, then the same action pill portrait uses.
+    @ViewBuilder
+    private var landscapeActions: some View {
+        HStack(alignment: .center, spacing: 22) {
+            railButtons(iconSize: 19)
+            landscapeActionPill
+        }
+    }
+
+    /// The unchanged primary CTA for this reel — same component, same wiring.
+    @ViewBuilder
+    private var landscapeActionPill: some View {
+        if trailer.isSponsored {
+            Button(action: onSponsorCTA) {
+                HStack(spacing: 6) {
+                    Text("Learn more")
+                        .scaledFont(size: 13, weight: .semibold)
+                        .foregroundStyle(.white)
+                    Image(systemName: "arrow.up.right")
+                        .scaledFont(size: 11, weight: .semibold)
+                        .foregroundStyle(Color.white.opacity(0.70))
+                }
+            }
+            .buttonStyle(.plain)
+        } else if trailer.tab == .comingSoon {
+            NotifyMePill(enrolled: isReminded, action: onNotify)
+        } else if isInjected {
+            WatchNowSwitcher(
+                tmdbId: trailer.tmdbId,
+                isTV: trailer.isTV,
+                showName: trailer.showName
+            )
+        } else {
+            PlayOnPill(action: onShowDetail)
         }
     }
 
@@ -2107,6 +2419,13 @@ private struct ReelView: View {
     private func armGlassAdFade() {
         glassAdFadeTask?.cancel()
         adAdvanceTask?.cancel()
+        // The affiliate carousel has no landscape placement, so neither the fade
+        // task nor the auto-advance task is ever armed there — which also means
+        // no adImpression is emitted for an ad the user never sees.
+        guard !isLandscape else {
+            glassAdVisible = false
+            return
+        }
         glassAdTargets = resolveGlassAds(count: 5)
         adPage = 0
         glassAdDismissed = false
@@ -2263,6 +2582,10 @@ private struct RailButton: View {
     let icon: String
     let label: String
     let tint: Color
+    /// Glyph size only. Defaults to the portrait value so portrait is unchanged;
+    /// landscape passes 19. The 48pt tap target and 11pt label are fixed in both
+    /// orientations so accessibility never degrades.
+    var iconSize: CGFloat = 20
     let action: () -> Void
 
     var body: some View {
@@ -2270,7 +2593,7 @@ private struct RailButton: View {
             VStack(spacing: 4) {
                 ZStack {
                     Image(systemName: icon)
-                        .scaledFont(size: 20, weight: .semibold)
+                        .scaledFont(size: iconSize, weight: .semibold)
                         .foregroundStyle(tint)
                         .shadow(color: Color.black.opacity(0.55), radius: 3, x: 0, y: 1)
                 }

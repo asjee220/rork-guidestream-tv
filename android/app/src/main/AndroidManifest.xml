@@ -16,10 +16,15 @@
         android:theme="@style/Theme.RorkApp">
 
         <!-- Deep link intent filter for guidestream:// -->
+        <!-- configChanges keeps MainActivity alive across rotation. MainScreen
+             holds selectedTab in a plain remember, so without this a rotation
+             would destroy and recreate the activity and dump the user out of
+             Reels back onto Home mid-reel. -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
             android:launchMode="singleTop"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden"
             android:theme="@style/Theme.RorkApp">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

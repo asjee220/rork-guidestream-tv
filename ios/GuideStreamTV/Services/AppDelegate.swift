@@ -7,7 +7,38 @@ import UIKit
 import UserNotifications
 import Supabase
 
+/// Runtime gate for landscape support.
+///
+/// `Info.plist` has to advertise landscape for the whole app before *any*
+/// screen is allowed to rotate, so this flag narrows it back down at runtime:
+/// only Reels flips it on, and `AppDelegate` returns `.portrait` for every
+/// other screen. Deliberately a tiny non-isolated box so both the SwiftUI view
+/// and the UIKit delegate callback can touch it without hopping actors.
+nonisolated final class AppOrientationGate {
+    nonisolated(unsafe) static let shared = AppOrientationGate()
+
+    /// `true` only while the Reels feed is on screen.
+    var allowsLandscape: Bool = false
+
+    private init() {}
+}
+
 final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
+
+    // MARK: - Orientation
+
+    /// Narrows the plist's advertised orientations down to portrait everywhere
+    /// except Reels. iPad is exempt — it already shipped all four orientations
+    /// and must not regress.
+    func application(
+        _ application: UIApplication,
+        supportedInterfaceOrientationsFor window: UIWindow?
+    ) -> UIInterfaceOrientationMask {
+        if UIDevice.current.userInterfaceIdiom == .pad { return .all }
+        return AppOrientationGate.shared.allowsLandscape
+            ? [.portrait, .landscapeLeft, .landscapeRight]
+            : .portrait
+    }
 
     func application(
         _ application: UIApplication,

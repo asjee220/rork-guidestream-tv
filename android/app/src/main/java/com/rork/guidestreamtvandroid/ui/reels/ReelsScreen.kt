@@ -1,7 +1,12 @@
 package com.rork.guidestreamtvandroid.ui.reels
 
+import android.app.Activity
 import android.content.Intent
+import android.content.pm.ActivityInfo
+import android.content.res.Configuration
 import android.net.Uri
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -13,7 +18,12 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.displayCutout
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -55,6 +65,7 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -78,6 +89,8 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.max
 import androidx.compose.ui.unit.IntOffset
@@ -130,6 +143,24 @@ fun ReelsScreen(
     injectedStartIndex: Int = 0,
     modifier: Modifier = Modifier,
 ) {
+    // Reels is the only screen allowed to rotate. SCREEN_ORIENTATION_USER (never
+    // SENSOR) so a device with auto-rotate switched off stays in portrait. The
+    // previous value is captured and restored rather than hardcoding portrait,
+    // because MainActivity already sets FULL_USER on 600dp+ tablets and
+    // hardcoding portrait would break tablet rotation. Declared above the
+    // injected early-return so Trailers & Clips rotates identically.
+    val orientationContext = LocalContext.current
+    DisposableEffect(Unit) {
+        val activity = orientationContext as? Activity
+        val previousOrientation = activity?.requestedOrientation
+        activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_USER
+        onDispose {
+            if (activity != null && previousOrientation != null) {
+                activity.requestedOrientation = previousOrientation
+            }
+        }
+    }
+
     // Title-scoped mode (Trailers & Clips): render the injected feed only,
     // never touching the shared ReelsViewModel or its global loader.
     if (injectedReels != null) {
@@ -168,6 +199,31 @@ fun ReelsScreen(
     var isPlaying by remember { mutableStateOf(true) }
     var isMuted by remember { mutableStateOf(true) }
 
+    val isLandscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
+    val (landscapeLeading, landscapeTrailing) = landscapeSideInsets()
+
+    // Landscape-only: the whole chrome layer auto-hides 3s after the last touch
+    // and returns on any tap. Independent of ReelView's showControls / 2.2s
+    // flash timer, which keeps driving the center play-pause exactly as before.
+    var landscapeChromeVisible by remember { mutableStateOf(true) }
+    var chromeHideJob by remember { mutableStateOf<Job?>(null) }
+    val chromeScope = rememberCoroutineScope()
+    val chromeAlpha by animateFloatAsState(
+        targetValue = if (!isLandscape || landscapeChromeVisible) 1f else 0f,
+        animationSpec = tween(durationMillis = 220),
+        label = "reelChromeAlpha",
+    )
+    fun revealChrome() {
+        chromeHideJob?.cancel()
+        landscapeChromeVisible = true
+        // Portrait never hides chrome, so no countdown is armed there.
+        if (!isLandscape) return
+        chromeHideJob = chromeScope.launch {
+            delay(3000)
+            landscapeChromeVisible = false
+        }
+    }
+
     // Load trailers on first composition
     LaunchedEffect(Unit) {
         vm.loadTrailers()
@@ -194,6 +250,10 @@ fun ReelsScreen(
             // keeping the previous tab's cached pages.
             key(currentTab) {
             val pagerState = rememberPagerState(pageCount = { filteredTrailers.size })
+
+            // Chrome reappears for each new reel, and rotating back to portrait
+            // pins it visible with the pending hide task cancelled.
+            LaunchedEffect(isLandscape, pagerState.currentPage) { revealChrome() }
 
             // Reset autoplay on page change
             LaunchedEffect(pagerState.currentPage) {
@@ -225,6 +285,12 @@ fun ReelsScreen(
                 ReelView(
                     reel = reel,
                     isCurrent = isCurrent,
+                    isLandscape = isLandscape,
+                    landscapeLeading = landscapeLeading,
+                    landscapeTrailing = landscapeTrailing,
+                    chromeVisible = landscapeChromeVisible,
+                    chromeAlpha = chromeAlpha,
+                    onRevealChrome = { revealChrome() },
                     isPlaying = isPlaying,
                     isMuted = isMuted,
                     isSaved = isSaved,
@@ -348,13 +414,23 @@ fun ReelsScreen(
                     )
                 }
             }
-            // Top overlay: dismiss chevron + category pills
+            // Top overlay: dismiss chevron + category pills. In landscape the
+            // pills are hidden and the bar carries the mute toggle (rendered by
+            // ReelView on the trailing side) instead. Not composed at all once
+            // the chrome has faded out, so taps fall through to the reel.
+            if (chromeAlpha > 0.01f) {
             Row(
                 modifier = Modifier
                     .align(Alignment.TopStart)
                     .fillMaxWidth()
                     .statusBarsPadding()
-                    .padding(horizontal = 12.dp, vertical = 12.dp),
+                    .padding(
+                        start = if (isLandscape) landscapeLeading else 12.dp,
+                        end = if (isLandscape) landscapeTrailing else 12.dp,
+                        top = 12.dp,
+                        bottom = 12.dp,
+                    )
+                    .alpha(chromeAlpha),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 // Dismiss chevron
@@ -377,6 +453,7 @@ fun ReelsScreen(
                     )
                 }
                 // Category pills — plain tappable buttons, left-aligned
+                if (!isLandscape) {
                 Row(
                     modifier = Modifier.padding(start = 12.dp),
                     horizontalArrangement = Arrangement.spacedBy(13.dp),
@@ -401,9 +478,23 @@ fun ReelsScreen(
                         )
                     }
                 }
+                }
+            }
             }
         }
     }
+}
+
+/**
+ * Landscape horizontal safe-area floors. 44dp is a floor, not a ceiling — a
+ * display cutout reports considerably more than that in landscape, and pinning
+ * to a fixed 44dp would tuck the chrome underneath it.
+ */
+@Composable
+private fun landscapeSideInsets(): Pair<Dp, Dp> {
+    val sides = WindowInsets.displayCutout.union(WindowInsets.navigationBars).asPaddingValues()
+    return max(44.dp, sides.calculateLeftPadding(LayoutDirection.Ltr)) to
+        max(44.dp, sides.calculateRightPadding(LayoutDirection.Ltr))
 }
 
 @Composable
@@ -414,6 +505,12 @@ private fun ReelView(
     isMuted: Boolean,
     isSaved: Boolean,
     isWatched: Boolean,
+    isLandscape: Boolean = false,
+    landscapeLeading: Dp = 44.dp,
+    landscapeTrailing: Dp = 44.dp,
+    chromeVisible: Boolean = true,
+    chromeAlpha: Float = 1f,
+    onRevealChrome: () -> Unit = {},
     isLiked: Boolean = false,
     likeCount: Int = 0,
     commentCount: Int = 0,
@@ -574,15 +671,24 @@ private fun ReelView(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null,
                     ) {
-                        onTogglePlay()
-                        flashControls()
+                        // Landscape with the chrome hidden: the first tap only
+                        // brings the chrome back, it never toggles playback.
+                        if (isLandscape && !chromeVisible) {
+                            onRevealChrome()
+                        } else {
+                            onTogglePlay()
+                            flashControls()
+                            if (isLandscape) onRevealChrome()
+                        }
                     },
                 contentAlignment = Alignment.Center,
             ) {}
         }
 
         // Right rail: Like, List, Watched, More — positioned at 27% down the
-        // screen to match iOS Layer 15.
+        // screen to match iOS Layer 15. Landscape folds these buttons into the
+        // bottom row instead, so the vertical rail is suppressed there.
+        if (!isLandscape) {
         Column(
             modifier = Modifier
                 .align(Alignment.TopEnd)
@@ -591,53 +697,26 @@ private fun ReelView(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            if (reel.tmdbId > 0) {
-                // Like
-                RailButton(
-                    icon = if (isLiked) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
-                    label = formatReelCount(likeCount),
-                    tint = if (isLiked) Color(0xFFFF3B5C) else TextPrimary,
-                    onClick = onLike,
-                )
-                // List (Save)
-                RailButton(
-                    icon = if (isSaved) Icons.Filled.Check else Icons.Filled.Add,
-                    label = if (isSaved) "Saved" else "Save",
-                    tint = BrandOrange,
-                    onClick = onToggleSave,
-                )
-                // Watched
-                RailButton(
-                    icon = Icons.Filled.Visibility,
-                    label = "Watched",
-                    tint = if (isWatched) BrandBlue else TextPrimary,
-                    onClick = onToggleWatched,
-                )
-                // More
-                RailButton(
-                    icon = Icons.Filled.MoreHoriz,
-                    label = "More",
-                    tint = TextPrimary,
-                    onClick = onMore,
-                )
-            } else {
-                // Sponsored reels: Save + Share only
-                RailButton(
-                    icon = if (isSaved) Icons.Filled.Check else Icons.Filled.Add,
-                    label = if (isSaved) "Saved" else "Save",
-                    tint = BrandOrange,
-                    onClick = onToggleSave,
-                )
-                RailButton(
-                    icon = Icons.Filled.Share,
-                    label = "Share",
-                    tint = TextPrimary,
-                    onClick = onShare,
-                )
-            }
+            ReelRailButtons(
+                reel = reel,
+                isLiked = isLiked,
+                likeCount = likeCount,
+                isSaved = isSaved,
+                isWatched = isWatched,
+                onLike = onLike,
+                onToggleSave = onToggleSave,
+                onToggleWatched = onToggleWatched,
+                onMore = onMore,
+                onShare = onShare,
+                iconSize = 20.dp,
+            )
+        }
         }
 
         // Bottom-left content (Layer 17) — matches iOS layout and typography.
+        // Landscape replaces this stacked block (plus the right rail) with a
+        // single horizontal row further down.
+        if (!isLandscape) {
         Column(
             modifier = Modifier
                 .align(Alignment.BottomStart)
@@ -646,55 +725,7 @@ private fun ReelView(
                 .fillMaxWidth(),
         ) {
             // Platform / genre / video-type chips
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(
-                            if (reel.isSponsored) reel.platformColor.copy(alpha = 0.25f) else reel.platformColor
-                        )
-                        .padding(horizontal = 10.dp, vertical = 5.dp),
-                ) {
-                    Text(
-                        text = reel.platformName,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White,
-                    )
-                }
-                Spacer(Modifier.width(8.dp))
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(Color.White.copy(alpha = if (reel.isSponsored) 0.06f else 0.12f))
-                        .border(1.dp, Color.White.copy(alpha = if (reel.isSponsored) 0.10f else 0.20f), RoundedCornerShape(6.dp))
-                        .padding(horizontal = 10.dp, vertical = 5.dp),
-                ) {
-                    Text(
-                        text = reel.genre,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White.copy(alpha = if (reel.isSponsored) 0.75f else 1f),
-                    )
-                }
-                if (injected && !reel.videoType.isNullOrBlank()) {
-                    Spacer(Modifier.width(8.dp))
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(Color.White.copy(alpha = 0.12f))
-                            .border(1.dp, Color.White.copy(alpha = 0.20f), RoundedCornerShape(6.dp))
-                            .padding(horizontal = 10.dp, vertical = 5.dp),
-                    ) {
-                        Text(
-                            text = reel.videoType,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White,
-                        )
-                    }
-                }
-            }
+            ReelChipsRow(reel = reel, injected = injected)
             Spacer(Modifier.height(8.dp))
             Text(
                 text = reel.showName,
@@ -757,9 +788,133 @@ private fun ReelView(
                 PlayOnPill(onClick = onPlayYoutube)
             }
         }
+        }
 
-        // Layer 19 — interactive video scrubber.
-        if (isCurrent && !allCandidatesFailed) {
+        // Landscape chrome — the scrubber sits directly above one horizontal row
+        // (metadata leading, actions trailing) inside the same bottom container,
+        // so the 14dp gap holds regardless of how tall the metadata renders.
+        if (isLandscape && chromeAlpha > 0.01f) {
+            Column(
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .fillMaxWidth()
+                    .padding(start = landscapeLeading, end = landscapeTrailing)
+                    .padding(bottom = 15.dp + systemBottomInset())
+                    .alpha(chromeAlpha),
+            ) {
+                if (isCurrent && !allCandidatesFailed) {
+                    ReelScrubber(
+                        progress = progress,
+                        onSeek = { fraction -> seekToFraction = fraction },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Spacer(Modifier.height(14.dp))
+                }
+                Row(verticalAlignment = Alignment.Bottom) {
+                    // Metadata — no trailing gutter reserved, the rail is in-row.
+                    Column(modifier = Modifier.weight(1f)) {
+                        ReelChipsRow(reel = reel, injected = injected)
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            text = reel.showName,
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        if (reel.synopsis.isNotBlank()) {
+                            Spacer(Modifier.height(6.dp))
+                            Text(
+                                text = reel.synopsis,
+                                fontSize = 12.sp,
+                                color = Color.White.copy(alpha = 0.80f),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
+                    Spacer(Modifier.width(16.dp))
+                    // Actions — the same rail buttons laid out horizontally, then
+                    // the unchanged action pill. No ad carousel in landscape.
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(22.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        ReelRailButtons(
+                            reel = reel,
+                            isLiked = isLiked,
+                            likeCount = likeCount,
+                            isSaved = isSaved,
+                            isWatched = isWatched,
+                            onLike = onLike,
+                            onToggleSave = onToggleSave,
+                            onToggleWatched = onToggleWatched,
+                            onMore = onMore,
+                            onShare = onShare,
+                            iconSize = 19.dp,
+                        )
+                        if (reel.isSponsored) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = "Learn more",
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = Color.White,
+                                )
+                                Spacer(Modifier.width(6.dp))
+                                Icon(
+                                    imageVector = Icons.Filled.KeyboardArrowDown,
+                                    contentDescription = null,
+                                    tint = Color.White.copy(alpha = 0.70f),
+                                    modifier = Modifier.size(16.dp),
+                                )
+                            }
+                        } else if (injected) {
+                            WatchNowSwitcher(sources = sources, onOpenSource = onOpenSource)
+                        } else {
+                            PlayOnPill(onClick = onPlayYoutube)
+                        }
+                    }
+                }
+            }
+        }
+
+        // Landscape top bar trailing edge — the mute toggle moves up here, level
+        // with the dismiss chevron the screen renders on the leading side. Same
+        // 40dp circle, same icons, same action, same flash.
+        if (isLandscape && isCurrent && chromeAlpha > 0.01f) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .statusBarsPadding()
+                    .padding(end = landscapeTrailing, top = 12.dp)
+                    .alpha(chromeAlpha)
+                    .size(40.dp)
+                    .clip(CircleShape)
+                    .background(Color.Black.copy(alpha = 0.45f))
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                    ) {
+                        onToggleMute()
+                        flashControls()
+                        onRevealChrome()
+                    },
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = if (isMuted) Icons.Filled.VolumeOff else Icons.Filled.VolumeUp,
+                    contentDescription = if (isMuted) "Unmute" else "Mute",
+                    tint = Color.White,
+                    modifier = Modifier.size(22.dp),
+                )
+            }
+        }
+
+        // Layer 19 — interactive video scrubber. Landscape renders it inside the
+        // bottom container above the row instead of anchoring it here.
+        if (isCurrent && !allCandidatesFailed && !isLandscape) {
             ReelScrubber(
                 progress = progress,
                 onSeek = { fraction -> seekToFraction = fraction },
@@ -799,10 +954,13 @@ private fun ReelView(
             }
 
             // Mute button — bottom-leading when playing, centered above the play
-            // button when paused, matching iOS.
+            // button when paused, matching iOS. Landscape relocates it to the
+            // trailing edge of the top bar, so it is suppressed here.
             val muteIcon = if (isMuted) Icons.Filled.VolumeOff else Icons.Filled.VolumeUp
             val muteDescription = if (isMuted) "Unmute" else "Mute"
-            if (isPlaying) {
+            if (isLandscape) {
+                // Relocated to the top bar.
+            } else if (isPlaying) {
                 Box(
                     modifier = Modifier
                         .align(Alignment.BottomStart)
@@ -905,6 +1063,28 @@ private fun InjectedReelsScreen(
     var isPlaying by remember { mutableStateOf(true) }
     var isMuted by remember { mutableStateOf(true) }
 
+    val isLandscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
+    val (landscapeLeading, landscapeTrailing) = landscapeSideInsets()
+
+    // Landscape-only auto-hiding chrome, identical to the main feed.
+    var landscapeChromeVisible by remember { mutableStateOf(true) }
+    var chromeHideJob by remember { mutableStateOf<Job?>(null) }
+    val chromeScope = rememberCoroutineScope()
+    val chromeAlpha by animateFloatAsState(
+        targetValue = if (!isLandscape || landscapeChromeVisible) 1f else 0f,
+        animationSpec = tween(durationMillis = 220),
+        label = "injectedReelChromeAlpha",
+    )
+    fun revealChrome() {
+        chromeHideJob?.cancel()
+        landscapeChromeVisible = true
+        if (!isLandscape) return
+        chromeHideJob = chromeScope.launch {
+            delay(3000)
+            landscapeChromeVisible = false
+        }
+    }
+
     // All injected reels share the same title, so resolve sources once.
     val sharedTmdbId = remember(reels) { reels.firstOrNull()?.tmdbId ?: 0 }
     val sharedIsTV = remember(reels) { reels.firstOrNull()?.isTV ?: true }
@@ -937,6 +1117,9 @@ private fun InjectedReelsScreen(
                 initialPage = startIndex.coerceIn(0, reels.size - 1),
                 pageCount = { reels.size },
             )
+            // Chrome reappears for each new reel; rotating back to portrait pins
+            // it visible with the pending hide task cancelled.
+            LaunchedEffect(isLandscape, pagerState.currentPage) { revealChrome() }
             LaunchedEffect(pagerState.currentPage) {
                 isPlaying = true
                 val item = reels.getOrNull(pagerState.currentPage) ?: return@LaunchedEffect
@@ -963,6 +1146,12 @@ private fun InjectedReelsScreen(
                 ReelView(
                     reel = reel,
                     isCurrent = isCurrent,
+                    isLandscape = isLandscape,
+                    landscapeLeading = landscapeLeading,
+                    landscapeTrailing = landscapeTrailing,
+                    chromeVisible = landscapeChromeVisible,
+                    chromeAlpha = chromeAlpha,
+                    onRevealChrome = { revealChrome() },
                     isPlaying = isPlaying,
                     isMuted = isMuted,
                     isSaved = isSaved,
@@ -1091,12 +1280,20 @@ private fun InjectedReelsScreen(
             }
             // Top overlay: dismiss chevron only (no category pills).
             // statusBarsPadding keeps the tap target below the system status bar
-            // so the status bar doesn't swallow the tap.
+            // so the status bar doesn't swallow the tap. Not composed at all once
+            // the landscape chrome has faded, so taps fall through to the reel.
+            if (chromeAlpha > 0.01f) {
             Box(
                 modifier = Modifier
                     .align(Alignment.TopStart)
                     .statusBarsPadding()
-                    .padding(12.dp)
+                    .padding(
+                        start = if (isLandscape) landscapeLeading else 12.dp,
+                        end = 12.dp,
+                        top = 12.dp,
+                        bottom = 12.dp,
+                    )
+                    .alpha(chromeAlpha)
                     .size(40.dp)
                     .clip(CircleShape)
                     .background(Color.Black.copy(alpha = 0.4f))
@@ -1112,6 +1309,7 @@ private fun InjectedReelsScreen(
                     tint = TextPrimary,
                     modifier = Modifier.size(26.dp),
                 )
+            }
             }
         }
     }
@@ -1453,12 +1651,143 @@ private fun isUsableReelUrl(url: String?): Boolean {
     return true
 }
 
+/**
+ * Platform / genre / video-type chips. Shared verbatim by the portrait stacked
+ * block and the landscape row so the chips are pixel-identical in both.
+ */
+@Composable
+private fun ReelChipsRow(reel: TrailerItem, injected: Boolean) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(
+            modifier = Modifier
+                .clip(RoundedCornerShape(6.dp))
+                .background(
+                    if (reel.isSponsored) reel.platformColor.copy(alpha = 0.25f) else reel.platformColor
+                )
+                .padding(horizontal = 10.dp, vertical = 5.dp),
+        ) {
+            Text(
+                text = reel.platformName,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color.White,
+            )
+        }
+        Spacer(Modifier.width(8.dp))
+        Box(
+            modifier = Modifier
+                .clip(RoundedCornerShape(6.dp))
+                .background(Color.White.copy(alpha = if (reel.isSponsored) 0.06f else 0.12f))
+                .border(1.dp, Color.White.copy(alpha = if (reel.isSponsored) 0.10f else 0.20f), RoundedCornerShape(6.dp))
+                .padding(horizontal = 10.dp, vertical = 5.dp),
+        ) {
+            Text(
+                text = reel.genre,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color.White.copy(alpha = if (reel.isSponsored) 0.75f else 1f),
+            )
+        }
+        if (injected && !reel.videoType.isNullOrBlank()) {
+            Spacer(Modifier.width(8.dp))
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(Color.White.copy(alpha = 0.12f))
+                    .border(1.dp, Color.White.copy(alpha = 0.20f), RoundedCornerShape(6.dp))
+                    .padding(horizontal = 10.dp, vertical = 5.dp),
+            ) {
+                Text(
+                    text = reel.videoType,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White,
+                )
+            }
+        }
+    }
+}
+
+/**
+ * The action buttons in the one canonical order — Like, Save, Watched, More for
+ * normal reels; Save, Share for sponsored ones. Portrait stacks them vertically
+ * at 20dp icons, landscape lays them out horizontally at 19dp. The caller owns
+ * the container, so the same set serves both orientations.
+ */
+@Composable
+private fun ReelRailButtons(
+    reel: TrailerItem,
+    isLiked: Boolean,
+    likeCount: Int,
+    isSaved: Boolean,
+    isWatched: Boolean,
+    onLike: () -> Unit,
+    onToggleSave: () -> Unit,
+    onToggleWatched: () -> Unit,
+    onMore: () -> Unit,
+    onShare: () -> Unit,
+    iconSize: Dp = 20.dp,
+) {
+    if (reel.tmdbId > 0) {
+        // Like
+        RailButton(
+            icon = if (isLiked) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
+            label = formatReelCount(likeCount),
+            tint = if (isLiked) Color(0xFFFF3B5C) else TextPrimary,
+            iconSize = iconSize,
+            onClick = onLike,
+        )
+        // List (Save)
+        RailButton(
+            icon = if (isSaved) Icons.Filled.Check else Icons.Filled.Add,
+            label = if (isSaved) "Saved" else "Save",
+            tint = BrandOrange,
+            iconSize = iconSize,
+            onClick = onToggleSave,
+        )
+        // Watched
+        RailButton(
+            icon = Icons.Filled.Visibility,
+            label = "Watched",
+            tint = if (isWatched) BrandBlue else TextPrimary,
+            iconSize = iconSize,
+            onClick = onToggleWatched,
+        )
+        // More
+        RailButton(
+            icon = Icons.Filled.MoreHoriz,
+            label = "More",
+            tint = TextPrimary,
+            iconSize = iconSize,
+            onClick = onMore,
+        )
+    } else {
+        // Sponsored reels: Save + Share only
+        RailButton(
+            icon = if (isSaved) Icons.Filled.Check else Icons.Filled.Add,
+            label = if (isSaved) "Saved" else "Save",
+            tint = BrandOrange,
+            iconSize = iconSize,
+            onClick = onToggleSave,
+        )
+        RailButton(
+            icon = Icons.Filled.Share,
+            label = "Share",
+            tint = TextPrimary,
+            iconSize = iconSize,
+            onClick = onShare,
+        )
+    }
+}
+
 @Composable
 private fun RailButton(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     label: String,
     tint: Color,
     onClick: () -> Unit,
+    /** Glyph size only. The 48dp tap target and 11sp label never change. */
+    iconSize: Dp = 20.dp,
 ) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -1479,7 +1808,7 @@ private fun RailButton(
                 contentDescription = label,
                 tint = tint,
                 modifier = Modifier
-                    .size(20.dp)
+                    .size(iconSize)
                     .shadow(
                         elevation = 3.dp,
                         shape = CircleShape,
