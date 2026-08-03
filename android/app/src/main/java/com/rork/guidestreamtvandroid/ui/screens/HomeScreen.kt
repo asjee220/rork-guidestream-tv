@@ -153,6 +153,13 @@ fun HomeScreen(
 
     LaunchedEffect(Unit) { homeVm.loadAll() }
 
+    // Popular-on-service rails track the live selection. Keyed on the selection
+    // itself and awaited in this effect's coroutine (not viewModelScope) so
+    // Compose cancels an in-flight fetch the moment the user toggles another
+    // service — a stale older result can never overwrite a newer one. Also
+    // covers sign-in hydrating services after Home has already mounted.
+    LaunchedEffect(selectedServices) { homeVm.loadPopularByServices(selectedServices) }
+
     // Inline sponsored slot indices dismissed for this session.
     val dismissedAdSlots = remember { mutableStateMapOf<Int, Boolean>() }
 

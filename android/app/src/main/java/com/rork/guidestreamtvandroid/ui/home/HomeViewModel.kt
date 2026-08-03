@@ -14,13 +14,13 @@ import com.rork.guidestreamtvandroid.data.remote.RecommendedCreatorsService
 import com.rork.guidestreamtvandroid.data.remote.StreamingReleasesService
 import com.rork.guidestreamtvandroid.data.remote.TMDBService
 import com.rork.guidestreamtvandroid.data.remote.toTMDBResult
-import com.rork.guidestreamtvandroid.data.repository.AuthViewModel
 import com.rork.guidestreamtvandroid.data.repository.StreamsViewModel
 import com.rork.guidestreamtvandroid.widget.WidgetDataService
 import com.rork.guidestreamtvandroid.widget.WidgetLeavingSoonItem
 import java.time.LocalDate
 import java.time.ZoneOffset
 import java.time.temporal.ChronoUnit
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -179,20 +179,6 @@ class HomeViewModel : ViewModel() {
                 launch { _upcoming.value = tmdb.getUpcomingMovies() },
                 launch { _bingeReady.value = tmdb.getDiscoverEnded() },
                 launch { _genreShows.value = tmdb.getDiscoverByGenre(80) }, // Crime
-                launch {
-                    val services = StreamingCatalog.ordered(AuthViewModel.get().selectedServices.value)
-                    val entries = services
-                        .mapNotNull { svc -> providerIdMap[svc.id]?.let { svc.id to it } }
-                        .map { (serviceId, providerId) ->
-                            launch(Dispatchers.IO) {
-                                val results = tmdb.discoverByProvider(providerId)
-                                if (results.isNotEmpty()) {
-                                    _popularByService.value = _popularByService.value + (serviceId to results)
-                                }
-                            }
-                        }
-                    entries.forEach { it.join() }
-                },
             )
             jobs.forEach { it.join() }
 
@@ -212,6 +198,82 @@ class HomeViewModel : ViewModel() {
             // and best-effort — never blocks the feed from rendering.
             loadRecommendedCreators()
         }
+    }
+
+    /**
+     * Loads the "Popular on {service}" rails for the passed selection.
+     *
+     * Ids are mapped through [StreamingCatalog.ordered] so rails keep catalogue
+     * order, then through [providerIdMap]; a service with no TMDB provider
+     * mapping (espn, sling, youtubetv, mgm, …) is skipped silently and renders
+     * no rail, exactly as on iOS. Each remaining service fetches its popular TV
+     * shows and popular movies concurrently, keeps the first 10 shows and first
+     * 5 movies, interleaves them show → movie → show → movie, drops duplicate
+     * TMDB ids, and caps the rail at 12 items.
+     *
+     * A failed or throwing fetch yields an empty list for that one service and
+     * never aborts the others. The freshly built map is assigned in a single
+     * write so concurrent fetches cannot drop each other's entries, and so
+     * services the user just deselected lose their rails instead of lingering
+     * from the previous value.
+     */
+    suspend fun loadPopularByServices(serviceIds: Set<String>) {
+        val mapped = StreamingCatalog.ordered(serviceIds)
+            .mapNotNull { svc -> providerIdMap[svc.id]?.let { svc.id to it } }
+        if (mapped.isEmpty()) {
+            _popularByService.value = emptyMap()
+            return
+        }
+
+        val collected = coroutineScope {
+            mapped.map { (serviceId, providerId) ->
+                async(Dispatchers.IO) {
+                    val showsJob = async(Dispatchers.IO) {
+                        try {
+                            tmdb.getPopularOnService(providerId)
+                        } catch (cancelled: CancellationException) {
+                            throw cancelled
+                        } catch (_: Exception) {
+                            emptyList<TMDBResult>()
+                        }
+                    }
+                    val moviesJob = async(Dispatchers.IO) {
+                        try {
+                            tmdb.getPopularMoviesOnService(providerId)
+                        } catch (cancelled: CancellationException) {
+                            throw cancelled
+                        } catch (_: Exception) {
+                            emptyList<TMDBResult>()
+                        }
+                    }
+                    val shows = showsJob.await().take(10)
+                    val movies = moviesJob.await().take(5)
+
+                    val merged = mutableListOf<TMDBResult>()
+                    val seen = mutableSetOf<Int>()
+                    var showIndex = 0
+                    var movieIndex = 0
+                    while (merged.size < 12 && (showIndex < shows.size || movieIndex < movies.size)) {
+                        if (showIndex < shows.size) {
+                            val show = shows[showIndex++]
+                            if (seen.add(show.id)) merged.add(show)
+                        }
+                        if (merged.size >= 12) break
+                        if (movieIndex < movies.size) {
+                            val movie = movies[movieIndex++]
+                            if (seen.add(movie.id)) merged.add(movie)
+                        }
+                    }
+                    serviceId to merged.toList()
+                }
+            }.awaitAll()
+        }
+
+        val next = LinkedHashMap<String, List<TMDBResult>>()
+        for ((serviceId, items) in collected) {
+            if (items.isNotEmpty()) next[serviceId] = items
+        }
+        _popularByService.value = next
     }
 
     /**
