@@ -86,6 +86,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -95,6 +96,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.max
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.sp
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.rork.guidestreamtvandroid.BuildConfig
 import com.rork.guidestreamtvandroid.data.models.Platform
@@ -158,6 +164,55 @@ fun ReelsScreen(
             if (activity != null && previousOrientation != null) {
                 activity.requestedOrientation = previousOrientation
             }
+        }
+    }
+
+    // Landscape Reels is fully immersive: both the status bar and the navigation
+    // bar hide so the trailer is genuinely full-bleed. MainActivity's
+    // enableEdgeToEdge() only draws content *behind* the bars and its default
+    // SystemBarStyle.auto paints a light scrim behind three-button navigation —
+    // that scrim is the grey trailing-edge bar. Keyed on the orientation value
+    // and never on Unit, because AndroidManifest declares configChanges for
+    // orientation|screenSize, so the activity is not recreated on rotation and a
+    // Unit-keyed effect would never re-fire. Declared above the injected
+    // early-return so Trailers & Clips goes immersive identically.
+    val immersiveLandscape =
+        LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
+    val immersiveLifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(immersiveLandscape) {
+        val activity = orientationContext as? Activity
+        val controller = activity?.window?.let { window ->
+            WindowCompat.getInsetsController(window, window.decorView)
+        }
+        val applyImmersive: () -> Unit = {
+            if (controller != null) {
+                if (immersiveLandscape) {
+                    // Transient behavior: an edge swipe surfaces the bars
+                    // temporarily and they auto-hide again on their own, so the
+                    // hidden state is never permanently lost.
+                    controller.systemBarsBehavior =
+                        WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                    controller.hide(WindowInsetsCompat.Type.systemBars())
+                } else {
+                    controller.show(WindowInsetsCompat.Type.systemBars())
+                }
+            }
+        }
+        applyImmersive()
+        // Returning from the background — or back from the YouTube app — can drop
+        // the hidden state, so re-apply it on every resume.
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                applyImmersive()
+            }
+        }
+        immersiveLifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            immersiveLifecycleOwner.lifecycle.removeObserver(observer)
+            // Leaving Reels by any route (chevron, swipe-down, tab change, system
+            // back) must hand the bars back to the rest of the app.
+            controller?.show(WindowInsetsCompat.Type.systemBars())
+            controller?.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_DEFAULT
         }
     }
 
