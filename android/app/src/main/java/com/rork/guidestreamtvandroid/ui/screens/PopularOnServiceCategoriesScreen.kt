@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -221,13 +220,19 @@ fun PopularOnServiceCategoriesScreen(
                     }
                 }
             }
+            // Trailing fade — matchParentSize so the overlay is measured at the
+            // pill row's size without contributing to it. fillMaxHeight() here
+            // made this Box (and therefore its parent) as tall as all remaining
+            // column space, collapsing the grid below to zero height.
             Box(
                 modifier = Modifier
-                    .align(Alignment.CenterEnd)
-                    .fillMaxHeight()
-                    .width(44.dp)
+                    .matchParentSize()
                     .background(
-                        Brush.horizontalGradient(listOf(Color.Transparent, Navy)),
+                        Brush.horizontalGradient(
+                            0f to Color.Transparent,
+                            0.86f to Color.Transparent,
+                            1f to Navy,
+                        ),
                     ),
             )
         }
