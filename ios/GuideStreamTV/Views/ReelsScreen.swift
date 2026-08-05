@@ -967,6 +967,11 @@ struct ReelsScreen: View {
     /// returns on any tap. Portrait never consults this.
     @State private var landscapeChromeVisible: Bool = true
     @State private var chromeHideTask: Task<Void, Never>?
+    /// Mirrors the geometry-derived orientation so the immersive modifiers —
+    /// which must sit on the view root, outside the GeometryReader — can read
+    /// it. Landscape hides the status bar and the home indicator so the reel is
+    /// genuinely edge-to-edge, matching Android.
+    @State private var isLandscapeNow: Bool = false
     @Environment(\.tabBarVisibility) private var tabBarVisibility
 
     /// Called when the user taps the dismiss chevron or completes a
@@ -1092,7 +1097,10 @@ struct ReelsScreen: View {
                 VStack(spacing: 0) {
                     HStack {
                         Button(action: handleDismiss) {
-                            Image(systemName: "chevron.left")
+                            // Landscape uses the downward chevron, matching
+                            // Android — it reads as "drop this full-screen
+                            // player" rather than "go back a level".
+                            Image(systemName: isLandscape ? "chevron.down" : "chevron.left")
                                 .scaledFont(size: 17, weight: .bold)
                                 .foregroundStyle(.white)
                                 .frame(width: 40, height: 40)
@@ -1132,7 +1140,10 @@ struct ReelsScreen: View {
 
                         Spacer()
                     }
-                    .padding(.top, topInset)
+                    // Landscape reports a zero top inset once the status bar is
+                    // hidden, so the chevron would sit flush against the edge.
+                    // The explicit 12pt matches Android's top bar padding.
+                    .padding(.top, topInset + (isLandscape ? 12 : 0))
                     Spacer()
                 }
                 .ignoresSafeArea()
@@ -1140,7 +1151,8 @@ struct ReelsScreen: View {
                 .allowsHitTesting(isLandscape ? landscapeChromeVisible : true)
             }
             .offset(y: dismissDragOffset)
-            .onChange(of: isLandscape) { _, nowLandscape in
+            .onChange(of: isLandscape, initial: true) { _, nowLandscape in
+                isLandscapeNow = nowLandscape
                 if nowLandscape {
                     armChromeHide()
                 } else {
@@ -1172,6 +1184,12 @@ struct ReelsScreen: View {
                     }
             )
         }
+        // Landscape goes fully immersive, matching Android: the status bar and
+        // the home indicator both hide so the trailer is genuinely full-bleed.
+        // Both return the instant the device rotates back to portrait, and
+        // leaving Reels tears the whole view down so they always come back.
+        .statusBarHidden(isLandscapeNow)
+        .persistentSystemOverlays(isLandscapeNow ? .hidden : .automatic)
         .task {
             // Initialise the ad SDK so interstitials and native ads begin
             // preloading. No-op on the cloud simulator.
@@ -2032,7 +2050,11 @@ private struct ReelView: View {
                 VStack {
                     Spacer()
                     VStack(alignment: .leading, spacing: 14) {
-                        scrubberBar
+                        // Neighbouring reels have no playback position to show,
+                        // so they render the row without a dead 0% bar above it.
+                        if isCurrent && !allCandidatesFailed {
+                            scrubberBar
+                        }
                         HStack(alignment: .bottom, spacing: 16) {
                             landscapeMetadata
                             Spacer(minLength: 0)
@@ -2041,7 +2063,11 @@ private struct ReelView: View {
                     }
                     .padding(.leading, landscapeLeading)
                     .padding(.trailing, landscapeTrailing)
-                    .padding(.bottom, bottomInset + 15)
+                    // The home indicator is hidden in landscape, so the full
+                    // safe-area inset would float the row well off the edge.
+                    // Clamping it keeps the row as tight to the bottom as
+                    // Android's, while still clearing the edge-swipe strip.
+                    .padding(.bottom, min(bottomInset, 8) + 15)
                 }
                 .opacity(chromeVisible ? 1 : 0)
                 .allowsHitTesting(chromeVisible)
@@ -2074,7 +2100,9 @@ private struct ReelView: View {
                         .buttonStyle(.plain)
                         .padding(.trailing, landscapeTrailing)
                     }
-                    .padding(.top, topInset)
+                    // Matches the dismiss chevron opposite it, which the screen
+                    // pads by the same 12pt now the status bar is hidden.
+                    .padding(.top, topInset + 12)
                     Spacer()
                 }
                 .opacity(chromeVisible ? 1 : 0)
