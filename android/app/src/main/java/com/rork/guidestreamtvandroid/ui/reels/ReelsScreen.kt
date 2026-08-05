@@ -115,6 +115,7 @@ import com.rork.guidestreamtvandroid.data.repository.StreamsViewModel
 import com.rork.guidestreamtvandroid.data.repository.WatchIntentLogger
 import com.rork.guidestreamtvandroid.ui.comments.TitleCommentsSheet
 import com.rork.guidestreamtvandroid.ui.components.RemoteImage
+import com.rork.guidestreamtvandroid.ui.navigation.PendingTitleRoute
 import java.util.Locale
 import kotlin.math.abs
 import kotlinx.coroutines.Dispatchers
@@ -145,6 +146,7 @@ import com.rork.guidestreamtvandroid.ui.theme.TextTertiary
 @Composable
 fun ReelsScreen(
     onDismiss: () -> Unit = {},
+    onOpenTitle: (PendingTitleRoute) -> Unit = {},
     injectedReels: List<TrailerItem>? = null,
     injectedStartIndex: Int = 0,
     modifier: Modifier = Modifier,
@@ -389,6 +391,27 @@ fun ReelsScreen(
                             platformId = "youtube",
                         )
                     },
+                    onShowDetail = {
+                        // Sponsored reels have no title behind them, and a
+                        // missing tmdbId would open an empty sheet — both are
+                        // no-ops rather than a broken destination.
+                        if (!reel.isSponsored && reel.tmdbId > 0) {
+                            WatchIntentLogger.get().log(
+                                WatchIntentLogger.IntentEventType.DEEPLINK_FIRED,
+                                titleId = reel.tmdbId.toString(),
+                                platformId = reel.platformId,
+                                metadata = mapOf("source" to "reels_play_pill"),
+                            )
+                            onOpenTitle(
+                                PendingTitleRoute(
+                                    titleId = reel.tmdbId.toString(),
+                                    titleName = reel.showName,
+                                    posterUrl = reel.posterUrl,
+                                    isTv = reel.isTV,
+                                )
+                            )
+                        }
+                    },
                     onToggleSave = {
                         if (isSaved) {
                             streamsVm.removeFromMyStreams(reel.tmdbId.toString())
@@ -575,6 +598,8 @@ private fun ReelView(
     onTogglePlay: () -> Unit,
     onToggleMute: () -> Unit,
     onPlayYoutube: () -> Unit,
+    /** Opens the title's quick-look detail sheet — driven by the Watch pill. */
+    onShowDetail: () -> Unit = {},
     onToggleSave: () -> Unit,
     onToggleWatched: () -> Unit,
     onShare: () -> Unit,
@@ -840,7 +865,7 @@ private fun ReelView(
                     ReelAdCarousel(reel = reel, isCurrent = isCurrent)
                 }
                 Spacer(Modifier.height(12.dp))
-                PlayOnPill(onClick = onPlayYoutube)
+                PlayOnPill(onClick = onShowDetail)
             }
         }
         }
@@ -928,7 +953,7 @@ private fun ReelView(
                         } else if (injected) {
                             WatchNowSwitcher(sources = sources, onOpenSource = onOpenSource)
                         } else {
-                            PlayOnPill(onClick = onPlayYoutube)
+                            PlayOnPill(onClick = onShowDetail)
                         }
                     }
                 }

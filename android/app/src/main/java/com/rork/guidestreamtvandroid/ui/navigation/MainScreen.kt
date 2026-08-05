@@ -31,6 +31,7 @@ import com.rork.guidestreamtvandroid.data.repository.CoachMarkManager
 import com.rork.guidestreamtvandroid.ui.home.HomeViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.rork.guidestreamtvandroid.ui.detail.CreatorDetailScreen
+import com.rork.guidestreamtvandroid.ui.detail.EpisodeDetailSheet
 import com.rork.guidestreamtvandroid.ui.detail.ShowDetailScreen
 import com.rork.guidestreamtvandroid.ui.reels.ReelsScreen
 import com.rork.guidestreamtvandroid.ui.screens.HomeListScreen
@@ -77,6 +78,10 @@ fun MainScreen(
     var showSearch by remember { mutableStateOf(false) }
     var showAskSheet by remember { mutableStateOf(false) }
     var showDetail by remember { mutableStateOf<PendingTitleRoute?>(null) }
+    // Quick-look bottom sheet — the default entry point for a tapped poster.
+    // The full ShowDetailScreen is now reached from the sheet's "Full details"
+    // pill (or straight from Search / Ask Stream, which still push it).
+    var detailSheetRoute by remember { mutableStateOf<PendingTitleRoute?>(null) }
     var showCreatorDetail by remember { mutableStateOf<String?>(null) }
     var selectedGame by remember { mutableStateOf<com.rork.guidestreamtvandroid.data.models.SportsGame?>(null) }
     var showPopularCategories by remember { mutableStateOf<PopularCategoriesTarget?>(null) }
@@ -99,7 +104,7 @@ fun MainScreen(
         if (kind.isNonTMDB) {
             showCreatorDetail = route.titleId
         } else {
-            showDetail = route
+            detailSheetRoute = route
         }
     }
 
@@ -132,7 +137,7 @@ fun MainScreen(
                         if (kind.isNonTMDB) {
                             showCreatorDetail = route.titleId
                         } else {
-                            showDetail = route
+                            detailSheetRoute = route
                         }
                     },
                     onOpenSearch = { showSearch = true },
@@ -152,6 +157,14 @@ fun MainScreen(
                         val target = if (tabBeforeReels == AppTab.REELS) AppTab.HOME else tabBeforeReels
                         selectedTab = target
                         tabBarVisible = true
+                    },
+                    onOpenTitle = { route ->
+                        val kind = SourceKind.from(route.titleId)
+                        if (kind.isNonTMDB) {
+                            showCreatorDetail = route.titleId
+                        } else {
+                            detailSheetRoute = route
+                        }
                     },
                 )
                 AppTab.PROFILE -> ProfileScreen()
@@ -252,7 +265,12 @@ fun MainScreen(
                     onBack = { showPopularCategories = null },
                     onOpenTitle = { route ->
                         showPopularCategories = null
-                        showDetail = route
+                        val kind = SourceKind.from(route.titleId)
+                        if (kind.isNonTMDB) {
+                            showCreatorDetail = route.titleId
+                        } else {
+                            detailSheetRoute = route
+                        }
                     },
                     modifier = Modifier.fillMaxSize(),
                 )
@@ -272,7 +290,12 @@ fun MainScreen(
                     onBack = { showHomeList = null },
                     onOpenTitle = { route ->
                         showHomeList = null
-                        showDetail = route
+                        val kind = SourceKind.from(route.titleId)
+                        if (kind.isNonTMDB) {
+                            showCreatorDetail = route.titleId
+                        } else {
+                            detailSheetRoute = route
+                        }
                     },
                     modifier = Modifier.fillMaxSize(),
                 )
@@ -295,7 +318,7 @@ fun MainScreen(
                         if (kind.isNonTMDB) {
                             showCreatorDetail = route.titleId
                         } else {
-                            showDetail = route
+                            detailSheetRoute = route
                         }
                     },
                     modifier = Modifier.fillMaxSize(),
@@ -316,6 +339,18 @@ fun MainScreen(
                     modifier = Modifier.fillMaxSize(),
                 )
             }
+        }
+
+        // Quick-look detail sheet — "Full details" hands off to ShowDetailScreen.
+        detailSheetRoute?.let { route ->
+            EpisodeDetailSheet(
+                route = route,
+                onDismiss = { detailSheetRoute = null },
+                onFullDetails = { target ->
+                    detailSheetRoute = null
+                    showDetail = target
+                },
+            )
         }
 
         // Ask Stream sheet

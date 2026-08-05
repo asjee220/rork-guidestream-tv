@@ -1,0 +1,783 @@
+package com.rork.guidestreamtvandroid.ui.detail
+
+import android.content.Intent
+import android.net.Uri
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.Tv
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.outlined.NotificationsNone
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.Text
+import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.rork.guidestreamtvandroid.data.models.Platform
+import com.rork.guidestreamtvandroid.data.models.StreamingCatalog
+import com.rork.guidestreamtvandroid.data.models.TitleId
+import com.rork.guidestreamtvandroid.data.remote.TMDBService
+import com.rork.guidestreamtvandroid.data.remote.WatchmodeResolveResponse
+import com.rork.guidestreamtvandroid.data.remote.WatchmodeResolveService
+import com.rork.guidestreamtvandroid.data.remote.WatchmodeSrc
+import com.rork.guidestreamtvandroid.data.repository.AuthViewModel
+import com.rork.guidestreamtvandroid.data.repository.ReleaseReminderService
+import com.rork.guidestreamtvandroid.data.repository.SocialViewModel
+import com.rork.guidestreamtvandroid.data.repository.StreamsViewModel
+import com.rork.guidestreamtvandroid.data.repository.WatchIntentLogger
+import com.rork.guidestreamtvandroid.ui.cast.CastToTVSheet
+import com.rork.guidestreamtvandroid.ui.comments.TitleCommentsSheet
+import com.rork.guidestreamtvandroid.ui.components.GsSheetDragHandle
+import com.rork.guidestreamtvandroid.ui.components.RemoteImage
+import com.rork.guidestreamtvandroid.ui.components.SocialCounterRow
+import com.rork.guidestreamtvandroid.ui.navigation.PendingTitleRoute
+import com.rork.guidestreamtvandroid.ui.theme.BrandBlue
+import com.rork.guidestreamtvandroid.ui.theme.BrandOrange
+import com.rork.guidestreamtvandroid.ui.theme.Hairline
+import com.rork.guidestreamtvandroid.ui.theme.SurfaceDark
+import com.rork.guidestreamtvandroid.ui.theme.TextPrimary
+import com.rork.guidestreamtvandroid.ui.theme.TextSecondary
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.util.Locale
+
+/**
+ * Quick-look bottom sheet for a title — Android port of iOS `EpisodeDetailSheet`.
+ *
+ * Two layouts share the same header. Titles that arrived from the "Coming to
+ * Streaming" rail ([PendingTitleRoute.isComingToStreaming]) get a reduced body
+ * with just Notify + Share and the synopsis, because there is nothing to watch
+ * yet. Every other title gets the full body: Watched / Share / Send to TV
+ * circle actions, the Where to Watch chip row, the orange watch CTA with the
+ * watchlist circle, an availability caption, and a "Full details" pill that
+ * pushes on to [ShowDetailScreen].
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun EpisodeDetailSheet(
+    route: PendingTitleRoute,
+    onDismiss: () -> Unit,
+    onFullDetails: (PendingTitleRoute) -> Unit,
+) {
+    val context = LocalContext.current
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    val streamsVm = StreamsViewModel.get()
+    val socialVm = SocialViewModel.get()
+    val authVm = AuthViewModel.get()
+    val reminders = ReleaseReminderService.get()
+
+    val tmdbId = TitleId.tmdbId(route.titleId)
+    val isTV = route.isTv
+    val titleName = route.titleName?.takeIf { it.isNotBlank() }
+
+    /**
+     * Social scope key — the bare TMDB id when resolvable so likes and comments
+     * line up with every other surface, otherwise a slug of the title so
+     * creator-style ids still get a stable home.
+     */
+    val socialKey = remember(route.titleId, titleName) {
+        tmdbId?.toString() ?: WatchIntentLogger.get().titleSlug(titleName ?: route.titleId)
+    }
+
+    val userStreams by streamsVm.userStreams.collectAsStateWithLifecycle()
+    val watchedIds by streamsVm.watchedIds.collectAsStateWithLifecycle()
+    val likeCounts by socialVm.likeCounts.collectAsStateWithLifecycle()
+    val likedByMe by socialVm.likedByMe.collectAsStateWithLifecycle()
+    val commentCounts by socialVm.commentCounts.collectAsStateWithLifecycle()
+    val remindedIds by reminders.remindedTitleIds.collectAsStateWithLifecycle()
+    val selectedServices by authVm.selectedServices.collectAsStateWithLifecycle()
+
+    var detail by remember { mutableStateOf<TMDBService.TMDBTVDetail?>(null) }
+    var usSources by remember { mutableStateOf<List<WatchmodeSrc>>(emptyList()) }
+    var selectedSource by remember { mutableStateOf<WatchmodeSrc?>(null) }
+    var episodeSource by remember { mutableStateOf<WatchmodeSrc?>(null) }
+    var isResolvingSources by remember { mutableStateOf(false) }
+    var showComments by remember { mutableStateOf(false) }
+    var showCast by remember { mutableStateOf(false) }
+
+    val isSaved = userStreams.any { it.titleId == route.titleId }
+    val isWatched = watchedIds.contains(route.titleId)
+    val reminderKey = tmdbId?.toString().orEmpty()
+    val isReminded = reminderKey.isNotEmpty() && remindedIds.contains(reminderKey)
+
+    val isSourceSubscribed: (String) -> Boolean = { name ->
+        val n = name.lowercase().filter { it.isLetterOrDigit() }
+        StreamingCatalog.ordered(selectedServices).any { svc ->
+            val s = svc.name.lowercase().filter { it.isLetterOrDigit() }
+            s.isNotEmpty() && (n.contains(s) || s.contains(n))
+        }
+    }
+
+    val displayTitle = detail?.name?.takeIf { it.isNotBlank() } ?: titleName ?: "Title"
+    val posterUrl = route.posterUrl
+        ?: detail?.posterPath?.let { path ->
+            "https://image.tmdb.org/t/p/w342${if (path.startsWith("/")) path else "/$path"}"
+        }
+
+    LaunchedEffect(socialKey) { socialVm.refreshCounts(socialKey) }
+
+    LaunchedEffect(reminderKey, route.isComingToStreaming) {
+        if (route.isComingToStreaming && reminderKey.isNotEmpty()) {
+            reminders.refreshReminded(reminderKey)
+        }
+    }
+
+    LaunchedEffect(tmdbId, isTV) {
+        val tid = tmdbId ?: return@LaunchedEffect
+        detail = try {
+            withContext(Dispatchers.IO) {
+                if (isTV) TMDBService.get().getTVDetail(tid) else TMDBService.get().getMovieDetail(tid)
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    // Streaming sources are pointless for a title that has not landed yet, so
+    // the coming-to-streaming layout skips the Watchmode round trip entirely.
+    LaunchedEffect(tmdbId, isTV, detail?.id, route.isComingToStreaming) {
+        val tid = tmdbId ?: return@LaunchedEffect
+        if (route.isComingToStreaming) return@LaunchedEffect
+        if (isTV && detail == null) return@LaunchedEffect
+        isResolvingSources = true
+        val response = try {
+            withContext(Dispatchers.IO) {
+                WatchmodeResolveService.resolve(
+                    tid, isTV,
+                    subscribedServices = StreamingCatalog.ordered(selectedServices).map { it.name },
+                    season = if (isTV) detail?.lastEpisodeToAir?.seasonNumber else null,
+                    episode = if (isTV) detail?.lastEpisodeToAir?.episodeNumber else null,
+                )
+            }
+        } catch (_: Exception) {
+            WatchmodeResolveResponse()
+        }
+        usSources = response.usSources
+        episodeSource = response.episodeSource
+        selectedSource = response.primarySource
+            ?: response.usSources.firstOrNull {
+                isSourceSubscribed(it.name) && it.type.lowercase() in setOf("sub", "free", "tve")
+            }
+            ?: response.usSources.firstOrNull()
+        isResolvingSources = false
+    }
+
+    val serviceLabel = selectedSource?.name
+    val platformColor = serviceLabel?.let { Platform.from(it)?.color } ?: BrandOrange
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = SurfaceDark,
+        dragHandle = { GsSheetDragHandle() },
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .navigationBarsPadding()
+                .padding(bottom = 28.dp),
+        ) {
+            // ── Header ────────────────────────────────────────────────
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp)
+                    .padding(top = 6.dp, bottom = 18.dp),
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                RemoteImage(
+                    url = posterUrl,
+                    contentDescription = displayTitle,
+                    cornerRadius = 12,
+                    placeholderText = displayTitle.take(2).uppercase(Locale.US),
+                    modifier = Modifier.width(110.dp).height(150.dp),
+                )
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = displayTitle,
+                        fontSize = 24.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = TextPrimary,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    val genre = detail?.genres?.firstOrNull()?.name
+                    val metaLine = listOfNotNull(
+                        if (isTV) "Series" else "Movie",
+                        genre,
+                        detail?.numberOfSeasons?.takeIf { isTV && it > 0 }?.let { "$it season${if (it == 1) "" else "s"}" },
+                    ).joinToString(" · ")
+                    Text(
+                        text = metaLine,
+                        fontSize = 13.sp,
+                        color = TextSecondary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    if (serviceLabel != null || route.isComingToStreaming) {
+                        Spacer(Modifier.height(10.dp))
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(20.dp))
+                                .background(if (route.isComingToStreaming) BrandBlue else platformColor)
+                                .padding(horizontal = 10.dp, vertical = 5.dp),
+                        ) {
+                            Text(
+                                text = (if (route.isComingToStreaming) "Coming Soon" else serviceLabel.orEmpty())
+                                    .uppercase(Locale.US),
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Black,
+                                color = Color.White,
+                                maxLines = 1,
+                            )
+                        }
+                    }
+                    val rating = detail?.voteAverage
+                    if (rating != null && rating > 0.0) {
+                        Spacer(Modifier.height(10.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Filled.Star,
+                                contentDescription = null,
+                                tint = Color(0xFFFFC43D),
+                                modifier = Modifier.size(13.dp),
+                            )
+                            Spacer(Modifier.width(5.dp))
+                            Text(
+                                text = String.format(Locale.US, "%.1f", rating),
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = TextPrimary,
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(6.dp))
+                    SocialCounterRow(
+                        isLiked = likedByMe.contains(socialKey),
+                        likeCount = likeCounts[socialKey] ?: 0,
+                        commentCount = commentCounts[socialKey] ?: 0,
+                        onLike = {
+                            socialVm.toggleLike(
+                                titleId = socialKey,
+                                mediaType = if (isTV) "tv" else "movie",
+                                tmdbId = tmdbId,
+                            )
+                        },
+                        onComment = {
+                            showComments = true
+                            WatchIntentLogger.get().log(
+                                WatchIntentLogger.IntentEventType.COMMENTS_OPENED,
+                                titleId = socialKey,
+                                metadata = mapOf("source" to "episode_detail_sheet"),
+                            )
+                        },
+                    )
+                }
+            }
+
+            if (route.isComingToStreaming) {
+                // ── Coming-soon body: Notify + Share, then the synopsis ──
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp, vertical = 18.dp),
+                    horizontalArrangement = Arrangement.Center,
+                ) {
+                    CircleAction(
+                        icon = if (isReminded) Icons.Filled.Notifications else Icons.Outlined.NotificationsNone,
+                        label = "Notify",
+                        tint = if (isReminded) BrandOrange else TextPrimary,
+                        showDot = isReminded,
+                        enabled = reminderKey.isNotEmpty(),
+                    ) {
+                        reminders.toggleReminder(
+                            titleId = reminderKey,
+                            tmdbId = tmdbId,
+                            source = "coming_to_streaming_sheet",
+                        )
+                    }
+                    Spacer(Modifier.width(40.dp))
+                    CircleAction(
+                        icon = Icons.Filled.Share,
+                        label = "Share",
+                        tint = TextPrimary,
+                        showDot = false,
+                    ) {
+                        shareTitle(context, displayTitle, tmdbId, isTV)
+                    }
+                }
+                AboutSection(
+                    overview = detail?.overview,
+                    fallback = "We'll let you know the moment $displayTitle lands on streaming.",
+                )
+            } else {
+                Hairline()
+
+                // ── Watched / Share / Send to TV ─────────────────────
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp, vertical = 18.dp),
+                    horizontalArrangement = Arrangement.SpaceEvenly,
+                ) {
+                    CircleAction(
+                        icon = Icons.Filled.Visibility,
+                        label = "Watched",
+                        tint = if (isWatched) BrandBlue else TextPrimary,
+                        showDot = false,
+                    ) {
+                        streamsVm.toggleWatched(
+                            titleId = route.titleId,
+                            titleName = displayTitle,
+                            mediaType = if (isTV) "tv" else "movie",
+                            tmdbId = tmdbId,
+                        )
+                    }
+                    CircleAction(
+                        icon = Icons.Filled.Share,
+                        label = "Share",
+                        tint = TextPrimary,
+                        showDot = false,
+                    ) {
+                        shareTitle(context, displayTitle, tmdbId, isTV)
+                    }
+                    CircleAction(
+                        icon = Icons.Filled.Tv,
+                        label = "Send to TV",
+                        tint = TextPrimary,
+                        showDot = false,
+                        isLoading = isResolvingSources,
+                    ) {
+                        if (!isResolvingSources) showCast = true
+                    }
+                }
+
+                Hairline()
+
+                WhereToWatchRow(
+                    sources = usSources,
+                    selectedSource = selectedSource,
+                    isSourceSubscribed = isSourceSubscribed,
+                    onSelect = { selectedSource = it },
+                )
+
+                // ── Watch CTA + watchlist circle ─────────────────────
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp)
+                        .padding(top = 20.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    if (selectedSource != null || isResolvingSources) {
+                        val srcName = selectedSource?.name
+                        val srcType = selectedSource?.type?.lowercase().orEmpty()
+                        val verb = when {
+                            srcType == "rent" -> "Rent on"
+                            srcType == "purchase" || srcType == "buy" -> "Buy on"
+                            srcType == "sub" && srcName != null && !isSourceSubscribed(srcName) -> "Get on"
+                            else -> "Watch on"
+                        }
+                        val label = if (srcName == null) "Finding service…" else "$verb $srcName"
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(54.dp)
+                                .clip(RoundedCornerShape(27.dp))
+                                .background(BrandOrange)
+                                .clickable(
+                                    interactionSource = remember { MutableInteractionSource() },
+                                    indication = null,
+                                    enabled = srcName != null && tmdbId != null,
+                                ) {
+                                    openWatchTarget(
+                                        context = context,
+                                        selectedSource = selectedSource,
+                                        episodeSource = if (isTV) episodeSource else null,
+                                        tmdbId = tmdbId,
+                                        isTV = isTV,
+                                    )
+                                    WatchIntentLogger.get().log(
+                                        WatchIntentLogger.IntentEventType.DEEPLINK_FIRED,
+                                        titleId = route.titleId,
+                                        platformId = srcName?.lowercase(),
+                                        metadata = mapOf("source" to "episode_detail_sheet"),
+                                    )
+                                    onDismiss()
+                                },
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                if (isResolvingSources && srcName == null) {
+                                    CircularProgressIndicator(
+                                        color = Color.White,
+                                        strokeWidth = 2.dp,
+                                        modifier = Modifier.size(16.dp),
+                                    )
+                                    Spacer(Modifier.width(8.dp))
+                                } else {
+                                    Icon(
+                                        imageVector = Icons.Filled.PlayArrow,
+                                        contentDescription = null,
+                                        tint = Color.White,
+                                        modifier = Modifier.size(20.dp),
+                                    )
+                                    Spacer(Modifier.width(6.dp))
+                                }
+                                Text(
+                                    text = label,
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                        }
+                    }
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Box(
+                            modifier = Modifier
+                                .size(54.dp)
+                                .clip(CircleShape)
+                                .then(
+                                    if (isSaved) Modifier.border(1.8.dp, Color.White, CircleShape)
+                                    else Modifier.background(BrandOrange)
+                                )
+                                .clickable(
+                                    interactionSource = remember { MutableInteractionSource() },
+                                    indication = null,
+                                ) {
+                                    if (isSaved) {
+                                        streamsVm.removeFromMyStreams(route.titleId)
+                                        WatchIntentLogger.get().log(
+                                            WatchIntentLogger.IntentEventType.WATCHLIST_REMOVED,
+                                            titleId = route.titleId,
+                                        )
+                                    } else {
+                                        streamsVm.addToMyStreams(
+                                            titleId = route.titleId,
+                                            title = displayTitle,
+                                            posterUrl = posterUrl,
+                                            platform = serviceLabel,
+                                            isTv = isTV,
+                                        )
+                                        WatchIntentLogger.get().log(
+                                            WatchIntentLogger.IntentEventType.WATCHLIST_ADDED,
+                                            titleId = route.titleId,
+                                            platformId = serviceLabel?.lowercase(),
+                                        )
+                                    }
+                                },
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(
+                                imageVector = if (isSaved) Icons.Filled.Check else Icons.Filled.Add,
+                                contentDescription = if (isSaved) "In watch list" else "Add to watch list",
+                                tint = Color.White,
+                                modifier = Modifier.size(22.dp),
+                            )
+                        }
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            text = if (isSaved) "Saved" else "Watch List",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = TextPrimary,
+                            maxLines = 1,
+                        )
+                    }
+                }
+
+                // Availability caption — identical wording rules to iOS
+                // (nothing rendered for a sub the user already has).
+                val src = selectedSource
+                if (src != null) {
+                    val t = src.type.lowercase()
+                    val priceLabel = src.price?.let { String.format(Locale.US, "$%.2f", it) }
+                    val caption = when {
+                        t == "free" -> "Free on ${src.name}"
+                        t == "tve" -> "Available on ${src.name} with a TV provider"
+                        t == "sub" -> if (isSourceSubscribed(src.name)) null else "Requires a ${src.name} subscription"
+                        t == "rent" -> if (priceLabel != null) "Rent from $priceLabel on ${src.name}" else "Rent on ${src.name}"
+                        t == "purchase" || t == "buy" -> if (priceLabel != null) "Buy from $priceLabel on ${src.name}" else "Buy on ${src.name}"
+                        else -> null
+                    }
+                    if (caption != null) {
+                        Text(
+                            text = caption,
+                            fontSize = 13.sp,
+                            color = TextSecondary,
+                            modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp),
+                        )
+                    }
+                }
+
+                // ── Full details pill ────────────────────────────────
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp)
+                        .padding(top = 14.dp)
+                        .height(44.dp)
+                        .clip(RoundedCornerShape(22.dp))
+                        .border(1.dp, BrandOrange, RoundedCornerShape(22.dp))
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                        ) { onFullDetails(route) },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Filled.Info,
+                            contentDescription = null,
+                            tint = BrandOrange,
+                            modifier = Modifier.size(15.dp),
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            text = "Full details",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = BrandOrange,
+                        )
+                    }
+                }
+
+                AboutSection(
+                    overview = detail?.overview,
+                    fallback = serviceLabel?.let {
+                        "Tap Watch on $it to open this title in the streaming app."
+                    } ?: "Pick a service above to start watching.",
+                )
+            }
+        }
+    }
+
+    if (showComments) {
+        TitleCommentsSheet(
+            titleId = socialKey,
+            title = displayTitle,
+            subtitle = if (isTV) "Series" else "Movie",
+            posterUrl = posterUrl,
+            onDismiss = { showComments = false },
+        )
+    }
+
+    if (showCast) {
+        CastToTVSheet(onClose = { showCast = false })
+    }
+}
+
+/** 1dp inset hairline separator matching the iOS sheet's divider rules. */
+@Composable
+private fun Hairline() {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp)
+            .height(1.dp)
+            .background(Hairline),
+    )
+}
+
+/** "ABOUT" caption plus the synopsis, or a service-aware fallback line. */
+@Composable
+private fun AboutSection(overview: String?, fallback: String) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp)
+            .padding(top = 24.dp),
+    ) {
+        Text(
+            text = "ABOUT",
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Black,
+            color = TextPrimary.copy(alpha = 0.45f),
+        )
+        Spacer(Modifier.height(8.dp))
+        Text(
+            text = overview?.takeIf { it.isNotBlank() } ?: fallback,
+            fontSize = 15.sp,
+            color = TextPrimary.copy(alpha = 0.85f),
+            lineHeight = 21.sp,
+        )
+    }
+}
+
+/**
+ * 56dp translucent circle with a glyph and a caption below — the sheet's
+ * standard action affordance. [showDot] draws the green "reminder set" pip in
+ * the top-trailing corner, matching the iOS `circleAction` badge.
+ */
+@Composable
+private fun CircleAction(
+    icon: ImageVector,
+    label: String,
+    tint: Color,
+    showDot: Boolean,
+    isLoading: Boolean = false,
+    enabled: Boolean = true,
+    onClick: () -> Unit,
+) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Box(
+            modifier = Modifier
+                .size(56.dp)
+                .clip(CircleShape)
+                .background(Color.White.copy(alpha = 0.08f))
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    enabled = enabled && !isLoading,
+                ) { onClick() },
+            contentAlignment = Alignment.Center,
+        ) {
+            if (isLoading) {
+                CircularProgressIndicator(
+                    color = Color.White,
+                    strokeWidth = 2.dp,
+                    modifier = Modifier.size(18.dp),
+                )
+            } else {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = label,
+                    tint = tint,
+                    modifier = Modifier.size(22.dp),
+                )
+                if (showDot) {
+                    Box(
+                        modifier = Modifier
+                            .offset(x = 16.dp, y = (-16).dp)
+                            .size(10.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFF3DE06A))
+                            .border(2.dp, SurfaceDark, CircleShape),
+                    )
+                }
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+        Text(
+            text = label,
+            fontSize = 13.sp,
+            color = TextPrimary.copy(alpha = 0.7f),
+            maxLines = 1,
+        )
+    }
+}
+
+/** Fires the platform share sheet with a canonical TMDB link for the title. */
+private fun shareTitle(
+    context: android.content.Context,
+    title: String,
+    tmdbId: Int?,
+    isTV: Boolean,
+) {
+    val link = tmdbId?.let { "https://www.themoviedb.org/${if (isTV) "tv" else "movie"}/$it" }
+        ?: "https://guidestream.tv"
+    val intent = Intent(Intent.ACTION_SEND).apply {
+        type = "text/plain"
+        putExtra(Intent.EXTRA_SUBJECT, title)
+        putExtra(Intent.EXTRA_TEXT, "Watch $title on GuideStream TV\n$link")
+    }
+    try {
+        context.startActivity(Intent.createChooser(intent, "Share"))
+    } catch (_: Exception) {
+        // No share target available — nothing to recover from.
+    }
+}
+
+/**
+ * Opens the best available link for the active source: the episode-level
+ * Android app link first, then the source's own Android / Android TV / web
+ * links, falling back to TMDB's watch page. Placeholder strings returned by
+ * Watchmode's free tier are filtered out before we try to launch them.
+ */
+private fun openWatchTarget(
+    context: android.content.Context,
+    selectedSource: WatchmodeSrc?,
+    episodeSource: WatchmodeSrc?,
+    tmdbId: Int?,
+    isTV: Boolean,
+) {
+    val epSrc = episodeSource?.takeIf { it.sourceId == selectedSource?.sourceId }
+    val fallback = "https://www.themoviedb.org/${if (isTV) "tv" else "movie"}/${tmdbId ?: 0}/watch"
+    val target = listOf(
+        epSrc?.androidUrl, epSrc?.androidTvUrl, epSrc?.webUrl,
+        selectedSource?.androidUrl, selectedSource?.androidTvUrl, selectedSource?.webUrl,
+    ).firstOrNull { isOpenableStreamUrl(it) } ?: fallback
+    try {
+        val intent = if (target.startsWith("intent:")) {
+            Intent.parseUri(target, Intent.URI_INTENT_SCHEME)
+        } else {
+            Intent(Intent.ACTION_VIEW, Uri.parse(target))
+        }
+        context.startActivity(intent)
+    } catch (_: Exception) {
+        try {
+            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(fallback)))
+        } catch (_: Exception) {
+            // No browser installed — nothing further to try.
+        }
+    }
+}
+
+/** True when [url] has a scheme and is not a Watchmode paid-plan placeholder. */
+private fun isOpenableStreamUrl(url: String?): Boolean {
+    if (url.isNullOrBlank()) return false
+    val lower = url.lowercase()
+    if (!lower.contains("://") && !lower.startsWith("intent:")) return false
+    if (lower.contains("deeplinks available") || lower.contains("paid plan")) return false
+    return true
+}
