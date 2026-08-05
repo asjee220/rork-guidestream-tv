@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -68,7 +69,9 @@ fun HomeListScreen(
             .fillMaxSize()
             .background(Navy),
     ) {
-        Spacer(Modifier.height(12.dp))
+        // statusBarsPadding keeps the back-arrow tap target below the system
+        // status bar — without it the status bar consumes the touch.
+        Spacer(Modifier.statusBarsPadding().height(12.dp))
 
         // Top bar — back chevron (same treatment as PopularOnServiceCategoriesScreen)
         Row(
