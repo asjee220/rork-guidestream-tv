@@ -978,6 +978,7 @@ class AuthViewModel private constructor(private val context: Context) : ViewMode
 
             StreamsViewModel.get().clearLocalCache()
             SocialViewModel.get().clearLocalCache()
+            ReleaseReminderService.get().clearLocalCache()
             TeamFavoritesService.get().clearLocalCache()
             CoachMarkManager.get().clearForSignOut()
             DeviceSessionService.get().upsert("signed_out")

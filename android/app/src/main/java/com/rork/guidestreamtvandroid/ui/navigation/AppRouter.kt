@@ -16,6 +16,13 @@ data class PendingTitleRoute(
     val posterUrl: String? = null,
     /** Explicit media type — no default so every route decides tv vs movie. */
     val isTv: Boolean,
+    /**
+     * True when this route came from the "Coming to Streaming" rail. Android
+     * carrier for the flag iOS keeps on `PosterShow.isComingToStreaming`;
+     * drives the reduced EpisodeDetailSheet layout. Defaults to false so every
+     * existing construction site keeps compiling unchanged.
+     */
+    val isComingToStreaming: Boolean = false,
 )
 
 /**

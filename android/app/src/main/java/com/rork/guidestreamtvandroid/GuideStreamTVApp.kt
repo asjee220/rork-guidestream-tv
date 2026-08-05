@@ -7,6 +7,7 @@ import com.rork.guidestreamtvandroid.data.local.DeviceSessionService
 import com.rork.guidestreamtvandroid.data.remote.RemoteConfigService
 import com.rork.guidestreamtvandroid.data.repository.AuthViewModel
 import com.rork.guidestreamtvandroid.data.repository.PushTokenManager
+import com.rork.guidestreamtvandroid.data.repository.ReleaseReminderService
 import com.rork.guidestreamtvandroid.data.repository.SocialViewModel
 import com.rork.guidestreamtvandroid.data.repository.StreamsViewModel
 import com.rork.guidestreamtvandroid.data.repository.TeamFavoritesService
@@ -37,6 +38,7 @@ class GuideStreamTVApp : Application() {
         safe("DeviceSessionService") { DeviceSessionService.init(this) }
         safe("StreamsViewModel") { StreamsViewModel.init(this) }
         safe("SocialViewModel") { SocialViewModel.init(this) }
+        safe("ReleaseReminderService") { ReleaseReminderService.init(this) }
         safe("TeamFavoritesService") { TeamFavoritesService.init(this) }
         safe("PushTokenManager") { PushTokenManager.init(this) }
         safe("WidgetDataService") { WidgetDataService.init(this) }

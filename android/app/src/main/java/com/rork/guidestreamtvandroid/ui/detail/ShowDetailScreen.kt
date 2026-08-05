@@ -824,7 +824,7 @@ fun ShowDetailScreen(
  * sources.
  */
 @Composable
-private fun WhereToWatchRow(
+internal fun WhereToWatchRow(
     sources: List<WatchmodeSrc>,
     selectedSource: WatchmodeSrc?,
     isSourceSubscribed: (String) -> Boolean,
