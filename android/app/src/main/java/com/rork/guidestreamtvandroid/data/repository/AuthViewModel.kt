@@ -6,10 +6,12 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rork.guidestreamtvandroid.data.local.DeviceIdentity
 import com.rork.guidestreamtvandroid.data.local.DeviceSessionService
+import com.rork.guidestreamtvandroid.data.remote.GoogleCredentialSignIn
 import com.rork.guidestreamtvandroid.data.remote.SupabaseManager
 import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.auth.providers.Google
 import io.github.jan.supabase.auth.providers.builtin.Email
+import io.github.jan.supabase.auth.providers.builtin.IDToken
 import io.github.jan.supabase.auth.user.UserInfo
 import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.postgrest.query.Columns
@@ -182,6 +184,8 @@ class AuthViewModel private constructor(private val context: Context) : ViewMode
     val email: String? get() = _currentUser.value?.email
 
     companion object {
+        private const val TAG = "AuthViewModel"
+
         @Volatile private var instance: AuthViewModel? = null
 
         fun init(context: Context): AuthViewModel =
@@ -488,16 +492,61 @@ class AuthViewModel private constructor(private val context: Context) : ViewMode
 
     // ── Google Sign-In (OAuth via Supabase) ──────────────────────────
 
-    fun signInWithGoogle() {
+    /**
+     * Native Google sign-in via the Credential Manager account sheet.
+     *
+     * Preferred path on Android: the user picks an account already on the
+     * device, Google returns an ID token, and that token is exchanged for a
+     * Supabase session in-process — no browser hop.
+     *
+     * Falls back to the browser OAuth flow ([signInWithGoogleBrowser]) when
+     * Credential Manager has nothing to offer (no Google account on the
+     * device, Play Services missing/outdated, or the token exchange fails).
+     * A user-initiated dismissal of the sheet is not an error and simply
+     * cancels the attempt.
+     *
+     * @param context an Activity context — required to present the sheet.
+     */
+    fun signInWithGoogle(context: Context) {
+        _isAuthenticating.value = true
+        _lastError.value = null
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val token = GoogleCredentialSignIn.requestIdToken(context)
+                SupabaseManager.client.auth.signInWith(IDToken) {
+                    this.idToken = token.idToken
+                    this.provider = Google
+                    this.nonce = token.rawNonce
+                }
+                // Session is live in-process; reuse the shared post-sign-in
+                // path so profile upsert, name extraction, row claiming and
+                // analytics behave exactly as they do for the browser flow.
+                _isAuthenticating.value = false
+                handleOAuthCallback()
+            } catch (e: GoogleCredentialSignIn.CancelledException) {
+                // User dismissed the sheet — silent, no error banner.
+                _isAuthenticating.value = false
+            } catch (e: GoogleCredentialSignIn.UnavailableException) {
+                Log.i(TAG, "Credential Manager unavailable; using browser OAuth")
+                signInWithGoogleBrowser()
+            } catch (e: Exception) {
+                Log.w(TAG, "Native Google sign-in failed; using browser OAuth", e)
+                signInWithGoogleBrowser()
+            }
+        }
+    }
+
+    /**
+     * Browser (Custom Tab) OAuth fallback. Returns immediately; the session is
+     * imported when the `guidestream://auth-callback` deep link returns and
+     * [handleOAuthCallback] runs, so completion is not signalled here.
+     */
+    private fun signInWithGoogleBrowser() {
         _isAuthenticating.value = true
         _lastError.value = null
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 SupabaseManager.client.auth.signInWith(Google)
-                // On Android, OAuth opens a browser and this call returns
-                // immediately; the session is imported when the
-                // guidestream://auth-callback deep link returns and
-                // handleOAuthCallback runs. Do not signal completion here.
                 _isAuthenticating.value = false
             } catch (e: Exception) {
                 _lastError.value = e.message

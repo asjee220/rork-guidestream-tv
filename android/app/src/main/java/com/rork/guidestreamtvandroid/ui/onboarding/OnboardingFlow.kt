@@ -350,7 +350,7 @@ private fun WelcomeScreen(
                 background = Color.White,
                 textColor = Color(red = 0.24f, green = 0.25f, blue = 0.26f),
                 isLoading = isAuthenticating,
-                onClick = { auth.signInWithGoogle() },
+                onClick = { auth.signInWithGoogle(context) },
             )
             Spacer(Modifier.height(12.dp))
 

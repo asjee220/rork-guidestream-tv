@@ -80,6 +80,7 @@ dependencies {
     implementation(libs.play.services.auth)
     implementation(libs.androidx.credentials)
     implementation(libs.androidx.credentials.play.services.auth)
+    implementation(libs.googleid)
     implementation(libs.androidx.webkit)
     implementation(libs.android.youtube.player)
     debugImplementation(libs.androidx.ui.tooling)
