@@ -1,6 +1,8 @@
 package com.rork.guidestreamtvandroid.data.remote
 
+import android.app.Activity
 import android.content.Context
+import android.content.ContextWrapper
 import android.util.Log
 import androidx.credentials.CredentialManager
 import androidx.credentials.CustomCredential
@@ -12,6 +14,8 @@ import com.google.android.libraries.identity.googleid.GetGoogleIdOption
 import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import com.rork.guidestreamtvandroid.AppConfig
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.security.MessageDigest
 import java.util.UUID
 
@@ -44,6 +48,21 @@ object GoogleCredentialSignIn {
     class UnavailableException(cause: Throwable?) :
         Exception("Google credentials unavailable", cause)
 
+    /**
+     * Credential Manager must present a system sheet, so it needs the hosting
+     * Activity — an application context throws. Compose's `LocalContext` is
+     * normally the Activity already, but it can be a themed wrapper, so walk
+     * the wrapper chain to be safe.
+     */
+    private fun Context.findActivity(): Activity? {
+        var current: Context? = this
+        while (current is ContextWrapper) {
+            if (current is Activity) return current
+            current = current.baseContext
+        }
+        return null
+    }
+
     /** SHA-256 of [raw], hex-encoded — the form Google expects for the nonce. */
     private fun hashNonce(raw: String): String {
         val digest = MessageDigest.getInstance("SHA-256").digest(raw.toByteArray())
@@ -63,9 +82,11 @@ object GoogleCredentialSignIn {
      * @throws UnavailableException if no credential could be obtained at all.
      */
     suspend fun requestIdToken(context: Context): Token {
+        val activity = context.findActivity()
+            ?: throw UnavailableException(IllegalStateException("No Activity context"))
         val rawNonce = UUID.randomUUID().toString()
         val hashedNonce = hashNonce(rawNonce)
-        val credentialManager = CredentialManager.create(context)
+        val credentialManager = CredentialManager.create(activity)
 
         val filteredOption = GetGoogleIdOption.Builder()
             .setServerClientId(AppConfig.GOOGLE_WEB_CLIENT_ID)
@@ -75,7 +96,7 @@ object GoogleCredentialSignIn {
             .build()
 
         val idToken = try {
-            fetchToken(credentialManager, context, filteredOption)
+            fetchToken(credentialManager, activity, filteredOption)
         } catch (e: NoCredentialException) {
             // No previously-authorized account — show the full picker instead.
             Log.i(TAG, "No authorized account; falling back to explicit picker")
@@ -84,7 +105,7 @@ object GoogleCredentialSignIn {
                 .setNonce(hashedNonce)
                 .build()
             try {
-                fetchToken(credentialManager, context, explicitOption)
+                fetchToken(credentialManager, activity, explicitOption)
             } catch (e2: GetCredentialCancellationException) {
                 throw CancelledException()
             } catch (e2: NoCredentialException) {
@@ -109,7 +130,11 @@ object GoogleCredentialSignIn {
         val request = GetCredentialRequest.Builder()
             .addCredentialOption(option)
             .build()
-        val response = credentialManager.getCredential(request = request, context = context)
+        // The sheet is UI — drive it from the main thread even though callers
+        // run this service on an IO dispatcher.
+        val response = withContext(Dispatchers.Main) {
+            credentialManager.getCredential(request = request, context = context)
+        }
         val credential = response.credential
         if (
             credential is CustomCredential &&
