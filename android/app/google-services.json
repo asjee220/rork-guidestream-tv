@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "1018161792268",
+    "project_id": "guidestream-tv",
+    "storage_bucket": "guidestream-tv.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1018161792268:android:e06a5e563e4e28ade2b529",
+        "android_client_info": {
+          "package_name": "com.rork.guidestreamtvandroid"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBw3IMtPN1CjhX3kmPZbOF7y0N3NHdCovg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
