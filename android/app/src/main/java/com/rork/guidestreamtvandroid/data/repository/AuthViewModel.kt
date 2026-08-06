@@ -513,10 +513,22 @@ class AuthViewModel private constructor(private val context: Context) : ViewMode
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 val token = GoogleCredentialSignIn.requestIdToken(context)
-                SupabaseManager.client.auth.signInWith(IDToken) {
-                    this.idToken = token.idToken
-                    this.provider = Google
-                    this.nonce = token.rawNonce
+                Log.i(TAG, "Google ID token obtained; exchanging with Supabase")
+                try {
+                    SupabaseManager.client.auth.signInWith(IDToken) {
+                        this.idToken = token.idToken
+                        this.provider = Google
+                        this.nonce = token.rawNonce
+                    }
+                } catch (e: Exception) {
+                    // The token itself was fine — Supabase rejected the exchange
+                    // (typically the web client ID missing from the provider's
+                    // Authorized Client IDs). Surface it; a browser hop would
+                    // just mask the misconfiguration.
+                    Log.w(TAG, "Supabase ID-token exchange failed", e)
+                    _lastError.value = "Google sign-in failed: ${e.message}"
+                    _isAuthenticating.value = false
+                    return@launch
                 }
                 // Session is live in-process; reuse the shared post-sign-in
                 // path so profile upsert, name extraction, row claiming and
@@ -527,7 +539,7 @@ class AuthViewModel private constructor(private val context: Context) : ViewMode
                 // User dismissed the sheet — silent, no error banner.
                 _isAuthenticating.value = false
             } catch (e: GoogleCredentialSignIn.UnavailableException) {
-                Log.i(TAG, "Credential Manager unavailable; using browser OAuth")
+                Log.w(TAG, "Credential Manager unavailable (${e.cause?.message}); using browser OAuth", e)
                 signInWithGoogleBrowser()
             } catch (e: Exception) {
                 Log.w(TAG, "Native Google sign-in failed; using browser OAuth", e)

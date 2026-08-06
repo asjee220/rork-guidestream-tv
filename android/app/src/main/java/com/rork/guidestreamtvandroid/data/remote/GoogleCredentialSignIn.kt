@@ -109,13 +109,22 @@ object GoogleCredentialSignIn {
             } catch (e2: GetCredentialCancellationException) {
                 throw CancelledException()
             } catch (e2: NoCredentialException) {
+                Log.w(TAG, "Explicit picker: no credential (${e2.type}): ${e2.message}")
                 throw UnavailableException(e2)
             } catch (e2: GetCredentialException) {
+                // A failure AFTER the user picked an account is almost always a
+                // configuration error — e.g. the app's signing SHA-1 is not
+                // registered as an Android OAuth client in the Google Cloud
+                // project (28444 \"Developer console is not set up correctly\").
+                // Play-installed builds are re-signed with the Play App Signing
+                // key, which differs from the upload key.
+                Log.w(TAG, "Explicit picker failed (${e2.type}): ${e2.message}", e2)
                 throw UnavailableException(e2)
             }
         } catch (e: GetCredentialCancellationException) {
             throw CancelledException()
         } catch (e: GetCredentialException) {
+            Log.w(TAG, "Filtered flow failed (${e.type}): ${e.message}", e)
             throw UnavailableException(e)
         }
 
