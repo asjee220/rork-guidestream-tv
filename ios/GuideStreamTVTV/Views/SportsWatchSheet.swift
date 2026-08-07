@@ -420,20 +420,23 @@ struct SportsWatchSheet: View {
     // MARK: - Where to watch
 
     private var whereToWatchSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        // Enriched with streaming simulcast companions (ESPN's scoreboard only
+        // reports the linear carrier); `game.broadcasts` itself stays untouched.
+        let enriched = TVSportsSimulcast.enrich(game.broadcasts)
+        return VStack(alignment: .leading, spacing: 10) {
             Text("WHERE TO WATCH")
                 .scaledFont(size: 12, weight: .heavy)
                 .tracking(1.4)
                 .foregroundStyle(Color.white.opacity(0.45))
 
-            if game.broadcasts.isEmpty {
+            if enriched.isEmpty {
                 Text("Broadcast not announced yet — check back closer to game time.")
                     .scaledFont(size: 13)
                     .foregroundStyle(Color.white.opacity(0.5))
             } else {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
-                        ForEach(game.broadcasts, id: \.self) { name in
+                        ForEach(enriched, id: \.self) { name in
                             broadcastChip(name)
                         }
                     }
@@ -441,7 +444,7 @@ struct SportsWatchSheet: View {
                 .scrollClipDisabled()
             }
 
-            if !game.broadcasts.isEmpty {
+            if !enriched.isEmpty {
                 Text(availabilityLabel)
                     .scaledFont(size: 13)
                     .foregroundStyle(Color.white.opacity(0.5))

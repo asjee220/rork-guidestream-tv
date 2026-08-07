@@ -63,6 +63,65 @@ internal fun broadcastColor(name: String): Color {
     }
 }
 
+/** Normalized names that are already streaming destinations — never get a companion. */
+private val streamingDestinations = setOf(
+    "peacock", "peacockpremium", "paramount", "paramountplus", "primevideo",
+    "amazonprime", "netflix", "appletv", "appletvplus", "hbomax", "max",
+    "hulu", "fubo", "fubotv", "slingtv", "youtube", "youtubetv", "tubi",
+    "disneyplus", "espn", "espnplus", "nflplus", "nbaleaguepass", "mlbtv",
+    "foxone",
+)
+
+/**
+ * Exact normalized key → streaming companion. Matched exactly, never by
+ * substring, so unexpected network names (MSG, FDSSO, …) yield nothing.
+ */
+private val simulcastCompanions = mapOf(
+    "nbc" to "Peacock", "nbcsn" to "Peacock", "cnbc" to "Peacock",
+    "usa" to "Peacock", "usanetwork" to "Peacock", "telemundo" to "Peacock",
+    "universo" to "Peacock", "golf" to "Peacock", "golfchannel" to "Peacock",
+    "cbs" to "Paramount+", "cbssn" to "Paramount+", "cbssportsnetwork" to "Paramount+",
+    "abc" to "ESPN", "espn2" to "ESPN", "espnu" to "ESPN", "espnews" to "ESPN",
+    "espndeportes" to "ESPN", "secn" to "ESPN", "secnetwork" to "ESPN",
+    "accn" to "ESPN", "accnetwork" to "ESPN",
+    "fox" to "Fox One", "foxsports" to "Fox One", "fs1" to "Fox One",
+    "fs2" to "Fox One", "btn" to "Fox One", "bigtennetwork" to "Fox One",
+    "foxdeportes" to "Fox One",
+    "tnt" to "HBO Max", "tbs" to "HBO Max", "trutv" to "HBO Max",
+    "nfln" to "NFL+", "nflnetwork" to "NFL+",
+    "nbatv" to "NBA League Pass",
+    "mlbn" to "MLB.TV", "mlbnetwork" to "MLB.TV",
+)
+
+/** Lowercased with every non-alphanumeric character removed. */
+private fun normalizeBroadcast(name: String): String =
+    name.lowercase().filter { it.isLetterOrDigit() }
+
+/**
+ * Deterministic linear-network → streaming-companion lookup for the sports
+ * Where to Watch chips, mirroring iOS SportsSimulcast.enrich(). ESPN's public
+ * scoreboard only reports the linear carrier (e.g. "NBC") and never the
+ * streaming simulcast (e.g. Peacock). Applied ONLY where the chips are built —
+ * `SportsGame.broadcasts` itself is never mutated, so every other surface
+ * keeps showing the linear network alone. Each companion is inserted
+ * immediately after its network, deduplicated case-insensitively, and index
+ * zero is always the original first broadcast. These mappings encode US
+ * streaming rights only, so non-US locales get the input back unchanged.
+ */
+internal fun enrichBroadcasts(broadcasts: List<String>): List<String> {
+    if (!Locale.getDefault().country.equals("US", ignoreCase = true)) return broadcasts
+    val result = mutableListOf<String>()
+    val seen = mutableSetOf<String>()
+    for (name in broadcasts) {
+        val key = normalizeBroadcast(name)
+        if (seen.add(key)) result.add(name)
+        if (key in streamingDestinations) continue
+        val companion = simulcastCompanions[key] ?: continue
+        if (seen.add(normalizeBroadcast(companion))) result.add(companion)
+    }
+    return result
+}
+
 private fun parseStart(timestamp: String?): Date? {
     if (timestamp == null) return null
     val patterns = listOf(

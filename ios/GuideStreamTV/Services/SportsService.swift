@@ -39,6 +39,75 @@ struct GameTeam: Hashable {
     let isWinner: Bool
 }
 
+// MARK: - Streaming Simulcast Companions
+
+/// Deterministic linear-network → streaming-companion lookup for the sports
+/// Where to Watch chips. ESPN's public scoreboard only reports the linear
+/// carrier (e.g. "NBC") and never the streaming simulcast (e.g. Peacock), so
+/// the chip row would otherwise never tell a cord-cutter where the game
+/// actually streams. Applied ONLY at the point where the chips are built —
+/// `SportsGame.broadcasts` itself is never mutated, so every other surface
+/// (sports cards, detail screen, hero carousel, tvOS tiles) keeps showing
+/// the linear network alone.
+nonisolated enum SportsSimulcast {
+
+    /// Normalized names that are already streaming destinations — these never
+    /// get a companion appended.
+    private static let streamingDestinations: Set<String> = [
+        "peacock", "peacockpremium", "paramount", "paramountplus", "primevideo",
+        "amazonprime", "netflix", "appletv", "appletvplus", "hbomax", "max",
+        "hulu", "fubo", "fubotv", "slingtv", "youtube", "youtubetv", "tubi",
+        "disneyplus", "espn", "espnplus", "nflplus", "nbaleaguepass", "mlbtv",
+        "foxone"
+    ]
+
+    /// Exact normalized key → streaming companion. Matched exactly, never by
+    /// substring, so unexpected network names (MSG, FDSSO, …) yield nothing.
+    private static let companions: [String: String] = [
+        "nbc": "Peacock", "nbcsn": "Peacock", "cnbc": "Peacock",
+        "usa": "Peacock", "usanetwork": "Peacock", "telemundo": "Peacock",
+        "universo": "Peacock", "golf": "Peacock", "golfchannel": "Peacock",
+        "cbs": "Paramount+", "cbssn": "Paramount+", "cbssportsnetwork": "Paramount+",
+        "abc": "ESPN", "espn2": "ESPN", "espnu": "ESPN", "espnews": "ESPN",
+        "espndeportes": "ESPN", "secn": "ESPN", "secnetwork": "ESPN",
+        "accn": "ESPN", "accnetwork": "ESPN",
+        "fox": "Fox One", "foxsports": "Fox One", "fs1": "Fox One",
+        "fs2": "Fox One", "btn": "Fox One", "bigtennetwork": "Fox One",
+        "foxdeportes": "Fox One",
+        "tnt": "HBO Max", "tbs": "HBO Max", "trutv": "HBO Max",
+        "nfln": "NFL+", "nflnetwork": "NFL+",
+        "nbatv": "NBA League Pass",
+        "mlbn": "MLB.TV", "mlbnetwork": "MLB.TV"
+    ]
+
+    /// Lowercased with every non-alphanumeric character removed.
+    private static func normalize(_ name: String) -> String {
+        name.lowercased().filter { $0.isLetter || $0.isNumber }
+    }
+
+    /// Returns the broadcasts with each linear network's streaming companion
+    /// inserted immediately after it, deduplicated case-insensitively. Index
+    /// zero is always the original first broadcast. These mappings encode US
+    /// streaming rights only, so non-US regions get the input back unchanged
+    /// rather than being pointed at a service that doesn't carry the game.
+    static func enrich(_ broadcasts: [String]) -> [String] {
+        guard DeviceLocale.current().region == "US" else { return broadcasts }
+        var result: [String] = []
+        var seen = Set<String>()
+        for name in broadcasts {
+            let key = normalize(name)
+            if seen.insert(key).inserted {
+                result.append(name)
+            }
+            guard !streamingDestinations.contains(key),
+                  let companion = companions[key],
+                  seen.insert(normalize(companion)).inserted else { continue }
+            result.append(companion)
+        }
+        return result
+    }
+}
+
 // MARK: - Service
 
 @MainActor

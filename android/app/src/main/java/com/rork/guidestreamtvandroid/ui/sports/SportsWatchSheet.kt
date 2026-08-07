@@ -101,9 +101,11 @@ fun SportsWatchSheet(
 
     val primaryBroadcast = game.broadcasts.firstOrNull()
 
-    // De-duped broadcasts preserving first-seen order, then stable-sorted so
-    // services the user subscribes to come first — mirrors the iOS chip order.
-    val sortedBroadcasts = game.broadcasts
+    // Broadcasts enriched with streaming simulcast companions (ESPN's
+    // scoreboard only reports the linear carrier), de-duped preserving
+    // first-seen order, then stable-sorted so services the user subscribes
+    // to come first — mirrors the iOS chip order.
+    val sortedBroadcasts = enrichBroadcasts(game.broadcasts)
         .distinct()
         .withIndex()
         .sortedWith(

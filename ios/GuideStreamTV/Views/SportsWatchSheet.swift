@@ -29,12 +29,14 @@ struct SportsWatchSheet: View {
     private var homeColor: Color { game.home.primaryHex.map { Color(hex: $0) } ?? Color(white: 0.18) }
     private var primaryBroadcast: String? { game.broadcasts.first }
 
-    /// `game.broadcasts` de-duplicated preserving first-seen order, then
-    /// stable-sorted so broadcasts the user subscribes to come first — the
-    /// same subscribed-service ordering used on the movie / TV detail screen.
+    /// `game.broadcasts` enriched with streaming simulcast companions (ESPN's
+    /// scoreboard only reports the linear carrier), de-duplicated preserving
+    /// first-seen order, then stable-sorted so broadcasts the user subscribes
+    /// to come first — the same subscribed-service ordering used on the
+    /// movie / TV detail screen.
     private var sortedBroadcasts: [String] {
         var seen = Set<String>()
-        let unique = game.broadcasts.filter { seen.insert($0).inserted }
+        let unique = SportsSimulcast.enrich(game.broadcasts).filter { seen.insert($0).inserted }
         return unique.enumerated().sorted { a, b in
             let aSub = AuthViewModel.shared.subscribesToService(named: a.element)
             let bSub = AuthViewModel.shared.subscribesToService(named: b.element)
