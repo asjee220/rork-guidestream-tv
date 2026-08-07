@@ -116,7 +116,7 @@ class AuthViewModel private constructor(private val context: Context) : ViewMode
     )
     val selectedServices: StateFlow<Set<String>> = _selectedServices.asStateFlow()
 
-    private val _notifyPushEnabled = MutableStateFlow(prefs.getBoolean("gs.notifyPush", false))
+    private val _notifyPushEnabled = MutableStateFlow(prefs.getBoolean("gs.notifyPush", true))
     val notifyPushEnabled: StateFlow<Boolean> = _notifyPushEnabled.asStateFlow()
 
     private val _notifySMSEnabled = MutableStateFlow(prefs.getBoolean("gs.notifySMS", false))
