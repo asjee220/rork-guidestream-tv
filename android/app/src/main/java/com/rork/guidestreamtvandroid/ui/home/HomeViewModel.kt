@@ -133,7 +133,18 @@ class HomeViewModel : ViewModel() {
         }
     }
 
-    /** Loads all home feed content in parallel. */
+    /**
+     * Loads the home feed. Only the hero-critical work gates
+     * [homeContentReady] — four trending pages, on-the-air, top-rated, the
+     * default genre rail, and streaming releases (Today's Pick) — plus a
+     * provider-resolution pass over the first 15 trending results so the hero
+     * carousel can filter to badged items. Everything else (brand map,
+     * Leaving Soon, upcoming, binge-ready, the remaining trending badges,
+     * watchlist refresh, taste genres, creator recs) is fire-and-forget after
+     * the flip, each isolated so one failure never blocks or cancels another.
+     * If trending comes back empty the gate still flips: the hero renders
+     * nothing and the rest of the feed stays reachable.
+     */
     fun loadAll() {
         if (_homeContentReady.value) return
         viewModelScope.launch(Dispatchers.IO) {
@@ -146,7 +157,6 @@ class HomeViewModel : ViewModel() {
                     val seen = mutableSetOf<Int>()
                     _trending.value = combined.filter { seen.add(it.id) }
                 },
-                launch { ProviderBrandMapService.get().refresh() },
                 launch { _onAir.value = tmdb.getOnTheAir() },
                 launch { _topRated.value = tmdb.getTopRated() },
                 launch {
@@ -175,20 +185,27 @@ class HomeViewModel : ViewModel() {
                         }
                     }
                 },
-                launch { loadLeavingSoon() },
-                launch { _upcoming.value = tmdb.getUpcomingMovies() },
-                launch { _bingeReady.value = tmdb.getDiscoverEnded() },
                 launch { _genreShows.value = tmdb.getDiscoverByGenre(80) }, // Crime
             )
             jobs.forEach { it.join() }
 
-            // Resolve providers for trending shows
-            resolveProviders(_trending.value)
+            // Resolve providers for the first 15 trending results only — just
+            // enough for the hero carousel's provider filter.
+            resolveProviders(_trending.value.take(15))
 
             _homeContentReady.value = true
 
-            // Refresh watchlist from Supabase
-            StreamsViewModel.get().refreshAll()
+            // Deferred, non-blocking work. Each runs in its own sibling
+            // coroutine (viewModelScope is a SupervisorJob) with its own
+            // catch, so a failure in one never blocks or cancels another.
+            launchDeferred { ProviderBrandMapService.get().refresh() }
+            launchDeferred { loadLeavingSoon() }
+            launchDeferred { _upcoming.value = tmdb.getUpcomingMovies() }
+            launchDeferred { _bingeReady.value = tmdb.getDiscoverEnded() }
+            // Second provider pass: trending results 16–40, so the remaining
+            // poster badges hydrate in the background.
+            launchDeferred { resolveProviders(_trending.value.drop(15).take(25)) }
+            launchDeferred { StreamsViewModel.get().refreshAll() }
 
             // Resolve the user's taste genres in the background. Additive and
             // best-effort — never blocks the Top Picks row from rendering.
@@ -197,6 +214,19 @@ class HomeViewModel : ViewModel() {
             // Resolve creator/podcast recommendations in the background. Additive
             // and best-effort — never blocks the feed from rendering.
             loadRecommendedCreators()
+        }
+    }
+
+    /** Fire-and-forget background job: isolated failure, never crashes. */
+    private fun launchDeferred(block: suspend () -> Unit) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                block()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                // Best-effort — the section simply stays hidden/unhydrated.
+            }
         }
     }
 
@@ -379,7 +409,10 @@ class HomeViewModel : ViewModel() {
                 .filterNot { map.containsKey(it.id) }
                 .map { show ->
                     async(Dispatchers.IO) {
-                        val provider = tmdb.getTopWatchProvider(show.id)
+                        // Pass isTV explicitly: the parameter defaults to true,
+                        // which sent movie ids to the tv watch-providers
+                        // endpoint where they always 404 and lose their badge.
+                        val provider = tmdb.getTopWatchProvider(show.id, isTV = show.isTV)
                         show.id to (Platform.fromProviderId(provider?.providerId ?: 0)
                             ?: Platform.from(provider?.providerName))
                     }

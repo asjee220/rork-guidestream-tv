@@ -166,7 +166,7 @@ fun HomeScreen(
     // Compose cancels an in-flight fetch the moment the user toggles another
     // service — a stale older result can never overwrite a newer one. Also
     // covers sign-in hydrating services after Home has already mounted.
-    LaunchedEffect(selectedServices) { homeVm.loadPopularByServices(selectedServices) }
+    LaunchedEffect(selectedServices, homeReady) { if (homeReady) homeVm.loadPopularByServices(selectedServices) }
 
     // Inline sponsored slot indices dismissed for this session.
     val dismissedAdSlots = remember { mutableStateMapOf<Int, Boolean>() }
