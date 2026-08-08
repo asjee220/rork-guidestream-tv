@@ -1,13 +1,17 @@
 package com.rork.guidestreamtvandroid.ui.theme
 
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.union
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 
 /**
@@ -45,4 +49,21 @@ fun tabBarBottomInset(extra: Dp = 12.dp): Dp =
 fun BottomSafeSpacer(withTabBar: Boolean) {
     val height = if (withTabBar) tabBarBottomInset() else systemBottomInset()
     Spacer(Modifier.height(height))
+}
+
+/**
+ * Horizontal-only safe-area padding for edge-anchored content over full-bleed
+ * surfaces (hero backdrops, immersive players). Unions the display cutout with
+ * the navigation bars — the same idiom Reels uses for its landscape overlay —
+ * then keeps ONLY the horizontal axis, so call sites never pick up a vertical
+ * inset that would double against statusBarsPadding or BottomSafeSpacer.
+ * Resolves to zero on both axes on cutout-free devices and in portrait.
+ */
+@Composable
+fun horizontalCutoutInsets(): PaddingValues {
+    val sides = WindowInsets.displayCutout.union(WindowInsets.navigationBars).asPaddingValues()
+    return PaddingValues(
+        start = sides.calculateLeftPadding(LayoutDirection.Ltr),
+        end = sides.calculateRightPadding(LayoutDirection.Ltr),
+    )
 }

@@ -92,6 +92,7 @@ import com.rork.guidestreamtvandroid.ui.theme.TextPrimary
 import com.rork.guidestreamtvandroid.ui.theme.Navy
 import com.rork.guidestreamtvandroid.ui.theme.TextSecondary
 import com.rork.guidestreamtvandroid.ui.theme.TextTertiary
+import com.rork.guidestreamtvandroid.ui.theme.horizontalCutoutInsets
 
 /**
  * Show detail screen — mirrors iOS ShowDetailScreen.swift.
@@ -252,6 +253,7 @@ fun ShowDetailScreen(
                         modifier = Modifier
                             .align(Alignment.TopStart)
                             .statusBarsPadding()
+                            .padding(horizontalCutoutInsets())
                             .padding(12.dp)
                             .size(40.dp)
                             .clip(CircleShape)
@@ -273,6 +275,7 @@ fun ShowDetailScreen(
                     Column(
                         modifier = Modifier
                             .align(Alignment.BottomStart)
+                            .padding(horizontalCutoutInsets())
                             .padding(16.dp),
                     ) {
                         Text(
@@ -337,7 +340,10 @@ fun ShowDetailScreen(
 
                 // Where to Watch — selectable streaming-source chips
                 val scope = androidx.compose.runtime.rememberCoroutineScope()
-                Box(modifier = Modifier.onGloballyPositioned { coords ->
+                // Column, not Box: WhereToWatchRow emits three siblings (spacer,
+                // heading, chip row) and Box would stack them on the Z axis,
+                // drawing the heading underneath the chips.
+                Column(modifier = Modifier.fillMaxWidth().onGloballyPositioned { coords ->
                     coachMark.setMeasuredRect("where_to_watch", coords.boundsInRoot())
                 }) {
                     WhereToWatchRow(
@@ -373,13 +379,105 @@ fun ShowDetailScreen(
                     )
                 }
 
-                // Action buttons
-                Row(
+                // Action buttons — two rows: secondary tiles stretch across the
+                // first, the Watch CTA + watchlist tile share the second, so all
+                // five actions fit without wrapping the Watch label.
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp, vertical = 12.dp),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                    // Watched toggle
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(50.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(GlassFill)
+                            .border(1.dp, GlassStroke, RoundedCornerShape(12.dp))
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null,
+                            ) {
+                                streamsVm.toggleWatched(
+                                    titleId = titleId,
+                                    titleName = detail?.name ?: titleName,
+                                    mediaType = if (isTV) "tv" else "movie",
+                                    tmdbId = tmdbId,
+                                )
+                            },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Visibility,
+                            contentDescription = "Watched",
+                            tint = if (isWatched) BrandBlue else TextPrimary,
+                            modifier = Modifier.size(22.dp),
+                        )
+                    }
+                    // Play on TV
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(50.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(GlassFill)
+                            .border(1.dp, GlassStroke, RoundedCornerShape(12.dp))
+                            .onGloballyPositioned { coords ->
+                                coachMark.setMeasuredRect("play_on", coords.boundsInRoot())
+                            }
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null,
+                            ) { showCast = true },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Tv,
+                            contentDescription = "Play on TV",
+                            tint = TextPrimary,
+                            modifier = Modifier.size(22.dp),
+                        )
+                    }
+                    // Share
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(50.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(GlassFill)
+                            .border(1.dp, GlassStroke, RoundedCornerShape(12.dp))
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null,
+                            ) {
+                                val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                    type = "text/plain"
+                                    putExtra(Intent.EXTRA_TEXT, "https://www.themoviedb.org/${if (isTV) "tv" else "movie"}/$tmdbId")
+                                }
+                                context.startActivity(Intent.createChooser(shareIntent, "Share"))
+                            },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Share,
+                            contentDescription = "Share",
+                            tint = TextPrimary,
+                            modifier = Modifier.size(20.dp),
+                        )
+                    }
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
                     // Watch button
                     if (topProvider != null || usSources.isNotEmpty()) {
                         // CTA verb mirrors iOS ctaVerb: Rent/Buy for transactional
@@ -401,6 +499,7 @@ fun ShowDetailScreen(
                         Box(
                             modifier = Modifier
                                 .weight(1f)
+                                .height(50.dp)
                                 .clip(RoundedCornerShape(12.dp))
                                 .background(BrandOrange)
                                 .onGloballyPositioned { coords ->
@@ -431,8 +530,7 @@ fun ShowDetailScreen(
                                     } catch (_: Exception) {
                                         context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(fallback)))
                                     }
-                                }
-                                .padding(vertical = 14.dp),
+                                },
                             contentAlignment = Alignment.Center,
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -448,6 +546,8 @@ fun ShowDetailScreen(
                                     fontSize = 14.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = Color.White,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
                                 )
                             }
                         }
@@ -498,81 +598,6 @@ fun ShowDetailScreen(
                             modifier = Modifier.size(22.dp),
                         )
                     }
-                    // Watched toggle
-                    Box(
-                        modifier = Modifier
-                            .size(50.dp)
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(GlassFill)
-                            .border(1.dp, GlassStroke, RoundedCornerShape(12.dp))
-                            .clickable(
-                                interactionSource = remember { MutableInteractionSource() },
-                                indication = null,
-                            ) {
-                                streamsVm.toggleWatched(
-                                    titleId = titleId,
-                                    titleName = detail?.name ?: titleName,
-                                    mediaType = if (isTV) "tv" else "movie",
-                                    tmdbId = tmdbId,
-                                )
-                            },
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(
-                            imageVector = Icons.Filled.Visibility,
-                            contentDescription = "Watched",
-                            tint = if (isWatched) BrandBlue else TextPrimary,
-                            modifier = Modifier.size(22.dp),
-                        )
-                    }
-                    // Play on TV
-                    Box(
-                        modifier = Modifier
-                            .size(50.dp)
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(GlassFill)
-                            .border(1.dp, GlassStroke, RoundedCornerShape(12.dp))
-                            .onGloballyPositioned { coords ->
-                                coachMark.setMeasuredRect("play_on", coords.boundsInRoot())
-                            }
-                            .clickable(
-                                interactionSource = remember { MutableInteractionSource() },
-                                indication = null,
-                            ) { showCast = true },
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(
-                            imageVector = Icons.Filled.Tv,
-                            contentDescription = "Play on TV",
-                            tint = TextPrimary,
-                            modifier = Modifier.size(22.dp),
-                        )
-                    }
-                    // Share
-                    Box(
-                        modifier = Modifier
-                            .size(50.dp)
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(GlassFill)
-                            .border(1.dp, GlassStroke, RoundedCornerShape(12.dp))
-                            .clickable(
-                                interactionSource = remember { MutableInteractionSource() },
-                                indication = null,
-                            ) {
-                                val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                                    type = "text/plain"
-                                    putExtra(Intent.EXTRA_TEXT, "https://www.themoviedb.org/${if (isTV) "tv" else "movie"}/$tmdbId")
-                                }
-                                context.startActivity(Intent.createChooser(shareIntent, "Share"))
-                            },
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(
-                            imageVector = Icons.Filled.Share,
-                            contentDescription = "Share",
-                            tint = TextPrimary,
-                            modifier = Modifier.size(20.dp),
-                        )
                     }
                 }
 
