@@ -785,6 +785,49 @@ nonisolated struct TMDBService {
         return collected
     }
 
+    /// Recently-added titles on a specific streaming service — the TMDB
+    /// backfill for the "Now & Next on {service}" home rail. Discovers TV
+    /// shows and movies that premiered in the last 180 days (UTC window,
+    /// upper bound today), US region, flat-rate + ad-supported only, newest
+    /// first (`first_air_date.desc` for TV, `primary_release_date.desc` for
+    /// movies). Pages through `pages` results per media type (TV pages
+    /// first, then movie pages), discards results with no poster path, and
+    /// de-duplicates by id while preserving order. Media type is stamped
+    /// exactly like `getPopularOnService` / `getPopularMoviesOnService`.
+    func getRecentlyAddedOnService(tmdbProviderId: Int, pages: Int = 2) async throws -> [TMDBResult] {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0) ?? .current
+        let fmt = DateFormatter()
+        fmt.locale = Locale(identifier: "en_US_POSIX")
+        fmt.timeZone = TimeZone(secondsFromGMT: 0) ?? .current
+        fmt.dateFormat = "yyyy-MM-dd"
+        let now = Date()
+        let upper = fmt.string(from: now)
+        let lower = fmt.string(from: calendar.date(byAdding: .day, value: -180, to: now) ?? now)
+
+        var collected: [TMDBResult] = []
+        var seen = Set<Int>()
+        for page in 1...max(1, pages) {
+            let urlString = "\(base)/discover/tv?api_key=\(apiKey)&language=en-US&sort_by=first_air_date.desc&watch_region=US&with_watch_providers=\(tmdbProviderId)&with_watch_monetization_types=flatrate%7Cads&first_air_date.gte=\(lower)&first_air_date.lte=\(upper)&page=\(page)"
+            let data = try await get(urlString)
+            let env = try JSONDecoder().decode(TMDBTrendingEnvelope.self, from: data)
+            for r in env.results.map({ stamp($0, mediaType: "tv") })
+            where !(r.posterPath ?? "").isEmpty && seen.insert(r.id).inserted {
+                collected.append(r)
+            }
+        }
+        for page in 1...max(1, pages) {
+            let urlString = "\(base)/discover/movie?api_key=\(apiKey)&language=en-US&sort_by=primary_release_date.desc&watch_region=US&with_watch_providers=\(tmdbProviderId)&with_watch_monetization_types=flatrate%7Cads&primary_release_date.gte=\(lower)&primary_release_date.lte=\(upper)&page=\(page)"
+            let data = try await get(urlString)
+            let env = try JSONDecoder().decode(TMDBTrendingEnvelope.self, from: data)
+            for r in env.results.map({ stamp($0, mediaType: "movie") })
+            where !(r.posterPath ?? "").isEmpty && seen.insert(r.id).inserted {
+                collected.append(r)
+            }
+        }
+        return collected
+    }
+
     /// "What's New Today" — trending TV + movies for the current day, capturing
     /// the daily zeitgeist of titles freshly hitting streaming services. Uses
     /// TMDB's `trending/all/day` endpoint and filters out people results.

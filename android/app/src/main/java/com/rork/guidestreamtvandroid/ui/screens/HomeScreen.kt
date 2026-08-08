@@ -95,6 +95,7 @@ import com.rork.guidestreamtvandroid.ui.ads.PooledAdSource
 import com.rork.guidestreamtvandroid.ui.ads.SponsoredSlot
 import com.rork.guidestreamtvandroid.ui.components.glassCard
 import com.rork.guidestreamtvandroid.ui.home.HomeViewModel
+import com.rork.guidestreamtvandroid.ui.home.NowNextEntry
 import com.rork.guidestreamtvandroid.ui.navigation.HomeListTarget
 import com.rork.guidestreamtvandroid.ui.navigation.PendingTitleRoute
 import com.rork.guidestreamtvandroid.ui.theme.BottomSafeSpacer
@@ -150,6 +151,7 @@ fun HomeScreen(
     val selectedGenreId by homeVm.selectedGenreId.collectAsStateWithLifecycle()
     val recommendedCreators by homeVm.recommendedCreators.collectAsStateWithLifecycle()
     val popularByService by homeVm.popularByService.collectAsStateWithLifecycle()
+    val nowNextByService by homeVm.nowNextByService.collectAsStateWithLifecycle()
     val providerByTmdb by homeVm.providerByTmdb.collectAsStateWithLifecycle()
     val preferredGenres by homeVm.preferredGenres.collectAsStateWithLifecycle()
     val userStreams by streamsVm.userStreams.collectAsStateWithLifecycle()
@@ -167,6 +169,14 @@ fun HomeScreen(
     // service — a stale older result can never overwrite a newer one. Also
     // covers sign-in hydrating services after Home has already mounted.
     LaunchedEffect(selectedServices, homeReady) { if (homeReady) homeVm.loadPopularByServices(selectedServices) }
+
+    // Now & Next rails follow the same selection-tracking rules as the
+    // Popular rails. Also keyed on newReleases so the rails build once the
+    // home load's streaming_releases rows land (the 8s watchdog can flip
+    // homeReady before they arrive).
+    LaunchedEffect(selectedServices, homeReady, newReleases) {
+        if (homeReady) homeVm.loadNowAndNext(selectedServices)
+    }
 
     // Inline sponsored slot indices dismissed for this session.
     val dismissedAdSlots = remember { mutableStateMapOf<Int, Boolean>() }
@@ -500,6 +510,7 @@ fun HomeScreen(
         if (!homeReady) {
             services.take(3).forEach { svc ->
                 ShimmerSection("Popular on ${svc.name}", Modifier.padding(horizontal = 12.dp, vertical = 8.dp))
+                ShimmerSection("Now & Next on ${svc.name}", Modifier.padding(horizontal = 12.dp, vertical = 8.dp))
             }
         } else {
             services.forEach { svc ->
@@ -526,6 +537,39 @@ fun HomeScreen(
                                 )
                                 onSeeAllPopular(svc.id, pid)
                             }
+                        },
+                    )
+                }
+                val nowNext = nowNextByService[svc.id] ?: emptyList()
+                if (nowNext.isNotEmpty()) {
+                    NowAndNextSection(
+                        serviceName = svc.name,
+                        accentColor = svc.glow,
+                        entries = nowNext,
+                        onOpen = { entry ->
+                            WatchIntentLogger.get().log(
+                                WatchIntentLogger.IntentEventType.CARD_TAPPED,
+                                titleId = entry.result.id.toString(),
+                                metadata = mapOf("section" to "now_next_${svc.id}"),
+                            )
+                            onOpenTitle(PendingTitleRoute(
+                                titleId = entry.result.id.toString(),
+                                titleName = entry.result.displayName,
+                                posterUrl = entry.posterUrl,
+                                isTv = entry.result.isTV,
+                            ))
+                        },
+                        onSeeAll = {
+                            WatchIntentLogger.get().log(
+                                WatchIntentLogger.IntentEventType.CARD_TAPPED,
+                                metadata = mapOf("section" to "now_next_${svc.id}_see_all"),
+                            )
+                            onSeeAllList(HomeListTarget(
+                                title = "Now & Next on ${svc.name}",
+                                tag = "NOW & NEXT",
+                                shows = nowNext.map { it.result },
+                                providerByTmdb = providerByTmdb,
+                            ))
                         },
                     )
                 }
@@ -1446,6 +1490,157 @@ private fun PopularOnServiceSection(
                 )
             }
         }
+    }
+}
+
+// ── Now & Next on Service Section ────────────────────────────────────────
+
+/** Matches iOS's NEW pill green (#16A34A) so both rails read identically. */
+private val NowNextPillGreen = Color(0xFF16A34A)
+
+@Composable
+private fun NowAndNextSection(
+    serviceName: String,
+    accentColor: Color,
+    entries: List<NowNextEntry>,
+    onOpen: (NowNextEntry) -> Unit,
+    onSeeAll: (() -> Unit)? = null,
+) {
+    if (entries.isEmpty()) return
+    Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+        Row(verticalAlignment = Alignment.Bottom) {
+            Text(
+                text = "Now & Next on ",
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold,
+                color = TextPrimary,
+            )
+            Text(
+                text = serviceName,
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold,
+                color = accentColor,
+            )
+            if (onSeeAll != null) {
+                Spacer(Modifier.weight(1f))
+                Text(
+                    text = "See all",
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = accentColor,
+                    modifier = Modifier
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                        ) { onSeeAll() },
+                )
+            }
+        }
+        Spacer(Modifier.height(10.dp))
+        LazyRow(
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            items(entries) { entry ->
+                NowNextPosterCard(
+                    entry = entry,
+                    accentColor = accentColor,
+                    onClick = { onOpen(entry) },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun NowNextPosterCard(
+    entry: NowNextEntry,
+    accentColor: Color,
+    onClick: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .width(164.dp)
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+            ) { onClick() },
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(0.6667f)
+                .clip(RoundedCornerShape(10.dp)),
+        ) {
+            RemoteImage(
+                url = entry.posterUrl,
+                contentDescription = entry.result.displayName,
+                modifier = Modifier.fillMaxSize(),
+                cornerRadius = 10,
+                placeholderText = entry.result.displayName.take(2).uppercase(),
+                placeholderFontSize = 20.sp,
+            )
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .height(3.dp)
+                    .background(accentColor),
+            )
+            // Pill overlay owned by this section — green NEW for fresh
+            // arrivals, neutral dark date for upcoming, nothing for backfill.
+            if (entry.isNow) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .padding(8.dp)
+                        .clip(RoundedCornerShape(50))
+                        .background(NowNextPillGreen)
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                ) {
+                    Text(
+                        text = "NEW",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White,
+                        maxLines = 1,
+                    )
+                }
+            } else if (entry.dateText != null) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .padding(8.dp)
+                        .clip(RoundedCornerShape(50))
+                        .background(Color.Black.copy(alpha = 0.72f))
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                ) {
+                    Text(
+                        text = entry.dateText,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color.White.copy(alpha = 0.9f),
+                        maxLines = 1,
+                    )
+                }
+            }
+        }
+        Spacer(Modifier.height(6.dp))
+        Text(
+            text = entry.result.displayName,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = TextPrimary,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Text(
+            text = entry.meta,
+            fontSize = 10.sp,
+            color = TextSecondary,
+            fontWeight = FontWeight.Medium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 

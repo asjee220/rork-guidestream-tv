@@ -121,20 +121,28 @@ data class Platform(
 
         // ── Name-based resolution (fallback + legacy call sites) ───────
 
-        /** Resolves a Platform from a display name. Resolution order:
-         * 1. Legacy pins by normalised name
-         * 2. Server map by alias
-         * 3. Local catalogue derivation (by normalised name, then by id)
-         * 4. null — title is hidden from provider-gated rails.
-         * No generic substring/contains fallback at any stage. */
-        fun from(providerName: String?): Platform? {
-            if (providerName.isNullOrEmpty()) return null
-            val normalised = normalise(providerName)
-            if (normalised.isEmpty()) return null
+        /** Outcome of one pass over the three name-lookup stages. [ServerNil]
+         * means the server alias map matched the name but explicitly maps it
+         * out of the catalogue — a definitive null that must not fall through
+         * to later stages or the tier-token retry. */
+        private sealed class NameResolution {
+            data class Hit(val platform: Platform) : NameResolution()
+            object ServerNil : NameResolution()
+            object Miss : NameResolution()
+        }
 
+        /** Tier tokens stripped from the tail of a normalised provider name on
+         * retry — mirrors TIER_TOKENS in the refresh_provider_catalog edge
+         * function so the client normaliser stays symmetric with the server one. */
+        private val tierTokens = listOf("premium", "essential", "standard", "basic", "withads", "adsupported", "ads", "free")
+
+        /** Runs the existing legacy-pin → server-alias → local-catalogue lookups
+         * against an already-normalised string — byte-for-byte the same logic
+         * (and the same early server-nil short-circuit) as before. */
+        private fun resolveStages(normalised: String): NameResolution {
             // 1. Legacy pins by normalised name
             for (pin in legacyPins.values) {
-                if (normalise(pin.name) == normalised) return pin
+                if (normalise(pin.name) == normalised) return NameResolution.Hit(pin)
             }
 
             // 2. Server map by alias
@@ -142,37 +150,75 @@ data class Platform(
                 if (row.aliases.any { normalise(it) == normalised }) {
                     val catalogId = row.catalogId
                     if (catalogId != null) {
-                        legacyPins[catalogId]?.let { return it }
+                        legacyPins[catalogId]?.let { return NameResolution.Hit(it) }
                         // Prefer badge_hex and badge_label from the server map.
                         if (row.badgeHex != null && row.badgeLabel != null && row.badgeLabel!!.isNotEmpty()) {
                             val color = colorFromHex(row.badgeHex!!)
                             if (color != null) {
-                                return Platform(row.badgeLabel!!, color, textColorFor(color), catalogId)
+                                return NameResolution.Hit(Platform(row.badgeLabel!!, color, textColorFor(color), catalogId))
                             }
                         }
                         // Fall back to local catalogue entry.
                         val svc = StreamingCatalog.service(catalogId)
-                        if (svc != null) return Platform(svc.name, svc.glow, textColorFor(svc.glow), catalogId)
+                        if (svc != null) return NameResolution.Hit(Platform(svc.name, svc.glow, textColorFor(svc.glow), catalogId))
                     }
-                    return null
+                    return NameResolution.ServerNil
                 }
             }
 
             // 3. Local catalogue derivation by normalised name, then by id
             for (svc in StreamingCatalog.all) {
                 if (normalise(svc.name) == normalised) {
-                    legacyPins[svc.id]?.let { return it }
-                    return Platform(svc.name, svc.glow, textColorFor(svc.glow), svc.id)
+                    legacyPins[svc.id]?.let { return NameResolution.Hit(it) }
+                    return NameResolution.Hit(Platform(svc.name, svc.glow, textColorFor(svc.glow), svc.id))
                 }
             }
             for (svc in StreamingCatalog.all) {
                 if (svc.id == normalised) {
-                    legacyPins[svc.id]?.let { return it }
-                    return Platform(svc.name, svc.glow, textColorFor(svc.glow), svc.id)
+                    legacyPins[svc.id]?.let { return NameResolution.Hit(it) }
+                    return NameResolution.Hit(Platform(svc.name, svc.glow, textColorFor(svc.glow), svc.id))
                 }
             }
 
-            // 4. No match
+            return NameResolution.Miss
+        }
+
+        /** Resolves a Platform from a display name. Resolution order:
+         * 1. Legacy pins by normalised name
+         * 2. Server map by alias
+         * 3. Local catalogue derivation (by normalised name, then by id)
+         * 4. null — then a tier-token retry: strip one trailing tier token
+         *    (premium/essential/standard/basic/withads/adsupported/ads/free)
+         *    at a time, at most three passes, re-running stages 1–3 on the
+         *    shortened string — lets "Crunchyroll Premium" resolve to the
+         *    crunchyroll entry. Every name that resolved before still resolves
+         *    through the exact same stage; the retry only runs after a full miss.
+         * No generic substring/contains fallback at any stage. */
+        fun from(providerName: String?): Platform? {
+            if (providerName.isNullOrEmpty()) return null
+            val normalised = normalise(providerName)
+            if (normalised.isEmpty()) return null
+
+            when (val first = resolveStages(normalised)) {
+                is NameResolution.Hit -> return first.platform
+                NameResolution.ServerNil -> return null
+                NameResolution.Miss -> Unit
+            }
+
+            // Tier-token retry — only after all existing stages have failed.
+            // Strip one trailing tier token per pass (at most three passes),
+            // only when the remaining string stays longer than two characters.
+            var current = normalised
+            repeat(3) {
+                val token = tierTokens.firstOrNull { current.endsWith(it) && current.length - it.length > 2 }
+                    ?: return null
+                current = current.dropLast(token.length)
+                when (val res = resolveStages(current)) {
+                    is NameResolution.Hit -> return res.platform
+                    NameResolution.ServerNil -> return null
+                    NameResolution.Miss -> Unit
+                }
+            }
             return null
         }
 

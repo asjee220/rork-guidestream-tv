@@ -11,7 +11,9 @@ import com.rork.guidestreamtvandroid.data.remote.ExpiringTitlesService
 import com.rork.guidestreamtvandroid.data.remote.ProviderBrandMapService
 import com.rork.guidestreamtvandroid.data.remote.RecommendedCreator
 import com.rork.guidestreamtvandroid.data.remote.RecommendedCreatorsService
+import com.rork.guidestreamtvandroid.data.models.StreamingService
 import com.rork.guidestreamtvandroid.data.remote.StreamingReleasesService
+import com.rork.guidestreamtvandroid.data.remote.StreamingUpcomingService
 import com.rork.guidestreamtvandroid.data.remote.TMDBService
 import com.rork.guidestreamtvandroid.data.remote.toTMDBResult
 import com.rork.guidestreamtvandroid.data.repository.StreamsViewModel
@@ -36,6 +38,24 @@ import kotlinx.coroutines.withTimeoutOrNull
  * Home feed view model — mirrors iOS HomeView state management.
  * Loads trending, on-air, top-rated, genre shows, and provider-scoped content.
  */
+/**
+ * One card in the "Now & Next on {service}" rail. Pairs the shared
+ * [TMDBResult] with the pill state so the pill overlay stays owned by the
+ * rail section and no field leaks into the shared model.
+ */
+data class NowNextEntry(
+    val result: TMDBResult,
+    /** Display poster — server poster_url first, then the posterPath-derived CDN url. */
+    val posterUrl: String?,
+    /** "Series"/"Movie" (+ " · Original") for server rows, "On {service}" for backfill. */
+    val meta: String,
+    /** "Aug 14" — set only for streaming_upcoming rows. */
+    val dateText: String?,
+    /** True for streaming_releases rows — renders the green NEW pill.
+     * False with null [dateText] marks a TMDB backfill card (no pill). */
+    val isNow: Boolean,
+)
+
 class HomeViewModel : ViewModel() {
 
     private val tmdb = TMDBService.get()
@@ -86,6 +106,18 @@ class HomeViewModel : ViewModel() {
 
     private val _popularByService = MutableStateFlow<Map<String, List<TMDBResult>>>(emptyMap())
     val popularByService: StateFlow<Map<String, List<TMDBResult>>> = _popularByService.asStateFlow()
+
+    /** Assembled "Now & Next on {service}" rail entries keyed by catalogue service id. */
+    private val _nowNextByService = MutableStateFlow<Map<String, List<NowNextEntry>>>(emptyMap())
+    val nowNextByService: StateFlow<Map<String, List<NowNextEntry>>> = _nowNextByService.asStateFlow()
+
+    /** Raw streaming_releases rows kept from the home load's single fetch so
+     * the Now & Next rails reuse them instead of refetching. */
+    private var releaseRows: List<StreamingReleasesService.StreamingReleaseRow> = emptyList()
+
+    /** streaming_upcoming rows fetched at most once per home load and shared
+     * across every service rail. */
+    private var upcomingRows: List<StreamingUpcomingService.StreamingUpcomingRow>? = null
 
     /** TMDB provider IDs for streaming services (matches iOS). */
     private val providerIdMap = mapOf(
@@ -170,6 +202,7 @@ class HomeViewModel : ViewModel() {
                 launch {
                     val rows = StreamingReleasesService.get().fetchReleases()
                     if (rows != null) {
+                        releaseRows = rows
                         _newReleases.value = rows.map { it.toTMDBResult() }
                         // Compute Today's Pick from the raw rows (already
                         // popularity-descending from the query). Take the first
@@ -325,6 +358,149 @@ class HomeViewModel : ViewModel() {
             if (items.isNotEmpty()) next[serviceId] = items
         }
         _popularByService.value = next
+    }
+
+    /**
+     * Builds the per-service "Now & Next on {service}" rails from the
+     * already-fetched streaming_releases ("now") rows and the once-per-load
+     * streaming_upcoming ("next") rows, then backfills below-capacity rails
+     * from TMDB. Rebuilt fresh from the passed selection so a deselected
+     * service loses its rail on the next load. All date comparisons run in
+     * UTC against the stored date-only strings so the device timezone can
+     * never shift a title across the 30-day horizon.
+     */
+    suspend fun loadNowAndNext(serviceIds: Set<String>) {
+        val services = StreamingCatalog.ordered(serviceIds)
+        if (services.isEmpty()) {
+            _nowNextByService.value = emptyMap()
+            return
+        }
+
+        // Reuse the home load's releases fetch; fetch upcoming at most once
+        // per home load and share the rows across every service rail.
+        val releases = releaseRows
+        val upcoming = upcomingRows
+            ?: StreamingUpcomingService.get().fetchUpcoming()?.also { upcomingRows = it }
+            ?: emptyList()
+
+        val today = LocalDate.now(ZoneOffset.UTC)
+        val horizon = today.plusDays(30)
+        val pillFmt = java.time.format.DateTimeFormatter.ofPattern("MMM d", java.util.Locale.US)
+
+        // Group server rows by catalogue id through Platform.from(providerName)
+        // — the app's single provider-name mapping. Unresolved source names
+        // are dropped silently, never guessed at.
+        val nowByService = HashMap<String, MutableList<StreamingReleasesService.StreamingReleaseRow>>()
+        for (row in releases) {
+            val catalogId = Platform.from(row.sourceName)?.catalogId ?: continue
+            nowByService.getOrPut(catalogId) { mutableListOf() }.add(row)
+        }
+        val nextByService = HashMap<String, MutableList<Pair<StreamingUpcomingService.StreamingUpcomingRow, LocalDate>>>()
+        for (row in upcoming) {
+            val raw = row.sourceReleaseDate ?: continue
+            if (raw.length < 10) continue
+            val date = runCatching { LocalDate.parse(raw.take(10)) }.getOrNull() ?: continue
+            if (date.isBefore(today) || date.isAfter(horizon)) continue
+            val catalogId = Platform.from(row.sourceName)?.catalogId ?: continue
+            nextByService.getOrPut(catalogId) { mutableListOf() }.add(row to date)
+        }
+
+        fun metaFor(mediaType: String, isOriginal: Boolean?): String =
+            (if (mediaType == "tv") "Series" else "Movie") + (if (isOriginal == true) " · Original" else "")
+
+        // Server entries per service: "now" first (the releases query is
+        // already popularity-descending), then "next" (already date-ascending),
+        // de-duplicated by tmdb type+id with the "now" entry winning. Fewer
+        // than three mapped rows → no rail at all for that service.
+        data class Gated(val service: StreamingService, val entries: List<NowNextEntry>)
+        val gated = mutableListOf<Gated>()
+        for (service in services) {
+            val seenKeys = mutableSetOf<String>()
+            val entries = mutableListOf<NowNextEntry>()
+            for (row in nowByService[service.id].orEmpty()) {
+                val mediaType = row.tmdbType ?: "tv"
+                if (!seenKeys.add("$mediaType:${row.tmdbId}")) continue
+                val result = TMDBResult(
+                    id = row.tmdbId,
+                    mediaType = mediaType,
+                    name = row.title,
+                    title = row.title,
+                    posterPath = row.posterPath,
+                    voteAverage = row.voteAverage,
+                )
+                entries.add(NowNextEntry(
+                    result = result,
+                    posterUrl = row.posterUrl ?: result.posterUrl,
+                    meta = metaFor(mediaType, row.isOriginal),
+                    dateText = null,
+                    isNow = true,
+                ))
+            }
+            for ((row, date) in nextByService[service.id].orEmpty()) {
+                val mediaType = row.tmdbType ?: "tv"
+                if (!seenKeys.add("$mediaType:${row.tmdbId}")) continue
+                val result = TMDBResult(
+                    id = row.tmdbId,
+                    mediaType = mediaType,
+                    name = row.title,
+                    title = row.title,
+                    posterPath = row.posterPath,
+                    voteAverage = row.voteAverage,
+                )
+                entries.add(NowNextEntry(
+                    result = result,
+                    posterUrl = row.posterUrl ?: result.posterUrl,
+                    meta = metaFor(mediaType, row.isOriginal),
+                    dateText = date.format(pillFmt),
+                    isNow = false,
+                ))
+            }
+            if (entries.size < 3) continue
+            gated.add(Gated(service, entries.take(12)))
+        }
+        if (gated.isEmpty()) {
+            _nowNextByService.value = emptyMap()
+            return
+        }
+
+        // Backfill below-capacity rails from TMDB concurrently. Backfill
+        // never displaces a server row, and a failed backfill keeps whatever
+        // server rows exist — it never blanks a rail that passed the gate.
+        val collected = coroutineScope {
+            gated.map { g ->
+                async(Dispatchers.IO) {
+                    var entries = g.entries
+                    val providerId = providerIdMap[g.service.id]
+                    if (entries.size < 12 && providerId != null) {
+                        val backfill = try {
+                            tmdb.getRecentlyAddedOnService(providerId)
+                        } catch (cancelled: CancellationException) {
+                            throw cancelled
+                        } catch (_: Exception) {
+                            emptyList()
+                        }
+                        val keys = entries.map { "${it.result.mediaType ?: "tv"}:${it.result.id}" }.toMutableSet()
+                        val extra = mutableListOf<NowNextEntry>()
+                        for (r in backfill) {
+                            if (entries.size + extra.size >= 12) break
+                            if (!keys.add("${r.mediaType ?: "tv"}:${r.id}")) continue
+                            extra.add(NowNextEntry(
+                                result = r,
+                                posterUrl = r.posterUrl,
+                                meta = "On ${g.service.name}",
+                                dateText = null,
+                                isNow = false,
+                            ))
+                        }
+                        entries = entries + extra
+                    }
+                    g.service.id to entries
+                }
+            }.awaitAll()
+        }
+        val next = LinkedHashMap<String, List<NowNextEntry>>()
+        for ((serviceId, entries) in collected) next[serviceId] = entries
+        _nowNextByService.value = next
     }
 
     /**

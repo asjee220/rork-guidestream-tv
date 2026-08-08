@@ -159,6 +159,34 @@ class TMDBService {
         return collected
     }
 
+    /**
+     * Recently-added titles on a specific streaming service — the TMDB
+     * backfill for the "Now & Next on {service}" home rail. Discovers TV
+     * shows and movies that premiered in the last 180 days (UTC window,
+     * upper bound today), US region, flat-rate + ad-supported only, newest
+     * first (first_air_date.desc for TV, primary_release_date.desc for
+     * movies). Pages through [pages] results per media type (TV pages first,
+     * then movie pages), discards results with no poster path, and
+     * de-duplicates by id while preserving order. Media type is stamped
+     * exactly like [getPopularOnService] / [getPopularMoviesOnService].
+     */
+    suspend fun getRecentlyAddedOnService(providerId: Int, pages: Int = 2): List<TMDBResult> {
+        val today = java.time.LocalDate.now(java.time.ZoneOffset.UTC)
+        val upper = today.toString()
+        val lower = today.minusDays(180).toString()
+        val collected = mutableListOf<TMDBResult>()
+        val seen = mutableSetOf<Int>()
+        for (page in 1..maxOf(1, pages)) {
+            val results = fetchList("$base/discover/tv?api_key=$apiKey&language=en-US&sort_by=first_air_date.desc&watch_region=US&with_watch_providers=$providerId&with_watch_monetization_types=flatrate%7Cads&first_air_date.gte=$lower&first_air_date.lte=$upper&page=$page", "tv")
+            for (r in results) if (!r.posterPath.isNullOrEmpty() && seen.add(r.id)) collected.add(r)
+        }
+        for (page in 1..maxOf(1, pages)) {
+            val results = fetchList("$base/discover/movie?api_key=$apiKey&language=en-US&sort_by=primary_release_date.desc&watch_region=US&with_watch_providers=$providerId&with_watch_monetization_types=flatrate%7Cads&primary_release_date.gte=$lower&primary_release_date.lte=$upper&page=$page", "movie")
+            for (r in results) if (!r.posterPath.isNullOrEmpty() && seen.add(r.id)) collected.add(r)
+        }
+        return collected
+    }
+
     /** Top-rated TV shows. */
     suspend fun getTopRated(): List<TMDBResult> {
         return fetchList("$base/tv/top_rated?api_key=$apiKey&language=en-US&page=1", "tv")

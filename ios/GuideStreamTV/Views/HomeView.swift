@@ -117,53 +117,98 @@ struct Platform {
 
     // MARK: - Name-based resolution (fallback + legacy call sites)
 
-    /// Resolves a Platform from a display name. Resolution order:
-    /// 1. Legacy pins by normalised name
-    /// 2. Server map by alias
-    /// 3. Local catalogue derivation (by normalised name, then by id)
-    /// 4. nil — title is hidden from provider-gated rails.
-    /// No generic substring/contains fallback at any stage.
-    static func from(providerName raw: String?) -> Platform? {
-        guard let raw, !raw.isEmpty else { return nil }
-        let normalised = normalise(raw)
-        guard !normalised.isEmpty else { return nil }
+    /// Outcome of one pass over the three name-lookup stages. `.serverNil`
+    /// means the server alias map matched the name but explicitly maps it
+    /// out of the catalogue — a definitive nil that must not fall through
+    /// to later stages or the tier-token retry.
+    private enum NameResolution {
+        case hit(Platform)
+        case serverNil
+        case miss
+    }
 
+    /// Tier tokens stripped from the tail of a normalised provider name on
+    /// retry — mirrors TIER_TOKENS in the refresh_provider_catalog edge
+    /// function so the client normaliser stays symmetric with the server one.
+    private static let tierTokens = ["premium", "essential", "standard", "basic", "withads", "adsupported", "ads", "free"]
+
+    /// Runs the existing legacy-pin → server-alias → local-catalogue lookups
+    /// against an already-normalised string, byte-for-byte the same logic
+    /// (and the same early server-nil short-circuit) as before.
+    private static func resolveStages(_ normalised: String) -> NameResolution {
         // 1. Legacy pins by normalised name
         for pin in legacyPins.values {
-            if normalise(pin.name) == normalised { return pin }
+            if normalise(pin.name) == normalised { return .hit(pin) }
         }
 
         // 2. Server map by alias
         for row in ProviderBrandMapService.shared.rows {
             if row.aliases.contains(where: { normalise($0) == normalised }) {
                 if let catalogId = row.catalogId {
-                    if let pinned = legacyPins[catalogId] { return pinned }
+                    if let pinned = legacyPins[catalogId] { return .hit(pinned) }
                     // Prefer badge_hex and badge_label from the server map.
-                    if let p = platformFromRow(row, catalogId: catalogId) { return p }
+                    if let p = platformFromRow(row, catalogId: catalogId) { return .hit(p) }
                     // Fall back to local catalogue entry.
                     if let svc = StreamingCatalog.service(for: catalogId) {
-                        return Platform(name: svc.name, color: svc.glow, textColor: textColor(for: svc.glow), catalogId: catalogId)
+                        return .hit(Platform(name: svc.name, color: svc.glow, textColor: textColor(for: svc.glow), catalogId: catalogId))
                     }
                 }
-                return nil
+                return .serverNil
             }
         }
 
         // 3. Local catalogue derivation by normalised name, then by id
         for svc in StreamingCatalog.all {
             if normalise(svc.name) == normalised {
-                if let pinned = legacyPins[svc.id] { return pinned }
-                return Platform(name: svc.name, color: svc.glow, textColor: textColor(for: svc.glow), catalogId: svc.id)
+                if let pinned = legacyPins[svc.id] { return .hit(pinned) }
+                return .hit(Platform(name: svc.name, color: svc.glow, textColor: textColor(for: svc.glow), catalogId: svc.id))
             }
         }
         for svc in StreamingCatalog.all {
             if svc.id == normalised {
-                if let pinned = legacyPins[svc.id] { return pinned }
-                return Platform(name: svc.name, color: svc.glow, textColor: textColor(for: svc.glow), catalogId: svc.id)
+                if let pinned = legacyPins[svc.id] { return .hit(pinned) }
+                return .hit(Platform(name: svc.name, color: svc.glow, textColor: textColor(for: svc.glow), catalogId: svc.id))
             }
         }
 
-        // 4. No match
+        return .miss
+    }
+
+    /// Resolves a Platform from a display name. Resolution order:
+    /// 1. Legacy pins by normalised name
+    /// 2. Server map by alias
+    /// 3. Local catalogue derivation (by normalised name, then by id)
+    /// 4. nil — then a tier-token retry: strip one trailing tier token
+    ///    (premium/essential/standard/basic/withads/adsupported/ads/free)
+    ///    at a time, at most three passes, re-running stages 1–3 on the
+    ///    shortened string — lets "Crunchyroll Premium" resolve to the
+    ///    crunchyroll entry. Every name that resolved before still resolves
+    ///    through the exact same stage; the retry only runs after a full miss.
+    /// No generic substring/contains fallback at any stage.
+    static func from(providerName raw: String?) -> Platform? {
+        guard let raw, !raw.isEmpty else { return nil }
+        let normalised = normalise(raw)
+        guard !normalised.isEmpty else { return nil }
+
+        switch resolveStages(normalised) {
+        case .hit(let platform): return platform
+        case .serverNil: return nil
+        case .miss: break
+        }
+
+        // Tier-token retry — only after all existing stages have failed.
+        var current = normalised
+        for _ in 0..<3 {
+            guard let token = tierTokens.first(where: { current.hasSuffix($0) && current.count - $0.count > 2 })
+            else { break }
+            current = String(current.dropLast(token.count))
+            switch resolveStages(current) {
+            case .hit(let platform): return platform
+            case .serverNil: return nil
+            case .miss: continue
+            }
+        }
+
         return nil
     }
 }
@@ -304,6 +349,11 @@ struct HomeView: View {
     @State private var bingeFallback: [TMDBResult] = []
     @State private var newToday: [TMDBResult] = []
     @State private var newReleases: [StreamingRelease] = []
+    /// streaming_upcoming rows fetched once per home load — shared across
+    /// every "Now & Next on {service}" rail instead of refetching per service.
+    @State private var upcomingReleases: [StreamingUpcoming] = []
+    /// Assembled "Now & Next" rail entries keyed by catalogue service id.
+    @State private var nowNextByService: [String: [NowNextEntry]] = [:]
     @State private var sportsGames: [SportsGame] = []
     @State private var selectedGame: SportsGame?
     /// Cached top US streaming provider per TMDB id. Items without an entry have no real
@@ -779,6 +829,8 @@ struct HomeView: View {
                             ForEach(StreamingCatalog.ordered(from: auth.selectedServices), id: \.id) { service in
                                 HomeShimmerSection(title: "Popular on \(service.name)")
                                     .padding(.horizontal, 12)
+                                HomeShimmerSection(title: "Now & Next on \(service.name)")
+                                    .padding(.horizontal, 12)
                             }
                         } else {
                             ForEach(StreamingCatalog.ordered(from: auth.selectedServices), id: \.id) { service in
@@ -814,6 +866,29 @@ struct HomeView: View {
                                                 )
                                                 path.append(.popularOnServiceCategories(serviceId: service.id, providerId: providerId))
                                             }
+                                        }
+                                    )
+                                    .padding(.horizontal, 12)
+                                }
+                                if let nowNext = nowNextByService[service.id], !nowNext.isEmpty {
+                                    NowAndNextSection(
+                                        serviceName: service.name,
+                                        accentColor: service.glow,
+                                        entries: nowNext,
+                                        onOpen: { entry in
+                                            WatchIntentLogger.shared.log(
+                                                eventType: .cardTapped,
+                                                titleId: WatchIntentLogger.titleSlug(entry.show.title),
+                                                metadata: ["section": "now_next_\(service.id)"]
+                                            )
+                                            detailSubject = .show(entry.show)
+                                        },
+                                        onSeeAll: {
+                                            WatchIntentLogger.shared.log(
+                                                eventType: .cardTapped,
+                                                metadata: ["section": "now_next_\(service.id)_see_all"]
+                                            )
+                                            path.append(.nowAndNext(serviceId: service.id))
                                         }
                                     )
                                     .padding(.horizontal, 12)
@@ -1169,6 +1244,14 @@ struct HomeView: View {
                         initialShows: initial,
                         onSelect: { show in detailSubject = .show(show) }
                     )
+                case .nowAndNext(let serviceId):
+                    let svc = StreamingCatalog.service(for: serviceId)
+                    BingeWorthyListView(
+                        shows: (nowNextByService[serviceId] ?? []).map { $0.show },
+                        sectionTitle: "Now & Next on \(svc?.name ?? "Streaming")",
+                        tag: "NOW & NEXT",
+                        onSelect: { show in detailSubject = .show(show) }
+                    )
                 }
             }
             .sheet(item: $detailSubject) { subject in
@@ -1475,12 +1558,14 @@ struct HomeView: View {
         async let topRatedCall = try? TMDBService.shared.getTopRated()
         async let genreCall = try? TMDBService.shared.getDiscoverByGenre(selectedGenreId)
         async let newReleasesCall = StreamingReleasesService.shared.fetchReleases()
+        async let upcomingCall = StreamingUpcomingService.shared.fetchUpcoming()
 
         // Await in smaller groups so the type-checker can resolve each tuple independently.
         let (t1, t2) = await (trendingPage1, trendingPage2)
         let (t3, t4) = await (trendingPage3, trendingPage4)
         let (a, e, n, s) = await (onAirCall, endedCall, newTodayCall, sportsCall)
         let (tr, genre, nr) = await (topRatedCall, genreCall, newReleasesCall)
+        let up = await upcomingCall
 
         // Concatenate all trending pages and de-duplicate by id, preserving
         // first-seen order (later pages can repeat earlier titles).
@@ -1497,6 +1582,7 @@ struct HomeView: View {
         if let e { bingeFallback = e }
         if let n { newToday = n }
         if let nr { newReleases = nr }
+        if let up { upcomingReleases = up }
         if let tr { topRated = tr }
         if let genre { genreShows = genre }
         sportsGames = s
@@ -1517,6 +1603,7 @@ struct HomeView: View {
         if deferNonCritical {
             Task {
                 await loadPopularOnServices()
+                await loadNowAndNext()
                 // TVDB enrichment — non-blocking, silently ignored when TVDB is down.
                 Task { await fetchTVDBUpcoming() }
             // Fetch expiring titles from the server-backed expiring_titles
@@ -1543,6 +1630,7 @@ struct HomeView: View {
             }
         } else {
             await loadPopularOnServices()
+            await loadNowAndNext()
             Task { await fetchTVDBUpcoming() }
             await refreshExpiringFromServer()
             WidgetDataService.shared.push(
@@ -1737,6 +1825,152 @@ struct HomeView: View {
             dict[id] = items
         }
         popularOnServiceResults = dict
+    }
+
+    /// Meta line for a "Now & Next" server row — Series/Movie from tmdb_type
+    /// with " · Original" appended when the row is a service original.
+    private func nowNextMeta(tmdbType: String, isOriginal: Bool?) -> String {
+        (tmdbType == "tv" ? "Series" : "Movie") + (isOriginal == true ? " · Original" : "")
+    }
+
+    /// Builds the per-service "Now & Next on {service}" rails from the
+    /// already-fetched streaming_releases ("now") and streaming_upcoming
+    /// ("next") rows, then backfills below-capacity rails from TMDB. Rebuilt
+    /// fresh from `auth.selectedServices` on every home load so a deselected
+    /// service loses its rail on the next load.
+    private func loadNowAndNext() async {
+        let services = StreamingCatalog.ordered(from: auth.selectedServices)
+        guard !services.isEmpty else {
+            nowNextByService = [:]
+            return
+        }
+
+        // UTC window — the stored strings are date-only, so every comparison
+        // runs in UTC to keep a title from shifting across the 30-day horizon
+        // with the device timezone.
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0) ?? .current
+        let dayFmt = DateFormatter()
+        dayFmt.locale = Locale(identifier: "en_US_POSIX")
+        dayFmt.timeZone = TimeZone(secondsFromGMT: 0) ?? .current
+        dayFmt.dateFormat = "yyyy-MM-dd"
+        let pillFmt = DateFormatter()
+        pillFmt.locale = Locale(identifier: "en_US_POSIX")
+        pillFmt.timeZone = TimeZone(secondsFromGMT: 0) ?? .current
+        pillFmt.dateFormat = "MMM d"
+        let today = calendar.startOfDay(for: Date())
+        guard let horizon = calendar.date(byAdding: .day, value: 30, to: today) else { return }
+
+        // Group server rows by catalogue id through Platform.from(providerName:)
+        // — the app's single provider-name mapping. Unresolved source names
+        // are dropped silently, never guessed at.
+        var nowByService: [String: [StreamingRelease]] = [:]
+        for row in newReleases {
+            guard let catalogId = Platform.from(providerName: row.sourceName)?.catalogId else { continue }
+            nowByService[catalogId, default: []].append(row)
+        }
+        var nextByService: [String: [(row: StreamingUpcoming, date: Date)]] = [:]
+        for row in upcomingReleases {
+            guard let raw = row.sourceReleaseDate, raw.count >= 10,
+                  let date = dayFmt.date(from: String(raw.prefix(10))),
+                  date >= today, date <= horizon,
+                  let catalogId = Platform.from(providerName: row.sourceName)?.catalogId
+            else { continue }
+            nextByService[catalogId, default: []].append((row, date))
+        }
+
+        // Server entries per service: "now" first (the releases query is
+        // already popularity-descending), then "next" (already date-ascending),
+        // de-duplicated by tmdb type+id with the "now" entry winning. Fewer
+        // than three mapped rows → no rail at all for that service.
+        var gated: [(service: StreamingService, entries: [NowNextEntry])] = []
+        for service in services {
+            var seenKeys = Set<String>()
+            var entries: [NowNextEntry] = []
+            for row in nowByService[service.id] ?? [] {
+                guard seenKeys.insert("\(row.tmdbType):\(row.tmdbId)").inserted else { continue }
+                entries.append(NowNextEntry(
+                    show: PosterShow(
+                        title: row.title,
+                        meta: nowNextMeta(tmdbType: row.tmdbType, isOriginal: row.isOriginal),
+                        posterColors: [service.glow.opacity(0.85), service.bg],
+                        symbol: "play.fill",
+                        posterUrl: row.posterUrl ?? TMDBImage.url(row.posterPath, size: .poster342),
+                        tmdbId: row.tmdbId,
+                        voteAverage: row.voteAverage,
+                        isTV: row.tmdbType == "tv"
+                    ),
+                    dateText: nil,
+                    isNow: true
+                ))
+            }
+            for (row, date) in nextByService[service.id] ?? [] {
+                guard seenKeys.insert("\(row.tmdbType):\(row.tmdbId)").inserted else { continue }
+                entries.append(NowNextEntry(
+                    show: PosterShow(
+                        title: row.title,
+                        meta: nowNextMeta(tmdbType: row.tmdbType, isOriginal: row.isOriginal),
+                        posterColors: [service.glow.opacity(0.85), service.bg],
+                        symbol: "play.fill",
+                        posterUrl: row.posterUrl ?? TMDBImage.url(row.posterPath, size: .poster342),
+                        tmdbId: row.tmdbId,
+                        voteAverage: row.voteAverage,
+                        isTV: row.tmdbType == "tv"
+                    ),
+                    dateText: pillFmt.string(from: date),
+                    isNow: false
+                ))
+            }
+            guard entries.count >= 3 else { continue }
+            gated.append((service, Array(entries.prefix(12))))
+        }
+        guard !gated.isEmpty else {
+            nowNextByService = [:]
+            return
+        }
+
+        // Backfill below-capacity rails from TMDB concurrently. Backfill
+        // never displaces a server row, and a failed backfill keeps whatever
+        // server rows exist — it never blanks a rail that passed the gate.
+        let collected: [(String, [NowNextEntry])] = await withTaskGroup(
+            of: (String, [NowNextEntry]).self
+        ) { group in
+            for (service, serverEntries) in gated {
+                let providerId = tmdbProviderIdMap[service.id]
+                group.addTask {
+                    var entries = serverEntries
+                    if entries.count < 12, let providerId {
+                        let backfill = (try? await TMDBService.shared.getRecentlyAddedOnService(tmdbProviderId: providerId)) ?? []
+                        var keys = Set(entries.map { "\($0.show.isTV ? "tv" : "movie"):\($0.show.tmdbId ?? 0)" })
+                        for r in backfill {
+                            if entries.count >= 12 { break }
+                            guard keys.insert("\(r.isTV ? "tv" : "movie"):\(r.id)").inserted else { continue }
+                            entries.append(NowNextEntry(
+                                show: PosterShow(
+                                    title: r.displayName,
+                                    meta: "On \(service.name)",
+                                    posterColors: [service.glow.opacity(0.85), service.bg],
+                                    symbol: "play.fill",
+                                    posterUrl: r.posterUrl,
+                                    tmdbId: r.id,
+                                    voteAverage: r.voteAverage,
+                                    isTV: r.isTV
+                                ),
+                                dateText: nil,
+                                isNow: false
+                            ))
+                        }
+                    }
+                    return (service.id, entries)
+                }
+            }
+            var out: [(String, [NowNextEntry])] = []
+            for await pair in group { out.append(pair) }
+            return out
+        }
+        var next: [String: [NowNextEntry]] = [:]
+        for (id, entries) in collected { next[id] = entries }
+        nowNextByService = next
     }
 
     // MARK: - Derived content
@@ -4140,6 +4374,126 @@ private struct PopularOnServiceSection: View {
                 .padding(.horizontal, 12)
                 .padding(.vertical, 6)
             }
+        }
+    }
+}
+
+// MARK: - Now & Next on Service section
+
+/// Per-card model for the "Now & Next on {service}" rail — pairs the shared
+/// PosterShow with its pill state (release date for upcoming rows, a live
+/// flag for fresh arrivals) so the pill overlay stays owned by this section
+/// and no field leaks into the shared PosterShow struct.
+private struct NowNextEntry: Identifiable, Hashable {
+    let show: PosterShow
+    /// "Aug 14" — set only for streaming_upcoming rows.
+    let dateText: String?
+    /// True for streaming_releases rows — renders the green NEW pill.
+    /// False with nil dateText marks a TMDB backfill card (no pill).
+    let isNow: Bool
+    var id: UUID { show.id }
+}
+
+private struct NowAndNextSection: View {
+    let serviceName: String
+    let accentColor: Color
+    let entries: [NowNextEntry]
+    let onOpen: (NowNextEntry) -> Void
+    var onSeeAll: (() -> Void)? = nil
+
+    var body: some View {
+        SectionGlassCard(
+            title: "Now & Next on \(serviceName)",
+            highlighted: false,
+            accentColor: accentColor,
+            onSeeAll: onSeeAll
+        ) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    ForEach(entries) { entry in
+                        NowNextPosterCard(entry: entry, onTap: { onOpen(entry) })
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+            }
+        }
+    }
+}
+
+private struct NowNextPosterCard: View {
+    let entry: NowNextEntry
+    let onTap: () -> Void
+
+    /// Matches Android's NEW pill green (#16A34A) so both rails read identically.
+    private let pillGreen = Color(red: 0x16 / 255, green: 0xA3 / 255, blue: 0x4A / 255)
+
+    var body: some View {
+        Button(action: onTap) {
+            VStack(alignment: .leading, spacing: 8) {
+                Color.black
+                    .frame(width: 164, height: 246)
+                    .overlay {
+                        LinearGradient(
+                            colors: entry.show.posterColors,
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                        .allowsHitTesting(false)
+                    }
+                    .overlay {
+                        RemoteImage(
+                            urlString: entry.show.posterUrl,
+                            contentMode: .fill,
+                            fallbackColors: entry.show.posterColors
+                        )
+                        .frame(width: 164, height: 246)
+                        .clipped()
+                        .allowsHitTesting(false)
+                    }
+                    .overlay(alignment: .bottomLeading) {
+                        pill
+                    }
+                    .clipShape(.rect(cornerRadius: 12))
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(entry.show.title)
+                        .scaledFont(size: 14, weight: .semibold)
+                        .foregroundStyle(Color.textPrimary)
+                        .lineLimit(1)
+                    Text(entry.show.meta)
+                        .scaledFont(size: 11)
+                        .foregroundStyle(Color.textTertiary)
+                        .lineLimit(1)
+                }
+                .frame(width: 164, alignment: .leading)
+            }
+        }
+        .buttonStyle(.plain)
+    }
+
+    @ViewBuilder
+    private var pill: some View {
+        if entry.isNow {
+            Text("NEW")
+                .scaledFont(size: 10, weight: .bold)
+                .foregroundStyle(.white)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(pillGreen)
+                .clipShape(Capsule())
+                .padding(8)
+                .allowsHitTesting(false)
+        } else if let date = entry.dateText {
+            Text(date)
+                .scaledFont(size: 10, weight: .semibold)
+                .foregroundStyle(Color.white.opacity(0.9))
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(Color.black.opacity(0.72))
+                .clipShape(Capsule())
+                .padding(8)
+                .allowsHitTesting(false)
         }
     }
 }
