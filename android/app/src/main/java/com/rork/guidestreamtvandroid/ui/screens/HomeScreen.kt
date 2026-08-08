@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -33,6 +34,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -53,6 +55,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.layout.boundsInRoot
@@ -72,6 +75,8 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.rork.guidestreamtvandroid.data.models.Platform
 import com.rork.guidestreamtvandroid.data.models.SourceKind
 import com.rork.guidestreamtvandroid.data.models.StreamingCatalog
+import com.rork.guidestreamtvandroid.data.models.selectionAccent
+import com.rork.guidestreamtvandroid.data.models.selectionGlyphColor
 import com.rork.guidestreamtvandroid.data.models.TitleId
 import com.rork.guidestreamtvandroid.data.models.TMDBResult
 import com.rork.guidestreamtvandroid.data.remote.RecommendedCreator
@@ -769,38 +774,92 @@ private fun ServiceEditorTile(
     isSelected: Boolean,
     onTap: () -> Unit,
 ) {
-    val borderColor = if (isSelected) service.glow else OutlineVariant
-    val borderWidth = if (isSelected) 2.dp else 1.dp
+    val accent = service.selectionAccent
+    val borderColor = if (isSelected) accent else OutlineVariant
+    val borderWidth = if (isSelected) 3.dp else 1.dp
+    // Outer column is deliberately never clipped so the selection badge can
+    // overhang the tile's top-right corner without being cut off.
     Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .aspectRatio(0.85f)
-            .clip(RoundedCornerShape(14.dp))
-            .background(service.bg)
-            .border(borderWidth, borderColor, RoundedCornerShape(14.dp))
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-            ) { onTap() },
+        modifier = Modifier.fillMaxWidth(),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
     ) {
-        val display = service.display
-        val label = when (display) {
-            is com.rork.guidestreamtvandroid.data.models.StreamingService.Display.Text -> display.text
-            is com.rork.guidestreamtvandroid.data.models.StreamingService.Display.SymbolText -> display.text
-            is com.rork.guidestreamtvandroid.data.models.StreamingService.Display.Star -> service.name
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(1f),
+        ) {
+            val tileShape = RoundedCornerShape(18.dp)
+            val shadowModifier = if (isSelected) {
+                // Glow is decorative only (colored shadows need API 28); the
+                // 3.dp accent border + badge carry selection on older devices.
+                Modifier.shadow(
+                    elevation = 12.dp,
+                    shape = tileShape,
+                    ambientColor = accent.copy(alpha = 0.55f),
+                    spotColor = accent.copy(alpha = 0.55f),
+                )
+            } else {
+                Modifier
+            }
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .then(shadowModifier)
+                    .clip(tileShape)
+                    .background(service.bg)
+                    .border(borderWidth, borderColor, tileShape)
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                    ) { onTap() },
+                contentAlignment = Alignment.Center,
+            ) {
+                val display = service.display
+                val label = when (display) {
+                    is com.rork.guidestreamtvandroid.data.models.StreamingService.Display.Text -> display.text
+                    is com.rork.guidestreamtvandroid.data.models.StreamingService.Display.SymbolText -> display.text
+                    is com.rork.guidestreamtvandroid.data.models.StreamingService.Display.Star -> service.name
+                }
+                val labelColor = when (display) {
+                    is com.rork.guidestreamtvandroid.data.models.StreamingService.Display.Text -> display.color
+                    is com.rork.guidestreamtvandroid.data.models.StreamingService.Display.SymbolText -> display.color
+                    is com.rork.guidestreamtvandroid.data.models.StreamingService.Display.Star -> display.color
+                }
+                Text(
+                    text = label,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Black,
+                    color = labelColor,
+                    textAlign = TextAlign.Center,
+                    maxLines = 2,
+                )
+            }
+            if (isSelected) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .offset(x = 6.dp, y = (-6).dp)
+                        .size(22.dp)
+                        .clip(CircleShape)
+                        .background(accent),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Check,
+                        contentDescription = "Selected",
+                        tint = service.selectionGlyphColor,
+                        modifier = Modifier.size(13.dp),
+                    )
+                }
+            }
         }
-        val labelColor = when (display) {
-            is com.rork.guidestreamtvandroid.data.models.StreamingService.Display.Text -> display.color
-            is com.rork.guidestreamtvandroid.data.models.StreamingService.Display.SymbolText -> display.color
-            is com.rork.guidestreamtvandroid.data.models.StreamingService.Display.Star -> display.color
-        }
+        Spacer(Modifier.height(8.dp))
         Text(
-            text = label,
-            fontSize = 13.sp,
-            fontWeight = FontWeight.Black,
-            color = labelColor,
+            text = service.name,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Medium,
+            color = TextSecondary,
+            maxLines = 1,
             textAlign = TextAlign.Center,
         )
     }

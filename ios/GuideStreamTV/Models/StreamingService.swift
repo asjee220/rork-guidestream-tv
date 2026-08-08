@@ -10,6 +10,7 @@
 //
 
 import SwiftUI
+import UIKit
 
 /// Tile/icon visual treatment for a streaming brand. Keeping the rendering
 /// data here lets the same struct power the big onboarding tiles AND the
@@ -34,6 +35,30 @@ struct StreamingService: Identifiable, Hashable {
 
     static func == (lhs: StreamingService, rhs: StreamingService) -> Bool { lhs.id == rhs.id }
     func hash(into hasher: inout Hasher) { hasher.combine(id) }
+
+    /// Accent used for the selected-tile border, badge and glow. Uses the
+    /// brand `glow` only when it is perceptually distinct from the tile
+    /// background (luminance delta >= 0.28); otherwise falls back to plain
+    /// white on dark tiles or black on light tiles so selection is always
+    /// legible (e.g. Paramount+, Hulu, Disney+, Max where glow ≈ bg).
+    var selectionAccent: Color {
+        let bgLum = Self.perceivedLuminance(bg)
+        if abs(Self.perceivedLuminance(glow) - bgLum) >= 0.28 { return glow }
+        return bgLum < 0.5 ? .white : .black
+    }
+
+    /// Checkmark tint that stays legible on top of `selectionAccent`.
+    var selectionGlyphColor: Color {
+        Self.perceivedLuminance(selectionAccent) > 0.45 ? .black : .white
+    }
+
+    /// Perceptual luminance (0.299 R + 0.587 G + 0.114 B on 0–1 components),
+    /// the same formula and UIColor extraction HomeView uses in textColor(for:).
+    private static func perceivedLuminance(_ color: Color) -> Double {
+        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        UIColor(color).getRed(&r, green: &g, blue: &b, alpha: &a)
+        return 0.299 * Double(r) + 0.587 * Double(g) + 0.114 * Double(b)
+    }
 }
 
 enum StreamingCatalog {
@@ -454,6 +479,10 @@ enum StreamingCatalog {
               bg: Color(red: 0x0A/255, green: 0x0A/255, blue: 0x0A/255),
               glow: Color(red: 0x8B/255, green: 0x2C/255, blue: 0xF5/255),
               display: .text("xumo", Color(red: 0xB4/255, green: 0x7B/255, blue: 0xFF/255), fontWeight: .black, design: .rounded)),
+        .init(id: "samsungtvplus", name: "Samsung TV Plus",
+              bg: Color(red: 0x0A/255, green: 0x0F/255, blue: 0x2A/255),
+              glow: Color(red: 0x4A/255, green: 0x6C/255, blue: 0xF7/255),
+              display: .text("Samsung\nTV+", Color(red: 0x4A/255, green: 0x6C/255, blue: 0xF7/255), fontWeight: .black, design: .default)),
         .init(id: "freevee", name: "Amazon Freevee",
               bg: Color(red: 0x0A/255, green: 0x0A/255, blue: 0x0A/255),
               glow: Color(red: 0x00/255, green: 0xA8/255, blue: 0xE1/255),

@@ -2,6 +2,7 @@ package com.rork.guidestreamtvandroid.data.models
 
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import kotlin.math.abs
 
 /**
  * Canonical catalogue of the top ~50 worldwide streaming services.
@@ -229,6 +230,8 @@ object StreamingCatalog {
             StreamingService.Display.Text("P", Color(0xFFE5A017), FontWeight.Black)),
         StreamingService("xumo", "Xumo Play", Color(0xFF0A0A0A), Color(0xFF8B2CF5),
             StreamingService.Display.Text("xumo", Color(0xFFB47BFF), FontWeight.Black)),
+        StreamingService("samsungtvplus", "Samsung TV Plus", Color(0xFF0A0F2A), Color(0xFF4A6CF7),
+            StreamingService.Display.Text("Samsung\nTV+", Color(0xFF4A6CF7), FontWeight.Black)),
         StreamingService("freevee", "Amazon Freevee", Color(0xFF0A0A0A), Color(0xFF00A8E1),
             StreamingService.Display.Text("free\nvee", Color(0xFF00A8E1), FontWeight.Black)),
         StreamingService("crackle", "Crackle", black, Color(0xFFFFA800),
@@ -384,3 +387,41 @@ object StreamingCatalog {
     fun service(id: String): StreamingService? = all.find { it.id == id }
     fun ordered(ids: Set<String>): List<StreamingService> = all.filter { it.id in ids }
 }
+
+// ── Selection accent derivation ─────────────────────────────────────────────
+
+/**
+ * Perceptual luminance (0.299 R + 0.587 G + 0.114 B on 0–1 components) — the
+ * same formula Platform.textColorFor uses, extracted via the same ARGB
+ * bit-shift pattern (Compose packs sRGB into the upper 32 bits of `value`).
+ */
+private fun perceivedLuminance(color: Color): Double {
+    val v = (color.value shr 32).toInt()
+    val r = ((v shr 16) and 0xFF) / 255.0
+    val g = ((v shr 8) and 0xFF) / 255.0
+    val b = (v and 0xFF) / 255.0
+    return 0.299 * r + 0.587 * g + 0.114 * b
+}
+
+/**
+ * Accent used for the selected-tile border, badge and glow. Uses the brand
+ * `glow` only when it is perceptually distinct from the tile background
+ * (luminance delta >= 0.28); otherwise falls back to plain white on dark
+ * tiles or black on light tiles so selection is always legible (e.g.
+ * paramount, hulu, disney, hbo where glow ≈ bg).
+ */
+val StreamingService.selectionAccent: Color
+    get() {
+        val bgLum = perceivedLuminance(bg)
+        return if (abs(perceivedLuminance(glow) - bgLum) >= 0.28) {
+            glow
+        } else if (bgLum < 0.5) {
+            Color.White
+        } else {
+            Color.Black
+        }
+    }
+
+/** Checkmark tint that stays legible on top of [selectionAccent]. */
+val StreamingService.selectionGlyphColor: Color
+    get() = if (perceivedLuminance(selectionAccent) > 0.45) Color.Black else Color.White

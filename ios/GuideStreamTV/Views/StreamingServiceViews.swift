@@ -30,25 +30,25 @@ struct ServiceTile: View {
                 .overlay {
                     RoundedRectangle(cornerRadius: 18, style: .continuous)
                         .stroke(
-                            isSelected ? service.glow : Color.white.opacity(0.06),
+                            isSelected ? service.selectionAccent : Color.white.opacity(0.06),
                             lineWidth: isSelected ? 3 : 1
                         )
                 }
                 .overlay(alignment: .topTrailing) {
                     if isSelected {
                         ZStack {
-                            Circle().fill(service.glow)
+                            Circle().fill(service.selectionAccent)
                                 .frame(width: 22, height: 22)
                             Image(systemName: "checkmark")
                                 .scaledFont(size: 11, weight: .black)
-                                .foregroundStyle(service.bg == .black ? .white : .black)
+                                .foregroundStyle(service.selectionGlyphColor)
                         }
                         .offset(x: 6, y: -6)
                         .transition(.scale.combined(with: .opacity))
                     }
                 }
                 .shadow(
-                    color: isSelected ? service.glow.opacity(0.55) : .clear,
+                    color: isSelected ? service.selectionAccent.opacity(0.55) : .clear,
                     radius: 18, x: 0, y: 0
                 )
 
