@@ -172,7 +172,7 @@ fun MainScreen(
         }
 
         // Full-screen overlay open flag — hides the floating tab bar behind opaque covers
-        val overlayOpen = showDetail != null || showCreatorDetail != null || showSearch || selectedGame != null || showPopularCategories != null || showHomeList != null || showWatchList || showWidgetSetup
+        val overlayOpen = showDetail != null || showCreatorDetail != null || showSearch || selectedGame != null || showPopularCategories != null || showHomeList != null || showWatchList || showWidgetSetup || showAskSheet
 
         // Show detail (full-screen cover equivalent)
         showDetail?.let { route ->

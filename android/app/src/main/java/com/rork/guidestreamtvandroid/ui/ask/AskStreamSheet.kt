@@ -1,7 +1,11 @@
 package com.rork.guidestreamtvandroid.ui.ask
 
+import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -30,9 +34,13 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material3.CircularProgressIndicator
@@ -50,17 +58,25 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 import com.rork.guidestreamtvandroid.SupabaseConfig
 import com.rork.guidestreamtvandroid.data.local.DeviceIdentity
+import com.rork.guidestreamtvandroid.data.local.SpeechInputService
+import com.rork.guidestreamtvandroid.data.remote.SupabaseManager
 import com.rork.guidestreamtvandroid.data.remote.AgentTitleMatch
 import com.rork.guidestreamtvandroid.data.remote.StreamAgentService
 import com.rork.guidestreamtvandroid.data.repository.AuthViewModel
@@ -85,8 +101,10 @@ import io.ktor.client.statement.HttpResponse
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.contentType
+import io.github.jan.supabase.auth.auth
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
@@ -146,12 +164,42 @@ fun AskStreamSheet(
     val messages = remember { mutableStateListOf<AskChatMessage>() }
     var isPending by remember { mutableStateOf(false) }
 
-    // Reset state when sheet closes
+    // Dictation state — mirrors iOS SpeechInputService swap logic. When the
+    // device has no recognition service or the mic permission is denied, the
+    // mic hides entirely and the sheet degrades to typing only.
+    var isDictating by remember { mutableStateOf(false) }
+    var micHidden by remember { mutableStateOf(false) }
+    val speechAvailable = remember { SpeechInputService.isAvailable(context) }
+    val focusRequester = remember { FocusRequester() }
+    val focusManager = LocalFocusManager.current
+
+    val micPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        if (granted) {
+            if (SpeechInputService.start(context) { spoken -> query = spoken }) {
+                isDictating = true
+            } else {
+                micHidden = true
+            }
+        } else {
+            micHidden = true
+        }
+    }
+
+    // Reset state when sheet closes; auto-focus the field when it opens
+    // (mirrors iOS AskStreamSheet.swift focus on appear / clear on close).
     LaunchedEffect(isOpen) {
-        if (!isOpen) {
+        if (isOpen) {
+            delay(300)
+            runCatching { focusRequester.requestFocus() }
+        } else {
             query = ""
             messages.clear()
             isPending = false
+            SpeechInputService.stop()
+            isDictating = false
+            focusManager.clearFocus()
         }
     }
 
@@ -257,6 +305,8 @@ fun AskStreamSheet(
                             SuggestionChip(
                                 text = suggestion,
                                 onClick = {
+                                    SpeechInputService.stop()
+                                    isDictating = false
                                     query = suggestion
                                     sendMessage(
                                         text = suggestion,
@@ -299,6 +349,21 @@ fun AskStreamSheet(
                 }
 
                 // Input bar
+                val submit: () -> Unit = submit@{
+                    if (query.isBlank() || isPending) return@submit
+                    SpeechInputService.stop()
+                    isDictating = false
+                    val text = query.trim()
+                    query = ""
+                    sendMessage(
+                        text = text,
+                        scope = scope,
+                        auth = auth,
+                        context = context,
+                        messages = messages,
+                        onPendingChange = { isPending = it },
+                    )
+                }
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -314,48 +379,98 @@ fun AskStreamSheet(
                             fontSize = 15.sp,
                         ),
                         cursorBrush = SolidColor(BrandOrange),
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(
+                            capitalization = KeyboardCapitalization.Sentences,
+                            imeAction = ImeAction.Send,
+                        ),
+                        keyboardActions = KeyboardActions(onSend = { submit() }),
                         modifier = Modifier
                             .weight(1f)
-                            .padding(horizontal = 12.dp, vertical = 12.dp),
+                            .padding(horizontal = 12.dp, vertical = 12.dp)
+                            .focusRequester(focusRequester),
                         enabled = !isPending,
-                    )
-                    Box(
-                        modifier = Modifier
-                            .size(40.dp)
-                            .clip(CircleShape)
-                            .background(if (query.isNotBlank() && !isPending) BrandOrange else GlassFill)
-                            .clickable(
-                                interactionSource = remember { MutableInteractionSource() },
-                                indication = null,
-                            ) {
-                                if (query.isNotBlank() && !isPending) {
-                                    val text = query
-                                    query = ""
-                                    sendMessage(
-                                        text = text,
-                                        scope = scope,
-                                        auth = auth,
-                                        context = context,
-                                        messages = messages,
-                                        onPendingChange = { isPending = it },
+                        decorationBox = { inner ->
+                            // Placeholder overlaid BEHIND the field (Box, not a
+                            // preceding sibling) so the caret stays at the start.
+                            Box {
+                                if (query.isEmpty()) {
+                                    Text(
+                                        text = "Ask anything about what to watch…",
+                                        fontSize = 14.sp,
+                                        color = TextTertiary,
                                     )
                                 }
-                            },
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        if (isPending) {
-                            CircularProgressIndicator(
-                                color = TextSecondary,
-                                modifier = Modifier.size(18.dp),
-                                strokeWidth = 2.dp,
-                            )
-                        } else {
+                                inner()
+                            }
+                        },
+                    )
+                    val showMic = speechAvailable && !micHidden && !isPending &&
+                        (query.isBlank() || isDictating)
+                    if (showMic) {
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(CircleShape)
+                                .background(if (isDictating) Color.Red else BrandOrange)
+                                .clickable(
+                                    interactionSource = remember { MutableInteractionSource() },
+                                    indication = null,
+                                ) {
+                                    if (isDictating) {
+                                        SpeechInputService.stop()
+                                        isDictating = false
+                                    } else {
+                                        val granted = ContextCompat.checkSelfPermission(
+                                            context,
+                                            Manifest.permission.RECORD_AUDIO,
+                                        ) == PackageManager.PERMISSION_GRANTED
+                                        if (granted) {
+                                            if (SpeechInputService.start(context) { spoken -> query = spoken }) {
+                                                isDictating = true
+                                            } else {
+                                                micHidden = true
+                                            }
+                                        } else {
+                                            micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                                        }
+                                    }
+                                },
+                            contentAlignment = Alignment.Center,
+                        ) {
                             Icon(
-                                imageVector = Icons.Filled.Send,
-                                contentDescription = "Send",
-                                tint = if (query.isNotBlank()) Color.White else TextTertiary,
+                                imageVector = if (isDictating) Icons.Filled.Stop else Icons.Filled.Mic,
+                                contentDescription = if (isDictating) "Stop dictation" else "Dictate",
+                                tint = Color.White,
                                 modifier = Modifier.size(18.dp),
                             )
+                        }
+                    } else {
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(CircleShape)
+                                .background(if (query.isNotBlank() && !isPending) BrandOrange else GlassFill)
+                                .clickable(
+                                    interactionSource = remember { MutableInteractionSource() },
+                                    indication = null,
+                                ) { submit() },
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            if (isPending) {
+                                CircularProgressIndicator(
+                                    color = TextSecondary,
+                                    modifier = Modifier.size(18.dp),
+                                    strokeWidth = 2.dp,
+                                )
+                            } else {
+                                Icon(
+                                    imageVector = Icons.Filled.Send,
+                                    contentDescription = "Send",
+                                    tint = if (query.isNotBlank()) Color.White else TextTertiary,
+                                    modifier = Modifier.size(18.dp),
+                                )
+                            }
                         }
                     }
                 }
@@ -547,6 +662,14 @@ private fun sendMessage(
     messages: androidx.compose.runtime.snapshots.SnapshotStateList<AskChatMessage>,
     onPendingChange: (Boolean) -> Unit,
 ) {
+    // Trailing transcript (last 8 committed turns) captured BEFORE appending
+    // the current query, so the edge function receives conversation context
+    // the same way iOS does. Pending and error bubbles are excluded.
+    val history = messages
+        .filter { !it.isPending && !it.isError }
+        .takeLast(8)
+        .map { it.isUser to it.text }
+
     val userMsgId = "user-${System.currentTimeMillis()}"
     messages.add(AskChatMessage(id = userMsgId, isUser = true, text = text))
     onPendingChange(true)
@@ -564,6 +687,7 @@ private fun sendMessage(
         val reply = withContext(Dispatchers.IO) {
             callAskStream(
                 query = text,
+                history = history,
                 auth = auth,
                 context = context,
             )
@@ -598,25 +722,42 @@ private fun sendMessage(
 
 private suspend fun callAskStream(
     query: String,
+    history: List<Pair<Boolean, String>>,
     auth: AuthViewModel,
     context: android.content.Context,
 ): String? {
-    return try {
-        val client = HttpClient {
-            install(ContentNegotiation) {
-                json(Json { ignoreUnknownKeys = true })
-            }
+    val client = HttpClient {
+        install(ContentNegotiation) {
+            json(Json { ignoreUnknownKeys = true })
         }
+    }
+    return try {
         val baseUrl = SupabaseConfig.URL.trim()
         val url = "$baseUrl/functions/v1/askstream"
 
         val deviceId = try { DeviceIdentity.get().deviceId } catch (_: Exception) { "unknown" }
         val connectedServices = auth.selectedServices.value.toList()
 
+        // Signed-in users send their access token so the edge function can
+        // scope grounding and rate limits to the real user (mirrors iOS
+        // StreamAgentService); guests fall back to the anon key. The apikey
+        // header stays on the anon key in both cases, exactly as iOS does.
+        val accessToken = try {
+            SupabaseManager.client.auth.currentSessionOrNull()?.accessToken
+        } catch (_: Exception) {
+            null
+        }
+
         val body = buildJsonObject {
             put(
                 "messages",
                 buildJsonArray {
+                    history.forEach { (isUser, content) ->
+                        add(buildJsonObject {
+                            put("role", JsonPrimitive(if (isUser) "user" else "assistant"))
+                            put("content", JsonPrimitive(content))
+                        })
+                    }
                     add(buildJsonObject {
                         put("role", JsonPrimitive("user"))
                         put("content", JsonPrimitive(query))
@@ -636,7 +777,7 @@ private suspend fun callAskStream(
             contentType(ContentType.Application.Json)
             header(HttpHeaders.ContentType, "application/json")
             header("apikey", SupabaseConfig.ANON_KEY)
-            header(HttpHeaders.Authorization, "Bearer ${SupabaseConfig.ANON_KEY}")
+            header(HttpHeaders.Authorization, "Bearer ${accessToken ?: SupabaseConfig.ANON_KEY}")
             setBody(body.toString())
         }
 
@@ -648,5 +789,7 @@ private suspend fun callAskStream(
         }
     } catch (_: Exception) {
         null
+    } finally {
+        client.close()
     }
 }
