@@ -2,6 +2,7 @@ package com.rork.guidestreamtvandroid.data.local
 
 import android.content.Context
 import android.os.Build
+import androidx.core.content.pm.PackageInfoCompat
 import com.rork.guidestreamtvandroid.data.remote.SupabaseManager
 import io.github.jan.supabase.postgrest.postgrest
 import kotlinx.coroutines.CancellationException
@@ -127,6 +128,17 @@ class DeviceSessionService private constructor(private val context: Context) {
             put("last_seen_at", nowIso)
             put("os_version", Build.VERSION.RELEASE)
             put("device_model", deviceModel)
+            // Report the running build so device_sessions rows identify which
+            // version each tester is on. On any lookup failure both keys are
+            // simply omitted, matching the userId/email pattern below.
+            try {
+                val info = context.packageManager.getPackageInfo(context.packageName, 0)
+                val versionName = info.versionName
+                if (!versionName.isNullOrEmpty()) put("app_version", versionName)
+                put("build_number", PackageInfoCompat.getLongVersionCode(info).toString())
+            } catch (_: Throwable) {
+                // Omit app_version and build_number when the lookup fails.
+            }
             val userId = auth.currentUserId
             if (userId != null) put("user_id", userId)
             val email = auth.email

@@ -1,13 +1,18 @@
 package com.rork.guidestreamtvandroid
 
+import android.Manifest
 import android.content.Intent
 import android.content.pm.ActivityInfo
+import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
@@ -38,6 +43,26 @@ import com.rork.guidestreamtvandroid.ui.theme.SurfaceContainer
 import com.rork.guidestreamtvandroid.ui.theme.WordmarkSize
 
 class MainActivity : ComponentActivity() {
+
+    /**
+     * Notification permission launcher. Declared as a field so it is
+     * registered during activity initialization — registering lazily inside
+     * a composable or callback after the activity has started would throw.
+     * On grant, push registration runs immediately so the first token upsert
+     * happens in the same session the user allowed notifications.
+     */
+    private val notificationPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        try {
+            if (granted) {
+                PushTokenManager.get().registerIfPermitted()
+            }
+        } catch (t: Throwable) {
+            Log.w("GSPush", "post-grant push registration failed: ${t.message}")
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -82,6 +107,50 @@ class MainActivity : ComponentActivity() {
                 )
             }
         }
+
+        // Request notification permission on launch. Onboarding is the only
+        // other place that ever prompts, and existing/updating users never
+        // see that screen again — without this, a reinstall or an update on
+        // Android 13+ leaves the user permanently unable to receive
+        // notifications while their push token still registers normally.
+        requestNotificationPermissionIfNeeded()
+    }
+
+    /**
+     * On Android 13+ (Tiramisu), checks POST_NOTIFICATIONS and shows the
+     * system dialog at most once per process; if already granted, refreshes
+     * push registration directly. On Android 12 and below the permission
+     * does not exist, so this only refreshes registration. Never crashes or
+     * blocks the activity.
+     */
+    private fun requestNotificationPermissionIfNeeded() {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                val granted = ContextCompat.checkSelfPermission(
+                    this,
+                    Manifest.permission.POST_NOTIFICATIONS,
+                ) == PackageManager.PERMISSION_GRANTED
+                if (granted) {
+                    PushTokenManager.get().registerIfPermitted()
+                } else if (!notificationPermissionRequestedThisProcess) {
+                    // Guard: request at most once per process so a denial is
+                    // never followed by a re-prompt loop within the session.
+                    notificationPermissionRequestedThisProcess = true
+                    notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                }
+            } else {
+                // Permission does not exist below Android 13 — no-op prompt,
+                // but still refresh registration.
+                PushTokenManager.get().registerIfPermitted()
+            }
+        } catch (t: Throwable) {
+            Log.w("GSPush", "notification permission request failed: ${t.message}")
+        }
+    }
+
+    private companion object {
+        /** Process-scoped guard so the system dialog is launched at most once per app launch. */
+        private var notificationPermissionRequestedThisProcess = false
     }
 
     override fun onResume() {
