@@ -95,6 +95,7 @@ import com.rork.guidestreamtvandroid.data.models.StreamingCatalog
 import com.rork.guidestreamtvandroid.data.models.selectionAccent
 import com.rork.guidestreamtvandroid.data.models.selectionGlyphColor
 import com.rork.guidestreamtvandroid.data.repository.AuthViewModel
+import com.rork.guidestreamtvandroid.data.repository.PushTokenManager
 import com.rork.guidestreamtvandroid.data.repository.StreamsViewModel
 import com.rork.guidestreamtvandroid.ui.theme.BrandBackground
 import com.rork.guidestreamtvandroid.ui.theme.BrandBlue
@@ -939,6 +940,10 @@ private fun StayNotifiedScreen(
     ) { granted ->
         if (granted) {
             onPushToggle(true)
+            // Permission just landed — fetch the FCM token and register it
+            // now, otherwise granting the toggle is a dead end until the
+            // next app foreground.
+            PushTokenManager.get().registerIfPermitted()
         } else {
             onPushToggle(false)
         }

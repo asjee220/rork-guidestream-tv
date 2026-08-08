@@ -250,6 +250,7 @@ class AuthViewModel private constructor(private val context: Context) : ViewMode
                         StreamsViewModel.get().syncLocalToSupabase()
                     }
                     PushTokenManager.get().flushPendingToken()
+                    PushTokenManager.get().resaveCachedToken()
                     CoachMarkManager.get()
                         .hydrateFromSupabase(session.user!!.id, session.user!!.email)
                 }
@@ -638,6 +639,7 @@ class AuthViewModel private constructor(private val context: Context) : ViewMode
                     if (user != null) {
                         CoachMarkManager.get().hydrateFromSupabase(user.id, user.email)
                     }
+                    PushTokenManager.get().resaveCachedToken()
                     onComplete(true)
                 } else {
                     onComplete(false)
@@ -762,6 +764,7 @@ class AuthViewModel private constructor(private val context: Context) : ViewMode
                 // Claim any guest-era rows on this device before the first
                 // fetch so they are attributed to this account.
                 StreamsViewModel.get().claimDeviceRows()
+                PushTokenManager.get().resaveCachedToken()
                 if (user != null) { CoachMarkManager.get().hydrateFromSupabase(user.id) }
                 _isAuthenticating.value = false
                 true
@@ -840,6 +843,7 @@ class AuthViewModel private constructor(private val context: Context) : ViewMode
                 // Claim any guest-era rows on this device before the first
                 // fetch so they are attributed to this account.
                 StreamsViewModel.get().claimDeviceRows()
+                PushTokenManager.get().resaveCachedToken()
                 viewModelScope.launch { StreamsViewModel.get().syncLocalToSupabase() }
                 if (user != null) { CoachMarkManager.get().hydrateFromSupabase(user.id) }
             }

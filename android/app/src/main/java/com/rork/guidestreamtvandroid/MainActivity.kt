@@ -15,8 +15,10 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import android.util.Log
 import com.rork.guidestreamtvandroid.data.remote.SupabaseManager
 import com.rork.guidestreamtvandroid.data.repository.AuthViewModel
+import com.rork.guidestreamtvandroid.data.repository.PushTokenManager
 import com.rork.guidestreamtvandroid.data.repository.StreamsViewModel
 import io.github.jan.supabase.auth.handleDeeplinks
 import com.rork.guidestreamtvandroid.ui.navigation.AppRouter
@@ -62,6 +64,19 @@ class MainActivity : ComponentActivity() {
                     initialIntent = intent,
                 )
             }
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // Refresh FCM registration whenever the app foregrounds — mirrors
+        // iOS refreshRegistrationIfAuthorized on scenePhase == .active. The
+        // apns_token conflict target makes repeated calls idempotent. Never
+        // allowed to crash or block the activity.
+        try {
+            PushTokenManager.get().registerIfPermitted()
+        } catch (t: Throwable) {
+            Log.w("GSPush", "onResume push registration failed: ${t.message}")
         }
     }
 
