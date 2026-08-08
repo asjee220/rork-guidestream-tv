@@ -23,26 +23,59 @@ object SpeechInputService {
     private var recognizer: SpeechRecognizer? = null
     private val mainHandler = Handler(Looper.getMainLooper())
 
+    /**
+     * Session-end callback for the CURRENT start invocation. Nulled once
+     * fired (so onEnd runs at most once per session — onError can follow
+     * onPartialResults and onResults can be followed by further callbacks)
+     * and nulled by [stop] so an explicit user-initiated stop never fires it.
+     */
+    private var currentOnEnd: ((Boolean) -> Unit)? = null
+
     /** True when the device has an on-device/Google recognition service. */
     fun isAvailable(context: Context): Boolean =
         SpeechRecognizer.isRecognitionAvailable(context.applicationContext)
 
     /**
      * Starts listening and streams both partial and final transcriptions
-     * through [onPartial]. Returns whether recognition could be started.
-     * RECORD_AUDIO permission must already be granted by the caller.
+     * through [onPartial]. RECORD_AUDIO permission must already be granted
+     * by the caller.
+     *
+     * Unlike iOS's SFSpeechRecognizer, Android's SpeechRecognizer ends its
+     * own session after a silence timeout, so [onEnd] reports session end:
+     * it fires exactly once per start with `startedOk = true` for a normal
+     * finish (results delivered or a recoverable error such as a silence
+     * timeout) and `startedOk = false` when recognition could not run at all
+     * (no service, recognizer creation failure, startListening throwing, or
+     * ERROR_INSUFFICIENT_PERMISSIONS) so the caller can hide the mic.
+     * RecognitionListener callbacks arrive on the main thread, so [onEnd]
+     * may set Compose state directly.
      */
-    fun start(context: Context, onPartial: (String) -> Unit): Boolean {
+    fun start(context: Context, onPartial: (String) -> Unit, onEnd: (Boolean) -> Unit) {
         val appContext = context.applicationContext
-        if (!isAvailable(appContext)) return false
+        if (!isAvailable(appContext)) {
+            onEnd(false)
+            return
+        }
         mainHandler.post {
             destroyRecognizer()
-            val r = SpeechRecognizer.createSpeechRecognizer(appContext)
+            // Fresh session: arm its end callback (also resets the at-most-once guard).
+            currentOnEnd = onEnd
+            val r: SpeechRecognizer? = SpeechRecognizer.createSpeechRecognizer(appContext)
+            if (r == null) {
+                fireEnd(false)
+                return@post
+            }
             recognizer = r
             r.setRecognitionListener(object : RecognitionListener {
                 override fun onPartialResults(partialResults: Bundle?) = deliver(partialResults, onPartial)
-                override fun onResults(results: Bundle?) = deliver(results, onPartial)
-                override fun onError(error: Int) { /* keep whatever text arrived */ }
+                override fun onResults(results: Bundle?) {
+                    deliver(results, onPartial)
+                    fireEnd(true)
+                }
+                override fun onError(error: Int) {
+                    // Keep whatever text arrived; report the session as over.
+                    fireEnd(error != SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS)
+                }
                 override fun onReadyForSpeech(params: Bundle?) {}
                 override fun onBeginningOfSpeech() {}
                 override fun onRmsChanged(rmsdB: Float) {}
@@ -62,14 +95,28 @@ object SpeechInputService {
                 r.startListening(intent)
             } catch (_: Exception) {
                 destroyRecognizer()
+                fireEnd(false)
             }
         }
-        return true
     }
 
-    /** Cancels and destroys the active recognizer, if any. Safe to call twice. */
+    /**
+     * Cancels and destroys the active recognizer, if any. Safe to call twice.
+     * Marks the current session consumed so a user-initiated stop never fires
+     * [currentOnEnd] — the caller resets its own state in that path.
+     */
     fun stop() {
-        mainHandler.post { destroyRecognizer() }
+        mainHandler.post {
+            currentOnEnd = null
+            destroyRecognizer()
+        }
+    }
+
+    /** Invokes the current session's end callback at most once. */
+    private fun fireEnd(startedOk: Boolean) {
+        val cb = currentOnEnd ?: return
+        currentOnEnd = null
+        cb(startedOk)
     }
 
     private fun destroyRecognizer() {

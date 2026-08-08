@@ -177,11 +177,18 @@ fun AskStreamSheet(
         ActivityResultContracts.RequestPermission(),
     ) { granted ->
         if (granted) {
-            if (SpeechInputService.start(context) { spoken -> query = spoken }) {
-                isDictating = true
-            } else {
-                micHidden = true
-            }
+            SpeechInputService.start(
+                context,
+                onPartial = { spoken -> query = spoken },
+                onEnd = { startedOk ->
+                    // Android's recognizer self-ends after silence — flip the
+                    // button back without user input. Hide the mic only when
+                    // the session could never run.
+                    isDictating = false
+                    if (!startedOk) micHidden = true
+                },
+            )
+            isDictating = true
         } else {
             micHidden = true
         }
@@ -199,6 +206,7 @@ fun AskStreamSheet(
             isPending = false
             SpeechInputService.stop()
             isDictating = false
+            micHidden = false
             focusManager.clearFocus()
         }
     }
@@ -426,11 +434,15 @@ fun AskStreamSheet(
                                             Manifest.permission.RECORD_AUDIO,
                                         ) == PackageManager.PERMISSION_GRANTED
                                         if (granted) {
-                                            if (SpeechInputService.start(context) { spoken -> query = spoken }) {
-                                                isDictating = true
-                                            } else {
-                                                micHidden = true
-                                            }
+                                            SpeechInputService.start(
+                                                context,
+                                                onPartial = { spoken -> query = spoken },
+                                                onEnd = { startedOk ->
+                                                    isDictating = false
+                                                    if (!startedOk) micHidden = true
+                                                },
+                                            )
+                                            isDictating = true
                                         } else {
                                             micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
                                         }
