@@ -4,6 +4,7 @@ import com.rork.guidestreamtvandroid.AppConfig
 import com.rork.guidestreamtvandroid.data.models.TMDBResult
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
+import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.request.get
 import io.ktor.client.statement.HttpResponse
@@ -26,6 +27,15 @@ class TMDBService {
     private val client = HttpClient {
         install(ContentNegotiation) {
             json(Json { ignoreUnknownKeys = true })
+        }
+        // The Ktor Android engine defaults to 100s connect/socket timeouts;
+        // a single stalled request would hold the home skeleton for over a
+        // minute. Timed-out calls throw and degrade through the existing
+        // per-function try/catch to an empty rail — never a crash.
+        install(HttpTimeout) {
+            connectTimeoutMillis = 10_000
+            socketTimeoutMillis = 15_000
+            requestTimeoutMillis = 15_000
         }
     }
 

@@ -73,6 +73,7 @@ fun MainScreen(
     var selectedTab by remember { mutableStateOf(AppTab.HOME) }
     var tabBarVisible by remember { mutableStateOf(true) }
     var tabBeforeReels by remember { mutableStateOf(AppTab.HOME) }
+    var tabBeforeProfile by remember { mutableStateOf(AppTab.HOME) }
 
     // Overlay state — mirrors iOS sheet/fullScreenCover state in ContentView + HomeView
     var showSearch by remember { mutableStateOf(false) }
@@ -167,7 +168,11 @@ fun MainScreen(
                         }
                     },
                 )
-                AppTab.PROFILE -> ProfileScreen()
+                AppTab.PROFILE -> ProfileScreen(
+                    onBack = {
+                        selectedTab = if (tabBeforeProfile == AppTab.PROFILE) AppTab.HOME else tabBeforeProfile
+                    },
+                )
             }
         }
 
@@ -386,6 +391,11 @@ fun MainScreen(
                     } else {
                         if (selectedTab != AppTab.REELS && tab == AppTab.REELS) {
                             tabBeforeReels = selectedTab
+                        }
+                        // ASK never reaches here (intercepted above), so the
+                        // recorded tab can never be AppTab.ASK.
+                        if (selectedTab != AppTab.PROFILE && tab == AppTab.PROFILE) {
+                            tabBeforeProfile = selectedTab
                         }
                         selectedTab = tab
                         tabBarVisible = tab != AppTab.REELS

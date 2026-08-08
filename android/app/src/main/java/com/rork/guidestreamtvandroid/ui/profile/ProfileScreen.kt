@@ -16,12 +16,14 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Devices
 import androidx.compose.material.icons.filled.Help
@@ -68,6 +70,7 @@ import com.rork.guidestreamtvandroid.ui.theme.TextTertiary
 @Composable
 fun ProfileScreen(
     modifier: Modifier = Modifier,
+    onBack: (() -> Unit)? = null,
 ) {
     val authVm = AuthViewModel.get()
     val streamsVm = StreamsViewModel.get()
@@ -93,6 +96,7 @@ fun ProfileScreen(
         computeInitials(firstName, lastName, displayName, isGuest, isAuthenticated)
     }
 
+    Box(Modifier.fillMaxSize()) {
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -221,6 +225,28 @@ fun ProfileScreen(
         BottomSafeSpacer(withTabBar = true)
     }
 
+    // Pinned back control — never scrolls away. Only rendered when a back
+    // target exists. Matches the ProfileSubScreens back button exactly:
+    // 40dp GlassFill circle, 22dp ArrowBack, TextPrimary tint.
+    if (onBack != null) {
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .statusBarsPadding()
+                .padding(start = 20.dp, top = 8.dp)
+                .size(40.dp)
+                .clip(CircleShape)
+                .background(GlassFill)
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                ) { onBack() },
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(Icons.Filled.ArrowBack, contentDescription = "Back", tint = TextPrimary, modifier = Modifier.size(22.dp))
+        }
+    }
+
     // Sub-screens as overlays
     if (showAccount) {
         AccountScreen(onClose = { showAccount = false })
@@ -246,6 +272,7 @@ fun ProfileScreen(
             },
             onDismiss = { showSignOutConfirm = false },
         )
+    }
     }
 }
 

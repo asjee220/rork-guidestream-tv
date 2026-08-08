@@ -28,7 +28,9 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * Home feed view model — mirrors iOS HomeView state management.
@@ -150,10 +152,16 @@ class HomeViewModel : ViewModel() {
         viewModelScope.launch(Dispatchers.IO) {
             val jobs = listOf(
                 launch {
-                    // Fetch four pages of trending and de-duplicate by id,
-                    // preserving first-seen order (later pages can repeat earlier).
-                    val combined = tmdb.getTrendingTV(page = 1) + tmdb.getTrendingTV(page = 2) +
-                        tmdb.getTrendingTV(page = 3) + tmdb.getTrendingTV(page = 4)
+                    // Fetch all four trending pages concurrently, concatenate
+                    // in page order 1→4, then de-duplicate by id preserving
+                    // first-seen order (later pages can repeat earlier) —
+                    // byte-for-byte the same result as the old serial fetch.
+                    val pages = coroutineScope {
+                        (1..4).map { page ->
+                            async(Dispatchers.IO) { tmdb.getTrendingTV(page = page) }
+                        }.awaitAll()
+                    }
+                    val combined = pages[0] + pages[1] + pages[2] + pages[3]
                     val seen = mutableSetOf<Int>()
                     _trending.value = combined.filter { seen.add(it.id) }
                 },
@@ -187,7 +195,14 @@ class HomeViewModel : ViewModel() {
                 },
                 launch { _genreShows.value = tmdb.getDiscoverByGenre(80) }, // Crime
             )
-            jobs.forEach { it.join() }
+            // Watchdog: never let a stalled request hold the skeleton. The
+            // jobs were launched above, OUTSIDE this block, so a timeout
+            // cancels only the joins — the in-flight jobs keep running and
+            // keep populating their StateFlows, and their sections fill in
+            // reactively once they arrive.
+            withTimeoutOrNull(8_000L) {
+                jobs.forEach { it.join() }
+            }
 
             // Resolve providers for the first 15 trending results only — just
             // enough for the hero carousel's provider filter.
@@ -202,9 +217,15 @@ class HomeViewModel : ViewModel() {
             launchDeferred { loadLeavingSoon() }
             launchDeferred { _upcoming.value = tmdb.getUpcomingMovies() }
             launchDeferred { _bingeReady.value = tmdb.getDiscoverEnded() }
-            // Second provider pass: trending results 16–40, so the remaining
-            // poster badges hydrate in the background.
-            launchDeferred { resolveProviders(_trending.value.drop(15).take(25)) }
+            // Second provider pass. The 8s watchdog can flip the gate while
+            // trending is still empty, so first suspend until the list is
+            // non-empty, then resolve the first 40. Idempotent:
+            // resolveProviders skips ids already hydrated by the 15-item
+            // pass, so nothing is ever re-fetched.
+            launchDeferred {
+                _trending.first { it.isNotEmpty() }
+                resolveProviders(_trending.value.take(40))
+            }
             launchDeferred { StreamsViewModel.get().refreshAll() }
 
             // Resolve the user's taste genres in the background. Additive and

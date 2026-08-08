@@ -5,10 +5,16 @@ import android.content.pm.ActivityInfo
 import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.windowInsetsBottomHeight
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -28,6 +34,7 @@ import com.rork.guidestreamtvandroid.ui.onboarding.OnboardingFlow
 import com.rork.guidestreamtvandroid.ui.theme.AppTheme
 import com.rork.guidestreamtvandroid.ui.theme.BrandBackground
 import com.rork.guidestreamtvandroid.ui.theme.BrandWordmark
+import com.rork.guidestreamtvandroid.ui.theme.SurfaceContainer
 import com.rork.guidestreamtvandroid.ui.theme.WordmarkSize
 
 class MainActivity : ComponentActivity() {
@@ -56,7 +63,17 @@ class MainActivity : ComponentActivity() {
             AuthViewModel.get().setShowPasswordRecovery(true)
         }
 
-        enableEdgeToEdge()
+        // Explicit dark system-bar styles: the app is permanently dark-themed,
+        // but SystemBarStyle.auto (the enableEdgeToEdge default) follows the
+        // device uiMode, so a light-mode device got a white navigation-bar
+        // scrim with dark icons. SystemBarStyle.dark also disables navigation
+        // bar contrast enforcement — the only lever at targetSdk 36, where
+        // window.navigationBarColor is a no-op. The bar color itself is
+        // painted by the app inside the navigation bar inset (see RootContent).
+        enableEdgeToEdge(
+            statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
+            navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
+        )
         setContent {
             AppTheme {
                 RootContent(
@@ -170,6 +187,18 @@ private fun RootContent(
                 SplashScreen()
             }
         }
+
+        // Fills the system navigation bar inset with the same SurfaceContainer
+        // fill the FloatingTabBar pill uses. windowInsetsBottomHeight collapses
+        // it to zero height automatically when the navigation bar is hidden
+        // (Reels immersive landscape) or moves to a side edge.
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .windowInsetsBottomHeight(WindowInsets.navigationBars)
+                .background(SurfaceContainer),
+        )
     }
 }
 
