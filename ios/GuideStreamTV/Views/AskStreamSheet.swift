@@ -210,6 +210,12 @@ struct AskStreamSheet: View {
 
     private var barMode: AskBarMode {
         if query.isEmpty { return .idle }
+        // Once a conversation has started, every follow-up routes to the AI.
+        // sheetState pins to .ai whenever messages is non-empty, so a short
+        // follow-up like "why" classified as .search would fire a TMDB call
+        // whose results can never render and the message would silently
+        // vanish from the chat.
+        if !messages.isEmpty { return .ai }
         // Heuristic: 3+ words OR a question mark = AI mode; otherwise direct
         // title search. Keeps the UX snappy: typing a show name doesn't fire
         // an LLM call, asking "shows like…" does.

@@ -100,7 +100,17 @@ final class StreamAgentService {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { throw AgentError.emptyResponse }
 
-        let answer = try await callAskStream(query: trimmed, connectedServices: connectedServices)
+        let (answer, blocked) = try await callAskStream(query: trimmed, connectedServices: connectedServices)
+
+        // Soft blocks arrive as HTTP 200 with a friendly deflection. Surface
+        // the reply for display but keep BOTH turns out of the transcript so
+        // the deflection doesn't bias the next answer or consume the
+        // eight-turn context window. A deflection contains no bolded titles,
+        // so the TMDB resolution pass is skipped as wasted work.
+        if blocked {
+            return AgentResponse(answer: answer, matches: [])
+        }
+
         let matches = await resolveTitleMatches(in: answer)
 
         // Remember the turn for follow-up context.
@@ -117,7 +127,7 @@ final class StreamAgentService {
     /// prompt, and grounding on the user's follows, then returns a plain-text
     /// answer. All soft blocks (off-topic, rate-limited, at-capacity, etc.)
     /// come back as HTTP 200 with a friendly `reply`, so we simply surface it.
-    private func callAskStream(query: String, connectedServices: [String]) async throws -> String {
+    private func callAskStream(query: String, connectedServices: [String]) async throws -> (reply: String, blocked: Bool) {
         let base = SupabaseConfig.url.trimmingCharacters(in: .whitespaces)
         guard let url = URL(string: "\(base)/functions/v1/askstream") else {
             throw AgentError.networkError
@@ -176,7 +186,7 @@ final class StreamAgentService {
         let decoded = try JSONDecoder().decode(AskStreamResponse.self, from: data)
         let reply = (decoded.reply ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         guard !reply.isEmpty else { throw AgentError.emptyResponse }
-        return reply
+        return (reply, decoded.blocked ?? false)
     }
 
     // MARK: - Title extraction + TMDB resolution

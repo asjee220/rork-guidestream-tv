@@ -124,6 +124,13 @@ data class AskChatMessage(
     val isPending: Boolean = false,
     val isError: Boolean = false,
     /**
+     * True when this turn was soft-blocked by the askstream topical gate.
+     * Blocked turns render normally but stay out of the history sent on
+     * the next request so the deflection doesn't bias the next answer or
+     * consume the eight-turn context window.
+     */
+    val isBlocked: Boolean = false,
+    /**
      * AI-side: titles the agent surfaced for this turn. The renderer draws a
      * horizontal poster rail under the bubble, matching iOS.
      */
@@ -140,7 +147,18 @@ private val askSuggestions = listOf(
 @Serializable
 private data class AskStreamResponse(
     val reply: String? = null,
-    @SerialName("error") val error: String? = null,
+    val blocked: Boolean? = null,
+    // The edge function returns `error` as a JSON boolean on its api_error
+    // path. Declaring it as String made kotlinx.serialization throw on the
+    // type mismatch (even with ignoreUnknownKeys), hiding the friendlier
+    // reply the server sent in the same payload.
+    @SerialName("error") val error: Boolean? = null,
+)
+
+/** Reply plus the soft-block flag, so callers can keep blocked turns out of history. */
+private data class AskStreamResult(
+    val reply: String?,
+    val blocked: Boolean,
 )
 
 /**
@@ -640,9 +658,9 @@ private fun sendMessage(
 ) {
     // Trailing transcript (last 8 committed turns) captured BEFORE appending
     // the current query, so the edge function receives conversation context
-    // the same way iOS does. Pending and error bubbles are excluded.
+    // the same way iOS does. Pending, error, and blocked bubbles are excluded.
     val history = messages
-        .filter { !it.isPending && !it.isError }
+        .filter { !it.isPending && !it.isError && !it.isBlocked }
         .takeLast(8)
         .map { it.isUser to it.text }
 
@@ -660,7 +678,7 @@ private fun sendMessage(
     messages.add(AskChatMessage(id = pendingId, isUser = false, text = "", isPending = true))
 
     scope.launch {
-        val reply = withContext(Dispatchers.IO) {
+        val result = withContext(Dispatchers.IO) {
             callAskStream(
                 query = text,
                 history = history,
@@ -668,6 +686,7 @@ private fun sendMessage(
                 context = context,
             )
         }
+        val reply = result.reply
         // Replace pending message with the prose first so the answer never
         // waits on poster lookups.
         val idx = messages.indexOfFirst { it.id == pendingId }
@@ -678,13 +697,24 @@ private fun sendMessage(
                 text = reply ?: "Couldn't reach the guide right now. Check your connection and try again.",
                 isPending = false,
                 isError = reply == null,
+                isBlocked = result.blocked,
             )
+        }
+        // Mark the user turn that triggered a soft block too, so the next
+        // request's history contains neither the blocked question nor the
+        // deflection. It still renders in the chat exactly as before.
+        if (result.blocked) {
+            val userIdx = messages.indexOfFirst { it.id == userMsgId }
+            if (userIdx >= 0) {
+                messages[userIdx] = messages[userIdx].copy(isBlocked = true)
+            }
         }
         onPendingChange(false)
 
         // Resolve the recommended titles to TMDB posters and attach them to
-        // the same bubble — mirrors iOS AgentResponse.matches.
-        if (reply != null) {
+        // the same bubble — mirrors iOS AgentResponse.matches. Skipped for
+        // blocked replies: a deflection contains no bolded titles.
+        if (reply != null && !result.blocked) {
             val matches = StreamAgentService.get().resolveTitleMatches(reply)
             if (matches.isNotEmpty()) {
                 val current = messages.indexOfFirst { it.id == pendingId }
@@ -701,7 +731,7 @@ private suspend fun callAskStream(
     history: List<Pair<Boolean, String>>,
     auth: AuthViewModel,
     context: android.content.Context,
-): String? {
+): AskStreamResult {
     val client = HttpClient {
         install(ContentNegotiation) {
             json(Json { ignoreUnknownKeys = true })
@@ -759,12 +789,14 @@ private suspend fun callAskStream(
 
         if (response.status.value == 200) {
             val resp: AskStreamResponse = response.body()
-            resp.reply ?: resp.error ?: "No response."
+            // Prefer the server's own reply (present even on the api_error
+            // path); fall back to the local string only when it is absent.
+            AskStreamResult(reply = resp.reply, blocked = resp.blocked == true)
         } else {
-            null
+            AskStreamResult(reply = null, blocked = false)
         }
     } catch (_: Exception) {
-        null
+        AskStreamResult(reply = null, blocked = false)
     } finally {
         client.close()
     }
