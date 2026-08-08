@@ -1248,8 +1248,7 @@ struct ReelsScreen: View {
                 )
                 .presentationDetents([.fraction(0.72)])
                 .presentationSizing(.page)
-                .presentationDragIndicator(.visible)
-                .presentationBackground(Color(red: 10/255, green: 16/255, blue: 26/255).opacity(0.96))
+                .gsSheetChrome()
             }
         }
         .sheet(isPresented: $showShare) {
@@ -1257,8 +1256,7 @@ struct ReelsScreen: View {
                 TrailerShareSheet(trailer: trailer)
                     .presentationDetents([.medium])
                     .presentationSizing(.form)
-                    .presentationDragIndicator(.visible)
-                    .presentationBackground(Color(red: 10/255, green: 16/255, blue: 26/255).opacity(0.96))
+                    .gsSheetChrome()
             }
         }
         .sheet(isPresented: $showMore) {
@@ -1280,8 +1278,7 @@ struct ReelsScreen: View {
                 )
                 .presentationDetents([.height(200)])
                 .presentationSizing(.form)
-                .presentationDragIndicator(.visible)
-                .presentationBackground(Color(red: 10/255, green: 16/255, blue: 26/255).opacity(0.96))
+                .gsSheetChrome()
             }
         }
         .sheet(item: $detailSubject) { subject in

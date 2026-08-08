@@ -497,9 +497,10 @@ struct EpisodeDetailSheet: View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: 0) {
                 if isComingToStreaming {
+                    GsSheetHeader(title: title, subtitle: meta)
+
                     headerRow
                         .padding(.horizontal, 20)
-                        .padding(.top, 6)
                         .padding(.bottom, 18)
 
                     comingSoonActionsRow
@@ -511,9 +512,10 @@ struct EpisodeDetailSheet: View {
                         .padding(.top, 28)
                         .padding(.bottom, 28)
                 } else {
+                    GsSheetHeader(title: title, subtitle: meta)
+
                     headerRow
                         .padding(.horizontal, 20)
-                        .padding(.top, 6)
                         .padding(.bottom, 18)
 
                     Rectangle()
@@ -829,15 +831,6 @@ struct EpisodeDetailSheet: View {
                 .clipShape(.rect(cornerRadius: 12))
 
             VStack(alignment: .leading, spacing: 8) {
-                Text(title)
-                    .scaledFont(size: 26, weight: .bold)
-                    .foregroundStyle(.white)
-                    .lineLimit(2)
-
-                Text(meta)
-                    .scaledFont(size: 13)
-                    .foregroundStyle(Color.white.opacity(0.55))
-
                 HStack(spacing: 8) {
                     if hasResolvedPlatform || isResolvingSource {
                         Text(platformName.uppercased())
@@ -2101,11 +2094,7 @@ struct NotificationsSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack {
-                Text("Notifications")
-                    .scaledFont(size: 22, weight: .semibold)
-                    .foregroundStyle(Color.textPrimary)
-                Spacer()
+            GsSheetHeader(title: "Notifications") {
                 Button(action: { dismiss() }) {
                     Image(systemName: "xmark")
                         .scaledFont(size: 14, weight: .bold)
@@ -2115,8 +2104,6 @@ struct NotificationsSheet: View {
                 }
                 .buttonStyle(.plain)
             }
-            .padding(.horizontal, 20)
-            .padding(.top, 4)
 
             ScrollView {
                 LazyVStack(spacing: 10) {

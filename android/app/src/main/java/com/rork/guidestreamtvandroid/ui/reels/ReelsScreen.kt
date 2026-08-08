@@ -125,8 +125,11 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import com.rork.guidestreamtvandroid.ui.theme.BrandBlue
 import com.rork.guidestreamtvandroid.ui.theme.SurfaceDark
+import androidx.compose.foundation.layout.navigationBarsPadding
 import com.rork.guidestreamtvandroid.ui.components.GsSheetDragHandle
+import com.rork.guidestreamtvandroid.ui.components.GsSheetHeader
 import com.rork.guidestreamtvandroid.ui.theme.BrandOrange
+import com.rork.guidestreamtvandroid.ui.theme.sheetTopInset
 import com.rork.guidestreamtvandroid.ui.theme.systemBottomInset
 import com.rork.guidestreamtvandroid.ui.theme.GlassFill
 import com.rork.guidestreamtvandroid.ui.theme.GlassStroke
@@ -1419,14 +1422,16 @@ private fun ReelMoreSheet(
     onShare: () -> Unit,
     onPlayYoutube: () -> Unit,
 ) {
-    val sheetState = rememberModalBottomSheetState()
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         containerColor = SurfaceDark,
         dragHandle = { GsSheetDragHandle() },
+        contentWindowInsets = { sheetTopInset() },
     ) {
-        Column {
+        Column(Modifier.navigationBarsPadding()) {
+            GsSheetHeader(title = "More")
             // Comment row
             Row(
                 modifier = Modifier

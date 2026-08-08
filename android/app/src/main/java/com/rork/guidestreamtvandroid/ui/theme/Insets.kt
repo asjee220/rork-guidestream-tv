@@ -4,9 +4,12 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.union
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -50,6 +53,18 @@ fun BottomSafeSpacer(withTabBar: Boolean) {
     val height = if (withTabBar) tabBarBottomInset() else systemBottomInset()
     Spacer(Modifier.height(height))
 }
+
+/**
+ * Top-side counterpart to [BottomSafeSpacer], for modal bottom sheets. Union
+ * of the status bar and the display cutout restricted to the top side only,
+ * passed to every ModalBottomSheet via `contentWindowInsets` so no sheet
+ * surface or content can draw beneath the status bar or a punch-hole camera
+ * at full expansion — in portrait or landscape. Bottom clearance stays the
+ * responsibility of each sheet's own navigationBarsPadding.
+ */
+@Composable
+fun sheetTopInset(): WindowInsets =
+    WindowInsets.statusBars.union(WindowInsets.displayCutout).only(WindowInsetsSides.Top)
 
 /**
  * Horizontal-only safe-area padding for edge-anchored content over full-bleed

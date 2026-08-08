@@ -149,13 +149,15 @@ enum Theme {
     static let textPrimary = Color.textPrimary
     static let textSecondary = Color.textSecondary
     static let textTertiary = Color.textTertiary
-    static let hairline = Color.white.opacity(0.08)
+    /// Shared hairline stroke for sheet chrome and inline dividers — white at
+    /// 13% so the lip under every sheet handle reads clearly on `Theme.surface`.
+    static let hairline = Color.white.opacity(0.13)
 }
 
 extension View {
     /// Standardizes the appearance of every drag-dismissible bottom sheet:
     /// hides the system drag indicator, sets the sheet background to
-    /// `Theme.surface`, and inserts a 40×4 white-0.25 capsule handle with a
+    /// `Theme.surface`, and inserts a 40×4 white-0.50 capsule handle with a
     /// 1-point `Theme.hairline` lip beneath it via a top safe-area inset.
     func gsSheetChrome() -> some View {
         self
@@ -164,7 +166,7 @@ extension View {
             .safeAreaInset(edge: .top, spacing: 0) {
                 VStack(spacing: 0) {
                     Capsule()
-                        .fill(Color.white.opacity(0.25))
+                        .fill(Color.white.opacity(0.50))
                         .frame(width: 40, height: 4)
                         .padding(.top, 12)
                         .padding(.bottom, 12)
@@ -175,5 +177,56 @@ extension View {
                 .frame(maxWidth: .infinity)
                 .background(Theme.surface)
             }
+    }
+}
+
+/// Standard header rendered directly beneath the `gsSheetChrome()` handle:
+/// a 20-point bold title over an optional 13-point secondary subtitle
+/// (3-point gap), inset 10 points horizontally with 8 above and 10 below.
+/// The optional trailing slot renders end-aligned accessories such as count
+/// pills and close buttons. Mirrors the Android `GsSheetHeader` so sheet
+/// headers match across platforms.
+struct GsSheetHeader<Trailing: View>: View {
+    let title: String
+    let subtitle: String?
+    @ViewBuilder let trailing: () -> Trailing
+
+    init(
+        title: String,
+        subtitle: String? = nil,
+        @ViewBuilder trailing: @escaping () -> Trailing
+    ) {
+        self.title = title
+        self.subtitle = subtitle
+        self.trailing = trailing
+    }
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 10) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .scaledFont(size: 20, weight: .bold)
+                    .foregroundStyle(Theme.textPrimary)
+                    .lineLimit(2)
+                if let subtitle {
+                    Text(subtitle)
+                        .scaledFont(size: 13)
+                        .foregroundStyle(Theme.textSecondary)
+                        .lineLimit(1)
+                }
+            }
+            Spacer(minLength: 0)
+            trailing()
+        }
+        .padding(.horizontal, 10)
+        .padding(.top, 8)
+        .padding(.bottom, 10)
+    }
+}
+
+extension GsSheetHeader where Trailing == EmptyView {
+    /// Title-and-subtitle-only header with no trailing accessories.
+    init(title: String, subtitle: String? = nil) {
+        self.init(title: title, subtitle: subtitle) { EmptyView() }
     }
 }

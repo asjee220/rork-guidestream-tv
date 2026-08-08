@@ -1,16 +1,9 @@
 package com.rork.guidestreamtvandroid.ui.ask
 
 import android.Manifest
-import android.content.Intent
 import android.content.pm.PackageManager
-import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -20,6 +13,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -41,14 +35,16 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Stop
-import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -64,7 +60,6 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -81,16 +76,19 @@ import com.rork.guidestreamtvandroid.data.remote.AgentTitleMatch
 import com.rork.guidestreamtvandroid.data.remote.StreamAgentService
 import com.rork.guidestreamtvandroid.data.repository.AuthViewModel
 import com.rork.guidestreamtvandroid.data.repository.WatchIntentLogger
+import com.rork.guidestreamtvandroid.ui.components.GsSheetDragHandle
+import com.rork.guidestreamtvandroid.ui.components.GsSheetHeader
 import com.rork.guidestreamtvandroid.ui.components.RemoteImage
 import com.rork.guidestreamtvandroid.ui.components.glassCard
 import com.rork.guidestreamtvandroid.ui.navigation.PendingTitleRoute
 import com.rork.guidestreamtvandroid.ui.theme.Navy
 import com.rork.guidestreamtvandroid.ui.theme.BrandOrange
 import com.rork.guidestreamtvandroid.ui.theme.GlassFill
-import com.rork.guidestreamtvandroid.ui.theme.GlassStroke
+import com.rork.guidestreamtvandroid.ui.theme.SurfaceDark
 import com.rork.guidestreamtvandroid.ui.theme.TextPrimary
 import com.rork.guidestreamtvandroid.ui.theme.TextSecondary
 import com.rork.guidestreamtvandroid.ui.theme.TextTertiary
+import com.rork.guidestreamtvandroid.ui.theme.sheetTopInset
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
@@ -148,7 +146,13 @@ private data class AskStreamResponse(
 /**
  * Ask Stream bottom sheet — hybrid search + AI.
  * Mirrors iOS AskStreamSheet.swift. Calls the `askstream` Supabase edge function.
+ *
+ * Presented as a real Material3 [ModalBottomSheet]: the system supplies the
+ * scrim, swipe-down dismissal, and (predictive) back handling, and all chat
+ * state lives inside the sheet so it resets naturally when the sheet leaves
+ * composition on close.
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AskStreamSheet(
     isOpen: Boolean,
@@ -156,9 +160,12 @@ fun AskStreamSheet(
     onOpenTitle: (PendingTitleRoute) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
+    if (!isOpen) return
+
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val auth = AuthViewModel.get()
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     var query by remember { mutableStateOf("") }
     val messages = remember { mutableStateListOf<AskChatMessage>() }
@@ -171,7 +178,6 @@ fun AskStreamSheet(
     var micHidden by remember { mutableStateOf(false) }
     val speechAvailable = remember { SpeechInputService.isAvailable(context) }
     val focusRequester = remember { FocusRequester() }
-    val focusManager = LocalFocusManager.current
 
     val micPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
@@ -194,79 +200,37 @@ fun AskStreamSheet(
         }
     }
 
-    // Reset state when sheet closes; auto-focus the field when it opens
-    // (mirrors iOS AskStreamSheet.swift focus on appear / clear on close).
-    LaunchedEffect(isOpen) {
-        if (isOpen) {
-            delay(300)
-            runCatching { focusRequester.requestFocus() }
-        } else {
-            query = ""
-            messages.clear()
-            isPending = false
-            SpeechInputService.stop()
-            isDictating = false
-            micHidden = false
-            focusManager.clearFocus()
-        }
+    // Auto-focus the field shortly after the sheet lands (mirrors iOS focus
+    // on appear). Chat state needs no explicit reset on close: dismissing
+    // removes this composable, discarding query/messages/dictation state.
+    LaunchedEffect(Unit) {
+        delay(300)
+        runCatching { focusRequester.requestFocus() }
+    }
+    // Tear the recognizer down whenever the sheet leaves composition so no
+    // dictation session or listener outlives the sheet.
+    DisposableEffect(Unit) {
+        onDispose { SpeechInputService.stop() }
     }
 
-    // Scrim + sheet
-    Box(modifier = modifier.fillMaxSize()) {
-        // Scrim
-        AnimatedVisibility(
-            visible = isOpen,
-            enter = fadeIn(),
-            exit = fadeOut(),
+    ModalBottomSheet(
+        onDismissRequest = onClose,
+        sheetState = sheetState,
+        containerColor = SurfaceDark,
+        dragHandle = { GsSheetDragHandle() },
+        contentWindowInsets = { sheetTopInset() },
+        modifier = modifier,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .fillMaxHeight(0.82f)
+                .imePadding()
+                .navigationBarsPadding(),
         ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.4f))
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                    ) { onClose() },
-            )
-        }
-
-        // Sheet
-        AnimatedVisibility(
-            visible = isOpen,
-            enter = slideInVertically { it } + fadeIn(),
-            exit = slideOutVertically { it } + fadeOut(),
-            modifier = Modifier.align(Alignment.BottomCenter),
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .fillMaxSize(0.82f)
-                    .clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
-                    .background(Color(red = 0x04, green = 0x09, blue = 0x0F))
-                    .imePadding()
-                    .navigationBarsPadding(),
-            ) {
-                // Header
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.AutoAwesome,
-                        contentDescription = null,
-                        tint = BrandOrange,
-                        modifier = Modifier.size(20.dp),
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        text = "Ask Stream",
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Black,
-                        color = TextPrimary,
-                    )
-                    Spacer(Modifier.weight(1f))
+            GsSheetHeader(
+                title = "Ask Stream",
+                trailing = {
                     Box(
                         modifier = Modifier
                             .size(32.dp)
@@ -284,205 +248,205 @@ fun AskStreamSheet(
                             modifier = Modifier.size(20.dp),
                         )
                     }
-                }
+                },
+            )
 
-                Text(
-                    text = "Responses are AI-generated and may be inaccurate. Double-check availability before you watch.",
-                    fontSize = 11.sp,
-                    color = TextSecondary,
-                    lineHeight = 15.sp,
-                    modifier = Modifier.padding(horizontal = 16.dp).padding(top = 8.dp).padding(bottom = 8.dp),
-                )
+            Text(
+                text = "Responses are AI-generated and may be inaccurate. Double-check availability before you watch.",
+                fontSize = 11.sp,
+                color = TextSecondary,
+                lineHeight = 15.sp,
+                modifier = Modifier.padding(horizontal = 16.dp).padding(bottom = 8.dp),
+            )
 
-                // Messages list
-                LazyColumn(
-                    modifier = Modifier.weight(1f),
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    if (messages.isEmpty()) {
-                        item {
-                            Text(
-                                text = "Ask me anything about what to watch. I'll ground my answer in your follows and connected services.",
-                                fontSize = 14.sp,
-                                color = TextSecondary,
-                                modifier = Modifier.padding(vertical = 8.dp),
-                            )
-                        }
-                        items(askSuggestions) { suggestion ->
-                            SuggestionChip(
-                                text = suggestion,
-                                onClick = {
-                                    SpeechInputService.stop()
-                                    isDictating = false
-                                    query = suggestion
-                                    sendMessage(
-                                        text = suggestion,
-                                        scope = scope,
-                                        auth = auth,
-                                        context = context,
-                                        messages = messages,
-                                        onPendingChange = { isPending = it },
-                                    )
-                                },
-                            )
-                        }
-                    } else {
-                        items(messages, key = { it.id }) { msg ->
-                            MessageBubble(
-                                msg = msg,
-                                onOpenTitle = { match ->
-                                    onClose()
-                                    WatchIntentLogger.get().log(
-                                        WatchIntentLogger.IntentEventType.CARD_TAPPED,
+            // Messages list
+            LazyColumn(
+                modifier = Modifier.weight(1f),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                if (messages.isEmpty()) {
+                    item {
+                        Text(
+                            text = "Ask me anything about what to watch. I'll ground my answer in your follows and connected services.",
+                            fontSize = 14.sp,
+                            color = TextSecondary,
+                            modifier = Modifier.padding(vertical = 8.dp),
+                        )
+                    }
+                    items(askSuggestions) { suggestion ->
+                        SuggestionChip(
+                            text = suggestion,
+                            onClick = {
+                                SpeechInputService.stop()
+                                isDictating = false
+                                query = suggestion
+                                sendMessage(
+                                    text = suggestion,
+                                    scope = scope,
+                                    auth = auth,
+                                    context = context,
+                                    messages = messages,
+                                    onPendingChange = { isPending = it },
+                                )
+                            },
+                        )
+                    }
+                } else {
+                    items(messages, key = { it.id }) { msg ->
+                        MessageBubble(
+                            msg = msg,
+                            onOpenTitle = { match ->
+                                onClose()
+                                WatchIntentLogger.get().log(
+                                    WatchIntentLogger.IntentEventType.CARD_TAPPED,
+                                    titleId = match.id.toString(),
+                                    platformId = match.providerName?.lowercase() ?: "ai_match",
+                                    metadata = mapOf(
+                                        "source" to "ask_stream_ai_match",
+                                        "title" to match.title,
+                                    ),
+                                )
+                                onOpenTitle(
+                                    PendingTitleRoute(
                                         titleId = match.id.toString(),
-                                        platformId = match.providerName?.lowercase() ?: "ai_match",
-                                        metadata = mapOf(
-                                            "source" to "ask_stream_ai_match",
-                                            "title" to match.title,
-                                        ),
-                                    )
-                                    onOpenTitle(
-                                        PendingTitleRoute(
-                                            titleId = match.id.toString(),
-                                            titleName = match.title,
-                                            posterUrl = match.posterUrl,
-                                            isTv = match.isTV,
-                                        ),
-                                    )
-                                },
-                            )
-                        }
+                                        titleName = match.title,
+                                        posterUrl = match.posterUrl,
+                                        isTv = match.isTV,
+                                    ),
+                                )
+                            },
+                        )
                     }
                 }
+            }
 
-                // Input bar
-                val submit: () -> Unit = submit@{
-                    if (query.isBlank() || isPending) return@submit
-                    SpeechInputService.stop()
-                    isDictating = false
-                    val text = query.trim()
-                    query = ""
-                    sendMessage(
-                        text = text,
-                        scope = scope,
-                        auth = auth,
-                        context = context,
-                        messages = messages,
-                        onPendingChange = { isPending = it },
-                    )
-                }
-                Row(
+            // Input bar
+            val submit: () -> Unit = submit@{
+                if (query.isBlank() || isPending) return@submit
+                SpeechInputService.stop()
+                isDictating = false
+                val text = query.trim()
+                query = ""
+                sendMessage(
+                    text = text,
+                    scope = scope,
+                    auth = auth,
+                    context = context,
+                    messages = messages,
+                    onPendingChange = { isPending = it },
+                )
+            }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .glassCard(cornerRadius = 0)
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                BasicTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    textStyle = TextStyle(
+                        color = TextPrimary,
+                        fontSize = 15.sp,
+                    ),
+                    cursorBrush = SolidColor(BrandOrange),
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(
+                        capitalization = KeyboardCapitalization.Sentences,
+                        imeAction = ImeAction.Send,
+                    ),
+                    keyboardActions = KeyboardActions(onSend = { submit() }),
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .glassCard(cornerRadius = 0)
-                        .padding(horizontal = 12.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    BasicTextField(
-                        value = query,
-                        onValueChange = { query = it },
-                        textStyle = TextStyle(
-                            color = TextPrimary,
-                            fontSize = 15.sp,
-                        ),
-                        cursorBrush = SolidColor(BrandOrange),
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(
-                            capitalization = KeyboardCapitalization.Sentences,
-                            imeAction = ImeAction.Send,
-                        ),
-                        keyboardActions = KeyboardActions(onSend = { submit() }),
-                        modifier = Modifier
-                            .weight(1f)
-                            .padding(horizontal = 12.dp, vertical = 12.dp)
-                            .focusRequester(focusRequester),
-                        enabled = !isPending,
-                        decorationBox = { inner ->
-                            // Placeholder overlaid BEHIND the field (Box, not a
-                            // preceding sibling) so the caret stays at the start.
-                            Box {
-                                if (query.isEmpty()) {
-                                    Text(
-                                        text = "Ask anything about what to watch…",
-                                        fontSize = 14.sp,
-                                        color = TextTertiary,
-                                    )
-                                }
-                                inner()
+                        .weight(1f)
+                        .padding(horizontal = 12.dp, vertical = 12.dp)
+                        .focusRequester(focusRequester),
+                    enabled = !isPending,
+                    decorationBox = { inner ->
+                        // Placeholder overlaid BEHIND the field (Box, not a
+                        // preceding sibling) so the caret stays at the start.
+                        Box {
+                            if (query.isEmpty()) {
+                                Text(
+                                    text = "Ask anything about what to watch…",
+                                    fontSize = 14.sp,
+                                    color = TextTertiary,
+                                )
                             }
-                        },
-                    )
-                    val showMic = speechAvailable && !micHidden && !isPending &&
-                        (query.isBlank() || isDictating)
-                    if (showMic) {
-                        Box(
-                            modifier = Modifier
-                                .size(40.dp)
-                                .clip(CircleShape)
-                                .background(if (isDictating) Color.Red else BrandOrange)
-                                .clickable(
-                                    interactionSource = remember { MutableInteractionSource() },
-                                    indication = null,
-                                ) {
-                                    if (isDictating) {
-                                        SpeechInputService.stop()
-                                        isDictating = false
-                                    } else {
-                                        val granted = ContextCompat.checkSelfPermission(
+                            inner()
+                        }
+                    },
+                )
+                val showMic = speechAvailable && !micHidden && !isPending &&
+                    (query.isBlank() || isDictating)
+                if (showMic) {
+                    Box(
+                        modifier = Modifier
+                            .size(40.dp)
+                            .clip(CircleShape)
+                            .background(if (isDictating) Color.Red else BrandOrange)
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null,
+                            ) {
+                                if (isDictating) {
+                                    SpeechInputService.stop()
+                                    isDictating = false
+                                } else {
+                                    val granted = ContextCompat.checkSelfPermission(
+                                        context,
+                                        Manifest.permission.RECORD_AUDIO,
+                                    ) == PackageManager.PERMISSION_GRANTED
+                                    if (granted) {
+                                        SpeechInputService.start(
                                             context,
-                                            Manifest.permission.RECORD_AUDIO,
-                                        ) == PackageManager.PERMISSION_GRANTED
-                                        if (granted) {
-                                            SpeechInputService.start(
-                                                context,
-                                                onPartial = { spoken -> query = spoken },
-                                                onEnd = { startedOk ->
-                                                    isDictating = false
-                                                    if (!startedOk) micHidden = true
-                                                },
-                                            )
-                                            isDictating = true
-                                        } else {
-                                            micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-                                        }
+                                            onPartial = { spoken -> query = spoken },
+                                            onEnd = { startedOk ->
+                                                isDictating = false
+                                                if (!startedOk) micHidden = true
+                                            },
+                                        )
+                                        isDictating = true
+                                    } else {
+                                        micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
                                     }
-                                },
-                            contentAlignment = Alignment.Center,
-                        ) {
+                                }
+                            },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            imageVector = if (isDictating) Icons.Filled.Stop else Icons.Filled.Mic,
+                            contentDescription = if (isDictating) "Stop dictation" else "Dictate",
+                            tint = Color.White,
+                            modifier = Modifier.size(18.dp),
+                        )
+                    }
+                } else {
+                    Box(
+                        modifier = Modifier
+                            .size(40.dp)
+                            .clip(CircleShape)
+                            .background(if (query.isNotBlank() && !isPending) BrandOrange else GlassFill)
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null,
+                            ) { submit() },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        if (isPending) {
+                            CircularProgressIndicator(
+                                color = TextSecondary,
+                                modifier = Modifier.size(18.dp),
+                                strokeWidth = 2.dp,
+                            )
+                        } else {
                             Icon(
-                                imageVector = if (isDictating) Icons.Filled.Stop else Icons.Filled.Mic,
-                                contentDescription = if (isDictating) "Stop dictation" else "Dictate",
-                                tint = Color.White,
+                                imageVector = Icons.Filled.Send,
+                                contentDescription = "Send",
+                                tint = if (query.isNotBlank()) Color.White else TextTertiary,
                                 modifier = Modifier.size(18.dp),
                             )
-                        }
-                    } else {
-                        Box(
-                            modifier = Modifier
-                                .size(40.dp)
-                                .clip(CircleShape)
-                                .background(if (query.isNotBlank() && !isPending) BrandOrange else GlassFill)
-                                .clickable(
-                                    interactionSource = remember { MutableInteractionSource() },
-                                    indication = null,
-                                ) { submit() },
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            if (isPending) {
-                                CircularProgressIndicator(
-                                    color = TextSecondary,
-                                    modifier = Modifier.size(18.dp),
-                                    strokeWidth = 2.dp,
-                                )
-                            } else {
-                                Icon(
-                                    imageVector = Icons.Filled.Send,
-                                    contentDescription = "Send",
-                                    tint = if (query.isNotBlank()) Color.White else TextTertiary,
-                                    modifier = Modifier.size(18.dp),
-                                )
-                            }
                         }
                     }
                 }

@@ -231,17 +231,6 @@ struct AskStreamSheet: View {
     @ViewBuilder
     private func sheetContent(height: CGFloat) -> some View {
         VStack(spacing: 0) {
-            // Drag handle
-            Capsule()
-                .fill(Color.white.opacity(0.25))
-                .frame(width: 40, height: 4)
-                .padding(.top, 12)
-                .padding(.bottom, 12)
-            Rectangle()
-                .fill(Theme.hairline)
-                .frame(height: 1)
-                .frame(maxWidth: .infinity)
-
             header
                 .padding(.horizontal, 16)
                 .padding(.vertical, 12)
@@ -278,6 +267,7 @@ struct AskStreamSheet: View {
 
             bottomInputRow
         }
+        .gsSheetChrome()
         .frame(height: height)
         .frame(maxWidth: .infinity)
         .background(
@@ -289,6 +279,15 @@ struct AskStreamSheet: View {
                 style: .continuous
             )
             .fill(Theme.surface)
+        )
+        .clipShape(
+            UnevenRoundedRectangle(
+                topLeadingRadius: 24,
+                bottomLeadingRadius: 0,
+                bottomTrailingRadius: 0,
+                topTrailingRadius: 24,
+                style: .continuous
+            )
         )
         .overlay(
             UnevenRoundedRectangle(

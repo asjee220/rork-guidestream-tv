@@ -89,27 +89,21 @@ struct CastToTVSheet: View {
 
     // MARK: Header
     private var header: some View {
-        VStack(spacing: 6) {
-            Text("Play on TV")
-                .scaledFont(size: 20, weight: .bold)
-                .foregroundStyle(.white)
-            Text(discovery.isScanning && rokuDevices.isEmpty
-                 ? "Scanning your network…"
-                 : "Choose a device to send \"\(showTitle)\"")
-                .scaledFont(size: 13)
-                .foregroundStyle(Color.white.opacity(0.55))
-                .multilineTextAlignment(.center)
+        VStack(alignment: .leading, spacing: 0) {
+            GsSheetHeader(
+                title: "Play on TV",
+                subtitle: discovery.isScanning && rokuDevices.isEmpty
+                    ? "Scanning your network…"
+                    : "Choose a device to send \"\(showTitle)\""
+            )
             Text("Play on TV currently supports Roku devices. Support for more TV platforms is coming in a future update.")
                 .scaledFont(size: 12)
                 .foregroundStyle(Color.white.opacity(0.5))
-                .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
-                .padding(.horizontal, 24)
-                .padding(.top, 6)
+                .padding(.horizontal, 10)
+                .padding(.bottom, 12)
         }
-        .frame(maxWidth: .infinity)
-        .padding(.top, 22)
-        .padding(.bottom, 14)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     // MARK: Content

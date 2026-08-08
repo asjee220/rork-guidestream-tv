@@ -71,6 +71,7 @@ import com.rork.guidestreamtvandroid.data.repository.WatchIntentLogger
 import com.rork.guidestreamtvandroid.ui.cast.CastToTVSheet
 import com.rork.guidestreamtvandroid.ui.comments.TitleCommentsSheet
 import com.rork.guidestreamtvandroid.ui.components.GsSheetDragHandle
+import com.rork.guidestreamtvandroid.ui.components.GsSheetHeader
 import com.rork.guidestreamtvandroid.ui.components.RemoteImage
 import com.rork.guidestreamtvandroid.ui.components.SocialCounterRow
 import com.rork.guidestreamtvandroid.ui.navigation.PendingTitleRoute
@@ -80,6 +81,7 @@ import com.rork.guidestreamtvandroid.ui.theme.Hairline
 import com.rork.guidestreamtvandroid.ui.theme.SurfaceDark
 import com.rork.guidestreamtvandroid.ui.theme.TextPrimary
 import com.rork.guidestreamtvandroid.ui.theme.TextSecondary
+import com.rork.guidestreamtvandroid.ui.theme.sheetTopInset
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.util.Locale
@@ -214,6 +216,7 @@ fun EpisodeDetailSheet(
         sheetState = sheetState,
         containerColor = SurfaceDark,
         dragHandle = { GsSheetDragHandle() },
+        contentWindowInsets = { sheetTopInset() },
     ) {
         Column(
             modifier = Modifier
@@ -223,11 +226,18 @@ fun EpisodeDetailSheet(
                 .padding(bottom = 28.dp),
         ) {
             // ── Header ────────────────────────────────────────────────
+            val genre = detail?.genres?.firstOrNull()?.name
+            val metaLine = listOfNotNull(
+                if (isTV) "Series" else "Movie",
+                genre,
+                detail?.numberOfSeasons?.takeIf { isTV && it > 0 }?.let { "$it season${if (it == 1) "" else "s"}" },
+            ).joinToString(" · ")
+            GsSheetHeader(title = displayTitle, subtitle = metaLine)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 20.dp)
-                    .padding(top = 6.dp, bottom = 18.dp),
+                    .padding(bottom = 18.dp),
                 horizontalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 RemoteImage(
@@ -238,28 +248,6 @@ fun EpisodeDetailSheet(
                     modifier = Modifier.width(110.dp).height(150.dp),
                 )
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = displayTitle,
-                        fontSize = 24.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = TextPrimary,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Spacer(Modifier.height(6.dp))
-                    val genre = detail?.genres?.firstOrNull()?.name
-                    val metaLine = listOfNotNull(
-                        if (isTV) "Series" else "Movie",
-                        genre,
-                        detail?.numberOfSeasons?.takeIf { isTV && it > 0 }?.let { "$it season${if (it == 1) "" else "s"}" },
-                    ).joinToString(" · ")
-                    Text(
-                        text = metaLine,
-                        fontSize = 13.sp,
-                        color = TextSecondary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
                     if (serviceLabel != null || route.isComingToStreaming) {
                         Spacer(Modifier.height(10.dp))
                         Box(

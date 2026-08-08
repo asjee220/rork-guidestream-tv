@@ -365,6 +365,8 @@ struct PlayOnBottomSheet: View {
         VStack(spacing: 0) {
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 0) {
+                    GsSheetHeader(title: showTitle, subtitle: yearsLabel)
+
                     headerRow
                         .padding(.horizontal, 20)
                         .padding(.bottom, 18)
@@ -423,15 +425,6 @@ struct PlayOnBottomSheet: View {
                 .clipShape(.rect(cornerRadius: 12))
 
             VStack(alignment: .leading, spacing: 8) {
-                Text(showTitle)
-                    .scaledFont(size: 26, weight: .bold)
-                    .foregroundStyle(.white)
-                    .lineLimit(2)
-
-                Text(yearsLabel)
-                    .scaledFont(size: 13)
-                    .foregroundStyle(Color.white.opacity(0.55))
-
                 HStack(spacing: 8) {
                     if hasResolvedPlatform || isResolvingSource {
                         Text(platformLabel)

@@ -102,55 +102,31 @@ struct TitleCommentsSheet: View {
     // MARK: - Header
 
     private var header: some View {
-        HStack(alignment: .center, spacing: 12) {
-            if posterUrl != nil || !posterColors.isEmpty {
-                Color.black
-                    .frame(width: 44, height: 60)
-                    .overlay {
-                        RemoteImage(
-                            urlString: posterUrl,
-                            contentMode: .fill,
-                            fallbackColors: posterColors
-                        )
-                        .allowsHitTesting(false)
-                    }
-                    .clipShape(.rect(cornerRadius: 8))
-            }
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Comments")
-                    .scaledFont(size: 17, weight: .heavy)
+        GsSheetHeader(title: "Comments", subtitle: title) {
+            HStack(spacing: 12) {
+                Text(formatCount(commentCount))
+                    .scaledFont(size: 12, weight: .bold)
                     .foregroundStyle(.white)
-                Text(title)
-                    .scaledFont(size: 13)
-                    .foregroundStyle(Color.white.opacity(0.55))
-                    .lineLimit(1)
-            }
-            Spacer(minLength: 0)
-            Text(formatCount(commentCount))
-                .scaledFont(size: 12, weight: .bold)
-                .foregroundStyle(.white)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 4)
-                .background(Capsule().fill(Color.white.opacity(0.10)))
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 4)
+                    .background(Capsule().fill(Color.white.opacity(0.10)))
 
-            Button {
-                dismiss()
-            } label: {
-                ZStack {
-                    Circle()
-                        .fill(Color.white.opacity(0.10))
-                        .frame(width: 30, height: 30)
-                    Image(systemName: "xmark")
-                        .scaledFont(size: 12, weight: .bold)
-                        .foregroundStyle(Color.white.opacity(0.85))
+                Button {
+                    dismiss()
+                } label: {
+                    ZStack {
+                        Circle()
+                            .fill(Color.white.opacity(0.10))
+                            .frame(width: 30, height: 30)
+                        Image(systemName: "xmark")
+                            .scaledFont(size: 12, weight: .bold)
+                            .foregroundStyle(Color.white.opacity(0.85))
+                    }
                 }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Close comments")
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Close comments")
         }
-        .padding(.horizontal, 20)
-        .padding(.top, 16)
-        .padding(.bottom, 12)
     }
 
     // MARK: - States

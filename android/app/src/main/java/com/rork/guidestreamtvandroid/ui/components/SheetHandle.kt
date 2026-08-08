@@ -14,12 +14,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
-import com.rork.guidestreamtvandroid.ui.theme.Hairline
+import com.rork.guidestreamtvandroid.ui.theme.OutlineVariant
 
 /**
  * Shared drag handle for all Material3 [ModalBottomSheet] call sites.
- * Mirrors the iOS `gsSheetChrome()` handle: a 40×4 white-0.25 capsule
- * with 12dp vertical padding, followed by a 1dp [Hairline] lip.
+ * Mirrors the iOS `gsSheetChrome()` handle: a 40×4 white-0.50 capsule
+ * with 12dp vertical padding, followed by a 1dp [OutlineVariant] lip.
  */
 @Composable
 fun GsSheetDragHandle() {
@@ -32,13 +32,13 @@ fun GsSheetDragHandle() {
                 .width(40.dp)
                 .height(4.dp)
                 .clip(RoundedCornerShape(2.dp))
-                .background(Color.White.copy(alpha = 0.25f)),
+                .background(Color.White.copy(alpha = 0.50f)),
         )
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(1.dp)
-                .background(Hairline),
+                .background(OutlineVariant),
         )
     }
 }

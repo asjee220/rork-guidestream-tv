@@ -25,16 +25,14 @@ struct WatchListBottomSheet: View {
 
     var body: some View {
         NavigationStack {
-            WatchListContent()
-                .navigationTitle("My Watch List")
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .topBarLeading) {
-                        Button("Close") { dismiss() }
-                            .foregroundStyle(Color.textSecondary)
-                    }
+            VStack(spacing: 0) {
+                GsSheetHeader(title: "My Watch List") {
+                    Button("Close") { dismiss() }
+                        .foregroundStyle(Color.textSecondary)
                 }
-                .toolbarBackground(Theme.surface, for: .navigationBar)
+                WatchListContent()
+            }
+            .toolbar(.hidden, for: .navigationBar)
         }
         .preferredColorScheme(.dark)
         .gsSheetChrome()

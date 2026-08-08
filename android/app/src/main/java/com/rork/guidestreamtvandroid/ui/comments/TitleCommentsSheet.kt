@@ -59,10 +59,12 @@ import com.rork.guidestreamtvandroid.ui.components.RemoteImage
 import com.rork.guidestreamtvandroid.ui.theme.BrandOrange
 import com.rork.guidestreamtvandroid.ui.theme.SurfaceDark
 import com.rork.guidestreamtvandroid.ui.components.GsSheetDragHandle
+import com.rork.guidestreamtvandroid.ui.components.GsSheetHeader
 import com.rork.guidestreamtvandroid.ui.theme.Hairline
 import com.rork.guidestreamtvandroid.ui.theme.TextPrimary
 import com.rork.guidestreamtvandroid.ui.theme.TextSecondary
 import com.rork.guidestreamtvandroid.ui.theme.TextTertiary
+import com.rork.guidestreamtvandroid.ui.theme.sheetTopInset
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -172,6 +174,7 @@ fun TitleCommentsSheet(
         sheetState = sheetState,
         containerColor = SurfaceDark,
         dragHandle = { GsSheetDragHandle() },
+        contentWindowInsets = { sheetTopInset() },
     ) {
         Column(
             modifier = Modifier
@@ -181,70 +184,40 @@ fun TitleCommentsSheet(
                 .padding(bottom = 8.dp),
         ) {
             // Header
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 20.dp)
-                    .padding(top = 4.dp, bottom = 14.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                if (posterUrl != null) {
-                    RemoteImage(
-                        url = posterUrl,
-                        contentDescription = title,
-                        modifier = Modifier.size(width = 44.dp, height = 60.dp),
-                        cornerRadius = 8,
-                        placeholderText = title.take(2).uppercase(),
-                        placeholderFontSize = 15.sp,
-                    )
-                }
-                Column(
-                    modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(2.dp),
-                ) {
-                    Text(
-                        text = "Comments",
-                        fontSize = 17.sp,
-                        fontWeight = FontWeight.Black,
-                        color = TextPrimary,
-                    )
-                    Text(
-                        text = subtitle ?: title,
-                        fontSize = 13.sp,
-                        color = TextPrimary.copy(alpha = 0.55f),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-                Box(
-                    modifier = Modifier
-                        .clip(CircleShape)
-                        .background(TextPrimary.copy(alpha = 0.10f))
-                        .padding(horizontal = 10.dp, vertical = 4.dp),
-                ) {
-                    Text(
-                        text = formatCount(total),
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = TextPrimary,
-                    )
-                }
-                IconButton(
-                    onClick = onDismiss,
-                    modifier = Modifier
-                        .size(30.dp)
-                        .clip(CircleShape)
-                        .background(TextPrimary.copy(alpha = 0.10f)),
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.Close,
-                        contentDescription = "Close comments",
-                        tint = TextPrimary.copy(alpha = 0.85f),
-                        modifier = Modifier.size(16.dp),
-                    )
-                }
-            }
+            GsSheetHeader(
+                title = "Comments",
+                subtitle = subtitle ?: title,
+                trailing = {
+                    Box(
+                        modifier = Modifier
+                            .clip(CircleShape)
+                            .background(TextPrimary.copy(alpha = 0.10f))
+                            .padding(horizontal = 10.dp, vertical = 4.dp),
+                    ) {
+                        Text(
+                            text = formatCount(total),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = TextPrimary,
+                        )
+                    }
+                    Spacer(Modifier.width(12.dp))
+                    IconButton(
+                        onClick = onDismiss,
+                        modifier = Modifier
+                            .size(30.dp)
+                            .clip(CircleShape)
+                            .background(TextPrimary.copy(alpha = 0.10f)),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Close,
+                            contentDescription = "Close comments",
+                            tint = TextPrimary.copy(alpha = 0.85f),
+                            modifier = Modifier.size(16.dp),
+                        )
+                    }
+                },
+            )
 
             Box(
                 modifier = Modifier

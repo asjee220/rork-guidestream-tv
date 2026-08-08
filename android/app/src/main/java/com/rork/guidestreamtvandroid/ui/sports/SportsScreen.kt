@@ -71,6 +71,7 @@ import com.rork.guidestreamtvandroid.data.repository.AuthViewModel
 import com.rork.guidestreamtvandroid.data.repository.TeamFavoritesService
 import com.rork.guidestreamtvandroid.data.repository.WatchIntentLogger
 import com.rork.guidestreamtvandroid.ui.components.GsTopBar
+import com.rork.guidestreamtvandroid.ui.components.ServicesBottomSheet
 import com.rork.guidestreamtvandroid.ui.components.ServicesPill
 import com.rork.guidestreamtvandroid.ui.theme.BrandBlue
 import com.rork.guidestreamtvandroid.ui.theme.BottomSafeSpacer
@@ -274,7 +275,7 @@ fun SportsScreen(
 
     // Services editor sheet
     if (showServices) {
-        ServicesEditorSheet(
+        ServicesBottomSheet(
             selected = selectedServices,
             onToggle = { id ->
                 val next = if (id in selectedServices) selectedServices - id else selectedServices + id
@@ -696,178 +697,4 @@ private fun colorHexForFavorite(game: SportsGame?, uid: String): String? {
     return null
 }
 
-// MARK: - Services editor sheet
 
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun ServicesEditorSheet(
-    selected: Set<String>,
-    onToggle: (String) -> Unit,
-    onDismiss: () -> Unit,
-) {
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    var serviceQuery by remember { mutableStateOf("") }
-    val filteredServices = remember(serviceQuery) {
-        if (serviceQuery.isBlank()) StreamingCatalog.all
-        else StreamingCatalog.all.filter { it.name.contains(serviceQuery, ignoreCase = true) }
-    }
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = sheetState,
-        containerColor = SurfaceDark,
-        dragHandle = { GsSheetDragHandle() },
-    ) {
-        Column {
-            Text(
-                text = "My services",
-                fontSize = 20.sp,
-                fontWeight = FontWeight.Bold,
-                color = TextPrimary,
-                modifier = Modifier.padding(horizontal = 20.dp),
-            )
-            Spacer(Modifier.height(4.dp))
-            Text(
-                text = "${selected.size} selected · tap to add or remove",
-                fontSize = 13.sp,
-                color = TextSecondary,
-                modifier = Modifier.padding(horizontal = 20.dp),
-            )
-            Spacer(Modifier.height(16.dp))
-            ServiceSearchField(
-                query = serviceQuery,
-                onQueryChange = { serviceQuery = it },
-                modifier = Modifier.padding(horizontal = 20.dp),
-            )
-            Spacer(Modifier.height(12.dp))
-            if (filteredServices.isEmpty()) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(420.dp)
-                        .padding(horizontal = 20.dp)
-                        .navigationBarsPadding(),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text("No services match", fontSize = 14.sp, color = TextSecondary)
-                }
-            } else {
-                LazyVerticalGrid(
-                    columns = GridCells.Fixed(3),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(420.dp)
-                        .padding(horizontal = 20.dp)
-                        .navigationBarsPadding(),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(22.dp),
-                ) {
-                    items(filteredServices, key = { it.id }) { svc ->
-                        ServiceEditorTile(
-                            service = svc,
-                            isSelected = svc.id in selected,
-                            onTap = { onToggle(svc.id) },
-                        )
-                    }
-                }
-            }
-            Spacer(Modifier.height(12.dp))
-        }
-    }
-}
-
-@Composable
-private fun ServiceEditorTile(
-    service: StreamingService,
-    isSelected: Boolean,
-    onTap: () -> Unit,
-) {
-    val borderColor = if (isSelected) service.glow else OutlineVariant
-    val borderWidth = if (isSelected) 2.dp else 1.dp
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .aspectRatio(0.85f)
-            .clip(RoundedCornerShape(14.dp))
-            .background(service.bg)
-            .border(borderWidth, borderColor, RoundedCornerShape(14.dp))
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-            ) { onTap() },
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
-    ) {
-        val display = service.display
-        val label = when (display) {
-            is StreamingService.Display.Text -> display.text
-            is StreamingService.Display.SymbolText -> display.text
-            is StreamingService.Display.Star -> service.name
-        }
-        val labelColor = when (display) {
-            is StreamingService.Display.Text -> display.color
-            is StreamingService.Display.SymbolText -> display.color
-            is StreamingService.Display.Star -> display.color
-        }
-        Text(
-            text = label,
-            fontSize = 13.sp,
-            fontWeight = FontWeight.Black,
-            color = labelColor,
-            textAlign = TextAlign.Center,
-        )
-    }
-}
-
-@Composable
-private fun ServiceSearchField(
-    query: String,
-    onQueryChange: (String) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    var isFocused by remember { mutableStateOf(false) }
-    BasicTextField(
-        value = query,
-        onValueChange = onQueryChange,
-        singleLine = true,
-        textStyle = TextStyle(color = Color.White, fontSize = 15.sp),
-        cursorBrush = SolidColor(BrandOrange),
-        modifier = modifier
-            .fillMaxWidth()
-            .height(44.dp)
-            .clip(RoundedCornerShape(50.dp))
-            .background(Color.White.copy(alpha = 0.05f))
-            .border(
-                1.dp,
-                if (isFocused) BrandOrange else Color.White.copy(alpha = 0.10f),
-                RoundedCornerShape(50.dp),
-            )
-            .onFocusChanged { isFocused = it.isFocused },
-        decorationBox = { innerTextField ->
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(44.dp)
-                    .padding(horizontal = 14.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Icon(
-                    imageVector = Icons.Filled.Search,
-                    contentDescription = null,
-                    tint = TextSecondary,
-                    modifier = Modifier.size(16.dp),
-                )
-                Spacer(Modifier.width(8.dp))
-                Box(modifier = Modifier.weight(1f)) {
-                    if (query.isEmpty()) {
-                        Text(
-                            text = "Search services",
-                            fontSize = 15.sp,
-                            color = TextSecondary,
-                        )
-                    }
-                    innerTextField()
-                }
-            }
-        },
-    )
-}

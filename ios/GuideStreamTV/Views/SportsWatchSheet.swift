@@ -161,9 +161,10 @@ struct SportsWatchSheet: View {
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: 0) {
+                GsSheetHeader(title: gameTitle, subtitle: metaText)
+
                 headerRow
                     .padding(.horizontal, 20)
-                    .padding(.top, 6)
                     .padding(.bottom, 18)
 
                 Rectangle()
@@ -284,15 +285,6 @@ struct SportsWatchSheet: View {
                 .clipShape(.rect(cornerRadius: 12))
 
             VStack(alignment: .leading, spacing: 8) {
-                Text(gameTitle)
-                    .scaledFont(size: 24, weight: .bold)
-                    .foregroundStyle(.white)
-                    .lineLimit(2)
-
-                Text(metaText)
-                    .scaledFont(size: 13)
-                    .foregroundStyle(Color.white.opacity(0.55))
-
                 HStack(spacing: 8) {
                     statusChip
                     Text(game.sport.uppercased())

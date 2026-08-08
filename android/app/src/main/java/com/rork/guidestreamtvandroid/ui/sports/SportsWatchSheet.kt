@@ -65,11 +65,13 @@ import com.rork.guidestreamtvandroid.ui.theme.Hairline
 import com.rork.guidestreamtvandroid.ui.theme.Navy
 import com.rork.guidestreamtvandroid.ui.theme.SurfaceDark
 import com.rork.guidestreamtvandroid.ui.components.GsSheetDragHandle
+import com.rork.guidestreamtvandroid.ui.components.GsSheetHeader
 import com.rork.guidestreamtvandroid.ui.theme.OutlineVariant
 import com.rork.guidestreamtvandroid.ui.theme.SurfaceContainer
 import com.rork.guidestreamtvandroid.ui.theme.TextPrimary
 import com.rork.guidestreamtvandroid.ui.theme.TextSecondary
 import com.rork.guidestreamtvandroid.ui.theme.TextTertiary
+import com.rork.guidestreamtvandroid.ui.theme.sheetTopInset
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -136,6 +138,7 @@ fun SportsWatchSheet(
         sheetState = sheetState,
         containerColor = SurfaceDark,
         dragHandle = { GsSheetDragHandle() },
+        contentWindowInsets = { sheetTopInset() },
     ) {
         Column(
             modifier = Modifier
@@ -144,7 +147,13 @@ fun SportsWatchSheet(
                 .padding(bottom = 28.dp),
         ) {
             // Header
-            HeaderRow(game, gameTitle, primaryBroadcast)
+            GsSheetHeader(
+                title = gameTitle,
+                subtitle = listOf(game.sport, game.statusDetail)
+                    .filter { it.isNotEmpty() }
+                    .joinToString(" · "),
+            )
+            HeaderRow(game)
 
             Divider()
 
@@ -466,12 +475,12 @@ private fun SportsWhereToWatchRow(
 }
 
 @Composable
-private fun HeaderRow(game: SportsGame, gameTitle: String, primaryBroadcast: String?) {
+private fun HeaderRow(game: SportsGame) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 20.dp)
-            .padding(top = 6.dp, bottom = 18.dp),
+            .padding(bottom = 18.dp),
         horizontalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         // Team-color thumbnail
@@ -522,15 +531,6 @@ private fun HeaderRow(game: SportsGame, gameTitle: String, primaryBroadcast: Str
         }
 
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(
-                text = gameTitle,
-                fontSize = 22.sp,
-                fontWeight = FontWeight.Bold,
-                color = TextPrimary,
-                maxLines = 2,
-            )
-            val meta = listOf(game.sport, game.statusDetail).filter { it.isNotEmpty() }.joinToString(" · ")
-            Text(text = meta, fontSize = 13.sp, color = TextSecondary)
             Row(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,

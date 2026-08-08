@@ -82,18 +82,13 @@ struct ServicesBottomSheet: View {
                 .allowsHitTesting(false)
 
                 VStack(spacing: 0) {
+                    GsSheetHeader(
+                        title: "Which services do you have?",
+                        subtitle: "Edit to personalise what shows up on your feed"
+                    )
+
                     ScrollView(showsIndicators: false) {
                         VStack(alignment: .leading, spacing: 6) {
-                            Text("Which services do you have?")
-                                .font(.custom("SF Pro Display", size: 24).weight(.bold))
-                                .foregroundStyle(.white)
-                                .padding(.top, 4)
-
-                            Text("Edit to personalise what shows up on your feed")
-                                .font(.custom("SF Pro Text", size: 14))
-                                .foregroundStyle(Color.textSecondary)
-                                .padding(.bottom, 16)
-
                             searchField
                                 .padding(.bottom, 14)
 
