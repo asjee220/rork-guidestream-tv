@@ -60,6 +60,14 @@
             android:name="com.google.android.gms.ads.APPLICATION_ID"
             android:value="ca-app-pub-3940256099942544~1458002511" />
 
+        <!-- Default FCM notification channel: notification-payload pushes are
+             rendered by the Firebase SDK without invoking onMessageReceived;
+             any message arriving without an explicit channel id resolves to
+             this existing channel instead of being silently dropped. -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="gs_episodes" />
+
         <!-- Glance Widget -->
         <receiver
             android:name=".widget.GuideStreamWidgetReceiver"

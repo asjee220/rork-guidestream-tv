@@ -12,6 +12,7 @@ import com.rork.guidestreamtvandroid.data.repository.SocialViewModel
 import com.rork.guidestreamtvandroid.data.repository.StreamsViewModel
 import com.rork.guidestreamtvandroid.data.repository.TeamFavoritesService
 import com.rork.guidestreamtvandroid.data.repository.WatchIntentLogger
+import com.rork.guidestreamtvandroid.push.GuideStreamFirebaseMessagingService
 import com.rork.guidestreamtvandroid.ui.ads.AdManager
 import com.rork.guidestreamtvandroid.widget.WidgetDataService
 import kotlinx.coroutines.CoroutineScope
@@ -41,6 +42,14 @@ class GuideStreamTVApp : Application() {
         safe("ReleaseReminderService") { ReleaseReminderService.init(this) }
         safe("TeamFavoritesService") { TeamFavoritesService.init(this) }
         safe("PushTokenManager") { PushTokenManager.init(this) }
+        // Create the gs_episodes notification channel at launch. Production
+        // pushes send notification payloads that the Firebase SDK renders
+        // itself against this channel id without invoking onMessageReceived —
+        // on Android 8+ a notification posted to a nonexistent channel is
+        // silently dropped, so the channel must exist before any push arrives.
+        // ensureChannel is idempotent (null-checks before creating) and
+        // creating a channel never triggers a permission dialog.
+        safe("NotificationChannel") { GuideStreamFirebaseMessagingService.ensureChannel(this) }
         safe("WidgetDataService") { WidgetDataService.init(this) }
 
         // Restore session on cold launch
