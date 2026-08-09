@@ -310,7 +310,10 @@ private struct HeroCarouselCard: View {
                 .foregroundStyle(Color.white.opacity(0.75))
             if let year = result.year {
                 metaDot
-                Text("\(year)")
+                // verbatim: a plain Int interpolation inside Text's localized
+                // initializer runs through a locale-aware number formatter,
+                // rendering 2026 as "2,026".
+                Text(verbatim: "\(year)")
                     .scaledFont(size: 12, weight: .medium)
                     .foregroundStyle(Color.white.opacity(0.75))
             }
