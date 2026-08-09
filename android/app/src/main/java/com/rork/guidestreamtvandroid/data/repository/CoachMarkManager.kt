@@ -185,7 +185,6 @@ class CoachMarkManager private constructor(private val context: Context) {
         if (unseen.isEmpty()) return
         activeTour = unseen
         currentIndex = 0
-        measuredRects.clear()
         scrollSettled = false
         isShowing = true
         handleScrollForCurrentMark()
@@ -196,7 +195,6 @@ class CoachMarkManager private constructor(private val context: Context) {
         if (unseen.isEmpty()) return
         activeTour = unseen
         currentIndex = 0
-        measuredRects.clear()
         scrollSettled = false
         isShowing = true
         handleScrollForCurrentMark()
@@ -217,7 +215,6 @@ class CoachMarkManager private constructor(private val context: Context) {
             dismissTour()
         } else {
             currentIndex++
-            measuredRects.clear()
             scrollSettled = false
             genreHighlightActive = false
             handleScrollForCurrentMark()
@@ -267,6 +264,15 @@ class CoachMarkManager private constructor(private val context: Context) {
         scrollRequestId = null
     }
 
+    /**
+     * Called by the host screen after it has scrolled the target into view
+     * and allowed a 350 ms settle delay. Mirrors iOS markScrollSettled.
+     */
+    fun markScrollSettled() {
+        scrollSettled = true
+        scrollRequestId = null
+    }
+
     // ── Scroll coordination ──────────────────────────────────────────
 
     private fun handleScrollForCurrentMark() {
@@ -275,6 +281,7 @@ class CoachMarkManager private constructor(private val context: Context) {
         when (mark.key) {
             "genre" -> scrollRequestId = "browseByGenre"
             "where_to_watch" -> scrollRequestId = "cmWhereToWatch"
+            "watchlist_add" -> scrollRequestId = "cmActionBar"
             "play_on" -> scrollRequestId = "cmSynopsis"
             else -> {
                 scrollSettled = true

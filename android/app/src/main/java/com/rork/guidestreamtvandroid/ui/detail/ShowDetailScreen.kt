@@ -52,6 +52,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -73,6 +74,7 @@ import com.rork.guidestreamtvandroid.data.repository.WatchIntentLogger
 import com.rork.guidestreamtvandroid.ui.cast.CastToTVSheet
 import com.rork.guidestreamtvandroid.ui.components.CoachMarkOverlay
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.rememberCoroutineScope
@@ -204,6 +206,30 @@ fun ShowDetailScreen(
         }
     }
 
+    val detailScrollState = rememberScrollState()
+    val detailDensity = LocalDensity.current
+    val detailTopInsetPx = with(detailDensity) { 100.dp.toPx() }
+
+    // Coach-mark scroll coordination: when a detail mark requests a scroll,
+    // animate the target into view, then settle after 350ms.
+    androidx.compose.runtime.LaunchedEffect(coachMark.isShowing, coachMark.currentMark?.key) {
+        if (!coachMark.isShowing) return@LaunchedEffect
+        val mark = coachMark.currentMark ?: return@LaunchedEffect
+        val reqId = coachMark.scrollRequestId
+        if (reqId == "cmWhereToWatch" || reqId == "cmActionBar" || reqId == "cmSynopsis") {
+            coachMark.clearScrollRequest()
+            val targetKey = mark.targetKeys.firstOrNull()
+            val rect = if (targetKey != null) coachMark.measuredRects[targetKey] else null
+            if (rect != null && !rect.isEmpty) {
+                val target = (detailScrollState.value + rect.top - detailTopInsetPx)
+                    .coerceIn(0f, detailScrollState.maxValue.toFloat())
+                detailScrollState.animateScrollTo(target.toInt())
+            }
+            delay(350)
+        }
+        coachMark.markScrollSettled()
+    }
+
     Box(modifier = modifier.fillMaxSize()) {
         if (isLoading && detail == null) {
             Box(
@@ -216,7 +242,7 @@ fun ShowDetailScreen(
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .verticalScroll(rememberScrollState()),
+                    .verticalScroll(detailScrollState),
             ) {
                 // Hero backdrop
                 Box(

@@ -24,6 +24,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
@@ -46,6 +47,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.delay
 import com.rork.guidestreamtvandroid.data.repository.CoachMark
 import com.rork.guidestreamtvandroid.data.repository.CoachMarkManager
 import com.rork.guidestreamtvandroid.ui.theme.BrandOrange
@@ -71,6 +73,16 @@ fun CoachMarkOverlay(
     manager: CoachMarkManager,
     modifier: Modifier = Modifier,
 ) {
+    // Watchdog: if a scroll request never settles (no host handles it),
+    // force-settle after 1.2s so the overlay can never hang invisibly.
+    LaunchedEffect(manager.isShowing, manager.currentMark?.key) {
+        if (!manager.isShowing) return@LaunchedEffect
+        delay(1200)
+        if (manager.isShowing && !manager.scrollSettled) {
+            manager.markScrollSettled()
+        }
+    }
+
     if (!manager.isShowing) return
     val mark = manager.currentMark ?: return
     if (!manager.scrollSettled) return

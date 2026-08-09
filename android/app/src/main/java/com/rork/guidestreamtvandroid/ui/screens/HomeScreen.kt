@@ -65,6 +65,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
+import kotlinx.coroutines.delay
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -194,8 +195,29 @@ fun HomeScreen(
         derivedStateOf { scrollState.value > elevateThresholdPx }
     }
 
-    Box(modifier = modifier.fillMaxSize()) {
     val coachMark = CoachMarkManager.get()
+    val density = LocalDensity.current
+    val genreTopInsetPx = with(density) { 140.dp.toPx() }
+
+    // Coach-mark scroll coordination: when the genre mark requests a scroll,
+    // animate the Browse-by-genre section into view, then settle after 350ms.
+    LaunchedEffect(coachMark.isShowing, coachMark.currentMark?.key) {
+        if (!coachMark.isShowing) return@LaunchedEffect
+        val mark = coachMark.currentMark ?: return@LaunchedEffect
+        if (coachMark.scrollRequestId == "browseByGenre") {
+            coachMark.clearScrollRequest()
+            val rect = coachMark.measuredRects["genre"]
+            if (rect != null && !rect.isEmpty) {
+                val target = (scrollState.value + rect.top - genreTopInsetPx)
+                    .coerceIn(0f, scrollState.maxValue.toFloat())
+                scrollState.animateScrollTo(target.toInt())
+            }
+            delay(350)
+        }
+        coachMark.markScrollSettled()
+    }
+
+    Box(modifier = modifier.fillMaxSize()) {
     Column(
         modifier = Modifier
             .fillMaxSize()
