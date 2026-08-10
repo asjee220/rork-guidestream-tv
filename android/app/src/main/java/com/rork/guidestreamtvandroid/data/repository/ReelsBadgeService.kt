@@ -1,121 +1,83 @@
 package com.rork.guidestreamtvandroid.data.repository
 
-import com.rork.guidestreamtvandroid.data.remote.SupabaseManager
-import io.github.jan.supabase.postgrest.postgrest
+import android.content.Context
+import com.rork.guidestreamtvandroid.data.remote.StreamingUpcomingService
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.serialization.SerialName
-import kotlinx.serialization.Serializable
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
-import java.util.TimeZone
 
 /**
- * Unseen-content badge for the Reels tab. Computes whether any streaming
- * upcoming titles appeared since the user last opened Reels. Guest users
- * never see a badge because RLS prevents them from reading their own users
- * row; cold-start users get reels_seen_at stamped on first refresh.
+ * Unseen-content badge for the Reels tab. Fetches the current
+ * streaming_upcoming titles and compares their tmdb_ids against a locally
+ * stored "seen" set in SharedPreferences. Works for both signed-in and guest
+ * users — no database column or RLS dependency.
  */
-class ReelsBadgeService private constructor() {
+class ReelsBadgeService private constructor(private val prefs: android.content.SharedPreferences) {
 
     private val _hasUnseen = MutableStateFlow(false)
     val hasUnseen: StateFlow<Boolean> = _hasUnseen.asStateFlow()
 
+    private val seenKey = "gs.reelsSeenIds"
+
     /**
-     * Refreshes the badge state. Safe to call repeatedly; never throws.
-     * Rethrows CancellationException so coroutine cancellation is honoured.
+     * Refreshes the badge state. Fetches streaming_upcoming rows and
+     * compares against the locally stored seen-id set. Safe to call
+     * repeatedly; never throws. Rethrows CancellationException.
      */
     suspend fun refresh() {
-        val uid = AuthViewModel.get().currentUserId
-        if (uid == null) {
-            _hasUnseen.value = false
-            return
-        }
-
         try {
-            val seenAt = SupabaseManager.client.postgrest["users"]
-                .select {
-                    filter { eq("id", uid) }
-                }
-                .decodeSingle<ReelsSeenRow>()
-                .reelsSeenAt
-
-            if (seenAt == null) {
-                stampSeen(uid)
-                _hasUnseen.value = false
-                return
-            }
-
-            val count = countUnseenSince(seenAt)
-            _hasUnseen.value = count > 0
+            val rows = StreamingUpcomingService.get().fetchUpcoming() ?: return
+            val currentIds = rows.map { it.tmdbId }.toSet()
+            val seenIds = loadSeenIds()
+            val unseen = currentIds - seenIds
+            _hasUnseen.value = unseen.isNotEmpty()
         } catch (e: Throwable) {
             if (e is CancellationException) throw e
-            _hasUnseen.value = false
+            // Network failure — leave existing badge state untouched.
         }
     }
 
     /**
-     * Marks Reels as seen. Optimistically clears the badge before the network call.
-     * Rethrows CancellationException so coroutine cancellation is honoured.
+     * Marks all current upcoming titles as seen. Clears the badge
+     * optimistically before persisting the full id set. Rethrows
+     * CancellationException.
      */
     suspend fun markSeen() {
-        val uid = AuthViewModel.get().currentUserId ?: return
         _hasUnseen.value = false
         try {
-            stampSeen(uid)
+            val rows = StreamingUpcomingService.get().fetchUpcoming() ?: return
+            val currentIds = rows.map { it.tmdbId }.toSet()
+            // Merge with existing so older rows that drop off don't re-trigger.
+            val merged = loadSeenIds() + currentIds
+            saveSeenIds(merged)
         } catch (e: Throwable) {
             if (e is CancellationException) throw e
         }
     }
 
-    private suspend fun stampSeen(userId: String) {
-        val now = iso8601()
-        SupabaseManager.client.postgrest["users"]
-            .update({
-                set("reels_seen_at", now)
-            }) {
-                filter { eq("id", userId) }
-            }
+    // ── Local persistence ─────────────────────────────────────────────
+
+    private fun loadSeenIds(): Set<Int> {
+        val arr = prefs.getStringSet(seenKey, emptySet()) ?: emptySet()
+        return arr.mapNotNull { it.toIntOrNull() }.toSet()
     }
 
-    private suspend fun countUnseenSince(seenAt: String): Int {
-        return try {
-            val rows = SupabaseManager.client.postgrest["streaming_upcoming"]
-                .select {
-                    filter { gt("created_at", seenAt) }
-                }
-                .decodeList<CreatedAtRow>()
-            rows.size
-        } catch (e: Throwable) {
-            if (e is CancellationException) throw e
-            0
-        }
-    }
-
-    private fun iso8601(): String {
-        val fmt = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US)
-        fmt.timeZone = TimeZone.getTimeZone("UTC")
-        return fmt.format(Date())
+    private fun saveSeenIds(ids: Set<Int>) {
+        prefs.edit().putStringSet(seenKey, ids.map { it.toString() }.toSet()).apply()
     }
 
     companion object {
         @Volatile private var instance: ReelsBadgeService? = null
 
-        fun get(): ReelsBadgeService = instance ?: synchronized(this) {
-            instance ?: ReelsBadgeService().also { instance = it }
-        }
+        fun init(context: Context): ReelsBadgeService =
+            instance ?: synchronized(this) {
+                instance ?: ReelsBadgeService(
+                    context.getSharedPreferences("gs_prefs", Context.MODE_PRIVATE)
+                ).also { instance = it }
+            }
+
+        fun get(): ReelsBadgeService =
+            instance ?: error("ReelsBadgeService not initialised — call init(context) first")
     }
 }
-
-@Serializable
-private data class ReelsSeenRow(
-    @SerialName("reels_seen_at") val reelsSeenAt: String? = null,
-)
-
-@Serializable
-private data class CreatedAtRow(
-    @SerialName("created_at") val createdAt: String? = null,
-)

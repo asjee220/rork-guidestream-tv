@@ -1,10 +1,11 @@
+//
 //  ReelsBadgeService.swift
 //  GuideStreamTV
 //
-//  Unseen-content badge for the Reels tab. Computes whether any streaming
-//  upcoming titles appeared since the user last opened Reels. Guest users
-//  never see a badge because RLS prevents them from reading their own users
-//  row; cold-start users get reels_seen_at stamped on first refresh.
+//  Unseen-content badge for the Reels tab. Fetches the current
+//  streaming_upcoming titles and compares their tmdb_ids against a locally
+//  stored "seen" set in UserDefaults. Works for both signed-in and guest
+//  users — no database column or RLS dependency.
 //
 
 import Foundation
@@ -19,85 +20,43 @@ final class ReelsBadgeService {
 
     var hasUnseen: Bool = false
 
-    /// Refreshes the badge state. Safe to call repeatedly; never throws.
+    private let seenKey = "gs.reelsSeenIds"
+
+    /// Refreshes the badge state. Fetches streaming_upcoming rows and
+    /// compares against the locally stored seen-id set. Safe to call
+    /// repeatedly; never throws.
     func refresh() async {
-        guard let user = AuthViewModel.shared.currentUser else {
-            print("[ReelsBadge] no signed-in user, hiding badge")
-            hasUnseen = false
-            return
-        }
+        let rows = await StreamingUpcomingService.shared.fetchUpcoming() ?? []
+        let currentIds = Set(rows.map(\.tmdbId))
+        let seenIds = loadSeenIds()
 
-        do {
-            let userId = user.id.uuidString
-            let rows: [ReelsSeenRow] = try await SupabaseManager.shared.client
-                .from("users")
-                .select("reels_seen_at")
-                .eq("id", value: userId)
-                .single()
-                .execute()
-                .value
-
-            guard let seenAt = rows.first?.reelsSeenAt else {
-                print("[ReelsBadge] first use — stamping reels_seen_at")
-                await stampSeen(for: userId)
-                hasUnseen = false
-                return
-            }
-
-            let unseenCount = try await countUnseen(since: seenAt)
-            hasUnseen = unseenCount > 0
-            print("[ReelsBadge] unseen count = \(unseenCount), hasUnseen = \(hasUnseen)")
-        } catch {
-            print("[ReelsBadge] refresh failed: \(error.localizedDescription)")
-            hasUnseen = false
-        }
+        // Unseen = ids in the current upcoming list that the user hasn't
+        // acknowledged yet by opening the Reels tab.
+        let unseen = currentIds.subtracting(seenIds)
+        hasUnseen = !unseen.isEmpty
     }
 
-    /// Marks Reels as seen. Optimistically clears the badge before the network call.
+    /// Marks all current upcoming titles as seen. Clears the badge
+    /// optimistically before persisting the full id set.
     func markSeen() async {
-        guard let user = AuthViewModel.shared.currentUser else { return }
         hasUnseen = false
-        await stampSeen(for: user.id.uuidString)
+        let rows = await StreamingUpcomingService.shared.fetchUpcoming() ?? []
+        let currentIds = Set(rows.map(\.tmdbId))
+        // Merge with existing seen ids so older rows that drop off the
+        // upcoming list don't re-trigger the badge if they reappear.
+        var merged = loadSeenIds()
+        merged.formUnion(currentIds)
+        saveSeenIds(merged)
     }
 
-    private func stampSeen(for userId: String) async {
-        do {
-            try await SupabaseManager.shared.client
-                .from("users")
-                .update(["reels_seen_at": Date().ISO8601Format()])
-                .eq("id", value: userId)
-                .execute()
-            print("[ReelsBadge] stamped reels_seen_at for \(userId)")
-        } catch {
-            print("[ReelsBadge] stamp failed: \(error.localizedDescription)")
-        }
+    // MARK: - Local persistence
+
+    private func loadSeenIds() -> Set<Int> {
+        let arr = UserDefaults.standard.array(forKey: seenKey) as? [Int] ?? []
+        return Set(arr)
     }
 
-    private func countUnseen(since: String) async throws -> Int {
-        let rows: [CreatedAtRow] = try await SupabaseManager.shared.client
-            .from("streaming_upcoming")
-            .select("created_at")
-            .gt("created_at", value: since)
-            .execute()
-            .value
-        return rows.count
-    }
-}
-
-// MARK: - Decodable rows
-
-nonisolated struct ReelsSeenRow: Decodable, Sendable {
-    let reelsSeenAt: String?
-
-    enum CodingKeys: String, CodingKey {
-        case reelsSeenAt = "reels_seen_at"
-    }
-}
-
-nonisolated struct CreatedAtRow: Decodable, Sendable {
-    let createdAt: String?
-
-    enum CodingKeys: String, CodingKey {
-        case createdAt = "created_at"
+    private func saveSeenIds(_ ids: Set<Int>) {
+        UserDefaults.standard.set(Array(ids), forKey: seenKey)
     }
 }

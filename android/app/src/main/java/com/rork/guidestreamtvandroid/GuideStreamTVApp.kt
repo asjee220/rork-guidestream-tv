@@ -7,6 +7,7 @@ import com.rork.guidestreamtvandroid.data.local.DeviceSessionService
 import com.rork.guidestreamtvandroid.data.remote.RemoteConfigService
 import com.rork.guidestreamtvandroid.data.repository.AuthViewModel
 import com.rork.guidestreamtvandroid.data.repository.PushTokenManager
+import com.rork.guidestreamtvandroid.data.repository.ReelsBadgeService
 import com.rork.guidestreamtvandroid.data.repository.ReleaseReminderService
 import com.rork.guidestreamtvandroid.data.repository.SocialViewModel
 import com.rork.guidestreamtvandroid.data.repository.StreamsViewModel
@@ -51,6 +52,7 @@ class GuideStreamTVApp : Application() {
         // creating a channel never triggers a permission dialog.
         safe("NotificationChannel") { GuideStreamFirebaseMessagingService.ensureChannel(this) }
         safe("WidgetDataService") { WidgetDataService.init(this) }
+        safe("ReelsBadgeService") { ReelsBadgeService.init(this) }
 
         // Restore session on cold launch
         safe("restoreSession") { AuthViewModel.get().restoreSession() }
