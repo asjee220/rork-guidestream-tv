@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.foundation.shape.CircleShape
@@ -28,6 +29,7 @@ import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -39,6 +41,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.rork.guidestreamtvandroid.data.models.TMDBResult
 import com.rork.guidestreamtvandroid.ui.components.RemoteImage
+import com.rork.guidestreamtvandroid.ui.ads.InlineAdSlot
 import com.rork.guidestreamtvandroid.ui.navigation.HomeListTarget
 import com.rork.guidestreamtvandroid.ui.navigation.PendingTitleRoute
 import com.rork.guidestreamtvandroid.ui.theme.BrandOrange
@@ -123,6 +126,7 @@ fun HomeListScreen(
                 )
             }
         } else {
+            val dismissedAdSlots = remember { mutableStateMapOf<Int, Boolean>() }
             LazyVerticalGrid(
                 columns = GridCells.Fixed(2),
                 contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 12.dp, bottom = systemBottomInset() + 24.dp),
@@ -130,21 +134,34 @@ fun HomeListScreen(
                 verticalArrangement = Arrangement.spacedBy(16.dp),
                 modifier = Modifier.fillMaxSize(),
             ) {
-                gridItems(target.shows) { r ->
-                    HomeListGridCell(
-                        show = r,
-                        tag = target.tag,
-                        accentColor = target.providerByTmdb[r.id]?.color ?: BrandOrange,
-                        onClick = {
-                            onOpenTitle(
-                                PendingTitleRoute(
-                                    titleId = r.id.toString(),
-                                    titleName = r.displayName,
-                                    isTv = r.isTV,
-                                ),
+                target.shows.chunked(6).forEachIndexed { chunkIdx, chunk ->
+                    gridItems(chunk) { r ->
+                        HomeListGridCell(
+                            show = r,
+                            tag = target.tag,
+                            accentColor = target.providerByTmdb[r.id]?.color ?: BrandOrange,
+                            onClick = {
+                                onOpenTitle(
+                                    PendingTitleRoute(
+                                        titleId = r.id.toString(),
+                                        titleName = r.displayName,
+                                        isTv = r.isTV,
+                                    ),
+                                )
+                            },
+                        )
+                    }
+                    if (chunk.size >= 6) {
+                        item(span = { GridItemSpan(maxLineSpan) }) {
+                            InlineAdSlot(
+                                slotIndex = chunkIdx,
+                                selectedServices = emptySet(),
+                                adSource = "list_inline",
+                                sectionKey = "list_inline_ad",
+                                dismissed = dismissedAdSlots,
                             )
-                        },
-                    )
+                        }
+                    }
                 }
             }
         }

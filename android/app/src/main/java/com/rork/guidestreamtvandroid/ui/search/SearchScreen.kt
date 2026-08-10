@@ -20,9 +20,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -37,6 +39,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -50,6 +53,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.rork.guidestreamtvandroid.ui.ads.InlineAdSlot
 import com.rork.guidestreamtvandroid.ui.components.RemoteImage
 import com.rork.guidestreamtvandroid.ui.components.glassCard
 import com.rork.guidestreamtvandroid.ui.navigation.PendingTitleRoute
@@ -228,6 +232,7 @@ fun SearchScreen(
                     )
                 }
             } else {
+                val dismissedPopularAdSlots = remember { mutableStateMapOf<Int, Boolean>() }
                 LazyVerticalGrid(
                     columns = GridCells.Fixed(3),
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(
@@ -237,19 +242,32 @@ fun SearchScreen(
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    items(popular) { result ->
-                        SearchPosterCard(
-                            title = result.title,
-                            posterUrl = result.posterUrl,
-                            serviceName = result.platform?.name,
-                            onClick = {
-                                onOpenTitle(PendingTitleRoute(
-                                    titleId = result.id.toString(),
-                                    titleName = result.title,
-                                    isTv = result.isTV,
-                                ))
-                            },
-                        )
+                    popular.chunked(9).forEachIndexed { chunkIdx, chunk ->
+                        items(chunk) { result ->
+                            SearchPosterCard(
+                                title = result.title,
+                                posterUrl = result.posterUrl,
+                                serviceName = result.platform?.name,
+                                onClick = {
+                                    onOpenTitle(PendingTitleRoute(
+                                        titleId = result.id.toString(),
+                                        titleName = result.title,
+                                        isTv = result.isTV,
+                                    ))
+                                },
+                            )
+                        }
+                        if (chunk.size >= 9) {
+                            item(span = { GridItemSpan(maxLineSpan) }) {
+                                InlineAdSlot(
+                                    slotIndex = chunkIdx,
+                                    selectedServices = emptySet(),
+                                    adSource = "search_inline",
+                                    sectionKey = "search_inline_ad",
+                                    dismissed = dismissedPopularAdSlots,
+                                )
+                            }
+                        }
                     }
                     item { BottomSafeSpacer(withTabBar = false) }
                 }
@@ -276,6 +294,7 @@ fun SearchScreen(
                 )
             }
         } else {
+            val dismissedSearchAdSlots = remember { mutableStateMapOf<Int, Boolean>() }
             LazyColumn(
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -290,20 +309,33 @@ fun SearchScreen(
                             modifier = Modifier.padding(horizontal = 20.dp),
                         )
                     }
-                    items(tmdbResults) { result ->
-                        SearchResultRow(
-                            title = result.title,
-                            posterUrl = result.posterUrl,
-                            subtitle = "${result.year ?: ""} · ${if (result.isTV) "Series" else "Movie"}",
-                            isLargePoster = true,
-                            onClick = {
-                                onOpenTitle(PendingTitleRoute(
-                                    titleId = result.id.toString(),
-                                    titleName = result.title,
-                                    isTv = result.isTV,
-                                ))
-                            },
-                        )
+                    tmdbResults.chunked(6).forEachIndexed { chunkIdx, chunk ->
+                        itemsIndexed(chunk) { idx, result ->
+                            SearchResultRow(
+                                title = result.title,
+                                posterUrl = result.posterUrl,
+                                subtitle = "${result.year ?: ""} · ${if (result.isTV) "Series" else "Movie"}",
+                                isLargePoster = true,
+                                onClick = {
+                                    onOpenTitle(PendingTitleRoute(
+                                        titleId = result.id.toString(),
+                                        titleName = result.title,
+                                        isTv = result.isTV,
+                                    ))
+                                },
+                            )
+                        }
+                        if (chunk.size >= 6) {
+                            item {
+                                InlineAdSlot(
+                                    slotIndex = chunkIdx,
+                                    selectedServices = emptySet(),
+                                    adSource = "search_inline",
+                                    sectionKey = "search_inline_ad",
+                                    dismissed = dismissedSearchAdSlots,
+                                )
+                            }
+                        }
                     }
                 }
                 if (creatorResults.isNotEmpty()) {
@@ -317,14 +349,27 @@ fun SearchScreen(
                             modifier = Modifier.padding(horizontal = 20.dp),
                         )
                     }
-                    items(creatorResults) { creator ->
-                        SearchResultRow(
-                            title = creator.displayName,
-                            posterUrl = creator.imageUrl,
-                            subtitle = creator.sourceType.uppercase() + (creator.category?.let { " · $it" } ?: ""),
-                            isCircle = true,
-                            onClick = { onOpenCreator(creator.titleId) },
-                        )
+                    creatorResults.chunked(6).forEachIndexed { chunkIdx, chunk ->
+                        itemsIndexed(chunk) { idx, creator ->
+                            SearchResultRow(
+                                title = creator.displayName,
+                                posterUrl = creator.imageUrl,
+                                subtitle = creator.sourceType.uppercase() + (creator.category?.let { " · $it" } ?: ""),
+                                isCircle = true,
+                                onClick = { onOpenCreator(creator.titleId) },
+                            )
+                        }
+                        if (chunk.size >= 6) {
+                            item {
+                                InlineAdSlot(
+                                    slotIndex = chunkIdx,
+                                    selectedServices = emptySet(),
+                                    adSource = "search_inline",
+                                    sectionKey = "search_inline_ad",
+                                    dismissed = dismissedSearchAdSlots,
+                                )
+                            }
+                        }
                     }
                 }
                 item { BottomSafeSpacer(withTabBar = false) }

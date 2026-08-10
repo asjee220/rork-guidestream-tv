@@ -8,6 +8,11 @@
 //  SponsoredAffiliateCard glass aesthetic. Only compiled when the Google
 //  Mobile Ads SDK is linked and the build targets a real device.
 //
+//  When `compact` is true the card uses a 56pt icon square instead of the
+//  120pt media square, hides the body label, and anchors the text column
+//  to the icon — matching the row-card layout used by inline ad slots and
+//  the Reels carousel.
+//
 
 #if canImport(GoogleMobileAds) && !targetEnvironment(simulator)
 import GoogleMobileAds
@@ -19,10 +24,11 @@ import UIKit
 /// asset subviews.
 struct NativeAdCardView: UIViewRepresentable {
     let nativeAd: NativeAd
+    var compact: Bool = false
     let onDismiss: () -> Void
 
     func makeUIView(context: Context) -> NativeAdContainer {
-        let container = NativeAdContainer()
+        let container = NativeAdContainer(compact: compact)
         container.onDismiss = onDismiss
         container.configure(with: nativeAd)
         return container
@@ -40,10 +46,13 @@ final class NativeAdContainer: UIView {
 
     var onDismiss: (() -> Void)?
 
+    let compact: Bool
+
     private let adView = NativeAdView()
     private let bgEffect = UIVisualEffectView(effect: UIBlurEffect(style: .systemUltraThinMaterial))
     private let navyOverlay = UIView()
     private let mediaView = MediaView()
+    private let iconView = UIImageView()
     private let textStack = UIStackView()
     private let headlineLabel = UILabel()
     private let bodyLabel = UILabel()
@@ -53,7 +62,13 @@ final class NativeAdContainer: UIView {
     private let dismissButton = UIButton(type: .system)
     private let adChoicesContainer = AdChoicesView()
 
-    override init(frame: CGRect) {
+    /// Text-stack leading constraint anchored to the icon — swappeable in
+    /// configure() when the ad has no icon image.
+    private var textStackLeadingWithIcon: NSLayoutConstraint?
+    private var textStackLeadingNoIcon: NSLayoutConstraint?
+
+    init(frame: CGRect, compact: Bool = false) {
+        self.compact = compact
         super.init(frame: frame)
         setupViews()
     }
@@ -86,19 +101,31 @@ final class NativeAdContainer: UIView {
         adView.clipsToBounds = true
         addSubview(adView)
 
-        // Media view (120pt square) — shows the ad's main image/video and is
-        // registered as adView.mediaView. Sized to 120x120 so the AdMob native
-        // ad validator's "media view too small for video" check passes.
-        // Aspect-fit so non-square creatives are letterboxed within the box
-        // and the media content never overflows the ad view (validator).
-        mediaView.translatesAutoresizingMaskIntoConstraints = false
-        mediaView.backgroundColor = UIColor.white.withAlphaComponent(0.10)
-        mediaView.contentMode = .scaleAspectFit
-        mediaView.layer.cornerRadius = 8
-        mediaView.layer.borderWidth = 0.5
-        mediaView.layer.borderColor = UIColor.white.withAlphaComponent(0.12).cgColor
-        mediaView.clipsToBounds = true
-        adView.addSubview(mediaView)
+        if !compact {
+            // Media view (120pt square) — shows the ad's main image/video and is
+            // registered as adView.mediaView. Sized to 120x120 so the AdMob native
+            // ad validator's "media view too small for video" check passes.
+            // Aspect-fit so non-square creatives are letterboxed within the box
+            // and the media content never overflows the ad view (validator).
+            mediaView.translatesAutoresizingMaskIntoConstraints = false
+            mediaView.backgroundColor = UIColor.white.withAlphaComponent(0.10)
+            mediaView.contentMode = .scaleAspectFit
+            mediaView.layer.cornerRadius = 8
+            mediaView.layer.borderWidth = 0.5
+            mediaView.layer.borderColor = UIColor.white.withAlphaComponent(0.12).cgColor
+            mediaView.clipsToBounds = true
+            adView.addSubview(mediaView)
+        } else {
+            // Compact: 56pt icon square instead of the 120pt media square.
+            iconView.translatesAutoresizingMaskIntoConstraints = false
+            iconView.backgroundColor = UIColor.white.withAlphaComponent(0.10)
+            iconView.contentMode = .scaleAspectFit
+            iconView.layer.cornerRadius = 8
+            iconView.layer.borderWidth = 0.5
+            iconView.layer.borderColor = UIColor.white.withAlphaComponent(0.12).cgColor
+            iconView.clipsToBounds = true
+            adView.addSubview(iconView)
+        }
 
         // Headline (12pt heavy, white, 2 lines)
         headlineLabel.font = .systemFont(ofSize: 12, weight: .heavy)
@@ -119,7 +146,7 @@ final class NativeAdContainer: UIView {
         advertiserLabel.textColor = UIColor.white.withAlphaComponent(0.45)
         advertiserLabel.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
 
-        // Text column — vertically centered between media and CTA
+        // Text column — vertically centered between media/icon and CTA
         textStack.axis = .vertical
         textStack.spacing = 2
         textStack.alignment = .fill
@@ -169,7 +196,9 @@ final class NativeAdContainer: UIView {
         dismissButton.addTarget(self, action: #selector(dismissTapped), for: .touchUpInside)
         addSubview(dismissButton)
 
-        NSLayoutConstraint.activate([
+        // Build constraints — common ones always active, media/icon ones
+        // branched on compact.
+        var constraints: [NSLayoutConstraint] = [
             // Background fills container
             bgEffect.topAnchor.constraint(equalTo: topAnchor),
             bgEffect.bottomAnchor.constraint(equalTo: bottomAnchor),
@@ -184,16 +213,6 @@ final class NativeAdContainer: UIView {
             // Note: adView is manually framed in layoutSubviews() with integral
             // bounds (see override below), so no Auto Layout pins are activated
             // here. Asset constraints relative to adView remain unchanged.
-
-            // Media — 120pt square, leading, vertically centered. Sized so the
-            // validator's "media view too small for video" check passes.
-            // Containment clamps keep the asset fully inside adView (validator).
-            mediaView.leadingAnchor.constraint(equalTo: adView.leadingAnchor, constant: 12),
-            mediaView.centerYAnchor.constraint(equalTo: adView.centerYAnchor),
-            mediaView.widthAnchor.constraint(equalToConstant: 120),
-            mediaView.heightAnchor.constraint(equalToConstant: 120),
-            mediaView.topAnchor.constraint(greaterThanOrEqualTo: adView.topAnchor, constant: 8),
-            mediaView.bottomAnchor.constraint(lessThanOrEqualTo: adView.bottomAnchor, constant: -8),
 
             // AdChoices — top-trailing corner of the ad view, clear of all
             // other assets and unobscured so it stays tappable.
@@ -214,9 +233,8 @@ final class NativeAdContainer: UIView {
             ctaButton.bottomAnchor.constraint(lessThanOrEqualTo: adView.bottomAnchor, constant: -8),
             ctaButton.leadingAnchor.constraint(greaterThanOrEqualTo: adView.leadingAnchor, constant: 8),
 
-            // Text column — between media and CTA, vertically centered.
-            // Trailing containment clamp keeps the stack inside adView (validator).
-            textStack.leadingAnchor.constraint(equalTo: mediaView.trailingAnchor, constant: 10),
+            // Text column — vertically centered. Trailing containment clamp
+            // keeps the stack inside adView (validator).
             textStack.trailingAnchor.constraint(equalTo: ctaButton.leadingAnchor, constant: -8),
             textStack.centerYAnchor.constraint(equalTo: adView.centerYAnchor),
             textStack.topAnchor.constraint(greaterThanOrEqualTo: adView.topAnchor, constant: 8),
@@ -239,7 +257,45 @@ final class NativeAdContainer: UIView {
             dismissButton.trailingAnchor.constraint(equalTo: adChoicesContainer.leadingAnchor, constant: -4),
             dismissButton.widthAnchor.constraint(equalToConstant: 28),
             dismissButton.heightAnchor.constraint(equalToConstant: 28),
-        ])
+        ]
+
+        if !compact {
+            // Media — 120pt square, leading, vertically centered. Sized so the
+            // validator's "media view too small for video" check passes.
+            // Containment clamps keep the asset fully inside adView (validator).
+            constraints.append(contentsOf: [
+                mediaView.leadingAnchor.constraint(equalTo: adView.leadingAnchor, constant: 12),
+                mediaView.centerYAnchor.constraint(equalTo: adView.centerYAnchor),
+                mediaView.widthAnchor.constraint(equalToConstant: 120),
+                mediaView.heightAnchor.constraint(equalToConstant: 120),
+                mediaView.topAnchor.constraint(greaterThanOrEqualTo: adView.topAnchor, constant: 8),
+                mediaView.bottomAnchor.constraint(lessThanOrEqualTo: adView.bottomAnchor, constant: -8),
+
+                // Text column leading — anchored to media trailing.
+                textStack.leadingAnchor.constraint(equalTo: mediaView.trailingAnchor, constant: 10),
+            ])
+        } else {
+            // Icon — 56pt square, leading, vertically centered.
+            constraints.append(contentsOf: [
+                iconView.leadingAnchor.constraint(equalTo: adView.leadingAnchor, constant: 12),
+                iconView.centerYAnchor.constraint(equalTo: adView.centerYAnchor),
+                iconView.widthAnchor.constraint(equalToConstant: 56),
+                iconView.heightAnchor.constraint(equalToConstant: 56),
+                iconView.topAnchor.constraint(greaterThanOrEqualTo: adView.topAnchor, constant: 8),
+                iconView.bottomAnchor.constraint(lessThanOrEqualTo: adView.bottomAnchor, constant: -8),
+            ])
+            // Text column leading — anchored to icon trailing by default;
+            // swapped to adView leading + 12 in configure() when no icon image.
+            textStackLeadingWithIcon = textStack.leadingAnchor.constraint(
+                equalTo: iconView.trailingAnchor, constant: 10
+            )
+            textStackLeadingNoIcon = textStack.leadingAnchor.constraint(
+                equalTo: adView.leadingAnchor, constant: 12
+            )
+            constraints.append(textStackLeadingWithIcon!)
+        }
+
+        NSLayoutConstraint.activate(constraints)
     }
 
     // MARK: - Configure
@@ -249,18 +305,40 @@ final class NativeAdContainer: UIView {
         // track impressions and handle clicks.
         adView.headlineView = headlineLabel
         adView.bodyView = bodyLabel
-        adView.mediaView = mediaView
         adView.callToActionView = ctaButton
         adView.advertiserView = advertiserLabel
         adView.adChoicesView = adChoicesContainer
 
-        // Main media asset — shown through the MediaView (validator requirement).
-        mediaView.mediaContent = ad.mediaContent
+        if !compact {
+            adView.mediaView = mediaView
+
+            // Main media asset — shown through the MediaView (validator requirement).
+            mediaView.mediaContent = ad.mediaContent
+        } else {
+            adView.iconView = iconView
+
+            // Populate icon from the ad's icon image. If the ad has no icon,
+            // hide the icon view and re-anchor textStack to adView leading.
+            if let iconImage = ad.icon?.image {
+                iconView.image = iconImage
+                iconView.isHidden = false
+                textStackLeadingWithIcon?.isActive = true
+                textStackLeadingNoIcon?.isActive = false
+            } else {
+                iconView.isHidden = true
+                textStackLeadingWithIcon?.isActive = false
+                textStackLeadingNoIcon?.isActive = true
+            }
+        }
 
         // Populate with ad assets
         headlineLabel.text = ad.headline
         bodyLabel.text = ad.body
-        bodyLabel.isHidden = (ad.body == nil)
+        if compact {
+            bodyLabel.isHidden = true
+        } else {
+            bodyLabel.isHidden = (ad.body == nil)
+        }
         advertiserLabel.text = ad.advertiser
         advertiserLabel.isHidden = (ad.advertiser == nil)
         ctaButton.setTitle(ad.callToAction, for: .normal)
@@ -290,8 +368,14 @@ final class NativeAdContainer: UIView {
 
         // Snap every registered asset view to an integral rect strictly inside
         // adView. Frames in adView's coordinate space:
-        for view in [mediaView, ctaButton, adChoicesContainer, adBadge, textStack] {
-            view.frame = integralRect(view.frame)
+        if compact {
+            for view in [iconView, ctaButton, adChoicesContainer, adBadge, textStack] {
+                view.frame = integralRect(view.frame)
+            }
+        } else {
+            for view in [mediaView, ctaButton, adChoicesContainer, adBadge, textStack] {
+                view.frame = integralRect(view.frame)
+            }
         }
         // Frames in textStack's coordinate space:
         for view in [headlineLabel, bodyLabel, advertiserLabel] {
@@ -321,6 +405,7 @@ final class NativeAdContainer: UIView {
 import SwiftUI
 
 struct NativeAdCardView: View {
+    var compact: Bool = false
     var onDismiss: () -> Void
     var body: some View { EmptyView() }
 }

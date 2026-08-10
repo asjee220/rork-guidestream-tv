@@ -92,6 +92,7 @@ import com.rork.guidestreamtvandroid.ui.components.ServicesBottomSheet
 import com.rork.guidestreamtvandroid.ui.components.ServicesPill
 import com.rork.guidestreamtvandroid.ui.components.ShimmerHero
 import com.rork.guidestreamtvandroid.ui.components.ShimmerSection
+import com.rork.guidestreamtvandroid.ui.ads.InlineAdSlot
 import com.rork.guidestreamtvandroid.ui.ads.PooledAdSource
 import com.rork.guidestreamtvandroid.ui.ads.SponsoredSlot
 import com.rork.guidestreamtvandroid.ui.components.glassCard
@@ -367,6 +368,8 @@ fun HomeScreen(
         InlineAdSlot(
             slotIndex = 0,
             selectedServices = selectedServices,
+            adSource = "home_inline",
+            sectionKey = "home_inline_ad",
             dismissed = dismissedAdSlots,
         )
 
@@ -462,6 +465,15 @@ fun HomeScreen(
             }
         }
 
+        // Inline sponsored slot #1 — after Creators/Podcasts for You
+        InlineAdSlot(
+            slotIndex = 1,
+            selectedServices = selectedServices,
+            adSource = "home_inline",
+            sectionKey = "home_inline_ad",
+            dismissed = dismissedAdSlots,
+        )
+
         // Everyone's Watching (ranked)
         if (!homeReady) {
             ShimmerSection("Everyone's Watching", Modifier.padding(horizontal = 12.dp, vertical = 8.dp))
@@ -520,10 +532,12 @@ fun HomeScreen(
             )
         }
 
-        // Inline sponsored slot #1 — after Leaving Soon
+        // Inline sponsored slot #2 — after Leaving Soon
         InlineAdSlot(
-            slotIndex = 1,
+            slotIndex = 2,
             selectedServices = selectedServices,
+            adSource = "home_inline",
+            sectionKey = "home_inline_ad",
             dismissed = dismissedAdSlots,
         )
 
@@ -598,6 +612,15 @@ fun HomeScreen(
             }
         }
 
+        // Inline sponsored slot #3 — after per-service ForEach, before Browsing genre
+        InlineAdSlot(
+            slotIndex = 3,
+            selectedServices = selectedServices,
+            adSource = "home_inline",
+            sectionKey = "home_inline_ad",
+            dismissed = dismissedAdSlots,
+        )
+
         // Browse by genre (pill grid) — drives the Because you watch rail below.
         Box(
             modifier = Modifier.onGloballyPositioned { coords ->
@@ -635,10 +658,12 @@ fun HomeScreen(
             }
         }
 
-        // Inline sponsored slot #2 — after Because you watch Crime
+        // Inline sponsored slot #4 — after Because you watch Crime
         InlineAdSlot(
-            slotIndex = 2,
+            slotIndex = 4,
             selectedServices = selectedServices,
+            adSource = "home_inline",
+            sectionKey = "home_inline_ad",
             dismissed = dismissedAdSlots,
         )
 
@@ -684,6 +709,15 @@ fun HomeScreen(
             }
         }
 
+        // Inline sponsored slot #5 — after New seasons
+        InlineAdSlot(
+            slotIndex = 5,
+            selectedServices = selectedServices,
+            adSource = "home_inline",
+            sectionKey = "home_inline_ad",
+            dismissed = dismissedAdSlots,
+        )
+
         // Binge Worthy (ended shows)
         if (!homeReady) {
             ShimmerSection("Binge Worthy", Modifier.padding(horizontal = 12.dp, vertical = 8.dp))
@@ -711,10 +745,12 @@ fun HomeScreen(
             )
         }
 
-        // Inline sponsored slot #3 — after Binge Worthy
+        // Inline sponsored slot #6 — after Binge Worthy
         InlineAdSlot(
-            slotIndex = 3,
+            slotIndex = 6,
             selectedServices = selectedServices,
+            adSource = "home_inline",
+            sectionKey = "home_inline_ad",
             dismissed = dismissedAdSlots,
         )
 
@@ -1936,50 +1972,3 @@ private fun WidgetPromoBanner(onSetUp: () -> Unit) {
     }
 }
 
-// ── Inline Sponsored Slot ───────────────────────────────────────────
-
-/**
- * Rotating pool of the eight affiliate offers, matching the iOS inline ad pool
- * and the detail-sheet sponsored cards (headline, subtitle, service id).
- */
-private val inlineAdPool: List<Triple<String, String, String>> = listOf(
-    Triple("netflix", "Stream more on Netflix", "Unlimited shows & movies · Try free"),
-    Triple("hbo", "Watch more on Max", "HBO, Max Originals & more · Try free"),
-    Triple("hulu", "Live TV + streaming on Hulu", "Starting at $7.99/mo · Try free"),
-    Triple("disney", "Disney+, Hulu & ESPN+ bundle", "Disney Bundle · Try free"),
-    Triple("appletv", "Award-winning originals", "Apple TV+ · First month free"),
-    Triple("prime", "Included with Prime", "Prime Video · Try free"),
-    Triple("paramount", "NFL on CBS & live sports", "Paramount+ · Try free"),
-    Triple("peacock", "Stream free on Peacock", "NBC shows & live sports · Free tier"),
-)
-
-/**
- * Compact inline sponsored slot inserted between home feed rows — mirrors iOS
- * inlineAdSlot. Hidden once its index is dismissed for the session. Even slots
- * prefer AdMob (Rakuten backfill); odd slots render the Rakuten card directly.
- */
-@Composable
-private fun InlineAdSlot(
-    slotIndex: Int,
-    selectedServices: Set<String>,
-    dismissed: MutableMap<Int, Boolean>,
-) {
-    if (dismissed[slotIndex] == true) return
-
-    // Rotate through the pool, preferring a service the user doesn't already own.
-    val unowned = inlineAdPool.filter { it.first !in selectedServices }
-    val pool = if (unowned.isEmpty()) inlineAdPool else unowned
-    val offer = pool[slotIndex % pool.size]
-    val service = StreamingCatalog.service(offer.first)
-
-    Box(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
-        SponsoredSlot(
-            preferredSource = if (slotIndex % 2 == 0) PooledAdSource.ADMOB_FIRST else PooledAdSource.RAKUTEN_FIRST,
-            service = service,
-            serviceId = offer.first,
-            headline = offer.second,
-            subtitle = offer.third,
-            onDismiss = { dismissed[slotIndex] = true },
-        )
-    }
-}

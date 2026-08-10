@@ -1706,6 +1706,8 @@ private struct ReelView: View {
     @State private var glassAdVisible: Bool = false
     @State private var glassAdFadeTask: Task<Void, Never>? = nil
     @State private var adAdvanceTask: Task<Void, Never>? = nil
+    /// Native ad claimed for the carousel's third page (index 2). nil → Rakuten backfill.
+    @State private var carouselNativeAd: AnyObject? = nil
 
     /// The YouTube video id currently loading: the primary key at index 0, or
     /// the corresponding fallback key thereafter.
@@ -2391,37 +2393,32 @@ private struct ReelView: View {
         VStack(spacing: 0) {
             TabView(selection: $adPage) {
                 ForEach(Array(glassAdTargets.enumerated()), id: \.offset) { idx, ad in
-                    ReelAffiliateRowCard(
-                        serviceId: ad.serviceId,
-                        fallbackName: ad.name,
-                        fallbackColor: ad.color,
-                        headline: ad.headline,
-                        subtitle: ad.subtitle,
-                        onTap: {
-                            RakutenManager.shared.openAffiliateLink(
-                                serviceId: ad.serviceId,
-                                metadata: [
-                                    "source": "reel_ad_carousel",
-                                    "reel_platform": trailer.platformId,
-                                    "show": trailer.showName
-                                ]
-                            )
-                            WatchIntentLogger.shared.log(
-                                eventType: .affiliateLinkTapped,
-                                platformId: ad.serviceId,
-                                metadata: [
-                                    "source": "reel_ad_carousel",
-                                    "show_platform": trailer.platformId
-                                ]
-                            )
-                        },
-                        onDismiss: { glassAdDismissed = true }
-                    )
+                    Group {
+                        if idx == 2, let nativeAd = carouselNativeAd {
+                            #if canImport(GoogleMobileAds) && !targetEnvironment(simulator)
+                            NativeAdCardView(nativeAd: nativeAd as! NativeAd, compact: true) {
+                                glassAdDismissed = true
+                            }
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 96)
+                            .onAppear {
+                                WatchIntentLogger.shared.log(
+                                    eventType: .adImpression,
+                                    metadata: ["ad_type": "native", "source": "reel_ad_carousel"]
+                                )
+                            }
+                            #else
+                            reelRakutenCard(ad)
+                            #endif
+                        } else {
+                            reelRakutenCard(ad)
+                        }
+                    }
                     .tag(idx)
                 }
             }
             .tabViewStyle(.page(indexDisplayMode: .never))
-            .frame(height: 68)
+            .frame(height: 96)
 
             HStack(spacing: 5) {
                 ForEach(0..<glassAdTargets.count, id: \.self) { dotIdx in
@@ -2439,13 +2436,48 @@ private struct ReelView: View {
         .opacity(0.83)
     }
 
+    @ViewBuilder
+    private func reelRakutenCard(_ ad: (serviceId: String, name: String, color: Color, headline: String, subtitle: String)) -> some View {
+        ReelAffiliateRowCard(
+            serviceId: ad.serviceId,
+            fallbackName: ad.name,
+            fallbackColor: ad.color,
+            headline: ad.headline,
+            subtitle: ad.subtitle,
+            onTap: {
+                RakutenManager.shared.openAffiliateLink(
+                    serviceId: ad.serviceId,
+                    metadata: [
+                        "source": "reel_ad_carousel",
+                        "reel_platform": trailer.platformId,
+                        "show": trailer.showName
+                    ]
+                )
+                WatchIntentLogger.shared.log(
+                    eventType: .affiliateLinkTapped,
+                    platformId: ad.serviceId,
+                    metadata: [
+                        "source": "reel_ad_carousel",
+                        "show_platform": trailer.platformId
+                    ]
+                )
+            },
+            onDismiss: { glassAdDismissed = true }
+        )
+    }
+
     private func armGlassAdFade() {
         glassAdFadeTask?.cancel()
         adAdvanceTask?.cancel()
+        carouselNativeAd = nil
         glassAdTargets = resolveGlassAds(count: 5)
         adPage = 0
         glassAdDismissed = false
         glassAdVisible = false
+        // Attempt to claim a native ad for page 2 (AdMob-first, Rakuten backfill).
+        AdManager.shared.start()
+        AdManager.shared.loadNativePool()
+        carouselNativeAd = AdManager.shared.nextNativeAd()
         glassAdFadeTask = Task { @MainActor in
             // Landscape chrome auto-hides 3s after reveal, so a 4s delay would
             // mean the ad is never seen there. Use 0.6s in landscape, 4s in

@@ -72,6 +72,8 @@ fun SponsoredSlot(
     subtitle: String,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
+    adSource: String = "home_inline",
+    sectionKey: String = "home_inline_ad",
 ) {
     val context = LocalContext.current
 
@@ -79,7 +81,7 @@ fun SponsoredSlot(
     LaunchedEffect(serviceId) {
         WatchIntentLogger.get().log(
             WatchIntentLogger.IntentEventType.AD_IMPRESSION,
-            metadata = mapOf("ad_type" to "home_inline", "source" to "home_inline"),
+            metadata = mapOf("ad_type" to adSource, "source" to adSource),
         )
     }
 
@@ -135,7 +137,7 @@ fun SponsoredSlot(
                     RakutenManager.get().openAffiliateLink(
                         serviceId = serviceId,
                         context = context,
-                        metadata = mapOf("section" to "home_inline_ad"),
+                        metadata = mapOf("section" to sectionKey),
                     )
                 },
             )

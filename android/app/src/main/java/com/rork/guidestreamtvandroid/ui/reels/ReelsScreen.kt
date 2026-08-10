@@ -114,6 +114,7 @@ import com.rork.guidestreamtvandroid.data.repository.RakutenManager
 import com.rork.guidestreamtvandroid.data.repository.SocialViewModel
 import com.rork.guidestreamtvandroid.data.repository.StreamsViewModel
 import com.rork.guidestreamtvandroid.data.repository.WatchIntentLogger
+import com.rork.guidestreamtvandroid.ui.ads.NativeAdCard
 import com.rork.guidestreamtvandroid.ui.comments.TitleCommentsSheet
 import com.rork.guidestreamtvandroid.ui.components.RemoteImage
 import com.rork.guidestreamtvandroid.ui.navigation.PendingTitleRoute
@@ -1985,6 +1986,8 @@ private fun ReelAdCarousel(
     }
     var dismissed by remember(reel.id) { mutableStateOf(false) }
     var visible by remember(reel.id) { mutableStateOf(false) }
+    var nativeAdFailed by remember(reel.id) { mutableStateOf(false) }
+    var nativeImpressionLogged by remember(reel.id) { mutableStateOf(false) }
 
     LaunchedEffect(isCurrent) {
         visible = false
@@ -2017,11 +2020,31 @@ private fun ReelAdCarousel(
             state = pagerState,
             modifier = Modifier.fillMaxWidth(),
         ) { page ->
-            ReelAffiliateCard(
-                offer = offers[page],
-                reel = reel,
-                onDismiss = { dismissed = true },
-            )
+            if (page == 2 && !nativeAdFailed) {
+                NativeAdCard(
+                    compact = true,
+                    onAdFailedToLoad = { nativeAdFailed = true },
+                )
+                // Log native impression once when the page first shows.
+                LaunchedEffect(pagerState.currentPage, page) {
+                    if (pagerState.currentPage == page && !nativeImpressionLogged) {
+                        nativeImpressionLogged = true
+                        WatchIntentLogger.get().log(
+                            WatchIntentLogger.IntentEventType.AD_IMPRESSION,
+                            metadata = mapOf(
+                                "ad_type" to "native",
+                                "source" to "reel_ad_carousel",
+                            ),
+                        )
+                    }
+                }
+            } else {
+                ReelAffiliateCard(
+                    offer = offers[page],
+                    reel = reel,
+                    onDismiss = { dismissed = true },
+                )
+            }
         }
         Spacer(Modifier.height(6.dp))
         Row(

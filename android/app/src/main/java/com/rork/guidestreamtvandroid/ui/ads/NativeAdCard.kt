@@ -50,6 +50,7 @@ import com.rork.guidestreamtvandroid.ui.theme.TextTertiary
 @Composable
 fun NativeAdCard(
     modifier: Modifier = Modifier,
+    compact: Boolean = false,
     onAdLoaded: () -> Unit = {},
     onAdFailedToLoad: () -> Unit = {},
 ) {
@@ -59,7 +60,7 @@ fun NativeAdCard(
             .clip(RoundedCornerShape(14.dp))
             .background(GlassFill)
             .border(1.dp, GlassStroke, RoundedCornerShape(14.dp))
-            .padding(12.dp),
+            .padding(if (compact) 8.dp else 12.dp),
     ) {
         // "Ad" badge
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -84,7 +85,7 @@ fun NativeAdCard(
             adUnitId = RemoteConfigService.adUnit("native") ?: AppConfig.ADMOB_NATIVE_AD_UNIT_ID,
             modifier = Modifier
                 .fillMaxWidth()
-                .height(100.dp),
+                .height(if (compact) 50.dp else 100.dp),
             onAdLoaded = onAdLoaded,
             onAdFailedToLoad = onAdFailedToLoad,
         )

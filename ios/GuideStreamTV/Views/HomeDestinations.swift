@@ -164,12 +164,25 @@ struct PopularOnServiceCategoriesView: View {
             .frame(maxWidth: .infinity)
         } else {
             ScrollView {
-                LazyVGrid(columns: columns, spacing: 16) {
-                    ForEach(currentShows) { show in
-                        Button(action: { select(show) }) {
-                            BingeGridCard(show: show, tag: currentTag)
+                LazyVStack(spacing: 16) {
+                    ForEach(Array(currentShows.chunked(6).enumerated()), id: \.offset) { chunkIdx, chunk in
+                        LazyVGrid(columns: columns, spacing: 16) {
+                            ForEach(chunk) { show in
+                                Button(action: { select(show) }) {
+                                    BingeGridCard(show: show, tag: currentTag)
+                                }
+                                .buttonStyle(.plain)
+                            }
                         }
-                        .buttonStyle(.plain)
+                        if chunk.count >= 6 {
+                            InlineAdSlotView(
+                                slotIndex: chunkIdx,
+                                adSource: "list_inline",
+                                sectionKey: "list_inline_ad",
+                                onDismiss: {}
+                            )
+                            .padding(.horizontal, 20)
+                        }
                     }
                 }
                 .padding(.horizontal, 20)
@@ -1525,11 +1538,22 @@ struct NewEpisodesListView: View {
     var body: some View {
         ScrollView {
             LazyVStack(spacing: 12) {
-                ForEach(episodes) { ep in
-                    Button(action: { onSelect(ep) }) {
-                        EpisodeRow(episode: ep)
+                ForEach(Array(episodes.chunked(6).enumerated()), id: \.offset) { chunkIdx, chunk in
+                    ForEach(chunk) { ep in
+                        Button(action: { onSelect(ep) }) {
+                            EpisodeRow(episode: ep)
+                        }
+                        .buttonStyle(.plain)
                     }
-                    .buttonStyle(.plain)
+                    if chunk.count >= 6 {
+                        InlineAdSlotView(
+                            slotIndex: chunkIdx,
+                            adSource: "list_inline",
+                            sectionKey: "list_inline_ad",
+                            onDismiss: {}
+                        )
+                        .padding(.horizontal, 20)
+                    }
                 }
             }
             .padding(.horizontal, 20)
@@ -1559,12 +1583,25 @@ struct BingeWorthyListView: View {
 
     var body: some View {
         ScrollView {
-            LazyVGrid(columns: columns, spacing: 16) {
-                ForEach(shows) { show in
-                    Button(action: { onSelect(show) }) {
-                        BingeGridCard(show: show, tag: tag)
+            LazyVStack(spacing: 16) {
+                ForEach(Array(shows.chunked(6).enumerated()), id: \.offset) { chunkIdx, chunk in
+                    LazyVGrid(columns: columns, spacing: 16) {
+                        ForEach(chunk) { show in
+                            Button(action: { onSelect(show) }) {
+                                BingeGridCard(show: show, tag: tag)
+                            }
+                            .buttonStyle(.plain)
+                        }
                     }
-                    .buttonStyle(.plain)
+                    if chunk.count >= 6 {
+                        InlineAdSlotView(
+                            slotIndex: chunkIdx,
+                            adSource: "list_inline",
+                            sectionKey: "list_inline_ad",
+                            onDismiss: {}
+                        )
+                        .padding(.horizontal, 20)
+                    }
                 }
             }
             .padding(.horizontal, 20)
@@ -1592,12 +1629,25 @@ struct WhatsNewTodayListView: View {
 
     var body: some View {
         ScrollView {
-            LazyVGrid(columns: columns, spacing: 16) {
-                ForEach(shows) { show in
-                    Button(action: { onSelect(show) }) {
-                        BingeGridCard(show: show, tag: "TODAY")
+            LazyVStack(spacing: 16) {
+                ForEach(Array(shows.chunked(6).enumerated()), id: \.offset) { chunkIdx, chunk in
+                    LazyVGrid(columns: columns, spacing: 16) {
+                        ForEach(chunk) { show in
+                            Button(action: { onSelect(show) }) {
+                                BingeGridCard(show: show, tag: "TODAY")
+                            }
+                            .buttonStyle(.plain)
+                        }
                     }
-                    .buttonStyle(.plain)
+                    if chunk.count >= 6 {
+                        InlineAdSlotView(
+                            slotIndex: chunkIdx,
+                            adSource: "list_inline",
+                            sectionKey: "list_inline_ad",
+                            onDismiss: {}
+                        )
+                        .padding(.horizontal, 20)
+                    }
                 }
             }
             .padding(.horizontal, 20)
@@ -1666,12 +1716,25 @@ struct ContinueWatchingGridView: View {
 
     var body: some View {
         ScrollView {
-            LazyVGrid(columns: columns, spacing: 16) {
-                ForEach(episodes) { ep in
-                    Button(action: { onSelect(ep) }) {
-                        ContinueWatchingGridCard(episode: ep)
+            LazyVStack(spacing: 16) {
+                ForEach(Array(episodes.chunked(6).enumerated()), id: \.offset) { chunkIdx, chunk in
+                    LazyVGrid(columns: columns, spacing: 16) {
+                        ForEach(chunk) { ep in
+                            Button(action: { onSelect(ep) }) {
+                                ContinueWatchingGridCard(episode: ep)
+                            }
+                            .buttonStyle(.plain)
+                        }
                     }
-                    .buttonStyle(.plain)
+                    if chunk.count >= 6 {
+                        InlineAdSlotView(
+                            slotIndex: chunkIdx,
+                            adSource: "list_inline",
+                            sectionKey: "list_inline_ad",
+                            onDismiss: {}
+                        )
+                        .padding(.horizontal, 20)
+                    }
                 }
             }
             .padding(.horizontal, 20)

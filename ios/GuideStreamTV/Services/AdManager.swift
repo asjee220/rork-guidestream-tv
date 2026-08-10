@@ -153,7 +153,7 @@ final class AdManager: NSObject, ObservableObject, FullScreenContentDelegate, Na
 
     // MARK: - Native ad pool
 
-    private let nativePoolTarget: Int = 3
+    private let nativePoolTarget: Int = 5
     private var nativePool: [NativeAd] = []
     private var nativeAdLoader: AdLoader?
 
@@ -176,11 +176,13 @@ final class AdManager: NSObject, ObservableObject, FullScreenContentDelegate, Na
     /// Loads one or more native ads into the pool via GADAdLoader.
     func loadNativePool() {
         guard nativeAdLoader == nil else { return }
+        let multiAdOptions = MultipleAdsAdLoaderOptions()
+        multiAdOptions.numberOfAds = 5
         let loader = AdLoader(
             adUnitID: nativeAdUnitID,
             rootViewController: nil,
             adTypes: [.native],
-            options: nil
+            options: [multiAdOptions]
         )
         loader.delegate = self
         nativeAdLoader = loader

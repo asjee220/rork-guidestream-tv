@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.foundation.shape.CircleShape
@@ -49,6 +50,7 @@ import com.rork.guidestreamtvandroid.data.models.StreamingCatalog
 import com.rork.guidestreamtvandroid.data.models.TMDBResult
 import com.rork.guidestreamtvandroid.data.remote.TMDBService
 import com.rork.guidestreamtvandroid.data.repository.WatchIntentLogger
+import com.rork.guidestreamtvandroid.ui.ads.InlineAdSlot
 import com.rork.guidestreamtvandroid.ui.components.RemoteImage
 import com.rork.guidestreamtvandroid.ui.home.HomeViewModel
 import com.rork.guidestreamtvandroid.ui.navigation.PendingTitleRoute
@@ -266,6 +268,7 @@ fun PopularOnServiceCategoriesScreen(
                 }
             }
             else -> {
+                val dismissedAdSlots = remember { mutableStateMapOf<Int, Boolean>() }
                 LazyVerticalGrid(
                     columns = GridCells.Fixed(2),
                     contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 12.dp, bottom = systemBottomInset() + 24.dp),
@@ -273,25 +276,38 @@ fun PopularOnServiceCategoriesScreen(
                     verticalArrangement = Arrangement.spacedBy(16.dp),
                     modifier = Modifier.fillMaxSize(),
                 ) {
-                    gridItems(currentShows) { r ->
-                        PosterGridCell(
-                            show = r,
-                            accentColor = glow,
-                            onClick = {
-                                WatchIntentLogger.get().log(
-                                    WatchIntentLogger.IntentEventType.CARD_TAPPED,
-                                    titleId = r.id.toString(),
-                                    metadata = mapOf("section" to "popular_on_${target.serviceId}_category_$selectedCategory"),
-                                )
-                                onOpenTitle(
-                                    PendingTitleRoute(
+                    currentShows.chunked(6).forEachIndexed { chunkIdx, chunk ->
+                        gridItems(chunk) { r ->
+                            PosterGridCell(
+                                show = r,
+                                accentColor = glow,
+                                onClick = {
+                                    WatchIntentLogger.get().log(
+                                        WatchIntentLogger.IntentEventType.CARD_TAPPED,
                                         titleId = r.id.toString(),
-                                        titleName = r.displayName,
-                                        isTv = r.isTV,
-                                    ),
+                                        metadata = mapOf("section" to "popular_on_${target.serviceId}_category_$selectedCategory"),
+                                    )
+                                    onOpenTitle(
+                                        PendingTitleRoute(
+                                            titleId = r.id.toString(),
+                                            titleName = r.displayName,
+                                            isTv = r.isTV,
+                                        ),
+                                    )
+                                },
+                            )
+                        }
+                        if (chunk.size >= 6) {
+                            item(span = { GridItemSpan(maxLineSpan) }) {
+                                InlineAdSlot(
+                                    slotIndex = chunkIdx,
+                                    selectedServices = emptySet(),
+                                    adSource = "list_inline",
+                                    sectionKey = "list_inline_ad",
+                                    dismissed = dismissedAdSlots,
                                 )
-                            },
-                        )
+                            }
+                        }
                     }
                 }
             }

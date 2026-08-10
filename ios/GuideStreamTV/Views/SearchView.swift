@@ -382,10 +382,22 @@ struct SearchView: View {
                 // 2. Shows & movies section
                 if hasShows {
                     sectionHeader("SHOWS & MOVIES")
-                    ForEach(Array(vm.tmdbResults.enumerated()), id: \.element.id) { idx, result in
-                        TypeAheadRow(result: result, query: vm.query) { openTMDB(result) }
-                        if idx < vm.tmdbResults.count - 1 {
-                            Divider().overlay(Color.white.opacity(0.06)).padding(.leading, 130)
+                    ForEach(Array(vm.tmdbResults.chunked(6).enumerated()), id: \.offset) { chunkIdx, chunk in
+                        ForEach(Array(chunk.enumerated()), id: \.element.id) { localIdx, result in
+                            TypeAheadRow(result: result, query: vm.query) { openTMDB(result) }
+                            let globalIdx = chunkIdx * 6 + localIdx
+                            if globalIdx < vm.tmdbResults.count - 1 {
+                                Divider().overlay(Color.white.opacity(0.06)).padding(.leading, 130)
+                            }
+                        }
+                        if chunk.count >= 6 {
+                            InlineAdSlotView(
+                                slotIndex: chunkIdx,
+                                adSource: "search_inline",
+                                sectionKey: "search_inline_ad",
+                                onDismiss: {}
+                            )
+                            .padding(.horizontal, 16)
                         }
                     }
                 }
@@ -393,11 +405,22 @@ struct SearchView: View {
                 // 3. Creators & podcasts section
                 if hasCreators {
                     sectionHeader("CREATORS & PODCASTS")
-                    ForEach(vm.nonLiveCreators) { creator in
-                        CreatorSearchRow(creator: creator, isFollowed: followedIds.contains(creator.titleId)) {
-                            toggleFollow(creator)
-                        } onTap: {
-                            openCreator(creator)
+                    ForEach(Array(vm.nonLiveCreators.chunked(6).enumerated()), id: \.offset) { chunkIdx, chunk in
+                        ForEach(chunk) { creator in
+                            CreatorSearchRow(creator: creator, isFollowed: followedIds.contains(creator.titleId)) {
+                                toggleFollow(creator)
+                            } onTap: {
+                                openCreator(creator)
+                            }
+                        }
+                        if chunk.count >= 6 {
+                            InlineAdSlotView(
+                                slotIndex: chunkIdx,
+                                adSource: "search_inline",
+                                sectionKey: "search_inline_ad",
+                                onDismiss: {}
+                            )
+                            .padding(.horizontal, 16)
                         }
                     }
                 }
@@ -460,13 +483,26 @@ struct SearchView: View {
                 HStack { Spacer(); ProgressView().tint(Color.orange); Spacer() }
                     .padding(.top, 40)
             } else {
-                LazyVGrid(columns: [
-                    GridItem(.flexible(), spacing: 8),
-                    GridItem(.flexible(), spacing: 8),
-                    GridItem(.flexible(), spacing: 8)
-                ], spacing: 8) {
-                    ForEach(vm.popular) { result in
-                        PosterCell(result: result) { openTMDB(result) }
+                LazyVStack(spacing: 8) {
+                    ForEach(Array(vm.popular.chunked(9).enumerated()), id: \.offset) { chunkIdx, chunk in
+                        LazyVGrid(columns: [
+                            GridItem(.flexible(), spacing: 8),
+                            GridItem(.flexible(), spacing: 8),
+                            GridItem(.flexible(), spacing: 8)
+                        ], spacing: 8) {
+                            ForEach(chunk) { result in
+                                PosterCell(result: result) { openTMDB(result) }
+                            }
+                        }
+                        if chunk.count >= 9 {
+                            InlineAdSlotView(
+                                slotIndex: chunkIdx,
+                                adSource: "search_inline",
+                                sectionKey: "search_inline_ad",
+                                onDismiss: {}
+                            )
+                            .padding(.horizontal, 12)
+                        }
                     }
                 }
                 .padding(.horizontal, 12)

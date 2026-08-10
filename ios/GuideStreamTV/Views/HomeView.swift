@@ -407,56 +407,18 @@ struct HomeView: View {
         streams.userStreams.contains { SourceKind.from(titleId: $0.titleId).isNonTMDB }
     }
 
-    /// Rotating pool of the eight affiliate offers, matching the detail-sheet
-    /// sponsored cards (affiliateAdData in HomeDestinations.swift).
-    private static let inlineAdPool: [(serviceId: String, headline: String, subtitle: String)] = [
-        ("netflix", "Stream more on Netflix", "Unlimited shows & movies · Try free"),
-        ("hbo", "Watch more on Max", "HBO, Max Originals & more · Try free"),
-        ("hulu", "Live TV + streaming on Hulu", "Starting at $7.99/mo · Try free"),
-        ("disney", "Disney+, Hulu & ESPN+ bundle", "Disney Bundle · Try free"),
-        ("appletv", "Award-winning originals", "Apple TV+ · First month free"),
-        ("prime", "Included with Prime", "Prime Video · Try free"),
-        ("paramount", "NFL on CBS & live sports", "Paramount+ · Try free"),
-        ("peacock", "Stream free on Peacock", "NBC shows & live sports · Free tier")
-    ]
-
-    /// Picks the affiliate offer for an inline slot, rotating by slot index and
-    /// preferring a service the user hasn't already selected.
-    private func inlineAdOffer(for slotIndex: Int) -> (serviceId: String, headline: String, subtitle: String) {
-        let owned = auth.selectedServices
-        let unowned = Self.inlineAdPool.filter { !owned.contains($0.serviceId) }
-        let chosen = unowned.isEmpty ? Self.inlineAdPool : unowned
-        return chosen[slotIndex % chosen.count]
-    }
-
     /// Compact inline sponsored slot inserted between home feed rows. Hidden
     /// once its index is dismissed for the session. Even slots prefer AdMob
     /// (Rakuten backfill); odd slots render the Rakuten card directly.
+    /// Delegates offer selection and rendering to the shared InlineAdSlotView.
     @ViewBuilder
     private func inlineAdSlot(_ slotIndex: Int) -> some View {
         if !dismissedAdSlots.contains(slotIndex) {
-            let offer = inlineAdOffer(for: slotIndex)
-            let service = StreamingCatalog.service(for: offer.serviceId)
-            SponsoredSlotView(
-                service: service,
-                fallbackName: service?.name ?? offer.headline,
-                fallbackColor: service?.glow ?? .white,
-                headline: offer.headline,
-                subtitle: offer.subtitle,
-                onTap: {
-                    RakutenManager.shared.openAffiliateLink(
-                        serviceId: offer.serviceId,
-                        metadata: ["section": "home_inline_ad_\(slotIndex)"]
-                    )
-                    WatchIntentLogger.shared.log(
-                        eventType: .cardTapped,
-                        metadata: ["section": "home_inline_ad_\(slotIndex)"]
-                    )
-                },
-                onDismiss: { dismissedAdSlots.insert(slotIndex) },
+            InlineAdSlotView(
+                slotIndex: slotIndex,
                 adSource: "home_inline",
-                compact: true,
-                preferredSource: slotIndex % 2 == 0 ? .adMobFirst : .rakutenFirst
+                sectionKey: "home_inline_ad",
+                onDismiss: { dismissedAdSlots.insert(slotIndex) }
             )
             .padding(.horizontal, 12)
         }
@@ -772,6 +734,9 @@ struct HomeView: View {
                             }
                         }
 
+                        // Inline sponsored slot #1 — after Creators/Podcasts for You
+                        inlineAdSlot(1)
+
                         if !homeContentReady {
                             HomeShimmerSection(title: "Everyone's Watching")
                                 .padding(.horizontal, 12)
@@ -822,8 +787,8 @@ struct HomeView: View {
                             .padding(.horizontal, 12)
                         }
 
-                        // Inline sponsored slot #1 — after Leaving Soon
-                        inlineAdSlot(1)
+                        // Inline sponsored slot #2 — after Leaving Soon
+                        inlineAdSlot(2)
 
                         if !homeContentReady {
                             ForEach(StreamingCatalog.ordered(from: auth.selectedServices), id: \.id) { service in
@@ -896,6 +861,9 @@ struct HomeView: View {
                             }
                         }
 
+                        // Inline sponsored slot #3 — after per-service Popular/Now&Next, before Genre discovery
+                        inlineAdSlot(3)
+
                         GenreDiscoverySection(highlighted: CoachMarkManager.shared.genreHighlightActive, selectedGenreId: selectedGenreId) { genreId, genreName, mediaType in
                             selectedGenreId = genreId
                             selectedGenreName = genreName
@@ -956,8 +924,8 @@ struct HomeView: View {
                             }
                         }
 
-                        // Inline sponsored slot #2 — after Because you watch
-                        inlineAdSlot(2)
+                        // Inline sponsored slot #4 — after Because you watch / Browsing genre
+                        inlineAdSlot(4)
 
                         if !homeContentReady {
                             HomeShimmerSection(title: "Top rated right now")
@@ -1022,6 +990,9 @@ struct HomeView: View {
                             )
                             .padding(.horizontal, 12)
                         }
+
+                        // Inline sponsored slot #5 — after Upcoming Episodes, before widget banner
+                        inlineAdSlot(5)
 
                         if !widgetBannerDismissed {
                             WidgetPromoBanner(
@@ -1089,8 +1060,8 @@ struct HomeView: View {
                             .padding(.horizontal, 12)
                         }
 
-                        // Inline sponsored slot #3 — after Binge Worthy
-                        inlineAdSlot(3)
+                        // Inline sponsored slot #6 — after Binge Worthy
+                        inlineAdSlot(6)
 
                         Color.clear.frame(height: 96)
                     }
