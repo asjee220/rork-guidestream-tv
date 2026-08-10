@@ -304,6 +304,16 @@ final class StreamsViewModel {
         }
     }
 
+    /// Clears the watch-list badge only when the title is actually saved in
+    /// the user's watch list. No-ops otherwise — e.g. for a deep-link id that
+    /// isn't a watch-list row, or a title slug that doesn't match any row.
+    func markWatchlistSeenIfSaved(titleId: String) async {
+        let trimmed = titleId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        guard userStreams.contains(where: { $0.titleId == trimmed }) else { return }
+        await markWatchlistSeen(titleId: trimmed)
+    }
+
     /// Returns the watch-list new-content badge text for a saved title, or
     /// nil when no badge should show.
     ///

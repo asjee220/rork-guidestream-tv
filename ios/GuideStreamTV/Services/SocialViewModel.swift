@@ -471,6 +471,7 @@ final class SocialViewModel {
             await removeWatched(titleId: trimmed, userId: userId, deviceId: deviceId)
         } else {
             await insertWatched(titleId: trimmed, userId: userId, deviceId: deviceId, titleName: titleName, mediaType: mediaType, tmdbId: tmdbId)
+            await StreamsViewModel.shared.markWatchlistSeenIfSaved(titleId: trimmed)
         }
     }
 

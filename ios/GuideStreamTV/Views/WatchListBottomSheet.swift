@@ -150,7 +150,6 @@ private struct WatchListContent: View {
                     ForEach(sortedStreams) { item in
                         Button {
                             UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                            Task { await streams.markWatchlistSeen(titleId: item.titleId) }
                             let kind = SourceKind.from(titleId: item.titleId)
                             if kind.isNonTMDB {
                                 creatorDetailTarget = CreatorDetailTarget(titleId: item.titleId, initialEpisode: nil)

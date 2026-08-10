@@ -563,11 +563,6 @@ struct HomeView: View {
                                         platformId: ep.platform.lowercased(),
                                         metadata: ["section": "watch_list"]
                                     )
-                                    // Clear the new-content badge the same way the
-                                    // watch-list sheet does when a card is opened.
-                                    if let tid = ep.titleId {
-                                        Task { await streams.markWatchlistSeen(titleId: tid) }
-                                    }
                                     if let tid = ep.titleId, SourceKind.from(titleId: tid).isNonTMDB {
                                         creatorDetailTarget = CreatorDetailTarget(titleId: tid, initialEpisode: nil)
                                     } else {

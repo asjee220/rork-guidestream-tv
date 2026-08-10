@@ -556,6 +556,7 @@ fun ShowDetailScreen(
                                     } catch (_: Exception) {
                                         context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(fallback)))
                                     }
+                                    streamsVm.markWatchlistSeenIfSaved(titleId)
                                 },
                             contentAlignment = Alignment.Center,
                         ) {

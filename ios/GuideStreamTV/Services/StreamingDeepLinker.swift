@@ -75,6 +75,11 @@ enum StreamingDeepLinker {
             ]
         )
 
+        Task { @MainActor in
+            if let tmdbId { await StreamsViewModel.shared.markWatchlistSeenIfSaved(titleId: String(tmdbId)) }
+            if let titleSlug { await StreamsViewModel.shared.markWatchlistSeenIfSaved(titleId: titleSlug) }
+        }
+
         openWithFallback(url, platform: platform, title: title)
     }
 
@@ -102,6 +107,11 @@ enum StreamingDeepLinker {
                 "source": tmdbId == nil ? "search_fallback" : "watchmode_lookup"
             ]
         )
+
+        Task { @MainActor in
+            if let tmdbId { await StreamsViewModel.shared.markWatchlistSeenIfSaved(titleId: String(tmdbId)) }
+            if let titleSlug { await StreamsViewModel.shared.markWatchlistSeenIfSaved(titleId: titleSlug) }
+        }
 
         guard let tmdbId else {
             print("[Deeplink] No tmdbId; opening search fallback for \(platform)")

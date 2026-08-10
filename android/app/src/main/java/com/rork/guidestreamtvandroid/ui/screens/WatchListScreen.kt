@@ -163,7 +163,6 @@ fun WatchListScreen(
                         isWatched = watchedIds.contains(stream.titleId),
                         badgeText = streamsVm.newBadgeText(stream, latestContentAt, latestContentKind, seenContentAt),
                         onClick = {
-                            streamsVm.markWatchlistSeen(stream.titleId)
                             onOpenTitle(
                                 PendingTitleRoute(
                                     titleId = stream.titleId,

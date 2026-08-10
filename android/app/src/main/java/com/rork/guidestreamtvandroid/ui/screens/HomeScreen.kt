@@ -276,8 +276,6 @@ fun HomeScreen(
                         platformId = stream.platform?.lowercase() ?: "tmdb",
                         metadata = mapOf("section" to "watch_list"),
                     )
-                    // Clear the new-content badge, same as the full watch list.
-                    streamsVm.markWatchlistSeen(stream.titleId)
                     onOpenTitle(PendingTitleRoute(
                         titleId = stream.titleId,
                         titleName = stream.title ?: stream.titleName,

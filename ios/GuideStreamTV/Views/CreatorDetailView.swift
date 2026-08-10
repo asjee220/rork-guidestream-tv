@@ -1038,7 +1038,10 @@ struct CreatorDetailView: View {
     /// primary watch button. Used by every external creator platform so the
     /// call-to-action reads consistently across the app.
     private func watchOnButton(chip: String, chipColor: Color, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
+        Button {
+            action()
+            Task { await StreamsViewModel.shared.markWatchlistSeenIfSaved(titleId: titleId) }
+        } label: {
             HStack(spacing: 8) {
                 Image(systemName: "play.fill")
                     .scaledFont(size: 15, weight: .bold)

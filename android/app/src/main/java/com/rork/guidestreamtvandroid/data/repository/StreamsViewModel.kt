@@ -198,6 +198,9 @@ class StreamsViewModel private constructor(context: Context) {
         } else {
             _watchedIds.value + trimmedId
         }
+        if (!wasWatched) {
+            markWatchlistSeenIfSaved(trimmedId)
+        }
 
         WatchIntentLogger.get().log(
             WatchIntentLogger.IntentEventType.WATCHED_TOGGLED,
@@ -661,6 +664,13 @@ class StreamsViewModel private constructor(context: Context) {
      * immediately. Owner is the signed-in user id when authenticated,
      * otherwise the device id.
      */
+    fun markWatchlistSeenIfSaved(titleId: String) {
+        val trimmedId = titleId.trim()
+        if (trimmedId.isEmpty()) return
+        if (!_userStreams.value.any { it.titleId == trimmedId }) return
+        markWatchlistSeen(trimmedId)
+    }
+
     fun markWatchlistSeen(titleId: String) {
         val trimmedId = titleId.trim()
         if (trimmedId.isEmpty()) return

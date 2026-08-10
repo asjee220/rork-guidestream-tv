@@ -379,6 +379,7 @@ fun CreatorDetailScreen(
                                     titleId = titleId,
                                     platformId = sourceType,
                                 )
+                                streamsVm.markWatchlistSeenIfSaved(titleId)
                             },
                         )
                     }

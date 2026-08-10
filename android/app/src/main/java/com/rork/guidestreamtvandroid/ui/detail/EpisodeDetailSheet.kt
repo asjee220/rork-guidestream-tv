@@ -438,6 +438,7 @@ fun EpisodeDetailSheet(
                                         platformId = srcName?.lowercase(),
                                         metadata = mapOf("source" to "episode_detail_sheet"),
                                     )
+                                    streamsVm.markWatchlistSeenIfSaved(route.titleId)
                                     onDismiss()
                                 },
                             contentAlignment = Alignment.Center,
