@@ -15,7 +15,6 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.serialization.SerialName
@@ -118,22 +117,22 @@ class StreamsViewModel private constructor(context: Context) {
     suspend fun refreshAllNow() {
         coroutineScope {
             val jobs = listOf(
-                launch {
+                launch(Dispatchers.IO) {
                     try { fetchUserStreamsNow() }
                     catch (c: CancellationException) { throw c }
                     catch (_: Exception) {}
                 },
-                launch {
+                launch(Dispatchers.IO) {
                     try { fetchNewEpisodesNow() }
                     catch (c: CancellationException) { throw c }
                     catch (_: Exception) {}
                 },
-                launch {
+                launch(Dispatchers.IO) {
                     try { fetchLatestContentDates() }
                     catch (c: CancellationException) { throw c }
                     catch (_: Exception) {}
                 },
-                launch {
+                launch(Dispatchers.IO) {
                     try { fetchWatchlistSeen() }
                     catch (c: CancellationException) { throw c }
                     catch (_: Exception) {}

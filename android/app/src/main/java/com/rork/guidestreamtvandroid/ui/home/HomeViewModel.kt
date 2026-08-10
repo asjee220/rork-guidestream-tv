@@ -32,6 +32,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 
 /**
@@ -717,16 +718,20 @@ class HomeViewModel : ViewModel() {
         }
 
         // Deferred, non-blocking work — each isolated so one failure never
-        // aborts the rest.
-        try { loadLeavingSoon() } catch (c: CancellationException) { throw c } catch (_: Exception) {}
-        launchDeferred { _upcoming.value = tmdb.getUpcomingMovies() }
-        launchDeferred { _bingeReady.value = tmdb.getDiscoverEnded() }
-        launchDeferred { ProviderBrandMapService.get().refresh() }
-        launchDeferred { loadRecommendedCreators() }
+        // aborts the rest. Runs on IO so SharedPreferences writes (widget
+        // payload inside loadLeavingSoon), database reads, and JSON encoding
+        // never hit the main thread during a pull-to-refresh.
+        withContext(Dispatchers.IO) {
+            try { loadLeavingSoon() } catch (c: CancellationException) { throw c } catch (_: Exception) {}
+            launchDeferred { _upcoming.value = tmdb.getUpcomingMovies() }
+            launchDeferred { _bingeReady.value = tmdb.getDiscoverEnded() }
+            launchDeferred { ProviderBrandMapService.get().refresh() }
+            launchDeferred { loadRecommendedCreators() }
 
-        // Refresh the watchlist / watched / badges / new-episode counts.
-        try { StreamsViewModel.get().refreshAllNow() }
-        catch (c: CancellationException) { throw c }
-        catch (_: Exception) {}
+            // Refresh the watchlist / watched / badges / new-episode counts.
+            try { StreamsViewModel.get().refreshAllNow() }
+            catch (c: CancellationException) { throw c }
+            catch (_: Exception) {}
+        }
     }
 }
