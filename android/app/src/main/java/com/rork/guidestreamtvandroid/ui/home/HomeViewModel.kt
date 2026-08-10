@@ -18,7 +18,8 @@ import com.rork.guidestreamtvandroid.data.remote.TMDBService
 import com.rork.guidestreamtvandroid.data.remote.toTMDBResult
 import com.rork.guidestreamtvandroid.data.repository.StreamsViewModel
 import com.rork.guidestreamtvandroid.widget.WidgetDataService
-import com.rork.guidestreamtvandroid.widget.WidgetLeavingSoonItem
+import com.rork.guidestreamtvandroid.widget.WidgetFeedItem
+import com.rork.guidestreamtvandroid.data.remote.LiveStatusService
 import java.time.LocalDate
 import java.time.ZoneOffset
 import java.time.temporal.ChronoUnit
@@ -249,6 +250,7 @@ class HomeViewModel : ViewModel() {
             // catch, so a failure in one never blocks or cancels another.
             launchDeferred { ProviderBrandMapService.get().refresh() }
             launchDeferred { loadLeavingSoon() }
+            launchDeferred { pushWidgetFeed() }
             launchDeferred { _upcoming.value = tmdb.getUpcomingMovies() }
             launchDeferred { _bingeReady.value = tmdb.getDiscoverEnded() }
             // Second provider pass. The 8s watchdog can flip the gate while
@@ -575,25 +577,164 @@ class HomeViewModel : ViewModel() {
             _providerByTmdb.value = _providerByTmdb.value + providerUpdates
         }
         _leavingSoon.value = kept.map { (row, _) -> row.toTMDBResult() }
+    }
 
-        // Push the kept rows to the home-screen widget.
-        val widgetItems = kept.map { (row, daysLeft) ->
-            val platform = Platform.from(row.serviceName)
-            WidgetLeavingSoonItem(
-                id = row.tmdbId.toString(),
-                title = row.title ?: "Untitled",
-                daysLeft = daysLeft,
-                platform = platform?.name ?: (row.serviceName ?: "").uppercase(),
-                platformColorHex = Platform.colorHex(platform),
-                posterUrl = row.posterUrl,
-            )
+    /**
+     * Builds the unified "Next Up" widget feed from four priority tiers
+     * (live, new, soon, out), deduplicates by deep link keeping the first
+     * occurrence, caps at 12 items, and pushes it to the widget via
+     * SharedPreferences. Called unconditionally from the same coroutine
+     * scope that calls loadLeavingSoon — never gated behind the expiring
+     * fetch so a null or empty expiring result can never suppress the
+     * widget write.
+     */
+    private suspend fun pushWidgetFeed() {
+        val now = LocalDate.now(ZoneOffset.UTC)
+        val items = mutableListOf<WidgetFeedItem>()
+
+        // --- Tier 1: live now ---
+        val streams = StreamsViewModel.get()
+        val livestreamIds = streams.userStreams.value
+            .filter { SourceKind.from(it.titleId).isLivestream }
+            .map { it.titleId }
+        val liveStatuses = LiveStatusService.get().fetchLiveStatus(livestreamIds) ?: emptyList()
+        val liveMap = liveStatuses.associateBy { it.titleId }
+        val liveRows = streams.userStreams.value
+            .filter { SourceKind.from(it.titleId).isLivestream }
+            .filter { liveMap[it.titleId]?.isLive == true }
+        for (stream in liveRows) {
+            val status = liveMap[stream.titleId]
+            val viewerText = if (status?.viewerCount != null && status.viewerCount > 0) {
+                val vc = status.viewerCount
+                if (vc >= 1_000_000) {
+                    String.format("%.1fM watching", vc / 1_000_000.0)
+                } else if (vc >= 1_000) {
+                    String.format("%.1fK watching", vc / 1_000.0)
+                } else {
+                    "$vc watching"
+                }
+            } else {
+                "Live now"
+            }
+            items.add(WidgetFeedItem(
+                id = stream.titleId,
+                kind = "live",
+                title = stream.title ?: stream.titleId,
+                subtitle = status?.category ?: "",
+                badge = viewerText,
+                platform = SourceKind.from(stream.titleId).displayLabel.uppercase(),
+                platformColorHex = "#FF3B30",
+                posterUrl = stream.posterUrl,
+                deepLink = "guidestream://title/${stream.titleId}",
+            ))
         }
+        val liveCount = items.size
+
+        // --- Tier 2: new for you (last 72h) ---
+        val cutoffEpoch = System.currentTimeMillis() - 72 * 60 * 60 * 1000L
+        val newRows = streams.newEpisodes.value.filter { row ->
+            row.releasedAt?.let {
+                runCatching { java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.US).parse(it) }.getOrNull()?.time
+            }?.let { it > cutoffEpoch } ?: false
+        }
+        for (row in newRows) {
+            val title = row.title ?: row.episodeTitle ?: row.titleId
+            val badge = if (row.season != null && row.episode != null) {
+                "S${row.season} E${row.episode}"
+            } else if (!row.episodeTitle.isNullOrEmpty()) {
+                row.episodeTitle
+            } else {
+                "New episode"
+            }
+            val platform = Platform.from(row.platform)
+            val colorHex = Platform.colorHex(platform)
+            val platformName = platform?.name ?: (row.platform?.uppercase() ?: "STREAM")
+            items.add(WidgetFeedItem(
+                id = row.id,
+                kind = "new",
+                title = title,
+                subtitle = "",
+                badge = badge,
+                platform = platformName,
+                platformColorHex = colorHex,
+                posterUrl = row.posterUrl ?: row.thumbnailUrl,
+                deepLink = "guidestream://title/${row.titleId}",
+            ))
+        }
+
+        // --- Tier 3: dropping soon (today..+14d) ---
+        val maxSoonDate = now.plusDays(14)
+        val upcoming = upcomingRows
+            ?: StreamingUpcomingService.get().fetchUpcoming()?.also { upcomingRows = it }
+        if (upcoming != null) {
+            val soonRows = upcoming
+                .mapNotNull { row ->
+                    val dateStr = row.sourceReleaseDate ?: return@mapNotNull null
+                    val parsed = runCatching { LocalDate.parse(dateStr) }.getOrNull() ?: return@mapNotNull null
+                    if (parsed.isBefore(now) || parsed.isAfter(maxSoonDate)) return@mapNotNull null
+                    if (row.title.isNullOrEmpty()) return@mapNotNull null
+                    val delta = ChronoUnit.DAYS.between(now, parsed).toInt()
+                    val badge = when (delta) {
+                        0 -> "Today"
+                        1 -> "Tomorrow"
+                        else -> "in ${delta}d"
+                    }
+                    val platform = Platform.from(row.sourceName)
+                    val colorHex = Platform.colorHex(platform)
+                    val platformName = platform?.name ?: (row.sourceName?.uppercase() ?: "STREAM")
+                    WidgetFeedItem(
+                        id = "soon-${row.tmdbId}",
+                        kind = "soon",
+                        title = row.title,
+                        subtitle = "",
+                        badge = badge,
+                        platform = platformName,
+                        platformColorHex = colorHex,
+                        posterUrl = row.posterUrl,
+                        deepLink = "guidestream://title/${row.tmdbId}",
+                    ) to parsed
+                }
+                .sortedBy { it.second }
+                .map { it.first }
+            items.addAll(soonRows)
+        }
+
+        // --- Tier 4: out now ---
+        val releases = releaseRows
+            .ifEmpty { StreamingReleasesService.get().fetchReleases() ?: emptyList() }
+        for (row in releases) {
+            if (row.title.isNullOrEmpty()) continue
+            val platform = Platform.from(row.sourceName)
+            val colorHex = Platform.colorHex(platform)
+            val platformName = platform?.name ?: (row.sourceName?.uppercase() ?: "STREAM")
+            items.add(WidgetFeedItem(
+                id = "out-${row.tmdbId}",
+                kind = "out",
+                title = row.title,
+                subtitle = "",
+                badge = "Out now",
+                platform = platformName,
+                platformColorHex = colorHex,
+                posterUrl = row.posterUrl,
+                deepLink = "guidestream://title/${row.tmdbId}",
+            ))
+        }
+
+        // --- Deduplicate by deepLink, keeping the first occurrence ---
+        val seenLinks = mutableSetOf<String>()
+        val deduped = items.filter { item ->
+            item.deepLink?.let { seenLinks.add(it) } ?: true
+        }
+
+        // --- Cap at 12 ---
+        val capped = deduped.take(12)
+
         runCatching {
-            val streams = StreamsViewModel.get()
             WidgetDataService.get().push(
-                leavingSoon = widgetItems,
+                items = capped,
                 watchlistCount = streams.userStreams.value.size,
                 newEpisodeCount = streams.newEpisodes.value.size,
+                liveCount = liveCount,
             )
         }
     }
@@ -723,6 +864,7 @@ class HomeViewModel : ViewModel() {
         // never hit the main thread during a pull-to-refresh.
         withContext(Dispatchers.IO) {
             try { loadLeavingSoon() } catch (c: CancellationException) { throw c } catch (_: Exception) {}
+            try { pushWidgetFeed() } catch (c: CancellationException) { throw c } catch (_: Exception) {}
             launchDeferred { _upcoming.value = tmdb.getUpcomingMovies() }
             launchDeferred { _bingeReady.value = tmdb.getDiscoverEnded() }
             launchDeferred { ProviderBrandMapService.get().refresh() }

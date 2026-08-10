@@ -2005,7 +2005,7 @@ struct WidgetDiagnosticsCard: View {
                 statusRow("Data written for widget", ok: diag.hasPayload && diag.fileContainerReachable)
 
                 if diag.fileContainerReachable, diag.hasPayload {
-                    Text("Leaving soon: \(diag.leavingSoonCount) · Watchlist: \(diag.watchlistCount) · New eps: \(diag.newEpisodeCount)")
+                    Text("Next up: \(diag.feedItemCount) · Live: \(diag.liveCount) · Watchlist: \(diag.watchlistCount) · New eps: \(diag.newEpisodeCount)")
                         .scaledFont(size: 11)
                         .foregroundStyle(Color.textSecondary)
                     if let updated = diag.lastUpdated {

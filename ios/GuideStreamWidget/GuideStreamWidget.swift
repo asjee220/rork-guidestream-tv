@@ -2,10 +2,11 @@
 //  GuideStreamWidget.swift
 //  GuideStreamWidget
 //
-//  Shows Leaving Soon titles, watchlist count, and new episode alerts
-//  across small, medium, and large widget families. All data is read
-//  from the App Group shared UserDefaults, written by the main app
-//  whenever the user's watchlist or leaving-soon list changes.
+//  Shows the unified "Next Up" feed — live now, new for you, dropping soon,
+//  and out now — across small, medium, and large widget families. All data
+//  is read from the App Group shared container, written by the main app
+//  whenever the home feed loads. Each row is tappable via a guidestream://
+//  deep link that opens the app on that title's detail screen.
 //
 
 import WidgetKit
@@ -25,27 +26,15 @@ nonisolated struct Provider: TimelineProvider {
         WidgetEntry(
             date: Date(),
             payload: WidgetPayload(
-                leavingSoon: [
-                    LeavingSoonItem(
-                        id: "ph1", title: "Stranger Things",
-                        platform: "NETFLIX", platformColorHex: "#E50914",
-                        posterUrl: nil, daysRemaining: 3, expireDate: "Jun 27"
-                    ),
-                    LeavingSoonItem(
-                        id: "ph2", title: "The Crown",
-                        platform: "NETFLIX", platformColorHex: "#E50914",
-                        posterUrl: nil, daysRemaining: 5, expireDate: "Jun 29"
-                    ),
-                    LeavingSoonItem(
-                        id: "ph3", title: "Game of Thrones",
-                        platform: "HBO", platformColorHex: "#5A1FCB",
-                        posterUrl: nil, daysRemaining: 7, expireDate: "Jul 1"
-                    ),
+                items: [
+                    WidgetFeedItem(id: "ph1", kind: "live", title: "Live Channel Demo", subtitle: "Just Chatting", badge: "Live now", platform: "TWITCH", platformColorHex: "#FF3B30", posterUrl: nil, deepLink: nil),
+                    WidgetFeedItem(id: "ph2", kind: "new", title: "New Show Example", subtitle: "Season 3 just dropped", badge: "S3 E1", platform: "NETFLIX", platformColorHex: "#009E8A", posterUrl: nil, deepLink: nil),
+                    WidgetFeedItem(id: "ph3", kind: "soon", title: "Coming Soon Demo", subtitle: "Arrives this week", badge: "in 3d", platform: "PRIME", platformColorHex: "#1A6FE8", posterUrl: nil, deepLink: nil),
                 ],
                 watchlistCount: 12,
                 newEpisodeCount: 3,
-                lastUpdated: Date(),
-                newEpisodes: nil
+                liveCount: 1,
+                lastUpdated: Date()
             )
         )
     }
@@ -67,11 +56,41 @@ nonisolated struct Provider: TimelineProvider {
     }
 }
 
+// MARK: - Kind colours
+
+private let kindLiveColor  = Color(red: 0xFF/255, green: 0x3B/255, blue: 0x30/255)
+private let kindNewColor   = Color(red: 0x00/255, green: 0x9E/255, blue: 0x8A/255)
+private let kindSoonColor  = Color(red: 0x1A/255, green: 0x6F/255, blue: 0xE8/255)
+private let kindOutColor   = Color(red: 0xF5/255, green: 0x82/255, blue: 0x1F/255)
+
+private func kindColor(_ kind: String) -> Color {
+    switch kind {
+    case "live": return kindLiveColor
+    case "new":  return kindNewColor
+    case "soon": return kindSoonColor
+    case "out":  return kindOutColor
+    default:     return kindOutColor
+    }
+}
+
+private func kindLabel(_ kind: String) -> String {
+    switch kind {
+    case "live": return "live now"
+    case "new":  return "new for you"
+    case "soon": return "dropping soon"
+    case "out":  return "out now"
+    default:     return "next up"
+    }
+}
+
 // MARK: - Widget Views
 
 struct SmallWidgetView: View {
     let entry: WidgetEntry
-    @Environment(\.widgetFamily) var family
+
+    private var items: [WidgetFeedItem] { entry.payload?.items ?? [] }
+    private var leadKind: String { items.first?.kind ?? "soon" }
+    private var leadColor: Color { kindColor(leadKind) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -92,60 +111,48 @@ struct SmallWidgetView: View {
 
             Spacer()
 
-            // Watchlist count badge
+            // Total item count in a large bold numeral coloured by the lead kind
             HStack(spacing: 8) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("\(entry.payload?.watchlistCount ?? 0)")
+                    Text("\(items.count)")
                         .font(.system(size: 28, weight: .bold))
-                        .foregroundStyle(.white)
-                    Text("in Watchlist")
+                        .foregroundStyle(leadColor)
+                    Text(kindLabel(leadKind))
                         .font(.system(size: 10, weight: .medium))
                         .foregroundStyle(.white.opacity(0.5))
                 }
-
                 Spacer()
-
-                // Leaving Soon count ring
-                if let soon = entry.payload?.leavingSoon.count, soon > 0 {
-                    ZStack {
-                        Circle()
-                            .stroke(Color.orange.opacity(0.2), lineWidth: 3)
-                            .frame(width: 44, height: 44)
-                        Circle()
-                            .trim(from: 0, to: min(CGFloat(soon) / 10.0, 1.0))
-                            .stroke(Color.orange, style: StrokeStyle(lineWidth: 3, lineCap: .round))
-                            .frame(width: 44, height: 44)
-                            .rotationEffect(.degrees(-90))
-                        Text("\(soon)")
-                            .font(.system(size: 16, weight: .bold))
-                            .foregroundStyle(.orange)
-                    }
-                }
             }
 
-            // New episodes badge
-            if let newEp = entry.payload?.newEpisodeCount, newEp > 0 {
+            // Live indicator
+            if let liveCount = entry.payload?.liveCount, liveCount > 0 {
                 HStack(spacing: 4) {
                     Circle()
-                        .fill(Color.blue)
+                        .fill(kindLiveColor)
                         .frame(width: 6, height: 6)
-                    Text("\(newEp) new episode\(newEp == 1 ? "" : "s")")
+                        .modifier(PulsingDot())
+                    Text("\(liveCount) live now")
                         .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(.blue)
+                        .foregroundStyle(kindLiveColor)
                 }
             }
         }
         .padding(14)
         .containerBackground(Color(red: 0x04/255, green: 0x09/255, blue: 0x0F/255), for: .widget)
+        .widgetURL(items.first?.deepLink.flatMap { URL(string: $0) })
     }
 }
 
 struct MediumWidgetView: View {
     let entry: WidgetEntry
 
+    private var items: [WidgetFeedItem] { entry.payload?.items ?? [] }
+    private var leadKind: String { items.first?.kind ?? "soon" }
+    private var eyebrowColor: Color { leadKind == "live" ? kindLiveColor : kindOutColor }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            // Header
+            // Header — wordmark + NEXT UP eyebrow
             HStack(spacing: 0) {
                 Text("Guide")
                     .font(.system(size: 13, weight: .heavy))
@@ -172,121 +179,36 @@ struct MediumWidgetView: View {
                 }
             }
 
-            // Section title — falls back to NEW EPISODES when there are no
-            // leaving-soon titles but new-episode content is available.
-            let hasLeavingSoon = entry.payload?.leavingSoon.isEmpty == false
-            let newEpItems = entry.payload?.newEpisodes
-            let hasNewEpisodes = newEpItems != nil && !(newEpItems?.isEmpty ?? true)
-
-            if hasLeavingSoon {
-                HStack(spacing: 5) {
-                    Text("LEAVING SOON")
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundStyle(.orange)
-                    if let count = entry.payload?.leavingSoon.count, count > 0 {
-                        Text("· \(count) title\(count == 1 ? "" : "s")")
-                            .font(.system(size: 10, weight: .medium))
-                            .foregroundStyle(.white.opacity(0.4))
-                    }
+            // Eyebrow — NEXT UP with count suffix
+            HStack(spacing: 5) {
+                if leadKind == "live" {
+                    Circle()
+                        .fill(kindLiveColor)
+                        .frame(width: 5, height: 5)
                 }
-            } else if hasNewEpisodes {
-                HStack(spacing: 5) {
-                    Text("NEW EPISODES")
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundStyle(Color(red: 0x00/255, green: 0x9E/255, blue: 0x8A/255))
-                    if let count = newEpItems?.count, count > 0 {
-                        Text("· \(count) new")
-                            .font(.system(size: 10, weight: .medium))
-                            .foregroundStyle(.white.opacity(0.4))
-                    }
-                }
-            } else {
-                Text("LEAVING SOON")
+                Text("NEXT UP")
                     .font(.system(size: 10, weight: .bold))
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(eyebrowColor)
+                if !items.isEmpty {
+                    Text("· \(items.count)")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.4))
+                }
             }
 
-            // Rows — leaving soon first, then new-episodes fallback, then empty state.
-            if hasLeavingSoon {
-                if let items = entry.payload?.leavingSoon {
-                    VStack(spacing: 6) {
-                        ForEach(Array(items.prefix(3))) { item in
-                            HStack(spacing: 8) {
-                                // Platform pill
-                                Text(item.platform)
-                                    .font(.system(size: 8, weight: .bold))
-                                    .foregroundStyle(.white)
-                                    .padding(.horizontal, 6)
-                                    .padding(.vertical, 3)
-                                    .background(
-                                        RoundedRectangle(cornerRadius: 4, style: .continuous)
-                                            .fill(Color(hex: item.platformColorHex) ?? .gray)
-                                    )
-
-                                // Title
-                                Text(item.title)
-                                    .font(.system(size: 13, weight: .semibold))
-                                    .foregroundStyle(.white)
-                                    .lineLimit(1)
-
-                                Spacer()
-
-                                // Days remaining badge
-                                Text("\(item.daysRemaining)d")
-                                    .font(.system(size: 10, weight: .bold))
-                                    .foregroundStyle(.orange)
-                                    .padding(.horizontal, 6)
-                                    .padding(.vertical, 2)
-                                    .background(
-                                        RoundedRectangle(cornerRadius: 4, style: .continuous)
-                                            .fill(Color.orange.opacity(0.15))
-                                    )
-                            }
-                        }
-                    }
-                }
-            } else if hasNewEpisodes, let items = newEpItems {
+            // Rows — first 3 items
+            if !items.isEmpty {
                 VStack(spacing: 6) {
                     ForEach(Array(items.prefix(3))) { item in
-                        HStack(spacing: 8) {
-                            // Platform pill
-                            Text(item.platform)
-                                .font(.system(size: 8, weight: .bold))
-                                .foregroundStyle(.white)
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 3)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 4, style: .continuous)
-                                        .fill(Color(hex: item.platformColorHex) ?? .gray)
-                                )
-
-                            // Title
-                            Text(item.title)
-                                .font(.system(size: 13, weight: .semibold))
-                                .foregroundStyle(.white)
-                                .lineLimit(1)
-
-                            Spacer()
-
-                            // Episode label badge (teal)
-                            Text(item.episodeLabel)
-                                .font(.system(size: 10, weight: .bold))
-                                .foregroundStyle(Color(red: 0x00/255, green: 0x9E/255, blue: 0x8A/255))
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 2)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 4, style: .continuous)
-                                        .fill(Color(red: 0x00/255, green: 0x9E/255, blue: 0x8A/255).opacity(0.15))
-                                )
-                        }
+                        FeedRow(item: item)
                     }
                 }
             } else {
                 VStack(spacing: 4) {
-                    Text("No titles leaving soon")
+                    Text("Nothing dropping right now")
                         .font(.system(size: 13, weight: .medium))
                         .foregroundStyle(.white.opacity(0.4))
-                    Text("Add shows to your watchlist to get alerts")
+                    Text("Follow a show to fill this in")
                         .font(.system(size: 10, weight: .regular))
                         .foregroundStyle(.white.opacity(0.25))
                 }
@@ -298,7 +220,7 @@ struct MediumWidgetView: View {
             // Bottom stats bar
             HStack(spacing: 16) {
                 StatBadge(label: "Watchlist", value: entry.payload?.watchlistCount ?? 0, color: .blue)
-                StatBadge(label: "New Episodes", value: entry.payload?.newEpisodeCount ?? 0, color: Color(red: 0x00/255, green: 0x9E/255, blue: 0x8A/255))
+                StatBadge(label: "New Episodes", value: entry.payload?.newEpisodeCount ?? 0, color: kindNewColor)
             }
         }
         .padding(14)
@@ -309,10 +231,12 @@ struct MediumWidgetView: View {
 struct LargeWidgetView: View {
     let entry: WidgetEntry
 
-    private let columns = [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)]
+    private var items: [WidgetFeedItem] { entry.payload?.items ?? [] }
+    private var leadKind: String { items.first?.kind ?? "soon" }
+    private var eyebrowColor: Color { leadKind == "live" ? kindLiveColor : kindOutColor }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 10) {
             // Header
             HStack(spacing: 0) {
                 Text("Guide")
@@ -329,39 +253,44 @@ struct LargeWidgetView: View {
 
                 Spacer()
 
-                Text("Leaving Soon")
+                if leadKind == "live" {
+                    Circle()
+                        .fill(kindLiveColor)
+                        .frame(width: 5, height: 5)
+                }
+                Text("NEXT UP")
                     .font(.system(size: 12, weight: .bold))
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(eyebrowColor)
+                if !items.isEmpty {
+                    Text("· \(items.count)")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.4))
+                }
             }
 
             // Stats row
             HStack(spacing: 16) {
                 StatBadge(label: "Watchlist", value: entry.payload?.watchlistCount ?? 0, color: .blue)
-                StatBadge(label: "New Eps", value: entry.payload?.newEpisodeCount ?? 0, color: Color(red: 0x00/255, green: 0x9E/255, blue: 0x8A/255))
-                StatBadge(label: "Expiring", value: entry.payload?.leavingSoon.count ?? 0, color: .orange)
+                StatBadge(label: "New Eps", value: entry.payload?.newEpisodeCount ?? 0, color: kindNewColor)
+                if let liveCount = entry.payload?.liveCount, liveCount > 0 {
+                    StatBadge(label: "Live", value: liveCount, color: kindLiveColor)
+                }
             }
 
-            // Grid of leaving-soon titles, falling back to new-episode cards
-            // when there are no expiring titles but new episodes exist.
-            if let items = entry.payload?.leavingSoon, !items.isEmpty {
-                LazyVGrid(columns: columns, spacing: 8) {
-                    ForEach(Array(items.prefix(8))) { item in
-                        LeavingSoonCard(item: item)
-                    }
-                }
-            } else if let newItems = entry.payload?.newEpisodes, !newItems.isEmpty {
-                LazyVGrid(columns: columns, spacing: 8) {
-                    ForEach(Array(newItems.prefix(8))) { item in
-                        NewEpisodeCard(item: item)
+            // Rows — first 7 items as a vertical list
+            if !items.isEmpty {
+                VStack(spacing: 7) {
+                    ForEach(Array(items.prefix(7))) { item in
+                        FeedRow(item: item)
                     }
                 }
             } else {
                 Spacer()
                 VStack(spacing: 4) {
-                    Text("Nothing expiring soon")
+                    Text("Nothing dropping right now")
                         .font(.system(size: 14, weight: .medium))
                         .foregroundStyle(.white.opacity(0.4))
-                    Text("Add shows to your watchlist to see what's leaving")
+                    Text("Follow a show to fill this in")
                         .font(.system(size: 11, weight: .regular))
                         .foregroundStyle(.white.opacity(0.25))
                 }
@@ -375,6 +304,58 @@ struct LargeWidgetView: View {
 }
 
 // MARK: - Shared subviews
+
+/// One feed row: 3pt wide rounded platform colour bar, title (12.5pt semibold
+/// white, one line, truncated), spacer, badge (9.5pt bold in its kind colour
+/// on a 13% opacity background of the same colour). Wrapped in a `Link` when
+/// the item has a parseable deep link so tapping the row opens the app on
+/// that title's detail screen.
+struct FeedRow: View {
+    let item: WidgetFeedItem
+
+    private var badgeColor: Color { kindColor(item.kind) }
+
+    var body: some View {
+        Group {
+            if let deepLink = item.deepLink, let url = URL(string: deepLink) {
+                Link(destination: url) { rowContent }
+            } else {
+                rowContent
+            }
+        }
+    }
+
+    private var rowContent: some View {
+        HStack(spacing: 8) {
+            // Platform colour bar — 3pt wide rounded rectangle
+            RoundedRectangle(cornerRadius: 1.5, style: .continuous)
+                .fill(Color(hex: item.platformColorHex) ?? badgeColor)
+                .frame(width: 3, height: 18)
+
+            // Title — 12.5pt semibold white, one line, truncated
+            Text(item.title)
+                .font(.system(size: 12.5, weight: .semibold))
+                .foregroundStyle(.white)
+                .lineLimit(1)
+                .truncationMode(.tail)
+
+            Spacer(minLength: 0)
+
+            // Badge — 9.5pt bold in kind colour on 13% opacity background
+            Text(item.badge)
+                .font(.system(size: 9.5, weight: .bold))
+                .foregroundStyle(badgeColor)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(
+                    RoundedRectangle(cornerRadius: 4, style: .continuous)
+                        .fill(badgeColor.opacity(0.13))
+                )
+                .lineLimit(1)
+                .fixedSize()
+        }
+    }
+}
 
 struct StatBadge: View {
     let label: String
@@ -403,97 +384,19 @@ struct StatBadge: View {
     }
 }
 
-struct LeavingSoonCard: View {
-    let item: LeavingSoonItem
+/// Pulsing red dot for the small widget's live indicator.
+struct PulsingDot: ViewModifier {
+    @State private var isPulsing = false
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            // Platform badge
-            Text(item.platform)
-                .font(.system(size: 7, weight: .bold))
-                .foregroundStyle(.white)
-                .padding(.horizontal, 5)
-                .padding(.vertical, 2)
-                .background(
-                    RoundedRectangle(cornerRadius: 3, style: .continuous)
-                        .fill(Color(hex: item.platformColorHex) ?? .gray)
-                )
-
-            Text(item.title)
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(.white)
-                .lineLimit(2)
-
-            Spacer(minLength: 0)
-
-            HStack(spacing: 4) {
-                Text("\(item.daysRemaining)d left")
-                    .font(.system(size: 10, weight: .bold))
-                    .foregroundStyle(.orange)
-                Spacer()
-                Text(item.expireDate)
-                    .font(.system(size: 9, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.35))
-            }
-        }
-        .padding(10)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(Color.white.opacity(0.05))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .strokeBorder(Color.white.opacity(0.08), lineWidth: 0.5)
-                )
-        )
-    }
-}
-
-/// Sibling of `LeavingSoonCard` used in the large widget's new-episodes
-/// fallback. Visually identical except the bottom row shows the episode
-/// label in teal on the left and nothing on the right.
-struct NewEpisodeCard: View {
-    let item: NewEpisodeItem
-
-    private let teal = Color(red: 0x00/255, green: 0x9E/255, blue: 0x8A/255)
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            // Platform badge
-            Text(item.platform)
-                .font(.system(size: 7, weight: .bold))
-                .foregroundStyle(.white)
-                .padding(.horizontal, 5)
-                .padding(.vertical, 2)
-                .background(
-                    RoundedRectangle(cornerRadius: 3, style: .continuous)
-                        .fill(Color(hex: item.platformColorHex) ?? .gray)
-                )
-
-            Text(item.title)
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(.white)
-                .lineLimit(2)
-
-            Spacer(minLength: 0)
-
-            HStack(spacing: 4) {
-                Text(item.episodeLabel)
-                    .font(.system(size: 10, weight: .bold))
-                    .foregroundStyle(teal)
-                Spacer()
-            }
-        }
-        .padding(10)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(Color.white.opacity(0.05))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .strokeBorder(Color.white.opacity(0.08), lineWidth: 0.5)
-                )
-        )
+    func body(content: Content) -> some View {
+        content
+            .scaleEffect(isPulsing ? 1.3 : 1.0)
+            .opacity(isPulsing ? 0.6 : 1.0)
+            .animation(
+                .easeInOut(duration: 0.8).repeatForever(autoreverses: true),
+                value: isPulsing
+            )
+            .onAppear { isPulsing = true }
     }
 }
 
@@ -520,7 +423,7 @@ struct GuideStreamWidget: Widget {
             WidgetContainer(entry: entry)
         }
         .configurationDisplayName("Guide Stream TV")
-        .description("See what's leaving your streaming services and keep tabs on your watchlist.")
+        .description("See what's live, what just dropped, and what's coming to your services.")
         .supportedFamilies([.systemSmall, .systemMedium, .systemLarge])
     }
 }

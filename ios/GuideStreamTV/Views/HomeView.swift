@@ -1082,14 +1082,8 @@ struct HomeView: View {
                     await loadRecommendedCreators()
                     rebuildHeroRail()
                     await hydrateSourceImages()
-                    // Push updated widget data on pull-to-refresh.
-                    WidgetDataService.shared.push(
-                        expiringItems: expiringItems.map { (tmdbId: $0.tmdbId, title: $0.title, daysLeft: $0.daysLeft, sourceId: $0.sourceId) },
-                        posterUrls: expiringPosterUrls,
-                        watchlistCount: streams.userStreams.count,
-                        newEpisodeCount: streams.newEpisodes.count,
-                        newEpisodeRows: streams.newEpisodes
-                    )
+                    // Push updated widget feed on pull-to-refresh.
+                    await pushWidgetFeed()
                 }
                 .onChange(of: scenePhase) { _, newPhase in
                     if newPhase == .active {
@@ -1585,14 +1579,8 @@ struct HomeView: View {
             // Fetch expiring titles from the server-backed expiring_titles
             // table (refreshed daily by the refresh_expiring_titles function).
             await refreshExpiringFromServer()
-            // Push fresh data to the widget via App Group UserDefaults.
-            WidgetDataService.shared.push(
-                expiringItems: expiringItems.map { (tmdbId: $0.tmdbId, title: $0.title, daysLeft: $0.daysLeft, sourceId: $0.sourceId) },
-                posterUrls: expiringPosterUrls,
-                watchlistCount: streams.userStreams.count,
-                newEpisodeCount: streams.newEpisodes.count,
-                newEpisodeRows: streams.newEpisodes
-            )
+            // Push fresh widget feed via App Group UserDefaults.
+            await pushWidgetFeed()
             let topGenreId = topGenreFromWatchList()
             if topGenreId.id != selectedGenreId {
                 selectedGenreId = topGenreId.id
@@ -1609,13 +1597,7 @@ struct HomeView: View {
             await loadNowAndNext()
             Task { await fetchTVDBUpcoming() }
             await refreshExpiringFromServer()
-            WidgetDataService.shared.push(
-                expiringItems: expiringItems.map { (tmdbId: $0.tmdbId, title: $0.title, daysLeft: $0.daysLeft, sourceId: $0.sourceId) },
-                posterUrls: expiringPosterUrls,
-                watchlistCount: streams.userStreams.count,
-                newEpisodeCount: streams.newEpisodes.count,
-                newEpisodeRows: streams.newEpisodes
-            )
+            await pushWidgetFeed()
             let topGenreId = topGenreFromWatchList()
             if topGenreId.id != selectedGenreId {
                 selectedGenreId = topGenreId.id
@@ -2252,6 +2234,156 @@ struct HomeView: View {
         expiringItems = Array(items.prefix(20))
         // Merge so posters from an earlier fetch aren't discarded.
         expiringPosterUrls.merge(posters) { _, new in new }
+    }
+
+    /// Builds the unified "Next Up" widget feed from four priority tiers
+    /// (live, new, soon, out), deduplicates by deep link keeping the first
+    /// occurrence, caps at 12 items, and pushes it to the widget via the App
+    /// Group shared container. Called unconditionally on every home load and
+    /// pull-to-refresh — never gated behind the expiring fetch.
+    private func pushWidgetFeed() async {
+        let now = Date()
+
+        // --- Tier 1: live now ---
+        var items: [WidgetFeedItem] = liveCreators.map { c in
+            let viewerText: String
+            if let vc = c.viewerCount, vc > 0 {
+                if vc >= 1_000_000 {
+                    viewerText = String(format: "%.1fM watching", Double(vc) / 1_000_000)
+                } else if vc >= 1_000 {
+                    viewerText = String(format: "%.1fK watching", Double(vc) / 1_000)
+                } else {
+                    viewerText = "\(vc) watching"
+                }
+            } else {
+                viewerText = "Live now"
+            }
+            return WidgetFeedItem(
+                id: c.titleId,
+                kind: "live",
+                title: c.displayName,
+                subtitle: c.category ?? "",
+                badge: viewerText,
+                platform: c.kind.displayLabel.uppercased(),
+                platformColorHex: "#FF3B30",
+                posterUrl: c.avatarUrl,
+                deepLink: "guidestream://title/\(c.titleId)"
+            )
+        }
+
+        // --- Tier 2: new for you (last 72h) ---
+        let cutoffNew = now.addingTimeInterval(-72 * 60 * 60)
+        let newRows = streams.newEpisodes.filter { row in
+            guard let released = row.releasedAt else { return false }
+            return released > cutoffNew
+        }
+        items.append(contentsOf: newRows.map { row in
+            let title = row.title ?? row.episodeTitle ?? row.titleId
+            let badge: String
+            if let s = row.season, let e = row.episode {
+                badge = "S\(s) E\(e)"
+            } else if let epTitle = row.episodeTitle, !epTitle.isEmpty {
+                badge = epTitle
+            } else {
+                badge = "New episode"
+            }
+            let platform = Platform.from(providerName: row.platform)
+            let colorHex = platform?.colorHex ?? "#F5821F"
+            let platformName = platform?.name ?? (row.platform?.uppercased() ?? "STREAM")
+            return WidgetFeedItem(
+                id: row.id,
+                kind: "new",
+                title: title,
+                subtitle: "",
+                badge: badge,
+                platform: platformName,
+                platformColorHex: colorHex,
+                posterUrl: row.posterUrl ?? row.thumbnailUrl,
+                deepLink: "guidestream://title/\(row.titleId)"
+            )
+        })
+
+        // --- Tier 3: dropping soon (today..+14d) ---
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyy-MM-dd"
+        dateFormatter.locale = Locale(identifier: "en_US_POSIX")
+        dateFormatter.timeZone = TimeZone(secondsFromGMT: 0) ?? .current
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0) ?? .current
+        let startOfToday = calendar.startOfDay(for: now)
+        let maxSoonDate = calendar.date(byAdding: .day, value: 14, to: startOfToday) ?? now
+
+        if let upcoming = await StreamingUpcomingService.shared.fetchUpcoming() {
+            let soonRows = upcoming
+                .compactMap { row -> (WidgetFeedItem, Date)? in
+                    guard let dateStr = row.sourceReleaseDate,
+                          let parsed = dateFormatter.date(from: dateStr)
+                    else { return nil }
+                    guard parsed >= startOfToday, parsed <= maxSoonDate else { return nil }
+                    guard !row.title.isEmpty else { return nil }
+                    let delta = calendar.dateComponents([.day], from: startOfToday, to: parsed).day ?? 0
+                    let badge: String
+                    if delta == 0 { badge = "Today" }
+                    else if delta == 1 { badge = "Tomorrow" }
+                    else { badge = "in \(delta)d" }
+                    let platform = Platform.from(providerName: row.sourceName)
+                    let colorHex = platform?.colorHex ?? "#F5821F"
+                    let platformName = platform?.name ?? (row.sourceName?.uppercased() ?? "STREAM")
+                    let item = WidgetFeedItem(
+                        id: "soon-\(row.tmdbId)",
+                        kind: "soon",
+                        title: row.title,
+                        subtitle: "",
+                        badge: badge,
+                        platform: platformName,
+                        platformColorHex: colorHex,
+                        posterUrl: row.posterUrl,
+                        deepLink: "guidestream://title/\(row.tmdbId)"
+                    )
+                    return (item, parsed)
+                }
+                .sorted { $0.1 < $1.1 }
+                .map { $0.0 }
+            items.append(contentsOf: soonRows)
+        }
+
+        // --- Tier 4: out now ---
+        if let releases = await StreamingReleasesService.shared.fetchReleases() {
+            items.append(contentsOf: releases.compactMap { row in
+                guard !row.title.isEmpty else { return nil }
+                let platform = Platform.from(providerName: row.sourceName)
+                let colorHex = platform?.colorHex ?? "#F5821F"
+                let platformName = platform?.name ?? (row.sourceName?.uppercased() ?? "STREAM")
+                return WidgetFeedItem(
+                    id: "out-\(row.tmdbId)",
+                    kind: "out",
+                    title: row.title,
+                    subtitle: "",
+                    badge: "Out now",
+                    platform: platformName,
+                    platformColorHex: colorHex,
+                    posterUrl: row.posterUrl,
+                    deepLink: "guidestream://title/\(row.tmdbId)"
+                )
+            })
+        }
+
+        // --- Deduplicate by deepLink, keeping the first occurrence ---
+        var seenLinks = Set<String>()
+        items = items.filter { item in
+            guard let link = item.deepLink else { return true }
+            return seenLinks.insert(link).inserted
+        }
+
+        // --- Cap at 12 ---
+        items = Array(items.prefix(12))
+
+        WidgetDataService.shared.push(
+            items: items,
+            watchlistCount: streams.userStreams.count,
+            newEpisodeCount: streams.newEpisodes.count,
+            liveCount: liveCreators.count
+        )
     }
 
     /// Leaving Soon — server-backed expiration data from the expiring_titles

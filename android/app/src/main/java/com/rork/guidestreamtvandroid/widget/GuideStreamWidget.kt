@@ -1,6 +1,8 @@
 package com.rork.guidestreamtvandroid.widget
 
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
@@ -36,8 +38,9 @@ import com.rork.guidestreamtvandroid.MainActivity
 
 /**
  * Guide Stream TV home-screen widget — mirrors iOS GuideStreamWidget.swift.
- * Renders Leaving Soon rows (or NEW EPISODES fallback when empty),
- * brand wordmark, stats bar, and timestamp (hidden when >24h).
+ * Renders the unified "Next Up" feed (live, new, soon, out) across small,
+ * medium, and large sizes. Each row is individually tappable via a
+ * guidestream:// deep link that opens the app on that title's detail screen.
  * Refresh policy: 30 minutes.
  */
 class GuideStreamWidget : GlanceAppWidget() {
@@ -51,13 +54,13 @@ class GuideStreamWidget : GlanceAppWidget() {
 
         provideContent {
             GlanceTheme {
-                WidgetContent(payload)
+                WidgetContent(payload, context)
             }
         }
     }
 
     @Composable
-    private fun WidgetContent(payload: WidgetPayload) {
+    private fun WidgetContent(payload: WidgetPayload, context: Context) {
         val size = LocalSize.current
         val isSmall = size.width < 200.dp
         val isMedium = size.width >= 200.dp && size.width < 300.dp
@@ -71,69 +74,125 @@ class GuideStreamWidget : GlanceAppWidget() {
             if (isSmall) {
                 SmallWidget(payload)
             } else if (isMedium) {
-                MediumWidget(payload)
+                MediumWidget(payload, context)
             } else {
-                LargeWidget(payload)
+                LargeWidget(payload, context)
+            }
+        }
+    }
+
+    private fun kindColor(kind: String): Color = when (kind) {
+        "live" -> Color(red = 0xFF, green = 0x3B, blue = 0x30)
+        "new" -> Color(red = 0x00, green = 0x9E, blue = 0x8A)
+        "soon" -> Color(red = 0x1A, green = 0x6F, blue = 0xE8)
+        "out" -> Color(red = 0xF5, green = 0x82, blue = 0x1F)
+        else -> Color(red = 0xF5, green = 0x82, blue = 0x1F)
+    }
+
+    private fun kindLabel(kind: String): String = when (kind) {
+        "live" -> "live now"
+        "new" -> "new for you"
+        "soon" -> "dropping soon"
+        "out" -> "out now"
+        else -> "next up"
+    }
+
+    @Composable
+    private fun SmallWidget(payload: WidgetPayload) {
+        val items = payload.items
+        val leadKind = items.firstOrNull()?.kind ?: "soon"
+        val leadColor = kindColor(leadKind)
+
+        Column(
+            modifier = GlanceModifier
+                .fillMaxSize()
+                .padding(12.dp),
+        ) {
+            // Brand wordmark
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = "Guide",
+                    style = TextStyle(
+                        color = ColorProvider(Color.White),
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold,
+                    ),
+                )
+                Text(
+                    text = "Stream",
+                    style = TextStyle(
+                        color = ColorProvider(Color(red = 0xF5, green = 0x82, blue = 0x1F)),
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold,
+                    ),
+                )
+                Text(
+                    text = "TV",
+                    style = TextStyle(
+                        color = ColorProvider(Color(red = 0x5B, green = 0xB0, blue = 0xFF)),
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold,
+                    ),
+                )
+            }
+
+            Spacer(GlanceModifier.height(10.dp))
+
+            // Total item count
+            Text(
+                text = "${items.size}",
+                style = TextStyle(
+                    color = ColorProvider(leadColor),
+                    fontSize = 28.sp,
+                    fontWeight = FontWeight.Bold,
+                ),
+            )
+            Text(
+                text = kindLabel(leadKind),
+                style = TextStyle(
+                    color = ColorProvider(Color.White.copy(alpha = 0.5f)),
+                    fontSize = 10.sp,
+                ),
+            )
+
+            Spacer(GlanceModifier.height(6.dp))
+
+            // Live indicator
+            if (payload.liveCount > 0) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = "●",
+                        style = TextStyle(
+                            color = ColorProvider(kindColor("live")),
+                            fontSize = 8.sp,
+                        ),
+                    )
+                    Spacer(GlanceModifier.width(4.dp))
+                    Text(
+                        text = "${payload.liveCount} live now",
+                        style = TextStyle(
+                            color = ColorProvider(kindColor("live")),
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Medium,
+                        ),
+                    )
+                }
             }
         }
     }
 
     @Composable
-    private fun SmallWidget(payload: WidgetPayload) {
-        Column(
-            modifier = GlanceModifier
-                .fillMaxSize()
-                .padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Text(
-                text = "GuideStream",
-                style = TextStyle(
-                    color = ColorProvider(Color.White),
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold,
-                ),
-            )
-            Text(
-                text = "TV",
-                style = TextStyle(
-                    color = ColorProvider(Color(red = 0x5B, green = 0xB0, blue = 0xFF)),
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Bold,
-                ),
-            )
-            Spacer(GlanceModifier.height(8.dp))
-            Text(
-                text = "${payload.watchlistCount}",
-                style = TextStyle(
-                    color = ColorProvider(Color(red = 0xF5, green = 0x82, blue = 0x1F)),
-                    fontSize = 22.sp,
-                    fontWeight = FontWeight.Bold,
-                ),
-            )
-            Text(
-                text = "Watching",
-                style = TextStyle(
-                    color = ColorProvider(Color.White.copy(alpha = 0.55f)),
-                    fontSize = 10.sp,
-                ),
-            )
-        }
-    }
-
-    @Composable
-    private fun MediumWidget(payload: WidgetPayload) {
-        val hasLeavingSoon = payload.leavingSoon.isNotEmpty()
-        val hasNewEpisodes = !payload.newEpisodes.isNullOrEmpty()
-        val showNewEpisodes = !hasLeavingSoon && hasNewEpisodes
+    private fun MediumWidget(payload: WidgetPayload, context: Context) {
+        val items = payload.items
+        val leadKind = items.firstOrNull()?.kind ?: "soon"
+        val eyebrowColor = if (leadKind == "live") kindColor("live") else Color(red = 0xF5, green = 0x82, blue = 0x1F)
 
         Column(
             modifier = GlanceModifier
                 .fillMaxSize()
                 .padding(14.dp),
         ) {
-            // Header
+            // Header — wordmark + NEXT UP eyebrow
             Row(
                 modifier = GlanceModifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
@@ -163,55 +222,58 @@ class GuideStreamWidget : GlanceAppWidget() {
                     ),
                 )
                 Spacer(GlanceModifier.width(6.dp))
+                if (leadKind == "live") {
+                    Text(
+                        text = "●",
+                        style = TextStyle(
+                            color = ColorProvider(kindColor("live")),
+                            fontSize = 8.sp,
+                        ),
+                    )
+                    Spacer(GlanceModifier.width(3.dp))
+                }
                 Text(
-                    text = if (showNewEpisodes) "NEW EPISODES" else "LEAVING SOON",
+                    text = "NEXT UP",
                     style = TextStyle(
-                        color = ColorProvider(if (showNewEpisodes) Color(red = 0x00, green = 0x9E, blue = 0x8A) else Color(red = 0xF5, green = 0x82, blue = 0x1F)),
-                        fontSize = 11.sp,
+                        color = ColorProvider(eyebrowColor),
+                        fontSize = 10.sp,
                         fontWeight = FontWeight.Bold,
                     ),
                 )
-                val count = if (showNewEpisodes) payload.newEpisodes!!.size else payload.leavingSoon.size
-                Text(
-                    text = " · $count ${if (showNewEpisodes) "new" else "left"}",
-                    style = TextStyle(
-                        color = ColorProvider(Color.White.copy(alpha = 0.4f)),
-                        fontSize = 11.sp,
-                    ),
-                )
+                if (items.isNotEmpty()) {
+                    Text(
+                        text = " · ${items.size}",
+                        style = TextStyle(
+                            color = ColorProvider(Color.White.copy(alpha = 0.4f)),
+                            fontSize = 10.sp,
+                        ),
+                    )
+                }
             }
 
             Spacer(GlanceModifier.height(8.dp))
 
-            // Rows
-            if (showNewEpisodes) {
-                payload.newEpisodes!!.take(3).forEach { item ->
-                    WidgetRow(
-                        title = item.title,
-                        badgeText = item.episodeLabel,
-                        badgeColor = Color(red = 0x00, green = 0x9E, blue = 0x8A),
-                        platformColor = parseHexColor(item.platformColorHex),
-                    )
-                    Spacer(GlanceModifier.height(4.dp))
-                }
-            } else if (hasLeavingSoon) {
-                payload.leavingSoon.take(3).forEach { item ->
-                    WidgetRow(
-                        title = item.title,
-                        badgeText = if (item.daysLeft == 0) "Today" else "${item.daysLeft}d left",
-                        badgeColor = Color(red = 0xF5, green = 0x82, blue = 0x1F),
-                        platformColor = parseHexColor(item.platformColorHex),
-                    )
+            // Rows — first 3 items
+            if (items.isNotEmpty()) {
+                items.take(3).forEach { item ->
+                    FeedRow(item, context)
                     Spacer(GlanceModifier.height(4.dp))
                 }
             } else {
                 Text(
-                    text = "No titles leaving soon",
+                    text = "Nothing dropping right now",
                     style = TextStyle(
-                        color = ColorProvider(Color.White.copy(alpha = 0.35f)),
-                        fontSize = 12.sp,
+                        color = ColorProvider(Color.White.copy(alpha = 0.4f)),
+                        fontSize = 13.sp,
                     ),
-                    modifier = GlanceModifier.padding(vertical = 16.dp),
+                )
+                Spacer(GlanceModifier.height(2.dp))
+                Text(
+                    text = "Follow a show to fill this in",
+                    style = TextStyle(
+                        color = ColorProvider(Color.White.copy(alpha = 0.25f)),
+                        fontSize = 10.sp,
+                    ),
                 )
             }
 
@@ -248,10 +310,10 @@ class GuideStreamWidget : GlanceAppWidget() {
     }
 
     @Composable
-    private fun LargeWidget(payload: WidgetPayload) {
-        val hasLeavingSoon = payload.leavingSoon.isNotEmpty()
-        val hasNewEpisodes = !payload.newEpisodes.isNullOrEmpty()
-        val showNewEpisodes = !hasLeavingSoon && hasNewEpisodes
+    private fun LargeWidget(payload: WidgetPayload, context: Context) {
+        val items = payload.items
+        val leadKind = items.firstOrNull()?.kind ?: "soon"
+        val eyebrowColor = if (leadKind == "live") kindColor("live") else Color(red = 0xF5, green = 0x82, blue = 0x1F)
 
         Column(
             modifier = GlanceModifier
@@ -264,96 +326,159 @@ class GuideStreamWidget : GlanceAppWidget() {
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    text = "GuideStream TV",
+                    text = "Guide",
                     style = TextStyle(
                         color = ColorProvider(Color.White),
-                        fontSize = 14.sp,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                    ),
+                )
+                Text(
+                    text = "Stream",
+                    style = TextStyle(
+                        color = ColorProvider(Color(red = 0xF5, green = 0x82, blue = 0x1F)),
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                    ),
+                )
+                Text(
+                    text = "TV",
+                    style = TextStyle(
+                        color = ColorProvider(Color(red = 0x5B, green = 0xB0, blue = 0xFF)),
+                        fontSize = 10.sp,
                         fontWeight = FontWeight.Bold,
                     ),
                 )
                 Spacer(GlanceModifier.width(8.dp))
+                if (leadKind == "live") {
+                    Text(
+                        text = "●",
+                        style = TextStyle(
+                            color = ColorProvider(kindColor("live")),
+                            fontSize = 8.sp,
+                        ),
+                    )
+                    Spacer(GlanceModifier.width(3.dp))
+                }
                 Text(
-                    text = if (showNewEpisodes) "NEW EPISODES" else "LEAVING SOON",
+                    text = "NEXT UP",
                     style = TextStyle(
-                        color = ColorProvider(if (showNewEpisodes) Color(red = 0x00, green = 0x9E, blue = 0x8A) else Color(red = 0xF5, green = 0x82, blue = 0x1F)),
+                        color = ColorProvider(eyebrowColor),
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold,
+                    ),
+                )
+                if (items.isNotEmpty()) {
+                    Text(
+                        text = " · ${items.size}",
+                        style = TextStyle(
+                            color = ColorProvider(Color.White.copy(alpha = 0.4f)),
+                            fontSize = 12.sp,
+                        ),
+                    )
+                }
+            }
+
+            Spacer(GlanceModifier.height(6.dp))
+
+            // Stats row
+            Row(
+                modifier = GlanceModifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.Start,
+            ) {
+                Text(
+                    text = "📺 ${payload.watchlistCount}  ✨ ${payload.newEpisodeCount}  🔴 ${payload.liveCount}",
+                    style = TextStyle(
+                        color = ColorProvider(Color.White.copy(alpha = 0.5f)),
+                        fontSize = 10.sp,
                     ),
                 )
             }
 
             Spacer(GlanceModifier.height(8.dp))
 
-            // Rows — up to 8 for large
-            if (showNewEpisodes) {
-                payload.newEpisodes!!.take(8).forEach { item ->
-                    WidgetRow(
-                        title = item.title,
-                        badgeText = item.episodeLabel,
-                        badgeColor = Color(red = 0x00, green = 0x9E, blue = 0x8A),
-                        platformColor = parseHexColor(item.platformColorHex),
-                    )
-                    Spacer(GlanceModifier.height(4.dp))
-                }
-            } else if (hasLeavingSoon) {
-                payload.leavingSoon.take(8).forEach { item ->
-                    WidgetRow(
-                        title = item.title,
-                        badgeText = if (item.daysLeft == 0) "Today" else "${item.daysLeft}d left",
-                        badgeColor = Color(red = 0xF5, green = 0x82, blue = 0x1F),
-                        platformColor = parseHexColor(item.platformColorHex),
-                    )
-                    Spacer(GlanceModifier.height(4.dp))
+            // Rows — first 7 items
+            if (items.isNotEmpty()) {
+                items.take(7).forEach { item ->
+                    FeedRow(item, context)
+                    Spacer(GlanceModifier.height(5.dp))
                 }
             } else {
                 Text(
-                    text = "No titles leaving soon",
+                    text = "Nothing dropping right now",
                     style = TextStyle(
-                        color = ColorProvider(Color.White.copy(alpha = 0.35f)),
-                        fontSize = 13.sp,
+                        color = ColorProvider(Color.White.copy(alpha = 0.4f)),
+                        fontSize = 14.sp,
                     ),
                     modifier = GlanceModifier.padding(vertical = 16.dp),
+                )
+                Text(
+                    text = "Follow a show to fill this in",
+                    style = TextStyle(
+                        color = ColorProvider(Color.White.copy(alpha = 0.25f)),
+                        fontSize = 11.sp,
+                    ),
                 )
             }
         }
     }
 
+    /**
+     * One feed row: 3pt wide rounded platform colour bar, title (12.5pt
+     * semibold white, one line, truncated), spacer, badge (9.5pt bold in its
+     * kind colour). Wrapped in a .clickable that opens the deep link via an
+     * ACTION_VIEW intent when the item has a non-null deepLink.
+     */
     @Composable
-    private fun WidgetRow(
-        title: String,
-        badgeText: String,
-        badgeColor: Color,
-        platformColor: Color,
-    ) {
+    private fun FeedRow(item: WidgetFeedItem, context: Context) {
+        val badgeColor = kindColor(item.kind)
+        val platformColor = parseHexColor(item.platformColorHex)
+
+        val rowModifier = if (!item.deepLink.isNullOrEmpty()) {
+            GlanceModifier.fillMaxWidth().wrapContentHeight().clickable {
+                context.startActivity(
+                    Intent(Intent.ACTION_VIEW, Uri.parse(item.deepLink))
+                        .setClass(context, MainActivity::class.java)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                )
+            }
+        } else {
+            GlanceModifier.fillMaxWidth().wrapContentHeight()
+        }
+
         Row(
-            modifier = GlanceModifier.fillMaxWidth().wrapContentHeight(),
+            modifier = rowModifier,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            // Platform pill
+            // Platform colour bar — 3dp wide
             Box(
                 modifier = GlanceModifier
-                    .width(4.dp)
-                    .height(24.dp)
+                    .width(3.dp)
+                    .height(18.dp)
                     .background(platformColor),
             ) {}
             Spacer(GlanceModifier.width(8.dp))
+            // Title — 12.5sp semibold white, one line, truncated
             Text(
-                text = title,
+                text = item.title,
                 style = TextStyle(
                     color = ColorProvider(Color.White),
-                    fontSize = 12.sp,
+                    fontSize = 12.5.sp,
                     fontWeight = FontWeight.Medium,
                 ),
-                modifier = GlanceModifier.padding(end = 4.dp),
+                maxLines = 1,
+                modifier = GlanceModifier.padding(end = 4.dp).defaultWeight(),
             )
             Spacer(GlanceModifier.width(4.dp))
+            // Badge — 9.5sp bold in kind colour
             Text(
-                text = badgeText,
+                text = item.badge,
                 style = TextStyle(
                     color = ColorProvider(badgeColor),
-                    fontSize = 11.sp,
+                    fontSize = 9.5.sp,
                     fontWeight = FontWeight.Bold,
                 ),
+                maxLines = 1,
             )
         }
     }

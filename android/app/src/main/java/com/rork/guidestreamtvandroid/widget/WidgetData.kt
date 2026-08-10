@@ -5,34 +5,36 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
 /**
- * Widget payload model — mirrors iOS WidgetPayload/WidgetData.swift.
- * Shared between the app (writer) and the widget (reader) via SharedPreferences.
+ * Unified widget feed item — replaces the parallel leaving-soon and
+ * new-episode arrays. Mirrors iOS WidgetFeedItem in WidgetData.swift.
+ * The `kind` field is one of exactly four lowercase string values:
+ * "live", "new", "soon", "out" and drives badge colour only.
  */
 @Serializable
-data class WidgetLeavingSoonItem(
+data class WidgetFeedItem(
     val id: String,
+    val kind: String,
     val title: String,
-    @SerialName("days_left") val daysLeft: Int,
+    val subtitle: String = "",
+    val badge: String,
     val platform: String,
     @SerialName("platform_color_hex") val platformColorHex: String,
     @SerialName("poster_url") val posterUrl: String? = null,
+    @SerialName("deep_link") val deepLink: String? = null,
 )
 
-@Serializable
-data class WidgetNewEpisodeItem(
-    val id: String,
-    val title: String,
-    @SerialName("episode_label") val episodeLabel: String,
-    val platform: String,
-    @SerialName("platform_color_hex") val platformColorHex: String,
-)
-
+/**
+ * The full widget payload written by the main app and read by the widget.
+ * Mirrors iOS WidgetPayload. A stale v1 blob decodes to an empty payload
+ * rather than throwing because `ignoreUnknownKeys = true` and all fields
+ * default to empty/zero.
+ */
 @Serializable
 data class WidgetPayload(
-    @SerialName("leaving_soon") val leavingSoon: List<WidgetLeavingSoonItem> = emptyList(),
-    @SerialName("new_episodes") val newEpisodes: List<WidgetNewEpisodeItem>? = null,
+    val items: List<WidgetFeedItem> = emptyList(),
     @SerialName("watchlist_count") val watchlistCount: Int = 0,
     @SerialName("new_episode_count") val newEpisodeCount: Int = 0,
+    @SerialName("live_count") val liveCount: Int = 0,
     @SerialName("last_updated") val lastUpdated: Long = 0L,
 )
 
@@ -48,7 +50,7 @@ class WidgetDataService private constructor(
 
     companion object {
         private const val PREFS_NAME = "gs_widget_payload"
-        private const val KEY = "gs.widgetPayload.v1"
+        private const val KEY = "gs.widgetPayload.v2"
 
         @Volatile private var instance: WidgetDataService? = null
         fun init(context: android.content.Context): WidgetDataService =
@@ -57,6 +59,7 @@ class WidgetDataService private constructor(
                     context.applicationContext.getSharedPreferences(PREFS_NAME, android.content.Context.MODE_PRIVATE)
                 ).also { instance = it }
             }
+
         fun get(): WidgetDataService =
             instance ?: error("WidgetDataService not initialized")
     }
@@ -79,36 +82,33 @@ class WidgetDataService private constructor(
         } catch (_: Exception) {}
     }
 
-    /** Push a full payload — mirrors iOS push(). */
+    /**
+     * Push a full payload — mirrors iOS push(items:watchlistCount:newEpisodeCount:liveCount:).
+     * Wipe protection: if the new items list is empty but we have a recent
+     * (within 48h) non-empty payload, preserve the existing items.
+     */
     fun push(
-        leavingSoon: List<WidgetLeavingSoonItem>,
+        items: List<WidgetFeedItem>,
         watchlistCount: Int,
         newEpisodeCount: Int,
-        newEpisodes: List<WidgetNewEpisodeItem>? = null,
+        liveCount: Int,
     ) {
-        // Wipe protection: if the new leaving-soon list is empty but we have
-        // a recent (within 48h) non-empty payload, preserve the existing data.
         val existing = loadPayload()
         val now = System.currentTimeMillis()
-        val effectiveLeavingSoon = if (leavingSoon.isEmpty() &&
-            existing.leavingSoon.isNotEmpty() &&
+        val effectiveItems = if (items.isEmpty() &&
+            existing.items.isNotEmpty() &&
             now - existing.lastUpdated < 48 * 60 * 60 * 1000L
         ) {
-            existing.leavingSoon
+            existing.items
         } else {
-            leavingSoon
-        }
-        val effectiveNewEpisodes = if (newEpisodes.isNullOrEmpty() && existing.newEpisodes != null) {
-            existing.newEpisodes
-        } else {
-            newEpisodes
+            items
         }
         writePayload(
             WidgetPayload(
-                leavingSoon = effectiveLeavingSoon,
-                newEpisodes = effectiveNewEpisodes,
+                items = effectiveItems,
                 watchlistCount = watchlistCount,
                 newEpisodeCount = newEpisodeCount,
+                liveCount = liveCount,
                 lastUpdated = now,
             )
         )
@@ -117,13 +117,35 @@ class WidgetDataService private constructor(
     /** Write test data for the widget setup screen. */
     fun pushTestData() {
         push(
-            leavingSoon = listOf(
-                WidgetLeavingSoonItem("test1", "Breaking Bad", 2, "NETFLIX", "#E50914"),
-                WidgetLeavingSoonItem("test2", "The Office", 3, "PEACOCK", "#000000"),
-                WidgetLeavingSoonItem("test3", "Succession", 5, "HBO", "#5A1FCB"),
+            items = listOf(
+                WidgetFeedItem(
+                    id = "sample-live", kind = "live",
+                    title = "Live Channel Demo",
+                    subtitle = "Just Chatting",
+                    badge = "Live now",
+                    platform = "TWITCH", platformColorHex = "#FF3B30",
+                    posterUrl = null, deepLink = null,
+                ),
+                WidgetFeedItem(
+                    id = "sample-new", kind = "new",
+                    title = "New Show Example",
+                    subtitle = "Season 3 just dropped",
+                    badge = "S3 E1",
+                    platform = "NETFLIX", platformColorHex = "#009E8A",
+                    posterUrl = null, deepLink = null,
+                ),
+                WidgetFeedItem(
+                    id = "sample-soon", kind = "soon",
+                    title = "Coming Soon Demo",
+                    subtitle = "Arrives this week",
+                    badge = "in 3d",
+                    platform = "PRIME", platformColorHex = "#1A6FE8",
+                    posterUrl = null, deepLink = null,
+                ),
             ),
             watchlistCount = 12,
-            newEpisodeCount = 4,
+            newEpisodeCount = 3,
+            liveCount = 1,
         )
     }
 }
