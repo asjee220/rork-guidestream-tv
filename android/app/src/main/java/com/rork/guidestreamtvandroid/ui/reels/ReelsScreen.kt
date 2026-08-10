@@ -31,6 +31,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.requiredHeight
 import androidx.compose.foundation.layout.requiredWidth
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -861,13 +862,13 @@ private fun ReelView(
                 Box(Modifier.fillMaxWidth().padding(end = 16.dp)) {
                     ReelAdCarousel(reel = reel, isCurrent = isCurrent)
                 }
-                Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(4.dp))
                 WatchNowSwitcher(sources = sources, onOpenSource = onOpenSource)
             } else {
                 Box(Modifier.fillMaxWidth().padding(end = 16.dp)) {
                     ReelAdCarousel(reel = reel, isCurrent = isCurrent)
                 }
-                Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(4.dp))
                 PlayOnPill(onClick = onShowDetail)
             }
         }
@@ -885,13 +886,21 @@ private fun ReelView(
                     .padding(bottom = 15.dp + systemBottomInset())
                     .alpha(chromeAlpha),
             ) {
+                if (isCurrent && !reel.isSponsored) {
+                    ReelAdCarousel(
+                        reel = reel,
+                        isCurrent = isCurrent,
+                        maxWidth = 370.dp,
+                    )
+                    Spacer(Modifier.height(9.dp))
+                }
                 if (isCurrent && !allCandidatesFailed) {
                     ReelScrubber(
                         progress = progress,
                         onSeek = { fraction -> seekToFraction = fraction },
                         modifier = Modifier.fillMaxWidth(),
                     )
-                    Spacer(Modifier.height(14.dp))
+                    Spacer(Modifier.height(9.dp))
                 }
                 Row(verticalAlignment = Alignment.Bottom) {
                     // Metadata — no trailing gutter reserved, the rail is in-row.
@@ -919,7 +928,7 @@ private fun ReelView(
                     }
                     Spacer(Modifier.width(16.dp))
                     // Actions — the same rail buttons laid out horizontally, then
-                    // the unchanged action pill. No ad carousel in landscape.
+                    // the unchanged action pill.
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(22.dp),
                         verticalAlignment = Alignment.CenterVertically,
@@ -1967,6 +1976,7 @@ private fun resolveReelAds(
 private fun ReelAdCarousel(
     reel: TrailerItem,
     isCurrent: Boolean,
+    maxWidth: Dp? = null,
 ) {
     val auth = AuthViewModel.get()
     val selectedServices by auth.selectedServices.collectAsStateWithLifecycle()
@@ -2000,7 +2010,9 @@ private fun ReelAdCarousel(
 
     val pagerState = rememberPagerState(pageCount = { offers.size })
 
-    Column(modifier = Modifier.alpha(0.83f)) {
+    Column(modifier = Modifier.alpha(0.83f).let { m ->
+        if (maxWidth != null) m.widthIn(max = maxWidth) else m
+    }) {
         HorizontalPager(
             state = pagerState,
             modifier = Modifier.fillMaxWidth(),
@@ -2075,7 +2087,7 @@ private fun ReelAffiliateCard(
             },
     ) {
         Row(
-            modifier = Modifier.padding(7.dp),
+            modifier = Modifier.padding(12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(

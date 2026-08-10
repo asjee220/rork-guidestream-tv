@@ -1,6 +1,7 @@
 //
 //  ReelsScreen.swift
 //  GuideStreamTV
+//  Reels affiliate ad carousel
 //
 //  TikTok-style vertical trailer feed. Pulls trailers from TMDB (For You from
 //  user_streams, Trending from /trending/tv/week, New from /tv/on_the_air),
@@ -1700,7 +1701,7 @@ private struct ReelView: View {
     @State private var controlsFadeTask: Task<Void, Never>?
     @State private var seekToFraction: Double = -1
     @State private var glassAdDismissed: Bool = false
-    @State private var glassAdTargets: [(serviceId: String, name: String, color: Color, tagline: String)] = []
+    @State private var glassAdTargets: [(serviceId: String, name: String, color: Color, headline: String, subtitle: String)] = []
     @State private var adPage: Int = 0
     @State private var glassAdVisible: Bool = false
     @State private var glassAdFadeTask: Task<Void, Never>? = nil
@@ -1730,19 +1731,19 @@ private struct ReelView: View {
         isLandscape ? 0 : 90
     }
 
-    private func resolveGlassAds(count: Int) -> [(serviceId: String, name: String, color: Color, tagline: String)] {
+    private func resolveGlassAds(count: Int) -> [(serviceId: String, name: String, color: Color, headline: String, subtitle: String)] {
         let current = trailer.platformId.lowercased()
         let selected = AuthViewModel.shared.selectedServices
             .map { $0.lowercased() }
-        let pool: [(String, String, Color, String)] = [
-            ("netflix", "Netflix", Color(red:0xE5/255, green:0x09/255, blue:0x14/255), "Unlimited movies, TV and more. Cancel anytime."),
-            ("hbo", "Max", Color(red:0x00/255, green:0x1E/255, blue:0xE0/255), "The greatest shows, movies and Max Originals."),
-            ("hulu", "Hulu", Color(red:0x1C/255, green:0xE7/255, blue:0x83/255), "Watch TV, movies, Hulu Originals and live sports."),
-            ("disney", "Disney+", Color(red:0x0E/255, green:0x29/255, blue:0x3F/255), "Infinite worlds of entertainment for the family."),
-            ("appletv", "Apple TV+", Color.black, "Critically acclaimed shows. New every month."),
-            ("prime", "Prime Video", Color(red:0x1A/255, green:0x20/255, blue:0x2C/255), "Thursday Night Football and Amazon Originals."),
-            ("paramount","Paramount+", Color(red:0x00/255, green:0x64/255, blue:0xFF/255), "Stream Paramount+ with Showtime available."),
-            ("peacock", "Peacock", Color.black, "NFL, Premier League, WWE and NBC hits.")
+        let pool: [(String, String, Color, String, String)] = [
+            ("netflix", "Netflix", Color(red:0xE5/255, green:0x09/255, blue:0x14/255), "Stream more on Netflix", "Unlimited shows & movies · Try free"),
+            ("hbo", "Max", Color(red:0x00/255, green:0x1E/255, blue:0xE0/255), "Watch more on Max", "HBO, Max Originals & more · Try free"),
+            ("hulu", "Hulu", Color(red:0x1C/255, green:0xE7/255, blue:0x83/255), "Live TV + streaming on Hulu", "Starting at $7.99/mo · Try free"),
+            ("disney", "Disney+", Color(red:0x0E/255, green:0x29/255, blue:0x3F/255), "Disney+, Hulu & ESPN+ bundle", "Disney Bundle · Try free"),
+            ("appletv", "Apple TV+", Color.black, "Award-winning originals", "Apple TV+ · First month free"),
+            ("prime", "Prime Video", Color(red:0x1A/255, green:0x20/255, blue:0x2C/255), "Included with Prime", "Prime Video · Try free"),
+            ("paramount","Paramount+", Color(red:0x00/255, green:0x64/255, blue:0xFF/255), "NFL on CBS & live sports", "Paramount+ · Try free"),
+            ("peacock", "Peacock", Color.black, "Stream free on Peacock", "NBC shows & live sports · Free tier")
         ]
         // Prefer services the user doesn't already own AND aren't the
         // current platform. If everything is owned, drop the owned filter so
@@ -1752,7 +1753,7 @@ private struct ReelView: View {
             entry.0 != current && !selected.contains(entry.0)
         }
         let secondary = pool.filter { $0.0 != current }
-        let eligible: [(String, String, Color, String)]
+        let eligible: [(String, String, Color, String, String)]
         if !preferred.isEmpty { eligible = preferred }
         else if !secondary.isEmpty { eligible = secondary }
         else { eligible = pool }
@@ -1980,7 +1981,7 @@ private struct ReelView: View {
                             .padding(.bottom, 12)
                     }
 
-                    HStack(alignment: .center, spacing: 6) {
+                    VStack(alignment: .leading, spacing: 4) {
                         if trailer.isSponsored {
                             // Make the whole bottom content area a tap target.
                             // The explicit button is removed — tapping anywhere
@@ -2001,38 +2002,31 @@ private struct ReelView: View {
                                     }
                                     .padding(.bottom, 2)
                                 }
-                        } else if trailer.tab == .comingSoon {
-                            NotifyMePill(enrolled: isReminded, action: onNotify)
-                            if !glassAdDismissed, !glassAdTargets.isEmpty {
-                                adCarousel
-                                    .opacity(glassAdVisible ? 1 : 0)
-                                    .allowsHitTesting(glassAdVisible)
-                            }
-                        } else if isInjected {
-                            WatchNowSwitcher(
-                                tmdbId: trailer.tmdbId,
-                                isTV: trailer.isTV,
-                                showName: trailer.showName
-                            )
-                            if !glassAdDismissed, !glassAdTargets.isEmpty {
-                                adCarousel
-                                    .opacity(glassAdVisible ? 1 : 0)
-                                    .allowsHitTesting(glassAdVisible)
-                            }
                         } else {
-                            PlayOnPill(action: onShowDetail)
                             if !glassAdDismissed, !glassAdTargets.isEmpty {
                                 adCarousel
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.trailing, 16)
                                     .opacity(glassAdVisible ? 1 : 0)
                                     .allowsHitTesting(glassAdVisible)
+                            }
+                            if trailer.tab == .comingSoon {
+                                NotifyMePill(enrolled: isReminded, action: onNotify)
+                            } else if isInjected {
+                                WatchNowSwitcher(
+                                    tmdbId: trailer.tmdbId,
+                                    isTV: trailer.isTV,
+                                    showName: trailer.showName
+                                )
+                            } else {
+                                PlayOnPill(action: onShowDetail)
                             }
                         }
                     }
-                    .padding(.trailing, 16)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.leading, 22)
-                .padding(.bottom, bottomInset + 38)
+                .padding(.bottom, bottomInset + 27)
                 .opacity(contentOpacity)
                 .onAppear {
                     withAnimation(.easeOut(duration: 0.6)) { contentOpacity = 1.0 }
@@ -2040,13 +2034,20 @@ private struct ReelView: View {
             }
             }
 
-            // Landscape chrome — one bottom container holding the scrubber
-            // directly above a single horizontal row (metadata leading, actions
-            // trailing). Auto-hides with the rest of the chrome.
+            // Landscape chrome — one bottom container holding the affiliate
+            // ad (capped at 370pt), the scrubber, and a single horizontal row
+            // (metadata leading, actions trailing). Auto-hides with the rest of
+            // the chrome.
             if isLandscape {
                 VStack {
                     Spacer()
-                    VStack(alignment: .leading, spacing: 14) {
+                    VStack(alignment: .leading, spacing: 9) {
+                        if !trailer.isSponsored, !glassAdDismissed, !glassAdTargets.isEmpty {
+                            adCarousel
+                                .frame(maxWidth: 370, alignment: .leading)
+                                .opacity(glassAdVisible ? 1 : 0)
+                                .allowsHitTesting(glassAdVisible)
+                        }
                         // Neighbouring reels have no playback position to show,
                         // so they render the row without a dead 0% bar above it.
                         if isCurrent && !allCandidatesFailed {
@@ -2184,14 +2185,10 @@ private struct ReelView: View {
                 metadata: ["source": "reel_ad_carousel", "position": page, "show_platform": trailer.platformId]
             )
         }
-        .onChange(of: isLandscape) { _, nowLandscape in
-            if nowLandscape {
-                // No affiliate carousel in landscape — tear its timers down so
-                // no impression is logged for an ad that is never shown.
-                glassAdFadeTask?.cancel()
-                adAdvanceTask?.cancel()
-                glassAdVisible = false
-            } else if isCurrent {
+        .onChange(of: isLandscape) { _, _ in
+            // Rotating either way re-arms rather than tears down, so the ad
+            // appears in landscape too and returns cleanly on rotate back.
+            if isCurrent {
                 armGlassAdFade()
             }
         }
@@ -2394,12 +2391,12 @@ private struct ReelView: View {
         VStack(spacing: 0) {
             TabView(selection: $adPage) {
                 ForEach(Array(glassAdTargets.enumerated()), id: \.offset) { idx, ad in
-                    SponsoredAffiliateCard(
-                        service: StreamingCatalog.all.first(where: { $0.id == ad.serviceId }),
+                    ReelAffiliateRowCard(
+                        serviceId: ad.serviceId,
                         fallbackName: ad.name,
                         fallbackColor: ad.color,
-                        headline: "Stream on \(ad.name)",
-                        subtitle: ad.tagline,
+                        headline: ad.headline,
+                        subtitle: ad.subtitle,
                         onTap: {
                             RakutenManager.shared.openAffiliateLink(
                                 serviceId: ad.serviceId,
@@ -2418,16 +2415,15 @@ private struct ReelView: View {
                                 ]
                             )
                         },
-                        onDismiss: { glassAdDismissed = true },
-                        compact: true
+                        onDismiss: { glassAdDismissed = true }
                     )
                     .tag(idx)
                 }
             }
             .tabViewStyle(.page(indexDisplayMode: .never))
-            .frame(height: 120)
+            .frame(height: 68)
 
-            HStack(spacing: 6) {
+            HStack(spacing: 5) {
                 ForEach(0..<glassAdTargets.count, id: \.self) { dotIdx in
                     Circle()
                         .fill(dotIdx == adPage ? Color(hex: "F5821F") : Color.white.opacity(0.28))
@@ -2437,26 +2433,24 @@ private struct ReelView: View {
                         }
                 }
             }
-            .padding(.top, 8)
+            .padding(.leading, 2)
+            .padding(.top, 6)
         }
+        .opacity(0.83)
     }
 
     private func armGlassAdFade() {
         glassAdFadeTask?.cancel()
         adAdvanceTask?.cancel()
-        // The affiliate carousel has no landscape placement, so neither the fade
-        // task nor the auto-advance task is ever armed there — which also means
-        // no adImpression is emitted for an ad the user never sees.
-        guard !isLandscape else {
-            glassAdVisible = false
-            return
-        }
         glassAdTargets = resolveGlassAds(count: 5)
         adPage = 0
         glassAdDismissed = false
         glassAdVisible = false
         glassAdFadeTask = Task { @MainActor in
-            try? await Task.sleep(for: .seconds(4))
+            // Landscape chrome auto-hides 3s after reveal, so a 4s delay would
+            // mean the ad is never seen there. Use 0.6s in landscape, 4s in
+            // portrait (matching Android's 600ms / 4000ms).
+            try? await Task.sleep(for: .seconds(isLandscape ? 0.6 : 4))
             guard !Task.isCancelled, isCurrent, !glassAdDismissed else { return }
             withAnimation(.easeIn(duration: 0.45)) {
                 glassAdVisible = true
@@ -2577,6 +2571,103 @@ private struct ReelView: View {
                         .stroke(Color.white.opacity(0.08), lineWidth: 0.5)
                 )
         )
+    }
+}
+
+// MARK: - Reel Affiliate Row Card
+
+/// Compact 68pt-tall affiliate row card for the Reels ad carousel. Renders a
+/// horizontal row with a 44pt brand tile, headline/subtitle/Sponsored footer,
+/// a Get offer pill, and a dismiss control. Tapping the card opens the
+/// Rakuten affiliate link; tapping dismiss hides the card for the session.
+private struct ReelAffiliateRowCard: View {
+    let serviceId: String
+    let fallbackName: String
+    let fallbackColor: Color
+    let headline: String
+    let subtitle: String
+    let onTap: () -> Void
+    let onDismiss: () -> Void
+
+    var body: some View {
+        Button(action: onTap) {
+            HStack(spacing: 10) {
+                brandTile
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(headline)
+                        .scaledFont(size: 13, weight: .bold)
+                        .foregroundStyle(.white)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    Spacer().frame(height: 2)
+                    Text(subtitle)
+                        .scaledFont(size: 10)
+                        .foregroundStyle(Color.white.opacity(0.62))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    Spacer().frame(height: 3)
+                    Text("Sponsored · Rakuten")
+                        .scaledFont(size: 9)
+                        .foregroundStyle(Color.white.opacity(0.45))
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                Spacer().frame(width: 8)
+                Text("Get offer")
+                    .scaledFont(size: 12, weight: .bold)
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 7)
+                    .background(RoundedRectangle(cornerRadius: 14).fill(Color(hex: "F5821F")))
+                Spacer().frame(width: 6)
+                dismissControl
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity)
+            .frame(height: 68)
+            .background(
+                RoundedRectangle(cornerRadius: 14)
+                    .fill(Color.black.opacity(0.44))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 14)
+                    .stroke(Color.white.opacity(0.12), lineWidth: 0.5)
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var brandTile: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 8)
+                .fill(service?.bg ?? fallbackColor)
+            if let service {
+                ServiceBrandContent(
+                    display: service.display,
+                    size: .mini(34)
+                )
+                .frame(width: 34, height: 34)
+            } else {
+                Text(String(fallbackName.prefix(3)).uppercased())
+                    .scaledFont(size: 13, weight: .black)
+                    .foregroundStyle(.white)
+            }
+        }
+        .frame(width: 44, height: 44)
+    }
+
+    private var dismissControl: some View {
+        Button(action: onDismiss) {
+            Image(systemName: "xmark")
+                .scaledFont(size: 16, weight: .semibold)
+                .foregroundStyle(Color.white.opacity(0.45))
+                .frame(width: 24, height: 24)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var service: StreamingService? {
+        StreamingCatalog.service(for: serviceId)
     }
 }
 
