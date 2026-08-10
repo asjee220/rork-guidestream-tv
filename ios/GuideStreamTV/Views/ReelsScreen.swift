@@ -1706,8 +1706,6 @@ private struct ReelView: View {
     @State private var glassAdVisible: Bool = false
     @State private var glassAdFadeTask: Task<Void, Never>? = nil
     @State private var adAdvanceTask: Task<Void, Never>? = nil
-    /// Native ad claimed for the carousel's third page (index 2). nil → Rakuten backfill.
-    @State private var carouselNativeAd: AnyObject? = nil
 
     /// The YouTube video id currently loading: the primary key at index 0, or
     /// the corresponding fallback key thereafter.
@@ -2394,19 +2392,13 @@ private struct ReelView: View {
             TabView(selection: $adPage) {
                 ForEach(Array(glassAdTargets.enumerated()), id: \.offset) { idx, ad in
                     Group {
-                        if idx == 2, let nativeAd = carouselNativeAd {
+                        if idx == 2 {
                             #if canImport(GoogleMobileAds) && !targetEnvironment(simulator)
-                            NativeAdCardView(nativeAd: nativeAd as! NativeAd, compact: true) {
-                                glassAdDismissed = true
-                            }
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 96)
-                            .onAppear {
-                                WatchIntentLogger.shared.log(
-                                    eventType: .adImpression,
-                                    metadata: ["ad_type": "native", "source": "reel_ad_carousel"]
-                                )
-                            }
+                            ReelNativeAdPage(
+                                isCurrent: isCurrent,
+                                rakutenBackfill: { AnyView(reelRakutenCard(ad)) },
+                                onDismiss: { glassAdDismissed = true }
+                            )
                             #else
                             reelRakutenCard(ad)
                             #endif
@@ -2469,15 +2461,10 @@ private struct ReelView: View {
     private func armGlassAdFade() {
         glassAdFadeTask?.cancel()
         adAdvanceTask?.cancel()
-        carouselNativeAd = nil
         glassAdTargets = resolveGlassAds(count: 5)
         adPage = 0
         glassAdDismissed = false
         glassAdVisible = false
-        // Attempt to claim a native ad for page 2 (AdMob-first, Rakuten backfill).
-        AdManager.shared.start()
-        AdManager.shared.loadNativePool()
-        carouselNativeAd = AdManager.shared.nextNativeAd()
         glassAdFadeTask = Task { @MainActor in
             // Landscape chrome auto-hides 3s after reveal, so a 4s delay would
             // mean the ad is never seen there. Use 0.6s in landscape, 4s in
@@ -2607,6 +2594,58 @@ private struct ReelView: View {
 }
 
 // MARK: - Reel Affiliate Row Card
+
+/// Page 2 of the Reels ad carousel. Claims a native AdMob ad from the shared
+/// pool (observing nativePoolTick for late fills) and renders a compact
+/// NativeAdCardView; falls back to the Rakuten affiliate card when no ad is
+/// available. Only fetches when this reel is the current one so background
+/// reels never drain the pool.
+private struct ReelNativeAdPage: View {
+    let isCurrent: Bool
+    let rakutenBackfill: () -> AnyView
+    let onDismiss: () -> Void
+
+    @State private var claimedAd: AnyObject? = nil
+    @ObservedObject private var adManager = AdManager.shared
+
+    var body: some View {
+        Group {
+            if let nativeAd = claimedAd {
+                #if canImport(GoogleMobileAds) && !targetEnvironment(simulator)
+                NativeAdCardView(nativeAd: nativeAd as! NativeAd, compact: true) {
+                    onDismiss()
+                }
+                .frame(maxWidth: .infinity)
+                .frame(height: 96)
+                .onAppear {
+                    WatchIntentLogger.shared.log(
+                        eventType: .adImpression,
+                        metadata: ["ad_type": "native", "source": "reel_ad_carousel"]
+                    )
+                }
+                #else
+                rakutenBackfill()
+                #endif
+            } else {
+                rakutenBackfill()
+            }
+        }
+        .onAppear { fetch() }
+        .onChange(of: adManager.nativePoolTick) { _, _ in
+            fetch()
+        }
+    }
+
+    private func fetch() {
+        guard isCurrent else { return }
+        guard claimedAd == nil else { return }
+        AdManager.shared.start()
+        AdManager.shared.loadNativePool()
+        if let ad = AdManager.shared.nextNativeAd() {
+            claimedAd = ad
+        }
+    }
+}
 
 /// Compact 68pt-tall affiliate row card for the Reels ad carousel. Renders a
 /// horizontal row with a 44pt brand tile, headline/subtitle/Sponsored footer,

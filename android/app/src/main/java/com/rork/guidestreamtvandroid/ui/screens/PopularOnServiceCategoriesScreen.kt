@@ -37,6 +37,7 @@ import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -52,6 +53,7 @@ import com.rork.guidestreamtvandroid.data.remote.TMDBService
 import com.rork.guidestreamtvandroid.data.repository.WatchIntentLogger
 import com.rork.guidestreamtvandroid.ui.ads.InlineAdSlot
 import com.rork.guidestreamtvandroid.ui.components.RemoteImage
+import com.rork.guidestreamtvandroid.data.repository.AuthViewModel
 import com.rork.guidestreamtvandroid.ui.home.HomeViewModel
 import com.rork.guidestreamtvandroid.ui.navigation.PendingTitleRoute
 import com.rork.guidestreamtvandroid.ui.navigation.PopularCategoriesTarget
@@ -81,6 +83,9 @@ fun PopularOnServiceCategoriesScreen(
     val glow = service?.glow ?: Color(0xFF6B7280)
     val bg = service?.bg ?: Navy
     val name = service?.name ?: "Streaming"
+
+    val auth = AuthViewModel.get()
+    val selectedServices by auth.selectedServices.collectAsStateWithLifecycle()
 
     val categories = remember {
         listOf(
@@ -301,7 +306,7 @@ fun PopularOnServiceCategoriesScreen(
                             item(span = { GridItemSpan(maxLineSpan) }) {
                                 InlineAdSlot(
                                     slotIndex = chunkIdx,
-                                    selectedServices = emptySet(),
+                                    selectedServices = selectedServices,
                                     adSource = "list_inline",
                                     sectionKey = "list_inline_ad",
                                     dismissed = dismissedAdSlots,

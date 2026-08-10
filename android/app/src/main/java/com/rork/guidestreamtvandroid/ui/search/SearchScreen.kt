@@ -55,6 +55,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.rork.guidestreamtvandroid.ui.ads.InlineAdSlot
 import com.rork.guidestreamtvandroid.ui.components.RemoteImage
+import com.rork.guidestreamtvandroid.data.repository.AuthViewModel
 import com.rork.guidestreamtvandroid.ui.components.glassCard
 import com.rork.guidestreamtvandroid.ui.navigation.PendingTitleRoute
 import com.rork.guidestreamtvandroid.ui.theme.BottomSafeSpacer
@@ -89,6 +90,8 @@ fun SearchScreen(
     modifier: Modifier = Modifier,
 ) {
     val vm = SearchViewModel.get()
+    val auth = AuthViewModel.get()
+    val selectedServices by auth.selectedServices.collectAsStateWithLifecycle()
     val query by vm.query.collectAsStateWithLifecycle()
     val scope by vm.scope.collectAsStateWithLifecycle()
     val isSearching by vm.isSearching.collectAsStateWithLifecycle()
@@ -261,7 +264,7 @@ fun SearchScreen(
                             item(span = { GridItemSpan(maxLineSpan) }) {
                                 InlineAdSlot(
                                     slotIndex = chunkIdx,
-                                    selectedServices = emptySet(),
+                                    selectedServices = selectedServices,
                                     adSource = "search_inline",
                                     sectionKey = "search_inline_ad",
                                     dismissed = dismissedPopularAdSlots,
@@ -329,7 +332,7 @@ fun SearchScreen(
                             item {
                                 InlineAdSlot(
                                     slotIndex = chunkIdx,
-                                    selectedServices = emptySet(),
+                                    selectedServices = selectedServices,
                                     adSource = "search_inline",
                                     sectionKey = "search_inline_ad",
                                     dismissed = dismissedSearchAdSlots,
@@ -363,7 +366,7 @@ fun SearchScreen(
                             item {
                                 InlineAdSlot(
                                     slotIndex = chunkIdx,
-                                    selectedServices = emptySet(),
+                                    selectedServices = selectedServices,
                                     adSource = "search_inline",
                                     sectionKey = "search_inline_ad",
                                     dismissed = dismissedSearchAdSlots,

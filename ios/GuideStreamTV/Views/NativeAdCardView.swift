@@ -67,9 +67,9 @@ final class NativeAdContainer: UIView {
     private var textStackLeadingWithIcon: NSLayoutConstraint?
     private var textStackLeadingNoIcon: NSLayoutConstraint?
 
-    init(frame: CGRect, compact: Bool = false) {
+    init(compact: Bool) {
         self.compact = compact
-        super.init(frame: frame)
+        super.init(frame: .zero)
         setupViews()
     }
 

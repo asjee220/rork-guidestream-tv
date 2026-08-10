@@ -65,8 +65,7 @@ struct InlineAdSlotView: View {
             onDismiss: onDismiss,
             adSource: adSource,
             compact: true,
-            preferredSource: slotIndex % 2 == 0 ? .adMobFirst : .rakutenFirst,
-            compactNative: true
+            preferredSource: slotIndex % 2 == 0 ? .adMobFirst : .rakutenFirst
         )
     }
 
