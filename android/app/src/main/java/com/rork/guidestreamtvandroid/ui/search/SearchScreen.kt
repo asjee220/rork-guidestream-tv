@@ -19,6 +19,9 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -38,6 +41,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.TextStyle
@@ -50,12 +54,23 @@ import com.rork.guidestreamtvandroid.ui.components.RemoteImage
 import com.rork.guidestreamtvandroid.ui.components.glassCard
 import com.rork.guidestreamtvandroid.ui.navigation.PendingTitleRoute
 import com.rork.guidestreamtvandroid.ui.theme.BottomSafeSpacer
+import com.rork.guidestreamtvandroid.ui.theme.AppleTVBlack
 import com.rork.guidestreamtvandroid.ui.theme.BrandOrange
+import com.rork.guidestreamtvandroid.ui.theme.CrunchyrollOrange
+import com.rork.guidestreamtvandroid.ui.theme.DisneyBlue
 import com.rork.guidestreamtvandroid.ui.theme.GlassFill
 import com.rork.guidestreamtvandroid.ui.theme.GlassStroke
+import com.rork.guidestreamtvandroid.ui.theme.HboPurple
+import com.rork.guidestreamtvandroid.ui.theme.HuluGreen
+import com.rork.guidestreamtvandroid.ui.theme.KickGreen
+import com.rork.guidestreamtvandroid.ui.theme.NetflixRed
+import com.rork.guidestreamtvandroid.ui.theme.ParamountBlue
+import com.rork.guidestreamtvandroid.ui.theme.PrimeBlue
 import com.rork.guidestreamtvandroid.ui.theme.TextPrimary
 import com.rork.guidestreamtvandroid.ui.theme.TextSecondary
 import com.rork.guidestreamtvandroid.ui.theme.TextTertiary
+import com.rork.guidestreamtvandroid.ui.theme.TwitchPurple
+import com.rork.guidestreamtvandroid.ui.theme.YouTubeRed
 
 /**
  * Search screen — mirrors iOS SearchView.swift.
@@ -213,15 +228,20 @@ fun SearchScreen(
                     )
                 }
             } else {
-                LazyColumn(
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 20.dp, vertical = 4.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(3),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                        horizontal = 12.dp,
+                        vertical = 4.dp,
+                    ),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     items(popular) { result ->
-                        SearchResultRow(
+                        SearchPosterCard(
                             title = result.title,
                             posterUrl = result.posterUrl,
-                            subtitle = "${result.year ?: ""} · ${result.platform?.name ?: "TV"}",
+                            serviceName = result.platform?.name,
                             onClick = {
                                 onOpenTitle(PendingTitleRoute(
                                     titleId = result.id.toString(),
@@ -275,6 +295,7 @@ fun SearchScreen(
                             title = result.title,
                             posterUrl = result.posterUrl,
                             subtitle = "${result.year ?: ""} · ${if (result.isTV) "Series" else "Movie"}",
+                            isLargePoster = true,
                             onClick = {
                                 onOpenTitle(PendingTitleRoute(
                                     titleId = result.id.toString(),
@@ -318,18 +339,19 @@ private fun SearchResultRow(
     posterUrl: String?,
     subtitle: String,
     isCircle: Boolean = false,
+    isLargePoster: Boolean = false,
     onClick: () -> Unit,
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 20.dp)
+            .padding(horizontal = if (isLargePoster) 16.dp else 20.dp)
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
             ) { onClick() }
             .glassCard()
-            .padding(10.dp),
+            .padding(if (isLargePoster) 12.dp else 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (isCircle) {
@@ -340,6 +362,17 @@ private fun SearchResultRow(
                 cornerRadius = 24,
                 placeholderText = title.take(2).uppercase(),
                 placeholderFontSize = 16.sp,
+            )
+        } else if (isLargePoster) {
+            RemoteImage(
+                url = posterUrl,
+                contentDescription = title,
+                modifier = Modifier
+                    .width(100.dp)
+                    .aspectRatio(2f / 3f),
+                cornerRadius = 10,
+                placeholderText = title.take(2).uppercase(),
+                placeholderFontSize = 18.sp,
             )
         } else {
             RemoteImage(
@@ -353,11 +386,13 @@ private fun SearchResultRow(
                 placeholderFontSize = 14.sp,
             )
         }
-        Spacer(Modifier.width(12.dp))
-        Column {
+        Spacer(Modifier.width(if (isLargePoster) 14.dp else 12.dp))
+        Column(
+            modifier = Modifier.weight(1f),
+        ) {
             Text(
                 text = title,
-                fontSize = 15.sp,
+                fontSize = if (isLargePoster) 16.sp else 15.sp,
                 fontWeight = FontWeight.SemiBold,
                 color = TextPrimary,
                 maxLines = 1,
@@ -365,10 +400,125 @@ private fun SearchResultRow(
             )
             Text(
                 text = subtitle,
-                fontSize = 12.sp,
+                fontSize = if (isLargePoster) 13.sp else 12.sp,
                 color = TextSecondary,
                 maxLines = 1,
             )
         }
+    }
+}
+
+@Composable
+private fun SearchPosterCard(
+    title: String,
+    posterUrl: String?,
+    serviceName: String?,
+    onClick: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+            ) { onClick() }
+            .fillMaxWidth(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(2f / 3f)
+                .clip(RoundedCornerShape(10.dp))
+                .glassCard(),
+            contentAlignment = Alignment.Center,
+        ) {
+            RemoteImage(
+                url = posterUrl,
+                contentDescription = title,
+                modifier = Modifier.fillMaxSize(),
+                cornerRadius = 10,
+                placeholderText = title.take(2).uppercase(),
+                placeholderFontSize = 18.sp,
+            )
+
+            // Bottom gradient + title
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(Color.Transparent, Color.Black.copy(alpha = 0.9f)),
+                            startY = 0.5f,
+                            endY = Float.POSITIVE_INFINITY,
+                        )
+                    )
+            )
+
+            Text(
+                text = title,
+                fontSize = 9.sp,
+                fontWeight = FontWeight.Bold,
+                color = TextPrimary,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(6.dp),
+            )
+
+            // Service badge
+            serviceName?.let { name ->
+                val short = serviceShort(name)
+                val color = serviceColor(name)
+                Text(
+                    text = short,
+                    fontSize = 8.sp,
+                    fontWeight = FontWeight.Black,
+                    color = Color.White,
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(5.dp)
+                        .background(
+                            color = color,
+                            shape = RoundedCornerShape(4.dp),
+                        )
+                        .padding(horizontal = 5.dp, vertical = 2.dp),
+                )
+            }
+        }
+    }
+}
+
+private fun serviceShort(name: String): String {
+    return when (name.uppercase()) {
+        "NETFLIX" -> "NFLX"
+        "HBO", "HBO MAX" -> "MAX"
+        "APPLE TV+", "APPLE TV" -> "ATV+"
+        "HULU" -> "HULU"
+        "PRIME VIDEO", "AMAZON PRIME" -> "PRIME"
+        "DISNEY+", "DISNEY PLUS" -> "D+"
+        "PARAMOUNT+", "PARAMOUNT PLUS" -> "P+"
+        "CRUNCHYROLL" -> "CR"
+        "YOUTUBE" -> "YT"
+        "TWITCH" -> "TTV"
+        "KICK" -> "KICK"
+        else -> name.take(4).uppercase()
+    }
+}
+
+private fun serviceColor(name: String): Color {
+    return when (name.uppercase()) {
+        "NETFLIX" -> NetflixRed
+        "HBO", "HBO MAX" -> HboPurple
+        "APPLE TV+", "APPLE TV" -> AppleTVBlack
+        "HULU" -> HuluGreen
+        "PRIME VIDEO", "AMAZON PRIME" -> PrimeBlue
+        "DISNEY+", "DISNEY PLUS" -> DisneyBlue
+        "PARAMOUNT+", "PARAMOUNT PLUS" -> ParamountBlue
+        "CRUNCHYROLL" -> CrunchyrollOrange
+        "YOUTUBE" -> YouTubeRed
+        "TWITCH" -> TwitchPurple
+        "KICK" -> KickGreen
+        else -> BrandOrange
     }
 }
