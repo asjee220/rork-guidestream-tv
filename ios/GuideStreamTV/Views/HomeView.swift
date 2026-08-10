@@ -762,6 +762,9 @@ struct HomeView: View {
                             .padding(.horizontal, 12)
                         }
 
+                        // Inline sponsored slot #2 — after Everyone's Watching, before Leaving Soon
+                        inlineAdSlot(2)
+
                         if !homeContentReady {
                             HomeShimmerSection(title: "Leaving Soon")
                                 .padding(.horizontal, 12)
@@ -787,8 +790,8 @@ struct HomeView: View {
                             .padding(.horizontal, 12)
                         }
 
-                        // Inline sponsored slot #2 — after Leaving Soon
-                        inlineAdSlot(2)
+                        // Inline sponsored slot #3 — after Leaving Soon
+                        inlineAdSlot(3)
 
                         if !homeContentReady {
                             ForEach(StreamingCatalog.ordered(from: auth.selectedServices), id: \.id) { service in
@@ -798,7 +801,7 @@ struct HomeView: View {
                                     .padding(.horizontal, 12)
                             }
                         } else {
-                            ForEach(StreamingCatalog.ordered(from: auth.selectedServices), id: \.id) { service in
+                            ForEach(Array(StreamingCatalog.ordered(from: auth.selectedServices).enumerated()), id: \.element.id) { index, service in
                                 if let results = popularOnServiceResults[service.id], !results.isEmpty {
                                     let shows = results.map { r in
                                         PosterShow(
@@ -858,11 +861,15 @@ struct HomeView: View {
                                     )
                                     .padding(.horizontal, 12)
                                 }
+                                // Dynamic per-service ad after every second service (index % 2 == 1)
+                                if index % 2 == 1 {
+                                    inlineAdSlot(100 + index / 2)
+                                }
                             }
                         }
 
-                        // Inline sponsored slot #3 — after per-service Popular/Now&Next, before Genre discovery
-                        inlineAdSlot(3)
+                        // Inline sponsored slot #4 — after per-service Popular/Now&Next, before Genre discovery
+                        inlineAdSlot(4)
 
                         GenreDiscoverySection(highlighted: CoachMarkManager.shared.genreHighlightActive, selectedGenreId: selectedGenreId) { genreId, genreName, mediaType in
                             selectedGenreId = genreId
@@ -924,8 +931,8 @@ struct HomeView: View {
                             }
                         }
 
-                        // Inline sponsored slot #4 — after Because you watch / Browsing genre
-                        inlineAdSlot(4)
+                        // Inline sponsored slot #5 — after Because you watch / Browsing genre
+                        inlineAdSlot(5)
 
                         if !homeContentReady {
                             HomeShimmerSection(title: "Top rated right now")
@@ -944,6 +951,9 @@ struct HomeView: View {
                             )
                             .padding(.horizontal, 12)
                         }
+
+                        // Inline sponsored slot #6 — after Top rated right now, before New seasons
+                        inlineAdSlot(6)
 
                         if !homeContentReady {
                             HomeShimmerSection(title: "New seasons — shows you follow")
@@ -991,8 +1001,8 @@ struct HomeView: View {
                             .padding(.horizontal, 12)
                         }
 
-                        // Inline sponsored slot #5 — after Upcoming Episodes, before widget banner
-                        inlineAdSlot(5)
+                        // Inline sponsored slot #7 — after Upcoming Episodes, before widget banner
+                        inlineAdSlot(7)
 
                         if !widgetBannerDismissed {
                             WidgetPromoBanner(
@@ -1060,8 +1070,8 @@ struct HomeView: View {
                             .padding(.horizontal, 12)
                         }
 
-                        // Inline sponsored slot #6 — after Binge Worthy
-                        inlineAdSlot(6)
+                        // Inline sponsored slot #8 — after Binge Worthy
+                        inlineAdSlot(8)
 
                         Color.clear.frame(height: 96)
                     }

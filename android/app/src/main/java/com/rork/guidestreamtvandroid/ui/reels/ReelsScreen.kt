@@ -71,6 +71,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -1951,7 +1952,7 @@ private fun resolveReelAds(
     currentPlatform: String,
     selected: Set<String>,
     tmdbId: Int,
-    count: Int = 5,
+    count: Int = 8,
 ): List<Triple<String, String, String>> {
     val current = currentPlatform.lowercase()
     val preferred = reelAdPool.filter { it.first != current && it.first !in selected }
@@ -1986,8 +1987,8 @@ private fun ReelAdCarousel(
     }
     var dismissed by remember(reel.id) { mutableStateOf(false) }
     var visible by remember(reel.id) { mutableStateOf(false) }
-    var nativeAdFailed by remember(reel.id) { mutableStateOf(false) }
-    var nativeImpressionLogged by remember(reel.id) { mutableStateOf(false) }
+    val nativeAdFailed = remember(reel.id) { mutableStateMapOf<Int, Boolean>() }
+    val nativeImpressionLogged = remember(reel.id) { mutableStateMapOf<Int, Boolean>() }
 
     LaunchedEffect(isCurrent) {
         visible = false
@@ -2020,15 +2021,15 @@ private fun ReelAdCarousel(
             state = pagerState,
             modifier = Modifier.fillMaxWidth(),
         ) { page ->
-            if (page == 2 && !nativeAdFailed) {
+            if (page in setOf(1, 2, 4, 5, 7) && nativeAdFailed[page] != true) {
                 NativeAdCard(
                     compact = true,
-                    onAdFailedToLoad = { nativeAdFailed = true },
+                    onAdFailedToLoad = { nativeAdFailed[page] = true },
                 )
                 // Log native impression once when the page first shows.
                 LaunchedEffect(pagerState.currentPage, page) {
-                    if (pagerState.currentPage == page && !nativeImpressionLogged) {
-                        nativeImpressionLogged = true
+                    if (pagerState.currentPage == page && nativeImpressionLogged[page] != true) {
+                        nativeImpressionLogged[page] = true
                         WatchIntentLogger.get().log(
                             WatchIntentLogger.IntentEventType.AD_IMPRESSION,
                             metadata = mapOf(

@@ -505,6 +505,15 @@ fun HomeScreen(
             )
         }
 
+        // Inline sponsored slot #2 — after Everyone's Watching, before Leaving Soon
+        InlineAdSlot(
+            slotIndex = 2,
+            selectedServices = selectedServices,
+            adSource = "home_inline",
+            sectionKey = "home_inline_ad",
+            dismissed = dismissedAdSlots,
+        )
+
         // Leaving Soon — server-backed rows from the expiring_titles table
         if (!homeReady) {
             ShimmerSection("Leaving Soon", Modifier.padding(horizontal = 12.dp, vertical = 8.dp))
@@ -532,9 +541,9 @@ fun HomeScreen(
             )
         }
 
-        // Inline sponsored slot #2 — after Leaving Soon
+        // Inline sponsored slot #3 — after Leaving Soon
         InlineAdSlot(
-            slotIndex = 2,
+            slotIndex = 3,
             selectedServices = selectedServices,
             adSource = "home_inline",
             sectionKey = "home_inline_ad",
@@ -549,7 +558,7 @@ fun HomeScreen(
                 ShimmerSection("Now & Next on ${svc.name}", Modifier.padding(horizontal = 12.dp, vertical = 8.dp))
             }
         } else {
-            services.forEach { svc ->
+            services.forEachIndexed { index, svc ->
                 val results = popularByService[svc.id] ?: emptyList()
                 if (results.isNotEmpty()) {
                     val providerId = HomeViewModel.get().providerIdFor(svc.id)
@@ -609,12 +618,22 @@ fun HomeScreen(
                         },
                     )
                 }
+                // Dynamic per-service ad after every second service (index % 2 == 1)
+                if (index % 2 == 1) {
+                    InlineAdSlot(
+                        slotIndex = 100 + index / 2,
+                        selectedServices = selectedServices,
+                        adSource = "home_inline",
+                        sectionKey = "home_inline_ad",
+                        dismissed = dismissedAdSlots,
+                    )
+                }
             }
         }
 
-        // Inline sponsored slot #3 — after per-service ForEach, before Browsing genre
+        // Inline sponsored slot #4 — after per-service ForEach, before Browsing genre
         InlineAdSlot(
-            slotIndex = 3,
+            slotIndex = 4,
             selectedServices = selectedServices,
             adSource = "home_inline",
             sectionKey = "home_inline_ad",
@@ -658,9 +677,9 @@ fun HomeScreen(
             }
         }
 
-        // Inline sponsored slot #4 — after Because you watch Crime
+        // Inline sponsored slot #5 — after Because you watch Crime
         InlineAdSlot(
-            slotIndex = 4,
+            slotIndex = 5,
             selectedServices = selectedServices,
             adSource = "home_inline",
             sectionKey = "home_inline_ad",
@@ -686,6 +705,15 @@ fun HomeScreen(
             )
         }
 
+        // Inline sponsored slot #6 — after Top rated right now, before New seasons
+        InlineAdSlot(
+            slotIndex = 6,
+            selectedServices = selectedServices,
+            adSource = "home_inline",
+            sectionKey = "home_inline_ad",
+            dismissed = dismissedAdSlots,
+        )
+
         // New seasons — shows you follow (on-air titles from the user's watch list)
         if (!homeReady) {
             ShimmerSection("New seasons — shows you follow", Modifier.padding(horizontal = 12.dp, vertical = 8.dp))
@@ -709,9 +737,9 @@ fun HomeScreen(
             }
         }
 
-        // Inline sponsored slot #5 — after New seasons
+        // Inline sponsored slot #7 — after New seasons
         InlineAdSlot(
-            slotIndex = 5,
+            slotIndex = 7,
             selectedServices = selectedServices,
             adSource = "home_inline",
             sectionKey = "home_inline_ad",
@@ -745,9 +773,9 @@ fun HomeScreen(
             )
         }
 
-        // Inline sponsored slot #6 — after Binge Worthy
+        // Inline sponsored slot #8 — after Binge Worthy
         InlineAdSlot(
-            slotIndex = 6,
+            slotIndex = 8,
             selectedServices = selectedServices,
             adSource = "home_inline",
             sectionKey = "home_inline_ad",

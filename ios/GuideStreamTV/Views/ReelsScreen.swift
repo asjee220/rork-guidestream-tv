@@ -2395,9 +2395,11 @@ private struct ReelView: View {
             TabView(selection: $adPage) {
                 ForEach(Array(glassAdTargets.enumerated()), id: \.offset) { idx, ad in
                     Group {
-                        if idx == 2 {
+                        if [1, 2, 4, 5, 7].contains(idx) {
                             #if canImport(GoogleMobileAds) && !targetEnvironment(simulator)
                             ReelNativeAdPage(
+                                pageIndex: idx,
+                                visiblePage: adPage,
                                 isCurrent: isCurrent,
                                 rakutenBackfill: { AnyView(reelRakutenCard(ad)) },
                                 onDismiss: { glassAdDismissed = true }
@@ -2464,7 +2466,7 @@ private struct ReelView: View {
     private func armGlassAdFade() {
         glassAdFadeTask?.cancel()
         adAdvanceTask?.cancel()
-        glassAdTargets = resolveGlassAds(count: 5)
+        glassAdTargets = resolveGlassAds(count: 8)
         adPage = 0
         glassAdDismissed = false
         glassAdVisible = false
@@ -2604,6 +2606,8 @@ private struct ReelView: View {
 /// available. Only fetches when this reel is the current one so background
 /// reels never drain the pool.
 private struct ReelNativeAdPage: View {
+    let pageIndex: Int
+    let visiblePage: Int
     let isCurrent: Bool
     let rakutenBackfill: () -> AnyView
     let onDismiss: () -> Void
@@ -2637,10 +2641,14 @@ private struct ReelNativeAdPage: View {
         .onChange(of: adManager.nativePoolTick) { _, _ in
             fetch()
         }
+        .onChange(of: visiblePage) { _, _ in
+            fetch()
+        }
     }
 
     private func fetch() {
         guard isCurrent else { return }
+        guard abs(visiblePage - pageIndex) <= 1 else { return }
         guard claimedAd == nil else { return }
         AdManager.shared.start()
         AdManager.shared.loadNativePool()
