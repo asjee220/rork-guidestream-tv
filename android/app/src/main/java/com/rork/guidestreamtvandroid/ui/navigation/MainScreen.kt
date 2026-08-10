@@ -16,13 +16,16 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import com.rork.guidestreamtvandroid.data.models.Platform
 import com.rork.guidestreamtvandroid.data.models.SourceKind
 import com.rork.guidestreamtvandroid.data.remote.SportsService
 import com.rork.guidestreamtvandroid.data.models.TMDBResult
+import com.rork.guidestreamtvandroid.data.repository.ReelsBadgeService
 import com.rork.guidestreamtvandroid.ui.ask.AskStreamSheet
 import com.rork.guidestreamtvandroid.ui.components.CoachMarkOverlay
 import com.rork.guidestreamtvandroid.ui.components.FloatingTabBar
@@ -91,6 +94,8 @@ fun MainScreen(
     var showWidgetSetup by remember { mutableStateOf(false) }
     val coachMark = CoachMarkManager.get()
     val authVm = AuthViewModel.get()
+    val reelsBadge = ReelsBadgeService.get()
+    val coroutineScope = rememberCoroutineScope()
     val homeReady by HomeViewModel.get().homeContentReady.collectAsStateWithLifecycle()
     val isSignedIn by authVm.isSignedIn.collectAsStateWithLifecycle()
     val hasCompletedOnboarding by authVm.hasCompletedOnboarding.collectAsStateWithLifecycle()
@@ -112,6 +117,9 @@ fun MainScreen(
     // Consume pending sports game route from AppRouter (push-notification
     // buffer). Resolves the game from the live scoreboard; an unresolvable
     // gameId leaves the user on the Sports tab.
+    // Refresh the Reels unseen-content badge on launch. Signed-out users never see a badge.
+    LaunchedEffect(Unit) { reelsBadge.refresh() }
+
     val pendingSportsGameId = router.pendingSportsGameId
     LaunchedEffect(pendingSportsGameId) {
         val gameId = pendingSportsGameId ?: return@LaunchedEffect
@@ -391,6 +399,8 @@ fun MainScreen(
                     } else {
                         if (selectedTab != AppTab.REELS && tab == AppTab.REELS) {
                             tabBeforeReels = selectedTab
+                            // Mark the Reels tab as seen so the badge clears immediately.
+                            coroutineScope.launch { reelsBadge.markSeen() }
                         }
                         // ASK never reaches here (intercepted above), so the
                         // recorded tab can never be AppTab.ASK.

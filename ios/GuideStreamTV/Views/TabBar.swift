@@ -5,6 +5,8 @@
 
 import SwiftUI
 
+private let reelsBadgeRingColor = Color(red: 0x0A/255, green: 0x12/255, blue: 0x1B/255)
+
 enum AppTab: Int, CaseIterable, Hashable {
     case home, sports, ask, reels, profile
 
@@ -33,6 +35,8 @@ struct FloatingTabBar: View {
     @Binding var selection: AppTab
     @State private var isGlowExpanded: Bool = false
     @State private var coachMark = CoachMarkManager.shared
+    @State private var reelsBadge = ReelsBadgeService.shared
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         HStack(spacing: 8) {
@@ -80,16 +84,42 @@ struct FloatingTabBar: View {
     @ViewBuilder
     private func tabItem(_ tab: AppTab) -> some View {
         let selected = selection == tab
+        let showBadge = tab == .reels && reelsBadge.hasUnseen && !selected
         Button {
             withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
                 selection = tab
             }
         } label: {
             VStack(spacing: 4) {
-                Image(systemName: tab.symbol)
-                    .font(.guideBody(size: 22, weight: .semibold))
-                    .foregroundStyle(selected ? Color(hex: "F5821F") : Color.white.opacity(0.35))
-                    .symbolEffect(.bounce, value: selected)
+                ZStack(alignment: .topTrailing) {
+                    Image(systemName: tab.symbol)
+                        .font(.guideBody(size: 22, weight: .semibold))
+                        .foregroundStyle(selected ? Color(hex: "F5821F") : Color.white.opacity(0.35))
+                        .symbolEffect(.bounce, value: selected)
+
+                    if showBadge {
+                        Circle()
+                            .fill(reelsBadgeRingColor)
+                            .frame(width: 13, height: 13)
+                            .overlay(
+                                Circle()
+                                    .fill(Color.blue)
+                                    .frame(width: 9, height: 9)
+                            )
+                            .offset(x: 5, y: -4)
+                            .transition(
+                                reduceMotion
+                                    ? .opacity
+                                    : .scale.combined(with: .opacity)
+                            )
+                            .animation(
+                                reduceMotion
+                                    ? nil
+                                    : .spring(response: 0.34, dampingFraction: 0.62),
+                                value: reelsBadge.hasUnseen
+                            )
+                    }
+                }
                 Text(tab.title)
                     .font(.guideBody(size: 10, weight: .semibold))
                     .foregroundStyle(selected ? Color.white.opacity(0.92) : Theme.textTertiary)

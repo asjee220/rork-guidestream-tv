@@ -130,6 +130,10 @@ struct ContentView: View {
             // for signed-in users, device_sessions.timezone for guests.
             auth.setUserTimezone()
 
+            // Refresh the Reels unseen-content badge so it appears before the
+            // user opens the tab. Signed-out users never see a badge.
+            Task { await ReelsBadgeService.shared.refresh() }
+
             // Warm up the reels feed in the background so the tab opens instantly
             // when the user first taps it. Network calls and trailer-key lookups
             // would otherwise add a 2–3s spinner on first reveal.
@@ -169,6 +173,8 @@ struct ContentView: View {
                         // dismiss chevron/swipe can return them there.
                         if newValue == .reels && oldValue != .reels {
                             tabBeforeReels = oldValue
+                            // Mark the Reels tab as seen so the badge clears immediately.
+                            Task { await ReelsBadgeService.shared.markSeen() }
                         }
                         previousTab = newValue
                         if newValue == .reels {

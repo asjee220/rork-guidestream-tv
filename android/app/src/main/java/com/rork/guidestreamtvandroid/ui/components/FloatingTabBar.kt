@@ -1,9 +1,13 @@
 package com.rork.guidestreamtvandroid.ui.components
 
+import android.provider.Settings
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -16,6 +20,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -35,6 +40,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -42,14 +48,18 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.rork.guidestreamtvandroid.data.repository.CoachMarkManager
+import com.rork.guidestreamtvandroid.data.repository.ReelsBadgeService
 import com.rork.guidestreamtvandroid.ui.navigation.AppTab
+import com.rork.guidestreamtvandroid.ui.theme.BrandBlue
 import com.rork.guidestreamtvandroid.ui.theme.BrandOrange
 import com.rork.guidestreamtvandroid.ui.theme.OutlineVariant
 import com.rork.guidestreamtvandroid.ui.theme.SurfaceContainer
@@ -119,6 +129,22 @@ private fun TabItem(
     onClick: (AppTab) -> Unit,
 ) {
     val (filled, outlined) = tabIconPair(tab)
+    val reelsBadge = ReelsBadgeService.get()
+    val hasUnseen by reelsBadge.hasUnseen.collectAsStateWithLifecycle()
+    val showBadge = tab == AppTab.REELS && hasUnseen && !isSelected
+
+    val animatorScale = Settings.Global.getFloat(
+        LocalContext.current.contentResolver,
+        Settings.Global.ANIMATOR_DURATION_SCALE,
+        1f,
+    )
+    val targetScale = if (showBadge) 1f else 0f
+    val scale by animateFloatAsState(
+        targetValue = targetScale,
+        animationSpec = if (animatorScale == 0f) snap() else spring(dampingRatio = 0.62f, stiffness = 0.34f),
+        label = "reels_badge_scale",
+    )
+
     Column(
         modifier = Modifier
             .clickable(
@@ -129,12 +155,37 @@ private fun TabItem(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        Icon(
-            imageVector = if (isSelected) filled else outlined,
-            contentDescription = tab.title,
-            tint = if (isSelected) BrandOrange else TextTertiary,
-            modifier = Modifier.size(22.dp),
-        )
+        Box(
+            contentAlignment = Alignment.TopEnd,
+        ) {
+            Icon(
+                imageVector = if (isSelected) filled else outlined,
+                contentDescription = tab.title,
+                tint = if (isSelected) BrandOrange else TextTertiary,
+                modifier = Modifier.size(22.dp),
+            )
+            if (showBadge) {
+                Box(
+                    modifier = Modifier
+                        .graphicsLayer {
+                            scaleX = scale
+                            scaleY = scale
+                        }
+                        .offset(x = 5.dp, y = (-4).dp)
+                        .size(13.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xFF0A121B)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(9.dp)
+                            .clip(CircleShape)
+                            .background(BrandBlue),
+                    )
+                }
+            }
+        }
         Spacer(Modifier.height(2.dp))
         Text(
             text = tab.title,
