@@ -13,6 +13,9 @@ import SwiftUI
 import UIKit
 import YouTubeiOSPlayerHelper
 import Supabase
+#if canImport(GoogleMobileAds) && !targetEnvironment(simulator)
+import GoogleMobileAds
+#endif
 
 private extension Array {
     subscript(safe index: Int) -> Element? {
