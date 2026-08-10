@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rork.guidestreamtvandroid.data.models.SportsGame
 import com.rork.guidestreamtvandroid.data.remote.SportsService
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -51,6 +52,24 @@ class SportsViewModel : ViewModel() {
 
     fun setSport(sport: String?) {
         _selectedSport.value = sport
+    }
+
+    /**
+     * Awaitable variant of [fetchGames] for pull-to-refresh. Awaits
+     * [sportsService.fetchAll] and assigns the result to [_games] inside a
+     * try/catch that swallows non-cancellation exceptions and leaves the
+     * previous [_games] value intact on failure. Deliberately does not set
+     * [_isLoading] so the pinned header spinner and the pull indicator never
+     * both appear at once.
+     */
+    suspend fun refreshGamesNow() {
+        try {
+            _games.value = sportsService.fetchAll()
+        } catch (c: CancellationException) {
+            throw c
+        } catch (_: Exception) {
+            // Leave previous _games value intact on failure.
+        }
     }
 
     /** Games filtered by the selected sport (null = all). */

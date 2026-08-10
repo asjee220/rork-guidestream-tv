@@ -84,7 +84,13 @@ import com.rork.guidestreamtvandroid.ui.theme.OutlineVariant
 import com.rork.guidestreamtvandroid.ui.theme.SurfaceContainer
 import com.rork.guidestreamtvandroid.ui.theme.SurfaceElevated
 import com.rork.guidestreamtvandroid.ui.theme.TextPrimary
+import androidx.compose.foundation.layout.offset
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
+import androidx.compose.runtime.rememberCoroutineScope
 import com.rork.guidestreamtvandroid.ui.theme.TextSecondary
+import kotlinx.coroutines.launch
 
 private val sportOptions = listOf("All", "NBA", "NBA Summer", "NFL", "Soccer", "MLB", "UFC")
 private val LiveRed = Color(0xFFE50914)
@@ -94,6 +100,7 @@ private val LiveRed = Color(0xFFE50914)
  * Pinned header (wordmark + services pill), sport pills, My Teams from real
  * favorites, and Live Now / Upcoming / Final sections with See all.
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SportsScreen(
     onOpenGameDetail: (SportsGame) -> Unit,
@@ -156,7 +163,38 @@ fun SportsScreen(
     // The bar overlays the list, so reserve its full height as top content padding.
     val statusBarTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
 
+    val scope = rememberCoroutineScope()
+    var isRefreshing by remember { mutableStateOf(false) }
+    val pullState = rememberPullToRefreshState()
+
     Box(modifier = modifier.fillMaxSize()) {
+        PullToRefreshBox(
+            isRefreshing = isRefreshing,
+            onRefresh = {
+                if (isRefreshing) return@PullToRefreshBox
+                scope.launch {
+                    isRefreshing = true
+                    try {
+                        vm.refreshGamesNow()
+                    } finally {
+                        isRefreshing = false
+                    }
+                }
+            },
+            state = pullState,
+            modifier = Modifier.fillMaxSize(),
+            indicator = {
+                PullToRefreshDefaults.Indicator(
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .offset(y = statusBarTop + 56.dp),
+                    isRefreshing = isRefreshing,
+                    state = pullState,
+                    containerColor = SurfaceContainer,
+                    color = BrandOrange,
+                )
+            },
+        ) {
         LazyColumn(
             state = listState,
             modifier = Modifier.fillMaxSize(),
@@ -240,13 +278,14 @@ fun SportsScreen(
 
             item { BottomSafeSpacer(withTabBar = true) }
         }
+        }
 
         // Pinned top bar — wordmark left, refresh spinner + services pill right
         GsTopBar(
             elevated = isBarElevated,
             modifier = Modifier.align(Alignment.TopStart),
         ) {
-            if (isLoading && games.isNotEmpty()) {
+            if (isLoading && games.isNotEmpty() && !isRefreshing) {
                 CircularProgressIndicator(color = BrandOrange, modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
                 Spacer(Modifier.width(10.dp))
             }

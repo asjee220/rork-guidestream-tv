@@ -643,4 +643,90 @@ class HomeViewModel : ViewModel() {
             resolveProviders(results)
         }
     }
+
+    /**
+     * Pull-to-refresh variant of [loadAll]. Performs the same data work but
+     * without the [_homeContentReady] gate and without ever writing false to
+     * [_homeContentReady], so the feed never flashes back to shimmer
+     * placeholders during a refresh. Each section is individually isolated so
+     * one failing section never aborts the rest and this function never throws.
+     */
+    suspend fun refreshFeed() {
+        coroutineScope {
+            val jobs = listOf(
+                launch(Dispatchers.IO) {
+                    try {
+                        val pages = coroutineScope {
+                            (1..4).map { page ->
+                                async(Dispatchers.IO) { tmdb.getTrendingTV(page = page) }
+                            }.awaitAll()
+                        }
+                        val combined = pages[0] + pages[1] + pages[2] + pages[3]
+                        val seen = mutableSetOf<Int>()
+                        _trending.value = combined.filter { seen.add(it.id) }
+                    } catch (c: CancellationException) { throw c }
+                    catch (_: Exception) {}
+                },
+                launch(Dispatchers.IO) {
+                    try { _onAir.value = tmdb.getOnTheAir() }
+                    catch (c: CancellationException) { throw c }
+                    catch (_: Exception) {}
+                },
+                launch(Dispatchers.IO) {
+                    try { _topRated.value = tmdb.getTopRated() }
+                    catch (c: CancellationException) { throw c }
+                    catch (_: Exception) {}
+                },
+                launch(Dispatchers.IO) {
+                    try {
+                        val rows = StreamingReleasesService.get().fetchReleases()
+                        if (rows != null) {
+                            releaseRows = rows
+                            _newReleases.value = rows.map { it.toTMDBResult() }
+                            val pool = rows.take(10)
+                            if (pool.isNotEmpty()) {
+                                val count = pool.size
+                                var idx = LocalDate.now().dayOfYear % count
+                                var chosen: StreamingReleasesService.StreamingReleaseRow? = null
+                                for (i in 0 until count) {
+                                    val candidate = pool[idx]
+                                    if (!candidate.posterUrl.isNullOrEmpty() ||
+                                        !candidate.posterPath.isNullOrEmpty()) {
+                                        chosen = candidate
+                                        break
+                                    }
+                                    idx = (idx + 1) % count
+                                }
+                                _todaysPick.value = chosen ?: pool[LocalDate.now().dayOfYear % count]
+                            }
+                        }
+                    } catch (c: CancellationException) { throw c }
+                    catch (_: Exception) {}
+                },
+                launch(Dispatchers.IO) {
+                    try { _genreShows.value = tmdb.getDiscoverByGenre(_selectedGenreId.value) }
+                    catch (c: CancellationException) { throw c }
+                    catch (_: Exception) {}
+                },
+            )
+            jobs.forEach { it.join() }
+
+            try { resolveProviders(_trending.value.take(40)) }
+            catch (c: CancellationException) { throw c }
+            catch (_: Exception) {}
+        }
+
+        // Deferred, non-blocking work — each isolated so one failure never
+        // aborts the rest.
+        try { loadLeavingSoon() } catch (c: CancellationException) { throw c } catch (_: Exception) {}
+        launchDeferred { _upcoming.value = tmdb.getUpcomingMovies() }
+        launchDeferred { _bingeReady.value = tmdb.getDiscoverEnded() }
+        launchDeferred { ProviderBrandMapService.get().refresh() }
+        launchDeferred { loadRecommendedCreators() }
+
+        // Refresh the watchlist / watched / badges / new-episode counts.
+        try { StreamsViewModel.get().refreshAllNow() }
+        catch (c: CancellationException) { throw c }
+        catch (_: Exception) {}
+    }
 }

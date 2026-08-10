@@ -15,6 +15,8 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -106,45 +108,82 @@ class StreamsViewModel private constructor(context: Context) {
         }
     }
 
+    /**
+     * Awaitable variant of [refreshAll] for pull-to-refresh. Launches all four
+     * fetches concurrently inside [coroutineScope], each individually isolated so
+     * a thrown exception in one never cancels the others and never propagates
+     * out of this function (CancellationException is rethrown). Returns when
+     * all four have completed.
+     */
+    suspend fun refreshAllNow() {
+        coroutineScope {
+            val jobs = listOf(
+                launch {
+                    try { fetchUserStreamsNow() }
+                    catch (c: CancellationException) { throw c }
+                    catch (_: Exception) {}
+                },
+                launch {
+                    try { fetchNewEpisodesNow() }
+                    catch (c: CancellationException) { throw c }
+                    catch (_: Exception) {}
+                },
+                launch {
+                    try { fetchLatestContentDates() }
+                    catch (c: CancellationException) { throw c }
+                    catch (_: Exception) {}
+                },
+                launch {
+                    try { fetchWatchlistSeen() }
+                    catch (c: CancellationException) { throw c }
+                    catch (_: Exception) {}
+                },
+            )
+            jobs.forEach { it.join() }
+        }
+    }
+
     /** True when the series is flagged watched by the current owner. */
     fun isWatched(titleId: String): Boolean = _watchedIds.value.contains(titleId.trim())
 
     fun fetchUserStreams() {
         _isLoadingStreams.value = true
-        scope.launch {
-            try {
-                val deviceId = DeviceIdentity.get().deviceId
-                val uid = currentUserId
-                val rows = SupabaseManager.client.postgrest
-                    .from("user_streams")
-                    .select {
-                        filter {
-                            // Single-ownership scoping: signed-in users read
-                            // strictly by user_id; guests read by device_id AND
-                            // user_id IS NULL so two accounts on one install
-                            // never see each other's rows.
-                            if (uid != null) {
-                                eq("user_id", uid)
-                            } else {
-                                eq("device_id", deviceId)
-                                exact("user_id", null)
-                            }
+        scope.launch { fetchUserStreamsNow() }
+    }
+
+    private suspend fun fetchUserStreamsNow() {
+        try {
+            val deviceId = DeviceIdentity.get().deviceId
+            val uid = currentUserId
+            val rows = SupabaseManager.client.postgrest
+                .from("user_streams")
+                .select {
+                    filter {
+                        // Single-ownership scoping: signed-in users read
+                        // strictly by user_id; guests read by device_id AND
+                        // user_id IS NULL so two accounts on one install
+                        // never see each other's rows.
+                        if (uid != null) {
+                            eq("user_id", uid)
+                        } else {
+                            eq("device_id", deviceId)
+                            exact("user_id", null)
                         }
-                        order("added_at", Order.DESCENDING)
                     }
-                    .decodeList<UserStream>()
-                val merged = mergeRemoteWithLocal(rows)
-                _userStreams.value = merged
-                saveLocalCache(merged)
-            } catch (e: Throwable) {
-                if (e is CancellationException) throw e
-                _lastError.value = e.message
-                _userStreams.value = loadLocalCache()
-            } finally {
-                _isLoadingStreams.value = false
-            }
-            fetchWatchedIds()
+                    order("added_at", Order.DESCENDING)
+                }
+                .decodeList<UserStream>()
+            val merged = mergeRemoteWithLocal(rows)
+            _userStreams.value = merged
+            saveLocalCache(merged)
+        } catch (e: Throwable) {
+            if (e is CancellationException) throw e
+            _lastError.value = e.message
+            _userStreams.value = loadLocalCache()
+        } finally {
+            _isLoadingStreams.value = false
         }
+        fetchWatchedIds()
     }
 
     /**
@@ -276,63 +315,65 @@ class StreamsViewModel private constructor(context: Context) {
 
     fun fetchNewEpisodes() {
         _isLoadingEpisodes.value = true
-        scope.launch {
-            try {
-                val deviceId = DeviceIdentity.get().deviceId
-                val uid = currentUserId
-                val mine = SupabaseManager.client.postgrest
-                    .from("user_streams")
-                    .select {
-                        filter {
-                            if (uid != null) {
-                                eq("user_id", uid)
-                            } else {
-                                eq("device_id", deviceId)
-                                exact("user_id", null)
-                            }
+        scope.launch { fetchNewEpisodesNow() }
+    }
+
+    private suspend fun fetchNewEpisodesNow() {
+        try {
+            val deviceId = DeviceIdentity.get().deviceId
+            val uid = currentUserId
+            val mine = SupabaseManager.client.postgrest
+                .from("user_streams")
+                .select {
+                    filter {
+                        if (uid != null) {
+                            eq("user_id", uid)
+                        } else {
+                            eq("device_id", deviceId)
+                            exact("user_id", null)
                         }
                     }
-                    .decodeList<UserStream>()
-                val titleIds = mine.map { it.titleId }
-                if (titleIds.isEmpty()) {
-                    _newEpisodes.value = emptyList()
-                    return@launch
                 }
-                val tmdbIds = titleIds.filter { TitleId.tmdbId(it) != null }
-                val nonTmdbIds = titleIds.filter { TitleId.tmdbId(it) == null }
-                val allRows = mutableListOf<NewEpisodeRow>()
-                if (tmdbIds.isNotEmpty()) {
-                    val tmdbRows = SupabaseManager.client.postgrest
-                        .from("new_episodes")
-                        .select {
-                            filter {
-                                isIn("title_id", tmdbIds)
-                                eq("is_new", true)
-                            }
-                            order("released_at", Order.DESCENDING)
-                            limit(20)
-                        }
-                        .decodeList<NewEpisodeRow>()
-                    allRows.addAll(tmdbRows)
-                }
-                if (nonTmdbIds.isNotEmpty()) {
-                    val nonTmdbRows = SupabaseManager.client.postgrest
-                        .from("new_episodes")
-                        .select {
-                            filter { isIn("title_id", nonTmdbIds) }
-                            order("released_at", Order.DESCENDING)
-                            limit(20)
-                        }
-                        .decodeList<NewEpisodeRow>()
-                    allRows.addAll(nonTmdbRows)
-                }
-                _newEpisodes.value = allRows.sortedByDescending { it.releasedAt }.take(20)
-            } catch (e: Throwable) {
-                if (e is CancellationException) throw e
-                _lastError.value = e.message
-            } finally {
-                _isLoadingEpisodes.value = false
+                .decodeList<UserStream>()
+            val titleIds = mine.map { it.titleId }
+            if (titleIds.isEmpty()) {
+                _newEpisodes.value = emptyList()
+                return
             }
+            val tmdbIds = titleIds.filter { TitleId.tmdbId(it) != null }
+            val nonTmdbIds = titleIds.filter { TitleId.tmdbId(it) == null }
+            val allRows = mutableListOf<NewEpisodeRow>()
+            if (tmdbIds.isNotEmpty()) {
+                val tmdbRows = SupabaseManager.client.postgrest
+                    .from("new_episodes")
+                    .select {
+                        filter {
+                            isIn("title_id", tmdbIds)
+                            eq("is_new", true)
+                        }
+                        order("released_at", Order.DESCENDING)
+                        limit(20)
+                    }
+                    .decodeList<NewEpisodeRow>()
+                allRows.addAll(tmdbRows)
+            }
+            if (nonTmdbIds.isNotEmpty()) {
+                val nonTmdbRows = SupabaseManager.client.postgrest
+                    .from("new_episodes")
+                    .select {
+                        filter { isIn("title_id", nonTmdbIds) }
+                        order("released_at", Order.DESCENDING)
+                        limit(20)
+                    }
+                    .decodeList<NewEpisodeRow>()
+                allRows.addAll(nonTmdbRows)
+            }
+            _newEpisodes.value = allRows.sortedByDescending { it.releasedAt }.take(20)
+        } catch (e: Throwable) {
+            if (e is CancellationException) throw e
+            _lastError.value = e.message
+        } finally {
+            _isLoadingEpisodes.value = false
         }
     }
 

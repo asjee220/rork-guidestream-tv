@@ -52,7 +52,19 @@ import com.rork.guidestreamtvandroid.ui.theme.Navy
 import com.rork.guidestreamtvandroid.ui.theme.TextPrimary
 import com.rork.guidestreamtvandroid.ui.theme.TextSecondary
 import com.rork.guidestreamtvandroid.ui.theme.TextTertiary
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import com.rork.guidestreamtvandroid.ui.theme.BrandOrange
+import com.rork.guidestreamtvandroid.ui.theme.SurfaceContainer
 import com.rork.guidestreamtvandroid.ui.theme.systemBottomInset
+import kotlinx.coroutines.launch
 
 /**
  * Full "My Watch List" destination reached from the home feed's Watch List
@@ -61,6 +73,7 @@ import com.rork.guidestreamtvandroid.ui.theme.systemBottomInset
  * watched badge and an inline remove control. No take limit. Live status and
  * content-source hydration remain iOS-only and are intentionally out of scope.
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun WatchListScreen(
     onBack: () -> Unit,
@@ -81,6 +94,10 @@ fun WatchListScreen(
     androidx.compose.runtime.LaunchedEffect(userStreams.size) {
         if (userStreams.isNotEmpty()) streamsVm.fetchWatchlistSeen()
     }
+
+    val scope = rememberCoroutineScope()
+    var isRefreshing by remember { mutableStateOf(false) }
+    val pullState = rememberPullToRefreshState()
 
     Column(
         modifier = modifier
@@ -126,10 +143,36 @@ fun WatchListScreen(
 
         Spacer(Modifier.height(8.dp))
 
+        PullToRefreshBox(
+            isRefreshing = isRefreshing,
+            onRefresh = {
+                if (isRefreshing) return@PullToRefreshBox
+                scope.launch {
+                    isRefreshing = true
+                    try {
+                        streamsVm.refreshAllNow()
+                    } finally {
+                        isRefreshing = false
+                    }
+                }
+            },
+            state = pullState,
+            modifier = Modifier.fillMaxSize(),
+            indicator = {
+                PullToRefreshDefaults.Indicator(
+                    modifier = Modifier.align(Alignment.TopCenter),
+                    isRefreshing = isRefreshing,
+                    state = pullState,
+                    containerColor = SurfaceContainer,
+                    color = BrandOrange,
+                )
+            },
+        ) {
         if (userStreams.isEmpty()) {
             Column(
                 modifier = Modifier
                     .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
                     .padding(horizontal = 36.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center,
@@ -176,6 +219,7 @@ fun WatchListScreen(
                     )
                 }
             }
+        }
         }
     }
 }

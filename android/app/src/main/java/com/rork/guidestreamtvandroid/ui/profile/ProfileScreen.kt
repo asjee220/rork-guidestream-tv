@@ -61,12 +61,24 @@ import com.rork.guidestreamtvandroid.ui.theme.GlassFill
 import com.rork.guidestreamtvandroid.ui.theme.GlassStroke
 import com.rork.guidestreamtvandroid.ui.theme.TextPrimary
 import com.rork.guidestreamtvandroid.ui.theme.TextSecondary
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
+import androidx.compose.runtime.rememberCoroutineScope
+import com.rork.guidestreamtvandroid.ui.theme.SurfaceContainer
 import com.rork.guidestreamtvandroid.ui.theme.TextTertiary
+import kotlinx.coroutines.launch
 
 /**
  * Profile screen — mirrors iOS ProfileView.swift.
  * Avatar (initials), display name, stats, menu rows.
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ProfileScreen(
     modifier: Modifier = Modifier,
@@ -96,7 +108,40 @@ fun ProfileScreen(
         computeInitials(firstName, lastName, displayName, isGuest, isAuthenticated)
     }
 
+    val scope = rememberCoroutineScope()
+    var isRefreshing by remember { mutableStateOf(false) }
+    val pullState = rememberPullToRefreshState()
+    val statusBarTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+
     Box(Modifier.fillMaxSize()) {
+        PullToRefreshBox(
+            isRefreshing = isRefreshing,
+            onRefresh = {
+                if (isRefreshing) return@PullToRefreshBox
+                scope.launch {
+                    isRefreshing = true
+                    try {
+                        streamsVm.refreshAllNow()
+                        if (isAuthenticated) authVm.loadDisplayName()
+                    } finally {
+                        isRefreshing = false
+                    }
+                }
+            },
+            state = pullState,
+            modifier = Modifier.fillMaxSize(),
+            indicator = {
+                PullToRefreshDefaults.Indicator(
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .offset(y = statusBarTop),
+                    isRefreshing = isRefreshing,
+                    state = pullState,
+                    containerColor = SurfaceContainer,
+                    color = BrandOrange,
+                )
+            },
+        ) {
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -224,6 +269,7 @@ fun ProfileScreen(
 
         BottomSafeSpacer(withTabBar = true)
     }
+        }
 
     // Pinned back control — never scrolls away. Only rendered when a back
     // target exists. Matches the ProfileSubScreens back button exactly:

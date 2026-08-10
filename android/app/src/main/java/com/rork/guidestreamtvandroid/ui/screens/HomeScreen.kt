@@ -117,7 +117,16 @@ import com.rork.guidestreamtvandroid.ui.theme.NewsGreen
 import com.rork.guidestreamtvandroid.ui.theme.OutlineVariant
 import com.rork.guidestreamtvandroid.ui.theme.TextPrimary
 import com.rork.guidestreamtvandroid.ui.theme.TextSecondary
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
+import androidx.compose.runtime.rememberCoroutineScope
+import com.rork.guidestreamtvandroid.ui.theme.SurfaceContainer
 import com.rork.guidestreamtvandroid.ui.theme.TextTertiary
+import kotlinx.coroutines.launch
 
 /**
  * Home feed — mirrors iOS HomeView.swift.
@@ -125,6 +134,7 @@ import com.rork.guidestreamtvandroid.ui.theme.TextTertiary
  * platform rows, coming to streaming, what's new, top picks, leaving soon,
  * binge worthy, widget promo banner.
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
     onOpenTitle: (PendingTitleRoute) -> Unit = {},
@@ -188,6 +198,11 @@ fun HomeScreen(
 
     val scrollState = rememberScrollState()
 
+    val scope = rememberCoroutineScope()
+    var isRefreshing by remember { mutableStateOf(false) }
+    val pullState = rememberPullToRefreshState()
+    val statusBarTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+
     // Elevate the top bar once the feed has scrolled past a small threshold.
     // The 8.dp deadzone absorbs overscroll rubber-banding at the very top so
     // the container settles back to transparent instead of flickering.
@@ -219,6 +234,35 @@ fun HomeScreen(
     }
 
     Box(modifier = modifier.fillMaxSize()) {
+        PullToRefreshBox(
+            isRefreshing = isRefreshing,
+            onRefresh = {
+                if (isRefreshing || coachMark.isShowing) return@PullToRefreshBox
+                scope.launch {
+                    isRefreshing = true
+                    try {
+                        homeVm.refreshFeed()
+                        homeVm.loadPopularByServices(selectedServices)
+                        homeVm.loadNowAndNext(selectedServices)
+                    } finally {
+                        isRefreshing = false
+                    }
+                }
+            },
+            state = pullState,
+            modifier = Modifier.fillMaxSize(),
+            indicator = {
+                PullToRefreshDefaults.Indicator(
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .offset(y = statusBarTop + 56.dp),
+                    isRefreshing = isRefreshing,
+                    state = pullState,
+                    containerColor = SurfaceContainer,
+                    color = BrandOrange,
+                )
+            },
+        ) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -790,6 +834,7 @@ fun HomeScreen(
 
         BottomSafeSpacer(withTabBar = true)
     }
+        }
 
         // Pinned top bar — wordmark left, services pill right (mirrors iOS PageBar)
         GsTopBar(
