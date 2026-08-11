@@ -1,7 +1,6 @@
 package com.rork.guidestreamtvandroid.ui.search
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -30,6 +29,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.CircularProgressIndicator
@@ -47,15 +47,21 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.rork.guidestreamtvandroid.ui.ads.InlineAdSlot
 import com.rork.guidestreamtvandroid.ui.components.RemoteImage
+import com.rork.guidestreamtvandroid.data.models.SourceKind
 import com.rork.guidestreamtvandroid.data.repository.AuthViewModel
+import com.rork.guidestreamtvandroid.data.repository.StreamsViewModel
+import com.rork.guidestreamtvandroid.data.repository.WatchIntentLogger
 import com.rork.guidestreamtvandroid.ui.components.glassCard
 import com.rork.guidestreamtvandroid.ui.navigation.PendingTitleRoute
 import com.rork.guidestreamtvandroid.ui.theme.BottomSafeSpacer
@@ -77,9 +83,15 @@ import com.rork.guidestreamtvandroid.ui.theme.TextTertiary
 import com.rork.guidestreamtvandroid.ui.theme.TwitchPurple
 import com.rork.guidestreamtvandroid.ui.theme.YouTubeRed
 
+/** Local red for the live pill, matching SportsScreen.kt's LiveRed. */
+private val LiveRed = Color(0xFFE50914)
+
+/** Local purple for podcast source color, matching the iOS sourceColor mapping. */
+private val PodcastPurple = Color(0xFF7C3AED)
+
 /**
  * Search screen — mirrors iOS SearchView.swift.
- * Scope chips (All, Shows, Creators, Podcasts), debounced query,
+ * Scope chips (All, Live, Shows, Creators, Podcasts), debounced query,
  * grouped results, popular trending when empty.
  */
 @Composable
@@ -98,6 +110,10 @@ fun SearchScreen(
     val tmdbResults by vm.tmdbResults.collectAsStateWithLifecycle()
     val creatorResults by vm.creatorResults.collectAsStateWithLifecycle()
     val popular by vm.popular.collectAsStateWithLifecycle()
+
+    val streamsVm = remember { StreamsViewModel.get() }
+    val userStreams by streamsVm.userStreams.collectAsStateWithLifecycle()
+    val followedIds = remember(userStreams) { userStreams.map { it.titleId }.toSet() }
 
     LaunchedEffect(Unit) { vm.loadPopular() }
 
@@ -195,18 +211,17 @@ fun SearchScreen(
                 val selected = scope == s
                 Box(
                     modifier = Modifier
-                        .clip(RoundedCornerShape(16.dp))
+                        .clip(CircleShape)
                         .background(if (selected) BrandOrange else GlassFill)
-                        .border(1.dp, if (selected) BrandOrange else GlassStroke, RoundedCornerShape(16.dp))
                         .clickable(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null,
                         ) { vm.setScope(s) }
-                        .padding(horizontal = 14.dp, vertical = 7.dp),
+                        .padding(horizontal = 14.dp, vertical = 8.dp),
                 ) {
                     Text(
                         text = s.label,
-                        fontSize = 13.sp,
+                        fontSize = 12.sp,
                         fontWeight = FontWeight.SemiBold,
                         color = if (selected) Color.White else TextSecondary,
                     )
@@ -217,12 +232,10 @@ fun SearchScreen(
         // Results
         if (query.isBlank()) {
             // Popular trending
-            Text(
-                text = "Popular This Week",
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Bold,
-                color = TextPrimary,
-                modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
+            SectionHeader(
+                text = "POPULAR ON YOUR SERVICES",
+                topPadding = 16.dp,
+                bottomPadding = 10.dp,
             )
             if (popular.isEmpty()) {
                 Box(
@@ -298,33 +311,62 @@ fun SearchScreen(
             }
         } else {
             val dismissedSearchAdSlots = remember { mutableStateMapOf<Int, Boolean>() }
+            val liveCreators = remember(creatorResults) { creatorResults.filter { it.isLive } }
+            val nonLiveCreators = remember(creatorResults) { creatorResults.filter { !it.isLive } }
+
             LazyColumn(
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                if (tmdbResults.isNotEmpty()) {
+                // Live creators section
+                if (liveCreators.isNotEmpty()) {
                     item {
-                        Text(
-                            text = "Shows & Movies",
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = TextPrimary,
-                            modifier = Modifier.padding(horizontal = 20.dp),
+                        SectionHeader(
+                            text = "LIVE NOW",
+                            topPadding = 14.dp,
+                            bottomPadding = 4.dp,
                         )
                     }
-                    tmdbResults.chunked(6).forEachIndexed { chunkIdx, chunk ->
-                        itemsIndexed(chunk) { idx, result ->
-                            SearchResultRow(
-                                title = result.title,
-                                posterUrl = result.posterUrl,
-                                subtitle = "${result.year ?: ""} · ${if (result.isTV) "Series" else "Movie"}",
-                                isLargePoster = true,
+                    liveCreators.chunked(6).forEachIndexed { chunkIdx, chunk ->
+                        itemsIndexed(chunk) { _, creator ->
+                            CreatorSearchRow(
+                                creator = creator,
+                                isFollowed = followedIds.contains(creator.titleId),
+                                onToggleFollow = { follow ->
+                                    if (follow) {
+                                        streamsVm.addToMyStreams(
+                                            titleId = creator.titleId,
+                                            title = creator.displayName,
+                                            posterUrl = creator.imageUrl,
+                                            platform = creator.sourceType,
+                                        )
+                                        WatchIntentLogger.get().log(
+                                            WatchIntentLogger.IntentEventType.STREAM_ADDED,
+                                            titleId = creator.titleId,
+                                            platformId = creator.sourceType,
+                                            metadata = mapOf("source" to "search"),
+                                        )
+                                    } else {
+                                        streamsVm.removeFromMyStreams(creator.titleId)
+                                        WatchIntentLogger.get().log(
+                                            WatchIntentLogger.IntentEventType.STREAM_REMOVED,
+                                            titleId = creator.titleId,
+                                            platformId = creator.sourceType,
+                                            metadata = mapOf("source" to "search"),
+                                        )
+                                    }
+                                },
                                 onClick = {
-                                    onOpenTitle(PendingTitleRoute(
-                                        titleId = result.id.toString(),
-                                        titleName = result.title,
-                                        isTv = result.isTV,
-                                    ))
+                                    WatchIntentLogger.get().log(
+                                        WatchIntentLogger.IntentEventType.CARD_TAPPED,
+                                        titleId = creator.titleId,
+                                        platformId = creator.sourceType,
+                                        metadata = mapOf(
+                                            "section" to "search",
+                                            "kind" to creator.sourceType,
+                                        ),
+                                    )
+                                    onOpenCreator(creator.titleId)
                                 },
                             )
                         }
@@ -341,25 +383,98 @@ fun SearchScreen(
                         }
                     }
                 }
-                if (creatorResults.isNotEmpty()) {
+
+                // Shows & movies section
+                if (tmdbResults.isNotEmpty()) {
                     item {
-                        Spacer(Modifier.height(8.dp))
-                        Text(
-                            text = "Creators & Podcasts",
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = TextPrimary,
-                            modifier = Modifier.padding(horizontal = 20.dp),
+                        SectionHeader(
+                            text = "SHOWS & MOVIES",
+                            topPadding = 14.dp,
+                            bottomPadding = 4.dp,
                         )
                     }
-                    creatorResults.chunked(6).forEachIndexed { chunkIdx, chunk ->
-                        itemsIndexed(chunk) { idx, creator ->
+                    tmdbResults.chunked(6).forEachIndexed { chunkIdx, chunk ->
+                        itemsIndexed(chunk) { idx, result ->
                             SearchResultRow(
-                                title = creator.displayName,
-                                posterUrl = creator.imageUrl,
-                                subtitle = creator.sourceType.uppercase() + (creator.category?.let { " · $it" } ?: ""),
-                                isCircle = true,
-                                onClick = { onOpenCreator(creator.titleId) },
+                                title = result.title,
+                                query = query,
+                                posterUrl = result.posterUrl,
+                                year = result.year,
+                                isTV = result.isTV,
+                                onClick = {
+                                    onOpenTitle(PendingTitleRoute(
+                                        titleId = result.id.toString(),
+                                        titleName = result.title,
+                                        isTv = result.isTV,
+                                    ))
+                                },
+                                showDivider = idx < chunk.lastIndex,
+                            )
+                        }
+                        if (chunk.size >= 6) {
+                            item {
+                                InlineAdSlot(
+                                    slotIndex = chunkIdx,
+                                    selectedServices = selectedServices,
+                                    adSource = "search_inline",
+                                    sectionKey = "search_inline_ad",
+                                    dismissed = dismissedSearchAdSlots,
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // Non-live creators section
+                if (nonLiveCreators.isNotEmpty()) {
+                    item {
+                        SectionHeader(
+                            text = "CREATORS & PODCASTS",
+                            topPadding = 14.dp,
+                            bottomPadding = 4.dp,
+                        )
+                    }
+                    nonLiveCreators.chunked(6).forEachIndexed { chunkIdx, chunk ->
+                        itemsIndexed(chunk) { _, creator ->
+                            CreatorSearchRow(
+                                creator = creator,
+                                isFollowed = followedIds.contains(creator.titleId),
+                                onToggleFollow = { follow ->
+                                    if (follow) {
+                                        streamsVm.addToMyStreams(
+                                            titleId = creator.titleId,
+                                            title = creator.displayName,
+                                            posterUrl = creator.imageUrl,
+                                            platform = creator.sourceType,
+                                        )
+                                        WatchIntentLogger.get().log(
+                                            WatchIntentLogger.IntentEventType.STREAM_ADDED,
+                                            titleId = creator.titleId,
+                                            platformId = creator.sourceType,
+                                            metadata = mapOf("source" to "search"),
+                                        )
+                                    } else {
+                                        streamsVm.removeFromMyStreams(creator.titleId)
+                                        WatchIntentLogger.get().log(
+                                            WatchIntentLogger.IntentEventType.STREAM_REMOVED,
+                                            titleId = creator.titleId,
+                                            platformId = creator.sourceType,
+                                            metadata = mapOf("source" to "search"),
+                                        )
+                                    }
+                                },
+                                onClick = {
+                                    WatchIntentLogger.get().log(
+                                        WatchIntentLogger.IntentEventType.CARD_TAPPED,
+                                        titleId = creator.titleId,
+                                        platformId = creator.sourceType,
+                                        metadata = mapOf(
+                                            "section" to "search",
+                                            "kind" to creator.sourceType,
+                                        ),
+                                    )
+                                    onOpenCreator(creator.titleId)
+                                },
                             )
                         }
                         if (chunk.size >= 6) {
@@ -382,36 +497,49 @@ fun SearchScreen(
 }
 
 @Composable
+private fun SectionHeader(
+    text: String,
+    topPadding: androidx.compose.ui.unit.Dp,
+    bottomPadding: androidx.compose.ui.unit.Dp,
+) {
+    Text(
+        text = text,
+        fontSize = 11.sp,
+        fontWeight = FontWeight.Bold,
+        color = TextPrimary.copy(alpha = 0.40f),
+        letterSpacing = 0.8.sp,
+        modifier = Modifier.padding(
+            start = 16.dp,
+            end = 16.dp,
+            top = topPadding,
+            bottom = bottomPadding,
+        ),
+    )
+}
+
+@Composable
 private fun SearchResultRow(
     title: String,
+    query: String,
     posterUrl: String?,
-    subtitle: String,
-    isCircle: Boolean = false,
-    isLargePoster: Boolean = false,
+    year: Int?,
+    isTV: Boolean,
     onClick: () -> Unit,
+    showDivider: Boolean,
 ) {
-    Row(
+    Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = if (isLargePoster) 16.dp else 20.dp)
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
             ) { onClick() }
-            .glassCard()
-            .padding(if (isLargePoster) 12.dp else 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
+            .padding(horizontal = 16.dp),
     ) {
-        if (isCircle) {
-            RemoteImage(
-                url = posterUrl,
-                contentDescription = title,
-                modifier = Modifier.size(48.dp),
-                cornerRadius = 24,
-                placeholderText = title.take(2).uppercase(),
-                placeholderFontSize = 16.sp,
-            )
-        } else if (isLargePoster) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             RemoteImage(
                 url = posterUrl,
                 contentDescription = title,
@@ -422,37 +550,202 @@ private fun SearchResultRow(
                 placeholderText = title.take(2).uppercase(),
                 placeholderFontSize = 18.sp,
             )
-        } else {
-            RemoteImage(
-                url = posterUrl,
-                contentDescription = title,
-                modifier = Modifier
-                    .width(44.dp)
-                    .aspectRatio(0.67f),
-                cornerRadius = 6,
-                placeholderText = title.take(2).uppercase(),
-                placeholderFontSize = 14.sp,
+            Spacer(Modifier.width(14.dp))
+            Column(
+                modifier = Modifier.weight(1f),
+            ) {
+                Text(
+                    text = highlightedTitle(title, query),
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = if (isTV) "TV Series" else "Movie",
+                    fontSize = 13.sp,
+                    color = TextPrimary.copy(alpha = 0.40f),
+                    maxLines = 1,
+                )
+                if (year != null) {
+                    Text(
+                        text = year.toString(),
+                        fontSize = 12.sp,
+                        color = TextPrimary.copy(alpha = 0.30f),
+                        maxLines = 1,
+                    )
+                }
+            }
+            Icon(
+                imageVector = Icons.Filled.ChevronRight,
+                contentDescription = null,
+                tint = TextPrimary.copy(alpha = 0.20f),
+                modifier = Modifier.size(14.dp),
             )
         }
-        Spacer(Modifier.width(if (isLargePoster) 14.dp else 12.dp))
+        if (showDivider) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 130.dp)
+                    .height(1.dp)
+                    .background(TextPrimary.copy(alpha = 0.06f)),
+            )
+        }
+    }
+}
+
+private fun highlightedTitle(title: String, query: String): androidx.compose.ui.text.AnnotatedString {
+    return try {
+        val lowerTitle = title.lowercase()
+        val lowerQuery = query.lowercase()
+        val index = lowerTitle.indexOf(lowerQuery)
+        if (query.isBlank() || index < 0) {
+            buildAnnotatedString { withStyle(SpanStyle(color = TextPrimary)) { append(title) } }
+        } else {
+            buildAnnotatedString {
+                withStyle(SpanStyle(color = TextPrimary)) { append(title.substring(0, index)) }
+                withStyle(SpanStyle(color = BrandOrange)) {
+                    append(title.substring(index, index + query.length))
+                }
+                withStyle(SpanStyle(color = TextPrimary)) {
+                    append(title.substring(index + query.length))
+                }
+            }
+        }
+    } catch (_: Exception) {
+        buildAnnotatedString { withStyle(SpanStyle(color = TextPrimary)) { append(title) } }
+    }
+}
+
+@Composable
+private fun CreatorSearchRow(
+    creator: SearchViewModel.CreatorResult,
+    isFollowed: Boolean,
+    onToggleFollow: (Boolean) -> Unit,
+    onClick: () -> Unit,
+) {
+    val sourceKind = SourceKind.from(creator.titleId)
+    val sourceColor = sourceKindColor(sourceKind)
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+            ) { onClick() }
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(44.dp)
+                .clip(CircleShape)
+                .background(sourceColor.copy(alpha = 0.15f)),
+            contentAlignment = Alignment.Center,
+        ) {
+            RemoteImage(
+                url = creator.imageUrl,
+                contentDescription = creator.displayName,
+                modifier = Modifier.fillMaxSize(),
+                cornerRadius = 22,
+                placeholderText = creator.displayName.take(2).uppercase(),
+                placeholderFontSize = 16.sp,
+            )
+        }
+        Spacer(Modifier.width(12.dp))
         Column(
             modifier = Modifier.weight(1f),
         ) {
             Text(
-                text = title,
-                fontSize = if (isLargePoster) 16.sp else 15.sp,
+                text = creator.displayName,
+                fontSize = 15.sp,
                 fontWeight = FontWeight.SemiBold,
                 color = TextPrimary,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
+            if (creator.isLive) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(6.dp)
+                            .clip(CircleShape)
+                            .background(LiveRed),
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    Text(
+                        text = "LIVE",
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Black,
+                        color = LiveRed,
+                    )
+                }
+            }
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = sourceKind.displayLabel,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = sourceColor,
+                    modifier = Modifier
+                        .background(sourceColor.copy(alpha = 0.20f), RoundedCornerShape(4.dp))
+                        .padding(horizontal = 5.dp, vertical = 2.dp),
+                )
+                creator.handle?.let { rawHandle ->
+                    val handle = rawHandle.removePrefix("@")
+                    Text(
+                        text = "@$handle",
+                        fontSize = 12.sp,
+                        color = TextTertiary,
+                        modifier = Modifier.padding(start = 8.dp),
+                        maxLines = 1,
+                    )
+                }
+            }
+            if (creator.isLive && creator.streamTitle != null) {
+                Text(
+                    text = creator.streamTitle,
+                    fontSize = 12.sp,
+                    color = TextSecondary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+        Spacer(Modifier.width(8.dp))
+        Box(
+            modifier = Modifier
+                .clip(CircleShape)
+                .background(if (isFollowed) Color.White.copy(alpha = 0.10f) else BrandOrange)
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                ) { onToggleFollow(!isFollowed) }
+                .padding(horizontal = 14.dp, vertical = 7.dp),
+        ) {
             Text(
-                text = subtitle,
-                fontSize = if (isLargePoster) 13.sp else 12.sp,
-                color = TextSecondary,
-                maxLines = 1,
+                text = if (isFollowed) "Following" else "Follow",
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                color = if (isFollowed) TextSecondary else Color.White,
             )
         }
+    }
+}
+
+private fun sourceKindColor(kind: SourceKind): Color {
+    return when (kind) {
+        SourceKind.YOUTUBE -> YouTubeRed
+        SourceKind.TWITCH -> TwitchPurple
+        SourceKind.KICK -> KickGreen
+        SourceKind.TMDB -> BrandOrange
+        SourceKind.PODCAST -> PodcastPurple
     }
 }
 
@@ -477,7 +770,7 @@ private fun SearchPosterCard(
                 .fillMaxWidth()
                 .aspectRatio(2f / 3f)
                 .clip(RoundedCornerShape(10.dp))
-                .glassCard(),
+                .background(Color.White.copy(alpha = 0.06f)),
             contentAlignment = Alignment.Center,
         ) {
             RemoteImage(

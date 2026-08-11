@@ -3,7 +3,9 @@ package com.rork.guidestreamtvandroid.ui.search
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rork.guidestreamtvandroid.data.models.Platform
+import com.rork.guidestreamtvandroid.data.models.SourceKind
 import com.rork.guidestreamtvandroid.data.models.TMDBResult
+import com.rork.guidestreamtvandroid.data.remote.LiveStatusService
 import com.rork.guidestreamtvandroid.data.remote.SupabaseManager
 import com.rork.guidestreamtvandroid.data.remote.TMDBService
 import io.github.jan.supabase.postgrest.postgrest
@@ -29,6 +31,8 @@ class SearchViewModel : ViewModel() {
         @SerialName("display_name") val displayName: String,
         @SerialName("image_url") val imageUrl: String? = null,
         @SerialName("source_type") val sourceType: String,
+        @SerialName("handle") val handle: String? = null,
+        @SerialName("format") val format: String? = null,
         val category: String? = null,
     )
 
@@ -48,10 +52,15 @@ class SearchViewModel : ViewModel() {
         val imageUrl: String?,
         val sourceType: String,
         val category: String?,
+        val isLive: Boolean = false,
+        val streamTitle: String? = null,
+        val liveCategory: String? = null,
+        val viewerCount: Int? = null,
+        val handle: String? = null,
     )
 
     enum class Scope(val label: String) {
-        ALL("All"), SHOWS("Shows"), CREATORS("Creators"), PODCASTS("Podcasts")
+        ALL("All"), LIVE("Live"), SHOWS("Shows"), CREATORS("Creators"), PODCASTS("Podcasts")
     }
 
     private val tmdb = TMDBService.get()
@@ -127,8 +136,9 @@ class SearchViewModel : ViewModel() {
     private suspend fun search(q: String) {
         _isSearching.value = true
         try {
-            val includeTMDB = _scope.value == Scope.ALL || _scope.value == Scope.SHOWS
-            val includeCreators = _scope.value == Scope.ALL || _scope.value == Scope.CREATORS || _scope.value == Scope.PODCASTS
+            val scope = _scope.value
+            val includeTMDB = scope == Scope.ALL || scope == Scope.SHOWS || scope == Scope.LIVE
+            val includeCreators = scope == Scope.ALL || scope == Scope.CREATORS || scope == Scope.PODCASTS || scope == Scope.LIVE
 
             if (includeTMDB) {
                 val results = tmdb.searchContent(q)
@@ -171,15 +181,48 @@ class SearchViewModel : ViewModel() {
                     limit(20)
                 }
                 .decodeList<CreatorSearchRow>()
-            _creatorResults.value = rows.map { row ->
+
+            val liveIds = rows
+                .map { it.titleId }
+                .filter { SourceKind.from(it).isLivestream }
+                .distinct()
+
+            val liveMap: Map<String, LiveStatusService.LiveStatusRow> = if (liveIds.isNotEmpty()) {
+                LiveStatusService.get().fetchLiveStatus(liveIds)
+                    ?.filter { it.isLive }
+                    ?.associateBy { it.titleId }
+                    ?: emptyMap()
+            } else emptyMap()
+
+            var creators = rows.map { row ->
+                val liveRow = liveMap[row.titleId]
                 CreatorResult(
                     titleId = row.titleId,
                     displayName = row.displayName,
                     imageUrl = row.imageUrl,
                     sourceType = row.sourceType,
                     category = row.category,
+                    isLive = liveRow != null,
+                    streamTitle = liveRow?.streamTitle,
+                    liveCategory = liveRow?.category,
+                    viewerCount = liveRow?.viewerCount,
+                    handle = row.handle,
                 )
             }
+
+            // Apply client-side scope filters for creators vs podcasts.
+            val scope = _scope.value
+            if (scope == Scope.CREATORS) {
+                creators = creators.filter { SourceKind.from(it.titleId) != SourceKind.PODCAST }
+            } else if (scope == Scope.PODCASTS) {
+                creators = creators.filter { SourceKind.from(it.titleId) == SourceKind.PODCAST }
+            }
+
+            // Sort: live first, then case-insensitive by display name ascending.
+            _creatorResults.value = creators.sortedWith(
+                compareByDescending<CreatorResult> { it.isLive }
+                    .thenBy { it.displayName.lowercase() }
+            )
         } catch (_: Exception) {
             _creatorResults.value = emptyList()
         }
