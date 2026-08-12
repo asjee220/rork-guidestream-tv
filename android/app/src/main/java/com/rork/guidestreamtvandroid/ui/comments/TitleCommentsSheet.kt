@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -179,12 +180,14 @@ fun TitleCommentsSheet(
         dragHandle = { GsSheetDragHandle(level = SheetLevel.Raised) },
         contentWindowInsets = { sheetTopInset() },
     ) {
+        // iOS .presentationDetents([.fraction(0.72), .large]) → cap Android sheet at 72%
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .navigationBarsPadding()
                 .imePadding()
-                .padding(bottom = 8.dp),
+                .padding(bottom = 8.dp)
+                .fillMaxHeight(0.72f),
         ) {
             // Header
             GsSheetHeader(

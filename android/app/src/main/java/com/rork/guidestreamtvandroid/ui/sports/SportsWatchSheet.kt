@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.height
@@ -143,11 +144,13 @@ fun SportsWatchSheet(
         dragHandle = { GsSheetDragHandle(level = SheetLevel.Base) },
         contentWindowInsets = { sheetTopInset() },
     ) {
+        // iOS .presentationDetents([.fraction(0.85), .large]) → cap Android sheet at 85%
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .navigationBarsPadding()
-                .padding(bottom = 28.dp),
+                .padding(bottom = 28.dp)
+                .fillMaxHeight(0.85f),
         ) {
             // Header
             GsSheetHeader(

@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -225,12 +226,14 @@ fun EpisodeDetailSheet(
         dragHandle = { GsSheetDragHandle(level = SheetLevel.Base) },
         contentWindowInsets = { sheetTopInset() },
     ) {
+        // iOS .presentationDetents([.fraction(0.8), .large]) → cap Android sheet at 80%
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .verticalScroll(rememberScrollState())
                 .navigationBarsPadding()
-                .padding(bottom = 28.dp),
+                .padding(bottom = 28.dp)
+                .fillMaxHeight(0.8f),
         ) {
             // ── Header ────────────────────────────────────────────────
             val genre = detail?.genres?.firstOrNull()?.name
