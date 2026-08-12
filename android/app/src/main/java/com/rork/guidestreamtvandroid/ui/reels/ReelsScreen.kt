@@ -127,7 +127,8 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import com.rork.guidestreamtvandroid.ui.theme.BrandBlue
-import com.rork.guidestreamtvandroid.ui.theme.SurfaceDark
+import com.rork.guidestreamtvandroid.ui.theme.SheetLevel
+import com.rork.guidestreamtvandroid.ui.theme.SheetSurfaceBase
 import androidx.compose.foundation.layout.navigationBarsPadding
 import com.rork.guidestreamtvandroid.ui.components.GsSheetDragHandle
 import com.rork.guidestreamtvandroid.ui.components.GsSheetHeader
@@ -1437,8 +1438,10 @@ private fun ReelMoreSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
-        containerColor = SurfaceDark,
-        dragHandle = { GsSheetDragHandle() },
+        containerColor = SheetSurfaceBase,
+        scrimColor = Color.Black.copy(alpha = 0.60f),
+        tonalElevation = 0.dp,
+        dragHandle = { GsSheetDragHandle(level = SheetLevel.Base) },
         contentWindowInsets = { sheetTopInset() },
     ) {
         Column(Modifier.navigationBarsPadding()) {

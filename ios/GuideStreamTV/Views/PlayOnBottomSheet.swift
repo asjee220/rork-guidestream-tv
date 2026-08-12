@@ -28,6 +28,7 @@ enum PlayOnRowState: Equatable {
 struct PlayOnBottomSheet: View {
     let isOpen: Bool
     let onClose: () -> Void
+    @Environment(\.colorSchemeContrast) private var colorSchemeContrast
     let showTitle: String
     let showSubtitle: String
     let thumbnailUrl: String?
@@ -267,7 +268,7 @@ struct PlayOnBottomSheet: View {
     var body: some View {
         GeometryReader { geo in
             ZStack(alignment: .bottom) {
-                Color.black.opacity(isOpen ? 0.55 : 0)
+                Color.black.opacity(isOpen ? (colorSchemeContrast == .increased ? 0.70 : 0.60) : 0)
                     .ignoresSafeArea()
                     .allowsHitTesting(isOpen)
                     .onTapGesture { close() }
@@ -405,12 +406,16 @@ struct PlayOnBottomSheet: View {
             }
             .scrollBounceBehavior(.basedOnSize)
         }
-        .gsSheetChrome()
+        .sheetSurface(.base)
         .frame(maxWidth: .infinity)
         .frame(maxHeight: maxHeight, alignment: .top)
         .background(
             UnevenRoundedRectangle(cornerRadii: .init(topLeading: 28, topTrailing: 28), style: .continuous)
-                .fill(Theme.surface)
+                .fill(Theme.sheetSurface)
+        )
+        .overlay(
+            UnevenRoundedRectangle(cornerRadii: .init(topLeading: 28, topTrailing: 28), style: .continuous)
+                .stroke(Color.white.opacity(colorSchemeContrast == .increased ? 0.40 : 0.28), lineWidth: 1.5)
         )
         .clipShape(UnevenRoundedRectangle(cornerRadii: .init(topLeading: 28, topTrailing: 28), style: .continuous))
         .shadow(color: .black.opacity(0.5), radius: 28, y: -10)

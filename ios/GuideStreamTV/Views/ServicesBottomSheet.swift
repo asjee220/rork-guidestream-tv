@@ -157,7 +157,7 @@ struct ServicesBottomSheet: View {
             .toolbarBackground(.hidden, for: .navigationBar)
         }
         .preferredColorScheme(.dark)
-        .gsSheetChrome()
+        .sheetSurface(.base)
         // Re-seed the local selection whenever the authoritative value
         // changes (e.g. after an account switch) so the Save button always
         // writes the current account's set, not a stale snapshot from init.

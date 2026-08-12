@@ -86,7 +86,7 @@ struct TitleCommentsSheet: View {
         }
         .presentationDetents([.fraction(0.72), .large])
         .presentationSizing(.page)
-        .gsSheetChrome()
+        .sheetSurface(.raised)
         .presentationContentInteraction(.scrolls)
         .task {
             // Once-per-session block-list load so blocked authors are

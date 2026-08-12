@@ -281,6 +281,10 @@ enum DetailSubject: Identifiable, Hashable {
 
 struct EpisodeDetailSheet: View {
     let subject: DetailSubject
+    /// Visual elevation: `.base` for top-level sheets, `.raised` when
+    /// presented from inside another sheet so the nested sheet reads as
+    /// visibly lighter than its parent.
+    var level: Theme.SheetLevel = .base
     @Environment(\.dismiss) private var dismiss
 
     @State private var resolvedBackdrop: String?
@@ -579,7 +583,7 @@ struct EpisodeDetailSheet: View {
         }
         .presentationDetents([.fraction(0.8), .large])
         .presentationSizing(.page)
-        .gsSheetChrome()
+        .sheetSurface(level)
         .presentationContentInteraction(.scrolls)
         .sheet(isPresented: $showCastSheet) {
             CastToTVSheet(

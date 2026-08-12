@@ -39,6 +39,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -48,7 +49,8 @@ import com.rork.guidestreamtvandroid.ui.components.GsSheetHeader
 import com.rork.guidestreamtvandroid.ui.theme.BrandOrange
 import com.rork.guidestreamtvandroid.ui.theme.GlassFill
 import com.rork.guidestreamtvandroid.ui.theme.GlassStroke
-import com.rork.guidestreamtvandroid.ui.theme.SurfaceDark
+import com.rork.guidestreamtvandroid.ui.theme.SheetLevel
+import com.rork.guidestreamtvandroid.ui.theme.SheetSurfaceRaised
 import com.rork.guidestreamtvandroid.ui.theme.TextPrimary
 import com.rork.guidestreamtvandroid.ui.theme.TextSecondary
 import com.rork.guidestreamtvandroid.ui.theme.TextTertiary
@@ -75,8 +77,10 @@ fun CastToTVSheet(
     ModalBottomSheet(
         onDismissRequest = onClose,
         sheetState = sheetState,
-        containerColor = SurfaceDark,
-        dragHandle = { GsSheetDragHandle() },
+        containerColor = SheetSurfaceRaised,
+        scrimColor = Color.Black.copy(alpha = 0.60f),
+        tonalElevation = 0.dp,
+        dragHandle = { GsSheetDragHandle(level = SheetLevel.Raised) },
         contentWindowInsets = { sheetTopInset() },
         modifier = modifier,
     ) {

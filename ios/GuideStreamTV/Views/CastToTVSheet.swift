@@ -78,7 +78,7 @@ struct CastToTVSheet: View {
             }
             .presentationDetents([.medium, .large])
             .presentationSizing(.page)
-            .gsSheetChrome()
+            .sheetSurface(.raised)
             .onAppear { startScan() }
             .onDisappear {
                 discovery.stop()
@@ -1424,7 +1424,7 @@ private struct LimitedModeHelpSheet: View {
         }
         .presentationDetents([.large])
         .presentationSizing(.page)
-        .gsSheetChrome()
+        .sheetSurface(.raised)
     }
 
     private var hero: some View {

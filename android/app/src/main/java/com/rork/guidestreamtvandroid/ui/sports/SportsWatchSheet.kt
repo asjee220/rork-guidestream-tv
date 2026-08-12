@@ -63,7 +63,8 @@ import com.rork.guidestreamtvandroid.ui.cast.CastToTVSheet
 import com.rork.guidestreamtvandroid.ui.theme.BrandOrange
 import com.rork.guidestreamtvandroid.ui.theme.Hairline
 import com.rork.guidestreamtvandroid.ui.theme.Navy
-import com.rork.guidestreamtvandroid.ui.theme.SurfaceDark
+import com.rork.guidestreamtvandroid.ui.theme.SheetLevel
+import com.rork.guidestreamtvandroid.ui.theme.SheetSurfaceBase
 import com.rork.guidestreamtvandroid.ui.components.GsSheetDragHandle
 import com.rork.guidestreamtvandroid.ui.components.GsSheetHeader
 import com.rork.guidestreamtvandroid.ui.theme.OutlineVariant
@@ -136,8 +137,10 @@ fun SportsWatchSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
-        containerColor = SurfaceDark,
-        dragHandle = { GsSheetDragHandle() },
+        containerColor = SheetSurfaceBase,
+        scrimColor = Color.Black.copy(alpha = 0.60f),
+        tonalElevation = 0.dp,
+        dragHandle = { GsSheetDragHandle(level = SheetLevel.Base) },
         contentWindowInsets = { sheetTopInset() },
     ) {
         Column(

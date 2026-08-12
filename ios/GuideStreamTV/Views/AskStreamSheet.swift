@@ -76,6 +76,7 @@ struct AskStreamSheet: View {
     let isOpen: Bool
     let onClose: () -> Void
     var onSelectResult: (TMDBResult) -> Void = { _ in }
+    @Environment(\.colorSchemeContrast) private var colorSchemeContrast
 
     @State private var query: String = ""
     @State private var activeFilter: String = "All"
@@ -106,7 +107,7 @@ struct AskStreamSheet: View {
         GeometryReader { geo in
             ZStack(alignment: .bottom) {
                 // Scrim
-                Color.black.opacity(isOpen ? 0.40 : 0)
+                Color.black.opacity(isOpen ? (colorSchemeContrast == .increased ? 0.70 : 0.60) : 0)
                     .ignoresSafeArea()
                     .allowsHitTesting(isOpen)
                     .onTapGesture { close() }
@@ -273,7 +274,7 @@ struct AskStreamSheet: View {
 
             bottomInputRow
         }
-        .gsSheetChrome()
+        .sheetSurface(.base, hairline: false)
         .frame(height: height)
         .frame(maxWidth: .infinity)
         .background(
@@ -284,7 +285,7 @@ struct AskStreamSheet: View {
                 topTrailingRadius: 24,
                 style: .continuous
             )
-            .fill(Theme.surface)
+            .fill(Theme.sheetSurface)
         )
         .clipShape(
             UnevenRoundedRectangle(

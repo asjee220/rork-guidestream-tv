@@ -84,7 +84,8 @@ import com.rork.guidestreamtvandroid.ui.navigation.PendingTitleRoute
 import com.rork.guidestreamtvandroid.ui.theme.Navy
 import com.rork.guidestreamtvandroid.ui.theme.BrandOrange
 import com.rork.guidestreamtvandroid.ui.theme.GlassFill
-import com.rork.guidestreamtvandroid.ui.theme.SurfaceDark
+import com.rork.guidestreamtvandroid.ui.theme.SheetLevel
+import com.rork.guidestreamtvandroid.ui.theme.SheetSurfaceBase
 import com.rork.guidestreamtvandroid.ui.theme.TextPrimary
 import com.rork.guidestreamtvandroid.ui.theme.TextSecondary
 import com.rork.guidestreamtvandroid.ui.theme.TextTertiary
@@ -234,8 +235,10 @@ fun AskStreamSheet(
     ModalBottomSheet(
         onDismissRequest = onClose,
         sheetState = sheetState,
-        containerColor = SurfaceDark,
-        dragHandle = { GsSheetDragHandle() },
+        containerColor = SheetSurfaceBase,
+        scrimColor = Color.Black.copy(alpha = 0.60f),
+        tonalElevation = 0.dp,
+        dragHandle = { GsSheetDragHandle(level = SheetLevel.Base) },
         contentWindowInsets = { sheetTopInset() },
         modifier = modifier,
     ) {

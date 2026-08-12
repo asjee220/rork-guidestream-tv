@@ -1252,7 +1252,7 @@ struct ReelsScreen: View {
                 )
                 .presentationDetents([.fraction(0.72)])
                 .presentationSizing(.page)
-                .gsSheetChrome()
+                .sheetSurface(.base)
             }
         }
         .sheet(isPresented: $showShare) {
@@ -1260,7 +1260,7 @@ struct ReelsScreen: View {
                 TrailerShareSheet(trailer: trailer)
                     .presentationDetents([.medium])
                     .presentationSizing(.form)
-                    .gsSheetChrome()
+                    .sheetSurface(.base)
             }
         }
         .sheet(isPresented: $showMore) {
@@ -1282,7 +1282,7 @@ struct ReelsScreen: View {
                 )
                 .presentationDetents([.height(200)])
                 .presentationSizing(.form)
-                .gsSheetChrome()
+                .sheetSurface(.base)
             }
         }
         .sheet(item: $detailSubject) { subject in

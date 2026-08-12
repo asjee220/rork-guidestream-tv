@@ -149,34 +149,82 @@ enum Theme {
     static let textPrimary = Color.textPrimary
     static let textSecondary = Color.textSecondary
     static let textTertiary = Color.textTertiary
-    /// Shared hairline stroke for sheet chrome and inline dividers — white at
-    /// 13% so the lip under every sheet handle reads clearly on `Theme.surface`.
-    static let hairline = Color.white.opacity(0.13)
+
+    // MARK: - Sheet surface tokens
+
+    /// Level-1 sheet fill — reuses the existing `#0B121C` surface constant
+    /// so every sheet reads as visibly distinct from the `#04090F` app bg.
+    static let sheetSurface = Theme.surface
+    /// Level-2 sheet fill for sheets opened from inside another sheet.
+    /// `#182335` is light enough that a nested sheet is clearly lifted.
+    static let sheetSurfaceRaised = Color(red: 0x18/255, green: 0x23/255, blue: 0x35/255)
+
+    /// Two-level elevation ladder so a nested sheet is always visibly lighter
+    /// than its parent.
+    enum SheetLevel: Hashable {
+        case base
+        case raised
+    }
 }
 
-extension View {
-    /// Standardizes the appearance of every drag-dismissible bottom sheet:
-    /// hides the system drag indicator, sets the sheet background to
-    /// `Theme.surface`, and inserts a 40×4 white-0.50 capsule handle with a
-    /// 1-point `Theme.hairline` lip beneath it via a top safe-area inset.
-    func gsSheetChrome() -> some View {
-        self
+/// View modifier that applies the unified sheet surface: fill, custom drag
+/// handle (36×4 capsule, white 45%), top hairline (1.5pt, white 28%), and
+/// hides the system indicator. High-contrast variants (40% / 60% / 70% scrim)
+/// activate via `@Environment(\.colorSchemeContrast)`.
+struct SheetSurfaceModifier: ViewModifier {
+    let level: Theme.SheetLevel
+    let hairline: Bool
+    @Environment(\.colorSchemeContrast) private var colorSchemeContrast
+
+    private var isHighContrast: Bool { colorSchemeContrast == .increased }
+
+    private var surfaceColor: Color {
+        level == .raised ? Theme.sheetSurfaceRaised : Theme.sheetSurface
+    }
+
+    private var handleOpacity: Double { isHighContrast ? 0.60 : 0.45 }
+    private var hairlineOpacity: Double { isHighContrast ? 0.40 : 0.28 }
+
+    func body(content: Content) -> some View {
+        content
             .presentationDragIndicator(.hidden)
-            .presentationBackground(Theme.surface)
+            .presentationBackground(surfaceColor)
             .safeAreaInset(edge: .top, spacing: 0) {
                 VStack(spacing: 0) {
                     Capsule()
-                        .fill(Color.white.opacity(0.50))
-                        .frame(width: 40, height: 4)
+                        .fill(Color.white.opacity(handleOpacity))
+                        .frame(width: 36, height: 4)
                         .padding(.top, 12)
                         .padding(.bottom, 12)
-                    Rectangle()
-                        .fill(Theme.hairline)
-                        .frame(height: 1)
+                    if hairline {
+                        Rectangle()
+                            .fill(Color.white.opacity(hairlineOpacity))
+                            .frame(height: 1.5)
+                    }
                 }
                 .frame(maxWidth: .infinity)
-                .background(Theme.surface)
+                .background(surfaceColor)
             }
+    }
+}
+
+extension View {
+    /// Unified sheet surface modifier — applies the level-appropriate fill,
+    /// hides the system drag indicator, and inserts a 36×4 white-45% capsule
+    /// handle with a 1.5pt white-28% top hairline via a top safe-area inset.
+    /// High-contrast variants (40% hairline, 60% handle) activate
+    /// automatically via `@Environment(\.colorSchemeContrast)`.
+    /// Pass `hairline: false` for custom overlays that supply their own
+    /// identity stroke (e.g. AskStreamSheet's orange border).
+    func sheetSurface(_ level: Theme.SheetLevel = .base, hairline: Bool = true) -> some View {
+        modifier(SheetSurfaceModifier(level: level, hairline: hairline))
+    }
+
+    /// Legacy alias — delegates to `sheetSurface(.base)` so existing call
+    /// sites (CreatorDetailView, NotificationsSheet, etc.) inherit the new
+    /// handle and hairline without code changes.
+    func gsSheetChrome() -> some View {
+        sheetSurface(.base)
     }
 }
 

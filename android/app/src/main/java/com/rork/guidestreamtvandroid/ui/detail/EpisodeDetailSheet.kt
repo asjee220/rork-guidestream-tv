@@ -78,7 +78,8 @@ import com.rork.guidestreamtvandroid.ui.navigation.PendingTitleRoute
 import com.rork.guidestreamtvandroid.ui.theme.BrandBlue
 import com.rork.guidestreamtvandroid.ui.theme.BrandOrange
 import com.rork.guidestreamtvandroid.ui.theme.Hairline
-import com.rork.guidestreamtvandroid.ui.theme.SurfaceDark
+import com.rork.guidestreamtvandroid.ui.theme.SheetLevel
+import com.rork.guidestreamtvandroid.ui.theme.SheetSurfaceBase
 import com.rork.guidestreamtvandroid.ui.theme.TextPrimary
 import com.rork.guidestreamtvandroid.ui.theme.TextSecondary
 import com.rork.guidestreamtvandroid.ui.theme.sheetTopInset
@@ -214,8 +215,10 @@ fun EpisodeDetailSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
-        containerColor = SurfaceDark,
-        dragHandle = { GsSheetDragHandle() },
+        containerColor = SheetSurfaceBase,
+        scrimColor = Color.Black.copy(alpha = 0.60f),
+        tonalElevation = 0.dp,
+        dragHandle = { GsSheetDragHandle(level = SheetLevel.Base) },
         contentWindowInsets = { sheetTopInset() },
     ) {
         Column(
@@ -691,7 +694,7 @@ private fun CircleAction(
                             .size(10.dp)
                             .clip(CircleShape)
                             .background(Color(0xFF3DE06A))
-                            .border(2.dp, SurfaceDark, CircleShape),
+                            .border(2.dp, SheetSurfaceBase, CircleShape),
                     )
                 }
             }

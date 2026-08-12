@@ -35,7 +35,7 @@ struct WatchListBottomSheet: View {
             .toolbar(.hidden, for: .navigationBar)
         }
         .preferredColorScheme(.dark)
-        .gsSheetChrome()
+        .sheetSurface(.base)
     }
 }
 
@@ -92,7 +92,7 @@ private struct WatchListContent: View {
             content
         }
         .sheet(item: $detailSubject) { subject in
-            EpisodeDetailSheet(subject: subject)
+            EpisodeDetailSheet(subject: subject, level: .raised)
         }
         .fullScreenCover(isPresented: $showFollowCreators) {
             FollowCreatorsView()

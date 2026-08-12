@@ -213,7 +213,7 @@ struct SportsWatchSheet: View {
         }
         .presentationDetents([.fraction(0.85), .large])
         .presentationSizing(.page)
-        .gsSheetChrome()
+        .sheetSurface(.base)
         .presentationContentInteraction(.scrolls)
         .sheet(isPresented: $showCastSheet) {
             CastToTVSheet(
