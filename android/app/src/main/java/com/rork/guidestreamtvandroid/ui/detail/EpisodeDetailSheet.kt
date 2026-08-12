@@ -68,6 +68,9 @@ import com.rork.guidestreamtvandroid.data.repository.ReleaseReminderService
 import com.rork.guidestreamtvandroid.data.repository.SocialViewModel
 import com.rork.guidestreamtvandroid.data.repository.StreamsViewModel
 import com.rork.guidestreamtvandroid.data.repository.WatchIntentLogger
+import com.rork.guidestreamtvandroid.ui.ads.PooledAdSource
+import com.rork.guidestreamtvandroid.ui.ads.SponsoredSlot
+import com.rork.guidestreamtvandroid.ui.ads.inlineAdPool
 import com.rork.guidestreamtvandroid.ui.cast.CastToTVSheet
 import com.rork.guidestreamtvandroid.ui.comments.TitleCommentsSheet
 import com.rork.guidestreamtvandroid.ui.components.GsSheetDragHandle
@@ -141,6 +144,7 @@ fun EpisodeDetailSheet(
     var isResolvingSources by remember { mutableStateOf(false) }
     var showComments by remember { mutableStateOf(false) }
     var showCast by remember { mutableStateOf(false) }
+    var adDismissed by remember(route.titleId) { mutableStateOf(false) }
 
     val isSaved = userStreams.any { it.titleId == route.titleId }
     val isWatched = watchedIds.contains(route.titleId)
@@ -391,6 +395,26 @@ fun EpisodeDetailSheet(
 
                 Hairline()
 
+                // ── Affiliate sponsored slot ─────────────────────
+                if (!adDismissed) {
+                    val offer = selectAffiliateOffer(
+                        currentSourceName = selectedSource?.name,
+                        selectedServices = selectedServices,
+                    )
+                    Box(Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
+                        SponsoredSlot(
+                            preferredSource = PooledAdSource.RAKUTEN_FIRST,
+                            service = StreamingCatalog.service(offer.first),
+                            serviceId = offer.first,
+                            headline = offer.second,
+                            subtitle = offer.third,
+                            onDismiss = { adDismissed = true },
+                            adSource = "episode_detail_sheet",
+                            sectionKey = "episode_detail_sheet_ad",
+                        )
+                    }
+                }
+
                 WhereToWatchRow(
                     sources = usSources,
                     selectedSource = selectedSource,
@@ -405,7 +429,7 @@ fun EpisodeDetailSheet(
                         .padding(horizontal = 20.dp)
                         .padding(top = 20.dp),
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
+                    verticalAlignment = Alignment.Top,
                 ) {
                     if (selectedSource != null || isResolvingSources) {
                         val srcName = selectedSource?.name
@@ -763,6 +787,45 @@ private fun openWatchTarget(
             // No browser installed — nothing further to try.
         }
     }
+}
+
+/**
+ * Selects an affiliate offer from the pool, mirroring iOS `affiliateAdData`.
+ * Prefers a service the user doesn't already have and that isn't the title's
+ * current platform; falls back to any non-current entry, then to the first
+ * entry overall so the slot is never blank.
+ */
+private fun selectAffiliateOffer(
+    currentSourceName: String?,
+    selectedServices: Set<String>,
+): Triple<String, String, String> {
+    val current = normalisedServiceKey(currentSourceName.orEmpty())
+    val owned = selectedServices.map { normalisedServiceKey(it) }.toSet()
+
+    inlineAdPool.firstOrNull { it.first != current && it.first !in owned }
+        ?.let { return it }
+
+    inlineAdPool.firstOrNull { it.first != current }
+        ?.let { return it }
+
+    return inlineAdPool.first()
+}
+
+/**
+ * Normalises a raw service name into a canonical pool key — mirrors iOS
+ * `normalisedServiceKey` so the same offer selection logic works on both.
+ */
+private fun normalisedServiceKey(raw: String): String {
+    val k = raw.lowercase()
+    if (k.contains("netflix")) return "netflix"
+    if (k.contains("max") || k.contains("hbo")) return "hbo"
+    if (k.contains("hulu")) return "hulu"
+    if (k.contains("disney")) return "disney"
+    if (k.contains("apple")) return "appletv"
+    if (k.contains("prime") || k.contains("amazon")) return "prime"
+    if (k.contains("paramount")) return "paramount"
+    if (k.contains("peacock")) return "peacock"
+    return k
 }
 
 /** True when [url] has a scheme and is not a Watchmode paid-plan placeholder. */
