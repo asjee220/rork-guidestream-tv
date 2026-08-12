@@ -26,12 +26,13 @@ val GlassStroke = OutlineVariant
 val Hairline = Color.White.copy(alpha = 0.08f)
 
 // ── Sheet surface tokens (two-level elevation ladder) ──────────────────────
-// Level 1: base sheet fill — reuses the same #0B121C as SurfaceDark so every
-// sheet reads as visibly distinct from the #04090F app background.
-val SheetSurfaceBase = SurfaceDark
+// Level 1: base sheet fill. Breaks the previous `= SurfaceDark` alias so
+// the sheet ladder can move independently of SurfaceDark (#0B121C), which
+// other composables still depend on.
+val SheetSurfaceBase = Color(red = 0x1B, green = 0x27, blue = 0x39)
 // Level 2: raised sheet fill for sheets opened from inside another sheet.
-// #182335 is light enough that a nested sheet is clearly lifted.
-val SheetSurfaceRaised = Color(red = 0x18, green = 0x23, blue = 0x35)
+// #2E3E58 is light enough that a nested sheet is clearly lifted.
+val SheetSurfaceRaised = Color(red = 0x2E, green = 0x3E, blue = 0x58)
 
 /// Two-level elevation ladder so a nested sheet is always visibly lighter
 /// than its parent. Mirrors iOS `Theme.SheetLevel`.

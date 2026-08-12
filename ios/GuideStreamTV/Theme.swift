@@ -152,12 +152,13 @@ enum Theme {
 
     // MARK: - Sheet surface tokens
 
-    /// Level-1 sheet fill — reuses the existing `#0B121C` surface constant
-    /// so every sheet reads as visibly distinct from the `#04090F` app bg.
-    static let sheetSurface = Theme.surface
+    /// Level-1 sheet fill. Breaks the previous `= Theme.surface` alias so
+    /// the sheet ladder can move independently of `Theme.surface` (#0B121C),
+    /// which other UI still depends on.
+    static let sheetSurface = Color(red: 0x1B/255, green: 0x27/255, blue: 0x39/255)
     /// Level-2 sheet fill for sheets opened from inside another sheet.
-    /// `#182335` is light enough that a nested sheet is clearly lifted.
-    static let sheetSurfaceRaised = Color(red: 0x18/255, green: 0x23/255, blue: 0x35/255)
+    /// `#2E3E58` is light enough that a nested sheet is clearly lifted.
+    static let sheetSurfaceRaised = Color(red: 0x2E/255, green: 0x3E/255, blue: 0x58/255)
 
     /// Two-level elevation ladder so a nested sheet is always visibly lighter
     /// than its parent.
@@ -182,8 +183,8 @@ struct SheetSurfaceModifier: ViewModifier {
         level == .raised ? Theme.sheetSurfaceRaised : Theme.sheetSurface
     }
 
-    private var handleOpacity: Double { isHighContrast ? 0.60 : 0.45 }
-    private var hairlineOpacity: Double { isHighContrast ? 0.40 : 0.28 }
+    private var handleOpacity: Double { isHighContrast ? 0.75 : 0.60 }
+    private var hairlineOpacity: Double { isHighContrast ? 0.55 : 0.40 }
 
     func body(content: Content) -> some View {
         content

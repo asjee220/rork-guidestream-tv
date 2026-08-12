@@ -415,7 +415,7 @@ struct PlayOnBottomSheet: View {
         )
         .overlay(
             UnevenRoundedRectangle(cornerRadii: .init(topLeading: 28, topTrailing: 28), style: .continuous)
-                .stroke(Color.white.opacity(colorSchemeContrast == .increased ? 0.40 : 0.28), lineWidth: 1.5)
+                .stroke(Color.white.opacity(colorSchemeContrast == .increased ? 0.55 : 0.40), lineWidth: 1.5)
         )
         .clipShape(UnevenRoundedRectangle(cornerRadii: .init(topLeading: 28, topTrailing: 28), style: .continuous))
         .shadow(color: .black.opacity(0.5), radius: 28, y: -10)

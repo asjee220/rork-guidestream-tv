@@ -38,8 +38,8 @@ fun GsSheetDragHandle(
             0,
         ) == 1
     }
-    val handleAlpha = if (isHighContrast) 0.60f else 0.45f
-    val hairlineAlpha = if (isHighContrast) 0.40f else 0.28f
+    val handleAlpha = if (isHighContrast) 0.75f else 0.60f
+    val hairlineAlpha = if (isHighContrast) 0.55f else 0.40f
 
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
