@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -94,7 +95,11 @@ fun ServicesBottomSheet(
         dragHandle = { GsSheetDragHandle(level = SheetLevel.Base) },
         contentWindowInsets = { sheetTopInset() },
     ) {
-        Column {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .fillMaxHeight(0.92f),
+        ) {
             GsSheetHeader(
                 title = "My services",
                 subtitle = "${selected.size} selected · tap to add or remove",

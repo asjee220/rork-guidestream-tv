@@ -51,23 +51,6 @@ func gsBrandColor(for name: String) -> Color {
  return Color(white:0.18)
 }
 
-/// Returns true when a Watchmode source name matches a user-facing platform string,
-/// using the same fuzzy logic already in StreamingDeepLinker.
-func gsSourceMatches(sourceName: String, platform: String) -> Bool {
- let s = sourceName.lowercased(), p = platform.lowercased()
- if p.contains("netflix") { return s.contains("netflix") }
- if p.contains("hbo") || p.contains("max") { return s.contains("max") || s.contains("hbo") }
- if p.contains("hulu") { return s.contains("hulu") }
- if p.contains("disney") { return s.contains("disney") }
- if p.contains("apple") { return s.contains("apple tv") }
- if p.contains("prime") || p.contains("amazon") { return s.contains("amazon") || s.contains("prime") }
- if p.contains("paramount") { return s.contains("paramount") }
- if p.contains("peacock") { return s.contains("peacock") }
- if p.contains("youtube") { return s.contains("youtube") }
- if p.contains("starz") { return s.contains("starz") }
- return s.contains(p) || p.contains(s)
-}
-
 func gsShortName(for name: String) -> String {
  let k = name.lowercased()
  if k.contains("netflix") { return "N" }
@@ -227,7 +210,7 @@ func buildEpisodeAvailRows(
  tmdbEpisodes: [TMDBEpisode],
  seasonNumber: Int,
  sources: [WatchmodeSource],
- userServiceNames: [String]
+ isSubscribed: (String) -> Bool
 ) -> [EpisodeAvailRow] {
  let ranked = sources.sorted { gsSourceRank($0) < gsSourceRank($1) }
  // Show most recent episodes first (reverse episode-number order)
@@ -245,7 +228,7 @@ func buildEpisodeAvailRows(
  }
  let displayName = gsDisplayName(for: src.name)
  let color = gsBrandColor(for: src.name)
- let userHas = userServiceNames.contains(where: { gsSourceMatches(sourceName: src.name, platform: $0) })
+ let userHas = isSubscribed(src.name)
  let deeplink: URL? = {
  // Build episode-specific URL from the show-level Watchmode URL by
  // appending season/episode path segments where the platform supports it.
@@ -305,7 +288,7 @@ func episodeDeeplinkURL(from base: URL, season: Int, episode: Int) -> URL {
 func buildSeasonCoverage(
  sources: [WatchmodeSource],
  totalEpisodes: Int,
- userServiceNames: [String]
+ isSubscribed: (String) -> Bool
 ) -> [SeasonCoverage] {
  var seen = Set<String>()
  var result: [SeasonCoverage] = []
@@ -314,7 +297,7 @@ func buildSeasonCoverage(
  let displayName = gsDisplayName(for: src.name)
  if seen.contains(displayName) { continue }
  seen.insert(displayName)
- let userHas = userServiceNames.contains(where: { gsSourceMatches(sourceName: src.name, platform: $0) })
+ let userHas = isSubscribed(src.name)
  result.append(SeasonCoverage(
  id: result.count,
  seasonNumber: 1,
@@ -344,8 +327,10 @@ struct EpisodeAvailabilitySection: View {
  @State private var isLoading = false
  @State private var showLevelSources: [WatchmodeSource] = []
 
- private var userServiceNames: [String] {
- StreamsViewModel.shared.userStreams.compactMap { $0.platform?.lowercased() }
+ /// Single app-wide subscription matcher — the user's selected services,
+ /// not the platforms stamped on saved watchlist titles.
+ private func isSubscribed(to sourceName: String) -> Bool {
+ AuthViewModel.shared.subscribesToService(named: sourceName)
  }
 
  var body: some View {
@@ -669,13 +654,12 @@ struct EpisodeAvailabilitySection: View {
  episodeRows = []; coverages = []; return
  }
  let eps = season.episodes ?? []
- let names = userServiceNames
  episodeRows = buildEpisodeAvailRows(
  tmdbEpisodes: eps, seasonNumber: selectedSeason,
- sources: showLevelSources, userServiceNames: names
+ sources: showLevelSources, isSubscribed: { isSubscribed(to: $0) }
  )
  coverages = buildSeasonCoverage(
- sources: showLevelSources, totalEpisodes: eps.count, userServiceNames: names
+ sources: showLevelSources, totalEpisodes: eps.count, isSubscribed: { isSubscribed(to: $0) }
  )
  }
 }

@@ -74,6 +74,7 @@ import com.rork.guidestreamtvandroid.ui.ads.SponsoredSlot
 import com.rork.guidestreamtvandroid.ui.ads.inlineAdPool
 import com.rork.guidestreamtvandroid.ui.cast.CastToTVSheet
 import com.rork.guidestreamtvandroid.ui.comments.TitleCommentsSheet
+import com.rork.guidestreamtvandroid.ui.components.CircleAction
 import com.rork.guidestreamtvandroid.ui.components.GsSheetDragHandle
 import com.rork.guidestreamtvandroid.ui.components.GsSheetHeader
 import com.rork.guidestreamtvandroid.ui.components.RemoteImage
@@ -230,10 +231,10 @@ fun EpisodeDetailSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
+                .fillMaxHeight(0.8f)
                 .navigationBarsPadding()
-                .padding(bottom = 28.dp)
-                .fillMaxHeight(0.8f),
+                .verticalScroll(rememberScrollState())
+                .padding(bottom = 28.dp),
         ) {
             // ── Header ────────────────────────────────────────────────
             val genre = detail?.genres?.firstOrNull()?.name
@@ -677,69 +678,6 @@ private fun AboutSection(overview: String?, fallback: String) {
             fontSize = 15.sp,
             color = TextPrimary.copy(alpha = 0.85f),
             lineHeight = 21.sp,
-        )
-    }
-}
-
-/**
- * 56dp translucent circle with a glyph and a caption below — the sheet's
- * standard action affordance. [showDot] draws the green "reminder set" pip in
- * the top-trailing corner, matching the iOS `circleAction` badge.
- */
-@Composable
-private fun CircleAction(
-    icon: ImageVector,
-    label: String,
-    tint: Color,
-    showDot: Boolean,
-    isLoading: Boolean = false,
-    enabled: Boolean = true,
-    onClick: () -> Unit,
-) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Box(
-            modifier = Modifier
-                .size(56.dp)
-                .clip(CircleShape)
-                .background(Color.White.copy(alpha = 0.08f))
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null,
-                    enabled = enabled && !isLoading,
-                ) { onClick() },
-            contentAlignment = Alignment.Center,
-        ) {
-            if (isLoading) {
-                CircularProgressIndicator(
-                    color = Color.White,
-                    strokeWidth = 2.dp,
-                    modifier = Modifier.size(18.dp),
-                )
-            } else {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = label,
-                    tint = tint,
-                    modifier = Modifier.size(22.dp),
-                )
-                if (showDot) {
-                    Box(
-                        modifier = Modifier
-                            .offset(x = 16.dp, y = (-16).dp)
-                            .size(10.dp)
-                            .clip(CircleShape)
-                            .background(Color(0xFF3DE06A))
-                            .border(2.dp, SheetSurfaceBase, CircleShape),
-                    )
-                }
-            }
-        }
-        Spacer(Modifier.height(8.dp))
-        Text(
-            text = label,
-            fontSize = 13.sp,
-            color = TextPrimary.copy(alpha = 0.7f),
-            maxLines = 1,
         )
     }
 }

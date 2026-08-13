@@ -33,6 +33,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
@@ -1742,8 +1743,9 @@ private fun WidgetInstructionSheet(onDismiss: () -> Unit) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
-                .navigationBarsPadding(),
+                .fillMaxHeight(0.85f)
+                .navigationBarsPadding()
+                .verticalScroll(rememberScrollState()),
         ) {
             GsSheetHeader(title = "Add the home screen widget") {
                 Text(

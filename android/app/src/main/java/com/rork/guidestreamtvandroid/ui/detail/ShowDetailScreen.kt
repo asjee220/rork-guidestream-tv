@@ -72,6 +72,7 @@ import com.rork.guidestreamtvandroid.data.repository.SocialViewModel
 import com.rork.guidestreamtvandroid.data.repository.StreamsViewModel
 import com.rork.guidestreamtvandroid.data.repository.WatchIntentLogger
 import com.rork.guidestreamtvandroid.ui.cast.CastToTVSheet
+import com.rork.guidestreamtvandroid.ui.components.CircleAction
 import com.rork.guidestreamtvandroid.ui.components.CoachMarkOverlay
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -416,88 +417,46 @@ fun ShowDetailScreen(
                 ) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        horizontalArrangement = Arrangement.SpaceEvenly,
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                     // Watched toggle
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(50.dp)
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(GlassFill)
-                            .border(1.dp, GlassStroke, RoundedCornerShape(12.dp))
-                            .clickable(
-                                interactionSource = remember { MutableInteractionSource() },
-                                indication = null,
-                            ) {
-                                streamsVm.toggleWatched(
-                                    titleId = titleId,
-                                    titleName = detail?.name ?: titleName,
-                                    mediaType = if (isTV) "tv" else "movie",
-                                    tmdbId = tmdbId,
-                                )
-                            },
-                        contentAlignment = Alignment.Center,
+                    CircleAction(
+                        icon = Icons.Filled.Visibility,
+                        label = "Watched",
+                        tint = if (isWatched) BrandBlue else TextPrimary,
+                        showDot = false,
                     ) {
-                        Icon(
-                            imageVector = Icons.Filled.Visibility,
-                            contentDescription = "Watched",
-                            tint = if (isWatched) BrandBlue else TextPrimary,
-                            modifier = Modifier.size(22.dp),
-                        )
-                    }
-                    // Play on TV
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(50.dp)
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(GlassFill)
-                            .border(1.dp, GlassStroke, RoundedCornerShape(12.dp))
-                            .onGloballyPositioned { coords ->
-                                coachMark.setMeasuredRect("play_on", coords.boundsInRoot())
-                            }
-                            .clickable(
-                                interactionSource = remember { MutableInteractionSource() },
-                                indication = null,
-                            ) { showCast = true },
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(
-                            imageVector = Icons.Filled.Tv,
-                            contentDescription = "Play on TV",
-                            tint = TextPrimary,
-                            modifier = Modifier.size(22.dp),
+                        streamsVm.toggleWatched(
+                            titleId = titleId,
+                            titleName = detail?.name ?: titleName,
+                            mediaType = if (isTV) "tv" else "movie",
+                            tmdbId = tmdbId,
                         )
                     }
                     // Share
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(50.dp)
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(GlassFill)
-                            .border(1.dp, GlassStroke, RoundedCornerShape(12.dp))
-                            .clickable(
-                                interactionSource = remember { MutableInteractionSource() },
-                                indication = null,
-                            ) {
-                                val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                                    type = "text/plain"
-                                    putExtra(Intent.EXTRA_TEXT, "https://www.themoviedb.org/${if (isTV) "tv" else "movie"}/$tmdbId")
-                                }
-                                context.startActivity(Intent.createChooser(shareIntent, "Share"))
-                            },
-                        contentAlignment = Alignment.Center,
+                    CircleAction(
+                        icon = Icons.Filled.Share,
+                        label = "Share",
+                        tint = TextPrimary,
+                        showDot = false,
                     ) {
-                        Icon(
-                            imageVector = Icons.Filled.Share,
-                            contentDescription = "Share",
-                            tint = TextPrimary,
-                            modifier = Modifier.size(20.dp),
-                        )
+                        val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                            type = "text/plain"
+                            putExtra(Intent.EXTRA_TEXT, "https://www.themoviedb.org/${if (isTV) "tv" else "movie"}/$tmdbId")
+                        }
+                        context.startActivity(Intent.createChooser(shareIntent, "Share"))
                     }
+                    // Send to TV
+                    CircleAction(
+                        icon = Icons.Filled.Tv,
+                        label = "Send to TV",
+                        tint = TextPrimary,
+                        showDot = false,
+                        modifier = Modifier.onGloballyPositioned { coords ->
+                            coachMark.setMeasuredRect("play_on", coords.boundsInRoot())
+                        },
+                    ) { showCast = true }
                     }
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -525,8 +484,8 @@ fun ShowDetailScreen(
                         Box(
                             modifier = Modifier
                                 .weight(1f)
-                                .height(50.dp)
-                                .clip(RoundedCornerShape(12.dp))
+                                .height(54.dp)
+                                .clip(RoundedCornerShape(27.dp))
                                 .background(BrandOrange)
                                 .onGloballyPositioned { coords ->
                                     coachMark.setMeasuredRect("watch_button", coords.boundsInRoot())
@@ -580,49 +539,64 @@ fun ShowDetailScreen(
                         }
                     }
                     // Add/Remove watchlist
-                    Box(
-                        modifier = Modifier
-                            .size(50.dp)
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(GlassFill)
-                            .border(1.dp, GlassStroke, RoundedCornerShape(12.dp))
-                            .onGloballyPositioned { coords ->
-                                coachMark.setMeasuredRect("watchlist_add", coords.boundsInRoot())
-                            }
-                            .clickable(
-                                interactionSource = remember { MutableInteractionSource() },
-                                indication = null,
-                            ) {
-                                if (isSaved) {
-                                    streamsVm.removeFromMyStreams(titleId)
-                                    WatchIntentLogger.get().log(
-                                        WatchIntentLogger.IntentEventType.WATCHLIST_REMOVED,
-                                        titleId = titleId,
-                                    )
-                                } else {
-                                    streamsVm.addToMyStreams(
-                                        titleId = titleId,
-                                        title = detail?.name ?: titleName,
-                                        posterUrl = detail?.posterPath?.let {
-                                            "https://image.tmdb.org/t/p/w342${if (it.startsWith("/")) it else "/$it"}"
-                                        },
-                                        platform = platform?.name,
-                                        isTv = isTV,
-                                    )
-                                    WatchIntentLogger.get().log(
-                                        WatchIntentLogger.IntentEventType.WATCHLIST_ADDED,
-                                        titleId = titleId,
-                                        platformId = platform?.name?.lowercase(),
-                                    )
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Box(
+                            modifier = Modifier
+                                .size(54.dp)
+                                .clip(CircleShape)
+                                .then(
+                                    if (isSaved) {
+                                        Modifier.border(1.8.dp, Color.White, CircleShape)
+                                    } else {
+                                        Modifier.background(BrandOrange)
+                                    }
+                                )
+                                .onGloballyPositioned { coords ->
+                                    coachMark.setMeasuredRect("watchlist_add", coords.boundsInRoot())
                                 }
-                            },
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(
-                            imageVector = if (isSaved) Icons.Filled.Check else Icons.Filled.Add,
-                            contentDescription = if (isSaved) "In watchlist" else "Add to watchlist",
-                            tint = if (isSaved) BrandOrange else TextPrimary,
-                            modifier = Modifier.size(22.dp),
+                                .clickable(
+                                    interactionSource = remember { MutableInteractionSource() },
+                                    indication = null,
+                                ) {
+                                    if (isSaved) {
+                                        streamsVm.removeFromMyStreams(titleId)
+                                        WatchIntentLogger.get().log(
+                                            WatchIntentLogger.IntentEventType.WATCHLIST_REMOVED,
+                                            titleId = titleId,
+                                        )
+                                    } else {
+                                        streamsVm.addToMyStreams(
+                                            titleId = titleId,
+                                            title = detail?.name ?: titleName,
+                                            posterUrl = detail?.posterPath?.let {
+                                                "https://image.tmdb.org/t/p/w342${if (it.startsWith("/")) it else "/$it"}"
+                                            },
+                                            platform = platform?.name,
+                                            isTv = isTV,
+                                        )
+                                        WatchIntentLogger.get().log(
+                                            WatchIntentLogger.IntentEventType.WATCHLIST_ADDED,
+                                            titleId = titleId,
+                                            platformId = platform?.name?.lowercase(),
+                                        )
+                                    }
+                                },
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(
+                                imageVector = if (isSaved) Icons.Filled.Check else Icons.Filled.Add,
+                                contentDescription = if (isSaved) "In watchlist" else "Add to watchlist",
+                                tint = Color.White,
+                                modifier = Modifier.size(22.dp),
+                            )
+                        }
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            text = if (isSaved) "Saved" else "Watch List",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = TextPrimary,
+                            maxLines = 1,
                         )
                     }
                     }
