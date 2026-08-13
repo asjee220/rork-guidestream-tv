@@ -7,6 +7,8 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
@@ -68,73 +70,18 @@ data class StreamSeed(
     val platform: String?,
 )
 
-// ── Seed prompt (intro before picking shows) ──────────────────────
-
-@Composable
-fun SeedPromptScreen(
-    selectedServices: Set<String>,
-    onContinue: () -> Unit,
-    onSkip: () -> Unit,
-) {
-    Column(modifier = Modifier.fillMaxSize()) {
-        OnboardingHeader(progress = 1f, onClose = null)
-
-        Column(
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth()
-                .padding(horizontal = 28.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(96.dp)
-                    .clip(CircleShape)
-                    .background(
-                        Brush.linearGradient(listOf(BrandBlue, BrandOrange)),
-                    ),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    imageVector = Icons.Filled.PlayArrow,
-                    contentDescription = null,
-                    tint = Color.White,
-                    modifier = Modifier.size(44.dp),
-                )
-            }
-            Spacer(Modifier.height(24.dp))
-            Text(
-                text = "Let's build your watch list",
-                fontSize = 26.sp,
-                fontWeight = FontWeight.Bold,
-                color = TextPrimary,
-                textAlign = TextAlign.Center,
-            )
-            Spacer(Modifier.height(10.dp))
-            Text(
-                text = "Pick a few shows you're watching now and follow creators you love. We'll keep you posted on new episodes.",
-                fontSize = 15.sp,
-                color = TextSecondary,
-                textAlign = TextAlign.Center,
-            )
-        }
-
-        OnboardingBottomBar(
-            primaryText = "Let's go",
-            onPrimary = onContinue,
-            onSkip = onSkip,
-        )
-    }
-}
-
 // ── Watching now (pick shows) ─────────────────────────────────────
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun WatchingNowScreen(
     selectedServices: Set<String>,
     onContinue: (List<StreamSeed>) -> Unit,
     onSkip: () -> Unit,
+    onBack: () -> Unit = {},
+    onSkipAll: () -> Unit = {},
+    currentStep: Int = 2,
+    totalSteps: Int = 4,
 ) {
     val tmdb = remember { TMDBService.get() }
     var shows by remember { mutableStateOf<List<TMDBResult>>(emptyList()) }
@@ -151,7 +98,7 @@ fun WatchingNowScreen(
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
-        OnboardingHeader(progress = 1f, onClose = null)
+        OnboardingHeader(currentStep = currentStep, totalSteps = totalSteps, onBack = onBack, onSkipAll = onSkipAll)
 
         Column(
             modifier = Modifier
@@ -160,16 +107,27 @@ fun WatchingNowScreen(
                 .padding(top = 12.dp, bottom = 8.dp),
         ) {
             Text(
-                text = "What are you watching?",
+                text = "What are you watching right now?",
                 fontSize = 22.sp,
                 fontWeight = FontWeight.Bold,
                 color = TextPrimary,
             )
             Text(
-                text = "Tap the shows on your list right now",
+                text = "We found top shows across your services — tap every one you follow.",
                 fontSize = 14.sp,
                 color = TextSecondary,
             )
+        }
+
+        // Value strip (folded from SeedPromptScreen)
+        FlowRow(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(bottom = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            valuePill("Lands in My Watch List")
+            valuePill("Instant episode alerts")
+            valuePill("One-tap deep links")
         }
 
         Box(modifier = Modifier.weight(1f)) {
@@ -207,6 +165,7 @@ fun WatchingNowScreen(
 
         OnboardingBottomBar(
             primaryText = if (selectedIds.isEmpty()) "Continue" else "Add ${selectedIds.size} & continue",
+            skipText = "Skip",
             onPrimary = {
                 val seeds = shows.filter { it.id in selectedIds }.map {
                     StreamSeed(
@@ -238,6 +197,10 @@ private data class OnboardingCreatorRow(
 fun FollowCreatorsOnboardingScreen(
     onContinue: (List<StreamSeed>) -> Unit,
     onSkip: () -> Unit,
+    onBack: () -> Unit = {},
+    onSkipAll: () -> Unit = {},
+    currentStep: Int = 3,
+    totalSteps: Int = 4,
 ) {
     var creators by remember { mutableStateOf<List<OnboardingCreatorRow>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
@@ -260,7 +223,7 @@ fun FollowCreatorsOnboardingScreen(
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
-        OnboardingHeader(progress = 1f, onClose = null)
+        OnboardingHeader(currentStep = currentStep, totalSteps = totalSteps, onBack = onBack, onSkipAll = onSkipAll)
 
         Column(
             modifier = Modifier
@@ -470,6 +433,7 @@ private fun OnboardingBottomBar(
     primaryText: String,
     onPrimary: () -> Unit,
     onSkip: () -> Unit,
+    skipText: String = "Skip for now",
 ) {
     Column(
         modifier = Modifier
@@ -511,7 +475,7 @@ private fun OnboardingBottomBar(
         }
         Spacer(Modifier.height(12.dp))
         Text(
-            text = "Skip for now",
+            text = skipText,
             fontSize = 14.sp,
             color = TextSecondary,
             modifier = Modifier
@@ -520,6 +484,31 @@ private fun OnboardingBottomBar(
                     indication = null,
                 ) { onSkip() }
                 .padding(8.dp),
+        )
+    }
+}
+
+@Composable
+private fun valuePill(text: String) {
+    Row(
+        modifier = Modifier
+            .clip(RoundedCornerShape(13.dp))
+            .background(Color.White.copy(alpha = 0.05f))
+            .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(13.dp))
+            .padding(horizontal = 10.dp, vertical = 7.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Icon(
+            imageVector = Icons.Filled.Check,
+            contentDescription = null,
+            tint = BrandOrange,
+            modifier = Modifier.size(10.dp),
+        )
+        Text(
+            text = text,
+            fontSize = 10.5.sp,
+            color = Color.White.copy(alpha = 0.55f),
         )
     }
 }

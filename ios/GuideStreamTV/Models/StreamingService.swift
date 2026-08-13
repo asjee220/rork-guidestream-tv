@@ -2,7 +2,7 @@
 //  StreamingService.swift
 //  GuideStreamTV
 //
-//  Canonical catalogue of the top ~50 worldwide streaming services. Used by
+//  Canonical catalogue of worldwide streaming services. Used by
 //  the onboarding "Which services do you have?" grid and the services pill
 //  bottom sheet so both surfaces stay in sync. Each entry has a stable `id`
 //  (persisted in UserDefaults), a human display name, brand colours, and a
@@ -62,7 +62,11 @@ struct StreamingService: Identifiable, Hashable {
 }
 
 enum StreamingCatalog {
-    /// Top 50 streaming services worldwide. Ordering roughly mirrors global
+    /// Curated subset of the most popular services shown in the "Most popular"
+    /// section of the service picker. Ordering mirrors the top of `all`.
+    static let popular: [StreamingService] = Array(all.prefix(18))
+
+    /// All streaming services worldwide. Ordering roughly mirrors global
     /// subscriber counts so the most relevant tiles appear first.
     static let all: [StreamingService] = [
         .init(id: "netflix", name: "Netflix",
@@ -799,5 +803,11 @@ enum StreamingCatalog {
     /// Used so the pill always shows brands in the same priority as the grid.
     static func ordered(from ids: Set<String>) -> [StreamingService] {
         all.filter { ids.contains($0.id) }
+    }
+
+    /// All services sorted alphabetically by display name, used by the
+    /// "All services · A–Z" toggle-row section of the hybrid picker.
+    static var alphabetical: [StreamingService] {
+        all.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
 }

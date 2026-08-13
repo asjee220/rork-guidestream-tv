@@ -19,9 +19,10 @@ struct OnboardingFlow: View {
     @State private var step: Int = 0
     @State private var selectedServices: Set<String> = AuthViewModel.shared.selectedServices
     @State private var pushOn: Bool = AuthViewModel.shared.notifyPushEnabled
-    @State private var smsOn: Bool = AuthViewModel.shared.notifySMSEnabled
     @State private var showEmailAuth: Bool = false
-
+    @State private var followedShowPosters: [String] = []
+    @State private var followedShowsCount: Int = 0
+    @State private var followedCreatorsCount: Int = 0
 
     var body: some View {
         ZStack {
@@ -32,7 +33,11 @@ struct OnboardingFlow: View {
                 case 0:
                     WelcomeOnboardingView(
                         onContinue: { advance() },
-                        onEmailAuth: { showEmailAuth = true }
+                        onEmailAuth: { showEmailAuth = true },
+                        onGuest: {
+                            AuthViewModel.shared.continueAsGuest()
+                            advance()
+                        }
                     )
                 case 1:
                     ConnectServicesView(
@@ -40,38 +45,55 @@ struct OnboardingFlow: View {
                         onContinue: {
                             AuthViewModel.shared.setSelectedServices(selectedServices)
                             advance()
+                        },
+                        onSkip: {
+                            AuthViewModel.shared.setSelectedServices(selectedServices)
+                            advance()
                         }
                     )
                 case 2:
-                    StayNotifiedView(
-                        pushOn: $pushOn,
-                        smsOn: $smsOn,
-                        onContinue: {
-                            AuthViewModel.shared.setNotificationPreferences(push: pushOn, sms: false) // SMS opt-in disabled
-                            advance()
-                        },
-                        onWidgetSettings: onWidgetSettings
-                    )
-                case 3:
-                    SeedPromptView(
-                        selectedServices: selectedServices,
-                        onContinue: { advance() },
-                        onSkip: { onFinish() }
-                    )
-                case 4:
                     WatchingNowView(
                         selectedServices: selectedServices,
                         onContinue: { inserts in
+                            followedShowsCount = inserts.count
+                            followedShowPosters = inserts.compactMap { $0.poster_url }
                             commitInserts(inserts) { advance() }
                         },
-                        onSkip: { advance() }
+                        onSkip: { advance() },
+                        onBack: { goBack() },
+                        onSkipAll: { finishOnboarding() },
+                        currentStep: 2,
+                        totalSteps: OnboardingHeader.stepNames.count
                     )
-                default:
+                case 3:
                     FollowCreatorsOnboardingView(
                         onContinue: { inserts in
-                            commitInserts(inserts) { onFinish() }
+                            followedCreatorsCount = inserts.count
+                            commitInserts(inserts) { advance() }
                         },
-                        onSkip: { onFinish() }
+                        onSkip: { finishOnboarding() },
+                        onBack: { goBack() },
+                        onSkipAll: { finishOnboarding() },
+                        currentStep: 3,
+                        totalSteps: OnboardingHeader.stepNames.count
+                    )
+                default:
+                    StayNotifiedView(
+                        pushOn: $pushOn,
+                        onContinue: {
+                            AuthViewModel.shared.setNotificationPreferences(push: pushOn, sms: false)
+                            if !AuthViewModel.shared.isSignedIn {
+                                AuthViewModel.shared.continueAsGuest()
+                            }
+                            finishOnboarding()
+                        },
+                        onBack: { goBack() },
+                        onWidgetSettings: onWidgetSettings,
+                        currentStep: 4,
+                        totalSteps: OnboardingHeader.stepNames.count,
+                        posterUrls: followedShowPosters,
+                        showCount: followedShowsCount,
+                        creatorCount: followedCreatorsCount
                     )
                 }
             }
@@ -85,10 +107,6 @@ struct OnboardingFlow: View {
             EmailAuthView(
                 onAuthenticated: {
                     showEmailAuth = false
-                    // Only advance the onboarding flow when the user has not
-                    // yet completed onboarding. Returning users
-                    // (hasCompletedOnboarding already true) are routed by
-                    // ContentView and should not be pulled forward here.
                     if !AuthViewModel.shared.hasCompletedOnboarding {
                         advance()
                     }
@@ -96,14 +114,10 @@ struct OnboardingFlow: View {
                 onClose: { showEmailAuth = false }
             )
         }
-        // Re-seed the local service selection whenever the authoritative
-        // value changes (e.g. after an account switch) so onboarding never
-        // writes a stale snapshot onto the new account.
         .onChange(of: AuthViewModel.shared.selectedServices) { _, newValue in
             selectedServices = newValue
         }
         .onAppear {
-            // Skip welcome if user is already authenticated
             if step == 0 && startStep > 0 {
                 step = startStep
             }
@@ -114,6 +128,20 @@ struct OnboardingFlow: View {
         withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) {
             step += 1
         }
+    }
+
+    private func goBack() {
+        withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) {
+            step -= 1
+        }
+    }
+
+    private func finishOnboarding() {
+        if !AuthViewModel.shared.isSignedIn {
+            AuthViewModel.shared.continueAsGuest()
+        }
+        AuthViewModel.shared.completeOnboarding()
+        onFinish()
     }
 
     private func commitInserts(_ inserts: [UserStreamInsert], completion: @escaping () -> Void) {
@@ -137,19 +165,15 @@ struct OnboardingFlow: View {
 struct WelcomeOnboardingView: View {
     var onContinue: () -> Void
     var onEmailAuth: () -> Void
+    var onGuest: () -> Void
 
     @State private var auth = AuthViewModel.shared
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         ZStack {
-            // Ambient drifting blurred poster wall — sits above the navy base
-            // but below the wordmark, hairline, and glass card.
             DriftingPosterWall(reduceMotion: reduceMotion)
-
             welcomeContent
-
-            // Decorative "CH 01" channel chip — top-right within the safe area.
             VStack {
                 HStack {
                     Spacer()
@@ -176,7 +200,6 @@ struct WelcomeOnboardingView: View {
                 }
                 .padding(.bottom, 8)
 
-            // Gradient hairline underline
             LinearGradient(
                 colors: [Color.blue.opacity(0.0), Color.blue, Color.orange, Color.orange.opacity(0.0)],
                 startPoint: .leading, endPoint: .trailing
@@ -185,7 +208,6 @@ struct WelcomeOnboardingView: View {
             .frame(maxWidth: 260)
             .padding(.bottom, 32)
 
-            // Card with copy + auth options
             VStack(spacing: 12) {
                 VStack(spacing: 4) {
                     Text("Every show. Every service.")
@@ -202,7 +224,6 @@ struct WelcomeOnboardingView: View {
                 .multilineTextAlignment(.center)
                 .padding(.top, 4)
 
-                // 1. Sign in with Apple — full width
                 SignInWithAppleButton(.signIn) { request in
                     auth.prepareAppleRequest(request)
                 } onCompletion: { result in
@@ -217,7 +238,6 @@ struct WelcomeOnboardingView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                 .disabled(auth.isAuthenticating)
 
-                // 2. Sign in with Google — full width
                 Button {
                     Task {
                         await auth.signInWithGoogle()
@@ -229,7 +249,7 @@ struct WelcomeOnboardingView: View {
                             .frame(width: 18, height: 18)
                         Text("Sign in with Google")
                             .font(.custom("SF Pro Text", size: 16).weight(.semibold))
-                            .foregroundStyle(Color(red: 0.24, green: 0.25, blue: 0.26))
+                            .foregroundStyle(Color(red: 0.24, green: 0.24, blue: 0.26))
                     }
                     .frame(maxWidth: .infinity)
                     .frame(height: 54)
@@ -239,7 +259,6 @@ struct WelcomeOnboardingView: View {
                 .buttonStyle(.plain)
                 .disabled(auth.isAuthenticating)
 
-                // Divider — "or"
                 HStack(spacing: 10) {
                     Color.white.opacity(0.1)
                         .frame(height: 1)
@@ -250,7 +269,6 @@ struct WelcomeOnboardingView: View {
                         .frame(height: 1)
                 }
 
-                // 3. Sign in with email — outlined
                 Button(action: onEmailAuth) {
                     HStack(spacing: 8) {
                         Image(systemName: "envelope.fill")
@@ -269,6 +287,14 @@ struct WelcomeOnboardingView: View {
                 }
                 .buttonStyle(.plain)
 
+                Button(action: onGuest) {
+                    Text("Continue as guest")
+                        .font(.custom("SF Pro Text", size: 14).weight(.medium))
+                        .foregroundStyle(Color.textSecondary)
+                }
+                .buttonStyle(.plain)
+                .padding(.top, 2)
+
                 if let err = auth.lastError {
                     Text(err)
                         .font(.custom("SF Pro Text", size: 11))
@@ -276,7 +302,6 @@ struct WelcomeOnboardingView: View {
                         .multilineTextAlignment(.center)
                 }
 
-                // Legal disclosure — links open in browser via Markdown
                 Text("By continuing, you agree to our [Privacy Policy](https://guidestream.tv/privacy) and [Terms of Service](https://guidestream.tv/terms).")
                     .font(.custom("SF Pro Text", size: 11))
                     .foregroundStyle(Color.textTertiary)
@@ -308,7 +333,6 @@ struct GuideStreamLogo: View {
     }
 }
 
-/// Multi-color "G" glyph for the Google button.
 private struct GoogleGlyph: View {
     var body: some View {
         ZStack {
@@ -349,10 +373,6 @@ private struct GoogleGlyph: View {
 
 // MARK: - Welcome decorative layers
 
-/// Ambient, slowly drifting wall of blurred poster tiles rendered entirely
-/// from computed gradients — no network, no assets, no image download. Two
-/// identical stacked copies translate upward by exactly one copy's height on
-/// a seamless linear loop. Honors Reduce Motion by rendering statically.
 private struct DriftingPosterWall: View {
     let reduceMotion: Bool
     @State private var animate = false
@@ -360,7 +380,6 @@ private struct DriftingPosterWall: View {
     private let columns = 4
     private let gap: CGFloat = 8
 
-    /// Ten brand-adjacent tile colors, assigned deterministically by index.
     private static let tileColors: [Color] = [
         Color(red: 0xE5/255, green: 0x09/255, blue: 0x14/255),
         Color(red: 0x1A/255, green: 0x6F/255, blue: 0xE8/255),
@@ -430,7 +449,6 @@ private struct DriftingPosterWall: View {
         }
     }
 
-    /// 150° diagonal gradient from a brand color to 55%-opacity black.
     private func gradient(for index: Int) -> LinearGradient {
         let base = Self.tileColors[index % Self.tileColors.count]
         return LinearGradient(
@@ -441,8 +459,6 @@ private struct DriftingPosterWall: View {
     }
 }
 
-/// A thin horizontal "tuning" light band that sweeps down over the wordmark on
-/// a repeating ease-in-out loop. Only rendered when Reduce Motion is off.
 private struct TuningShimmer: View {
     private struct ShimmerPhase {
         var offsetY: CGFloat = -32
@@ -472,8 +488,6 @@ private struct TuningShimmer: View {
     }
 }
 
-/// Small decorative "CH 01" channel chip shown in the welcome screen's
-/// top-right corner.
 private struct ChannelChip: View {
     private static let brandOrange = Color(red: 0xF5/255, green: 0x82/255, blue: 0x1F/255)
 
@@ -491,72 +505,193 @@ private struct ChannelChip: View {
     }
 }
 
-// MARK: - Onboarding header
+// MARK: - Onboarding header + step indicator
 
 struct OnboardingHeader: View {
-    let progress: CGFloat // 0...1
-    var onClose: (() -> Void)?
+    static let stepNames = ["Services", "Watching Now", "Creators", "Notify"]
+
+    let currentStep: Int
+    let totalSteps: Int
+    var onBack: (() -> Void)? = nil
+    var onSkipAll: (() -> Void)? = nil
 
     var body: some View {
-        HStack {
-            Button {
-                onClose?()
-            } label: {
-                Image(systemName: "xmark")
-                    .scaledFont(size: 14, weight: .semibold)
-                    .foregroundStyle(.white)
-                    .frame(width: 36, height: 36)
-                    .background(Circle().fill(Color.white.opacity(0.10)))
+        VStack(spacing: 0) {
+            HStack {
+                if let onBack, currentStep > 1 {
+                    Button {
+                        onBack()
+                    } label: {
+                        Image(systemName: "chevron.left")
+                            .scaledFont(size: 14, weight: .semibold)
+                            .foregroundStyle(.white)
+                            .frame(width: 36, height: 36)
+                            .background(Circle().fill(Color.white.opacity(0.10)))
+                    }
+                    .buttonStyle(.plain)
+                } else {
+                    Color.clear.frame(width: 36, height: 36)
+                }
+
+                Spacer()
+
+                BrandWordmark(wordmarkSize: .nav)
+
+                Spacer()
+
+                if let onSkipAll {
+                    Button {
+                        onSkipAll()
+                    } label: {
+                        Text("Skip all")
+                            .font(.custom("SF Pro Text", size: 13).weight(.medium))
+                            .foregroundStyle(Color.textSecondary)
+                    }
+                    .buttonStyle(.plain)
+                    .frame(height: 36)
+                } else {
+                    Color.clear.frame(width: 36, height: 36)
+                }
             }
-            .buttonStyle(.plain)
-            .opacity(onClose == nil ? 0 : 1)
-            .disabled(onClose == nil)
+            .padding(.horizontal, 16)
+            .padding(.top, 4)
+            .padding(.bottom, 14)
+            .background(Color.white.opacity(0.04).ignoresSafeArea(edges: .top))
 
-            Spacer()
-
-            BrandWordmark(wordmarkSize: .nav)
-
-            Spacer()
-
-            Image(systemName: "ellipsis")
-                .scaledFont(size: 14, weight: .semibold)
-                .foregroundStyle(.white)
-                .frame(width: 36, height: 36)
-                .background(Circle().fill(Color.white.opacity(0.10)))
-                .opacity(0.0)
+            OnboardingStepIndicator(
+                currentStep: currentStep,
+                totalSteps: totalSteps
+            )
+            .padding(.horizontal, 24)
+            .padding(.top, 4)
+            .padding(.bottom, 8)
         }
-        .padding(.horizontal, 16)
-        .padding(.top, 4)
-        .padding(.bottom, 14)
-        .background(Color.white.opacity(0.04).ignoresSafeArea(edges: .top))
-
-        // Split progress bar — blue (done) + orange (current)
-        HStack(spacing: 6) {
-            Capsule()
-                .fill(LinearGradient(colors: [Color.blue.opacity(0.6), Color.blue],
-                                     startPoint: .leading, endPoint: .trailing))
-                .frame(height: 3)
-            Capsule()
-                .fill(progress >= 1.0
-                      ? AnyShapeStyle(LinearGradient(colors: [Color.orange.opacity(0.6), Color.orange],
-                                                    startPoint: .leading, endPoint: .trailing))
-                      : AnyShapeStyle(Color.white.opacity(0.12)))
-                .frame(height: 3)
-        }
-        .padding(.horizontal, 24)
-        .padding(.top, 4)
     }
 }
 
-// MARK: - Connect Services
+private struct OnboardingStepIndicator: View {
+    let currentStep: Int
+    let totalSteps: Int
 
-/// Onboarding step where the user picks every streaming service they have so
-/// the home-screen feed is personalised. Uses the shared `StreamingCatalog`
-/// (top ~50 worldwide) and `ServiceTile` so the same brand artwork is reused
-/// by the `ServicesBottomSheet` accessed from the header pill.
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityDifferentiateWithoutColor) private var differentiateWithoutColor
+    @ScaledMetric private var nodeSize: CGFloat = 26
+    @ScaledMetric private var ringSize: CGFloat = 34
+
+    private static let completedBlue = Color(red: 0x1A/255, green: 0x6F/255, blue: 0xE8/255)
+    private static let currentOrange = Color(red: 0xF5/255, green: 0x82/255, blue: 0x1F/255)
+
+    var body: some View {
+        VStack(spacing: 6) {
+            HStack(spacing: 0) {
+                ForEach(0..<totalSteps, id: \.self) { i in
+                    let stepNum = i + 1
+
+                    if i > 0 {
+                        connector(behindCompleted: i < currentStep)
+                    }
+
+                    node(stepNum: stepNum)
+                        .frame(width: ringSize, height: ringSize)
+                }
+            }
+
+            HStack(spacing: 0) {
+                ForEach(0..<totalSteps, id: \.self) { i in
+                    if i > 0 {
+                        Spacer().frame(width: 20)
+                    }
+                    Text(OnboardingHeader.stepNames[i])
+                        .font(.custom("SF Pro Text", size: 10))
+                        .tracking(1.0)
+                        .textCase(.uppercase)
+                        .foregroundStyle(Color.white.opacity(differentiateWithoutColor ? 0.6 : 0.35))
+                        .multilineTextAlignment(.center)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity)
+                }
+            }
+        }
+        .accessibilityElement()
+        .accessibilityLabel("Step \(currentStep) of \(totalSteps), \(OnboardingHeader.stepNames[currentStep - 1])")
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.3), value: currentStep)
+    }
+
+    @ViewBuilder
+    private func node(stepNum: Int) -> some View {
+        let isCompleted = stepNum < currentStep
+        let isCurrent = stepNum == currentStep
+        let isUpcoming = stepNum > currentStep
+
+        ZStack {
+            if isCurrent {
+                Circle()
+                    .stroke(
+                        Color.white.opacity(differentiateWithoutColor ? 0.25 : 0.14),
+                        lineWidth: 2.5
+                    )
+                    .frame(width: ringSize, height: ringSize)
+                Circle()
+                    .trim(from: 0, to: 1.0)
+                    .stroke(
+                        Self.currentOrange,
+                        style: StrokeStyle(lineWidth: 2.5, lineCap: .round)
+                    )
+                    .frame(width: ringSize, height: ringSize)
+                    .rotationEffect(.degrees(-90))
+            }
+
+            Circle()
+                .fill(isCompleted
+                      ? Self.completedBlue.opacity(differentiateWithoutColor ? 1.0 : 0.9)
+                      : isCurrent
+                        ? Self.currentOrange
+                        : Color.clear)
+                .frame(width: nodeSize, height: nodeSize)
+
+            if isCompleted {
+                Image(systemName: "checkmark")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(.white)
+            } else if isCurrent {
+                Text("\(stepNum)")
+                    .font(.custom("SF Pro Text", size: 12).weight(.bold))
+                    .foregroundStyle(.white)
+            } else {
+                Text("\(stepNum)")
+                    .font(.custom("SF Pro Text", size: 12).weight(.semibold))
+                    .foregroundStyle(Color.white.opacity(differentiateWithoutColor ? 0.6 : 0.35))
+            }
+
+            if isUpcoming {
+                Circle()
+                    .stroke(
+                        Color.white.opacity(differentiateWithoutColor ? 0.3 : 0.18),
+                        lineWidth: 1.5
+                    )
+                    .frame(width: nodeSize, height: nodeSize)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func connector(behindCompleted: Bool) -> some View {
+        Capsule()
+            .fill(behindCompleted
+                  ? Self.completedBlue.opacity(differentiateWithoutColor ? 0.9 : 0.75)
+                  : Color.white.opacity(differentiateWithoutColor ? 0.25 : 0.15))
+            .frame(height: 1.5)
+            .padding(.horizontal, 2)
+    }
+}
+
+// MARK: - Connect Services (hybrid layout)
+
 struct ConnectServicesView: View {
     @Binding var selected: Set<String>
     var onContinue: () -> Void
+    var onSkip: () -> Void
 
     @State private var serviceQuery: String = ""
     @FocusState private var isSearchFocused: Bool
@@ -567,10 +702,16 @@ struct ConnectServicesView: View {
         GridItem(.flexible(), spacing: 16)
     ]
 
-    private var filteredServices: [StreamingService] {
+    private var filteredPopular: [StreamingService] {
         let q = serviceQuery.trimmingCharacters(in: .whitespaces)
-        guard !q.isEmpty else { return StreamingCatalog.all }
-        return StreamingCatalog.all.filter { $0.name.localizedCaseInsensitiveContains(q) }
+        guard !q.isEmpty else { return StreamingCatalog.popular }
+        return StreamingCatalog.popular.filter { $0.name.localizedCaseInsensitiveContains(q) }
+    }
+
+    private var filteredAll: [StreamingService] {
+        let q = serviceQuery.trimmingCharacters(in: .whitespaces)
+        guard !q.isEmpty else { return StreamingCatalog.alphabetical }
+        return StreamingCatalog.alphabetical.filter { $0.name.localizedCaseInsensitiveContains(q) }
     }
 
     private var searchField: some View {
@@ -581,7 +722,7 @@ struct ConnectServicesView: View {
             TextField(
                 "",
                 text: $serviceQuery,
-                prompt: Text("Search services").foregroundStyle(Color.textSecondary)
+                prompt: Text("Search all services").foregroundStyle(Color.textSecondary)
             )
             .font(.custom("SF Pro Text", size: 15))
             .foregroundStyle(.white)
@@ -602,7 +743,7 @@ struct ConnectServicesView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            OnboardingHeader(progress: 1.0)
+            OnboardingHeader(currentStep: 1, totalSteps: OnboardingHeader.stepNames.count)
 
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 6) {
@@ -611,7 +752,7 @@ struct ConnectServicesView: View {
                         .foregroundStyle(.white)
                         .padding(.top, 24)
 
-                    Text("Pick from the top 50 worldwide — every selection sharpens your feed")
+                    Text("Pick every service you have — each one sharpens your feed")
                         .font(.custom("SF Pro Text", size: 15))
                         .foregroundStyle(Color.textSecondary)
                         .padding(.bottom, 18)
@@ -619,23 +760,61 @@ struct ConnectServicesView: View {
                     searchField
                         .padding(.bottom, 16)
 
-                    if filteredServices.isEmpty {
+                    if filteredPopular.isEmpty && filteredAll.isEmpty {
                         Text("No services match")
                             .font(.custom("SF Pro Text", size: 14))
                             .foregroundStyle(Color.textSecondary)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 28)
                     } else {
-                        LazyVGrid(columns: columns, spacing: 22) {
-                            ForEach(filteredServices) { svc in
-                                ServiceTile(
-                                    service: svc,
-                                    isSelected: selected.contains(svc.id),
-                                    onTap: { toggle(svc.id) }
-                                )
+                        if !filteredPopular.isEmpty {
+                            Text("Most popular")
+                                .font(.custom("SF Pro Text", size: 13).weight(.semibold))
+                                .foregroundStyle(Color.textSecondary)
+                                .padding(.bottom, 12)
+
+                            LazyVGrid(columns: columns, spacing: 22) {
+                                ForEach(filteredPopular) { svc in
+                                    ServiceTile(
+                                        service: svc,
+                                        isSelected: selected.contains(svc.id),
+                                        onTap: { toggle(svc.id) }
+                                    )
+                                }
                             }
+                            .padding(.bottom, 24)
                         }
-                        .padding(.bottom, 24)
+
+                        if !filteredAll.isEmpty {
+                            Text("All services · A–Z")
+                                .font(.custom("SF Pro Text", size: 13).weight(.semibold))
+                                .foregroundStyle(Color.textSecondary)
+                                .padding(.bottom, 8)
+
+                            VStack(spacing: 0) {
+                                ForEach(Array(filteredAll.enumerated()), id: \.element.id) { idx, svc in
+                                    ServiceToggleRow(
+                                        service: svc,
+                                        isSelected: selected.contains(svc.id),
+                                        onTap: { toggle(svc.id) }
+                                    )
+                                    if idx < filteredAll.count - 1 {
+                                        Divider()
+                                            .background(Color.white.opacity(0.06))
+                                    }
+                                }
+                            }
+                            .background(
+                                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                    .fill(Color.white.opacity(0.04))
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                    .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                            )
+                            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                            .padding(.bottom, 24)
+                        }
                     }
                 }
                 .padding(.horizontal, 20)
@@ -661,17 +840,21 @@ struct ConnectServicesView: View {
                             colors: [Color.orange, Color.orange.opacity(0.85)],
                             startPoint: .top, endPoint: .bottom
                         )
-                        .opacity(selected.isEmpty ? 0.35 : 1.0)
                     )
                     .clipShape(Capsule())
-                    .shadow(color: Color.orange.opacity(selected.isEmpty ? 0.0 : 0.45),
-                            radius: 24, x: 0, y: 0)
+                    .shadow(color: Color.orange.opacity(0.45), radius: 24, x: 0, y: 0)
                 }
                 .buttonStyle(.plain)
-                .disabled(selected.isEmpty)
-                .padding(.horizontal, 20)
-                .padding(.bottom, 28)
+
+                Button(action: onSkip) {
+                    Text("Skip")
+                        .font(.custom("SF Pro Text", size: 14).weight(.medium))
+                        .foregroundStyle(Color.textSecondary)
+                }
+                .buttonStyle(.plain)
             }
+            .padding(.horizontal, 20)
+            .padding(.bottom, 28)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -685,26 +868,223 @@ struct ConnectServicesView: View {
     }
 }
 
-// MARK: - Stay Notified
+private struct ServiceToggleRow: View {
+    let service: StreamingService
+    let isSelected: Bool
+    let onTap: () -> Void
+
+    var body: some View {
+        Button(action: onTap) {
+            HStack(spacing: 12) {
+                ServiceMiniIcon(service: service, size: 36)
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+
+                Text(service.name)
+                    .font(.custom("SF Pro Text", size: 15))
+                    .foregroundStyle(.white)
+
+                Spacer()
+
+                ZStack {
+                    Capsule()
+                        .fill(isSelected ? Color.orange : Color.white.opacity(0.15))
+                        .frame(width: 44, height: 26)
+                    Circle()
+                        .fill(.white)
+                        .frame(width: 22, height: 22)
+                        .offset(x: isSelected ? 8 : -8)
+                }
+                .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isSelected)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+// MARK: - Stay Notified (last step)
 
 struct StayNotifiedView: View {
     @Binding var pushOn: Bool
-    @Binding var smsOn: Bool
     var onContinue: () -> Void
+    var onBack: () -> Void
     var onWidgetSettings: () -> Void
-    // SMS episode-recap opt-in disabled — kept for later re-enablement.
-    // @State private var phoneDraft: String = AuthViewModel.formatUSPhoneDisplay(AuthViewModel.shared.phoneNumber ?? "")
-    // @State private var isSavingPhone: Bool = false
-    // @State private var phoneSaved: Bool = false
-    // @State private var phoneSaveFailed: Bool = false
+    let currentStep: Int
+    let totalSteps: Int
+    let posterUrls: [String]
+    let showCount: Int
+    let creatorCount: Int
 
-    private func handlePushToggle(_ newValue: Bool) {
-        guard newValue else { return }
+    var body: some View {
+        VStack(spacing: 0) {
+            OnboardingHeader(currentStep: currentStep, totalSteps: totalSteps, onBack: onBack)
+
+            ScrollView(showsIndicators: false) {
+                VStack(spacing: 16) {
+                    if !posterUrls.isEmpty {
+                        PosterStackHero(
+                            posterUrls: posterUrls,
+                            newCount: showCount
+                        )
+                        .padding(.top, 20)
+                    } else {
+                        Spacer().frame(height: 24)
+                    }
+
+                    VStack(spacing: 8) {
+                        Text("Never miss an episode.")
+                            .font(.custom("SF Pro Display", size: 28).weight(.bold))
+                            .foregroundStyle(.white)
+                        Text(notifySubtitle)
+                            .font(.custom("SF Pro Text", size: 15))
+                            .foregroundStyle(Color.textSecondary)
+                    }
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 24)
+
+                    VStack(spacing: 0) {
+                        ForEach(0..<3, id: \.self) { i in
+                            NotifyBenefitRow(
+                                posterUrl: posterUrls.indices.contains(i) ? posterUrls[i] : nil,
+                                title: benefitTitle(i),
+                                subtitle: benefitSubtitle(i)
+                            )
+                            if i < 2 {
+                                Divider().background(Color.white.opacity(0.06))
+                            }
+                        }
+                    }
+                    .background(
+                        RoundedRectangle(cornerRadius: 18, style: .continuous)
+                            .fill(Color.white.opacity(0.04))
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 18, style: .continuous)
+                            .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                    )
+                    .padding(.horizontal, 20)
+
+                    Button(action: onWidgetSettings) {
+                        HStack(spacing: 14) {
+                            ZStack {
+                                Circle().fill(Color(red: 0.55, green: 0.40, blue: 0.95).opacity(0.18))
+                                Image(systemName: "iphone")
+                                    .scaledFont(size: 16, weight: .semibold)
+                                    .foregroundStyle(Color(red: 0.65, green: 0.50, blue: 1.0))
+                            }
+                            .frame(width: 40, height: 40)
+
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Home screen widget")
+                                    .font(.custom("SF Pro Text", size: 15).weight(.semibold))
+                                    .foregroundStyle(.white)
+                                Text("Configure size, content & appearance")
+                                    .font(.custom("SF Pro Text", size: 12))
+                                    .foregroundStyle(Color.textSecondary)
+                            }
+
+                            Spacer(minLength: 8)
+
+                            Image(systemName: "chevron.right")
+                                .scaledFont(size: 14, weight: .semibold)
+                                .foregroundStyle(Color.textSecondary)
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 14)
+                    }
+                    .buttonStyle(.plain)
+                    .background(
+                        RoundedRectangle(cornerRadius: 18, style: .continuous)
+                            .fill(Color.white.opacity(0.04))
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 18, style: .continuous)
+                            .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                    )
+                    .padding(.horizontal, 20)
+
+                    Color.clear.frame(height: 90)
+                }
+            }
+
+            VStack(spacing: 12) {
+                Button {
+                    requestPermission()
+                } label: {
+                    HStack(spacing: 8) {
+                        Text("Allow notifications")
+                            .font(.custom("SF Pro Text", size: 16).weight(.bold))
+                        Image(systemName: "bell.fill")
+                            .scaledFont(size: 14, weight: .bold)
+                    }
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 56)
+                    .background(
+                        LinearGradient(
+                            colors: [Color.orange, Color.orange.opacity(0.85)],
+                            startPoint: .top, endPoint: .bottom
+                        )
+                    )
+                    .clipShape(Capsule())
+                    .shadow(color: Color.orange.opacity(0.45), radius: 28, x: 0, y: 0)
+                }
+                .buttonStyle(.plain)
+
+                Button {
+                    pushOn = false
+                    onContinue()
+                } label: {
+                    Text("Not now")
+                        .font(.custom("SF Pro Text", size: 14).weight(.medium))
+                        .foregroundStyle(Color.textSecondary)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 20)
+            .padding(.bottom, 28)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var notifySubtitle: String {
+        var parts: [String] = []
+        if showCount > 0 {
+            parts.append("\(showCount) show\(showCount == 1 ? "" : "s")")
+        }
+        if creatorCount > 0 {
+            parts.append("\(creatorCount) creator\(creatorCount == 1 ? "" : "s")")
+        }
+        if parts.isEmpty {
+            return "Turn on alerts so you never miss a new episode."
+        }
+        return "You're following \(parts.joined(separator: " and ")). Turn on alerts so you never miss a new episode."
+    }
+
+    private func benefitTitle(_ i: Int) -> String {
+        switch i {
+        case 0: return "New episode alerts"
+        case 1: return "Watch list updates"
+        default: return "Deep links"
+        }
+    }
+
+    private func benefitSubtitle(_ i: Int) -> String {
+        switch i {
+        case 0: return "Know the moment a new episode drops"
+        case 1: return "See when your shows have new content"
+        default: return "One tap straight to the episode"
+        }
+    }
+
+    private func requestPermission() {
         Task { @MainActor in
             do {
                 let granted = try await UNUserNotificationCenter.current()
                     .requestAuthorization(options: [.alert, .badge, .sound])
                 if granted {
+                    pushOn = true
                     UIApplication.shared.registerForRemoteNotifications()
                 } else {
                     pushOn = false
@@ -712,294 +1092,72 @@ struct StayNotifiedView: View {
             } catch {
                 pushOn = false
             }
+            onContinue()
         }
     }
+}
 
-    // SMS episode-recap opt-in disabled — kept for later re-enablement.
-    // private func savePhoneNumber() {
-    //     Task {
-    //         isSavingPhone = true
-    //         defer { isSavingPhone = false }
-    //         let ok = await AuthViewModel.shared.updatePhoneNumber(phoneDraft)
-    //         if ok {
-    //             UINotificationFeedbackGenerator().notificationOccurred(.success)
-    //             withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-    //                 phoneSaved = true
-    //                 phoneSaveFailed = false
-    //             }
-    //             try? await Task.sleep(for: .seconds(1.6))
-    //             withAnimation(.easeOut(duration: 0.25)) { phoneSaved = false }
-    //         } else {
-    //             UINotificationFeedbackGenerator().notificationOccurred(.error)
-    //             withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-    //                 phoneSaveFailed = true
-    //                 phoneSaved = false
-    //             }
-    //         }
-    //     }
-    // }
-    //
-    // @ViewBuilder
-    // private var saveFeedbackBanners: some View {
-    //     if phoneSaved {
-    //         HStack(spacing: 8) {
-    //             Image(systemName: "checkmark.circle.fill")
-    //                 .font(.custom("SF Pro Text", size: 13).weight(.semibold))
-    //             Text("Saved")
-    //                 .font(.custom("SF Pro Text", size: 13).weight(.semibold))
-    //         }
-    //         .foregroundStyle(Color.green)
-    //         .padding(.horizontal, 14)
-    //         .padding(.vertical, 8)
-    //         .background(
-    //             Capsule().fill(Color.green.opacity(0.12))
-    //         )
-    //         .transition(.opacity)
-    //     }
-    //
-    //     if phoneSaveFailed {
-    //         HStack(spacing: 8) {
-    //             Image(systemName: "exclamationmark.triangle.fill")
-    //                 .font(.custom("SF Pro Text", size: 13).weight(.semibold))
-    //             Text("Couldn't save — check your connection")
-    //                 .font(.custom("SF Pro Text", size: 13).weight(.semibold))
-    //         }
-    //         .foregroundStyle(Color.red.opacity(0.9))
-    //         .padding(.horizontal, 14)
-    //         .padding(.vertical, 8)
-    //         .background(
-    //             Capsule().fill(Color.red.opacity(0.12))
-    //         )
-    //         .transition(.opacity)
-    //     }
-    // }
+private struct PosterStackHero: View {
+    let posterUrls: [String]
+    let newCount: Int
 
     var body: some View {
-        VStack(spacing: 0) {
-            OnboardingHeader(progress: 1.0)
+        ZStack {
+            let display = Array(posterUrls.prefix(5))
+            let count = display.count
+            ForEach(0..<count, id: \.self) { i in
+                let mid = Double(count - 1) / 2.0
+                let angle = (Double(i) - mid) * 7.0
+                let xOffset = (CGFloat(i) - CGFloat(mid)) * 16
 
-            Spacer(minLength: 24)
-
-            // Bell hero
-            ZStack {
-                Circle()
-                    .fill(Color.white.opacity(0.04))
-                    .frame(width: 220, height: 220)
-                Circle()
-                    .fill(
-                        LinearGradient(
-                            colors: [Color(red: 0.36, green: 0.42, blue: 0.96),
-                                     Color(red: 0.62, green: 0.40, blue: 0.95)],
-                            startPoint: .topLeading, endPoint: .bottomTrailing
-                        )
+                RemoteImage(urlString: display[i])
+                    .frame(width: 76, height: 114)
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .stroke(Color.white.opacity(0.08), lineWidth: 0.5)
                     )
-                    .frame(width: 92, height: 92)
-                    .shadow(color: Color(red: 0.45, green: 0.40, blue: 0.95).opacity(0.55),
-                            radius: 30, x: 0, y: 0)
-                Image(systemName: "bell.fill")
-                    .scaledFont(size: 38, weight: .semibold)
-                    .foregroundStyle(.white)
+                    .shadow(color: .black.opacity(0.5), radius: 10, x: 0, y: 4)
+                    .rotationEffect(.degrees(angle))
+                    .offset(x: xOffset)
+                    .zIndex(Double(count - i))
             }
-
-            VStack(spacing: 8) {
-                Text("Never miss an episode.")
-                    .font(.custom("SF Pro Display", size: 30).weight(.bold))
-                    .foregroundStyle(.white)
-                Text("Stay updated with your favorite shows")
-                    .font(.custom("SF Pro Text", size: 15))
-                    .foregroundStyle(Color.textSecondary)
-            }
-            .multilineTextAlignment(.center)
-            .padding(.top, 16)
-            .padding(.horizontal, 24)
-
-            Spacer(minLength: 24)
-
-            // Notification options card
-            VStack(spacing: 0) {
-                NotifyRow(
-                    icon: "bell.fill",
-                    iconBg: Color.orange.opacity(0.18),
-                    iconTint: Color.orange,
-                    title: "New episode alerts",
-                    subtitle: "Push notification",
-                    trailing: .toggle($pushOn, tint: Color.orange)
-                )
-                .onChange(of: pushOn) { _, newValue in
-                    handlePushToggle(newValue)
-                }
-                // SMS episode-recap opt-in disabled — kept for later re-enablement.
-                // Divider().background(Color.white.opacity(0.06))
-                // NotifyRow(
-                //     icon: "message.fill",
-                //     iconBg: Color.blue.opacity(0.18),
-                //     iconTint: Color.blue,
-                //     title: "Episode synopsis by text",
-                //     subtitle: "SMS",
-                //     trailing: .toggle($smsOn, tint: Color.blue)
-                // )
-                // .onChange(of: smsOn) { _, newValue in
-                //     withAnimation(.easeInOut(duration: 0.28)) { }
-                // }
-                //
-                // if smsOn {
-                //     VStack(alignment: .leading, spacing: 10) {
-                //         Text("Mobile number")
-                //             .font(.custom("SF Pro Text", size: 11).weight(.semibold))
-                //             .tracking(0.8)
-                //             .foregroundStyle(Color.textTertiary)
-                //
-                //         HStack(spacing: 0) {
-                //             Text("+1")
-                //                 .font(.custom("SF Pro Text", size: 15).weight(.medium))
-                //                 .foregroundStyle(Color.textSecondary)
-                //                 .padding(.leading, 14)
-                //             TextField("", text: $phoneDraft)
-                //                 .keyboardType(.phonePad)
-                //                 .textContentType(.telephoneNumber)
-                //                 .textInputAutocapitalization(.never)
-                //                 .font(.custom("SF Pro Text", size: 15).weight(.medium))
-                //                 .foregroundStyle(.white)
-                //                 .tint(Color.orange)
-                //                 .padding(.leading, 4)
-                //                 .padding(.vertical, 12)
-                //         }
-                //         .background(
-                //             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                //                 .fill(Color.white.opacity(0.05))
-                //         )
-                //         .overlay(
-                //             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                //                 .stroke(Color.white.opacity(0.08), lineWidth: 1)
-                //         )
-                //         .onChange(of: phoneDraft) { _, newValue in
-                //             phoneDraft = AuthViewModel.formatUSPhoneDisplay(newValue)
-                //             phoneSaved = false
-                //             phoneSaveFailed = false
-                //         }
-                //
-                //         if !phoneDraft.isEmpty && AuthViewModel.normalizeUSPhone(phoneDraft) == nil {
-                //             Text("Enter a valid 10-digit US mobile number.")
-                //                 .font(.custom("SF Pro Text", size: 11))
-                //                 .foregroundStyle(Color(red: 0.96, green: 0.32, blue: 0.32))
-                //         }
-                //
-                //         Text("We'll text recaps to this number. Reply STOP to opt out; msg & data rates may apply.")
-                //             .font(.custom("SF Pro Text", size: 11))
-                //             .foregroundStyle(Color.textTertiary)
-                //             .fixedSize(horizontal: false, vertical: true)
-                //
-                //         Button(action: savePhoneNumber) {
-                //             HStack(spacing: 6) {
-                //                 if isSavingPhone {
-                //                     ProgressView()
-                //                         .progressViewStyle(.circular)
-                //                         .tint(.white)
-                //                 }
-                //                 Text("Save number")
-                //                     .font(.custom("SF Pro Text", size: 13).weight(.semibold))
-                //             }
-                //             .foregroundStyle(.white)
-                //             .frame(maxWidth: .infinity)
-                //             .frame(height: 40)
-                //             .background(
-                //                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                //                     .fill(AuthViewModel.normalizeUSPhone(phoneDraft) != nil ? Color.blue : Color.blue.opacity(0.35))
-                //             )
-                //         }
-                //         .buttonStyle(.plain)
-                //         .disabled(AuthViewModel.normalizeUSPhone(phoneDraft) == nil || isSavingPhone)
-                //
-                //         saveFeedbackBanners
-                //     }
-                //     .padding(.horizontal, 16)
-                //     .padding(.vertical, 14)
-                //     .transition(.opacity.combined(with: .move(edge: .top)))
-                // }
-
-                Divider().background(Color.white.opacity(0.06))
-                NotifyRow(
-                    icon: "iphone",
-                    iconBg: Color(red: 0.55, green: 0.40, blue: 0.95).opacity(0.18),
-                    iconTint: Color(red: 0.65, green: 0.50, blue: 1.0),
-                    title: "Home screen widget",
-                    subtitle: "Configure size, content & appearance",
-                    trailing: .chevron(action: onWidgetSettings)
-                )
-            }
-            .background(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .fill(Color.white.opacity(0.04))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .stroke(Color.white.opacity(0.08), lineWidth: 1)
-            )
-            .padding(.horizontal, 20)
-
-            Spacer(minLength: 24)
-
-            Button(action: {
-                // SMS episode-recap opt-in disabled — kept for later re-enablement.
-                // if smsOn {
-                //     guard AuthViewModel.normalizeUSPhone(phoneDraft) != nil else { return }
-                //     Task {
-                //         _ = await AuthViewModel.shared.updatePhoneNumber(phoneDraft)
-                //         await MainActor.run { onContinue() }
-                //     }
-                // } else {
-                //     onContinue()
-                // }
-                onContinue()
-            }) {
-                HStack(spacing: 8) {
-                    Text("I'm all set")
-                        .font(.custom("SF Pro Text", size: 16).weight(.bold))
-                    Image(systemName: "arrow.right")
-                        .scaledFont(size: 14, weight: .bold)
-                }
-                .foregroundStyle(.white)
-                .frame(maxWidth: .infinity)
-                .frame(height: 56)
-                .background(
-                    LinearGradient(
-                        colors: [Color.orange, Color.orange.opacity(0.85)],
-                        startPoint: .top, endPoint: .bottom
-                    )
-                )
-                .clipShape(Capsule())
-                .shadow(color: Color.orange.opacity(0.55), radius: 28, x: 0, y: 0)
-            }
-            .buttonStyle(.plain)
-            .padding(.horizontal, 20)
-            .padding(.bottom, 28)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .overlay(alignment: .topTrailing) {
+            if newCount > 0 {
+                Text("\(newCount) new")
+                    .font(.custom("SF Pro Text", size: 11).weight(.bold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(
+                        Capsule().fill(Color(red: 0xF5/255, green: 0x82/255, blue: 0x1F/255))
+                    )
+                    .offset(x: 20, y: -10)
+            }
+        }
+        .frame(height: 130)
     }
 }
 
-private enum NotifyTrailingKind {
-    case toggle(Binding<Bool>, tint: Color)
-    case chevron(action: () -> Void)
-}
-
-private struct NotifyRow: View {
-    let icon: String
-    let iconBg: Color
-    let iconTint: Color
+private struct NotifyBenefitRow: View {
+    let posterUrl: String?
     let title: String
     let subtitle: String
-    let trailing: NotifyTrailingKind
 
     var body: some View {
         HStack(spacing: 14) {
-            ZStack {
-                Circle().fill(iconBg)
-                Image(systemName: icon)
-                    .scaledFont(size: 16, weight: .semibold)
-                    .foregroundStyle(iconTint)
+            if let url = posterUrl, !url.isEmpty {
+                RemoteImage(urlString: url)
+                    .aspectRatio(2.0 / 3.0, contentMode: .fill)
+                    .frame(width: 36, height: 54)
+                    .clipped()
+                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+            } else {
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(Color.orange.opacity(0.15))
+                    .frame(width: 36, height: 54)
             }
-            .frame(width: 40, height: 40)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
@@ -1011,25 +1169,13 @@ private struct NotifyRow: View {
             }
 
             Spacer(minLength: 8)
-
-            switch trailing {
-            case .toggle(let binding, let tint):
-                Toggle("", isOn: binding)
-                    .labelsHidden()
-                    .tint(tint)
-            case .chevron(let action):
-                Button(action: action) {
-                    Image(systemName: "chevron.right")
-                        .scaledFont(size: 14, weight: .semibold)
-                        .foregroundStyle(Color.textSecondary)
-                }
-                .buttonStyle(.plain)
-            }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
     }
 }
+
+// MARK: - Previews
 
 #Preview("Welcome") {
     OnboardingFlow(onFinish: {})
@@ -1040,5 +1186,5 @@ private struct NotifyRow: View {
 }
 
 #Preview("Notify") {
-    OnboardingFlow(startStep: 2, onFinish: {})
+    OnboardingFlow(startStep: 4, onFinish: {})
 }

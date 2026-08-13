@@ -403,7 +403,7 @@ struct ConnectServicesView: View {
                         .foregroundStyle(.white)
                         .padding(.top, 24)
 
-                    Text("Pick from the top 50 worldwide — every selection sharpens your feed")
+                    Text("Pick every service you have — each one sharpens your feed")
                         .font(.custom("SF Pro Text", size: 15))
                         .foregroundStyle(Color.textSecondary)
                         .padding(.bottom, 18)

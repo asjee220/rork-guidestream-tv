@@ -17,6 +17,10 @@ import UIKit
 struct FollowCreatorsOnboardingView: View {
     let onContinue: ([UserStreamInsert]) -> Void
     let onSkip: () -> Void
+    var onBack: () -> Void
+    var onSkipAll: () -> Void
+    let currentStep: Int
+    let totalSteps: Int
 
     // MARK: - Lanes
 
@@ -146,7 +150,7 @@ struct FollowCreatorsOnboardingView: View {
 
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 0) {
-                    OnboardingHeader(progress: 1.0)
+                    OnboardingHeader(currentStep: currentStep, totalSteps: totalSteps, onBack: onBack, onSkipAll: onSkipAll)
 
                     // Title section — changes with lane
                     VStack(alignment: .leading, spacing: 6) {
@@ -579,7 +583,11 @@ private struct PodcastBadge: View {
 #Preview {
     FollowCreatorsOnboardingView(
         onContinue: { _ in },
-        onSkip: {}
+        onSkip: {},
+        onBack: {},
+        onSkipAll: {},
+        currentStep: 3,
+        totalSteps: 4
     )
     .preferredColorScheme(.dark)
 }

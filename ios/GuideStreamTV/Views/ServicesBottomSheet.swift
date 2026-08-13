@@ -29,10 +29,16 @@ struct ServicesBottomSheet: View {
         _selected = State(initialValue: AuthViewModel.shared.selectedServices)
     }
 
-    private var filteredServices: [StreamingService] {
+    private var filteredPopular: [StreamingService] {
         let q = serviceQuery.trimmingCharacters(in: .whitespaces)
-        guard !q.isEmpty else { return StreamingCatalog.all }
-        return StreamingCatalog.all.filter { $0.name.localizedCaseInsensitiveContains(q) }
+        guard !q.isEmpty else { return StreamingCatalog.popular }
+        return StreamingCatalog.popular.filter { $0.name.localizedCaseInsensitiveContains(q) }
+    }
+
+    private var filteredAll: [StreamingService] {
+        let q = serviceQuery.trimmingCharacters(in: .whitespaces)
+        guard !q.isEmpty else { return StreamingCatalog.alphabetical }
+        return StreamingCatalog.alphabetical.filter { $0.name.localizedCaseInsensitiveContains(q) }
     }
 
     private var searchField: some View {
@@ -43,7 +49,7 @@ struct ServicesBottomSheet: View {
             TextField(
                 "",
                 text: $serviceQuery,
-                prompt: Text("Search services").foregroundStyle(Color.textSecondary)
+                prompt: Text("Search all services").foregroundStyle(Color.textSecondary)
             )
             .font(.custom("SF Pro Text", size: 15))
             .foregroundStyle(.white)
@@ -65,7 +71,6 @@ struct ServicesBottomSheet: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                // Atmosphere — keeps the sheet feeling like the same surface as the rest of the app.
                 GeometryReader { geo in
                     Circle()
                         .fill(Color.blue.opacity(0.14))
@@ -92,23 +97,57 @@ struct ServicesBottomSheet: View {
                             searchField
                                 .padding(.bottom, 14)
 
-                            if filteredServices.isEmpty {
+                            if filteredPopular.isEmpty && filteredAll.isEmpty {
                                 Text("No services match")
                                     .font(.custom("SF Pro Text", size: 14))
                                     .foregroundStyle(Color.textSecondary)
                                     .frame(maxWidth: .infinity)
                                     .padding(.vertical, 28)
                             } else {
-                                LazyVGrid(columns: columns, spacing: 22) {
-                                    ForEach(filteredServices) { svc in
-                                        ServiceTile(
-                                            service: svc,
-                                            isSelected: selected.contains(svc.id),
-                                            onTap: { toggle(svc.id) }
-                                        )
+                                if !filteredPopular.isEmpty {
+                                    Text("Most popular")
+                                        .font(.custom("SF Pro Text", size: 13).weight(.semibold))
+                                        .foregroundStyle(Color.textSecondary)
+                                        .padding(.bottom, 12)
+
+                                    LazyVGrid(columns: columns, spacing: 22) {
+                                        ForEach(filteredPopular) { svc in
+                                            ServiceTile(
+                                                service: svc,
+                                                isSelected: selected.contains(svc.id),
+                                                onTap: { toggle(svc.id) }
+                                            )
+                                        }
                                     }
+                                    .padding(.bottom, 24)
                                 }
-                                .padding(.bottom, 24)
+
+                                if !filteredAll.isEmpty {
+                                    Text("All services · A–Z")
+                                        .font(.custom("SF Pro Text", size: 13).weight(.semibold))
+                                        .foregroundStyle(Color.textSecondary)
+                                        .padding(.bottom, 8)
+
+                                    VStack(spacing: 0) {
+                                        ForEach(Array(filteredAll.enumerated()), id: \.element.id) { idx, svc in
+                                            serviceToggleRow(svc)
+                                            if idx < filteredAll.count - 1 {
+                                                Divider()
+                                                    .background(Color.white.opacity(0.06))
+                                            }
+                                        }
+                                    }
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                            .fill(Color.white.opacity(0.04))
+                                    )
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                            .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                                    )
+                                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                                    .padding(.bottom, 24)
+                                }
                             }
                         }
                         .padding(.horizontal, 20)
@@ -158,12 +197,40 @@ struct ServicesBottomSheet: View {
         }
         .preferredColorScheme(.dark)
         .sheetSurface(.base)
-        // Re-seed the local selection whenever the authoritative value
-        // changes (e.g. after an account switch) so the Save button always
-        // writes the current account's set, not a stale snapshot from init.
         .onChange(of: auth.selectedServices) { _, newValue in
             selected = newValue
         }
+    }
+
+    private func serviceToggleRow(_ svc: StreamingService) -> some View {
+        Button {
+            toggle(svc.id)
+        } label: {
+            HStack(spacing: 12) {
+                ServiceMiniIcon(service: svc, size: 36)
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+
+                Text(svc.name)
+                    .font(.custom("SF Pro Text", size: 15))
+                    .foregroundStyle(.white)
+
+                Spacer()
+
+                ZStack {
+                    Capsule()
+                        .fill(selected.contains(svc.id) ? Color.orange : Color.white.opacity(0.15))
+                        .frame(width: 44, height: 26)
+                    Circle()
+                        .fill(.white)
+                        .frame(width: 22, height: 22)
+                        .offset(x: selected.contains(svc.id) ? 8 : -8)
+                }
+                .animation(.spring(response: 0.3, dampingFraction: 0.7), value: selected.contains(svc.id))
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+        }
+        .buttonStyle(.plain)
     }
 
     private func toggle(_ id: String) {

@@ -1947,7 +1947,7 @@ struct HelpFeedbackView: View {
             FAQItem(question: "Can I use multiple profiles?",
                     answer: "Yes — head to Profiles to create up to a handful of personas (Kids, Partner, Main, etc.). Each one keeps its own preferences and history."),
             FAQItem(question: "Is GuideStream TV free?",
-                    answer: "The core experience is free. Premium features like SMS recaps and ad-free reels will be available with GuideStream Pro soon.")
+                    answer: "The core experience is free. Premium features like ad-free reels will be available with GuideStream Pro soon.")
         ]
     }
 

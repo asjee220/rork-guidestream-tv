@@ -5,7 +5,7 @@ import androidx.compose.ui.text.font.FontWeight
 import kotlin.math.abs
 
 /**
- * Canonical catalogue of the top ~50 worldwide streaming services.
+ * Canonical catalogue of worldwide streaming services.
  * Mirrors iOS StreamingService.swift + StreamingCatalog enum.
  */
 data class StreamingService(
@@ -386,6 +386,12 @@ object StreamingCatalog {
 
     fun service(id: String): StreamingService? = all.find { it.id == id }
     fun ordered(ids: Set<String>): List<StreamingService> = all.filter { it.id in ids }
+
+    /** Curated subset shown in the "Most popular" section of the picker. */
+    val popular: List<StreamingService> get() = all.take(18)
+
+    /** All services sorted alphabetically for the "A–Z" toggle-row section. */
+    val alphabetical: List<StreamingService> get() = all.sortedBy { it.name.lowercase() }
 }
 
 // ── Selection accent derivation ─────────────────────────────────────────────

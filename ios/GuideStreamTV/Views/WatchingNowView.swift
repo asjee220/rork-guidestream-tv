@@ -13,6 +13,10 @@ struct WatchingNowView: View {
     let selectedServices: Set<String>
     let onContinue: ([UserStreamInsert]) -> Void
     let onSkip: () -> Void
+    var onBack: () -> Void
+    var onSkipAll: () -> Void
+    let currentStep: Int
+    let totalSteps: Int
 
     @State private var activeService: String = ""
     @State private var selections: Set<String> = [] // "platform|titleId"
@@ -27,19 +31,28 @@ struct WatchingNowView: View {
 
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 0) {
-                    OnboardingHeader(progress: 1.0)
+                    OnboardingHeader(currentStep: currentStep, totalSteps: totalSteps, onBack: onBack, onSkipAll: onSkipAll)
 
                     // Title section
                     VStack(alignment: .leading, spacing: 6) {
-                        Text("What are you watching?")
+                        Text("What are you watching right now?")
                             .font(.custom("SF Pro Display", size: 24).weight(.bold))
                             .foregroundStyle(.white)
-                        Text("Tap every show you follow — we'll alert you the moment new episodes drop")
+                        Text("We found top shows across your services — tap every one you follow.")
                             .font(.custom("SF Pro Text", size: 13))
                             .foregroundStyle(Color.textSecondary)
                     }
                     .padding(.horizontal, 20)
                     .padding(.top, 20)
+                    .padding(.bottom, 12)
+
+                    // Value strip (folded from SeedPromptView)
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 100), spacing: 8)], spacing: 8) {
+                        valuePill("Lands in My Watch List")
+                        valuePill("Instant episode alerts")
+                        valuePill("One-tap deep links")
+                    }
+                    .padding(.horizontal, 20)
                     .padding(.bottom, 16)
 
                     // Service tab bar
@@ -408,11 +421,36 @@ private struct SkeletonCard: View {
     }
 }
 
+private func valuePill(_ text: String) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: "checkmark")
+                .font(.custom("SF Pro Text", size: 10).weight(.bold))
+                .foregroundStyle(Color.orange)
+            Text(text)
+                .font(.custom("SF Pro Text", size: 10.5))
+                .foregroundStyle(Color.white.opacity(0.55))
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .background(
+            RoundedRectangle(cornerRadius: 13, style: .continuous)
+                .fill(Color.white.opacity(0.05))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 13, style: .continuous)
+                .stroke(Color.white.opacity(0.08), lineWidth: 1)
+        )
+    }
+
 #Preview {
     WatchingNowView(
         selectedServices: ["Netflix", "Max", "Paramount+"],
         onContinue: { _ in },
-        onSkip: {}
+        onSkip: {},
+        onBack: {},
+        onSkipAll: {},
+        currentStep: 2,
+        totalSteps: 4
     )
     .preferredColorScheme(.dark)
 }

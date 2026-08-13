@@ -18,6 +18,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -48,16 +49,16 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.material.icons.filled.Notifications
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Email
+import androidx.compose.material.icons.filled.PhoneAndroid
+import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
-import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -65,26 +66,27 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -92,11 +94,13 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.rork.guidestreamtvandroid.data.models.StreamingCatalog
+import com.rork.guidestreamtvandroid.data.models.StreamingService
 import com.rork.guidestreamtvandroid.data.models.selectionAccent
 import com.rork.guidestreamtvandroid.data.models.selectionGlyphColor
 import com.rork.guidestreamtvandroid.data.repository.AuthViewModel
 import com.rork.guidestreamtvandroid.data.repository.PushTokenManager
 import com.rork.guidestreamtvandroid.data.repository.StreamsViewModel
+import com.rork.guidestreamtvandroid.ui.components.RemoteImage
 import com.rork.guidestreamtvandroid.ui.theme.BrandBackground
 import com.rork.guidestreamtvandroid.ui.theme.BrandBlue
 import com.rork.guidestreamtvandroid.ui.theme.BrandOrange
@@ -113,16 +117,16 @@ import com.rork.guidestreamtvandroid.ui.theme.TextTertiary
 import kotlin.math.PI
 import kotlin.math.ceil
 import kotlin.math.sin
-import kotlinx.coroutines.launch
 
 /**
- * Onboarding flow — mirrors iOS OnboardingFlow.swift.
- * Welcome → Connect Services → Stay Notified.
+ * Onboarding flow — Welcome → Services → Watching now → Creators → Notify → home.
+ * 4 counted steps (Services, Watching Now, Creators, Notify) shown in the indicator.
  */
 @Composable
 fun OnboardingFlow(
     startStep: Int = 0,
     onFinish: () -> Unit,
+    onWidgetSettings: () -> Unit = {},
 ) {
     var step by remember { mutableStateOf(startStep) }
     var showEmailAuth by remember { mutableStateOf(false) }
@@ -130,33 +134,29 @@ fun OnboardingFlow(
     val isAuthenticated by auth.isAuthenticated.collectAsState()
     val streams = StreamsViewModel.get()
 
-    // When the Google OAuth deep link returns and flips authentication on,
-    // advance off the Welcome screen (which otherwise looks like the splash).
-    // Guarded on step 0 so it's idempotent and never pulls a user who has
-    // already progressed backwards or forwards.
     LaunchedEffect(isAuthenticated) {
         if (isAuthenticated && step == 0) step = 1
     }
     val selectedServices = remember { mutableStateOf(auth.selectedServices.value) }
-    // Keep the local selection in sync with the authoritative StateFlow so
-    // after an account switch onboarding never writes a stale snapshot onto
-    // the new account. LaunchedEffect re-seeds whenever the flow emits.
     LaunchedEffect(auth.selectedServices) {
         auth.selectedServices.collect { services ->
             if (selectedServices.value != services) selectedServices.value = services
         }
     }
     var pushOn by remember { mutableStateOf(auth.notifyPushEnabled.value) }
-    val scope = rememberCoroutineScope()
 
-    // Terminal path: mark onboarding complete and hand control back to the host.
+    var followedShowPosters by remember { mutableStateOf<List<String>>(emptyList()) }
+    var followedShowsCount by remember { mutableStateOf(0) }
+    var followedCreatorsCount by remember { mutableStateOf(0) }
+
+    val totalSteps = OnboardingHeader.stepNames.size
+
     val finish: () -> Unit = {
         if (!auth.isAuthenticated.value) auth.continueAsGuest()
         auth.completeOnboarding()
         onFinish()
     }
 
-    // Commit seeded shows / creators into the watchlist (guest or signed-in).
     val commitSeeds: (List<StreamSeed>) -> Unit = { seeds ->
         seeds.forEach { seed ->
             streams.addToMyStreams(
@@ -181,6 +181,10 @@ fun OnboardingFlow(
                 0 -> WelcomeScreen(
                     onContinue = { step = 1 },
                     onEmailAuth = { showEmailAuth = true },
+                    onGuest = {
+                        auth.continueAsGuest()
+                        step = 1
+                    },
                 )
                 1 -> ConnectServicesScreen(
                     selected = selectedServices.value,
@@ -195,35 +199,51 @@ fun OnboardingFlow(
                         auth.setSelectedServices(selectedServices.value)
                         step = 2
                     },
+                    onSkip = {
+                        auth.setSelectedServices(selectedServices.value)
+                        step = 2
+                    },
                 )
-                2 -> StayNotifiedScreen(
+                2 -> WatchingNowScreen(
+                    selectedServices = selectedServices.value,
+                    onContinue = { seeds ->
+                        followedShowsCount = seeds.size
+                        followedShowPosters = seeds.mapNotNull { it.posterUrl }
+                        commitSeeds(seeds)
+                        step = 3
+                    },
+                    onSkip = { step = 3 },
+                    onBack = { step = 2 },
+                    onSkipAll = { finish() },
+                    currentStep = 2,
+                    totalSteps = totalSteps,
+                )
+                3 -> FollowCreatorsOnboardingScreen(
+                    onContinue = { seeds ->
+                        followedCreatorsCount = seeds.size
+                        commitSeeds(seeds)
+                        step = 4
+                    },
+                    onSkip = { finish() },
+                    onBack = { step = 3 },
+                    onSkipAll = { finish() },
+                    currentStep = 3,
+                    totalSteps = totalSteps,
+                )
+                else -> StayNotifiedScreen(
                     pushOn = pushOn,
                     onPushToggle = { pushOn = it },
                     onContinue = {
                         auth.setNotificationPreferences(pushOn, false)
-                        if (!auth.isAuthenticated.value) auth.continueAsGuest()
-                        step = 3
-                    },
-                )
-                3 -> SeedPromptScreen(
-                    selectedServices = selectedServices.value,
-                    onContinue = { step = 4 },
-                    onSkip = { finish() },
-                )
-                4 -> WatchingNowScreen(
-                    selectedServices = selectedServices.value,
-                    onContinue = { seeds ->
-                        commitSeeds(seeds)
-                        step = 5
-                    },
-                    onSkip = { step = 5 },
-                )
-                else -> FollowCreatorsOnboardingScreen(
-                    onContinue = { seeds ->
-                        commitSeeds(seeds)
                         finish()
                     },
-                    onSkip = { finish() },
+                    onBack = { step = 4 },
+                    onWidgetSettings = onWidgetSettings,
+                    currentStep = 4,
+                    totalSteps = totalSteps,
+                    posterUrls = followedShowPosters,
+                    showCount = followedShowsCount,
+                    creatorCount = followedCreatorsCount,
                 )
             }
         }
@@ -241,9 +261,6 @@ fun OnboardingFlow(
                 EmailAuthScreen(
                     onAuthenticated = {
                         showEmailAuth = false
-                        // Only advance the onboarding flow when the user has
-                        // not yet completed onboarding. Returning users are
-                        // routed by the host and should not be pulled forward.
                         if (!auth.hasCompletedOnboarding.value) {
                             step = 1
                         }
@@ -261,12 +278,12 @@ fun OnboardingFlow(
 private fun WelcomeScreen(
     onContinue: () -> Unit,
     onEmailAuth: () -> Unit,
+    onGuest: () -> Unit,
 ) {
     val auth = AuthViewModel.get()
     val isAuthenticating by auth.isAuthenticating.collectAsState()
     val lastError by auth.lastError.collectAsState()
     val context = LocalContext.current
-    // Reduce Motion: ANIMATOR_DURATION_SCALE == 0 means the user disabled animations.
     val reduceMotion = remember {
         Settings.Global.getFloat(
             context.contentResolver,
@@ -276,8 +293,6 @@ private fun WelcomeScreen(
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
-        // Ambient drifting blurred poster wall — above the navy base, below the
-        // wordmark, hairline, and glass card. Purely computed gradients.
         DriftingPosterWall(
             reduceMotion = reduceMotion,
             modifier = Modifier.fillMaxSize(),
@@ -293,7 +308,6 @@ private fun WelcomeScreen(
         ) {
             Spacer(Modifier.height(24.dp))
 
-            // Logo with tuning-shimmer sweep overlaid on top of the wordmark.
             Box(contentAlignment = Alignment.Center) {
                 BrandWordmark(size = com.rork.guidestreamtvandroid.ui.theme.WordmarkSize.LARGE)
                 if (!reduceMotion) {
@@ -302,117 +316,125 @@ private fun WelcomeScreen(
             }
             Spacer(Modifier.height(8.dp))
 
-        // Gradient hairline underline
-        Box(
-            modifier = Modifier
-                .width(260.dp)
-                .height(2.dp)
-                .background(
-                    Brush.horizontalGradient(
-                        colors = listOf(
-                            BrandBlue.copy(alpha = 0f),
-                            BrandBlue,
-                            BrandOrange,
-                            BrandOrange.copy(alpha = 0f),
+            Box(
+                modifier = Modifier
+                    .width(260.dp)
+                    .height(2.dp)
+                    .background(
+                        Brush.horizontalGradient(
+                            colors = listOf(
+                                BrandBlue.copy(alpha = 0f),
+                                BrandBlue,
+                                BrandOrange,
+                                BrandOrange.copy(alpha = 0f),
+                            ),
                         ),
                     ),
-                ),
-        )
-        Spacer(Modifier.height(32.dp))
-
-        // Card with copy + auth options
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(20.dp))
-                .background(GlassFill)
-                .border(1.dp, GlassStroke, RoundedCornerShape(20.dp))
-                .padding(20.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Text(
-                text = "Every show. Every service.",
-                fontSize = 13.sp,
-                color = TextSecondary,
-                maxLines = 1,
-                softWrap = false,
-                overflow = TextOverflow.Clip,
             )
-            Text(
-                text = "What are you watching now?",
-                fontSize = 15.sp,
-                fontWeight = FontWeight.Bold,
-                color = TextPrimary,
-                maxLines = 1,
-                softWrap = false,
-                overflow = TextOverflow.Clip,
-            )
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(32.dp))
 
-            // Sign in with Google — full width
-            AuthButton(
-                text = "Sign in with Google",
-                background = Color.White,
-                textColor = Color(red = 0.24f, green = 0.25f, blue = 0.26f),
-                isLoading = isAuthenticating,
-                onClick = { auth.signInWithGoogle(context) },
-            )
-            Spacer(Modifier.height(12.dp))
-
-            // Divider — "or"
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(GlassFill)
+                    .border(1.dp, GlassStroke, RoundedCornerShape(20.dp))
+                    .padding(20.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(1.dp)
-                        .background(Hairline),
-                )
                 Text(
-                    text = "or",
-                    fontSize = 12.sp,
+                    text = "Every show. Every service.",
+                    fontSize = 13.sp,
                     color = TextSecondary,
-                    modifier = Modifier.padding(horizontal = 10.dp),
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Clip,
                 )
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(1.dp)
-                        .background(Hairline),
-                )
-            }
-            Spacer(Modifier.height(12.dp))
-
-            // Sign in with email — outlined
-            OutlinedAuthButton(
-                text = "Sign in with email",
-                icon = Icons.Filled.Email,
-                onClick = onEmailAuth,
-            )
-
-            if (lastError != null) {
-                Spacer(Modifier.height(12.dp))
                 Text(
-                    text = lastError ?: "",
+                    text = "What are you watching now?",
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = TextPrimary,
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Clip,
+                )
+                Spacer(Modifier.height(16.dp))
+
+                AuthButton(
+                    text = "Sign in with Google",
+                    background = Color.White,
+                    textColor = Color(red = 0.24f, green = 0.24f, blue = 0.26f),
+                    isLoading = isAuthenticating,
+                    onClick = { auth.signInWithGoogle(context) },
+                )
+                Spacer(Modifier.height(12.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(1.dp)
+                            .background(Hairline),
+                    )
+                    Text(
+                        text = "or",
+                        fontSize = 12.sp,
+                        color = TextSecondary,
+                        modifier = Modifier.padding(horizontal = 10.dp),
+                    )
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(1.dp)
+                            .background(Hairline),
+                    )
+                }
+                Spacer(Modifier.height(12.dp))
+
+                OutlinedAuthButton(
+                    text = "Sign in with email",
+                    icon = Icons.Filled.Email,
+                    onClick = onEmailAuth,
+                )
+
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = "Continue as guest",
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = TextSecondary,
+                    modifier = Modifier
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                        ) { onGuest() }
+                        .padding(8.dp),
+                )
+
+                if (lastError != null) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        text = lastError ?: "",
+                        fontSize = 11.sp,
+                        color = Color.Red.copy(alpha = 0.85f),
+                        textAlign = TextAlign.Center,
+                    )
+                }
+
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = "By continuing, you agree to our Privacy Policy and Terms of Service.",
                     fontSize = 11.sp,
-                    color = Color.Red.copy(alpha = 0.85f),
+                    color = TextTertiary,
                     textAlign = TextAlign.Center,
                 )
             }
-
-            Spacer(Modifier.height(12.dp))
-            Text(
-                text = "By continuing, you agree to our Privacy Policy and Terms of Service.",
-                fontSize = 11.sp,
-                color = TextTertiary,
-                textAlign = TextAlign.Center,
-            )
-            }
         }
 
-        // Decorative "CH 01" channel chip — top-right within the safe area.
         ChannelChip(
             modifier = Modifier
                 .align(Alignment.TopEnd)
@@ -424,22 +446,12 @@ private fun WelcomeScreen(
 
 // ── Welcome decorative layers ──────────────────────────────────
 
-/// Ten brand-adjacent poster-tile colors, assigned deterministically by index.
 private val posterTileColors: List<Color> = listOf(
-    Color(0xFFE50914),
-    Color(0xFF1A6FE8),
-    Color(0xFF00A8E1),
-    Color(0xFF5B2A86),
-    Color(0xFFF5821F),
-    Color(0xFF0F79AF),
-    Color(0xFF772CE8),
-    Color(0xFFE4A11B),
-    Color(0xFF1DB954),
-    Color(0xFF2E51A2),
+    Color(0xFFE50914), Color(0xFF1A6FE8), Color(0xFF00A8E1), Color(0xFF5B2A86),
+    Color(0xFFF5821F), Color(0xFF0F79AF), Color(0xFF772CE8), Color(0xFFE4A11B),
+    Color(0xFF1DB954), Color(0xFF2E51A2),
 )
 
-/// Mixes a color slightly toward its gray luminance to gently reduce saturation
-/// (mirrors the iOS `.saturation(0.85)` applied to the poster wall).
 private fun Color.desaturated(amount: Float): Color {
     val gray = 0.299f * red + 0.587f * green + 0.114f * blue
     return Color(
@@ -667,7 +679,7 @@ private fun OutlinedAuthButton(
     }
 }
 
-// ── Connect Services ──────────────────────────────────────────────
+// ── Connect Services (hybrid layout) ──────────────────────────────
 
 @Composable
 private fun ServiceSearchField(
@@ -711,7 +723,7 @@ private fun ServiceSearchField(
                 Box(modifier = Modifier.weight(1f)) {
                     if (query.isEmpty()) {
                         Text(
-                            text = "Search services",
+                            text = "Search all services",
                             fontSize = 15.sp,
                             color = TextSecondary,
                         )
@@ -729,48 +741,113 @@ private fun ConnectServicesScreen(
     selected: Set<String>,
     onToggle: (String) -> Unit,
     onContinue: () -> Unit,
+    onSkip: () -> Unit,
 ) {
     var serviceQuery by remember { mutableStateOf("") }
-    val filteredServices = remember(serviceQuery) {
-        if (serviceQuery.isBlank()) StreamingCatalog.all
-        else StreamingCatalog.all.filter { it.name.contains(serviceQuery, ignoreCase = true) }
+    val filteredPopular = remember(serviceQuery) {
+        if (serviceQuery.isBlank()) StreamingCatalog.popular
+        else StreamingCatalog.popular.filter { it.name.contains(serviceQuery, ignoreCase = true) }
     }
-    Column(
-        modifier = Modifier.fillMaxSize(),
-    ) {
-        OnboardingHeader(progress = 1f, onClose = null)
+    val filteredAll = remember(serviceQuery) {
+        if (serviceQuery.isBlank()) StreamingCatalog.alphabetical
+        else StreamingCatalog.alphabetical.filter { it.name.contains(serviceQuery, ignoreCase = true) }
+    }
 
-        ServiceSearchField(
-            query = serviceQuery,
-            onQueryChange = { serviceQuery = it },
-            modifier = Modifier.padding(horizontal = 20.dp),
-        )
-        Spacer(Modifier.height(14.dp))
+    Column(modifier = Modifier.fillMaxSize()) {
+        OnboardingHeader(currentStep = 1, totalSteps = OnboardingHeader.stepNames.size)
 
-        if (filteredServices.isEmpty()) {
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth(),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text("No services match", fontSize = 14.sp, color = TextSecondary)
-            }
-        } else {
-            LazyVerticalGrid(
-                columns = GridCells.Fixed(3),
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(horizontal = 20.dp),
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
-                verticalArrangement = Arrangement.spacedBy(22.dp),
-            ) {
-                items(filteredServices, key = { it.id }) { svc ->
-                    ServiceTile(
-                        service = svc,
-                        isSelected = svc.id in selected,
-                        onTap = { onToggle(svc.id) },
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp),
+        ) {
+            Text(
+                text = "Which services do you have?",
+                fontSize = 28.sp,
+                fontWeight = FontWeight.Bold,
+                color = TextPrimary,
+            )
+            Spacer(Modifier.height(6.dp))
+            Text(
+                text = "Pick every service you have — each one sharpens your feed",
+                fontSize = 15.sp,
+                color = TextSecondary,
+            )
+            Spacer(Modifier.height(18.dp))
+
+            ServiceSearchField(
+                query = serviceQuery,
+                onQueryChange = { serviceQuery = it },
+            )
+            Spacer(Modifier.height(16.dp))
+
+            if (filteredPopular.isEmpty() && filteredAll.isEmpty()) {
+                Text(
+                    text = "No services match",
+                    fontSize = 14.sp,
+                    color = TextSecondary,
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 28.dp),
+                )
+            } else {
+                if (filteredPopular.isNotEmpty()) {
+                    Text(
+                        text = "Most popular",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = TextSecondary,
                     )
+                    Spacer(Modifier.height(12.dp))
+                    LazyVerticalGrid(
+                        columns = GridCells.Fixed(3),
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(22.dp),
+                        userScrollEnabled = false,
+                    ) {
+                        items(filteredPopular, key = { it.id }) { svc ->
+                            ServiceTile(
+                                service = svc,
+                                isSelected = svc.id in selected,
+                                onTap = { onToggle(svc.id) },
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(24.dp))
+                }
+
+                if (filteredAll.isNotEmpty()) {
+                    Text(
+                        text = "All services · A–Z",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = TextSecondary,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(Color.White.copy(alpha = 0.04f))
+                            .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(14.dp)),
+                    ) {
+                        filteredAll.forEachIndexed { idx, svc ->
+                            ServiceToggleRow(
+                                service = svc,
+                                isSelected = svc.id in selected,
+                                onTap = { onToggle(svc.id) },
+                            )
+                            if (idx < filteredAll.size - 1) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(1.dp)
+                                        .background(Color.White.copy(alpha = 0.06f))
+                                )
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(24.dp))
                 }
             }
         }
@@ -789,7 +866,6 @@ private fun ConnectServicesScreen(
             )
             Spacer(Modifier.height(14.dp))
 
-            // Continue button
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -803,7 +879,6 @@ private fun ConnectServicesScreen(
                     .clickable(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null,
-                        enabled = selected.isNotEmpty(),
                     ) { onContinue() },
                 horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically,
@@ -822,21 +897,116 @@ private fun ConnectServicesScreen(
                     modifier = Modifier.size(16.dp),
                 )
             }
+            Spacer(Modifier.height(10.dp))
+            Text(
+                text = "Skip",
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Medium,
+                color = TextSecondary,
+                modifier = Modifier
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                    ) { onSkip() }
+                    .padding(8.dp),
+            )
         }
     }
 }
 
 @Composable
+private fun ServiceMiniIcon(service: StreamingService, size: Dp) {
+    Box(
+        modifier = Modifier
+            .size(size)
+            .clip(RoundedCornerShape(10.dp))
+            .background(service.bg),
+        contentAlignment = Alignment.Center,
+    ) {
+        val display = service.display
+        val textSize = (size.value * 0.3f).sp
+        when (display) {
+            is StreamingService.Display.Text -> {
+                Text(
+                    text = display.text,
+                    fontSize = textSize,
+                    fontWeight = display.weight,
+                    color = display.color,
+                    textAlign = TextAlign.Center,
+                    maxLines = 2,
+                )
+            }
+            is StreamingService.Display.SymbolText -> {
+                Text(
+                    text = display.text,
+                    fontSize = textSize,
+                    fontWeight = FontWeight.Black,
+                    color = display.color,
+                )
+            }
+            is StreamingService.Display.Star -> {
+                Text("\u2605", fontSize = (size.value * 0.5f).sp, color = display.color)
+            }
+        }
+    }
+}
+
+@Composable
+private fun ServiceToggleRow(
+    service: StreamingService,
+    isSelected: Boolean,
+    onTap: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+            ) { onTap() }
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        ServiceMiniIcon(service = service, size = 36.dp)
+        Spacer(Modifier.width(12.dp))
+        Text(
+            text = service.name,
+            fontSize = 15.sp,
+            color = Color.White,
+            modifier = Modifier.weight(1f),
+        )
+        VisualSwitch(checked = isSelected)
+    }
+}
+
+@Composable
+private fun VisualSwitch(checked: Boolean) {
+    Box(
+        modifier = Modifier
+            .size(width = 44.dp, height = 26.dp)
+            .clip(RoundedCornerShape(50.dp))
+            .background(if (checked) BrandOrange else Color.White.copy(alpha = 0.15f)),
+        contentAlignment = if (checked) Alignment.CenterEnd else Alignment.CenterStart,
+    ) {
+        Box(
+            modifier = Modifier
+                .padding(2.dp)
+                .size(22.dp)
+                .clip(CircleShape)
+                .background(Color.White),
+        )
+    }
+}
+
+@Composable
 private fun ServiceTile(
-    service: com.rork.guidestreamtvandroid.data.models.StreamingService,
+    service: StreamingService,
     isSelected: Boolean,
     onTap: () -> Unit,
 ) {
     val accent = service.selectionAccent
     val borderColor = if (isSelected) accent else OutlineVariant
     val borderWidth = if (isSelected) 3.dp else 1.dp
-    // Outer column is deliberately never clipped so the selection badge can
-    // overhang the tile's top-right corner without being cut off.
     Column(
         modifier = Modifier.fillMaxWidth(),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -848,8 +1018,6 @@ private fun ServiceTile(
         ) {
             val tileShape = RoundedCornerShape(18.dp)
             val shadowModifier = if (isSelected) {
-                // Glow is decorative only (colored shadows need API 28); the
-                // 3.dp accent border + badge carry selection on older devices.
                 Modifier.shadow(
                     elevation = 12.dp,
                     shape = tileShape,
@@ -874,7 +1042,7 @@ private fun ServiceTile(
             ) {
                 val display = service.display
                 when (display) {
-                    is com.rork.guidestreamtvandroid.data.models.StreamingService.Display.Text -> {
+                    is StreamingService.Display.Text -> {
                         Text(
                             text = display.text,
                             fontSize = 13.sp,
@@ -884,7 +1052,7 @@ private fun ServiceTile(
                             maxLines = 2,
                         )
                     }
-                    is com.rork.guidestreamtvandroid.data.models.StreamingService.Display.SymbolText -> {
+                    is StreamingService.Display.SymbolText -> {
                         Text(
                             text = display.text,
                             fontSize = 13.sp,
@@ -892,7 +1060,7 @@ private fun ServiceTile(
                             color = display.color,
                         )
                     }
-                    is com.rork.guidestreamtvandroid.data.models.StreamingService.Display.Star -> {
+                    is StreamingService.Display.Star -> {
                         Text("\u2605", fontSize = 24.sp, color = display.color)
                     }
                 }
@@ -926,13 +1094,20 @@ private fun ServiceTile(
     }
 }
 
-// ── Stay Notified ─────────────────────────────────────────────────
+// ── Stay Notified (last step, redesigned) ─────────────────────────
 
 @Composable
 private fun StayNotifiedScreen(
     pushOn: Boolean,
     onPushToggle: (Boolean) -> Unit,
     onContinue: () -> Unit,
+    onBack: () -> Unit,
+    onWidgetSettings: () -> Unit,
+    currentStep: Int,
+    totalSteps: Int,
+    posterUrls: List<String>,
+    showCount: Int,
+    creatorCount: Int,
 ) {
     val context = LocalContext.current
     val permissionLauncher = rememberLauncherForActivityResult(
@@ -940,176 +1115,333 @@ private fun StayNotifiedScreen(
     ) { granted ->
         if (granted) {
             onPushToggle(true)
-            // Permission just landed — fetch the FCM token and register it
-            // now, otherwise granting the toggle is a dead end until the
-            // next app foreground.
             PushTokenManager.get().registerIfPermitted()
         } else {
             onPushToggle(false)
         }
+        onContinue()
     }
 
     Column(
         modifier = Modifier.fillMaxSize(),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        OnboardingHeader(progress = 1f, onClose = null)
-
-        Spacer(Modifier.height(24.dp))
-
-        // Bell hero
-        Box(
-            modifier = Modifier.size(220.dp),
-            contentAlignment = Alignment.Center,
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(220.dp)
-                    .clip(CircleShape)
-                    .background(SurfaceContainer),
-            )
-            Box(
-                modifier = Modifier
-                    .size(92.dp)
-                    .clip(CircleShape)
-                    .background(
-                        Brush.linearGradient(
-                            colors = listOf(
-                                Color(red = 0.36f, green = 0.42f, blue = 0.96f),
-                                Color(red = 0.62f, green = 0.40f, blue = 0.95f),
-                            ),
-                        ),
-                    ),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    imageVector = Icons.Filled.Notifications,
-                    contentDescription = null,
-                    tint = Color.White,
-                    modifier = Modifier.size(38.dp),
-                )
-            }
-        }
-
-        Spacer(Modifier.height(16.dp))
-        Text(
-            text = "Never miss an episode.",
-            fontSize = 30.sp,
-            fontWeight = FontWeight.Bold,
-            color = TextPrimary,
-        )
-        Text(
-            text = "Stay updated with your favorite shows",
-            fontSize = 15.sp,
-            color = TextSecondary,
+        OnboardingHeader(
+            currentStep = currentStep,
+            totalSteps = totalSteps,
+            onBack = onBack,
         )
 
-        Spacer(Modifier.height(24.dp))
-
-        // Notification options card
         Column(
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp)
-                .clip(RoundedCornerShape(18.dp))
-                .background(SurfaceContainer)
-                .border(1.dp, OutlineVariant, RoundedCornerShape(18.dp)),
+                .weight(1f)
+                .verticalScroll(rememberScrollState()),
+            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
+            if (posterUrls.isNotEmpty()) {
+                PosterStackHero(
+                    posterUrls = posterUrls,
+                    newCount = showCount,
+                )
+                Spacer(Modifier.height(20.dp))
+            } else {
+                Spacer(Modifier.height(24.dp))
+            }
+
+            Text(
+                text = "Never miss an episode.",
+                fontSize = 28.sp,
+                fontWeight = FontWeight.Bold,
+                color = TextPrimary,
+                textAlign = TextAlign.Center,
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = notifySubtitle(showCount, creatorCount),
+                fontSize = 15.sp,
+                color = TextSecondary,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(horizontal = 24.dp),
+            )
+
+            Spacer(Modifier.height(24.dp))
+
+            // Benefit list
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp)
+                    .clip(RoundedCornerShape(18.dp))
+                    .background(SurfaceContainer)
+                    .border(1.dp, OutlineVariant, RoundedCornerShape(18.dp)),
+            ) {
+                for (i in 0 until 3) {
+                    NotifyBenefitRow(
+                        posterUrl = posterUrls.getOrNull(i),
+                        title = benefitTitle(i),
+                        subtitle = benefitSubtitle(i),
+                    )
+                    if (i < 2) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(1.dp)
+                                .background(Color.White.copy(alpha = 0.06f))
+                        )
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(16.dp))
+
+            // Widget row
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(16.dp),
+                    .padding(horizontal = 20.dp)
+                    .clip(RoundedCornerShape(18.dp))
+                    .background(SurfaceContainer)
+                    .border(1.dp, OutlineVariant, RoundedCornerShape(18.dp))
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                    ) { onWidgetSettings() }
+                    .padding(horizontal = 16.dp, vertical = 14.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Box(
                     modifier = Modifier
                         .size(40.dp)
                         .clip(CircleShape)
-                        .background(BrandOrange.copy(alpha = 0.18f)),
+                        .background(Color(red = 0.55f, green = 0.40f, blue = 0.95f).copy(alpha = 0.18f)),
                     contentAlignment = Alignment.Center,
                 ) {
                     Icon(
-                        imageVector = Icons.Filled.Notifications,
+                        imageVector = Icons.Filled.PhoneAndroid,
                         contentDescription = null,
-                        tint = BrandOrange,
+                        tint = Color(red = 0.65f, green = 0.50f, blue = 1.0f),
                         modifier = Modifier.size(18.dp),
                     )
                 }
                 Spacer(Modifier.width(14.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "New episode alerts",
+                        text = "Home screen widget",
                         fontSize = 15.sp,
                         fontWeight = FontWeight.SemiBold,
                         color = TextPrimary,
                     )
                     Text(
-                        text = "Push notification",
+                        text = "Configure size, content & appearance",
                         fontSize = 12.sp,
                         color = TextSecondary,
                     )
                 }
-                Switch(
-                    checked = pushOn,
-                    onCheckedChange = { value ->
-                        if (value && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                            permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                        } else {
-                            onPushToggle(value)
-                        }
-                    },
-                    colors = SwitchDefaults.colors(
-                        checkedTrackColor = BrandOrange,
-                    ),
+                Icon(
+                    imageVector = Icons.Filled.KeyboardArrowRight,
+                    contentDescription = null,
+                    tint = TextSecondary,
+                    modifier = Modifier.size(16.dp),
                 )
             }
+
+            Spacer(Modifier.height(90.dp))
         }
 
-        Spacer(Modifier.weight(1f))
-
-        // Continue button
-        Row(
+        // Buttons
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 20.dp)
-                .padding(bottom = 28.dp)
-                .height(56.dp)
-                .clip(RoundedCornerShape(50.dp))
-                .background(
-                    Brush.verticalGradient(
-                        colors = listOf(BrandOrange, BrandOrange.copy(alpha = 0.85f)),
-                    ),
-                )
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null,
-                ) { onContinue() },
-            horizontalArrangement = Arrangement.Center,
-            verticalAlignment = Alignment.CenterVertically,
+                .padding(bottom = 28.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(56.dp)
+                    .clip(RoundedCornerShape(50.dp))
+                    .background(
+                        Brush.verticalGradient(
+                            colors = listOf(BrandOrange, BrandOrange.copy(alpha = 0.85f)),
+                        ),
+                    )
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                    ) {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                            permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                        } else {
+                            onPushToggle(true)
+                            onContinue()
+                        }
+                    },
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = "Allow notifications",
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White,
+                )
+                Spacer(Modifier.width(8.dp))
+                Icon(
+                    imageVector = Icons.Filled.Notifications,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(16.dp),
+                )
+            }
+            Spacer(Modifier.height(12.dp))
             Text(
-                text = "I'm all set",
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color.White,
-            )
-            Spacer(Modifier.width(8.dp))
-            Icon(
-                imageVector = Icons.Filled.ArrowForward,
-                contentDescription = null,
-                tint = Color.White,
-                modifier = Modifier.size(16.dp),
+                text = "Not now",
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Medium,
+                color = TextSecondary,
+                modifier = Modifier
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                    ) {
+                        onPushToggle(false)
+                        onContinue()
+                    }
+                    .padding(8.dp),
             )
         }
     }
 }
 
-// ── Onboarding header ─────────────────────────────────────────────
+private fun notifySubtitle(showCount: Int, creatorCount: Int): String {
+    val parts = mutableListOf<String>()
+    if (showCount > 0) parts.add("$showCount show${if (showCount == 1) "" else "s"}")
+    if (creatorCount > 0) parts.add("$creatorCount creator${if (creatorCount == 1) "" else "s"}")
+    return if (parts.isEmpty()) {
+        "Turn on alerts so you never miss a new episode."
+    } else {
+        "You're following ${parts.joinToString(" and ")}. Turn on alerts so you never miss a new episode."
+    }
+}
+
+private fun benefitTitle(i: Int): String = when (i) {
+    0 -> "New episode alerts"
+    1 -> "Watch list updates"
+    else -> "Deep links"
+}
+
+private fun benefitSubtitle(i: Int): String = when (i) {
+    0 -> "Know the moment a new episode drops"
+    1 -> "See when your shows have new content"
+    else -> "One tap straight to the episode"
+}
+
+@Composable
+private fun PosterStackHero(
+    posterUrls: List<String>,
+    newCount: Int,
+) {
+    Box(
+        modifier = Modifier.height(130.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        val display = posterUrls.take(5)
+        val count = display.size
+        display.forEachIndexed { i, url ->
+            val mid = (count - 1) / 2.0f
+            val angle = ((i - mid) * 7.0f)
+            val xOffset = ((i - mid) * 16f).dp
+            RemoteImage(
+                url = url,
+                contentDescription = null,
+                modifier = Modifier
+                    .size(width = 76.dp, height = 114.dp)
+                    .graphicsLayer {
+                        rotationZ = angle
+                        translationX = xOffset.toPx()
+                    }
+                    .clip(RoundedCornerShape(8.dp))
+                    .border(0.5.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(8.dp)),
+            )
+        }
+        if (newCount > 0) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .offset(x = 20.dp, y = (-10).dp)
+                    .clip(RoundedCornerShape(50.dp))
+                    .background(BrandOrange)
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
+            ) {
+                Text(
+                    text = "$newCount new",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun NotifyBenefitRow(
+    posterUrl: String?,
+    title: String,
+    subtitle: String,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (posterUrl != null) {
+            RemoteImage(
+                url = posterUrl,
+                contentDescription = null,
+                modifier = Modifier
+                    .size(width = 36.dp, height = 54.dp)
+                    .clip(RoundedCornerShape(6.dp)),
+            )
+        } else {
+            Box(
+                modifier = Modifier
+                    .size(width = 36.dp, height = 54.dp)
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(BrandOrange.copy(alpha = 0.15f)),
+            )
+        }
+        Spacer(Modifier.width(14.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = TextPrimary,
+            )
+            Text(
+                text = subtitle,
+                fontSize = 12.sp,
+                color = TextSecondary,
+            )
+        }
+    }
+}
+
+// ── Onboarding header + step indicator ─────────────────────────────
+
+internal object OnboardingHeader {
+    val stepNames = listOf("Services", "Watching Now", "Creators", "Notify")
+}
 
 @Composable
 internal fun OnboardingHeader(
-    progress: Float,
-    onClose: (() -> Unit)? = null,
+    currentStep: Int,
+    totalSteps: Int,
+    onBack: (() -> Unit)? = null,
+    onSkipAll: (() -> Unit)? = null,
 ) {
     Column(
         modifier = Modifier
@@ -1123,20 +1455,20 @@ internal fun OnboardingHeader(
                 .padding(top = 4.dp, bottom = 14.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            if (onClose != null) {
+            if (onBack != null && currentStep > 1) {
                 Box(
                     modifier = Modifier
                         .size(36.dp)
                         .clip(CircleShape)
-                        .background(SurfaceContainer)
-                        .clickable { onClose() },
+                        .background(Color.White.copy(alpha = 0.10f))
+                        .clickable { onBack() },
                     contentAlignment = Alignment.Center,
                 ) {
                     Icon(
-                        imageVector = Icons.Filled.Close,
-                        contentDescription = "Close",
+                        imageVector = Icons.Filled.KeyboardArrowLeft,
+                        contentDescription = "Back",
                         tint = Color.White,
-                        modifier = Modifier.size(14.dp),
+                        modifier = Modifier.size(20.dp),
                     )
                 }
             } else {
@@ -1145,44 +1477,160 @@ internal fun OnboardingHeader(
             Spacer(Modifier.weight(1f))
             BrandWordmark(size = com.rork.guidestreamtvandroid.ui.theme.WordmarkSize.NAV)
             Spacer(Modifier.weight(1f))
-            Spacer(Modifier.size(36.dp))
+            if (onSkipAll != null) {
+                Text(
+                    text = "Skip all",
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = TextSecondary,
+                    modifier = Modifier
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                        ) { onSkipAll() }
+                        .padding(4.dp),
+                )
+            } else {
+                Spacer(Modifier.size(36.dp))
+            }
         }
-        // Split progress bar — blue (done) + orange (current)
-        Row(
+
+        OnboardingStepIndicator(
+            currentStep = currentStep,
+            totalSteps = totalSteps,
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 24.dp)
-                .padding(top = 4.dp),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                .padding(top = 4.dp, bottom = 8.dp),
+        )
+    }
+}
+
+@Composable
+private fun OnboardingStepIndicator(
+    currentStep: Int,
+    totalSteps: Int,
+    modifier: Modifier = Modifier,
+) {
+    val nodeSize = 26.dp
+    val ringSize = 34.dp
+
+    Column(modifier = modifier) {
+        // Indicator row
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .height(3.dp)
-                    .clip(RoundedCornerShape(50.dp))
-                    .background(
-                        Brush.horizontalGradient(
-                            colors = listOf(BrandBlue.copy(alpha = 0.6f), BrandBlue),
-                        ),
-                    ),
-            )
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .height(3.dp)
-                    .clip(RoundedCornerShape(50.dp))
-                    .background(
-                        if (progress >= 1f) {
-                            Brush.horizontalGradient(
-                                colors = listOf(BrandOrange.copy(alpha = 0.6f), BrandOrange),
+            for (i in 0 until totalSteps) {
+                val stepNum = i + 1
+                if (i > 0) {
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(1.5.dp)
+                            .background(
+                                if (i < currentStep) BrandBlue.copy(alpha = 0.75f)
+                                else Color.White.copy(alpha = 0.15f)
                             )
-                        } else {
-                            Brush.horizontalGradient(
-                                colors = listOf(Color.White.copy(alpha = 0.12f), Color.White.copy(alpha = 0.12f)),
-                            )
-                        },
-                    ),
-            )
+                    )
+                }
+                StepNode(
+                    stepNum = stepNum,
+                    isCompleted = stepNum < currentStep,
+                    isCurrent = stepNum == currentStep,
+                    isUpcoming = stepNum > currentStep,
+                    nodeSize = nodeSize,
+                    ringSize = ringSize,
+                )
+            }
+        }
+        // Labels
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
+        ) {
+            for (i in 0 until totalSteps) {
+                if (i > 0) {
+                    Spacer(Modifier.weight(1f))
+                }
+                Text(
+                    text = OnboardingHeader.stepNames[i],
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    letterSpacing = 1.sp,
+                    color = Color.White.copy(alpha = 0.35f),
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun StepNode(
+    stepNum: Int,
+    isCompleted: Boolean,
+    isCurrent: Boolean,
+    isUpcoming: Boolean,
+    nodeSize: Dp,
+    ringSize: Dp,
+) {
+    Box(
+        modifier = Modifier.size(ringSize),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (isCurrent) {
+            Canvas(modifier = Modifier.size(ringSize)) {
+                val strokePx = 2.5.dp.toPx()
+                drawCircle(
+                    color = Color.White.copy(alpha = 0.14f),
+                    style = Stroke(width = strokePx),
+                )
+                drawArc(
+                    color = BrandOrange,
+                    startAngle = -90f,
+                    sweepAngle = 360f,
+                    useCenter = false,
+                    style = Stroke(width = strokePx, cap = StrokeCap.Round),
+                )
+            }
+        }
+
+        Box(
+            modifier = Modifier
+                .size(nodeSize)
+                .clip(CircleShape)
+                .background(
+                    when {
+                        isCompleted -> BrandBlue.copy(alpha = 0.9f)
+                        isCurrent -> BrandOrange
+                        else -> Color.Transparent
+                    }
+                )
+                .then(
+                    if (isUpcoming) {
+                        Modifier.border(1.5.dp, Color.White.copy(alpha = 0.18f), CircleShape)
+                    } else {
+                        Modifier
+                    }
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (isCompleted) {
+                Icon(
+                    imageVector = Icons.Filled.Check,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(12.dp),
+                )
+            } else {
+                Text(
+                    text = "$stepNum",
+                    fontSize = 12.sp,
+                    fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.SemiBold,
+                    color = if (isCurrent) Color.White else Color.White.copy(alpha = 0.35f),
+                )
+            }
         }
     }
 }

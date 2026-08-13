@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
@@ -46,6 +47,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.rork.guidestreamtvandroid.data.models.StreamingCatalog
@@ -62,10 +64,8 @@ import com.rork.guidestreamtvandroid.ui.theme.sheetTopInset
 
 /**
  * Shared "My services" editor sheet used by both the Home and Sports top-bar
- * services pills. Header, search field, and the 3-column tile grid with the
- * selection accent border/badge/glow. Selection changes flow straight through
- * [onToggle] so each caller keeps its existing persistence path
- * (AuthViewModel.setSelectedServices) and ordering untouched.
+ * services pills. Hybrid layout: "Most popular" tile grid + "All services · A–Z"
+ * toggle-row list, both filtered by the search field.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -76,10 +76,15 @@ fun ServicesBottomSheet(
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var serviceQuery by remember { mutableStateOf("") }
-    val filteredServices = remember(serviceQuery) {
-        if (serviceQuery.isBlank()) StreamingCatalog.all
-        else StreamingCatalog.all.filter { it.name.contains(serviceQuery, ignoreCase = true) }
+    val filteredPopular = remember(serviceQuery) {
+        if (serviceQuery.isBlank()) StreamingCatalog.popular
+        else StreamingCatalog.popular.filter { it.name.contains(serviceQuery, ignoreCase = true) }
     }
+    val filteredAll = remember(serviceQuery) {
+        if (serviceQuery.isBlank()) StreamingCatalog.alphabetical
+        else StreamingCatalog.alphabetical.filter { it.name.contains(serviceQuery, ignoreCase = true) }
+    }
+
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
@@ -101,11 +106,12 @@ fun ServicesBottomSheet(
                 modifier = Modifier.padding(horizontal = 12.dp),
             )
             Spacer(Modifier.height(12.dp))
-            if (filteredServices.isEmpty()) {
+
+            if (filteredPopular.isEmpty() && filteredAll.isEmpty()) {
                 Box(
                     modifier = Modifier
+                        .weight(1f)
                         .fillMaxWidth()
-                        .height(420.dp)
                         .padding(horizontal = 12.dp)
                         .navigationBarsPadding(),
                     contentAlignment = Alignment.Center,
@@ -116,24 +122,143 @@ fun ServicesBottomSheet(
                 LazyVerticalGrid(
                     columns = GridCells.Fixed(3),
                     modifier = Modifier
+                        .weight(1f)
                         .fillMaxWidth()
-                        .height(420.dp)
                         .padding(horizontal = 12.dp)
                         .navigationBarsPadding(),
                     horizontalArrangement = Arrangement.spacedBy(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(22.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    items(filteredServices, key = { it.id }) { svc ->
-                        ServiceEditorTile(
-                            service = svc,
-                            isSelected = svc.id in selected,
-                            onTap = { onToggle(svc.id) },
-                        )
+                    // Most popular section
+                    if (filteredPopular.isNotEmpty()) {
+                        item(span = { GridItemSpan(maxLineSpan) }) {
+                            Text(
+                                text = "Most popular",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = TextSecondary,
+                                modifier = Modifier.padding(bottom = 4.dp),
+                            )
+                        }
+                        items(filteredPopular, key = { "popular_${it.id}" }) { svc ->
+                            ServiceEditorTile(
+                                service = svc,
+                                isSelected = svc.id in selected,
+                                onTap = { onToggle(svc.id) },
+                            )
+                        }
+                        item(span = { GridItemSpan(maxLineSpan) }) {
+                            Spacer(Modifier.height(8.dp))
+                        }
+                    }
+
+                    // All services · A–Z section
+                    if (filteredAll.isNotEmpty()) {
+                        item(span = { GridItemSpan(maxLineSpan) }) {
+                            Text(
+                                text = "All services · A–Z",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = TextSecondary,
+                                modifier = Modifier.padding(bottom = 4.dp),
+                            )
+                        }
+                        items(filteredAll, key = { "all_${it.id}" }) { svc ->
+                            ServiceToggleRowItem(
+                                service = svc,
+                                isSelected = svc.id in selected,
+                                onTap = { onToggle(svc.id) },
+                            )
+                        }
                     }
                 }
             }
             Spacer(Modifier.height(12.dp))
         }
+    }
+}
+
+@Composable
+private fun ServiceToggleRowItem(
+    service: StreamingService,
+    isSelected: Boolean,
+    onTap: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+            ) { onTap() }
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        ServiceMiniIcon(service = service, size = 36.dp)
+        Spacer(Modifier.width(12.dp))
+        Text(
+            text = service.name,
+            fontSize = 15.sp,
+            color = Color.White,
+            modifier = Modifier.weight(1f),
+        )
+        VisualSwitch(checked = isSelected)
+    }
+}
+
+@Composable
+private fun ServiceMiniIcon(service: StreamingService, size: Dp) {
+    Box(
+        modifier = Modifier
+            .size(size)
+            .clip(RoundedCornerShape(10.dp))
+            .background(service.bg),
+        contentAlignment = Alignment.Center,
+    ) {
+        val display = service.display
+        val textSize = (size.value * 0.3f).sp
+        when (display) {
+            is StreamingService.Display.Text -> {
+                Text(
+                    text = display.text,
+                    fontSize = textSize,
+                    fontWeight = display.weight,
+                    color = display.color,
+                    textAlign = TextAlign.Center,
+                    maxLines = 2,
+                )
+            }
+            is StreamingService.Display.SymbolText -> {
+                Text(
+                    text = display.text,
+                    fontSize = textSize,
+                    fontWeight = FontWeight.Black,
+                    color = display.color,
+                )
+            }
+            is StreamingService.Display.Star -> {
+                Text("\u2605", fontSize = (size.value * 0.5f).sp, color = display.color)
+            }
+        }
+    }
+}
+
+@Composable
+private fun VisualSwitch(checked: Boolean) {
+    Box(
+        modifier = Modifier
+            .size(width = 44.dp, height = 26.dp)
+            .clip(RoundedCornerShape(50.dp))
+            .background(if (checked) BrandOrange else Color.White.copy(alpha = 0.15f)),
+        contentAlignment = if (checked) Alignment.CenterEnd else Alignment.CenterStart,
+    ) {
+        Box(
+            modifier = Modifier
+                .padding(2.dp)
+                .size(22.dp)
+                .clip(CircleShape)
+                .background(Color.White),
+        )
     }
 }
 
@@ -146,8 +271,6 @@ private fun ServiceEditorTile(
     val accent = service.selectionAccent
     val borderColor = if (isSelected) accent else OutlineVariant
     val borderWidth = if (isSelected) 3.dp else 1.dp
-    // Outer column is deliberately never clipped so the selection badge can
-    // overhang the tile's top-right corner without being cut off.
     Column(
         modifier = Modifier.fillMaxWidth(),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -159,8 +282,6 @@ private fun ServiceEditorTile(
         ) {
             val tileShape = RoundedCornerShape(18.dp)
             val shadowModifier = if (isSelected) {
-                // Glow is decorative only (colored shadows need API 28); the
-                // 3.dp accent border + badge carry selection on older devices.
                 Modifier.shadow(
                     elevation = 12.dp,
                     shape = tileShape,
@@ -276,7 +397,7 @@ private fun ServiceSearchField(
                 Box(modifier = Modifier.weight(1f)) {
                     if (query.isEmpty()) {
                         Text(
-                            text = "Search services",
+                            text = "Search all services",
                             fontSize = 15.sp,
                             color = TextSecondary,
                         )
