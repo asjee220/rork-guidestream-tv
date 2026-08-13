@@ -338,9 +338,13 @@ struct SearchView: View {
         }
         .preferredColorScheme(.dark)
         .onAppear {
-            focused = true
             syncFollowed()
             Task { await vm.loadPopular() }
+            // Delay focus until the full-screen cover transition finishes;
+            // setting it immediately in onAppear often fails to summon the keyboard.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                focused = true
+            }
         }
 
     }
