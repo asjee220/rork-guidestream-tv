@@ -53,9 +53,17 @@ struct CoachMarkOverlay: View {
             Color.clear
                 .onAppear {
                     if validRects.isEmpty && manager.scrollSettled {
-                        // No valid frames after settle — skip this mark without
-                        // persisting it, so it is retried on a later session.
+                        let markKey = mark.key
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                            // Guard against the measurement task arriving in the
+                            // meantime and populating rects for this same mark.
+                            guard manager.currentMark?.key == markKey else { return }
+                            guard let current = manager.currentMark,
+                                  current.targetKeys.contains(where: {
+                                      manager.measuredRects[$0]?.isEmpty ?? true
+                                  }) else {
+                                return
+                            }
                             manager.skipUnmeasurableMark()
                         }
                     }
