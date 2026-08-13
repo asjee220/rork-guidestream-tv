@@ -57,6 +57,7 @@ enum UnifiedResultKind {
 final class SearchViewModel {
     var query: String = "" {
         didSet {
+            guard query != oldValue else { return }
             onQueryChange(query)
         }
     }
@@ -256,12 +257,14 @@ struct SearchView: View {
                         Image(systemName: "magnifyingglass")
                             .font(.system(size: 15, weight: .medium))
                             .foregroundStyle(Color.orange)
-                        FocusedSearchField(
-                            text: $vm.query,
-                            placeholder: "Search shows, creators, podcasts…",
-                            onEditingChanged: { focused = $0 }
-                        )
-                        .frame(height: 20)
+                        TextField("Search shows, creators, podcasts…", text: $vm.query)
+                            .focused($focused)
+                            .foregroundStyle(.white)
+                            .tint(Color.orange)
+                            .font(.system(size: 15))
+                            .autocorrectionDisabled()
+                            .textInputAutocapitalization(.never)
+                            .submitLabel(.search)
                         if !vm.query.isEmpty {
                             Button {
                                 vm.query = ""
