@@ -73,8 +73,9 @@ final class TVCastDiscovery {
     @ObservationIgnored private var browsers: [NWBrowser] = []
     @ObservationIgnored private var permissionPokeListener: NWListener?
     @ObservationIgnored private var subnetScanTask: Task<Void, Never>?
+    @ObservationIgnored private var rokuOnly: Bool = true
 
-    func start() {
+    func start(rokuOnly: Bool = true) {
         guard !isScanning else { return }
         isScanning = true
         devices = []
@@ -83,6 +84,7 @@ final class TVCastDiscovery {
         totalHosts = 0
         bonjourEndpointsSeen = 0
         TVCastDiscoveryStore.register(self)
+        self.rokuOnly = rokuOnly
 
         // Force iOS to surface the Local Network permission prompt and
         // register the app on the LAN.
@@ -95,18 +97,22 @@ final class TVCastDiscovery {
         // Some Roku models advertise _rsp._tcp.
         browseBonjour(type: "_rsp._tcp", kind: .roku)
 
-        // Google TV / Chromecast — reliable mDNS advertisement on all models.
-        browseBonjour(type: "_googlecast._tcp", kind: .googleTV)
+        if !rokuOnly {
+            // Google TV / Chromecast — reliable mDNS advertisement on all models.
+            browseBonjour(type: "_googlecast._tcp", kind: .googleTV)
 
-        // Amazon Fire TV — advertises via mDNS on the local network.
-        browseBonjour(type: "_amzn-wplay._tcp", kind: .fireTVStick)
+            // Amazon Fire TV — advertises via mDNS on the local network.
+            browseBonjour(type: "_amzn-wplay._tcp", kind: .fireTVStick)
+        }
 
         // Active subnet probe — the reliable path for Roku and a great
         // Bonjour fallback for Apple TV.
         startSubnetProbe()
 
-        // Samsung Tizen TVs use SSDP (UDP multicast) not Bonjour.
-        startSSDPProbe()
+        if !rokuOnly {
+            // Samsung Tizen TVs use SSDP (UDP multicast) not Bonjour.
+            startSSDPProbe()
+        }
     }
 
     func stop() {
@@ -267,18 +273,23 @@ final class TVCastDiscovery {
 
     private func startSubnetProbe() {
         subnetScanTask?.cancel()
+        let rokuOnlyFlag = rokuOnly
         subnetScanTask = Task.detached(priority: .userInitiated) {
             guard let localIP = Self.localIPv4Address() else {
                 #if DEBUG
                 print("[TVCastDiscovery] no local IPv4 — skipping subnet probe")
                 #endif
+                await MainActor.run { TVCastDiscoveryStore.setScanFinished() }
                 return
             }
             await MainActor.run {
                 TVCastDiscoveryStore.setLocalIPv4(localIP)
             }
             let parts = localIP.split(separator: ".")
-            guard parts.count == 4 else { return }
+            guard parts.count == 4 else {
+                await MainActor.run { TVCastDiscoveryStore.setScanFinished() }
+                return
+            }
             let prefix = "\(parts[0]).\(parts[1]).\(parts[2])."
             #if DEBUG
             print("[TVCastDiscovery] probing subnet \(prefix)0/24")
@@ -289,18 +300,17 @@ final class TVCastDiscovery {
                 TVCastDiscoveryStore.setTotalHosts(allHosts.count)
             }
 
-            // Probe in larger batches for faster completion (~4s end-to-end
-            // versus ~12s with batches of 32). 64 parallel TCP connects is
-            // well within the iOS socket budget.
-            let batchSize = 64
+            // Probe in larger batches for faster completion. 128 parallel
+            // TCP connects is well within the iOS socket budget.
+            let batchSize = 128
             var index = 0
             while index < allHosts.count {
-                if Task.isCancelled { return }
+                if Task.isCancelled { break }
                 let end = min(index + batchSize, allHosts.count)
                 await withTaskGroup(of: Void.self) { group in
                     for host in allHosts[index..<end] {
                         group.addTask {
-                            await Self.probe(host: host)
+                            await Self.probe(host: host, rokuOnly: rokuOnlyFlag)
                             await MainActor.run {
                                 TVCastDiscoveryStore.incrementScannedHosts()
                             }
@@ -309,6 +319,7 @@ final class TVCastDiscovery {
                 }
                 index = end
             }
+            await MainActor.run { TVCastDiscoveryStore.setScanFinished() }
         }
     }
 
@@ -399,9 +410,9 @@ final class TVCastDiscovery {
         return host
     }
 
-    nonisolated private static func probe(host: String) async {
+    nonisolated private static func probe(host: String, rokuOnly: Bool) async {
         // Roku ECP on :8060 — XML device-info; cheap and reliable.
-        if let rokuInfo = await rawHTTPGet(host: host, port: 8060, path: "/query/device-info", timeout: 1.0),
+        if let rokuInfo = await rawHTTPGet(host: host, port: 8060, path: "/query/device-info", timeout: 0.8),
            rokuInfo.lowercased().contains("roku") {
             let name = extractTag("user-device-name", from: rokuInfo)
                 ?? extractTag("friendly-device-name", from: rokuInfo)
@@ -418,6 +429,9 @@ final class TVCastDiscovery {
             }
             return
         }
+
+        // Roku-only mode: skip all non-Roku probes.
+        if rokuOnly { return }
 
         // AirPlay on :7000 — covers Apple TV, LG webOS TVs, and Macs.
         // The classifier reads the model field from the plist to distinguish them.
@@ -898,6 +912,7 @@ final class TVCastDiscovery {
     fileprivate func setLocalIPv4(_ ip: String) { localIPv4 = ip }
     fileprivate func setTotalHosts(_ total: Int) { totalHosts = total }
     fileprivate func incrementScannedHosts() { scannedHosts += 1 }
+    fileprivate func setScanFinished() { isScanning = false }
     fileprivate func recordBonjourEndpoints(_ count: Int) {
         bonjourEndpointsSeen = max(bonjourEndpointsSeen, count)
     }
@@ -918,5 +933,6 @@ enum TVCastDiscoveryStore {
     static func setLocalIPv4(_ ip: String) { current?.setLocalIPv4(ip) }
     static func setTotalHosts(_ total: Int) { current?.setTotalHosts(total) }
     static func incrementScannedHosts() { current?.incrementScannedHosts() }
+    static func setScanFinished() { current?.setScanFinished() }
     static func recordBonjourEndpoints(_ count: Int) { current?.recordBonjourEndpoints(count) }
 }

@@ -139,13 +139,16 @@ enum RokuECPClient {
                     func readNext() {
                         conn.receive(minimumIncompleteLength: 1, maximumLength: 4096) { data, _, isComplete, error in
                             if let data = data { buffer.append(data) }
-                            if let line = firstResponseLine(in: buffer) {
-                                if line.contains(" 403") {
-                                    finish(.limited)
-                                } else if line.contains(" 2") {
+                            if let code = parseStatusCode(in: buffer) {
+                                if (200..<300).contains(code) {
                                     finish(.enabled)
+                                } else if code == 401 || code == 403 {
+                                    finish(.limited)
                                 } else {
-                                    finish(.unreachable)
+                                    // Device answered with an HTTP status —
+                                    // it's reachable; let the launch path
+                                    // classify the real failure.
+                                    finish(.enabled)
                                 }
                                 return
                             }
@@ -216,7 +219,7 @@ enum RokuECPClient {
         }
 
         // Send Home first so the channel always launches from a known state.
-        _ = await rawHTTPPost(host: host, port: port, path: "/keypress/Home", timeout: 2.0)
+        _ = await rawHTTPPost(host: host, port: port, path: "/keypress/Home", timeout: 1.2)
         try? await Task.sleep(for: .milliseconds(1200))
 
         let outcome = await rawHTTPPost(host: host, port: port, path: "/" + normalized, timeout: 4.0)
@@ -262,7 +265,7 @@ enum RokuECPClient {
         // 1.2–1.8s, so we wait 1500ms as the safe minimum — at 900ms the
         // launch could still land mid-transition and the contentId gets
         // dropped, opening the channel home screen instead of the title.
-        _ = await rawHTTPPost(host: host, port: port, path: "/keypress/Home", timeout: 2.0)
+        _ = await rawHTTPPost(host: host, port: port, path: "/keypress/Home", timeout: 1.2)
         try? await Task.sleep(for: .milliseconds(1500))
 
         // Build the candidate paths in priority order.

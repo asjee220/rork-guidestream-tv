@@ -400,7 +400,14 @@ fun CreatorDetailScreen(
         }
 
         if (showCast) {
-            CastToTVSheet(onClose = { showCast = false })
+            CastToTVSheet(
+                onClose = { showCast = false },
+                showTitle = source?.displayName ?: titleId,
+                platform = "",
+                tmdbId = null,
+                isTV = false,
+                watchmodeSource = null,
+            )
         }
     }
 }

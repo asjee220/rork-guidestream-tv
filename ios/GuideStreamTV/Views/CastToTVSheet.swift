@@ -51,7 +51,25 @@ struct CastToTVSheet: View {
     /// launches. Other discovered devices are filtered out so the user never
     /// sees a device they can't actually cast to.
     private var rokuDevices: [DiscoveredTVDevice] {
-        discovery.devices.filter { $0.kind == .roku }
+        let rokus = discovery.devices.filter { $0.kind == .roku }
+        // Deduplicate by case-insensitive trimmed name, preferring rows
+        // with a non-nil host. At most one row survives per name.
+        var bestByName: [String: DiscoveredTVDevice] = [:]
+        for device in rokus {
+            let key = device.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            if let existing = bestByName[key] {
+                if existing.host == nil && device.host != nil {
+                    bestByName[key] = device
+                }
+            } else {
+                bestByName[key] = device
+            }
+        }
+        // Return in discovery order, keeping only the best per name.
+        return rokus.filter { device in
+            let key = device.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            return bestByName[key]?.id == device.id
+        }
     }
 
     var body: some View {
@@ -602,14 +620,27 @@ struct CastToTVSheet: View {
         // user's home Wi-Fi, so the empty state explains what to do instead.
         guard !isRunningInSimulator else { return }
 
-        discovery.start()
+        discovery.start(rokuOnly: true)
 
-        // Give the active subnet probe enough time to walk a full /24
-        // (~4-6s with 64-host batches) before nudging the user toward the
-        // manual entry / Settings fallback.
+        // Poll for scan completion instead of a blind 6-second sleep.
+        // Show the permission prompt only once the scan has finished and
+        // no devices were found, with a 9-second hard ceiling so the
+        // prompt still appears if the scan never reports completion.
         permissionCheckTask = Task { @MainActor in
-            try? await Task.sleep(for: .seconds(6))
-            guard !Task.isCancelled else { return }
+            let deadline = Date().addingTimeInterval(9.0)
+            while Date() < deadline {
+                try? await Task.sleep(for: .milliseconds(250))
+                guard !Task.isCancelled else { return }
+                if !discovery.isScanning {
+                    if rokuDevices.isEmpty {
+                        withAnimation(.easeInOut(duration: 0.25)) {
+                            showPermissionPrompt = true
+                        }
+                    }
+                    return
+                }
+            }
+            // 9-second ceiling — scan never reported completion.
             if rokuDevices.isEmpty {
                 withAnimation(.easeInOut(duration: 0.25)) {
                     showPermissionPrompt = true
@@ -670,12 +701,8 @@ struct CastToTVSheet: View {
                     sendingDeviceId = nil
                     rokuLimitedModeDevice = device
                     return
-                case .unreachable:
-                    sendingDeviceId = nil
-                    showToast(ToastState(message: "Couldn't reach \(device.name)", icon: "exclamationmark.triangle.fill"))
-                    return
-                case .enabled:
-                    break // proceed to launch
+                case .enabled, .unreachable:
+                    break // proceed to launch — let the launch result decide
                 }
                 // ECP confirmed enabled — proceed with normal launch flow.
                 let ok = await dispatchLaunch(for: resolved)

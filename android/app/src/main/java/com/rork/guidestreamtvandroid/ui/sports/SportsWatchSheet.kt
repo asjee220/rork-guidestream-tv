@@ -375,7 +375,14 @@ fun SportsWatchSheet(
     }
 
     if (showCast) {
-        CastToTVSheet(onClose = { showCast = false })
+        CastToTVSheet(
+            onClose = { showCast = false },
+            showTitle = gameTitle,
+            platform = activeBroadcast.orEmpty(),
+            tmdbId = null,
+            isTV = true,
+            watchmodeSource = null,
+        )
     }
 }
 

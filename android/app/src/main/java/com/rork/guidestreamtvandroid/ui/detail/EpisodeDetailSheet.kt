@@ -632,7 +632,15 @@ fun EpisodeDetailSheet(
     }
 
     if (showCast) {
-        CastToTVSheet(onClose = { showCast = false })
+        CastToTVSheet(
+            onClose = { showCast = false },
+            showTitle = displayTitle,
+            platform = selectedSource?.name.orEmpty(),
+            tmdbId = tmdbId,
+            isTV = isTV,
+            watchmodeSource = selectedSource,
+            episodeRokuUrl = episodeSource?.rokuUrl,
+        )
     }
 }
 

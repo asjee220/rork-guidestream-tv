@@ -853,7 +853,14 @@ fun ShowDetailScreen(
         }
 
         if (showCast) {
-            CastToTVSheet(onClose = { showCast = false })
+            CastToTVSheet(
+                onClose = { showCast = false },
+                showTitle = detail?.name ?: titleName,
+                platform = selectedSource?.name.orEmpty(),
+                tmdbId = tmdbId,
+                isTV = isTV,
+                watchmodeSource = selectedSource,
+            )
         }
 
         // Detail coach mark overlay
