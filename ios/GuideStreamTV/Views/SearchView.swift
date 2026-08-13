@@ -55,7 +55,11 @@ enum UnifiedResultKind {
 
 @Observable
 final class SearchViewModel {
-    var query: String = ""
+    var query: String = "" {
+        didSet {
+            onQueryChange(query)
+        }
+    }
     var scope: SearchScope = .all
     var isSearching: Bool = false
     var tmdbResults: [SearchResult] = []
@@ -252,13 +256,12 @@ struct SearchView: View {
                         Image(systemName: "magnifyingglass")
                             .font(.system(size: 15, weight: .medium))
                             .foregroundStyle(Color.orange)
-                        TextField("Search shows, creators, podcasts…", text: $vm.query)
-                            .focused($focused)
-                            .foregroundStyle(.white)
-                            .tint(Color.orange)
-                            .font(.system(size: 15))
-                            .autocorrectionDisabled()
-                            .onChange(of: vm.query) { _, q in vm.onQueryChange(q) }
+                        FocusedSearchField(
+                            text: $vm.query,
+                            placeholder: "Search shows, creators, podcasts…",
+                            onEditingChanged: { focused = $0 }
+                        )
+                        .frame(height: 20)
                         if !vm.query.isEmpty {
                             Button {
                                 vm.query = ""
