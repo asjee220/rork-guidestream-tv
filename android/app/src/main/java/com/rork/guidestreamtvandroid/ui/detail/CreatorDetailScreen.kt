@@ -194,6 +194,7 @@ fun CreatorDetailScreen(
             Column(
                 modifier = Modifier
                     .fillMaxSize()
+                    .statusBarsPadding()
                     .verticalScroll(rememberScrollState()),
             ) {
                 // Hero header
@@ -227,7 +228,6 @@ fun CreatorDetailScreen(
                     Box(
                         modifier = Modifier
                             .align(Alignment.TopStart)
-                            .statusBarsPadding()
                             .padding(12.dp)
                             .size(40.dp)
                             .clip(CircleShape)

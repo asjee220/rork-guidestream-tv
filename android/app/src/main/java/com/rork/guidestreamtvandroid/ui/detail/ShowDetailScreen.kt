@@ -243,6 +243,7 @@ fun ShowDetailScreen(
             Column(
                 modifier = Modifier
                     .fillMaxSize()
+                    .statusBarsPadding()
                     .verticalScroll(detailScrollState),
             ) {
                 // Hero backdrop
@@ -279,7 +280,6 @@ fun ShowDetailScreen(
                     Box(
                         modifier = Modifier
                             .align(Alignment.TopStart)
-                            .statusBarsPadding()
                             .padding(horizontalCutoutInsets())
                             .padding(12.dp)
                             .size(40.dp)
@@ -461,7 +461,7 @@ fun ShowDetailScreen(
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        verticalAlignment = Alignment.CenterVertically,
+                        verticalAlignment = Alignment.Top,
                     ) {
                     // Watch button
                     if (topProvider != null || usSources.isNotEmpty()) {
