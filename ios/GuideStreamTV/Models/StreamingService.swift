@@ -810,4 +810,38 @@ enum StreamingCatalog {
     static var alphabetical: [StreamingService] {
         all.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
+
+    /// TMDB watch-provider IDs for services that have a mapping. Services
+    /// absent from this map (espn, sling, youtubetv, mgm, etc.) are
+    /// intentionally unmapped — they have no direct TMDB provider entry and
+    /// are silently skipped by the onboarding show-picker and the home rails.
+    /// This is the single source of truth so the picker and the rails cannot
+    /// drift apart.
+    static let tmdbProviderIdMap: [String: Int] = [
+        "netflix": 8,
+        "prime": 9,
+        "disney": 337,
+        "hbo": 1899,
+        "hulu": 15,
+        "appletv": 350,
+        "paramount": 2303,
+        "peacock": 386,
+        "starz": 43,
+        "showtime": 37,
+        "crunchyroll": 283,
+        "amc": 526,
+        "discovery": 584,
+        "mubi": 11,
+        "britbox": 151,
+        "fubo": 257,
+        "tubi": 73,
+        "pluto": 300,
+        "youtube": 192,
+    ]
+
+    /// Returns the TMDB provider ID for a catalogue service id, or nil when
+    /// the service has no TMDB mapping.
+    static func tmdbProviderId(for serviceId: String) -> Int? {
+        tmdbProviderIdMap[serviceId]
+    }
 }

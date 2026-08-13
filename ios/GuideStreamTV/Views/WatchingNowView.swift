@@ -21,11 +21,54 @@ struct WatchingNowView: View {
     let totalSteps: Int
 
     @State private var activeService: String = ""
-    @State private var selections: Set<String> = [] // "platform|titleId"
+    /// Selection keys are "owningServiceId|titleId" — never use activeService
+    /// so picks made under "All" resolve correctly on continue.
+    @State private var selections: Set<String> = []
     @State private var showsByService: [String: [TMDBResult]] = [:]
+    /// Tracks which services have finished loading (for skeleton vs empty state).
+    @State private var loadedServices: Set<String> = []
     @State private var isLoading = true
 
     private var totalSelected: Int { selections.count }
+
+    /// Union of all shows across every loaded service, de-duplicated by show id,
+    /// preserving popularity order via merge-sort across the per-service lists
+    /// (each list is already popularity-desc from TMDB).
+    private var allShows: [TMDBResult] {
+        var seen = Set<Int>()
+        var result: [TMDBResult] = []
+        // Interleave: take one from each service in rotation so no single
+        // service dominates the All view. Services are sorted for determinism.
+        let sortedKeys = showsByService.keys.sorted()
+        var indices: [String: Int] = [:]
+        while true {
+            var added = false
+            for key in sortedKeys {
+                let list = showsByService[key] ?? []
+                let idx = indices[key, default: 0]
+                while idx < list.count {
+                    let show = list[idx]
+                    indices[key] = idx + 1
+                    if seen.insert(show.id).inserted {
+                        result.append(show)
+                        added = true
+                        break
+                    }
+                    // already seen — continue to next in this list
+                }
+            }
+            if !added { break }
+        }
+        return result
+    }
+
+    /// The list to render based on the active filter chip.
+    private var displayShows: [TMDBResult] {
+        if activeService.isEmpty {
+            return allShows
+        }
+        return showsByService[activeService] ?? []
+    }
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -117,7 +160,8 @@ struct WatchingNowView: View {
                     .padding(.bottom, 16)
 
                     // Show grid
-                    if isLoading {
+                    if isLoading && displayShows.isEmpty {
+                        // Skeletons while loading
                         LazyVGrid(
                             columns: [GridItem(.flexible(), spacing: 8),
                                       GridItem(.flexible(), spacing: 8),
@@ -129,6 +173,11 @@ struct WatchingNowView: View {
                             }
                         }
                         .padding(.horizontal, 16)
+                    } else if displayShows.isEmpty {
+                        // Explicit empty state
+                        emptyState
+                            .padding(.horizontal, 20)
+                            .padding(.top, 40)
                     } else {
                         LazyVGrid(
                             columns: [GridItem(.flexible(), spacing: 8),
@@ -136,12 +185,18 @@ struct WatchingNowView: View {
                                       GridItem(.flexible(), spacing: 8)],
                             spacing: 8
                         ) {
-                            ForEach(showsByService[activeService] ?? [], id: \.id) { show in
+                            ForEach(displayShows, id: \.id) { show in
+                                // Find the owning service for this show.
+                                // Under "All", a show may appear in multiple services;
+                                // use the first service that contains it.
+                                let owningService = activeService.isEmpty
+                                    ? (showsByService.first { _, list in list.contains { $0.id == show.id } }?.key ?? "")
+                                    : activeService
                                 ShowPosterCard(
                                     show: show,
-                                    serviceId: activeService,
-                                    isSelected: selections.contains("\(activeService)|\(show.id)"),
-                                    onTap: { toggleSelection(show: show) }
+                                    serviceId: owningService,
+                                    isSelected: selections.contains("\(owningService)|\(show.id)"),
+                                    onTap: { toggleSelection(show: show, owningService: owningService) }
                                 )
                             }
                         }
@@ -206,28 +261,8 @@ struct WatchingNowView: View {
             )
         }
         .task {
-            let providerIdMap: [String: Int] = [
-                "netflix": 8,
-                "hulu": 15,
-                "paramount": 2303,
-                "hbo": 1899,
-                "disney": 337,
-                "appletv": 350,
-                "peacock": 386,
-                "prime": 9,
-                "crunchyroll": 283,
-                "youtube": 192,
-                "tubi": 73,
-                "pluto": 300,
-                "starz": 43,
-                "showtime": 37,
-                "amc": 80,
-                "discovery": 510,
-                "espn": 337,
-                "fubo": 257,
-                "britbox": 151,
-                "acorntv": 122
-            ]
+            // Use the shared provider map so the picker and home rails can't drift.
+            let providerIdMap = StreamingCatalog.tmdbProviderIdMap
             await withTaskGroup(of: (String, [TMDBResult]).self) { group in
                 for service in selectedServices {
                     group.addTask {
@@ -244,11 +279,13 @@ struct WatchingNowView: View {
                 for await (service, results) in group {
                     await MainActor.run {
                         showsByService[service] = results
+                        loadedServices.insert(service)
                     }
                 }
             }
             await MainActor.run {
-                activeService = selectedServices.sorted().first ?? ""
+                // Default to "All" so the user sees the full union on load.
+                activeService = ""
                 isLoading = false
             }
         }
@@ -256,10 +293,10 @@ struct WatchingNowView: View {
 
     // MARK: - Selection
 
-    private func toggleSelection(show: TMDBResult) {
+    private func toggleSelection(show: TMDBResult, owningService: String) {
         let gen = UIImpactFeedbackGenerator(style: .light)
         gen.impactOccurred()
-        let key = "\(activeService)|\(show.id)"
+        let key = "\(owningService)|\(show.id)"
         if selections.contains(key) {
             selections.remove(key)
         } else {
@@ -288,41 +325,24 @@ struct WatchingNowView: View {
         }
     }
 
-    // MARK: - Helpers
+    // MARK: - Empty State
 
-    private func serviceShortName(_ name: String) -> String {
-        switch name {
-        case "Paramount+": return "Paramount+"
-        case "Apple TV+": return "Apple TV+"
-        case "Disney+": return "Disney+"
-        default: return name
+    private var emptyState: some View {
+        VStack(spacing: 8) {
+            Image(systemName: "tv.slash")
+                .font(.system(size: 32, weight: .light))
+                .foregroundStyle(Color.white.opacity(0.3))
+            Text(activeService.isEmpty
+                 ? "No shows found for your services right now"
+                 : "Nothing to show for \(StreamingCatalog.service(for: activeService)?.name ?? activeService.capitalized) right now")
+                .font(.custom("SF Pro Text", size: 14).weight(.medium))
+                .foregroundStyle(Color.textSecondary)
+            Text("Try selecting different services, or skip to continue.")
+                .font(.custom("SF Pro Text", size: 12))
+                .foregroundStyle(Color.white.opacity(0.35))
         }
-    }
-
-    private func serviceBrandColor(_ name: String) -> Color {
-        switch name {
-        case "Netflix": return Color(hex: "E50914")
-        case "Paramount+": return Color(hex: "0064FF")
-        case "Max": return Color(hex: "5822B4")
-        case "Hulu": return Color(hex: "1CE783")
-        case "Disney+": return Color(hex: "0B3D91")
-        case "Apple TV+": return .black
-        case "Peacock": return Color(hex: "F5821F")
-        default: return .blue
-        }
-    }
-
-    private func serviceBrandAbbreviation(_ name: String) -> String {
-        switch name {
-        case "Netflix": return "N"
-        case "Paramount+": return "P+"
-        case "Max": return "MAX"
-        case "Hulu": return "H"
-        case "Disney+": return "D+"
-        case "Apple TV+": return "TV+"
-        case "Peacock": return "P"
-        default: return String(name.prefix(1))
-        }
+        .frame(maxWidth: .infinity)
+        .multilineTextAlignment(.center)
     }
 
     // MARK: - Skeleton

@@ -340,6 +340,7 @@ struct HomeView: View {
 
     @State private var showServicesSheet: Bool = false
     @State private var showWatchListSheet: Bool = false
+    @State private var showEmailAuth: Bool = false
     @State private var auth = AuthViewModel.shared
     @State private var streams = StreamsViewModel.shared
     @State private var social = SocialViewModel.shared
@@ -366,7 +367,9 @@ struct HomeView: View {
     /// Cache of resolved genre ids per TMDB id so a title is never looked up twice.
     @State private var resolvedGenres: [Int: Set<Int>] = [:]
     @State private var popularOnServiceResults: [String: [TMDBResult]] = [:]
-    private let tmdbProviderIdMap: [String: Int] = ["netflix": 8, "prime": 9, "disney": 337, "hbo": 1899, "hulu": 15, "appletv": 350, "paramount": 2303, "peacock": 386, "starz": 43, "showtime": 37, "crunchyroll": 283, "amc": 526, "discovery": 584, "mubi": 11, "britbox": 151, "fubo": 257, "tubi": 73, "pluto": 300, "youtube": 192]
+    /// TMDB provider IDs — delegated to the shared `StreamingCatalog.tmdbProviderIdMap`
+    /// so the home rails and the onboarding show-picker can never drift apart.
+    private var tmdbProviderIdMap: [String: Int] { StreamingCatalog.tmdbProviderIdMap }
     @State private var topRated: [TMDBResult] = []
     @State private var genreShows: [TMDBResult] = []
     @State private var recommendedShows: [TMDBResult] = []
@@ -549,26 +552,15 @@ struct HomeView: View {
                                 liveStatusMap: liveStatusMap,
                                 latestContentMap: streams.latestContentAt,
                                 badgeTextByTitleId: watchListBadgeText,
-                                onSeeAll: {
-                                    WatchIntentLogger.shared.log(
-                                        eventType: .cardTapped,
-                                        metadata: ["section": "watch_list_see_all"]
-                                    )
-                                    showWatchListSheet = true
-                                },
+                                onSeeAll: { showWatchListSheet = true },
                                 onOpen: { ep in
-                                    WatchIntentLogger.shared.log(
-                                        eventType: .cardTapped,
-                                        titleId: ep.titleId ?? WatchIntentLogger.titleSlug(ep.title),
-                                        platformId: ep.platform.lowercased(),
-                                        metadata: ["section": "watch_list"]
-                                    )
                                     if let tid = ep.titleId, SourceKind.from(titleId: tid).isNonTMDB {
                                         creatorDetailTarget = CreatorDetailTarget(titleId: tid, initialEpisode: nil)
                                     } else {
                                         detailSubject = .episode(ep)
                                     }
-                                }
+                                },
+                                onSignIn: { showEmailAuth = true }
                             )
                             .padding(.horizontal, 12)
                         }
@@ -1274,6 +1266,12 @@ struct HomeView: View {
             }
             .sheet(isPresented: $showWatchListSheet) {
                 WatchListBottomSheet()
+            }
+            .sheet(isPresented: $showEmailAuth) {
+                EmailAuthView(
+                    onAuthenticated: { showEmailAuth = false },
+                    onClose: { showEmailAuth = false }
+                )
             }
             .toolbar(.hidden, for: .navigationBar)
         }
@@ -3288,6 +3286,7 @@ private struct WatchListSection: View {
     let badgeTextByTitleId: [String: String]
     let onSeeAll: () -> Void
     let onOpen: (Episode) -> Void
+    var onSignIn: () -> Void = {}
 
     /// Count of live items in this section.
     private var liveCount: Int {
@@ -3376,6 +3375,23 @@ private struct WatchListSection: View {
                     .padding(.horizontal, 12)
                     .padding(.vertical, 6)
                 }
+                // Quiet sync footer for guests with items — not a sign-in wall.
+                if !isAuthenticated {
+                    HStack(spacing: 4) {
+                        Text("\(items.count) saved on this device.")
+                            .scaledFont(size: 11)
+                            .foregroundStyle(Color.textSecondary)
+                        Text("Sign in")
+                            .scaledFont(size: 11, weight: .semibold)
+                            .foregroundStyle(Color.orange)
+                            .onTapGesture { onSignIn() }
+                        Text("to keep them across devices.")
+                            .scaledFont(size: 11)
+                            .foregroundStyle(Color.textSecondary)
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 4)
+                }
             }
         }
         .overlay(liveCount > 0 ? redGlowOverlay : nil)
@@ -3396,31 +3412,63 @@ private struct WatchListSection: View {
             }
     }
 
+    @ViewBuilder
     private var emptyState: some View {
-        HStack(alignment: .top, spacing: 12) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(Color.orange.opacity(0.14))
-                    .frame(width: 52, height: 52)
-                Image(systemName: "bookmark.fill")
-                    .scaledFont(size: 22, weight: .semibold)
+        if isAuthenticated {
+            // Signed-in user with no items — original empty state.
+            HStack(alignment: .top, spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(Color.orange.opacity(0.14))
+                        .frame(width: 52, height: 52)
+                    Image(systemName: "bookmark.fill")
+                        .scaledFont(size: 22, weight: .semibold)
+                        .foregroundStyle(Color.orange)
+                }
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Nothing saved yet")
+                        .scaledFont(size: 14, weight: .semibold)
+                        .foregroundStyle(.white)
+                    Text("Tap the + on any show, movie, or game to save it here for tonight.")
+                        .scaledFont(size: 12)
+                        .foregroundStyle(Color.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 16)
+            .padding(.bottom, 4)
+        } else {
+            // Guest with no items — invitation, not a sign-in wall.
+            HStack(alignment: .top, spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(Color.orange.opacity(0.14))
+                        .frame(width: 52, height: 52)
+                    Image(systemName: "sparkles")
+                        .scaledFont(size: 22, weight: .semibold)
+                        .foregroundStyle(Color.orange)
+                }
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Nothing here yet")
+                        .scaledFont(size: 14, weight: .semibold)
+                        .foregroundStyle(.white)
+                    Text("Add a show and we'll tell you the moment a new episode lands on one of your services.")
+                        .scaledFont(size: 12)
+                        .foregroundStyle(Color.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Button("Browse shows") {
+                        onSeeAll()
+                    }
+                    .scaledFont(size: 12, weight: .semibold)
                     .foregroundStyle(Color.orange)
+                    .padding(.top, 2)
+                }
+                Spacer(minLength: 0)
             }
-            VStack(alignment: .leading, spacing: 4) {
-                Text(isAuthenticated ? "Nothing saved yet" : "Sign in to start your list")
-                    .scaledFont(size: 14, weight: .semibold)
-                    .foregroundStyle(.white)
-                Text(isAuthenticated
-                     ? "Tap the + on any show, movie, or game to save it here for tonight."
-                     : "Create an account to keep your shows, movies, and games in sync across devices.")
-                    .scaledFont(size: 12)
-                    .foregroundStyle(Color.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            Spacer(minLength: 0)
+            .padding(.horizontal, 16)
+            .padding(.bottom, 4)
         }
-        .padding(.horizontal, 16)
-        .padding(.bottom, 4)
     }
 }
 

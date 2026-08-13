@@ -108,9 +108,14 @@ class TMDBService {
         return fetchList("$base/discover/tv?api_key=$apiKey&language=en-US&sort_by=popularity.desc&with_original_language=$languages&page=1", "tv")
     }
 
-    /** Discover by watch provider. */
+    /** Onboarding show-picker: popular TV series on a specific streaming
+     *  service. Uses the device's resolved region (US fallback) and the same
+     *  flatrate+ads monetization filter as the home rails. The with_type
+     *  parameter was removed — it was set to 0 (Documentary), which silently
+     *  filtered out all scripted series. */
     suspend fun discoverByProvider(providerId: Int, limit: Int = 15): List<TMDBResult> {
-        val results = fetchList("$base/discover/tv?api_key=$apiKey&language=en-US&sort_by=popularity.desc&watch_region=US&with_watch_providers=$providerId&with_type=0&page=1", "tv")
+        val region = java.util.Locale.getDefault().country.ifEmpty { "US" }.uppercase()
+        val results = fetchList("$base/discover/tv?api_key=$apiKey&language=en-US&sort_by=popularity.desc&watch_region=$region&with_watch_providers=$providerId&with_watch_monetization_types=flatrate%7Cads&page=1", "tv")
         return results.take(limit)
     }
 

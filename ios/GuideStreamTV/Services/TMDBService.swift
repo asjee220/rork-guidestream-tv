@@ -459,8 +459,14 @@ nonisolated struct TMDBService {
         return env.results.map { stamp($0, mediaType: "tv") }
     }
 
+    /// Onboarding show-picker: popular TV series on a specific streaming
+    /// service. Uses the device's resolved region (US fallback) and the same
+    /// flatrate+ads monetization filter as the home rails so results are
+    /// consistent. The `with_type` parameter was removed — it was set to 0
+    /// (Documentary), which silently filtered out all scripted series.
     func discoverByProvider(providerId: Int, limit: Int = 15) async throws -> [TMDBResult] {
-        let urlString = "\(base)/discover/tv?api_key=\(apiKey)&language=en-US&sort_by=popularity.desc&watch_region=US&with_watch_providers=\(providerId)&with_type=0&page=1"
+        let region = DeviceLocale.current().region.uppercased()
+        let urlString = "\(base)/discover/tv?api_key=\(apiKey)&language=en-US&sort_by=popularity.desc&watch_region=\(region)&with_watch_providers=\(providerId)&with_watch_monetization_types=flatrate%7Cads&page=1"
         let data = try await get(urlString)
         let env = try JSONDecoder().decode(TMDBTrendingEnvelope.self, from: data)
         return Array(env.results.map { stamp($0, mediaType: "tv") }.prefix(limit))

@@ -36,6 +36,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -313,6 +314,7 @@ fun HomeScreen(
                 latestContentAt = latestContentAt,
                 latestContentKind = latestContentKind,
                 seenContentAt = seenContentAt,
+                isAuthenticated = authVm.isAuthenticated.value,
                 onOpen = { stream ->
                     WatchIntentLogger.get().log(
                         WatchIntentLogger.IntentEventType.CARD_TAPPED,
@@ -334,6 +336,7 @@ fun HomeScreen(
                     )
                     onOpenWatchList()
                 },
+                onSignIn = { onOpenSearch() },
             )
         }
 
@@ -1196,15 +1199,78 @@ private fun WatchListSection(
     latestContentAt: Map<String, Long>,
     latestContentKind: Map<String, String>,
     seenContentAt: Map<String, Long>,
+    isAuthenticated: Boolean,
     onOpen: (com.rork.guidestreamtvandroid.data.models.UserStream) -> Unit,
     onSeeAll: (() -> Unit)? = null,
+    onSignIn: () -> Unit = {},
 ) {
     if (streams.isEmpty()) {
-        EmptyStateRow(
-            title = "My Watch List",
-            message = "Tap the + on any show to add it here.",
-            onSeeAll = onSeeAll,
-        )
+        if (isAuthenticated) {
+            EmptyStateRow(
+                title = "My Watch List",
+                message = "Tap the + on any show to add it here.",
+                onSeeAll = onSeeAll,
+            )
+        } else {
+            // Guest with no items — invitation, not a sign-in wall.
+            Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+                Row(verticalAlignment = Alignment.Bottom) {
+                    Text(
+                        text = "My Watch List",
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = TextPrimary,
+                    )
+                }
+                Spacer(Modifier.height(10.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.Start,
+                    verticalAlignment = Alignment.Top,
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(52.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(BrandOrange.copy(alpha = 0.14f)),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Star,
+                            contentDescription = null,
+                            tint = BrandOrange,
+                            modifier = Modifier.size(22.dp),
+                        )
+                    }
+                    Spacer(Modifier.width(12.dp))
+                    Column {
+                        Text(
+                            text = "Nothing here yet",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = TextPrimary,
+                        )
+                        Spacer(Modifier.height(2.dp))
+                        Text(
+                            text = "Add a show and we'll tell you the moment a new episode lands on one of your services.",
+                            fontSize = 12.sp,
+                            color = TextSecondary,
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = "Browse shows",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = BrandOrange,
+                            modifier = Modifier.clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null,
+                            ) { onSeeAll?.invoke() },
+                        )
+                    }
+                }
+            }
+        }
         return
     }
     // Sort newest-content-first, preserving incoming index as a tiebreaker.
@@ -1269,6 +1335,35 @@ private fun WatchListSection(
                         seenContentAt,
                     ),
                     onClick = { onOpen(stream) },
+                )
+            }
+        }
+        // Quiet sync footer for guests with items — not a sign-in wall.
+        if (!isAuthenticated) {
+            Row(
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.Start,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = "${streams.size} saved on this device. ",
+                    fontSize = 11.sp,
+                    color = TextSecondary,
+                )
+                Text(
+                    text = "Sign in",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = BrandOrange,
+                    modifier = Modifier.clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                    ) { onSignIn() },
+                )
+                Text(
+                    text = " to keep them across devices.",
+                    fontSize = 11.sp,
+                    color = TextSecondary,
                 )
             }
         }

@@ -75,7 +75,12 @@ import com.rork.guidestreamtvandroid.ui.theme.SurfaceDark
 import com.rork.guidestreamtvandroid.ui.theme.TextPrimary
 import com.rork.guidestreamtvandroid.ui.theme.TextSecondary
 import com.rork.guidestreamtvandroid.ui.theme.TextTertiary
+import com.rork.guidestreamtvandroid.ui.home.HomeViewModel
 import io.github.jan.supabase.postgrest.postgrest
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
@@ -104,24 +109,70 @@ fun WatchingNowScreen(
     totalSteps: Int = 4,
 ) {
     val tmdb = remember { TMDBService.get() }
-    var shows by remember { mutableStateOf<List<TMDBResult>>(emptyList()) }
+    var showsByService by remember { mutableStateOf<Map<String, List<TMDBResult>>>(emptyMap()) }
+    var loadedServices by remember { mutableStateOf<Set<String>>(emptySet()) }
     var isLoading by remember { mutableStateOf(true) }
     val selectedIds = remember { mutableStateListOf<Int>() }
     var activeService by remember { mutableStateOf("") }
 
+    // Per-service loading — mirrors iOS WatchingNowView. Uses the same
+    // providerIdMap from HomeViewModel so the picker and rails stay in sync.
     LaunchedEffect(Unit) {
-        val combined = (tmdb.getTrendingTV() + tmdb.getPopularTV())
-            .distinctBy { it.id }
-            .filter { it.posterUrl != null }
-            .take(30)
-        shows = combined
+        val providerMap = HomeViewModel.get().run {
+            selectedServices.mapNotNull { id ->
+                providerIdFor(id)?.let { id to it }
+            }
+        }
+        val results = mutableMapOf<String, List<TMDBResult>>()
+        coroutineScope {
+            providerMap.map { (serviceId, providerId) ->
+                async(Dispatchers.IO) {
+                    try {
+                        tmdb.discoverByProvider(providerId)
+                    } catch (_: Exception) {
+                        emptyList()
+                    } to serviceId
+                }
+            }.awaitAll().forEach { (shows, serviceId) ->
+                results[serviceId] = shows
+                loadedServices = loadedServices + serviceId
+            }
+        }
+        showsByService = results
+        // Default to "All" so the user sees the full union on load.
+        activeService = ""
         isLoading = false
     }
 
-    val filteredShows = remember(shows, activeService) {
-        if (activeService.isEmpty()) shows
-        else shows.filter { activeService.equals("trending", ignoreCase = true) || true }
+    // Union of all shows across every loaded service, de-duplicated by id,
+    // preserving popularity order via interleaved merge.
+    val allShows = remember(showsByService) {
+        val seen = mutableSetOf<Int>()
+        val result = mutableListOf<TMDBResult>()
+        val sortedKeys = showsByService.keys.sorted()
+        val indices = mutableMapOf<String, Int>()
+        while (true) {
+            var added = false
+            for (key in sortedKeys) {
+                val list = showsByService[key] ?: continue
+                var idx = indices[key] ?: 0
+                while (idx < list.size) {
+                    val show = list[idx]
+                    idx++
+                    indices[key] = idx
+                    if (seen.add(show.id)) {
+                        result.add(show)
+                        added = true
+                        break
+                    }
+                }
+            }
+            if (!added) break
+        }
+        result
     }
+
+    val displayShows = if (activeService.isEmpty()) allShows else showsByService[activeService] ?: emptyList()
 
     Column(modifier = Modifier.fillMaxSize()) {
         OnboardingHeader(currentStep = currentStep, totalSteps = totalSteps, onBack = onBack, onSkipAll = onSkipAll)
@@ -189,6 +240,28 @@ fun WatchingNowScreen(
                     color = BrandOrange,
                     strokeWidth = 2.dp,
                 )
+            } else if (displayShows.isEmpty()) {
+                // Explicit empty state
+                Column(
+                    modifier = Modifier.align(Alignment.Center),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Text(
+                        text = if (activeService.isEmpty()) "No shows found for your services right now"
+                        else "Nothing to show for ${StreamingCatalog.service(activeService)?.name ?: activeService} right now",
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = TextSecondary,
+                        textAlign = TextAlign.Center,
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = "Try selecting different services, or skip to continue.",
+                        fontSize = 12.sp,
+                        color = Color.White.copy(alpha = 0.35f),
+                        textAlign = TextAlign.Center,
+                    )
+                }
             } else {
                 LazyVerticalGrid(
                     columns = GridCells.Fixed(3),
@@ -196,7 +269,13 @@ fun WatchingNowScreen(
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
-                    items(filteredShows, key = { it.id }) { show ->
+                    items(displayShows, key = { it.id }) { show ->
+                        // Find owning service for this show under "All".
+                        val owningService = if (activeService.isEmpty()) {
+                            showsByService.entries.firstOrNull { (_, list) ->
+                                list.any { it.id == show.id }
+                            }?.key ?: ""
+                        } else activeService
                         PosterPickTile(
                             title = show.displayName,
                             posterUrl = show.posterUrl,
@@ -216,12 +295,16 @@ fun WatchingNowScreen(
             skipText = "Skip",
             enabled = selectedIds.isNotEmpty(),
             onPrimary = {
-                val seeds = shows.filter { it.id in selectedIds }.map {
+                val allItems = showsByService.values.flatten().distinctBy { it.id }
+                val seeds = allItems.filter { it.id in selectedIds }.map { show ->
+                    val owningService = showsByService.entries.firstOrNull { (_, list) ->
+                        list.any { it.id == show.id }
+                    }?.key
                     StreamSeed(
-                        titleId = it.id.toString(),
-                        title = it.displayName,
-                        posterUrl = it.posterUrl,
-                        platform = null,
+                        titleId = show.id.toString(),
+                        title = show.displayName,
+                        posterUrl = show.posterUrl,
+                        platform = owningService,
                     )
                 }
                 onContinue(seeds)
