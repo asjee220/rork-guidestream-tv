@@ -9,6 +9,8 @@
 
 import SwiftUI
 import UIKit
+import Supabase
+import Auth
 
 /// Two-lane seed screen: Creators (YouTube / Twitch / Kick) and Podcasts
 /// (audio + video). Selections are batched into `UserStreamInsert` values
@@ -263,13 +265,11 @@ struct FollowCreatorsOnboardingView: View {
                         .frame(height: 38)
                         .background(
                             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                .fill(
-                                    lane == l
-                                        ? AnyShapeStyle(LinearGradient(
-                                            colors: [Color.orange, Color.orange.opacity(0.8)],
-                                            startPoint: .top, endPoint: .bottom))
-                                        : AnyShapeStyle(Color.clear)
-                                )
+                                .fill(lane == l ? Color.white.opacity(0.10) : Color.clear)
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .stroke(lane == l ? Color.white : Color.clear, lineWidth: 1)
                         )
                 }
                 .buttonStyle(.plain)
@@ -335,8 +335,12 @@ struct FollowCreatorsOnboardingView: View {
                 .padding(.horizontal, 14)
                 .padding(.vertical, 8)
                 .background(
-                    Capsule()
-                        .fill(isSelected ? Color.orange : Color.white.opacity(0.08))
+                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        .fill(isSelected ? Color.white.opacity(0.10) : Color.white.opacity(0.04))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        .stroke(isSelected ? Color.white : Color.clear, lineWidth: 1)
                 )
         }
         .buttonStyle(.plain)
@@ -348,7 +352,7 @@ struct FollowCreatorsOnboardingView: View {
         VStack(spacing: 10) {
             Text("\(totalSelected) selected")
                 .font(.custom("SF Pro Text", size: 12))
-                .foregroundStyle(Color.orange)
+                .foregroundStyle(Color.textSecondary)
 
             Button {
                 let gen = UIImpactFeedbackGenerator(style: .medium)
@@ -361,22 +365,22 @@ struct FollowCreatorsOnboardingView: View {
                     Image(systemName: "arrow.right")
                         .scaledFont(size: 14, weight: .bold)
                 }
-                .foregroundStyle(.white)
+                .foregroundStyle(selectedIds.isEmpty ? Color.white.opacity(0.35) : .white)
                 .frame(maxWidth: .infinity)
                 .frame(height: 52)
                 .background(
-                    LinearGradient(
-                        colors: [Color.orange, Color.orange.opacity(0.85)],
-                        startPoint: .top, endPoint: .bottom
-                    )
-                    .opacity(selectedIds.isEmpty ? 0.4 : 1.0)
+                    selectedIds.isEmpty
+                        ? AnyShapeStyle(Color.white.opacity(0.10))
+                        : AnyShapeStyle(LinearGradient(
+                            colors: [Color.orange, Color.orange.opacity(0.85)],
+                            startPoint: .top, endPoint: .bottom))
                 )
                 .clipShape(Capsule())
-                .shadow(color: Color.orange.opacity(selectedIds.isEmpty ? 0.0 : 0.45),
+                .shadow(color: selectedIds.isEmpty ? .clear : Color.orange.opacity(0.45),
                         radius: 24, x: 0, y: 0)
             }
             .buttonStyle(.plain)
-
+            .disabled(selectedIds.isEmpty)
 
             Button(action: onSkip) {
                 Text("Skip for now")
@@ -390,13 +394,10 @@ struct FollowCreatorsOnboardingView: View {
         .padding(.bottom, 8)
         .background(
             VStack(spacing: 0) {
-                LinearGradient(
-                    colors: [Color.navy.opacity(0), Color.navy],
-                    startPoint: .top, endPoint: .bottom
-                )
-                .frame(height: 28)
-                Color.navy
+                Rectangle().fill(Color.white.opacity(0.10)).frame(height: 1)
+                Theme.surface
             }
+            .ignoresSafeArea(edges: .bottom)
         )
     }
 
@@ -421,17 +422,18 @@ struct FollowCreatorsOnboardingView: View {
     }
 
     private func buildInserts() -> [UserStreamInsert] {
-        let userId = AuthViewModel.shared.currentUserId
+        let userId = AuthViewModel.shared.currentUser?.id.uuidString
+        let deviceId = DeviceIdentity.shared.deviceId
         let allItems = creators + podcasts
         return selectedIds.compactMap { titleId -> UserStreamInsert? in
             let item = allItems.first { $0.titleId == titleId }
             return UserStreamInsert(
                 user_id: userId,
+                device_id: deviceId,
                 title_id: titleId,
                 title: item?.displayName,
                 poster_url: item?.imageUrl,
                 platform: item?.sourceType,
-                // Creators/podcasts are not TMDB titles — no tv/movie type.
                 is_tv: nil
             )
         }
@@ -479,79 +481,124 @@ private struct OnboardingCreatorCard: View {
 
     var body: some View {
         Button(action: onToggle) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(Color.white.opacity(0.05))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .stroke(isSelected ? Color.orange : Color.white.opacity(0.08), lineWidth: isSelected ? 2 : 1)
-                    )
-                    .shadow(color: isSelected ? Color.orange.opacity(0.35) : .clear, radius: isSelected ? 16 : 0)
-
-                VStack(spacing: 8) {
-                    // Avatar
-                    ZStack {
+            VStack(spacing: 8) {
+                // Avatar — circular for creators, rounded square for podcasts
+                ZStack {
+                    if isPodcastLane {
+                        RoundedRectangle(cornerRadius: 13, style: .continuous)
+                            .fill(sourceColor.opacity(0.15))
+                            .frame(width: 56, height: 56)
+                    } else {
                         Circle()
                             .fill(sourceColor.opacity(0.15))
                             .frame(width: 56, height: 56)
-                        if let url = CreatorImageOverrides.resolve(titleId: creator.titleId, stored: creator.avatarUrl) {
-                            RemoteImage(urlString: url, contentMode: .fill, fallbackColors: [sourceColor, sourceColor.opacity(0.5)])
+                    }
+
+                    if let url = CreatorImageOverrides.resolve(titleId: creator.titleId, stored: creator.avatarUrl) {
+                        RemoteImage(urlString: url, contentMode: .fill, fallbackColors: [sourceColor, sourceColor.opacity(0.5)])
+                            .frame(width: 56, height: 56)
+                            .clipShape(isPodcastLane
+                                ? AnyShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
+                                : AnyShape(Circle()))
+                            .allowsHitTesting(false)
+                    } else {
+                        Image(systemName: isPodcastLane ? "mic.fill" : "play.rectangle.fill")
+                            .scaledFont(size: 22, weight: .semibold)
+                            .foregroundStyle(sourceColor)
+                    }
+
+                    // Selection ring
+                    if isSelected {
+                        if isPodcastLane {
+                            RoundedRectangle(cornerRadius: 13, style: .continuous)
+                                .stroke(Color.orange, lineWidth: 2.5)
                                 .frame(width: 56, height: 56)
-                                .clipShape(Circle())
-                                .allowsHitTesting(false)
                         } else {
-                            Image(systemName: creator.kind == .podcast ? "mic.fill" : "play.rectangle.fill")
-                                .scaledFont(size: 22, weight: .semibold)
-                                .foregroundStyle(sourceColor)
-                        }
-                    }
-
-                    // Name
-                    Text(creator.displayName)
-                        .scaledFont(size: 12, weight: .semibold)
-                        .foregroundStyle(Color.textPrimary)
-                        .multilineTextAlignment(.center)
-                        .lineLimit(2)
-                        .minimumScaleFactor(0.85)
-                        .padding(.horizontal, 6)
-                }
-
-                // Top-leading badges
-                VStack(alignment: .leading, spacing: 3) {
-                    SourceTypeBadge(kind: creator.kind)
-                    if creator.kind == .youtube, creator.format == "podcast" {
-                        PodcastBadge()
-                    }
-                    if creator.isLive {
-                        LivePill()
-                    }
-                }
-                .padding(8)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-
-                // Top-right selection check
-                if isSelected {
-                    VStack {
-                        HStack {
-                            Spacer()
                             Circle()
-                                .fill(Color.orange)
-                                .frame(width: 22, height: 22)
-                                .overlay(
-                                    Image(systemName: "checkmark")
-                                        .scaledFont(size: 12, weight: .bold)
-                                        .foregroundStyle(.white)
-                                )
+                                .stroke(Color.orange, lineWidth: 2.5)
+                                .frame(width: 56, height: 56)
                         }
-                        Spacer()
                     }
-                    .padding(8)
+
+                    // Source glyph (bottom-right, 19pt circle, navy stroke)
+                    sourceGlyph
+                        .frame(width: 19, height: 19)
+                        .offset(x: 24, y: 24)
+
+                    // Video/Audio badge (top-left on art edge)
+                    if isPodcastLane {
+                        mediaTypeBadge
+                            .offset(x: -24, y: -24)
+                    }
+
+                    // Selection check (top-right)
+                    if isSelected {
+                        ZStack {
+                            Circle().fill(Color.orange)
+                                .frame(width: 20, height: 20)
+                            Image(systemName: "checkmark")
+                                .scaledFont(size: 10, weight: .bold)
+                                .foregroundStyle(.white)
+                        }
+                        .offset(x: 26, y: -26)
+                    }
                 }
+                .frame(width: 56, height: 56)
+
+                // Name
+                Text(creator.displayName)
+                    .scaledFont(size: 12, weight: .semibold)
+                    .foregroundStyle(isSelected ? Color.white : Color.textSecondary)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.85)
+                    .padding(.horizontal, 6)
             }
-            .aspectRatio(1, contentMode: .fit)
         }
         .buttonStyle(.plain)
         .contentShape(Rectangle())
+    }
+
+    private var isPodcastLane: Bool {
+        creator.kind == .podcast || creator.format == "podcast"
+    }
+
+    private var sourceGlyph: some View {
+        Circle()
+            .fill(Color.navy)
+            .overlay(Circle().stroke(Color.white.opacity(0.3), lineWidth: 1))
+            .overlay(
+                Image(systemName: sourceGlyphName)
+                    .scaledFont(size: 9, weight: .bold)
+                    .foregroundStyle(sourceColor)
+            )
+    }
+
+    private var sourceGlyphName: String {
+        switch creator.kind {
+        case .youtube: return "play.fill"
+        case .podcast: return "mic.fill"
+        case .twitch: return "magnifyingglass"
+        case .kick: return "k"
+        case .tmdb: return "film.fill"
+        }
+    }
+
+    private var mediaTypeBadge: some View {
+        HStack(spacing: 2) {
+            Image(systemName: isPodcastLane && creator.sourceType == "podcast" ? "music.note" : "play.fill")
+                .scaledFont(size: 7, weight: .bold)
+            Text(isPodcastLane && creator.sourceType == "podcast" ? "Audio" : "Video")
+                .scaledFont(size: 7, weight: .bold)
+        }
+        .foregroundStyle(.white)
+        .padding(.horizontal, 4)
+        .padding(.vertical, 2)
+        .background(
+            Capsule()
+                .fill(Color.navy)
+                .overlay(Capsule().stroke(Color.white.opacity(0.3), lineWidth: 0.5))
+        )
     }
 
     private var sourceColor: Color {

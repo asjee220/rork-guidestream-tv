@@ -5,6 +5,8 @@
 
 import SwiftUI
 import UIKit
+import Supabase
+import Auth
 
 /// Onboarding step 4 — the "Seed Your List" show-picker. Loads top TV series
 /// from the user's connected streaming services so they can tap every show
@@ -46,52 +48,71 @@ struct WatchingNowView: View {
                     .padding(.top, 20)
                     .padding(.bottom, 12)
 
-                    // Value strip (folded from SeedPromptView)
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 100), spacing: 8)], spacing: 8) {
-                        valuePill("Lands in My Watch List")
-                        valuePill("Instant episode alerts")
-                        valuePill("One-tap deep links")
-                    }
-                    .padding(.horizontal, 20)
-                    .padding(.bottom, 16)
+                    // Value promises — quiet inline line, no chrome
+                    promisesLine
+                        .padding(.horizontal, 20)
+                        .padding(.bottom, 12)
 
-                    // Service tab bar
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 8) {
-                            ForEach(Array(selectedServices).sorted(), id: \.self) { serviceId in
-                                let svc = StreamingCatalog.service(for: serviceId)
+                    // Filter rubric + service chips
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("FILTER BY SERVICE")
+                            .font(.custom("SF Pro Text", size: 10).weight(.semibold))
+                            .tracking(1.1)
+                            .foregroundStyle(Color.white.opacity(0.35))
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 8) {
                                 Button {
                                     withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                                        activeService = serviceId
+                                        activeService = ""
                                     }
                                 } label: {
-                                    HStack(spacing: 6) {
-                                        if let svc {
-                                            ServiceMiniIcon(service: svc, size: 18)
-                                                .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
-                                        }
-                                        Text(svc?.name ?? serviceId.capitalized)
-                                            .font(.system(size: 12, weight: .semibold))
-                                            .foregroundStyle(activeService == serviceId ? .white : Color.textSecondary)
-                                    }
-                                    .padding(.vertical, 7)
-                                    .padding(.horizontal, 12)
-                                    .background(
-                                        Capsule()
-                                            .fill(activeService == serviceId
-                                                ? (svc?.glow ?? Color.blue).opacity(0.85)
-                                                : Color.white.opacity(0.08))
-                                    )
-                                    .overlay(
-                                        Capsule()
-                                            .stroke(Color.white.opacity(activeService == serviceId ? 0 : 0.12), lineWidth: 1)
-                                    )
+                                    Text("All")
+                                        .font(.system(size: 12, weight: .semibold))
+                                        .foregroundStyle(activeService == "" ? .white : Color.textSecondary)
+                                        .padding(.vertical, 7)
+                                        .padding(.horizontal, 12)
+                                        .background(
+                                            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                                                .fill(activeService == "" ? Color.white.opacity(0.10) : Color.white.opacity(0.04))
+                                        )
+                                        .overlay(
+                                            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                                                .stroke(activeService == "" ? Color.white : Color.clear, lineWidth: 1)
+                                        )
                                 }
                                 .buttonStyle(.plain)
+                                ForEach(Array(selectedServices).sorted(), id: \.self) { serviceId in
+                                    let svc = StreamingCatalog.service(for: serviceId)
+                                    Button {
+                                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                                            activeService = serviceId
+                                        }
+                                    } label: {
+                                        HStack(spacing: 6) {
+                                            if let svc {
+                                                ServiceMiniIcon(service: svc, size: 18)
+                                                    .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+                                            }
+                                            Text(svc?.name ?? serviceId.capitalized)
+                                                .font(.system(size: 12, weight: .semibold))
+                                                .foregroundStyle(activeService == serviceId ? .white : Color.textSecondary)
+                                        }
+                                        .padding(.vertical, 7)
+                                        .padding(.horizontal, 12)
+                                        .background(
+                                            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                                                .fill(activeService == serviceId ? Color.white.opacity(0.10) : Color.white.opacity(0.04))
+                                        )
+                                        .overlay(
+                                            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                                                .stroke(activeService == serviceId ? Color.white : Color.clear, lineWidth: 1)
+                                        )
+                                    }
+                                    .buttonStyle(.plain)
+                                }
                             }
+                            .padding(.horizontal, 20)
                         }
-                        .padding(.horizontal, 20)
-                        .padding(.bottom, 2)
                     }
                     .padding(.bottom, 16)
 
@@ -136,7 +157,7 @@ struct WatchingNowView: View {
             VStack(spacing: 10) {
                 Text("\(totalSelected) show\(totalSelected == 1 ? "" : "s") selected")
                     .font(.custom("SF Pro Text", size: 12))
-                    .foregroundStyle(Color.orange)
+                    .foregroundStyle(Color.textSecondary)
 
                 Button {
                     let gen = UIImpactFeedbackGenerator(style: .medium)
@@ -149,18 +170,18 @@ struct WatchingNowView: View {
                         Image(systemName: "arrow.right")
                             .scaledFont(size: 14, weight: .bold)
                     }
-                    .foregroundStyle(.white)
+                    .foregroundStyle(selections.isEmpty ? Color.white.opacity(0.35) : .white)
                     .frame(maxWidth: .infinity)
                     .frame(height: 52)
                     .background(
-                        LinearGradient(
-                            colors: [Color.orange, Color.orange.opacity(0.85)],
-                            startPoint: .top, endPoint: .bottom
-                        )
-                        .opacity(selections.isEmpty ? 0.4 : 1.0)
+                        selections.isEmpty
+                            ? AnyShapeStyle(Color.white.opacity(0.10))
+                            : AnyShapeStyle(LinearGradient(
+                                colors: [Color.orange, Color.orange.opacity(0.85)],
+                                startPoint: .top, endPoint: .bottom))
                     )
                     .clipShape(Capsule())
-                    .shadow(color: Color.orange.opacity(selections.isEmpty ? 0.0 : 0.45),
+                    .shadow(color: selections.isEmpty ? .clear : Color.orange.opacity(0.45),
                             radius: 24, x: 0, y: 0)
                 }
                 .buttonStyle(.plain)
@@ -178,13 +199,10 @@ struct WatchingNowView: View {
             .padding(.bottom, 8)
             .background(
                 VStack(spacing: 0) {
-                    LinearGradient(
-                        colors: [Color.navy.opacity(0), Color.navy],
-                        startPoint: .top, endPoint: .bottom
-                    )
-                    .frame(height: 28)
-                    Color.navy
+                    Rectangle().fill(Color.white.opacity(0.10)).frame(height: 1)
+                    Theme.surface
                 }
+                .ignoresSafeArea(edges: .bottom)
             )
         }
         .task {
@@ -250,7 +268,8 @@ struct WatchingNowView: View {
     }
 
     private func buildInserts() -> [UserStreamInsert] {
-        let userId = AuthViewModel.shared.currentUserId
+        let userId = AuthViewModel.shared.currentUser?.id.uuidString
+        let deviceId = DeviceIdentity.shared.deviceId
         return selections.compactMap { key -> UserStreamInsert? in
             let parts = key.split(separator: "|")
             guard parts.count == 2 else { return nil }
@@ -259,6 +278,7 @@ struct WatchingNowView: View {
             let show = showsByService[platform]?.first { String($0.id) == titleId }
             return UserStreamInsert(
                 user_id: userId,
+                device_id: deviceId,
                 title_id: titleId,
                 title: show?.displayName,
                 poster_url: show?.posterUrl,
@@ -323,82 +343,69 @@ private struct ShowPosterCard: View {
     var body: some View {
         let svc = StreamingCatalog.service(for: serviceId)
         Button(action: onTap) {
-            ZStack {
-                // Poster background
-                RemoteImage(urlString: show.posterUrl)
-                    .aspectRatio(2.0 / 3.0, contentMode: .fill)
-                    .frame(maxWidth: .infinity)
-                    .clipped()
+            VStack(spacing: 4) {
+                ZStack {
+                    // Poster background
+                    RemoteImage(urlString: show.posterUrl)
+                        .aspectRatio(2.0 / 3.0, contentMode: .fill)
+                        .frame(maxWidth: .infinity)
+                        .clipped()
 
-                // Bottom gradient overlay
-                VStack {
-                    Spacer()
-                    LinearGradient(
-                        colors: [Color.black.opacity(0.9), Color.clear],
-                        startPoint: .bottom, endPoint: .top
-                    )
-                    .frame(height: 55)
-                }
+                    // Orange wash when selected
+                    if isSelected {
+                        Color.orange.opacity(0.15)
+                    }
 
-                // Bottom-left service badge
-                VStack {
-                    Spacer()
-                    HStack {
-                        RoundedRectangle(cornerRadius: 3, style: .continuous)
-                            .fill(svc?.glow ?? Color.blue)
-                            .frame(width: 13, height: 13)
-                            .overlay(
-                                Text(svc != nil ? String((svc!.name).prefix(2)).uppercased() : serviceId.prefix(2).uppercased())
-                                    .font(.system(size: 5, weight: .black))
-                                    .foregroundStyle(.white)
-                            )
+                    // Top-left service badge
+                    VStack {
+                        HStack {
+                            RoundedRectangle(cornerRadius: 3, style: .continuous)
+                                .fill(svc?.glow ?? Color.blue)
+                                .frame(width: 13, height: 13)
+                                .overlay(
+                                    Text(svc != nil ? String((svc!.name).prefix(2)).uppercased() : serviceId.prefix(2).uppercased())
+                                        .font(.system(size: 5, weight: .black))
+                                        .foregroundStyle(.white)
+                                )
+                            Spacer()
+                        }
+                        .padding(.leading, 5)
+                        .padding(.top, 5)
                         Spacer()
                     }
-                    .padding(.leading, 5)
-                    .padding(.bottom, 5)
-                }
 
-                // Bottom text
-                VStack {
-                    Spacer()
-                    Text(show.displayName)
-                        .font(.system(size: 9, weight: .bold, design: .default))
-                        .foregroundStyle(.white)
-                        .lineLimit(2)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, 5)
-                        .padding(.bottom, 5)
-                }
-
-                // Top-right selection checkmark
-                VStack {
-                    HStack {
-                        Spacer()
-                        ZStack {
-                            Circle()
-                                .fill(isSelected ? Color.orange : Color.clear)
-                                .frame(width: 18, height: 18)
-                                .overlay(
-                                    Circle()
-                                        .stroke(isSelected ? Color.clear : Color.white.opacity(0.5), lineWidth: 1.5)
-                                )
+                    // Top-right selection check
+                    VStack {
+                        HStack {
+                            Spacer()
                             if isSelected {
-                                Image(systemName: "checkmark")
-                                    .font(.system(size: 9, weight: .bold, design: .default))
-                                    .foregroundStyle(.white)
+                                ZStack {
+                                    Circle().fill(Color.orange)
+                                        .frame(width: 18, height: 18)
+                                    Image(systemName: "checkmark")
+                                        .font(.system(size: 9, weight: .bold, design: .default))
+                                        .foregroundStyle(.white)
+                                }
+                                .padding(5)
                             }
                         }
-                        .padding(5)
+                        Spacer()
                     }
-                    Spacer()
                 }
+                .aspectRatio(2.0 / 3.0, contentMode: .fit)
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .stroke(isSelected ? Color.orange : Color.clear, lineWidth: 2)
+                )
+
+                // Title below poster
+                Text(show.displayName)
+                    .font(.system(size: 9, weight: .semibold, design: .default))
+                    .foregroundStyle(isSelected ? Color.white : Color.white.opacity(0.55))
+                    .lineLimit(2)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .aspectRatio(2.0 / 3.0, contentMode: .fit)
-            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .stroke(isSelected ? Color.orange : Color.clear, lineWidth: 2)
-            )
         }
         .buttonStyle(.plain)
     }
@@ -421,25 +428,20 @@ private struct SkeletonCard: View {
     }
 }
 
-private func valuePill(_ text: String) -> some View {
-        HStack(spacing: 6) {
-            Image(systemName: "checkmark")
-                .font(.custom("SF Pro Text", size: 10).weight(.bold))
-                .foregroundStyle(Color.orange)
-            Text(text)
-                .font(.custom("SF Pro Text", size: 10.5))
-                .foregroundStyle(Color.white.opacity(0.55))
+private var promisesLine: some View {
+        let items = ["Lands in My Watch List", "Instant episode alerts", "One-tap deep links"]
+        var parts: [Text] = []
+        for (i, item) in items.enumerated() {
+            if i > 0 {
+                parts.append(Text("  \u{00B7}  ").foregroundStyle(Color.white.opacity(0.18)))
+            }
+            parts.append(Text(Image(systemName: "checkmark")).foregroundStyle(Color.orange))
+            parts.append(Text(" \(item)").foregroundStyle(Color.white.opacity(0.55)))
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 7)
-        .background(
-            RoundedRectangle(cornerRadius: 13, style: .continuous)
-                .fill(Color.white.opacity(0.05))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 13, style: .continuous)
-                .stroke(Color.white.opacity(0.08), lineWidth: 1)
-        )
+        return parts.reduce(Text(""), +)
+            .font(.custom("SF Pro Text", size: 11.5))
+            .lineLimit(2)
+            .fixedSize(horizontal: false, vertical: true)
     }
 
 #Preview {

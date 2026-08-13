@@ -23,6 +23,7 @@ struct OnboardingFlow: View {
     @State private var followedShowPosters: [String] = []
     @State private var followedShowsCount: Int = 0
     @State private var followedCreatorsCount: Int = 0
+    @State private var showWidgetSheet: Bool = false
 
     var body: some View {
         ZStack {
@@ -88,7 +89,7 @@ struct OnboardingFlow: View {
                             finishOnboarding()
                         },
                         onBack: { goBack() },
-                        onWidgetSettings: onWidgetSettings,
+                        onWidgetSettings: { showWidgetSheet = true },
                         currentStep: 4,
                         totalSteps: OnboardingHeader.stepNames.count,
                         posterUrls: followedShowPosters,
@@ -103,6 +104,9 @@ struct OnboardingFlow: View {
             ))
         }
         .preferredColorScheme(.dark)
+        .sheet(isPresented: $showWidgetSheet) {
+            WidgetInstructionSheet(onDismiss: { showWidgetSheet = false })
+        }
         .sheet(isPresented: $showEmailAuth) {
             EmailAuthView(
                 onAuthenticated: {
@@ -146,14 +150,16 @@ struct OnboardingFlow: View {
 
     private func commitInserts(_ inserts: [UserStreamInsert], completion: @escaping () -> Void) {
         guard !inserts.isEmpty else { completion(); return }
+        let isGuest = !AuthViewModel.shared.isAuthenticated
+        let conflictTarget = isGuest ? "device_id,title_id" : "user_id,title_id"
         Task {
             do {
                 try await SupabaseManager.shared.client
                     .from("user_streams")
-                    .upsert(inserts, onConflict: "user_id,title_id")
+                    .upsert(inserts, onConflict: conflictTarget)
                     .execute()
             } catch {
-                print("[GuideStream] seed upsert failed: \(error)")
+                print("[GuideStream] ⚠️ seed upsert failed (conflict: \(conflictTarget)): \(error)")
             }
             await MainActor.run { completion() }
         }
@@ -302,12 +308,7 @@ struct WelcomeOnboardingView: View {
                         .multilineTextAlignment(.center)
                 }
 
-                Text("By continuing, you agree to our [Privacy Policy](https://guidestream.tv/privacy) and [Terms of Service](https://guidestream.tv/terms).")
-                    .font(.custom("SF Pro Text", size: 11))
-                    .foregroundStyle(Color.textTertiary)
-                    .multilineTextAlignment(.center)
-                    .tint(Color.blue)
-                    .fixedSize(horizontal: false, vertical: true)
+                legalLinksLine
                     .padding(.top, 2)
             }
             .padding(20)
@@ -324,6 +325,23 @@ struct WelcomeOnboardingView: View {
         }
         .padding(.horizontal, 24)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var legalLinksLine: some View {
+        var attr = AttributedString("By continuing, you agree to our Privacy Policy and Terms of Service.")
+        attr.foregroundColor = Color.textTertiary
+        if let ppRange = attr.range(of: "Privacy Policy") {
+            attr[ppRange].foregroundColor = Color.blue
+            attr[ppRange].link = URL(string: "https://guidestream.tv/privacy")
+        }
+        if let tosRange = attr.range(of: "Terms of Service") {
+            attr[tosRange].foregroundColor = Color.blue
+            attr[tosRange].link = URL(string: "https://guidestream.tv/terms")
+        }
+        return Text(attr)
+            .font(.custom("SF Pro Text", size: 13))
+            .multilineTextAlignment(.center)
+            .fixedSize(horizontal: false, vertical: true)
     }
 }
 
@@ -508,7 +526,7 @@ private struct ChannelChip: View {
 // MARK: - Onboarding header + step indicator
 
 struct OnboardingHeader: View {
-    static let stepNames = ["Services", "Watching Now", "Creators", "Notify"]
+    static let stepNames = ["Services", "Watching", "Creators", "Notify"]
 
     let currentStep: Int
     let totalSteps: Int
@@ -697,9 +715,10 @@ struct ConnectServicesView: View {
     @FocusState private var isSearchFocused: Bool
 
     private let columns = [
-        GridItem(.flexible(), spacing: 16),
-        GridItem(.flexible(), spacing: 16),
-        GridItem(.flexible(), spacing: 16)
+        GridItem(.flexible(), spacing: 14),
+        GridItem(.flexible(), spacing: 14),
+        GridItem(.flexible(), spacing: 14),
+        GridItem(.flexible(), spacing: 14)
     ]
 
     private var filteredPopular: [StreamingService] {
@@ -854,7 +873,15 @@ struct ConnectServicesView: View {
                 .buttonStyle(.plain)
             }
             .padding(.horizontal, 20)
+            .padding(.top, 12)
             .padding(.bottom, 28)
+            .background(
+                VStack(spacing: 0) {
+                    Rectangle().fill(Color.white.opacity(0.10)).frame(height: 1)
+                    Theme.surface
+                }
+                .ignoresSafeArea(edges: .bottom)
+            )
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -976,12 +1003,15 @@ struct StayNotifiedView: View {
                             .frame(width: 40, height: 40)
 
                             VStack(alignment: .leading, spacing: 2) {
-                                Text("Home screen widget")
+                                Text("Add the home screen widget")
                                     .font(.custom("SF Pro Text", size: 15).weight(.semibold))
                                     .foregroundStyle(.white)
-                                Text("Configure size, content & appearance")
+                                Text("Show tonight's episodes without opening the app")
                                     .font(.custom("SF Pro Text", size: 12))
                                     .foregroundStyle(Color.textSecondary)
+                                Text("Takes about 15 seconds — we'll show you how")
+                                    .font(.custom("SF Pro Text", size: 11))
+                                    .foregroundStyle(Color.textTertiary)
                             }
 
                             Spacer(minLength: 8)
@@ -1043,7 +1073,15 @@ struct StayNotifiedView: View {
                 .buttonStyle(.plain)
             }
             .padding(.horizontal, 20)
+            .padding(.top, 12)
             .padding(.bottom, 28)
+            .background(
+                VStack(spacing: 0) {
+                    Rectangle().fill(Color.white.opacity(0.10)).frame(height: 1)
+                    Theme.surface
+                }
+                .ignoresSafeArea(edges: .bottom)
+            )
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -1124,17 +1162,10 @@ private struct PosterStackHero: View {
             }
         }
         .overlay(alignment: .topTrailing) {
-            if newCount > 0 {
-                Text("\(newCount) new")
-                    .font(.custom("SF Pro Text", size: 11).weight(.bold))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(
-                        Capsule().fill(Color(red: 0xF5/255, green: 0x82/255, blue: 0x1F/255))
-                    )
-                    .offset(x: 20, y: -10)
-            }
+            Image(systemName: "bell.fill")
+                .font(.custom("SF Pro Text", size: 14).weight(.bold))
+                .foregroundStyle(Color(red: 0xF5/255, green: 0x82/255, blue: 0x1F/255))
+                .offset(x: 20, y: -10)
         }
         .frame(height: 130)
     }
@@ -1155,8 +1186,13 @@ private struct NotifyBenefitRow: View {
                     .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
             } else {
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .fill(Color.orange.opacity(0.15))
+                    .fill(Color.white.opacity(0.06))
                     .frame(width: 36, height: 54)
+                    .overlay(
+                        Image(systemName: title == "New episode alerts" ? "tv.fill" : title == "Watch list updates" ? "list.bullet.rectangle.fill" : "link")
+                            .scaledFont(size: 16, weight: .regular)
+                            .foregroundStyle(Color.white.opacity(0.25))
+                    )
             }
 
             VStack(alignment: .leading, spacing: 2) {
@@ -1172,6 +1208,141 @@ private struct NotifyBenefitRow: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
+    }
+}
+
+// MARK: - Widget Instruction Sheet (H3)
+
+private struct WidgetInstructionSheet: View {
+    let onDismiss: () -> Void
+
+    var body: some View {
+        VStack(spacing: 0) {
+            GsSheetHeader(title: "Add the home screen widget") {
+                Button("Done") { onDismiss() }
+                    .foregroundStyle(Color.textSecondary)
+            }
+
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 18) {
+                    // Widget preview
+                    WidgetPreviewCard()
+                        .padding(.horizontal, 20)
+                        .padding(.top, 8)
+
+                    VStack(spacing: 14) {
+                        WidgetStep(number: 1, text: "Touch and hold anywhere on your Home Screen until the icons jiggle")
+                        WidgetStep(number: 2, text: "Tap the + button in the top-left corner")
+                        WidgetStep(number: 3, text: "Search \"GuideStream\", pick a size, then tap Add Widget")
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.top, 8)
+
+                    HStack(spacing: 12) {
+                        Button { onDismiss() } label: {
+                            Text("Remind me later")
+                                .font(.custom("SF Pro Text", size: 15).weight(.medium))
+                                .foregroundStyle(Color.textSecondary)
+                                .frame(maxWidth: .infinity)
+                                .frame(height: 48)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                        .fill(Color.white.opacity(0.06))
+                                )
+                        }
+                        .buttonStyle(.plain)
+
+                        Button { onDismiss() } label: {
+                            Text("Got it")
+                                .font(.custom("SF Pro Text", size: 15).weight(.bold))
+                                .foregroundStyle(.white)
+                                .frame(maxWidth: .infinity)
+                                .frame(height: 48)
+                                .background(
+                                    LinearGradient(
+                                        colors: [Color.orange, Color.orange.opacity(0.85)],
+                                        startPoint: .top, endPoint: .bottom
+                                    )
+                                )
+                                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.top, 12)
+                    .padding(.bottom, 24)
+                }
+            }
+        }
+        .sheetSurface(.base)
+    }
+}
+
+private struct WidgetStep: View {
+    let number: Int
+    let text: String
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 14) {
+            ZStack {
+                Circle()
+                    .fill(Color.orange.opacity(0.15))
+                    .frame(width: 28, height: 28)
+                Text("\(number)")
+                    .font(.custom("SF Pro Text", size: 13).weight(.bold))
+                    .foregroundStyle(Color.orange)
+            }
+            Text(text)
+                .font(.custom("SF Pro Text", size: 15))
+                .foregroundStyle(Color.textPrimary)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+        }
+    }
+}
+
+private struct WidgetPreviewCard: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("GuideStream")
+                    .font(.custom("SF Pro Display", size: 14).weight(.bold))
+                    .foregroundStyle(.white)
+                Spacer()
+                Text("TONIGHT")
+                    .font(.custom("SF Pro Text", size: 9).weight(.bold))
+                    .tracking(1.0)
+                    .foregroundStyle(Color.orange)
+            }
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(Color.blue.opacity(0.6))
+                        .frame(width: 24, height: 36)
+                    Text("New episode · The Last of Us")
+                        .font(.custom("SF Pro Text", size: 11))
+                        .foregroundStyle(Color.textSecondary)
+                }
+                HStack {
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(Color.orange.opacity(0.6))
+                        .frame(width: 24, height: 36)
+                    Text("Season finale · Severance")
+                        .font(.custom("SF Pro Text", size: 11))
+                        .foregroundStyle(Color.textSecondary)
+                }
+            }
+        }
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(Theme.surface)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(Color.white.opacity(0.10), lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 }
 

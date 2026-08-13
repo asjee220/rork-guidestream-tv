@@ -68,7 +68,11 @@ nonisolated struct NewEpisodeRow: Codable, Identifiable, Hashable, Sendable {
 }
 
 nonisolated struct UserStreamInsert: Encodable, Sendable {
-    let user_id: String
+    /// UUID of the signed-in user, or nil for guests. Never the string "guest".
+    let user_id: String?
+    /// Stable device identifier. Always populated — for guests this is the
+    /// conflict key that deduplicates picks via the `device_id,title_id` index.
+    let device_id: String?
     let title_id: String
     let title: String?
     let poster_url: String?

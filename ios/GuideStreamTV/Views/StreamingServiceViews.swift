@@ -16,47 +16,57 @@ struct ServiceTile: View {
     let isSelected: Bool
     let onTap: () -> Void
 
+    private static let navy = Color(red: 0x04/255, green: 0x09/255, blue: 0x0F/255)
+    private static let brandOrange = Color(red: 0xF5/255, green: 0x82/255, blue: 0x1F/255)
+
     var body: some View {
         Button(action: onTap) {
             VStack(spacing: 8) {
                 ZStack {
-                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    RoundedRectangle(cornerRadius: 13, style: .continuous)
                         .fill(service.bg)
 
                     ServiceBrandContent(display: service.display, size: .tile)
                         .padding(8)
                 }
                 .aspectRatio(1, contentMode: .fit)
+                .opacity(isSelected ? 1.0 : 0.52)
                 .overlay {
-                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    RoundedRectangle(cornerRadius: 13, style: .continuous)
                         .stroke(
-                            isSelected ? service.selectionAccent : Color.white.opacity(0.06),
-                            lineWidth: isSelected ? 3 : 1
+                            isSelected ? Self.navy : Color.white.opacity(0.06),
+                            lineWidth: isSelected ? 2 : 1
                         )
+                }
+                .overlay {
+                    if isSelected {
+                        RoundedRectangle(cornerRadius: 13, style: .continuous)
+                            .stroke(Color.white, lineWidth: 4.5)
+                    }
                 }
                 .overlay(alignment: .topTrailing) {
                     if isSelected {
                         ZStack {
-                            Circle().fill(service.selectionAccent)
+                            Circle().fill(Self.brandOrange)
                                 .frame(width: 22, height: 22)
+                                .overlay(
+                                    Circle().stroke(Self.navy, lineWidth: 2)
+                                )
                             Image(systemName: "checkmark")
                                 .scaledFont(size: 11, weight: .black)
-                                .foregroundStyle(service.selectionGlyphColor)
+                                .foregroundStyle(.white)
                         }
                         .offset(x: 6, y: -6)
                         .transition(.scale.combined(with: .opacity))
                     }
                 }
-                .shadow(
-                    color: isSelected ? service.selectionAccent.opacity(0.55) : .clear,
-                    radius: 18, x: 0, y: 0
-                )
 
                 Text(service.name)
                     .font(.custom("SF Pro Text", size: 12).weight(.medium))
-                    .foregroundStyle(Color.textSecondary)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.7)
+                    .foregroundStyle(isSelected ? Color.white : Color.white.opacity(0.35))
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.5)
+                    .multilineTextAlignment(.center)
             }
         }
         .buttonStyle(.plain)
@@ -104,7 +114,7 @@ struct ServiceBrandContent: View {
                 .foregroundStyle(color)
                 .multilineTextAlignment(.center)
                 .minimumScaleFactor(0.4)
-                .lineLimit(str.contains("\n") ? 2 : 1)
+                .lineLimit(2)
         case .symbol(let name, let color):
             Image(systemName: name)
                 .scaledFont(size: symbolSize, weight: .bold)

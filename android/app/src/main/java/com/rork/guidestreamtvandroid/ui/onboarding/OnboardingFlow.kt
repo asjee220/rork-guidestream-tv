@@ -39,11 +39,17 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.ui.text.LinkAnnotation
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withLink
+import androidx.compose.ui.text.withStyle
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowLeft
@@ -51,9 +57,13 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.KeyboardArrowRight
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -69,9 +79,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -108,6 +120,12 @@ import com.rork.guidestreamtvandroid.ui.theme.Hairline
 import com.rork.guidestreamtvandroid.ui.theme.Navy
 import com.rork.guidestreamtvandroid.ui.theme.OutlineVariant
 import com.rork.guidestreamtvandroid.ui.theme.SurfaceContainer
+import com.rork.guidestreamtvandroid.ui.theme.SurfaceDark
+import com.rork.guidestreamtvandroid.ui.theme.SheetSurfaceBase
+import com.rork.guidestreamtvandroid.ui.theme.SheetLevel
+import com.rork.guidestreamtvandroid.ui.components.GsSheetDragHandle
+import com.rork.guidestreamtvandroid.ui.components.GsSheetHeader
+import com.rork.guidestreamtvandroid.ui.theme.sheetTopInset
 import com.rork.guidestreamtvandroid.ui.theme.TextPrimary
 import com.rork.guidestreamtvandroid.ui.theme.TextSecondary
 import com.rork.guidestreamtvandroid.ui.theme.TextTertiary
@@ -127,6 +145,7 @@ fun OnboardingFlow(
 ) {
     var step by remember { mutableStateOf(startStep) }
     var showEmailAuth by remember { mutableStateOf(false) }
+    var showWidgetSheet by remember { mutableStateOf(false) }
     val auth = AuthViewModel.get()
     val isAuthenticated by auth.isAuthenticated.collectAsState()
     val streams = StreamsViewModel.get()
@@ -235,7 +254,7 @@ fun OnboardingFlow(
                         finish()
                     },
                     onBack = { step = 4 },
-                    onWidgetSettings = onWidgetSettings,
+                    onWidgetSettings = { showWidgetSheet = true },
                     currentStep = 4,
                     totalSteps = totalSteps,
                     posterUrls = followedShowPosters,
@@ -243,6 +262,10 @@ fun OnboardingFlow(
                     creatorCount = followedCreatorsCount,
                 )
             }
+        }
+
+        if (showWidgetSheet) {
+            WidgetInstructionSheet(onDismiss = { showWidgetSheet = false })
         }
 
         if (showEmailAuth) {
@@ -428,8 +451,22 @@ private fun WelcomeScreen(
 
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    text = "By continuing, you agree to our Privacy Policy and Terms of Service.",
-                    fontSize = 11.sp,
+                    text = buildAnnotatedString {
+                        append("By continuing, you agree to our ")
+                        withLink(LinkAnnotation.Url("https://guidestream.tv/privacy")) {
+                            withStyle(SpanStyle(color = BrandBlue)) {
+                                append("Privacy Policy")
+                            }
+                        }
+                        append(" and ")
+                        withLink(LinkAnnotation.Url("https://guidestream.tv/terms")) {
+                            withStyle(SpanStyle(color = BrandBlue)) {
+                                append("Terms of Service")
+                            }
+                        }
+                        append(".")
+                    },
+                    fontSize = 13.sp,
                     color = TextTertiary,
                     textAlign = TextAlign.Center,
                 )
@@ -816,10 +853,10 @@ private fun ConnectServicesScreen(
                         modifier = Modifier.fillMaxWidth(),
                         verticalArrangement = Arrangement.spacedBy(22.dp),
                     ) {
-                        filteredPopular.chunked(3).forEach { rowServices ->
+                        filteredPopular.chunked(4).forEach { rowServices ->
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
                             ) {
                                 rowServices.forEach { svc ->
                                     Box(modifier = Modifier.weight(1f)) {
@@ -830,8 +867,7 @@ private fun ConnectServicesScreen(
                                         )
                                     }
                                 }
-                                // Keep the last row's tiles aligned to the grid columns.
-                                repeat(3 - rowServices.size) {
+                                repeat(4 - rowServices.size) {
                                     Spacer(modifier = Modifier.weight(1f))
                                 }
                             }
@@ -879,8 +915,17 @@ private fun ConnectServicesScreen(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .background(SurfaceDark)
+                .drawBehind {
+                    drawRect(
+                        color = Color.White.copy(alpha = 0.10f),
+                        topLeft = Offset.Zero,
+                        size = Size(width = size.width, height = 1f),
+                    )
+                }
                 .padding(horizontal = 20.dp)
-                .padding(bottom = 28.dp),
+                .padding(top = 12.dp, bottom = 28.dp)
+                .navigationBarsPadding(),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Text(
@@ -890,19 +935,21 @@ private fun ConnectServicesScreen(
             )
             Spacer(Modifier.height(14.dp))
 
+            val ctaEnabled = selected.isNotEmpty()
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(56.dp)
                     .clip(RoundedCornerShape(50.dp))
                     .background(
-                        Brush.verticalGradient(
+                        if (ctaEnabled) Brush.verticalGradient(
                             colors = listOf(BrandOrange, BrandOrange.copy(alpha = 0.85f)),
-                        ),
+                        ) else SolidColor(Color.White.copy(alpha = 0.10f))
                     )
                     .clickable(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null,
+                        enabled = ctaEnabled,
                     ) { onContinue() },
                 horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically,
@@ -911,13 +958,13 @@ private fun ConnectServicesScreen(
                     text = "Build My Feed",
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Bold,
-                    color = Color.White,
+                    color = if (ctaEnabled) Color.White else Color.White.copy(alpha = 0.35f),
                 )
                 Spacer(Modifier.width(8.dp))
                 Icon(
                     imageVector = Icons.Filled.ArrowForward,
                     contentDescription = null,
-                    tint = Color.White,
+                    tint = if (ctaEnabled) Color.White else Color.White.copy(alpha = 0.35f),
                     modifier = Modifier.size(16.dp),
                 )
             }
@@ -1028,9 +1075,7 @@ private fun ServiceTile(
     isSelected: Boolean,
     onTap: () -> Unit,
 ) {
-    val accent = service.selectionAccent
-    val borderColor = if (isSelected) accent else OutlineVariant
-    val borderWidth = if (isSelected) 3.dp else 1.dp
+    val tileShape = RoundedCornerShape(13.dp)
     Column(
         modifier = Modifier.fillMaxWidth(),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -1038,26 +1083,22 @@ private fun ServiceTile(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .aspectRatio(1f),
+                .aspectRatio(1f)
+                .graphicsLayer { alpha = if (isSelected) 1f else 0.52f },
         ) {
-            val tileShape = RoundedCornerShape(18.dp)
-            val shadowModifier = if (isSelected) {
-                Modifier.shadow(
-                    elevation = 12.dp,
-                    shape = tileShape,
-                    ambientColor = accent.copy(alpha = 0.55f),
-                    spotColor = accent.copy(alpha = 0.55f),
-                )
-            } else {
-                Modifier
-            }
             Box(
                 modifier = Modifier
                     .matchParentSize()
-                    .then(shadowModifier)
                     .clip(tileShape)
                     .background(service.bg)
-                    .border(borderWidth, borderColor, tileShape)
+                    .then(
+                        if (isSelected) Modifier.border(2.dp, Navy, tileShape)
+                        else Modifier.border(1.dp, OutlineVariant, tileShape)
+                    )
+                    .then(
+                        if (isSelected) Modifier.border(4.5.dp, Color.White, tileShape)
+                        else Modifier
+                    )
                     .clickable(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null,
@@ -1069,23 +1110,25 @@ private fun ServiceTile(
                     is StreamingService.Display.Text -> {
                         Text(
                             text = display.text,
-                            fontSize = 13.sp,
+                            fontSize = 11.sp,
                             fontWeight = display.weight,
                             color = display.color,
                             textAlign = TextAlign.Center,
                             maxLines = 2,
+                            overflow = TextOverflow.Visible,
                         )
                     }
                     is StreamingService.Display.SymbolText -> {
                         Text(
                             text = display.text,
-                            fontSize = 13.sp,
+                            fontSize = 11.sp,
                             fontWeight = FontWeight.Bold,
                             color = display.color,
+                            maxLines = 2,
                         )
                     }
                     is StreamingService.Display.Star -> {
-                        Text("\u2605", fontSize = 24.sp, color = display.color)
+                        Text("\u2605", fontSize = 20.sp, color = display.color)
                     }
                 }
             }
@@ -1096,13 +1139,14 @@ private fun ServiceTile(
                         .offset(x = 6.dp, y = (-6).dp)
                         .size(22.dp)
                         .clip(CircleShape)
-                        .background(accent),
+                        .background(BrandOrange)
+                        .border(2.dp, Navy, CircleShape),
                     contentAlignment = Alignment.Center,
                 ) {
                     Icon(
                         imageVector = Icons.Filled.Check,
                         contentDescription = "Selected",
-                        tint = service.selectionGlyphColor,
+                        tint = Color.White,
                         modifier = Modifier.size(13.dp),
                     )
                 }
@@ -1112,8 +1156,10 @@ private fun ServiceTile(
         Text(
             text = service.name,
             fontSize = 9.sp,
-            color = Color.White.copy(alpha = 0.5f),
-            maxLines = 1,
+            color = if (isSelected) Color.White else Color.White.copy(alpha = 0.35f),
+            maxLines = 2,
+            textAlign = TextAlign.Center,
+            overflow = TextOverflow.Visible,
         )
     }
 }
@@ -1218,7 +1264,7 @@ private fun StayNotifiedScreen(
 
             Spacer(Modifier.height(16.dp))
 
-            // Widget row
+            // Widget row (H2 — rewritten copy, no false promise)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -1250,15 +1296,20 @@ private fun StayNotifiedScreen(
                 Spacer(Modifier.width(14.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "Home screen widget",
+                        text = "Add the home screen widget",
                         fontSize = 15.sp,
                         fontWeight = FontWeight.SemiBold,
                         color = TextPrimary,
                     )
                     Text(
-                        text = "Configure size, content & appearance",
+                        text = "Show tonight's episodes without opening the app",
                         fontSize = 12.sp,
                         color = TextSecondary,
+                    )
+                    Text(
+                        text = "Takes about 15 seconds — we'll show you how",
+                        fontSize = 11.sp,
+                        color = TextTertiary,
                     )
                 }
                 Icon(
@@ -1276,8 +1327,17 @@ private fun StayNotifiedScreen(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .background(SurfaceDark)
+                .drawBehind {
+                    drawRect(
+                        color = Color.White.copy(alpha = 0.10f),
+                        topLeft = Offset.Zero,
+                        size = Size(width = size.width, height = 1f),
+                    )
+                }
                 .padding(horizontal = 20.dp)
-                .padding(bottom = 28.dp),
+                .padding(top = 12.dp, bottom = 28.dp)
+                .navigationBarsPadding(),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Row(
@@ -1389,23 +1449,16 @@ private fun PosterStackHero(
                     .border(0.5.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(8.dp)),
             )
         }
-        if (newCount > 0) {
-            Box(
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .offset(x = 20.dp, y = (-10).dp)
-                    .clip(RoundedCornerShape(50.dp))
-                    .background(BrandOrange)
-                    .padding(horizontal = 8.dp, vertical = 4.dp),
-            ) {
-                Text(
-                    text = "$newCount new",
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White,
-                )
-            }
-        }
+        // H5 — small bell mark instead of fabricated count
+        Icon(
+            imageVector = Icons.Filled.Notifications,
+            contentDescription = null,
+            tint = BrandOrange,
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .offset(x = 20.dp, y = (-10).dp)
+                .size(16.dp),
+        )
     }
 }
 
@@ -1430,12 +1483,23 @@ private fun NotifyBenefitRow(
                     .clip(RoundedCornerShape(6.dp)),
             )
         } else {
+            // H4 — quiet monochrome glyph, not a brown placeholder
             Box(
                 modifier = Modifier
                     .size(width = 36.dp, height = 54.dp)
                     .clip(RoundedCornerShape(6.dp))
-                    .background(BrandOrange.copy(alpha = 0.15f)),
-            )
+                    .background(Color.White.copy(alpha = 0.06f)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = if (title == "New episode alerts") Icons.Filled.PlayArrow
+                        else if (title == "Watch list updates") Icons.Filled.Check
+                        else Icons.Filled.ArrowForward,
+                    contentDescription = null,
+                    tint = Color.White.copy(alpha = 0.25f),
+                    modifier = Modifier.size(16.dp),
+                )
+            }
         }
         Spacer(Modifier.width(14.dp))
         Column(modifier = Modifier.weight(1f)) {
@@ -1457,7 +1521,7 @@ private fun NotifyBenefitRow(
 // ── Onboarding header + step indicator ─────────────────────────────
 
 internal object OnboardingHeader {
-    val stepNames = listOf("Services", "Watching Now", "Creators", "Notify")
+    val stepNames = listOf("Services", "Watching", "Creators", "Notify")
 }
 
 @Composable
@@ -1470,7 +1534,8 @@ internal fun OnboardingHeader(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(SurfaceContainer),
+            .background(SurfaceContainer)
+            .statusBarsPadding(),
     ) {
         Row(
             modifier = Modifier
@@ -1655,6 +1720,149 @@ private fun StepNode(
                     color = if (isCurrent) Color.White else Color.White.copy(alpha = 0.35f),
                 )
             }
+        }
+    }
+}
+
+// ── Widget Instruction Sheet (H3) ─────────────────────────────────
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun WidgetInstructionSheet(onDismiss: () -> Unit) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = SheetSurfaceBase,
+        scrimColor = Color.Black.copy(alpha = 0.60f),
+        tonalElevation = 0.dp,
+        dragHandle = { GsSheetDragHandle(level = SheetLevel.Base) },
+        contentWindowInsets = { sheetTopInset() },
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .navigationBarsPadding(),
+        ) {
+            GsSheetHeader(title = "Add the home screen widget") {
+                Text(
+                    text = "Done",
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = TextSecondary,
+                    modifier = Modifier.clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                    ) { onDismiss() }.padding(4.dp),
+                )
+            }
+
+            // Widget preview card
+            WidgetPreviewCard(Modifier.padding(horizontal = 20.dp).padding(top = 8.dp))
+
+            Spacer(Modifier.height(18.dp))
+
+            // Numbered steps (Android-specific)
+            WidgetStepRow(number = 1, text = "Touch and hold an empty area of your home screen", modifier = Modifier.padding(horizontal = 20.dp))
+            Spacer(Modifier.height(14.dp))
+            WidgetStepRow(number = 2, text = "Tap Widgets", modifier = Modifier.padding(horizontal = 20.dp))
+            Spacer(Modifier.height(14.dp))
+            WidgetStepRow(number = 3, text = "Find GuideStream TV and drag your preferred size into place", modifier = Modifier.padding(horizontal = 20.dp))
+
+            Spacer(Modifier.height(24.dp))
+
+            // Buttons
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 24.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(48.dp)
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(Color.White.copy(alpha = 0.06f))
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                        ) { onDismiss() },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text("Remind me later", fontSize = 15.sp, fontWeight = FontWeight.Medium, color = TextSecondary)
+                }
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(48.dp)
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(Brush.verticalGradient(listOf(BrandOrange, BrandOrange.copy(alpha = 0.85f))))
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                        ) { onDismiss() },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text("Got it", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun WidgetStepRow(number: Int, text: String, modifier: Modifier = Modifier) {
+    Row(
+        modifier = modifier,
+        verticalAlignment = Alignment.Top,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(28.dp)
+                .clip(CircleShape)
+                .background(BrandOrange.copy(alpha = 0.15f)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text("$number", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = BrandOrange)
+        }
+        Spacer(Modifier.width(14.dp))
+        Text(
+            text = text,
+            fontSize = 15.sp,
+            color = TextPrimary,
+            modifier = Modifier.weight(1f),
+        )
+    }
+}
+
+@Composable
+private fun WidgetPreviewCard(modifier: Modifier = Modifier) {
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(SurfaceDark)
+            .border(1.dp, Color.White.copy(alpha = 0.10f), RoundedCornerShape(16.dp))
+            .padding(14.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Text("GuideStream", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+            Text("TONIGHT", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = BrandOrange, letterSpacing = 1.sp)
+        }
+        Spacer(Modifier.height(8.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(modifier = Modifier.size(width = 24.dp, height = 36.dp).clip(RoundedCornerShape(4.dp)).background(BrandBlue.copy(alpha = 0.6f)))
+            Spacer(Modifier.width(8.dp))
+            Text("New episode \u00b7 The Last of Us", fontSize = 11.sp, color = TextSecondary)
+        }
+        Spacer(Modifier.height(4.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(modifier = Modifier.size(width = 24.dp, height = 36.dp).clip(RoundedCornerShape(4.dp)).background(BrandOrange.copy(alpha = 0.6f)))
+            Spacer(Modifier.width(8.dp))
+            Text("Season finale \u00b7 Severance", fontSize = 11.sp, color = TextSecondary)
         }
     }
 }
