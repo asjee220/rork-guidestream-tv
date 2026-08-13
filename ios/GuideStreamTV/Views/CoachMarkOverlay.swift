@@ -53,9 +53,10 @@ struct CoachMarkOverlay: View {
             Color.clear
                 .onAppear {
                     if validRects.isEmpty && manager.scrollSettled {
-                        // No valid frames after settle — skip this mark
+                        // No valid frames after settle — skip this mark without
+                        // persisting it, so it is retried on a later session.
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                            manager.advance()
+                            manager.skipUnmeasurableMark()
                         }
                     }
                 }

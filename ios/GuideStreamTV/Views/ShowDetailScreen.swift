@@ -571,29 +571,34 @@ struct ShowDetailScreen: View {
             )
             .allowsHitTesting(playOnOpen)
 
-            // Detail coach mark overlay — hosted here since this screen is a
-            // fullScreenCover with its own anchor preferences.
-            CoachMarkOverlay(manager: coachMark)
-                .overlayPreferenceValue(CoachMarkAnchorKey.self) { anchors in
-                    GeometryReader { proxy in
-                        Color.clear
-                            .task(id: coachMark.currentMark?.key ?? "none-detail") {
-                                guard coachMark.isShowing, let mark = coachMark.currentMark else { return }
-                                if coachMark.scrollRequest != nil {
-                                    coachMark.clearScrollRequest()
-                                    try? await Task.sleep(for: .milliseconds(350))
-                                }
-                                var rects: [String: CGRect] = [:]
-                                for key in mark.targetKeys {
-                                    if let anchor = anchors[key] {
-                                        rects[key] = proxy[anchor]
-                                    }
-                                }
-                                coachMark.setMeasuredRects(rects)
-                                coachMark.markScrollSettled()
+        }
+        // Detail coach mark overlay — attached to the whole ZStack so the
+        // anchor publishers inside the scroll content are in the measured
+        // subtree. Rendered in the closure, so it still paints above every
+        // sibling: an overlay always draws on top of its content.
+        .overlayPreferenceValue(CoachMarkAnchorKey.self) { anchors in
+            ZStack {
+                CoachMarkOverlay(manager: coachMark)
+                GeometryReader { proxy in
+                    Color.clear
+                        .task(id: coachMark.currentMark?.key ?? "none-detail") {
+                            guard coachMark.isShowing, let mark = coachMark.currentMark else { return }
+                            if coachMark.scrollRequest != nil {
+                                coachMark.clearScrollRequest()
+                                try? await Task.sleep(for: .milliseconds(350))
                             }
-                    }
+                            var rects: [String: CGRect] = [:]
+                            for key in mark.targetKeys {
+                                if let anchor = anchors[key] {
+                                    rects[key] = proxy[anchor]
+                                }
+                            }
+                            coachMark.setMeasuredRects(rects)
+                            coachMark.markScrollSettled()
+                        }
                 }
+                .allowsHitTesting(false)
+            }
         }
         .preferredColorScheme(.dark)
         .onChange(of: scenePhase) { _, phase in

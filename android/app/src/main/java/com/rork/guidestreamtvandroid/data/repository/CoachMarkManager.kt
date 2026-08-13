@@ -97,6 +97,14 @@ class CoachMarkManager private constructor(private val context: Context) {
     private val resetRevisionKey = "gs.coachMarks.resetRevision"
 
     /**
+     * Bump to force a one-time clear of stored coach mark state on every
+     * install. Matches the iOS reset version so both platforms replay once.
+     */
+    private val coachMarkResetVersion = 2
+    private val resetVersionKey = "coach_mark_reset_version"
+    private val pendingRemoteResetKey = "coach_mark_pending_remote_reset"
+
+    /**
      * Accounts whose tour is force-reset once per [testerResetRevision].
      * Bump the revision to replay the tour again for these accounts.
      */
@@ -137,7 +145,23 @@ class CoachMarkManager private constructor(private val context: Context) {
     }
 
     init {
+        applyOneTimeResetIfNeeded()
         loadFromPrefs()
+    }
+
+    /**
+     * Runs at most once per install per [coachMarkResetVersion]. Clears the
+     * stored seen-keys entry before [loadFromPrefs] can populate state, and
+     * flags the remote copy for an authoritative clear on next hydrate.
+     */
+    private fun applyOneTimeResetIfNeeded() {
+        if (prefs.getInt(resetVersionKey, 0) >= coachMarkResetVersion) return
+        prefs.edit()
+            .remove(storageKey)
+            .putInt(resetVersionKey, coachMarkResetVersion)
+            .putBoolean(pendingRemoteResetKey, true)
+            .apply()
+        seenKeys = emptyMap()
     }
 
     // ── Local persistence ────────────────────────────────────────────
@@ -334,6 +358,23 @@ class CoachMarkManager private constructor(private val context: Context) {
      * reset so a cleared server copy is not immediately re-merged.
      */
     suspend fun hydrateFromSupabase(userId: String, email: String? = null) {
+        // One-time reset: overwrite the remote copy authoritatively instead of
+        // merging, otherwise the stale remote keys would be pulled straight
+        // back down and the local clear undone. The flag only clears when the
+        // write succeeds, so a failure retries on the next hydrate.
+        if (prefs.getBoolean(pendingRemoteResetKey, false)) {
+            try {
+                SupabaseManager.client.postgrest
+                    .from("users")
+                    .update(buildJsonObject {
+                        put("coach_marks_seen", buildJsonObject { })
+                    }) { filter { eq("id", userId) } }
+                prefs.edit().putBoolean(pendingRemoteResetKey, false).apply()
+            } catch (_: Exception) {
+                // Local reset already applied; retry the remote clear later
+            }
+            return
+        }
         hydrateSeenKeys(userId)
         withContext(Dispatchers.Main) { maybeResetForTester(email) }
     }

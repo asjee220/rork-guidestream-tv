@@ -101,8 +101,30 @@ final class CoachMarkManager {
     private let defaults = UserDefaults.standard
     private let storageKey = "gs.coachMarks"
 
+    /// Bump to force a one-time clear of stored coach mark state on every
+    /// install. Version 2 clears keys written by the broken auto-advance
+    /// path, which persisted marks the user never actually saw.
+    private let coachMarkResetVersion = 2
+    private let resetVersionKey = "gs.coachMarkResetVersion"
+    /// Persisted so a launch where the user never signs in does not lose the
+    /// pending authoritative remote clear.
+    private let pendingRemoteResetKey = "gs.coachMarkPendingRemoteReset"
+
     private init() {
+        applyOneTimeResetIfNeeded()
         loadFromUserDefaults()
+    }
+
+    /// Runs at most once per install per `coachMarkResetVersion`. Clears the
+    /// local store before `loadFromUserDefaults` can populate `seenKeys`, and
+    /// flags the remote copy for an authoritative clear on next hydrate.
+    private func applyOneTimeResetIfNeeded() {
+        let stored = defaults.integer(forKey: resetVersionKey)
+        guard stored < coachMarkResetVersion else { return }
+        defaults.removeObject(forKey: storageKey)
+        seenKeys = [:]
+        defaults.set(coachMarkResetVersion, forKey: resetVersionKey)
+        defaults.set(true, forKey: pendingRemoteResetKey)
     }
 
     // MARK: - Local persistence
@@ -228,6 +250,24 @@ final class CoachMarkManager {
         scrollSettled = false
     }
 
+    /// Moves past the current mark *without* persisting it, so a mark whose
+    /// anchor could not be measured is retried on a later session instead of
+    /// being burned. When it is the last mark, the tour is dismissed without
+    /// writing either the mark key or the tour-level done key.
+    func skipUnmeasurableMark() {
+        guard currentMark != nil else { return }
+        if currentIndex + 1 >= activeTour.count {
+            genreHighlightActive = false
+            dismissTour()
+        } else {
+            currentIndex += 1
+            measuredRects = [:]
+            scrollSettled = false
+            genreHighlightActive = false
+            handleScrollForCurrentMark()
+        }
+    }
+
     /// If a target's measured frame is zero or missing, skip that single
     /// mark and advance rather than drawing a cutout at the origin.
     func currentMarkHasValidFrames() -> Bool {
@@ -323,6 +363,25 @@ final class CoachMarkManager {
     /// Hydrate on sign-in / session restore: read `coach_marks_seen`,
     /// union with local storage, write the union back up, store locally.
     func hydrateFromSupabase(userId: String) async {
+        // One-time reset: overwrite the remote copy authoritatively instead of
+        // merging, otherwise the stale remote keys would be pulled straight
+        // back down and the local clear undone.
+        if defaults.bool(forKey: pendingRemoteResetKey) {
+            do {
+                let empty: [String: String] = [:]
+                try await SupabaseManager.shared.client
+                    .from("users")
+                    .update(["coach_marks_seen": empty])
+                    .eq("id", value: userId)
+                    .execute()
+                defaults.set(false, forKey: pendingRemoteResetKey)
+            } catch {
+                #if DEBUG
+                print("[CoachMark] remote reset failed: \(error.localizedDescription)")
+                #endif
+            }
+            return
+        }
         do {
             let rows: [CoachMarksRow] = try await SupabaseManager.shared.client
                 .from("users")

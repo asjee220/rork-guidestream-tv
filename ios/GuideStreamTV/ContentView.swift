@@ -191,31 +191,34 @@ struct ContentView: View {
             AskStreamSheet(isOpen: askSheetOpen, onClose: { askSheetOpen = false }, onSelectResult: { searchSelectedResult = $0 })
                 .ignoresSafeArea()
 
-            // Coach mark overlay — last child so it paints above everything.
-            // The overlay reads anchor preferences from HomeView/TabBar targets
-            // and resolves them to global rects via a GeometryProxy.
-            CoachMarkOverlay(manager: coachMark)
-                .overlayPreferenceValue(CoachMarkAnchorKey.self) { anchors in
-                    GeometryReader { proxy in
-                        Color.clear
-                            .task(id: coachMark.currentMark?.key ?? "none") {
-                                guard coachMark.isShowing, let mark = coachMark.currentMark else { return }
-                                if coachMark.scrollRequest != nil {
-                                    coachMark.clearScrollRequest()
-                                    try? await Task.sleep(for: .milliseconds(350))
-                                }
-                                var rects: [String: CGRect] = [:]
-                                for key in mark.targetKeys {
-                                    if let anchor = anchors[key] {
-                                        rects[key] = proxy[anchor]
-                                    }
-                                }
-                                coachMark.setMeasuredRects(rects)
-                                coachMark.markScrollSettled()
+        }
+        // Coach mark overlay — attached to the whole ZStack so the anchor
+        // publishers in HomeView and FloatingTabBar are inside the measured
+        // subtree. Rendered in the closure, so it still paints above every
+        // sibling: an overlay always draws on top of its content.
+        .overlayPreferenceValue(CoachMarkAnchorKey.self) { anchors in
+            ZStack {
+                CoachMarkOverlay(manager: coachMark)
+                GeometryReader { proxy in
+                    Color.clear
+                        .task(id: coachMark.currentMark?.key ?? "none") {
+                            guard coachMark.isShowing, let mark = coachMark.currentMark else { return }
+                            if coachMark.scrollRequest != nil {
+                                coachMark.clearScrollRequest()
+                                try? await Task.sleep(for: .milliseconds(350))
                             }
-                    }
+                            var rects: [String: CGRect] = [:]
+                            for key in mark.targetKeys {
+                                if let anchor = anchors[key] {
+                                    rects[key] = proxy[anchor]
+                                }
+                            }
+                            coachMark.setMeasuredRects(rects)
+                            coachMark.markScrollSettled()
+                        }
                 }
-
+                .allowsHitTesting(false)
+            }
         }
         .fullScreenCover(item: $searchSelectedResult) { result in
             ShowDetailScreen(
