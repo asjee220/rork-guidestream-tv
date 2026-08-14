@@ -48,7 +48,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
@@ -148,8 +150,16 @@ private fun CoachMarkSpotlight(
     val mark = manager.currentMark ?: return
     if (!manager.scrollSettled) return
 
+    // Targets are measured with boundsInRoot (window coordinates), but this
+    // overlay is not always hosted at the window origin — inside the episode
+    // bottom sheet it starts a third of the way down the screen. Measure the
+    // overlay's own root bounds and translate every target rect into local
+    // space, otherwise every cutout lands offset by the sheet's top.
+    var overlayBounds by remember { mutableStateOf<Rect?>(null) }
+
+    val origin = overlayBounds?.topLeft ?: Offset.Zero
     val validRects = mark.targetKeys.mapNotNull { key ->
-        manager.measuredRects[key]?.takeIf { !it.isEmpty }?.let { key to it }
+        manager.measuredRects[key]?.takeIf { !it.isEmpty }?.let { key to it.translate(-origin) }
     }
 
     if (validRects.isEmpty()) {
@@ -170,7 +180,11 @@ private fun CoachMarkSpotlight(
     val configuration = LocalConfiguration.current
     val screenWidthPx = with(density) { configuration.screenWidthDp.dp.toPx() }
     val screenHeightPx = with(density) { configuration.screenHeightDp.dp.toPx() }
-    val screenRect = Rect(offset = Offset.Zero, size = Size(screenWidthPx, screenHeightPx))
+    // Card clamping must work in the overlay's local space too, so the "screen"
+    // is the overlay's own measured size when known (the sheet host is shorter
+    // than the display), falling back to the configuration size on first frame.
+    val screenRect = overlayBounds?.let { Rect(offset = Offset.Zero, size = it.size) }
+        ?: Rect(offset = Offset.Zero, size = Size(screenWidthPx, screenHeightPx))
 
     val padding8 = with(density) { 8.dp.toPx() }
     val padding12 = with(density) { 12.dp.toPx() }
@@ -184,12 +198,16 @@ private fun CoachMarkSpotlight(
     Box(
         modifier = Modifier
             .fillMaxSize()
+            .onGloballyPositioned { coords -> overlayBounds = coords.boundsInRoot() }
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
             ) { manager.advance() }
             .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen },
     ) {
+        // Skip the first frame(s) until the overlay's root offset is known so
+        // cutouts never flash at the untranslated position.
+        if (overlayBounds == null) return@Box
         // Scrim with holes — single Canvas draws all holes from one mask using
         // BlendMode.Clear so the underlying UI remains visible, framed only by
         // the orange pulse rings below.
