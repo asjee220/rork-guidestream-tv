@@ -62,8 +62,8 @@ data class CoachMark(
         )
 
         val sheetTour = listOf(
-            CoachMark("sheet_play_on", "Send it to the TV",
-                "Open this on your Roku without touching the remote.",
+            CoachMark("sheet_play_on", "Quick actions",
+                "Watched marks it as seen. Share sends it to a friend. Send to TV opens it on your Roku without touching the remote.",
                 listOf("sheet_play_on")),
             CoachMark("sheet_where_to_watch", "Pick your service",
                 "Tap a service to switch where this plays. The Watch button follows your choice.",
