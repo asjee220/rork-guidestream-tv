@@ -63,7 +63,7 @@ data class CoachMark(
 
         val sheetTour = listOf(
             CoachMark("sheet_play_on", "Send it to the TV",
-                "Open this on your Apple TV, Roku or Samsung without touching the remote.",
+                "Open this on your Roku without touching the remote.",
                 listOf("sheet_play_on")),
             CoachMark("sheet_where_to_watch", "Pick your service",
                 "Tap a service to switch where this plays. The Watch button follows your choice.",

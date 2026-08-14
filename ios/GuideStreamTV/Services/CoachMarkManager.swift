@@ -50,7 +50,7 @@ struct CoachMark: Identifiable {
 
     static let sheetTour: [CoachMark] = [
         CoachMark(id: "sheet_play_on", key: "sheet_play_on", title: "Send it to the TV",
-                  body: "Open this on your Apple TV, Roku or Samsung without touching the remote.",
+                  body: "Open this on your Roku without touching the remote.",
                   targetKeys: ["sheet_play_on"]),
         CoachMark(id: "sheet_where_to_watch", key: "sheet_where_to_watch", title: "Pick your service",
                   body: "Tap a service to switch where this plays. The Watch button follows your choice.",
