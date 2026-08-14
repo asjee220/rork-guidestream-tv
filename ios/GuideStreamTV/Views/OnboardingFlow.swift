@@ -943,6 +943,9 @@ struct StayNotifiedView: View {
     let showCount: Int
     let creatorCount: Int
 
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var authStatus: UNAuthorizationStatus = .notDetermined
+
     var body: some View {
         VStack(spacing: 0) {
             OnboardingHeader(currentStep: currentStep, totalSteps: totalSteps, onBack: onBack)
@@ -1039,28 +1042,83 @@ struct StayNotifiedView: View {
             }
 
             VStack(spacing: 12) {
-                Button {
-                    requestPermission()
-                } label: {
-                    HStack(spacing: 8) {
-                        Text("Allow notifications")
-                            .font(.custom("SF Pro Text", size: 16).weight(.bold))
-                        Image(systemName: "bell.fill")
-                            .scaledFont(size: 14, weight: .bold)
-                    }
-                    .foregroundStyle(.white)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 56)
-                    .background(
-                        LinearGradient(
-                            colors: [Color.orange, Color.orange.opacity(0.85)],
-                            startPoint: .top, endPoint: .bottom
+                switch authStatus {
+                case .authorized, .provisional, .ephemeral:
+                    Button {
+                        pushOn = true
+                        UIApplication.shared.registerForRemoteNotifications()
+                        onContinue()
+                    } label: {
+                        HStack(spacing: 8) {
+                            Text("Alerts are on")
+                                .font(.custom("SF Pro Text", size: 16).weight(.bold))
+                            Image(systemName: "checkmark.circle.fill")
+                                .scaledFont(size: 14, weight: .bold)
+                        }
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 56)
+                        .background(
+                            LinearGradient(
+                                colors: [Color(red: 0.20, green: 0.66, blue: 0.33), Color(red: 0.20, green: 0.66, blue: 0.33).opacity(0.85)],
+                                startPoint: .top, endPoint: .bottom
+                            )
                         )
-                    )
-                    .clipShape(Capsule())
-                    .shadow(color: Color.orange.opacity(0.45), radius: 28, x: 0, y: 0)
+                        .clipShape(Capsule())
+                        .shadow(color: Color(red: 0.20, green: 0.66, blue: 0.33).opacity(0.35), radius: 28, x: 0, y: 0)
+                    }
+                    .buttonStyle(.plain)
+
+                case .denied:
+                    Button {
+                        if let url = URL(string: UIApplication.openSettingsURLString) {
+                            UIApplication.shared.open(url)
+                        }
+                    } label: {
+                        HStack(spacing: 8) {
+                            Text("Open settings")
+                                .font(.custom("SF Pro Text", size: 16).weight(.bold))
+                            Image(systemName: "gearshape.fill")
+                                .scaledFont(size: 14, weight: .bold)
+                        }
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 56)
+                        .background(
+                            LinearGradient(
+                                colors: [Color.orange, Color.orange.opacity(0.85)],
+                                startPoint: .top, endPoint: .bottom
+                            )
+                        )
+                        .clipShape(Capsule())
+                        .shadow(color: Color.orange.opacity(0.45), radius: 28, x: 0, y: 0)
+                    }
+                    .buttonStyle(.plain)
+
+                default: // .notDetermined
+                    Button {
+                        requestPermission()
+                    } label: {
+                        HStack(spacing: 8) {
+                            Text("Allow notifications")
+                                .font(.custom("SF Pro Text", size: 16).weight(.bold))
+                            Image(systemName: "bell.fill")
+                                .scaledFont(size: 14, weight: .bold)
+                        }
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 56)
+                        .background(
+                            LinearGradient(
+                                colors: [Color.orange, Color.orange.opacity(0.85)],
+                                startPoint: .top, endPoint: .bottom
+                            )
+                        )
+                        .clipShape(Capsule())
+                        .shadow(color: Color.orange.opacity(0.45), radius: 28, x: 0, y: 0)
+                    }
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
 
                 Button {
                     pushOn = false
@@ -1084,6 +1142,18 @@ struct StayNotifiedView: View {
             )
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .task {
+            let settings = await UNUserNotificationCenter.current().notificationSettings()
+            authStatus = settings.authorizationStatus
+        }
+        .onChange(of: scenePhase) { _, newPhase in
+            if newPhase == .active {
+                Task {
+                    let settings = await UNUserNotificationCenter.current().notificationSettings()
+                    authStatus = settings.authorizationStatus
+                }
+            }
+        }
     }
 
     private var notifySubtitle: String {

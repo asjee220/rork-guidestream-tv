@@ -1,6 +1,7 @@
 package com.rork.guidestreamtvandroid
 
 import android.Manifest
+import android.content.Context
 import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
@@ -108,12 +109,16 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-        // Request notification permission on launch. Onboarding is the only
-        // other place that ever prompts, and existing/updating users never
-        // see that screen again — without this, a reinstall or an update on
-        // Android 13+ leaves the user permanently unable to receive
-        // notifications while their push token still registers normally.
-        requestNotificationPermissionIfNeeded()
+        // Request notification permission at launch — but only for users who
+        // have already completed onboarding. New installs let the onboarding
+        // notify step own the ask; updates and reinstalls (which skip
+        // onboarding) are still caught here so they are not silently unable
+        // to receive notifications.
+        val prefs = getSharedPreferences("gs_prefs", Context.MODE_PRIVATE)
+        val hasCompletedOnboarding = prefs.getBoolean("gs.onboardingComplete", false)
+        if (hasCompletedOnboarding) {
+            requestNotificationPermissionIfNeeded()
+        }
     }
 
     /**
