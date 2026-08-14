@@ -19,8 +19,6 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.relocation.BringIntoViewRequester
-import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -45,6 +43,7 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -56,6 +55,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -98,6 +98,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import java.util.Locale
+import kotlin.math.roundToInt
 
 /**
  * Quick-look bottom sheet for a title — Android port of iOS `EpisodeDetailSheet`.
@@ -234,34 +235,37 @@ fun EpisodeDetailSheet(
     val platformColor = serviceLabel?.let { Platform.from(it)?.color } ?: BrandOrange
 
     val sheetScrollState = rememberScrollState()
+    val density = LocalDensity.current
 
-    // BringIntoViewRequesters for the sheet-tour targets. animateScrollTo
-    // can't be used here: measuredRects are in root (screen) coordinates,
-    // not scroll-content offsets, so bringIntoView is the correct primitive
-    // (same approach as the home tour's genre scroll).
-    val playOnRequester = remember { BringIntoViewRequester() }
-    val whereToWatchRequester = remember { BringIntoViewRequester() }
-    val watchlistRequester = remember { BringIntoViewRequester() }
+    // Root-coordinate top of the sheet's scroll viewport. measuredRects are
+    // in root coordinates, NOT scroll-content offsets, so the scroll target
+    // must be derived: contentOffset = currentScroll + (targetTop - viewportTop).
+    // bringIntoView is unreliable inside ModalBottomSheet's nested-scroll
+    // chain, so the scroll is driven on sheetScrollState directly.
+    var scrollViewportTop by remember { mutableFloatStateOf(0f) }
 
     // Coach-mark scroll coordination: when the sheet tour requests a scroll,
-    // bring the target row into view, then settle after 350ms so the overlay
-    // measures the target at its final resting position.
+    // scroll the target row into the upper part of the viewport, then settle
+    // after 350ms so the overlay measures the target at its resting position.
     LaunchedEffect(coachMark.isShowing, coachMark.currentMark?.key) {
         if (!coachMark.isShowing) return@LaunchedEffect
         coachMark.currentMark ?: return@LaunchedEffect
         val id = coachMark.scrollRequestId
         if (id == "cmSheetActions" || id == "cmSheetWatch" || id == "cmSheetWatchlist") {
             coachMark.clearScrollRequest()
-            val requester = when (id) {
-                "cmSheetActions" -> playOnRequester
-                "cmSheetWatch" -> whereToWatchRequester
-                "cmSheetWatchlist" -> watchlistRequester
+            val targetKey = when (id) {
+                "cmSheetActions" -> "sheet_play_on"
+                "cmSheetWatch" -> "sheet_where_to_watch"
+                "cmSheetWatchlist" -> "sheet_watchlist"
                 else -> null
             }
-            try {
-                requester?.bringIntoView()
-            } catch (_: Exception) {
-                // Target not composed yet — the overlay watchdog settles us.
+            val rect = targetKey?.let { key -> coachMark.measuredRects[key] }
+            if (rect != null && !rect.isEmpty) {
+                val marginPx = with(density) { 96.dp.toPx() }
+                val desired = (sheetScrollState.value + (rect.top - scrollViewportTop) - marginPx)
+                    .roundToInt()
+                    .coerceIn(0, sheetScrollState.maxValue)
+                sheetScrollState.animateScrollTo(desired)
             }
             delay(350)
         }
@@ -289,7 +293,10 @@ fun EpisodeDetailSheet(
             modifier = Modifier
                 .fillMaxWidth()
                 .fillMaxHeight(0.8f)
-                .navigationBarsPadding(),
+                .navigationBarsPadding()
+                .onGloballyPositioned { coords ->
+                    scrollViewportTop = coords.boundsInRoot().top
+                },
         ) {
             Column(
                 modifier = Modifier
@@ -425,7 +432,6 @@ fun EpisodeDetailSheet(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 20.dp, vertical = 18.dp)
-                        .bringIntoViewRequester(playOnRequester)
                         .onGloballyPositioned { coords ->
                             coachMark.setMeasuredRect("sheet_play_on", coords.boundsInRoot())
                         },
@@ -491,7 +497,6 @@ fun EpisodeDetailSheet(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .bringIntoViewRequester(whereToWatchRequester)
                         .onGloballyPositioned { coords ->
                             coachMark.setMeasuredRect("sheet_where_to_watch", coords.boundsInRoot())
                         },
@@ -583,10 +588,7 @@ fun EpisodeDetailSheet(
                             }
                         }
                     }
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        modifier = Modifier.bringIntoViewRequester(watchlistRequester),
-                    ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Box(
                             modifier = Modifier
                                 .size(54.dp)
