@@ -19,6 +19,8 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -233,24 +235,33 @@ fun EpisodeDetailSheet(
 
     val sheetScrollState = rememberScrollState()
 
+    // BringIntoViewRequesters for the sheet-tour targets. animateScrollTo
+    // can't be used here: measuredRects are in root (screen) coordinates,
+    // not scroll-content offsets, so bringIntoView is the correct primitive
+    // (same approach as the home tour's genre scroll).
+    val playOnRequester = remember { BringIntoViewRequester() }
+    val whereToWatchRequester = remember { BringIntoViewRequester() }
+    val watchlistRequester = remember { BringIntoViewRequester() }
+
     // Coach-mark scroll coordination: when the sheet tour requests a scroll,
-    // animate the target row into view, then settle after 350ms.
+    // bring the target row into view, then settle after 350ms so the overlay
+    // measures the target at its final resting position.
     LaunchedEffect(coachMark.isShowing, coachMark.currentMark?.key) {
         if (!coachMark.isShowing) return@LaunchedEffect
-        val mark = coachMark.currentMark ?: return@LaunchedEffect
+        coachMark.currentMark ?: return@LaunchedEffect
         val id = coachMark.scrollRequestId
         if (id == "cmSheetActions" || id == "cmSheetWatch" || id == "cmSheetWatchlist") {
             coachMark.clearScrollRequest()
-            val targetKey = when (id) {
-                "cmSheetActions" -> "sheet_play_on"
-                "cmSheetWatch" -> "sheet_where_to_watch"
-                "cmSheetWatchlist" -> "sheet_watchlist"
+            val requester = when (id) {
+                "cmSheetActions" -> playOnRequester
+                "cmSheetWatch" -> whereToWatchRequester
+                "cmSheetWatchlist" -> watchlistRequester
                 else -> null
             }
-            val rect = targetKey?.let { coachMark.measuredRects[it] }
-            if (rect != null && !rect.isEmpty) {
-                val target = (rect.top - 120f).coerceIn(0f, sheetScrollState.maxValue.toFloat())
-                sheetScrollState.animateScrollTo(target.toInt())
+            try {
+                requester?.bringIntoView()
+            } catch (_: Exception) {
+                // Target not composed yet — the overlay watchdog settles us.
             }
             delay(350)
         }
@@ -414,6 +425,7 @@ fun EpisodeDetailSheet(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 20.dp, vertical = 18.dp)
+                        .bringIntoViewRequester(playOnRequester)
                         .onGloballyPositioned { coords ->
                             coachMark.setMeasuredRect("sheet_play_on", coords.boundsInRoot())
                         },
@@ -473,9 +485,13 @@ fun EpisodeDetailSheet(
                     }
                 }
 
-                Box(
+                // Column, not Box: WhereToWatchRow emits three siblings
+                // (spacer, section title, chip row) — a Box stacks them on
+                // top of each other so the title overlaps the chips.
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .bringIntoViewRequester(whereToWatchRequester)
                         .onGloballyPositioned { coords ->
                             coachMark.setMeasuredRect("sheet_where_to_watch", coords.boundsInRoot())
                         },
@@ -567,7 +583,10 @@ fun EpisodeDetailSheet(
                             }
                         }
                     }
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.bringIntoViewRequester(watchlistRequester),
+                    ) {
                         Box(
                             modifier = Modifier
                                 .size(54.dp)
