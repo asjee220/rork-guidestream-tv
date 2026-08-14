@@ -152,7 +152,17 @@ private fun CoachMarkSpotlight(
         manager.measuredRects[key]?.takeIf { !it.isEmpty }?.let { key to it }
     }
 
-    if (validRects.isEmpty()) return
+    if (validRects.isEmpty()) {
+        // iOS parity: if a target's measured frame is zero or missing, skip
+        // that single mark and advance rather than drawing a cutout at the
+        // origin or rendering nothing while isShowing stays true.
+        LaunchedEffect(mark.key) {
+            if (manager.currentMark?.key == mark.key && !manager.currentMarkHasValidFrames()) {
+                manager.advance()
+            }
+        }
+        return
+    }
 
     val cutoutRects = validRects.map { it.second }
     val firstRect = validRects.first().second

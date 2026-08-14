@@ -28,6 +28,8 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -214,23 +216,20 @@ fun HomeScreen(
     }
 
     val coachMark = CoachMarkManager.get()
-    val density = LocalDensity.current
-    val configuration = LocalConfiguration.current
-    val genreTopInsetPx = with(density) { (configuration.screenHeightDp * 0.16f).dp.toPx() }
+
+    // BringIntoViewRequester for the Browse-by-genre section. Used by the
+    // coach-mark tour so the scroll target resolves by composition identity
+    // rather than a previously measured rect that may be stale or missing.
+    val genreBringIntoViewRequester = remember { BringIntoViewRequester() }
 
     // Coach-mark scroll coordination: when the genre mark requests a scroll,
-    // animate the Browse-by-genre section into view, then settle after 350ms.
+    // bring the Browse-by-genre section into view, then settle after 350ms so
+    // onGloballyPositioned can re-report after the scroll.
     LaunchedEffect(coachMark.isShowing, coachMark.currentMark?.key) {
         if (!coachMark.isShowing) return@LaunchedEffect
-        val mark = coachMark.currentMark ?: return@LaunchedEffect
         if (coachMark.scrollRequestId == "browseByGenre") {
             coachMark.clearScrollRequest()
-            val rect = coachMark.measuredRects["genre"]
-            if (rect != null && !rect.isEmpty) {
-                val target = (scrollState.value + rect.top - genreTopInsetPx)
-                    .coerceIn(0f, scrollState.maxValue.toFloat())
-                scrollState.animateScrollTo(target.toInt())
-            }
+            genreBringIntoViewRequester.bringIntoView()
             delay(350)
         }
         coachMark.markScrollSettled()
@@ -689,9 +688,11 @@ fun HomeScreen(
 
         // Browse by genre (pill grid) — drives the Because you watch rail below.
         Box(
-            modifier = Modifier.onGloballyPositioned { coords ->
-                coachMark.setMeasuredRect("genre", coords.boundsInRoot())
-            },
+            modifier = Modifier
+                .bringIntoViewRequester(genreBringIntoViewRequester)
+                .onGloballyPositioned { coords ->
+                    coachMark.setMeasuredRect("genre", coords.boundsInRoot())
+                },
         ) {
             GenrePillGrid(
                 selectedGenreId = selectedGenreId,
