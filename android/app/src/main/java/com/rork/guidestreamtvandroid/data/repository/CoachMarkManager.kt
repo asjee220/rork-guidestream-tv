@@ -10,6 +10,9 @@ import androidx.compose.ui.geometry.Rect
 import com.rork.guidestreamtvandroid.data.remote.SupabaseManager
 import io.github.jan.supabase.postgrest.postgrest
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
@@ -100,7 +103,7 @@ class CoachMarkManager private constructor(private val context: Context) {
      * Bump to force a one-time clear of stored coach mark state on every
      * install. Matches the iOS reset version so both platforms replay once.
      */
-    private val coachMarkResetVersion = 2
+    private val coachMarkResetVersion = 3
     private val resetVersionKey = "coach_mark_reset_version"
     private val pendingRemoteResetKey = "coach_mark_pending_remote_reset"
 
@@ -110,7 +113,7 @@ class CoachMarkManager private constructor(private val context: Context) {
      */
     private val testerEmails = setOf("ma@guidestream.tv")
     // Bump this to force the next one-time reset for tester accounts.
-    private val testerResetRevision = 2
+    private val testerResetRevision = 3
 
     /** Seen keys mapped to ISO8601 timestamps. */
     var seenKeys: Map<String, String> by mutableStateOf(emptyMap())
@@ -139,6 +142,12 @@ class CoachMarkManager private constructor(private val context: Context) {
 
     /** True while the genre mark is active so HomeScreen can bind highlight. */
     var genreHighlightActive: Boolean by mutableStateOf(false)
+
+    /** True while the home-tour completion toast is visible. */
+    var completionToastVisible: Boolean by mutableStateOf(false)
+        private set
+
+    private var completionToastJob: Job? = null
 
     private val isoFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US).apply {
         timeZone = TimeZone.getTimeZone("UTC")
@@ -233,7 +242,10 @@ class CoachMarkManager private constructor(private val context: Context) {
         if (currentIndex + 1 >= activeTour.size) {
             val isHome = activeTour.any { it.key == "genre" }
             val isDetail = activeTour.any { it.key == "play_on" }
-            if (isHome) markAsSeen("home_tour_done")
+            if (isHome) {
+                markAsSeen("home_tour_done")
+                showCompletionToast()
+            }
             if (isDetail) markAsSeen("detail_tour_done")
             genreHighlightActive = false
             dismissTour()
@@ -250,7 +262,10 @@ class CoachMarkManager private constructor(private val context: Context) {
         for (mark in remaining) markAsSeen(mark.key)
         val isHome = activeTour.any { it.key == "genre" }
         val isDetail = activeTour.any { it.key == "play_on" }
-        if (isHome) markAsSeen("home_tour_done")
+        if (isHome) {
+            markAsSeen("home_tour_done")
+            showCompletionToast()
+        }
         if (isDetail) markAsSeen("detail_tour_done")
         genreHighlightActive = false
         dismissTour()
@@ -271,6 +286,21 @@ class CoachMarkManager private constructor(private val context: Context) {
         measuredRects.clear()
         scrollRequestId = null
         scrollSettled = false
+    }
+
+    private fun showCompletionToast() {
+        completionToastJob?.cancel()
+        completionToastVisible = true
+        completionToastJob = scope.launch {
+            delay(6000)
+            completionToastVisible = false
+        }
+    }
+
+    private fun hideCompletionToast() {
+        completionToastJob?.cancel()
+        completionToastJob = null
+        completionToastVisible = false
     }
 
     fun currentMarkHasValidFrames(): Boolean {

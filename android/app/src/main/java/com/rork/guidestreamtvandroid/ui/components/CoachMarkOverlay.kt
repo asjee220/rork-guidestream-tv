@@ -1,10 +1,15 @@
 package com.rork.guidestreamtvandroid.ui.components
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -22,6 +27,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -83,6 +91,48 @@ fun CoachMarkOverlay(
         }
     }
 
+    Box(modifier = modifier.fillMaxSize()) {
+        CoachMarkSpotlight(manager = manager)
+
+        AnimatedVisibility(
+            visible = manager.completionToastVisible,
+            enter = slideInVertically { it } + fadeIn(),
+            exit = slideOutVertically { it } + fadeOut(),
+            modifier = Modifier.align(Alignment.BottomCenter),
+        ) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .padding(horizontal = 20.dp, vertical = 0.dp)
+                    .padding(bottom = 86.dp)
+                    .background(BrandOrange, RoundedCornerShape(14.dp))
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.CheckCircle,
+                    contentDescription = null,
+                    tint = Navy,
+                    modifier = Modifier.size(18.dp),
+                )
+                Text(
+                    text = "You're set. Tap any poster and we'll show you the rest.",
+                    fontSize = 13.sp,
+                    lineHeight = 19.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = Navy,
+                )
+            }
+        }
+    }
+}
+
+/**
+ * The actual spotlight surface: dimmed scrim with holes, pulse rings and
+ * callout card. Kept identical to the previous implementation.
+ */
+@Composable
+private fun CoachMarkSpotlight(manager: CoachMarkManager) {
     if (!manager.isShowing) return
     val mark = manager.currentMark ?: return
     if (!manager.scrollSettled) return
@@ -109,7 +159,7 @@ fun CoachMarkOverlay(
     val cardWidthPx = with(density) { 230.dp.toPx() }
 
     Box(
-        modifier = modifier
+        modifier = Modifier
             .fillMaxSize()
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
@@ -118,46 +168,46 @@ fun CoachMarkOverlay(
             .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen },
     ) {
         // Scrim with holes — single Canvas draws all holes from one mask using
-    // BlendMode.Clear so the underlying UI remains visible, framed only by
-    // the orange pulse rings below.
-    Canvas(
-        modifier = Modifier
-            .fillMaxSize()
-            .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen },
-    ) {
-        drawRect(color = ScrimColor, size = size)
-        cutoutRects.forEach { rect ->
-            val expanded = Rect(
-                offset = Offset(
-                    (rect.left - padding8).coerceAtLeast(0f),
-                    (rect.top - padding8).coerceAtLeast(0f),
-                ),
-                size = Size(
-                    rect.width + padding8 * 2,
-                    rect.height + padding8 * 2,
-                ),
-            )
-            if (mark.isCircular) {
-                val dim = maxOf(expanded.width, expanded.height)
-                val cx = expanded.center.x
-                val cy = expanded.center.y
-                drawCircle(
-                    color = Color.Transparent,
-                    radius = dim / 2f,
-                    center = Offset(cx, cy),
-                    blendMode = BlendMode.Clear,
+        // BlendMode.Clear so the underlying UI remains visible, framed only by
+        // the orange pulse rings below.
+        Canvas(
+            modifier = Modifier
+                .fillMaxSize()
+                .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen },
+        ) {
+            drawRect(color = ScrimColor, size = size)
+            cutoutRects.forEach { rect ->
+                val expanded = Rect(
+                    offset = Offset(
+                        (rect.left - padding8).coerceAtLeast(0f),
+                        (rect.top - padding8).coerceAtLeast(0f),
+                    ),
+                    size = Size(
+                        rect.width + padding8 * 2,
+                        rect.height + padding8 * 2,
+                    ),
                 )
-            } else {
-                drawRoundRect(
-                    color = Color.Transparent,
-                    topLeft = expanded.topLeft,
-                    size = expanded.size,
-                    cornerRadius = CornerRadius(radius14, radius14),
-                    blendMode = BlendMode.Clear,
-                )
+                if (mark.isCircular) {
+                    val dim = maxOf(expanded.width, expanded.height)
+                    val cx = expanded.center.x
+                    val cy = expanded.center.y
+                    drawCircle(
+                        color = Color.Transparent,
+                        radius = dim / 2f,
+                        center = Offset(cx, cy),
+                        blendMode = BlendMode.Clear,
+                    )
+                } else {
+                    drawRoundRect(
+                        color = Color.Transparent,
+                        topLeft = expanded.topLeft,
+                        size = expanded.size,
+                        cornerRadius = CornerRadius(radius14, radius14),
+                        blendMode = BlendMode.Clear,
+                    )
+                }
             }
         }
-    }
 
         // Pulse rings around each cutout
         cutoutRects.forEach { rect ->

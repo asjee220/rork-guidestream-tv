@@ -24,18 +24,46 @@ struct CoachMarkOverlay: View {
     let manager: CoachMarkManager
 
     var body: some View {
-        GeometryReader { geo in
-            let screen = geo.frame(in: .global)
-            if manager.isShowing, let mark = manager.currentMark {
-                overlayContent(mark: mark, screen: screen)
-                    .transition(.opacity)
-            } else {
-                Color.clear
+        ZStack {
+            GeometryReader { geo in
+                let screen = geo.frame(in: .global)
+                if manager.isShowing, let mark = manager.currentMark {
+                    overlayContent(mark: mark, screen: screen)
+                        .transition(.opacity)
+                } else {
+                    Color.clear
+                }
+            }
+            .ignoresSafeArea()
+
+            if manager.completionToastVisible {
+                completionToast
             }
         }
-        .ignoresSafeArea()
         .allowsHitTesting(manager.isShowing)
         .animation(.easeInOut(duration: 0.25), value: manager.isShowing)
+        .animation(.spring(response: 0.35, dampingFraction: 0.85), value: manager.completionToastVisible)
+    }
+
+    // MARK: - Completion toast
+
+    private var completionToast: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "checkmark.circle.fill")
+                .scaledFont(size: 15, weight: .semibold)
+            Text("You're set. Tap any poster and we'll show you the rest.")
+                .scaledFont(size: 13, weight: .medium)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .foregroundStyle(Color.navy)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(RoundedRectangle(cornerRadius: 14).fill(Color.orange))
+        .shadow(color: .black.opacity(0.5), radius: 18, y: 8)
+        .padding(.horizontal, 20)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+        .padding(.bottom, 86)
+        .transition(.move(edge: .bottom).combined(with: .opacity))
     }
 
     // MARK: - Scrim + cutouts + card

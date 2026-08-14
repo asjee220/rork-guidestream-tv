@@ -1082,6 +1082,12 @@ struct HomeView: View {
                         Task { await streams.refreshIfStale() }
                     }
                 }
+                .onChange(of: coachMark.scrollRequest) { _, req in
+                    guard let id = req else { return }
+                    withAnimation(.easeInOut(duration: 0.3)) {
+                        scrollProxy.scrollTo(id, anchor: UnitPoint(x: 0.5, y: 0.16))
+                    }
+                }
                 } // ScrollViewReader
 
                 VStack(spacing: 0) {

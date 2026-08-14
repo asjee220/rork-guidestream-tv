@@ -98,13 +98,17 @@ final class CoachMarkManager {
     /// `genreHighlighted` to it.
     var genreHighlightActive: Bool = false
 
+    /// `true` while the home-tour completion toast is visible.
+    private(set) var completionToastVisible: Bool = false
+    private var completionToastTask: Task<Void, Never>?
+
     private let defaults = UserDefaults.standard
     private let storageKey = "gs.coachMarks"
 
     /// Bump to force a one-time clear of stored coach mark state on every
-    /// install. Version 2 clears keys written by the broken auto-advance
-    /// path, which persisted marks the user never actually saw.
-    private let coachMarkResetVersion = 2
+    /// install. Version 3 replays the tour after the Browse-by-genre scroll
+    /// fix and the new completion toast.
+    private let coachMarkResetVersion = 3
     private let resetVersionKey = "gs.coachMarkResetVersion"
     /// Persisted so a launch where the user never signs in does not lose the
     /// pending authoritative remote clear.
@@ -202,7 +206,10 @@ final class CoachMarkManager {
             // Tour complete — mark the tour-level done key
             let isHomeTour = activeTour.contains(where: { $0.key == "genre" })
             let isDetailTour = activeTour.contains(where: { $0.key == "play_on" })
-            if isHomeTour { markAsSeen("home_tour_done") }
+            if isHomeTour {
+                markAsSeen("home_tour_done")
+                showCompletionToast()
+            }
             if isDetailTour { markAsSeen("detail_tour_done") }
             genreHighlightActive = false
             dismissTour()
@@ -223,7 +230,10 @@ final class CoachMarkManager {
         }
         let isHomeTour = activeTour.contains(where: { $0.key == "genre" })
         let isDetailTour = activeTour.contains(where: { $0.key == "play_on" })
-        if isHomeTour { markAsSeen("home_tour_done") }
+        if isHomeTour {
+            markAsSeen("home_tour_done")
+            showCompletionToast()
+        }
         if isDetailTour { markAsSeen("detail_tour_done") }
         genreHighlightActive = false
         dismissTour()
@@ -410,7 +420,26 @@ final class CoachMarkManager {
     }
 
     func clearForSignOut() {
+        hideCompletionToast()
         dismissTour()
+    }
+
+    // MARK: - Completion toast
+
+    private func showCompletionToast() {
+        completionToastTask?.cancel()
+        completionToastVisible = true
+        completionToastTask = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(6))
+            guard !Task.isCancelled else { return }
+            completionToastVisible = false
+        }
+    }
+
+    private func hideCompletionToast() {
+        completionToastTask?.cancel()
+        completionToastTask = nil
+        completionToastVisible = false
     }
 }
 

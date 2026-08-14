@@ -64,6 +64,7 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import com.rork.guidestreamtvandroid.data.repository.CoachMarkManager
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import kotlinx.coroutines.delay
@@ -214,7 +215,8 @@ fun HomeScreen(
 
     val coachMark = CoachMarkManager.get()
     val density = LocalDensity.current
-    val genreTopInsetPx = with(density) { 140.dp.toPx() }
+    val configuration = LocalConfiguration.current
+    val genreTopInsetPx = with(density) { (configuration.screenHeightDp * 0.16f).dp.toPx() }
 
     // Coach-mark scroll coordination: when the genre mark requests a scroll,
     // animate the Browse-by-genre section into view, then settle after 350ms.
