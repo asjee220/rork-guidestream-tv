@@ -66,9 +66,8 @@ final class StreamsViewModel {
     // MARK: - Read
 
     func refreshAll() async {
-        async let a: () = fetchUserStreams()
-        async let b: () = fetchNewEpisodes()
-        _ = await (a, b)
+        await fetchUserStreams()
+        await fetchNewEpisodes()
         await fetchLatestContentDates()
         // Hydrate the seen baseline on the home path too, not just when the
         // watch-list sheet opens, so the Home rail badge matches the sheet's

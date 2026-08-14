@@ -252,13 +252,11 @@ final class ReelsViewModel {
         // Fetch source lists in parallel — including movies currently on the
         // user's subscribed services so the feed includes streaming movies,
         // not just theatrical / upcoming titles.
-        async let trendingTask: [TMDBResult] = (try? tmdb.getTrending()) ?? []
-        async let onAirTask: [TMDBResult] = (try? tmdb.getOnTheAir()) ?? []
-        async let myStreamsTask: [UserStream] = fetchMyStreams()
-        async let popularTVTask: [TMDBResult] = (try? tmdb.getPopularTV()) ?? []
-        async let streamingMoviesTask: [TMDBResult] = fetchStreamingMovies()
-
-        let (trending, onAir, mine, popularTV, streamingMovies) = await (trendingTask, onAirTask, myStreamsTask, popularTVTask, streamingMoviesTask)
+        let trending: [TMDBResult] = (try? await tmdb.getTrending()) ?? []
+        let onAir: [TMDBResult] = (try? await tmdb.getOnTheAir()) ?? []
+        let mine: [UserStream] = await fetchMyStreams()
+        let popularTV: [TMDBResult] = (try? await tmdb.getPopularTV()) ?? []
+        let streamingMovies: [TMDBResult] = await fetchStreamingMovies()
 
         let comingSoonReleases = await StreamingUpcomingService.shared.fetchUpcoming() ?? []
 
@@ -371,12 +369,10 @@ final class ReelsViewModel {
         let skipMovies = exhaustedSources.contains(.streamingMovies)
 
         // nil = fetch failed (or skipped); [] = successful empty page.
-        async let popularTVFetch: [TMDBResult]? = skipPopularTV ? nil : (try? tmdb.getPopularTV(page: page))
-        async let trendingFetch: [TMDBResult]? = skipTrending ? nil : (try? tmdb.getTrending(page: page))
-        async let onAirFetch: [TMDBResult]? = skipOnTheAir ? nil : (try? tmdb.getOnTheAir(page: page))
-        async let moviesFetch: ([TMDBResult], Bool)? = skipMovies ? nil : fetchMoreStreamingMovies(page: page)
-
-        let (popularTV, trending, onAir, movies) = await (popularTVFetch, trendingFetch, onAirFetch, moviesFetch)
+        let popularTV: [TMDBResult]? = skipPopularTV ? nil : (try? await tmdb.getPopularTV(page: page))
+        let trending: [TMDBResult]? = skipTrending ? nil : (try? await tmdb.getTrending(page: page))
+        let onAir: [TMDBResult]? = skipOnTheAir ? nil : (try? await tmdb.getOnTheAir(page: page))
+        let movies: ([TMDBResult], Bool)? = skipMovies ? nil : await fetchMoreStreamingMovies(page: page)
 
         var newItems: [TrailerItem] = []
 
@@ -489,15 +485,15 @@ final class ReelsViewModel {
     /// for the remaining 14 providers — all run concurrently.
     private func fetchStreamingMovies() async -> [TMDBResult] {
         // Fetch the "big five" directly with async let for reliability.
-        async let netflix = (try? tmdb.getPopularMoviesOnService(tmdbProviderId: 8)) ?? []
-        async let prime = (try? tmdb.getPopularMoviesOnService(tmdbProviderId: 9)) ?? []
-        async let disney = (try? tmdb.getPopularMoviesOnService(tmdbProviderId: 337)) ?? []
-        async let hbo = (try? tmdb.getPopularMoviesOnService(tmdbProviderId: 1899)) ?? []
-        async let hulu = (try? tmdb.getPopularMoviesOnService(tmdbProviderId: 15)) ?? []
+        let n: [TMDBResult] = (try? await tmdb.getPopularMoviesOnService(tmdbProviderId: 8)) ?? []
+        let p: [TMDBResult] = (try? await tmdb.getPopularMoviesOnService(tmdbProviderId: 9)) ?? []
+        let d: [TMDBResult] = (try? await tmdb.getPopularMoviesOnService(tmdbProviderId: 337)) ?? []
+        let hb: [TMDBResult] = (try? await tmdb.getPopularMoviesOnService(tmdbProviderId: 1899)) ?? []
+        let hu: [TMDBResult] = (try? await tmdb.getPopularMoviesOnService(tmdbProviderId: 15)) ?? []
 
         // Remaining providers via task group.
         let secondaryProviderIds = [350, 2303, 386, 43, 37, 283, 526, 584, 11, 151, 257, 73, 300, 192]
-        async let secondary: [TMDBResult] = await withTaskGroup(of: [TMDBResult].self) { group in
+        let sec: [TMDBResult] = await withTaskGroup(of: [TMDBResult].self) { group in
             for pid in secondaryProviderIds {
                 group.addTask { [tmdb] in
                     (try? await tmdb.getPopularMoviesOnService(tmdbProviderId: pid)) ?? []
@@ -508,7 +504,6 @@ final class ReelsViewModel {
             return all
         }
 
-        let (n, p, d, hb, hu, sec) = await (netflix, prime, disney, hbo, hulu, secondary)
         let allSources = [[n, p, d, hb, hu].flatMap { $0 }, sec].flatMap { $0 }
         var seen = Set<Int>()
         let deduped = allSources.filter { seen.insert($0.id).inserted }
@@ -532,9 +527,8 @@ final class ReelsViewModel {
                     // resolver only returns keys that are embeddable, public,
                     // processed, and not US-blocked, so the first key is trusted
                     // to play — no client-side ranking can replicate that.
-                    async let resolveTask: [String]? = TrailerResolveService.resolve(tmdbId: r.id, isTV: r.isTV)
-                    async let providerTask: [TMDBWatchProvider]? = try? tmdb.getWatchProviders(tmdbId: r.id, isTV: r.isTV)
-                    let (resolved, poolOptional) = await (resolveTask, providerTask)
+                    let resolved: [String]? = await TrailerResolveService.resolve(tmdbId: r.id, isTV: r.isTV)
+                    let poolOptional: [TMDBWatchProvider]? = try? await tmdb.getWatchProviders(tmdbId: r.id, isTV: r.isTV)
                     let pool = poolOptional ?? []
 
                     // Three-way handling of the resolver result:
@@ -927,9 +921,8 @@ private func makeRakutenAdReels() -> [TrailerItem] {
             tvdbCache[tmdbId] = TVDBReelInfo(nextAirDate: nil, episodeCode: nil, episodeName: nil, seriesStatus: nil)
             return
         }
-        async let nextEp = try? TheTVDBService.shared.nextEpisode(seriesId: tvdbId)
-        async let series = try? TheTVDBService.shared.seriesExtended(tvdbId)
-        let (ep, s) = await (nextEp, series)
+        let ep = try? await TheTVDBService.shared.nextEpisode(seriesId: tvdbId)
+        let s = try? await TheTVDBService.shared.seriesExtended(tvdbId)
         let code: String? = {
             guard let sn = ep?.seasonNumber, let en = ep?.episodeNumber else { return nil }
             return "S\(sn) E\(en)"

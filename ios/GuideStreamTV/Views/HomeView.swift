@@ -1293,20 +1293,17 @@ struct HomeView: View {
             await streams.refreshAll()
             // Kick off creator recommendations early so the panel populates
             // alongside the rest of the home screen sections.
-            async let creatorRecs: Void = loadRecommendedCreators()
             // Hero-critical path: load the data the carousel needs and
             // render it immediately so the hero appears first, then fill
             // in non-critical sections asynchronously.
             await loadTrendingIfNeeded(deferNonCritical: true)
-            // Live status + creator uploads can fetch concurrently.
-            async let liveStatusWork: Void = subscribeToLiveStatus()
-            async let creatorWork: Void = loadCreatorUploads()
-            await liveStatusWork
+            // Live status + creator uploads
+            await subscribeToLiveStatus()
             buildLiveCreators()
-            await creatorWork
+            await loadCreatorUploads()
             // Wait for creator recommendations BEFORE flipping homeContentReady
             // so the "Creators for You" panel never renders in a stale/empty state.
-            await creatorRecs
+            await loadRecommendedCreators()
             rebuildHeroRail()
             // Show the hero carousel and all sections that have data RIGHT NOW.
             // Non-hero sections (Coming Soon, platform rows, expiring) populate
@@ -1515,25 +1512,20 @@ struct HomeView: View {
         // Refresh the provider brand map from the server (fire-and-forget;
         // cached rows from UserDefaults are already loaded at init).
         Task { await ProviderBrandMapService.shared.refresh() }
-        async let trendingPage1 = try? TMDBService.shared.getTrending(page: 1)
-        async let trendingPage2 = try? TMDBService.shared.getTrending(page: 2)
-        async let trendingPage3 = try? TMDBService.shared.getTrending(page: 3)
-        async let trendingPage4 = try? TMDBService.shared.getTrending(page: 4)
-        async let onAirCall = try? TMDBService.shared.getOnTheAir()
-        async let endedCall = try? TMDBService.shared.getDiscoverEnded()
-        async let newTodayCall = try? TMDBService.shared.getNewToday()
-        async let sportsCall = SportsService.shared.fetchAll()
-        async let topRatedCall = try? TMDBService.shared.getTopRated()
-        async let genreCall = try? TMDBService.shared.getDiscoverByGenre(selectedGenreId)
-        async let newReleasesCall = StreamingReleasesService.shared.fetchReleases()
-        async let upcomingCall = StreamingUpcomingService.shared.fetchUpcoming()
-
-        // Await in smaller groups so the type-checker can resolve each tuple independently.
-        let (t1, t2) = await (trendingPage1, trendingPage2)
-        let (t3, t4) = await (trendingPage3, trendingPage4)
-        let (a, e, n, s) = await (onAirCall, endedCall, newTodayCall, sportsCall)
-        let (tr, genre, nr) = await (topRatedCall, genreCall, newReleasesCall)
-        let up = await upcomingCall
+        // Fetch sequentially to avoid the async let deallocation race
+        // that crashes when the view is dismissed mid-load.
+        let t1 = try? await TMDBService.shared.getTrending(page: 1)
+        let t2 = try? await TMDBService.shared.getTrending(page: 2)
+        let t3 = try? await TMDBService.shared.getTrending(page: 3)
+        let t4 = try? await TMDBService.shared.getTrending(page: 4)
+        let a = try? await TMDBService.shared.getOnTheAir()
+        let e = try? await TMDBService.shared.getDiscoverEnded()
+        let n = try? await TMDBService.shared.getNewToday()
+        let s = await SportsService.shared.fetchAll()
+        let tr = try? await TMDBService.shared.getTopRated()
+        let genre = try? await TMDBService.shared.getDiscoverByGenre(selectedGenreId)
+        let nr = await StreamingReleasesService.shared.fetchReleases()
+        let up = await StreamingUpcomingService.shared.fetchUpcoming()
 
         // Concatenate all trending pages and de-duplicate by id, preserving
         // first-seen order (later pages can repeat earlier titles).
@@ -1751,9 +1743,8 @@ struct HomeView: View {
             for service in services {
                 guard let providerId = tmdbProviderIdMap[service.id] else { continue }
                 group.addTask {
-                    async let tvItems = (try? await TMDBService.shared.getPopularOnService(tmdbProviderId: providerId)) ?? []
-                    async let movieItems = (try? await TMDBService.shared.getPopularMoviesOnService(tmdbProviderId: providerId)) ?? []
-                    let (tv, movies) = await (tvItems, movieItems)
+                    let tv = (try? await TMDBService.shared.getPopularOnService(tmdbProviderId: providerId)) ?? []
+                    let movies = (try? await TMDBService.shared.getPopularMoviesOnService(tmdbProviderId: providerId)) ?? []
                     // Interleave: show → movie → show → movie so both types are visible.
                     var merged: [TMDBResult] = []
                     let tvSlice = tv.prefix(10)

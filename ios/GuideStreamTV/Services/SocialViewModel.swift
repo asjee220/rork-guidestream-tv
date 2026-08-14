@@ -177,12 +177,10 @@ final class SocialViewModel {
         loadingCounts.insert(trimmed)
         defer { loadingCounts.remove(trimmed) }
 
-        async let likeTotal: Int = fetchLikeCount(titleId: trimmed)
-        async let mineLiked: Bool = fetchHasLiked(titleId: trimmed)
-        async let mineWatched: Bool = fetchHasWatched(titleId: trimmed)
-        async let commentTotal: Int = fetchCommentCount(titleId: trimmed)
-
-        let (lt, ml, mw, ct) = await (likeTotal, mineLiked, mineWatched, commentTotal)
+        let lt: Int = await fetchLikeCount(titleId: trimmed)
+        let ml: Bool = await fetchHasLiked(titleId: trimmed)
+        let mw: Bool = await fetchHasWatched(titleId: trimmed)
+        let ct: Int = await fetchCommentCount(titleId: trimmed)
         likeCounts[trimmed] = lt
         commentCounts[trimmed] = ct
         if ml {
