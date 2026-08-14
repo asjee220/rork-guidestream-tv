@@ -91,8 +91,7 @@ final class ShowDetailViewModel {
         errorMessage = nil
 
         if let tmdbId = Int(titleId), isTV {
-            async let tmdbCall: TMDBTVDetail? = try? TMDBService.shared.getTVDetail(tmdbId: tmdbId)
-            let tmdbResult = await tmdbCall
+            let tmdbResult: TMDBTVDetail? = try? await TMDBService.shared.getTVDetail(tmdbId: tmdbId)
 
             // Legacy heal — watch-list rows saved before media types were
             // recorded default to TV, so a saved movie id lands here and either
@@ -242,9 +241,8 @@ final class ShowDetailViewModel {
     private func enrichWithTVDB(tmdbId: Int) async {
         guard let tvdbId = try? await TheTVDBService.shared.tvdbSeriesId(forTMDBId: tmdbId)
         else { return }
-        async let nextEp = try? TheTVDBService.shared.nextEpisode(seriesId: tvdbId)
-        async let series = try? TheTVDBService.shared.seriesExtended(tvdbId)
-        let (ep, s) = await (nextEp, series)
+        let ep = try? await TheTVDBService.shared.nextEpisode(seriesId: tvdbId)
+        let s = try? await TheTVDBService.shared.seriesExtended(tvdbId)
         tvdbNextEpisode = ep
         tvdbSeries = s
     }

@@ -632,8 +632,8 @@ struct EpisodeAvailabilitySection: View {
  guard let tmdbId, isTV else { return }
  isLoading = true
  defer { isLoading = false }
- async let tvDetail: TMDBTVDetail? = try? TMDBService.shared.getTVDetail(tmdbId: tmdbId)
- let tv = await tvDetail
+ let tvDetail: TMDBTVDetail? = try? await TMDBService.shared.getTVDetail(tmdbId: tmdbId)
+ let tv = tvDetail
  let n = max(1, tv?.numberOfSeasons ?? 1)
  seasons = Array(1...n)
  selectedSeason = n
