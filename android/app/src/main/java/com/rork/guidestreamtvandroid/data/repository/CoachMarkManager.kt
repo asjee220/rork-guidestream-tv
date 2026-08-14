@@ -37,11 +37,13 @@ data class CoachMark(
     val body: String,
     val targetKeys: List<String>,
 ) {
-    val isCircular: Boolean get() = key == "ask" || key == "watchlist_add"
-    val isLastInTour: Boolean get() = key == "genre" || key == "play_on"
+    val isCircular: Boolean get() = key == "ask" || key == "watchlist_add" || key == "sheet_watchlist"
 
     companion object {
         val homeTour = listOf(
+            CoachMark("services", "Your services",
+                "The services you subscribe to. Everything below is filtered to what you can actually watch.",
+                listOf("services")),
             CoachMark("search", "Find anything, fast",
                 "Search shows, movies, creators and podcasts across every service at once.",
                 listOf("search")),
@@ -59,16 +61,16 @@ data class CoachMark(
                 listOf("genre", "because_you_watch")),
         )
 
-        val detailTour = listOf(
-            CoachMark("where_to_watch", "Pick your service",
-                "Tap a service to switch where this plays. The Watch button follows your choice.",
-                listOf("where_to_watch", "watch_button")),
-            CoachMark("watchlist_add", "Add to watch list",
-                "Save it and we will notify you the moment a new episode drops.",
-                listOf("watchlist_add")),
-            CoachMark("play_on", "Send it to the TV",
+        val sheetTour = listOf(
+            CoachMark("sheet_play_on", "Send it to the TV",
                 "Open this on your Apple TV, Roku or Samsung without touching the remote.",
-                listOf("play_on")),
+                listOf("sheet_play_on")),
+            CoachMark("sheet_where_to_watch", "Pick your service",
+                "Tap a service to switch where this plays. The Watch button follows your choice.",
+                listOf("sheet_where_to_watch", "sheet_watch_button")),
+            CoachMark("sheet_watchlist", "Add to watch list",
+                "Save it and we will notify you the moment a new episode drops.",
+                listOf("sheet_watchlist")),
         )
     }
 }
@@ -140,8 +142,12 @@ class CoachMarkManager private constructor(private val context: Context) {
     var scrollSettled: Boolean by mutableStateOf(false)
         private set
 
+    var activeTourIsHome: Boolean by mutableStateOf(false)
+        private set
+
     /** True while the genre mark is active so HomeScreen can bind highlight. */
     var genreHighlightActive: Boolean by mutableStateOf(false)
+        private set
 
     /** True while the home-tour completion toast is visible. */
     var completionToastVisible: Boolean by mutableStateOf(false)
@@ -195,7 +201,7 @@ class CoachMarkManager private constructor(private val context: Context) {
     // ── Tour gating ──────────────────────────────────────────────────
 
     val homeTourDone: Boolean get() = seenKeys.containsKey("home_tour_done")
-    val detailTourDone: Boolean get() = seenKeys.containsKey("detail_tour_done")
+    val sheetTourDone: Boolean get() = seenKeys.containsKey("sheet_tour_done")
 
     fun shouldStartHomeTour(
         isSignedIn: Boolean, hasCompletedOnboarding: Boolean,
@@ -206,9 +212,9 @@ class CoachMarkManager private constructor(private val context: Context) {
         return CoachMark.homeTour.any { !seenKeys.containsKey(it.key) }
     }
 
-    fun shouldStartDetailTour(sourcesResolved: Boolean): Boolean {
-        if (detailTourDone || isShowing || !sourcesResolved) return false
-        return CoachMark.detailTour.any { !seenKeys.containsKey(it.key) }
+    fun shouldStartSheetTour(sourcesResolved: Boolean): Boolean {
+        if (sheetTourDone || isShowing || !sourcesResolved) return false
+        return CoachMark.sheetTour.any { !seenKeys.containsKey(it.key) }
     }
 
     // ── Tour control ─────────────────────────────────────────────────
@@ -217,16 +223,18 @@ class CoachMarkManager private constructor(private val context: Context) {
         val unseen = CoachMark.homeTour.filter { !seenKeys.containsKey(it.key) }
         if (unseen.isEmpty()) return
         activeTour = unseen
+        activeTourIsHome = true
         currentIndex = 0
         scrollSettled = false
         isShowing = true
         handleScrollForCurrentMark()
     }
 
-    fun startDetailTour() {
-        val unseen = CoachMark.detailTour.filter { !seenKeys.containsKey(it.key) }
+    fun startSheetTour() {
+        val unseen = CoachMark.sheetTour.filter { !seenKeys.containsKey(it.key) }
         if (unseen.isEmpty()) return
         activeTour = unseen
+        activeTourIsHome = false
         currentIndex = 0
         scrollSettled = false
         isShowing = true
@@ -240,13 +248,12 @@ class CoachMarkManager private constructor(private val context: Context) {
         val mark = currentMark ?: return
         markAsSeen(mark.key)
         if (currentIndex + 1 >= activeTour.size) {
-            val isHome = activeTour.any { it.key == "genre" }
-            val isDetail = activeTour.any { it.key == "play_on" }
-            if (isHome) {
+            if (activeTourIsHome) {
                 markAsSeen("home_tour_done")
                 showCompletionToast()
+            } else {
+                markAsSeen("sheet_tour_done")
             }
-            if (isDetail) markAsSeen("detail_tour_done")
             genreHighlightActive = false
             dismissTour()
         } else {
@@ -260,13 +267,12 @@ class CoachMarkManager private constructor(private val context: Context) {
     fun skipTour() {
         val remaining = activeTour.drop(currentIndex)
         for (mark in remaining) markAsSeen(mark.key)
-        val isHome = activeTour.any { it.key == "genre" }
-        val isDetail = activeTour.any { it.key == "play_on" }
-        if (isHome) {
+        if (activeTourIsHome) {
             markAsSeen("home_tour_done")
             showCompletionToast()
+        } else {
+            markAsSeen("sheet_tour_done")
         }
-        if (isDetail) markAsSeen("detail_tour_done")
         genreHighlightActive = false
         dismissTour()
     }
@@ -281,6 +287,7 @@ class CoachMarkManager private constructor(private val context: Context) {
 
     private fun dismissTour() {
         isShowing = false
+        activeTourIsHome = false
         activeTour = emptyList()
         currentIndex = 0
         measuredRects.clear()
@@ -334,9 +341,8 @@ class CoachMarkManager private constructor(private val context: Context) {
         genreHighlightActive = (mark.key == "genre")
         when (mark.key) {
             "genre" -> scrollRequestId = "browseByGenre"
-            "where_to_watch" -> scrollRequestId = "cmWhereToWatch"
-            "watchlist_add" -> scrollRequestId = "cmActionBar"
-            "play_on" -> scrollRequestId = "cmSynopsis"
+            "sheet_play_on" -> scrollRequestId = "cmSheetActions"
+            "sheet_where_to_watch" -> scrollRequestId = "cmSheetWatch"
             else -> {
                 scrollSettled = true
             }

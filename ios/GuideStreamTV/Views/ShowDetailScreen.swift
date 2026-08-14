@@ -385,7 +385,6 @@ struct ShowDetailScreen: View {
     /// honored when the user is subscribed to two or more of the title's
     /// services; otherwise the resolver's primary is used.
     @State private var selectedServiceName: String?
-    @State private var coachMark = CoachMarkManager.shared
     @Environment(\.scenePhase) private var scenePhase
 
     private let platformId = "hbo"
@@ -533,12 +532,6 @@ struct ShowDetailScreen: View {
             }
             .coordinateSpace(name: "showDetailScroll")
             .onPreferenceChange(ScrollOffsetKey.self) { scrollOffset = $0 }
-            .onChange(of: coachMark.scrollRequest) { _, req in
-                guard let id = req else { return }
-                withAnimation(.easeInOut(duration: 0.3)) {
-                    scrollProxy.scrollTo(id, anchor: .top)
-                }
-            }
             } // end ScrollViewReader
 
             compactHeader
@@ -570,46 +563,10 @@ struct ShowDetailScreen: View {
             .allowsHitTesting(playOnOpen)
 
         }
-        // Detail coach mark overlay — attached to the whole ZStack so the
-        // anchor publishers inside the scroll content are in the measured
-        // subtree. Rendered in the closure, so it still paints above every
-        // sibling: an overlay always draws on top of its content.
-        .overlayPreferenceValue(CoachMarkAnchorKey.self) { anchors in
-            ZStack {
-                CoachMarkOverlay(manager: coachMark)
-                GeometryReader { proxy in
-                    Color.clear
-                        .task(id: coachMark.currentMark?.key ?? "none-detail") {
-                            guard coachMark.isShowing, let mark = coachMark.currentMark else { return }
-                            if coachMark.scrollRequest != nil {
-                                coachMark.clearScrollRequest()
-                                try? await Task.sleep(for: .milliseconds(350))
-                            }
-                            var rects: [String: CGRect] = [:]
-                            for key in mark.targetKeys {
-                                if let anchor = anchors[key] {
-                                    rects[key] = proxy[anchor]
-                                }
-                            }
-                            coachMark.setMeasuredRects(rects)
-                            coachMark.markScrollSettled()
-                        }
-                }
-                .allowsHitTesting(false)
-            }
-            .ignoresSafeArea()
-        }
         .preferredColorScheme(.dark)
         .onChange(of: scenePhase) { _, phase in
             if phase == .background {
-                coachMark.handleBackground()
-            }
-        }
-        .onChange(of: vm.resolved.usSources.isEmpty) { _, isEmpty in
-            if !isEmpty {
-                if coachMark.shouldStartDetailTour(sourcesResolved: true) {
-                    coachMark.startDetailTour()
-                }
+                CoachMarkManager.shared.handleBackground()
             }
         }
         .sheet(isPresented: $showComments) {
@@ -972,9 +929,6 @@ struct ShowDetailScreen: View {
     private var compactHeader: some View {
         DetailCompactHeader(title: displayTitle, onBack: onBack) {
             PlayOnTriggerButton(compact: true, action: openPlayOn)
-                .anchorPreference(key: CoachMarkAnchorKey.self, value: .bounds) {
-                    ["play_on": $0]
-                }
         }
     }
 
@@ -1307,9 +1261,6 @@ struct ShowDetailScreen: View {
 
         }
         .padding(.top, 24)
-        .anchorPreference(key: CoachMarkAnchorKey.self, value: .bounds) {
-            ["where_to_watch": $0]
-        }
     }
 
     // MARK: Fan activity
@@ -1461,9 +1412,6 @@ struct ShowDetailScreen: View {
                         .shadow(color: Color.orange.opacity(0.35), radius: 14, y: 6)
                     }
                     .buttonStyle(.plain)
-                    .anchorPreference(key: CoachMarkAnchorKey.self, value: .bounds) {
-                        ["watch_button": $0]
-                    }
 
                     Button(action: toggleWatchList) {
                         Image(systemName: isSaved ? "checkmark" : "plus")
@@ -1474,9 +1422,6 @@ struct ShowDetailScreen: View {
                             .overlay(Circle().stroke(isSaved ? Color.orange : Color.white.opacity(0.14), lineWidth: 1))
                     }
                     .buttonStyle(.plain)
-                    .anchorPreference(key: CoachMarkAnchorKey.self, value: .bounds) {
-                        ["watchlist_add": $0]
-                    }
                 }
 
                 if let caption = availabilityCaption {

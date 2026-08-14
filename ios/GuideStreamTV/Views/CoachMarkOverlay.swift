@@ -22,6 +22,14 @@ struct CoachMarkAnchorKey: PreferenceKey {
 
 struct CoachMarkOverlay: View {
     let manager: CoachMarkManager
+    let topInset: CGFloat
+    let bottomInset: CGFloat
+
+    init(manager: CoachMarkManager, topInset: CGFloat = 104, bottomInset: CGFloat = 104) {
+        self.manager = manager
+        self.topInset = topInset
+        self.bottomInset = bottomInset
+    }
 
     var body: some View {
         ZStack {
@@ -192,8 +200,8 @@ struct CoachMarkOverlay: View {
             ? lowestBottom + 12 + (positionedCardSize.height / 2)
             : highestTop - 12 - (positionedCardSize.height / 2)
         let cardHeight: CGFloat = positionedCardSize.height
-        let minY: CGFloat = 104 + cardHeight / 2
-        let maxY: CGFloat = screen.height - 104 - cardHeight / 2
+        let minY: CGFloat = topInset + cardHeight / 2
+        let maxY: CGFloat = screen.height - bottomInset - cardHeight / 2
         let clampedY: CGFloat = maxY < minY ? minY : min(max(rawY, minY), maxY)
 
         VStack(alignment: .leading, spacing: 0) {
@@ -222,7 +230,7 @@ struct CoachMarkOverlay: View {
                     .foregroundStyle(Color.navy.opacity(0.72))
                     .contentShape(Rectangle())
                     .onTapGesture { manager.skipTour() }
-                Text(mark.isLastInTour ? "Done" : "Next")
+                Text(manager.currentIndex == manager.activeTour.count - 1 ? "Done" : "Next")
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(Color.navy)
                     .padding(.leading, 8)

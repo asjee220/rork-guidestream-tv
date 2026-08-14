@@ -53,6 +53,7 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
@@ -80,6 +81,8 @@ private val InactiveDotColor = Navy.copy(alpha = 0.30f)
 fun CoachMarkOverlay(
     manager: CoachMarkManager,
     modifier: Modifier = Modifier,
+    topInset: Dp = 12.dp,
+    bottomInset: Dp = 12.dp,
 ) {
     // Watchdog: if a scroll request never settles (no host handles it),
     // force-settle after 1.2s so the overlay can never hang invisibly.
@@ -92,7 +95,11 @@ fun CoachMarkOverlay(
     }
 
     Box(modifier = modifier.fillMaxSize()) {
-        CoachMarkSpotlight(manager = manager)
+        CoachMarkSpotlight(
+            manager = manager,
+            topInset = topInset,
+            bottomInset = bottomInset,
+        )
 
         AnimatedVisibility(
             visible = manager.completionToastVisible,
@@ -132,7 +139,11 @@ fun CoachMarkOverlay(
  * callout card. Kept identical to the previous implementation.
  */
 @Composable
-private fun CoachMarkSpotlight(manager: CoachMarkManager) {
+private fun CoachMarkSpotlight(
+    manager: CoachMarkManager,
+    topInset: Dp,
+    bottomInset: Dp,
+) {
     if (!manager.isShowing) return
     val mark = manager.currentMark ?: return
     if (!manager.scrollSettled) return
@@ -154,6 +165,8 @@ private fun CoachMarkSpotlight(manager: CoachMarkManager) {
     val padding8 = with(density) { 8.dp.toPx() }
     val padding12 = with(density) { 12.dp.toPx() }
     val padding10 = with(density) { 10.dp.toPx() }
+    val topInsetPx = with(density) { topInset.toPx() }
+    val bottomInsetPx = with(density) { bottomInset.toPx() }
     val radius14 = with(density) { 14.dp.toPx() }
     val stroke2 = with(density) { 2.dp.toPx() }
     val cardWidthPx = with(density) { 230.dp.toPx() }
@@ -233,6 +246,8 @@ private fun CoachMarkSpotlight(manager: CoachMarkManager) {
             padding8 = padding8,
             padding10 = padding10,
             padding12 = padding12,
+            topInset = topInset,
+            bottomInset = bottomInset,
             cardWidthPx = cardWidthPx,
             density = density,
         )
@@ -314,6 +329,8 @@ private fun CalloutCard(
     padding8: Float,
     padding10: Float,
     padding12: Float,
+    topInset: Dp,
+    bottomInset: Dp,
     cardWidthPx: Float,
     density: androidx.compose.ui.unit.Density,
 ) {
@@ -336,6 +353,9 @@ private fun CalloutCard(
         (screenRect.width - actualCardWidthPx - padding10).coerceAtLeast(padding10),
     )
 
+    val topInsetPx = with(density) { topInset.toPx() }
+    val bottomInsetPx = with(density) { bottomInset.toPx() }
+
     val preferredTop = if (belowCard) {
         lowestBottom + padding12
     } else {
@@ -344,8 +364,10 @@ private fun CalloutCard(
     // The card is positioned manually, so nothing else keeps it on screen:
     // clamp its top edge to the safe band. Without this a tall card anchored
     // near an edge (or a target close to the bottom) runs off the display.
-    val maxTop = (screenRect.height - cardHeightPx - padding12).coerceAtLeast(padding12)
-    val cardTop = preferredTop.coerceIn(padding12, maxTop)
+    val minTop = topInsetPx.coerceAtLeast(padding12)
+    val maxTop = (screenRect.height - cardHeightPx - bottomInsetPx)
+        .coerceAtLeast(minTop)
+    val cardTop = preferredTop.coerceIn(minTop, maxTop)
 
     Box(
         modifier = Modifier
@@ -413,7 +435,7 @@ private fun CalloutCard(
                     )
                     Spacer(Modifier.size(8.dp))
                     Text(
-                        text = if (mark.isLastInTour) "Done" else "Next",
+                        text = if (manager.currentIndex == manager.activeTour.size - 1) "Done" else "Next",
                         fontSize = 12.sp,
                         fontWeight = FontWeight.SemiBold,
                         color = CardTextColor,

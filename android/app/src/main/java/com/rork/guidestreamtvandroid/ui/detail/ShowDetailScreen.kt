@@ -67,13 +67,11 @@ import com.rork.guidestreamtvandroid.data.remote.WatchmodeResolveResponse
 import com.rork.guidestreamtvandroid.data.remote.WatchmodeResolveService
 import com.rork.guidestreamtvandroid.data.remote.WatchmodeSrc
 import com.rork.guidestreamtvandroid.data.repository.AuthViewModel
-import com.rork.guidestreamtvandroid.data.repository.CoachMarkManager
 import com.rork.guidestreamtvandroid.data.repository.SocialViewModel
 import com.rork.guidestreamtvandroid.data.repository.StreamsViewModel
 import com.rork.guidestreamtvandroid.data.repository.WatchIntentLogger
 import com.rork.guidestreamtvandroid.ui.cast.CastToTVSheet
 import com.rork.guidestreamtvandroid.ui.components.CircleAction
-import com.rork.guidestreamtvandroid.ui.components.CoachMarkOverlay
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
@@ -132,7 +130,6 @@ fun ShowDetailScreen(
     val commentCounts by socialVm.commentCounts.collectAsStateWithLifecycle()
     var showComments by remember { mutableStateOf(false) }
     var showCast by remember { mutableStateOf(false) }
-    val coachMark = CoachMarkManager.get()
     androidx.compose.runtime.LaunchedEffect(titleId) { socialVm.refreshCounts(titleId) }
 
     val tmdbId = TitleId.tmdbId(titleId)
@@ -208,28 +205,6 @@ fun ShowDetailScreen(
     }
 
     val detailScrollState = rememberScrollState()
-    val detailDensity = LocalDensity.current
-    val detailTopInsetPx = with(detailDensity) { 100.dp.toPx() }
-
-    // Coach-mark scroll coordination: when a detail mark requests a scroll,
-    // animate the target into view, then settle after 350ms.
-    androidx.compose.runtime.LaunchedEffect(coachMark.isShowing, coachMark.currentMark?.key) {
-        if (!coachMark.isShowing) return@LaunchedEffect
-        val mark = coachMark.currentMark ?: return@LaunchedEffect
-        val reqId = coachMark.scrollRequestId
-        if (reqId == "cmWhereToWatch" || reqId == "cmActionBar" || reqId == "cmSynopsis") {
-            coachMark.clearScrollRequest()
-            val targetKey = mark.targetKeys.firstOrNull()
-            val rect = if (targetKey != null) coachMark.measuredRects[targetKey] else null
-            if (rect != null && !rect.isEmpty) {
-                val target = (detailScrollState.value + rect.top - detailTopInsetPx)
-                    .coerceIn(0f, detailScrollState.maxValue.toFloat())
-                detailScrollState.animateScrollTo(target.toInt())
-            }
-            delay(350)
-        }
-        coachMark.markScrollSettled()
-    }
 
     Box(modifier = modifier.fillMaxSize()) {
         if (isLoading && detail == null) {
@@ -370,9 +345,7 @@ fun ShowDetailScreen(
                 // Column, not Box: WhereToWatchRow emits three siblings (spacer,
                 // heading, chip row) and Box would stack them on the Z axis,
                 // drawing the heading underneath the chips.
-                Column(modifier = Modifier.fillMaxWidth().onGloballyPositioned { coords ->
-                    coachMark.setMeasuredRect("where_to_watch", coords.boundsInRoot())
-                }) {
+                Column(modifier = Modifier.fillMaxWidth()) {
                     WhereToWatchRow(
                         sources = usSources,
                         selectedSource = selectedSource,
@@ -453,9 +426,7 @@ fun ShowDetailScreen(
                         label = "Send to TV",
                         tint = TextPrimary,
                         showDot = false,
-                        modifier = Modifier.onGloballyPositioned { coords ->
-                            coachMark.setMeasuredRect("play_on", coords.boundsInRoot())
-                        },
+                        modifier = Modifier,
                     ) { showCast = true }
                     }
                     Row(
@@ -487,9 +458,6 @@ fun ShowDetailScreen(
                                 .height(54.dp)
                                 .clip(RoundedCornerShape(27.dp))
                                 .background(BrandOrange)
-                                .onGloballyPositioned { coords ->
-                                    coachMark.setMeasuredRect("watch_button", coords.boundsInRoot())
-                                }
                                 .clickable(
                                     interactionSource = remember { MutableInteractionSource() },
                                     indication = null,
@@ -551,9 +519,6 @@ fun ShowDetailScreen(
                                         Modifier.background(BrandOrange)
                                     }
                                 )
-                                .onGloballyPositioned { coords ->
-                                    coachMark.setMeasuredRect("watchlist_add", coords.boundsInRoot())
-                                }
                                 .clickable(
                                     interactionSource = remember { MutableInteractionSource() },
                                     indication = null,
@@ -837,15 +802,6 @@ fun ShowDetailScreen(
             )
         }
 
-        // Detail coach mark overlay
-        CoachMarkOverlay(manager = coachMark)
-    }
-
-    // Detail tour trigger — fires once sources resolve
-    androidx.compose.runtime.LaunchedEffect(usSources.isNotEmpty()) {
-        if (usSources.isNotEmpty() && coachMark.shouldStartDetailTour(sourcesResolved = true)) {
-            coachMark.startDetailTour()
-        }
     }
 }
 

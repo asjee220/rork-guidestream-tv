@@ -2713,6 +2713,9 @@ private struct PageBar: View {
             Spacer()
             if !selectedServiceIds.isEmpty {
                 ServicesPill(serviceIds: selectedServiceIds, onTap: onServicesPill)
+                    .anchorPreference(key: CoachMarkAnchorKey.self, value: .bounds) {
+                        ["services": $0]
+                    }
             }
         }
         .padding(.horizontal, 12)

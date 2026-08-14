@@ -851,6 +851,9 @@ fun HomeScreen(
                 ServicesPill(
                     serviceIds = serviceIds,
                     onTap = { showServicesSheet = true },
+                    modifier = Modifier.onGloballyPositioned { coords ->
+                        coachMark.setMeasuredRect("services", coords.boundsInRoot())
+                    },
                 )
             }
         }

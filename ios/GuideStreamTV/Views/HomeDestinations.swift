@@ -306,6 +306,7 @@ struct EpisodeDetailSheet: View {
     @State private var isResolvingSource: Bool = false
     @State private var adDismissed: Bool = false
     @State private var showFullDetail: Bool = false
+    @State private var coachMark = CoachMarkManager.shared
     /// Latest episode (season, episode) pulled from TMDB when the subject is a
     /// show. Drives the "Watch S:1 EP:10 on Paramount+" button label.
     @State private var showLatestEpisode: (seasonNum: Int, episodeNum: Int)? = nil
@@ -512,8 +513,9 @@ struct EpisodeDetailSheet: View {
     }
 
     var body: some View {
-        ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 0) {
+        ScrollViewReader { scrollProxy in
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 0) {
                 if isComingToStreaming {
                     GsSheetHeader(title: title, subtitle: meta)
 
@@ -581,6 +583,56 @@ struct EpisodeDetailSheet: View {
                 }
             }
         }
+        .overlayPreferenceValue(CoachMarkAnchorKey.self) { anchors in
+            ZStack {
+                CoachMarkOverlay(manager: coachMark, topInset: 72, bottomInset: 40)
+                GeometryReader { proxy in
+                    Color.clear
+                        .task(id: "\(coachMark.currentMark?.key ?? "none")_\(coachMark.measureAttempt)") {
+                            guard coachMark.isShowing, let mark = coachMark.currentMark else { return }
+                            let markKey = mark.key
+                            if coachMark.scrollRequest != nil {
+                                coachMark.clearScrollRequest()
+                                try? await Task.sleep(for: .milliseconds(350))
+                            }
+                            var rects: [String: CGRect] = [:]
+                            for key in mark.targetKeys {
+                                if let anchor = anchors[key] {
+                                    rects[key] = proxy[anchor]
+                                }
+                            }
+                            coachMark.setMeasuredRects(rects)
+                            coachMark.markScrollSettled()
+                            if coachMark.measureAttempt == 0 {
+                                let hasMissing = mark.targetKeys.contains {
+                                    coachMark.measuredRects[$0]?.isEmpty ?? true
+                                }
+                                if hasMissing {
+                                    try? await Task.sleep(for: .milliseconds(300))
+                                    guard coachMark.currentMark?.key == markKey else { return }
+                                    coachMark.requestRemeasure()
+                                }
+                            }
+                        }
+                }
+                .allowsHitTesting(false)
+            }
+            .ignoresSafeArea()
+        }
+        .onChange(of: coachMark.scrollRequest) { _, req in
+            guard let id = req else { return }
+            withAnimation(.easeInOut(duration: 0.3)) {
+                scrollProxy.scrollTo(id, anchor: UnitPoint(x: 0.5, y: 0.16))
+            }
+        }
+        .background(
+            GeometryReader { sheetGeo in
+                Color.clear
+                    .onChange(of: sheetGeo.size) { _, _ in
+                        if coachMark.isShowing { coachMark.requestRemeasure() }
+                    }
+            }
+        )
         .presentationDetents([.fraction(0.8), .large])
         .presentationSizing(.page)
         .sheetSurface(level)
@@ -664,6 +716,14 @@ struct EpisodeDetailSheet: View {
                     self.isResolvingEpisodeSources = false
                 }
             }
+
+            // Start the sheet coach-mark tour once sources have resolved and
+            // the sheet is showing the full (non-coming-soon) layout. Guard on
+            // !isShowing so nested sheets don't double-trigger.
+            if !isComingToStreaming,
+               coachMark.shouldStartSheetTour(sourcesResolved: true) {
+                coachMark.startSheetTour()
+            }
         }
         .fullScreenCover(isPresented: $showFullDetail) {
             ShowDetailScreen(
@@ -678,6 +738,13 @@ struct EpisodeDetailSheet: View {
         }
         .task(id: socialTitleKey) {
             await social.refreshCounts(titleId: socialTitleKey)
+        }
+        .onChange(of: showFullDetail) { _, show in
+            if show { coachMark.handleBackground() }
+        }
+        .onDisappear {
+            coachMark.handleBackground()
+        }
         }
     }
 
@@ -803,6 +870,9 @@ struct EpisodeDetailSheet: View {
                         }
                     }
                 }
+            }
+            .anchorPreference(key: CoachMarkAnchorKey.self, value: .bounds) {
+                ["sheet_where_to_watch": $0]
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -1034,6 +1104,9 @@ struct EpisodeDetailSheet: View {
                 UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                 showCastSheet = true
             }
+            .anchorPreference(key: CoachMarkAnchorKey.self, value: .bounds) {
+                ["sheet_play_on": $0]
+            }
             .frame(maxWidth: .infinity)
         }
     }
@@ -1132,8 +1205,14 @@ struct EpisodeDetailSheet: View {
         HStack(alignment: .top, spacing: 12) {
             if hasResolvedPlatform || isResolvingSource {
                 watchButton
+                    .anchorPreference(key: CoachMarkAnchorKey.self, value: .bounds) {
+                        ["sheet_watch_button": $0]
+                    }
             }
             watchlistButton
+                .anchorPreference(key: CoachMarkAnchorKey.self, value: .bounds) {
+                    ["sheet_watchlist": $0]
+                }
         }
     }
 

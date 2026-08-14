@@ -51,6 +51,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -68,7 +70,9 @@ import com.rork.guidestreamtvandroid.data.repository.AuthViewModel
 import com.rork.guidestreamtvandroid.data.repository.ReleaseReminderService
 import com.rork.guidestreamtvandroid.data.repository.SocialViewModel
 import com.rork.guidestreamtvandroid.data.repository.StreamsViewModel
+import com.rork.guidestreamtvandroid.data.repository.CoachMarkManager
 import com.rork.guidestreamtvandroid.data.repository.WatchIntentLogger
+import com.rork.guidestreamtvandroid.ui.components.CoachMarkOverlay
 import com.rork.guidestreamtvandroid.ui.ads.PooledAdSource
 import com.rork.guidestreamtvandroid.ui.ads.SponsoredSlot
 import com.rork.guidestreamtvandroid.ui.ads.inlineAdPool
@@ -89,6 +93,7 @@ import com.rork.guidestreamtvandroid.ui.theme.TextPrimary
 import com.rork.guidestreamtvandroid.ui.theme.TextSecondary
 import com.rork.guidestreamtvandroid.ui.theme.sheetTopInset
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import java.util.Locale
 
@@ -117,6 +122,7 @@ fun EpisodeDetailSheet(
     val socialVm = SocialViewModel.get()
     val authVm = AuthViewModel.get()
     val reminders = ReleaseReminderService.get()
+    val coachMark = CoachMarkManager.get()
 
     val tmdbId = TitleId.tmdbId(route.titleId)
     val isTV = route.isTv
@@ -213,10 +219,49 @@ fun EpisodeDetailSheet(
             }
             ?: response.usSources.firstOrNull()
         isResolvingSources = false
+
+        // Start the sheet coach-mark tour once sources have resolved and the
+        // sheet is showing the full (non-coming-soon) layout. Guard on
+        // !isShowing so nested sheets don't double-trigger.
+        if (!route.isComingToStreaming && coachMark.shouldStartSheetTour(sourcesResolved = true)) {
+            coachMark.startSheetTour()
+        }
     }
 
     val serviceLabel = selectedSource?.name
     val platformColor = serviceLabel?.let { Platform.from(it)?.color } ?: BrandOrange
+
+    val sheetScrollState = rememberScrollState()
+
+    // Coach-mark scroll coordination: when the sheet tour requests a scroll,
+    // animate the target row into view, then settle after 350ms.
+    LaunchedEffect(coachMark.isShowing, coachMark.currentMark?.key) {
+        if (!coachMark.isShowing) return@LaunchedEffect
+        val mark = coachMark.currentMark ?: return@LaunchedEffect
+        val id = coachMark.scrollRequestId
+        if (id == "cmSheetActions" || id == "cmSheetWatch") {
+            coachMark.clearScrollRequest()
+            val targetKey = when (id) {
+                "cmSheetActions" -> "sheet_play_on"
+                "cmSheetWatch" -> "sheet_where_to_watch"
+                else -> null
+            }
+            val rect = targetKey?.let { coachMark.measuredRects[it] }
+            if (rect != null && !rect.isEmpty) {
+                val target = (rect.top - 120f).coerceIn(0f, sheetScrollState.maxValue.toFloat())
+                sheetScrollState.animateScrollTo(target.toInt())
+            }
+            delay(350)
+        }
+        coachMark.markScrollSettled()
+    }
+
+    // Dismiss the active sheet tour when the sheet itself is dismissed.
+    LaunchedEffect(sheetState.isVisible) {
+        if (!sheetState.isVisible) {
+            coachMark.handleBackground()
+        }
+    }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -228,14 +273,19 @@ fun EpisodeDetailSheet(
         contentWindowInsets = { sheetTopInset() },
     ) {
         // iOS .presentationDetents([.fraction(0.8), .large]) → cap Android sheet at 80%
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .fillMaxHeight(0.8f)
-                .navigationBarsPadding()
-                .verticalScroll(rememberScrollState())
-                .padding(bottom = 28.dp),
+                .navigationBarsPadding(),
         ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .fillMaxHeight()
+                    .verticalScroll(sheetScrollState)
+                    .padding(bottom = 28.dp),
+            ) {
             // ── Header ────────────────────────────────────────────────
             val genre = detail?.genres?.firstOrNull()?.name
             val metaLine = listOfNotNull(
@@ -362,7 +412,10 @@ fun EpisodeDetailSheet(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 20.dp, vertical = 18.dp),
+                        .padding(horizontal = 20.dp, vertical = 18.dp)
+                        .onGloballyPositioned { coords ->
+                            coachMark.setMeasuredRect("sheet_play_on", coords.boundsInRoot())
+                        },
                     horizontalArrangement = Arrangement.SpaceEvenly,
                 ) {
                     CircleAction(
@@ -419,12 +472,20 @@ fun EpisodeDetailSheet(
                     }
                 }
 
-                WhereToWatchRow(
-                    sources = usSources,
-                    selectedSource = selectedSource,
-                    isSourceSubscribed = isSourceSubscribed,
-                    onSelect = { selectedSource = it },
-                )
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .onGloballyPositioned { coords ->
+                            coachMark.setMeasuredRect("sheet_where_to_watch", coords.boundsInRoot())
+                        },
+                ) {
+                    WhereToWatchRow(
+                        sources = usSources,
+                        selectedSource = selectedSource,
+                        isSourceSubscribed = isSourceSubscribed,
+                        onSelect = { selectedSource = it },
+                    )
+                }
 
                 // ── Watch CTA + watchlist circle ─────────────────────
                 Row(
@@ -451,6 +512,9 @@ fun EpisodeDetailSheet(
                                 .height(54.dp)
                                 .clip(RoundedCornerShape(27.dp))
                                 .background(BrandOrange)
+                                .onGloballyPositioned { coords ->
+                                    coachMark.setMeasuredRect("sheet_watch_button", coords.boundsInRoot())
+                                }
                                 .clickable(
                                     interactionSource = remember { MutableInteractionSource() },
                                     indication = null,
@@ -507,6 +571,9 @@ fun EpisodeDetailSheet(
                             modifier = Modifier
                                 .size(54.dp)
                                 .clip(CircleShape)
+                                .onGloballyPositioned { coords ->
+                                    coachMark.setMeasuredRect("sheet_watchlist", coords.boundsInRoot())
+                                }
                                 .then(
                                     if (isSaved) Modifier.border(1.8.dp, Color.White, CircleShape)
                                     else Modifier.background(BrandOrange)
@@ -592,7 +659,10 @@ fun EpisodeDetailSheet(
                         .clickable(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null,
-                        ) { onFullDetails(route) },
+                        ) {
+                            coachMark.handleBackground()
+                            onFullDetails(route)
+                        },
                     contentAlignment = Alignment.Center,
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -619,6 +689,12 @@ fun EpisodeDetailSheet(
                     } ?: "Pick a service above to start watching.",
                 )
             }
+
+            CoachMarkOverlay(
+                manager = coachMark,
+                topInset = 72.dp,
+                bottomInset = 40.dp,
+            )
         }
     }
 
@@ -643,6 +719,7 @@ fun EpisodeDetailSheet(
             episodeRokuUrl = episodeSource?.rokuUrl,
         )
     }
+}
 }
 
 /** 1dp inset hairline separator matching the iOS sheet's divider rules. */
