@@ -1210,9 +1210,6 @@ struct EpisodeDetailSheet: View {
                     }
             }
             watchlistButton
-                .anchorPreference(key: CoachMarkAnchorKey.self, value: .bounds) {
-                    ["sheet_watchlist": $0]
-                }
         }
     }
 
@@ -1418,6 +1415,9 @@ struct EpisodeDetailSheet: View {
                     }
                 }
                 .frame(width: 56, height: 56)
+                .anchorPreference(key: CoachMarkAnchorKey.self, value: .bounds) {
+                    ["sheet_watchlist": $0]
+                }
 
                 Text(isSaved ? "Saved" : "Watch List")
                     .scaledFont(size: 11, weight: .semibold)
