@@ -219,6 +219,7 @@ struct ContentView: View {
                 }
                 .allowsHitTesting(false)
             }
+            .ignoresSafeArea()
         }
         .fullScreenCover(item: $searchSelectedResult) { result in
             ShowDetailScreen(

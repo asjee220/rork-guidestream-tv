@@ -597,6 +597,7 @@ struct ShowDetailScreen: View {
                 }
                 .allowsHitTesting(false)
             }
+            .ignoresSafeArea()
         }
         .preferredColorScheme(.dark)
         .onChange(of: scenePhase) { _, phase in
