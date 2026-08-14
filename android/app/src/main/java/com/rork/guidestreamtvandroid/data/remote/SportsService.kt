@@ -1,5 +1,6 @@
 package com.rork.guidestreamtvandroid.data.remote
 
+import android.util.Log
 import com.rork.guidestreamtvandroid.data.models.SportsGame
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
@@ -23,7 +24,7 @@ class SportsService {
 
     private val client = HttpClient {
         install(ContentNegotiation) {
-            json(Json { ignoreUnknownKeys = true })
+            json(Json { ignoreUnknownKeys = true; coerceInputValues = true; isLenient = true })
         }
     }
 
@@ -149,7 +150,8 @@ class SportsService {
                     awayScore = away.score.toIntOrNull(),
                 )
             }
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            Log.w("SportsService", "Fetch failed for ${endpoint.path}", e)
             emptyList()
         }
     }
