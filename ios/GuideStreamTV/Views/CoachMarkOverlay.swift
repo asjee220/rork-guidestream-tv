@@ -99,7 +99,7 @@ struct CoachMarkOverlay: View {
                 scrimWithHoles(rects: cutoutRects, mark: mark, screen: screen)
 
                 ForEach(Array(cutoutRects.indices), id: \.self) { idx in
-                    pulseRing(rect: cutoutRects[idx], isCircular: mark.isCircular)
+                    pulseRing(rect: cutoutRects[idx], isCircular: mark.isCircular, screen: screen)
                 }
 
                 if let firstValid = validRects.first {
@@ -148,7 +148,7 @@ struct CoachMarkOverlay: View {
             // Cut all holes from a single mask
             context.blendMode = .destinationOut
             for rect in rects {
-                let expanded = rect.insetBy(dx: -8, dy: -8)
+                let expanded = Self.clampedCutout(for: rect, in: CGRect(origin: .zero, size: size))
                 if mark.isCircular {
                     let dim = max(expanded.width, expanded.height)
                     let cx = expanded.midX
@@ -170,10 +170,19 @@ struct CoachMarkOverlay: View {
     // MARK: - Pulse ring (opacity 0.9 → 0.15 → 0.9 over 1.7s)
 
     @ViewBuilder
-    private func pulseRing(rect: CGRect, isCircular: Bool) -> some View {
-        let expanded = rect.insetBy(dx: -8, dy: -8)
+    private func pulseRing(rect: CGRect, isCircular: Bool, screen: CGRect) -> some View {
+        let expanded = Self.clampedCutout(for: rect, in: CGRect(origin: .zero, size: screen.size))
         PulseRingView(expanded: expanded, isCircular: isCircular)
             .ignoresSafeArea()
+    }
+
+    /// Expands the target rect by 8pt, then clamps it so the cutout and
+    /// pulse ring never bleed past the screen edges (6pt minimum margin).
+    static func clampedCutout(for rect: CGRect, in bounds: CGRect) -> CGRect {
+        let expanded = rect.insetBy(dx: -8, dy: -8)
+        let limit = bounds.insetBy(dx: 6, dy: 6)
+        let clamped = expanded.intersection(limit)
+        return clamped.isNull || clamped.isEmpty ? expanded : clamped
     }
 
     // MARK: - Callout card

@@ -1104,10 +1104,10 @@ struct EpisodeDetailSheet: View {
                 UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                 showCastSheet = true
             }
-            .anchorPreference(key: CoachMarkAnchorKey.self, value: .bounds) {
-                ["sheet_play_on": $0]
-            }
             .frame(maxWidth: .infinity)
+        }
+        .anchorPreference(key: CoachMarkAnchorKey.self, value: .bounds) {
+            ["sheet_play_on": $0]
         }
     }
 
