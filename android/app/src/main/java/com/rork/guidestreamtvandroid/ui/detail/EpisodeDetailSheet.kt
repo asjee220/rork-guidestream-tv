@@ -689,13 +689,14 @@ fun EpisodeDetailSheet(
                     } ?: "Pick a service above to start watching.",
                 )
             }
-
-            CoachMarkOverlay(
-                manager = coachMark,
-                topInset = 72.dp,
-                bottomInset = 40.dp,
-            )
         }
+
+        CoachMarkOverlay(
+            manager = coachMark,
+            topInset = 72.dp,
+            bottomInset = 40.dp,
+        )
+    }
     }
 
     if (showComments) {
@@ -719,7 +720,6 @@ fun EpisodeDetailSheet(
             episodeRokuUrl = episodeSource?.rokuUrl,
         )
     }
-}
 }
 
 /** 1dp inset hairline separator matching the iOS sheet's divider rules. */
