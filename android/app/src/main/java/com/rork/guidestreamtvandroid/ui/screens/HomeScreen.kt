@@ -227,6 +227,11 @@ fun HomeScreen(
     // onGloballyPositioned can re-report after the scroll.
     LaunchedEffect(coachMark.isShowing, coachMark.currentMark?.key) {
         if (!coachMark.isShowing) return@LaunchedEffect
+        // Only service the HOME tour. The sheet tour runs while HomeScreen is
+        // still composed underneath the ModalBottomSheet; without this guard
+        // the unconditional markScrollSettled() below races the sheet's own
+        // handler and nulls scrollRequestId before the sheet can scroll.
+        if (!coachMark.activeTourIsHome) return@LaunchedEffect
         if (coachMark.scrollRequestId == "browseByGenre") {
             coachMark.clearScrollRequest()
             genreBringIntoViewRequester.bringIntoView()
