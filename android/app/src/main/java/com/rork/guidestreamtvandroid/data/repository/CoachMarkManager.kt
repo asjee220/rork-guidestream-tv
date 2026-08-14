@@ -343,6 +343,7 @@ class CoachMarkManager private constructor(private val context: Context) {
             "genre" -> scrollRequestId = "browseByGenre"
             "sheet_play_on" -> scrollRequestId = "cmSheetActions"
             "sheet_where_to_watch" -> scrollRequestId = "cmSheetWatch"
+            "sheet_watchlist" -> scrollRequestId = "cmSheetWatchlist"
             else -> {
                 scrollSettled = true
             }

@@ -239,11 +239,12 @@ fun EpisodeDetailSheet(
         if (!coachMark.isShowing) return@LaunchedEffect
         val mark = coachMark.currentMark ?: return@LaunchedEffect
         val id = coachMark.scrollRequestId
-        if (id == "cmSheetActions" || id == "cmSheetWatch") {
+        if (id == "cmSheetActions" || id == "cmSheetWatch" || id == "cmSheetWatchlist") {
             coachMark.clearScrollRequest()
             val targetKey = when (id) {
                 "cmSheetActions" -> "sheet_play_on"
                 "cmSheetWatch" -> "sheet_where_to_watch"
+                "cmSheetWatchlist" -> "sheet_watchlist"
                 else -> null
             }
             val rect = targetKey?.let { coachMark.measuredRects[it] }
