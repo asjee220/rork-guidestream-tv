@@ -80,21 +80,10 @@ struct CoachMarkOverlay: View {
             // Waiting for scroll to settle or no valid frames — show nothing
             Color.clear
                 .onAppear {
-                    if validRects.isEmpty && manager.scrollSettled {
-                        let markKey = mark.key
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                            // Guard against the measurement task arriving in the
-                            // meantime and populating rects for this same mark.
-                            guard manager.currentMark?.key == markKey else { return }
-                            guard let current = manager.currentMark,
-                                  current.targetKeys.contains(where: {
-                                      manager.measuredRects[$0]?.isEmpty ?? true
-                                  }) else {
-                                return
-                            }
-                            manager.skipUnmeasurableMark()
-                        }
-                    }
+                    attemptSkipIfAllUnmeasurable(mark: mark)
+                }
+                .onChange(of: manager.measureAttempt) { _, _ in
+                    attemptSkipIfAllUnmeasurable(mark: mark)
                 }
         } else {
             let cutoutRects = validRects.map { $0.1 }
@@ -105,11 +94,10 @@ struct CoachMarkOverlay: View {
                     pulseRing(rect: cutoutRects[idx], isCircular: mark.isCircular)
                 }
 
-                if let firstKey = mark.targetKeys.first,
-                   let firstRect = rects[firstKey], !firstRect.isEmpty {
+                if let firstValid = validRects.first {
                     calloutCard(
                         mark: mark,
-                        anchorRect: firstRect,
+                        anchorRect: firstValid.1,
                         allRects: cutoutRects,
                         screen: screen,
                         index: manager.currentIndex,
@@ -121,6 +109,24 @@ struct CoachMarkOverlay: View {
             .onTapGesture {
                 manager.advance()
             }
+        }
+    }
+
+    private func attemptSkipIfAllUnmeasurable(mark: CoachMark) {
+        guard manager.scrollSettled, manager.measureAttempt > 0 else { return }
+        let allUnmeasured = mark.targetKeys.allSatisfy {
+            manager.measuredRects[$0]?.isEmpty ?? true
+        }
+        guard allUnmeasured else { return }
+        let markKey = mark.key
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            guard manager.currentMark?.key == markKey else { return }
+            guard let current = manager.currentMark else { return }
+            let stillAllUnmeasured = current.targetKeys.allSatisfy {
+                manager.measuredRects[$0]?.isEmpty ?? true
+            }
+            guard stillAllUnmeasured else { return }
+            manager.skipUnmeasurableMark()
         }
     }
 
@@ -182,6 +188,14 @@ struct CoachMarkOverlay: View {
         // otherwise 12pt above highest cutout
         let belowCard: Bool = lowestBottom < midScreen
 
+        let rawY: CGFloat = belowCard
+            ? lowestBottom + 12 + (positionedCardSize.height / 2)
+            : highestTop - 12 - (positionedCardSize.height / 2)
+        let cardHeight: CGFloat = positionedCardSize.height
+        let minY: CGFloat = 104 + cardHeight / 2
+        let maxY: CGFloat = screen.height - 104 - cardHeight / 2
+        let clampedY: CGFloat = maxY < minY ? minY : min(max(rawY, minY), maxY)
+
         VStack(alignment: .leading, spacing: 0) {
             Text(mark.title)
                 .font(.system(size: 14, weight: .semibold))
@@ -234,9 +248,7 @@ struct CoachMarkOverlay: View {
         }
         .position(
             x: clampX(anchorRect: anchorRect, cardWidth: cardWidth, screen: screen),
-            y: belowCard
-                ? lowestBottom + 12 + (positionedCardSize.height / 2)
-                : highestTop - 12 - (positionedCardSize.height / 2)
+            y: clampedY
         )
         .ignoresSafeArea()
     }

@@ -102,6 +102,11 @@ final class CoachMarkManager {
     private(set) var completionToastVisible: Bool = false
     private var completionToastTask: Task<Void, Never>?
 
+    /// Monotonic counter incremented by `requestRemeasure()`. The host
+    /// uses it in a `.task(id:)` composite so a re-measure pass re-runs the
+    /// anchor resolution with a freshly captured preference dictionary.
+    private(set) var measureAttempt: Int = 0
+
     private let defaults = UserDefaults.standard
     private let storageKey = "gs.coachMarks"
 
@@ -176,6 +181,7 @@ final class CoachMarkManager {
         currentIndex = 0
         measuredRects = [:]
         scrollSettled = false
+        measureAttempt = 0
         isShowing = true
         handleScrollForCurrentMark()
     }
@@ -187,6 +193,7 @@ final class CoachMarkManager {
         currentIndex = 0
         measuredRects = [:]
         scrollSettled = false
+        measureAttempt = 0
         isShowing = true
         handleScrollForCurrentMark()
     }
@@ -217,6 +224,7 @@ final class CoachMarkManager {
             currentIndex += 1
             measuredRects = [:]
             scrollSettled = false
+            measureAttempt = 0
             genreHighlightActive = false
             handleScrollForCurrentMark()
         }
@@ -258,6 +266,7 @@ final class CoachMarkManager {
         measuredRects = [:]
         scrollRequest = nil
         scrollSettled = false
+        measureAttempt = 0
     }
 
     /// Moves past the current mark *without* persisting it, so a mark whose
@@ -290,8 +299,24 @@ final class CoachMarkManager {
         return true
     }
 
+    /// Sets measured rects for the current mark. On the initial pass
+    /// (measureAttempt == 0) the rects are stored directly. On retry passes
+    /// (measureAttempt > 0) newly resolved empty rects do not overwrite
+    /// previously stored non-empty rects, so a key that measured on the
+    /// first pass but went stale on the retry retains its valid frame.
     func setMeasuredRects(_ rects: [String: CGRect]) {
-        measuredRects = rects
+        if measureAttempt == 0 {
+            measuredRects = rects
+        } else {
+            for (key, newRect) in rects {
+                if newRect.isEmpty {
+                    if let existing = measuredRects[key], !existing.isEmpty {
+                        continue
+                    }
+                }
+                measuredRects[key] = newRect
+            }
+        }
     }
 
     func clearScrollRequest() {
@@ -303,6 +328,15 @@ final class CoachMarkManager {
     func markScrollSettled() {
         scrollSettled = true
         scrollRequest = nil
+    }
+
+    /// Increments `measureAttempt` so the host's `.task(id:)` composite
+    /// re-runs, capturing a fresh `anchors` dictionary from the updated
+    /// preference tree. Used to re-measure a mark whose anchors were stale
+    /// because a SwiftUI view was re-created between the scroll and the
+    /// first measurement pass.
+    func requestRemeasure() {
+        measureAttempt += 1
     }
 
     // MARK: - Scroll coordination

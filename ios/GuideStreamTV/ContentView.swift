@@ -201,8 +201,9 @@ struct ContentView: View {
                 CoachMarkOverlay(manager: coachMark)
                 GeometryReader { proxy in
                     Color.clear
-                        .task(id: coachMark.currentMark?.key ?? "none") {
+                        .task(id: "\(coachMark.currentMark?.key ?? "none")_\(coachMark.measureAttempt)") {
                             guard coachMark.isShowing, let mark = coachMark.currentMark else { return }
+                            let markKey = mark.key
                             if coachMark.scrollRequest != nil {
                                 coachMark.clearScrollRequest()
                                 try? await Task.sleep(for: .milliseconds(350))
@@ -215,6 +216,25 @@ struct ContentView: View {
                             }
                             coachMark.setMeasuredRects(rects)
                             coachMark.markScrollSettled()
+
+                            // One retry: if this is the initial pass and at
+                            // least one target key failed to measure, wait for
+                            // the view tree to settle (e.g. genre highlight
+                            // re-creating GenreDiscoverySection and invalidating
+                            // its Anchor token) then re-run the task with a
+                            // fresh anchors dictionary.
+                            if coachMark.measureAttempt == 0 {
+                                let hasMissing = mark.targetKeys.contains {
+                                    coachMark.measuredRects[$0]?.isEmpty ?? true
+                                }
+                                if hasMissing {
+                                    try? await Task.sleep(for: .milliseconds(300))
+                                    // Guard: do not resurrect a dismissed or
+                                    // advanced mark.
+                                    guard coachMark.currentMark?.key == markKey else { return }
+                                    coachMark.requestRemeasure()
+                                }
+                            }
                         }
                 }
                 .allowsHitTesting(false)
