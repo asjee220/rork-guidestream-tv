@@ -210,7 +210,7 @@ struct CastToTVSheet: View {
                         .foregroundStyle(.white)
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, 18)
-                    Text("iPhone has a self-assigned address (\(discovery.localIPv4 ?? "169.254.x.x")) because the router didn't give it a real one. Until that's fixed, no app can see your Apple TV or Roku.")
+                    Text("iPhone has a self-assigned address (\(discovery.localIPv4 ?? "169.254.x.x")) because the router didn't give it a real one. Until that's fixed, no app can see your Roku device.")
                         .scaledFont(size: 13)
                         .foregroundStyle(Color.white.opacity(0.6))
                         .multilineTextAlignment(.center)
@@ -249,7 +249,7 @@ struct CastToTVSheet: View {
                         rescanButton
                     }
                 } else {
-                    Text("Looking for Apple TV, Roku, Google TV, Fire TV & Samsung…")
+                    Text("Looking for Roku devices…")
                         .scaledFont(size: 15)
                         .foregroundStyle(Color.white.opacity(0.7))
                     Text("Make sure your phone and TV are on the same Wi-Fi network.")
@@ -435,7 +435,7 @@ struct CastToTVSheet: View {
                             .stroke(Color.white.opacity(0.08), lineWidth: 1)
                     )
 
-                    Text("Find your TV's IP under Settings → Network on Roku, or Settings → General → About on Apple TV.")
+                    Text("Find your Roku's IP under Settings → Network → About on your Roku.")
                         .scaledFont(size: 11)
                         .foregroundStyle(Color.white.opacity(0.45))
                         .multilineTextAlignment(.leading)

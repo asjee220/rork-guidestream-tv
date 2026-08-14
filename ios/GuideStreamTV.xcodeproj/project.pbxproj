@@ -668,7 +668,7 @@
 					"_amzn-wplay._tcp",
 				);
 				INFOPLIST_KEY_NSAppTransportSecurity_NSAllowsLocalNetworking = YES;
-				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "GuideStream uses your local network to find streaming devices (Apple TV, Roku, Google TV, Fire TV, Samsung) so you can send shows to them.";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "GuideStream uses your local network to find your Roku device so you can send shows to it.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -761,7 +761,7 @@
 					"_amzn-wplay._tcp",
 				);
 				INFOPLIST_KEY_NSAppTransportSecurity_NSAllowsLocalNetworking = YES;
-				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "GuideStream uses your local network to find streaming devices (Apple TV, Roku, Google TV, Fire TV, Samsung) so you can send shows to them.";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "GuideStream uses your local network to find your Roku device so you can send shows to it.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
