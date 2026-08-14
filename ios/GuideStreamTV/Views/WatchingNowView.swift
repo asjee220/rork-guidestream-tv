@@ -45,16 +45,16 @@ struct WatchingNowView: View {
             var added = false
             for key in sortedKeys {
                 let list = showsByService[key] ?? []
-                let idx = indices[key, default: 0]
+                var idx = indices[key, default: 0]
                 while idx < list.count {
                     let show = list[idx]
-                    indices[key] = idx + 1
+                    idx += 1
+                    indices[key] = idx
                     if seen.insert(show.id).inserted {
                         result.append(show)
                         added = true
                         break
                     }
-                    // already seen — continue to next in this list
                 }
             }
             if !added { break }
