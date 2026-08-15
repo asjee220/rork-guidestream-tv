@@ -2161,8 +2161,8 @@ struct WidgetDiagnosticsCard: View {
 
 private struct StepRow: View {
     let number: Int
-    let title: String
-    let subtitle: String
+    let title: LocalizedStringKey
+    let subtitle: LocalizedStringKey
 
     var body: some View {
         HStack(alignment: .top, spacing: 14) {

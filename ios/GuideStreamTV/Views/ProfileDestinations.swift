@@ -1366,7 +1366,7 @@ private struct NotificationToggleRow: View {
     let icon: String
     let iconTint: Color
     let title: LocalizedStringKey
-    let subtitle: String
+    let subtitle: LocalizedStringKey
     @Binding var isOn: Bool
     let tint: Color
 

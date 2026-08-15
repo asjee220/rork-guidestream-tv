@@ -1350,7 +1350,7 @@ private struct WidgetInstructionSheet: View {
 
 private struct WidgetStep: View {
     let number: Int
-    let text: String
+    let text: LocalizedStringKey
 
     var body: some View {
         HStack(alignment: .top, spacing: 14) {
