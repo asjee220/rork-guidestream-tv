@@ -210,7 +210,7 @@ struct WatchingNowView: View {
 
             // Sticky bottom bar
             VStack(spacing: 10) {
-                Text("\(totalSelected) show\(totalSelected == 1 ? "" : "s") selected")
+                Text("\(DisplayFormatting.shows(totalSelected)) selected")
                     .font(.custom("SF Pro Text", size: 12))
                     .foregroundStyle(Color.textSecondary)
 

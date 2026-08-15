@@ -423,7 +423,7 @@ struct ConnectServicesView: View {
             }
 
             VStack(spacing: 14) {
-                Text("\(selected.count) service\(selected.count == 1 ? "" : "s") selected")
+                Text("\(DisplayFormatting.services(selected.count)) selected")
                     .font(.custom("SF Pro Text", size: 13))
                     .foregroundStyle(Color.textSecondary)
 

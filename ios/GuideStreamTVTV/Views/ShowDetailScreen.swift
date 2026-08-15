@@ -949,7 +949,7 @@ private struct TMDBEpisodeCardSmall: View {
                 .clipShape(.rect(cornerRadius: 10))
 
             HStack {
-                Text("S\(seasonNumber) E\(episode.episodeNumber)")
+                Text(DisplayFormatting.seasonEpisodeShort(season: seasonNumber, episode: episode.episodeNumber))
                     .scaledFont(size: 11, weight: .bold)
                     .foregroundStyle(Color.textTertiary)
                 Spacer()

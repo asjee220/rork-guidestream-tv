@@ -4468,7 +4468,7 @@ private struct UpcomingEpisodeCard: View {
             // Episode code + name
             if let season = item.seasonNumber, let episode = item.episodeNumber {
                 HStack(spacing: 4) {
-                    Text("S:\(season) EP:\(episode)")
+                    Text(DisplayFormatting.seasonEpisodeColon(season: season, episode: episode))
                         .scaledFont(size: 13, weight: .bold)
                         .foregroundStyle(.white)
                     if let name = item.episodeName {

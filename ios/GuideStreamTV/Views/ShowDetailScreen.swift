@@ -1055,7 +1055,7 @@ struct ShowDetailScreen: View {
             VStack(alignment: .leading, spacing: 3) {
                 if let ep = vm.tvdbNextEpisode {
                     HStack(spacing: 4) {
-                        Text("S\(ep.seasonNumber ?? 0) E\(ep.episodeNumber ?? 0)")
+                        Text(DisplayFormatting.seasonEpisodeShort(season: ep.seasonNumber ?? 0, episode: ep.episodeNumber ?? 0))
                             .scaledFont(size: 12, weight: .heavy)
                             .foregroundStyle(Color.orange)
                         if let name = ep.name {
@@ -1300,7 +1300,7 @@ struct ShowDetailScreen: View {
                             )
 
                         VStack(alignment: .leading, spacing: 1) {
-                            Text("S\(ep.seasonNum) · E\(ep.episodeNum) · Most recent")
+                            Text("\(DisplayFormatting.seasonEpisodeDot(season: ep.seasonNum, episode: ep.episodeNum)) · Most recent")
                                 .scaledFont(size: 9, weight: .semibold)
                                 .foregroundStyle(Color.white.opacity(0.38))
                             Text("\(ep.name)\(ep.runtime.isEmpty ? "" : " · \(ep.runtime)")")
@@ -1384,7 +1384,7 @@ struct ShowDetailScreen: View {
                                 .scaledFont(size: 15, weight: .bold)
 
                             if isTV, let ep = latestEpisode {
-                                Text("\(ctaVerb) S:\(ep.seasonNum) EP:\(ep.episodeNum)")
+                                Text("\(ctaVerb) \(DisplayFormatting.seasonEpisodeColon(season: ep.seasonNum, episode: ep.episodeNum))")
                                     .scaledFont(size: 15, weight: .bold)
                                     .lineLimit(1)
                             } else {
@@ -1656,7 +1656,7 @@ private struct TMDBEpisodeCardSmall: View {
                 .clipShape(.rect(cornerRadius: 10))
 
             HStack {
-                Text("S\(seasonNumber) E\(episode.episodeNumber)")
+                Text(DisplayFormatting.seasonEpisodeShort(season: seasonNumber, episode: episode.episodeNumber))
                     .scaledFont(size: 11, weight: .bold)
                     .foregroundStyle(Color.textTertiary)
                 Spacer()

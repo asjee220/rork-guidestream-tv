@@ -800,7 +800,7 @@ struct PlayOnBottomSheet: View {
                         .tint(.white)
                 }
                 if let s = watchSeasonNum, let e = watchEpisodeNum, !episodeSourceUnavailable {
-                    Text("\(ctaVerb) S:\(s) EP:\(e)")
+                    Text("\(ctaVerb) \(DisplayFormatting.seasonEpisodeColon(season: s, episode: e))")
                         .scaledFont(size: 15, weight: .semibold)
                         .lineLimit(1)
                 } else {

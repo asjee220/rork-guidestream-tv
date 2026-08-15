@@ -1350,7 +1350,7 @@ struct EpisodeDetailSheet: View {
                         .tint(.white)
                 }
                 if let ctx = episodeContext, !episodeSourceUnavailable {
-                    Text("\(ctaVerb) S:\(ctx.seasonNum) EP:\(ctx.episodeNum)")
+                    Text("\(ctaVerb) \(DisplayFormatting.seasonEpisodeColon(season: ctx.seasonNum, episode: ctx.episodeNum))")
                         .scaledFont(size: 15, weight: .semibold)
                         .lineLimit(1)
                 } else {

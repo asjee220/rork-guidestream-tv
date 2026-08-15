@@ -195,7 +195,7 @@ struct MoreEpisodesScreen: View {
     private var seasonProgressBar: some View {
         VStack(spacing: 6) {
             HStack {
-                Text("Season \(activeSeason) progress")
+                Text("\(DisplayFormatting.seasonLabel(activeSeason)) progress")
                     .scaledFont(size: 11, weight: .semibold)
                     .foregroundStyle(Color.textSecondary)
                 Spacer()
@@ -301,7 +301,7 @@ struct MoreEpisodesScreen: View {
 
                         // Info
                         VStack(alignment: .leading, spacing: 3) {
-                            Text("S:\(activeSeason) EP:\(ep.episodeNumber)")
+                            Text(DisplayFormatting.seasonEpisodeColon(season: activeSeason, episode: ep.episodeNumber))
                                 .scaledFont(size: 9, weight: .semibold)
                                 .foregroundStyle(Color.textTertiary)
 
@@ -378,7 +378,7 @@ struct MoreEpisodesScreen: View {
                     HStack(spacing: 8) {
                         Image(systemName: "play.fill")
                             .scaledFont(size: 14, weight: .bold)
-                        Text("Watch S:\(activeSeason) EP:\(nextEpisodeNumber)")
+                        Text("Watch \(DisplayFormatting.seasonEpisodeColon(season: activeSeason, episode: nextEpisodeNumber))")
                             .scaledFont(size: 14, weight: .bold)
                             .lineLimit(1)
                         if let svc = vm.primaryService {

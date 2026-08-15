@@ -375,7 +375,7 @@ struct EpisodeAvailabilitySection: View {
  .frame(height: 8)
 
  // Episode count
- Text("\(cov.episodesCovered) ep\(cov.episodesCovered == 1 ? "" : "s")")
+ Text(DisplayFormatting.episodesShort(cov.episodesCovered))
  .font(.system(size: 11))
  .foregroundStyle(cov.userHasSubscription ? Color.white.opacity(0.7) : Color.white.opacity(0.3))
  .frame(minWidth: 36, alignment: .trailing)
@@ -426,7 +426,7 @@ struct EpisodeAvailabilitySection: View {
  ScrollView(.horizontal, showsIndicators: false) {
  HStack(spacing: 8) {
  ForEach(seasons, id: \.self) { s in
- Button("Season \(s)") { selectedSeason = s }
+ Button(DisplayFormatting.seasonLabel(s)) { selectedSeason = s }
  .font(.system(size: 13, weight: .semibold))
  .foregroundStyle(selectedSeason == s ? .white : Color.white.opacity(0.5))
  .padding(.horizontal, 16)
@@ -533,7 +533,7 @@ struct EpisodeAvailabilitySection: View {
  RoundedRectangle(cornerRadius: 8)
  .fill(isAvail ? svcColor.opacity(0.18) : isLocked ? svcColor.opacity(0.08) : Color.white.opacity(0.05))
  .frame(width: 52, height: 36)
- Text("S\(row.seasonNumber) EP\(row.episodeNumber)")
+ Text(DisplayFormatting.seasonEpisodeCompact(season: row.seasonNumber, episode: row.episodeNumber))
  .font(.system(size: 9, weight: .bold))
  .foregroundStyle(isAvail ? svcColor : Color.white.opacity(isLocked ? 0.22 : 0.18))
  .lineLimit(1)
@@ -603,7 +603,7 @@ struct EpisodeAvailabilitySection: View {
  .font(.system(size: 18))
  .foregroundStyle(Color.orange)
  VStack(alignment: .leading, spacing: 2) {
- Text("\(count) episode\(count == 1 ? "" : "s") on \(serviceName)")
+ Text("\(DisplayFormatting.episodes(count)) on \(serviceName)")
  .font(.system(size: 13, weight: .semibold))
  .foregroundStyle(.white)
  Text("Not in your current plan")

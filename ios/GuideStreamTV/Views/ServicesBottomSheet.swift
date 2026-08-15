@@ -156,7 +156,7 @@ struct ServicesBottomSheet: View {
                     .presentationContentInteraction(.scrolls)
 
                     VStack(spacing: 12) {
-                        Text("\(selected.count) service\(selected.count == 1 ? "" : "s") selected")
+                        Text("\(DisplayFormatting.services(selected.count)) selected")
                             .font(.custom("SF Pro Text", size: 13))
                             .foregroundStyle(Color.textSecondary)
 
