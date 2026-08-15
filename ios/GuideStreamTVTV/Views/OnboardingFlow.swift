@@ -610,7 +610,7 @@ private struct NotifyRow: View {
     let icon: String
     let iconBg: Color
     let iconTint: Color
-    let title: String
+    let title: LocalizedStringKey
     let subtitle: String
     let trailing: NotifyTrailingKind
 

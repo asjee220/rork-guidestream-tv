@@ -31,7 +31,7 @@ enum ReelTab: String, CaseIterable, Hashable {
     case new = "new"
     case comingSoon = "coming-soon"
 
-    var label: String {
+    var label: LocalizedStringKey {
         switch self {
         case .forYou: return "For You"
         case .trending: return "Trending"

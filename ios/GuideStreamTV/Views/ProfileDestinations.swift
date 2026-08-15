@@ -370,7 +370,7 @@ struct AccountView: View {
 /// Static label/value row used inside Account info cards. Tapping a copyable
 /// row writes the value to the pasteboard with a quick haptic.
 struct ProfileInfoRow: View {
-    let label: String
+    let label: LocalizedStringKey
     let value: String
     var isMonospaced: Bool = false
     var copyable: Bool = false
@@ -1365,7 +1365,7 @@ private struct TimezoneInfoRow: View {
 private struct NotificationToggleRow: View {
     let icon: String
     let iconTint: Color
-    let title: String
+    let title: LocalizedStringKey
     let subtitle: String
     @Binding var isOn: Bool
     let tint: Color

@@ -30,7 +30,7 @@ struct AskStreamView: View {
 
 struct PlaceholderShell: View {
     let symbol: String
-    let title: String
+    let title: LocalizedStringKey
     let subtitle: String
     let accent: Color
 
