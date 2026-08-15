@@ -130,7 +130,7 @@ nonisolated struct TMDBEpisodeSummary: Decodable, Sendable, Hashable {
 nonisolated struct TMDBTVDetail: Decodable, Sendable {
     let id: Int
     let name: String
-    let overview: String?
+    var overview: String?
     let posterPath: String?
     let backdropPath: String?
     let voteAverage: Double?
@@ -175,7 +175,7 @@ nonisolated struct TMDBTVDetail: Decodable, Sendable {
 nonisolated struct TMDBMovieDetail: Decodable, Sendable {
     let id: Int
     let title: String
-    let overview: String?
+    var overview: String?
     let posterPath: String?
     let backdropPath: String?
     let voteAverage: Double?
@@ -324,6 +324,8 @@ nonisolated struct TMDBService {
     private let apiKey = "233f8054219ef58bc928549b4b5bab50"
     private let base = "https://api.themoviedb.org/3"
 
+    nonisolated(unsafe) private static var englishOverviewCache: [String: String] = [:]
+
     /// Wraps `searchContent` so SearchView callers can use the shorter name.
     func search(query: String) async throws -> [TMDBResult] {
         try await searchContent(query: query)
@@ -346,7 +348,19 @@ nonisolated struct TMDBService {
         let locale = DeviceLocale.current()
         let urlString = "\(base)/tv/\(tmdbId)?api_key=\(apiKey)&language=\(locale.tmdbLanguage)"
         let data = try await get(urlString)
-        return try JSONDecoder().decode(TMDBTVDetail.self, from: data)
+        var detail = try JSONDecoder().decode(TMDBTVDetail.self, from: data)
+        if !locale.tmdbLanguage.hasPrefix("en") && (detail.overview?.isEmpty ?? true) {
+            let cacheKey = "tv:\(tmdbId)"
+            if let cached = Self.englishOverviewCache[cacheKey] {
+                detail.overview = cached
+            } else if let enData = try? await get("\(base)/tv/\(tmdbId)?api_key=\(apiKey)&language=en-US"),
+                      let enDetail = try? JSONDecoder().decode(TMDBTVDetail.self, from: enData),
+                      let enOverview = enDetail.overview, !enOverview.isEmpty {
+                Self.englishOverviewCache[cacheKey] = enOverview
+                detail.overview = enOverview
+            }
+        }
+        return detail
     }
 
     /// Movie metadata from TMDB — the movie counterpart to `getTVDetail`.
@@ -354,7 +368,19 @@ nonisolated struct TMDBService {
         let locale = DeviceLocale.current()
         let urlString = "\(base)/movie/\(tmdbId)?api_key=\(apiKey)&language=\(locale.tmdbLanguage)"
         let data = try await get(urlString)
-        return try JSONDecoder().decode(TMDBMovieDetail.self, from: data)
+        var detail = try JSONDecoder().decode(TMDBMovieDetail.self, from: data)
+        if !locale.tmdbLanguage.hasPrefix("en") && (detail.overview?.isEmpty ?? true) {
+            let cacheKey = "movie:\(tmdbId)"
+            if let cached = Self.englishOverviewCache[cacheKey] {
+                detail.overview = cached
+            } else if let enData = try? await get("\(base)/movie/\(tmdbId)?api_key=\(apiKey)&language=en-US"),
+                      let enDetail = try? JSONDecoder().decode(TMDBMovieDetail.self, from: enData),
+                      let enOverview = enDetail.overview, !enOverview.isEmpty {
+                Self.englishOverviewCache[cacheKey] = enOverview
+                detail.overview = enOverview
+            }
+        }
+        return detail
     }
 
     func getSeason(tmdbId: Int, seasonNumber: Int) async throws -> TMDBSeason {

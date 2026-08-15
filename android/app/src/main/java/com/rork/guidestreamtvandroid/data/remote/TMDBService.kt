@@ -25,6 +25,8 @@ class TMDBService {
     private val apiKey = "233f8054219ef58bc928549b4b5bab50"
     private val base = AppConfig.TMDB_BASE_URL
 
+    private val englishOverviewCache = java.util.concurrent.ConcurrentHashMap<String, String>()
+
     private val client = HttpClient {
         install(ContentNegotiation) {
             json(Json { ignoreUnknownKeys = true })
@@ -268,7 +270,23 @@ class TMDBService {
 
     suspend fun getTVDetail(tmdbId: Int): TMDBTVDetail? {
         return try {
-            client.get("$base/tv/$tmdbId?api_key=$apiKey&language=${DeviceLocale.tmdbLanguage}").body()
+            var detail: TMDBTVDetail = client.get("$base/tv/$tmdbId?api_key=$apiKey&language=${DeviceLocale.tmdbLanguage}").body()
+            if (!DeviceLocale.tmdbLanguage.startsWith("en") && detail.overview.isNullOrEmpty()) {
+                val cacheKey = "tv:$tmdbId"
+                val cached = englishOverviewCache[cacheKey]
+                if (cached != null) {
+                    detail = detail.copy(overview = cached)
+                } else {
+                    try {
+                        val enDetail: TMDBTVDetail = client.get("$base/tv/$tmdbId?api_key=$apiKey&language=en-US").body()
+                        if (!enDetail.overview.isNullOrEmpty()) {
+                            englishOverviewCache[cacheKey] = enDetail.overview
+                            detail = detail.copy(overview = enDetail.overview)
+                        }
+                    } catch (_: Exception) { }
+                }
+            }
+            detail
         } catch (_: Exception) { null }
     }
 
@@ -293,10 +311,26 @@ class TMDBService {
     suspend fun getMovieDetail(tmdbId: Int): TMDBTVDetail? {
         return try {
             val movie: TMDBMovieDetailDTO = client.get("$base/movie/$tmdbId?api_key=$apiKey&language=${DeviceLocale.tmdbLanguage}").body()
+            var overview = movie.overview
+            if (!DeviceLocale.tmdbLanguage.startsWith("en") && overview.isNullOrEmpty()) {
+                val cacheKey = "movie:$tmdbId"
+                val cached = englishOverviewCache[cacheKey]
+                if (cached != null) {
+                    overview = cached
+                } else {
+                    try {
+                        val enMovie: TMDBMovieDetailDTO = client.get("$base/movie/$tmdbId?api_key=$apiKey&language=en-US").body()
+                        if (!enMovie.overview.isNullOrEmpty()) {
+                            englishOverviewCache[cacheKey] = enMovie.overview
+                            overview = enMovie.overview
+                        }
+                    } catch (_: Exception) { }
+                }
+            }
             TMDBTVDetail(
                 id = movie.id,
                 name = movie.title,
-                overview = movie.overview,
+                overview = overview,
                 posterPath = movie.posterPath,
                 backdropPath = movie.backdropPath,
                 voteAverage = movie.voteAverage,
