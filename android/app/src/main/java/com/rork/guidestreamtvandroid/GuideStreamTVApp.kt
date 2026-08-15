@@ -2,6 +2,7 @@ package com.rork.guidestreamtvandroid
 
 import android.app.Application
 import android.util.Log
+import com.rork.guidestreamtvandroid.data.DeviceLocale
 import com.rork.guidestreamtvandroid.data.local.DeviceIdentity
 import com.rork.guidestreamtvandroid.data.local.DeviceSessionService
 import com.rork.guidestreamtvandroid.data.remote.RemoteConfigService
@@ -34,6 +35,7 @@ class GuideStreamTVApp : Application() {
         // Initialize singletons in dependency order. Each step is guarded so a
         // single failing service can never prevent the app from launching.
         safe("DeviceIdentity") { DeviceIdentity.init(this) }
+        safe("DeviceLocale") { DeviceLocale.init(this) }
         safe("RemoteConfig") { RemoteConfigService.init(this) }
         safe("AuthViewModel") { AuthViewModel.init(this) }
         safe("WatchIntentLogger") { WatchIntentLogger.init(this) }

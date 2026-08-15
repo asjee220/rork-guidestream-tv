@@ -105,7 +105,8 @@ nonisolated struct TVTMDBService {
 
     /// Mixed trending feed (TV + movies) for the hero carousel + rail.
     func getTrending() async throws -> [TVTMDBResult] {
-        let urlString = "\(base)/trending/all/week?api_key=\(apiKey)&language=en-US"
+        let locale = DeviceLocale.current()
+        let urlString = "\(base)/trending/all/week?api_key=\(apiKey)&language=\(locale.tmdbLanguage)"
         let data = try await get(urlString)
         let env = try JSONDecoder().decode(TVTMDBSearchEnvelope.self, from: data)
         return env.results
@@ -115,7 +116,8 @@ nonisolated struct TVTMDBService {
 
     /// Currently-airing TV — used for the "New Episodes" rail.
     func getOnTheAir() async throws -> [TVTMDBResult] {
-        let urlString = "\(base)/tv/on_the_air?api_key=\(apiKey)&language=en-US&page=1"
+        let locale = DeviceLocale.current()
+        let urlString = "\(base)/tv/on_the_air?api_key=\(apiKey)&language=\(locale.tmdbLanguage)&page=1"
         let data = try await get(urlString)
         let env = try JSONDecoder().decode(TVTMDBSearchEnvelope.self, from: data)
         return env.results.map { stamp($0, mediaType: "tv") }
@@ -123,7 +125,8 @@ nonisolated struct TVTMDBService {
 
     /// Returns the first genre name for a TV show, or nil.
     func getTVGenre(tmdbId: Int) async throws -> String? {
-        let urlString = "\(base)/tv/\(tmdbId)?api_key=\(apiKey)&language=en-US"
+        let locale = DeviceLocale.current()
+        let urlString = "\(base)/tv/\(tmdbId)?api_key=\(apiKey)&language=\(locale.tmdbLanguage)"
         let data = try await get(urlString)
         let env = try JSONDecoder().decode(TVTMDBTVDetailEnvelope.self, from: data)
         return env.genres?.first?.name
@@ -131,7 +134,8 @@ nonisolated struct TVTMDBService {
 
     /// Popular TV — used as a secondary feed source for For You.
     func getPopularTV() async throws -> [TVTMDBResult] {
-        let urlString = "\(base)/tv/popular?api_key=\(apiKey)&language=en-US&page=1"
+        let locale = DeviceLocale.current()
+        let urlString = "\(base)/tv/popular?api_key=\(apiKey)&language=\(locale.tmdbLanguage)&page=1"
         let data = try await get(urlString)
         let env = try JSONDecoder().decode(TVTMDBSearchEnvelope.self, from: data)
         return env.results.map { stamp($0, mediaType: "tv") }
@@ -141,8 +145,9 @@ nonisolated struct TVTMDBService {
     /// nil if none exists. Prefers official trailers, then any trailer, then
     /// any teaser/clip so we still surface motion art when possible.
     func getTrailerKey(tmdbId: Int, isTV: Bool) async throws -> String? {
+        let locale = DeviceLocale.current()
         let kind = isTV ? "tv" : "movie"
-        let urlString = "\(base)/\(kind)/\(tmdbId)/videos?api_key=\(apiKey)&language=en-US"
+        let urlString = "\(base)/\(kind)/\(tmdbId)/videos?api_key=\(apiKey)&language=\(locale.tmdbLanguage)"
         let data = try await get(urlString)
         let env = try JSONDecoder().decode(TVTMDBVideosEnvelope.self, from: data)
         let youtube = env.results.filter { ($0.site ?? "").lowercased() == "youtube" && !($0.key ?? "").isEmpty }
@@ -161,12 +166,14 @@ nonisolated struct TVTMDBService {
     /// Returns the top US streaming provider for a title, or nil if no
     /// real streaming service is associated with it.
     func getTopWatchProvider(tmdbId: Int, isTV: Bool) async throws -> TVTMDBWatchProvider? {
+        let locale = DeviceLocale.current()
         let kind = isTV ? "tv" : "movie"
         let urlString = "\(base)/\(kind)/\(tmdbId)/watch/providers?api_key=\(apiKey)"
         let data = try await get(urlString)
         let env = try JSONDecoder().decode(TVTMDBProvidersEnvelope.self, from: data)
-        guard let us = env.results["US"] else { return nil }
-        let pool = (us.flatrate ?? []) + (us.ads ?? []) + (us.free ?? [])
+        let regionEntry = env.results[locale.region] ?? env.results["US"]
+        guard let entry = regionEntry else { return nil }
+        let pool = (entry.flatrate ?? []) + (entry.ads ?? []) + (entry.free ?? [])
         guard !pool.isEmpty else { return nil }
         return pool.min(by: { ($0.displayPriority ?? 999) < ($1.displayPriority ?? 999) })
     }
@@ -176,7 +183,8 @@ nonisolated struct TVTMDBService {
     /// can fall back to the stored snapshot. Used by the watch-list poster
     /// back-fill and the season/episode pre-selection in TVTitleSheet.
     func getTVFreshness(tmdbId: Int) async -> (posterPath: String?, latestSeason: Int?, latestEpisode: Int?) {
-        let urlString = "\(base)/tv/\(tmdbId)?api_key=\(apiKey)&language=en-US"
+        let locale = DeviceLocale.current()
+        let urlString = "\(base)/tv/\(tmdbId)?api_key=\(apiKey)&language=\(locale.tmdbLanguage)"
         guard let data = try? await get(urlString) else { return (nil, nil, nil) }
         guard let env = try? JSONDecoder().decode(TVTMDBFreshness.self, from: data) else { return (nil, nil, nil) }
         return (env.posterPath, env.lastEpisodeToAir?.seasonNumber, env.lastEpisodeToAir?.episodeNumber)
@@ -185,7 +193,8 @@ nonisolated struct TVTMDBService {
     /// Fetches a fresh poster path for a movie title. Returns nil on any
     /// error so callers can fall back to the stored snapshot.
     func getMoviePosterPath(tmdbId: Int) async -> String? {
-        let urlString = "\(base)/movie/\(tmdbId)?api_key=\(apiKey)&language=en-US"
+        let locale = DeviceLocale.current()
+        let urlString = "\(base)/movie/\(tmdbId)?api_key=\(apiKey)&language=\(locale.tmdbLanguage)"
         guard let data = try? await get(urlString) else { return nil }
         guard let env = try? JSONDecoder().decode(TVTMDBMoviePoster.self, from: data) else { return nil }
         return env.posterPath
@@ -193,7 +202,8 @@ nonisolated struct TVTMDBService {
 
     /// Now-playing movies in the US — mirrors the iOS `getNowPlayingMovies`.
     func getNowPlayingMovies() async -> [TVTMDBResult] {
-        let urlString = "\(base)/movie/now_playing?api_key=\(apiKey)&language=en-US&region=US&page=1"
+        let locale = DeviceLocale.current()
+        let urlString = "\(base)/movie/now_playing?api_key=\(apiKey)&language=\(locale.tmdbLanguage)&region=\(locale.region)&page=1"
         guard let data = try? await get(urlString) else { return [] }
         guard let env = try? JSONDecoder().decode(TVTMDBSearchEnvelope.self, from: data) else { return [] }
         return env.results.map { stamp($0, mediaType: "movie") }
@@ -202,11 +212,12 @@ nonisolated struct TVTMDBService {
     /// Returns the earliest future US digital release date (type == 4) for a
     /// movie, or nil when none exists. Mirrors the iOS `getUSDigitalReleaseDate`.
     func getUSDigitalReleaseDate(movieId: Int) async -> (date: Date, note: String?)? {
+        let locale = DeviceLocale.current()
         let urlString = "\(base)/movie/\(movieId)/release_dates?api_key=\(apiKey)"
         guard let data = try? await get(urlString) else { return nil }
         guard let env = try? JSONDecoder().decode(TVTMDBReleaseDatesEnvelope.self, from: data) else { return nil }
-        guard let us = env.results.first(where: { $0.iso31661 == "US" }) else { return nil }
-        let digital = (us.releaseDates ?? []).filter { $0.type == 4 }
+        guard let regionEntry = env.results.first(where: { $0.iso31661 == locale.region }) ?? env.results.first(where: { $0.iso31661 == "US" }) else { return nil }
+        let digital = (regionEntry.releaseDates ?? []).filter { $0.type == 4 }
         let isoFormatter = ISO8601DateFormatter()
         isoFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         let fallbackFormatter = DateFormatter()
@@ -229,7 +240,8 @@ nonisolated struct TVTMDBService {
     /// Popular TV shows on a specific Watchmode provider — mirrors the iOS
     /// `getPopularOnService`. Returns [] on any error so the rail hides.
     func getPopularOnService(tmdbProviderId: Int) async -> [TVTMDBResult] {
-        let urlString = "\(base)/discover/tv?api_key=\(apiKey)&language=en-US&sort_by=popularity.desc&watch_region=US&with_watch_providers=\(tmdbProviderId)&with_watch_monetization_types=flatrate%7Cads&page=1"
+        let locale = DeviceLocale.current()
+        let urlString = "\(base)/discover/tv?api_key=\(apiKey)&language=\(locale.tmdbLanguage)&sort_by=popularity.desc&watch_region=\(locale.region)&with_watch_providers=\(tmdbProviderId)&with_watch_monetization_types=flatrate%7Cads&page=1"
         guard let data = try? await get(urlString) else { return [] }
         guard let env = try? JSONDecoder().decode(TVTMDBSearchEnvelope.self, from: data) else { return [] }
         return env.results.map { stamp($0, mediaType: "tv") }
@@ -238,7 +250,8 @@ nonisolated struct TVTMDBService {
     /// Popular movies on a specific Watchmode provider — mirrors the iOS
     /// `getPopularMoviesOnService`. Returns [] on any error so the rail hides.
     func getPopularMoviesOnService(tmdbProviderId: Int) async -> [TVTMDBResult] {
-        let urlString = "\(base)/discover/movie?api_key=\(apiKey)&language=en-US&sort_by=popularity.desc&watch_region=US&with_watch_providers=\(tmdbProviderId)&page=1"
+        let locale = DeviceLocale.current()
+        let urlString = "\(base)/discover/movie?api_key=\(apiKey)&language=\(locale.tmdbLanguage)&sort_by=popularity.desc&watch_region=\(locale.region)&with_watch_providers=\(tmdbProviderId)&page=1"
         guard let data = try? await get(urlString) else { return [] }
         guard let env = try? JSONDecoder().decode(TVTMDBSearchEnvelope.self, from: data) else { return [] }
         return env.results.map { stamp($0, mediaType: "movie") }

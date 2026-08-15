@@ -343,33 +343,38 @@ nonisolated struct TMDBService {
     }
 
     func getTVDetail(tmdbId: Int) async throws -> TMDBTVDetail {
-        let urlString = "\(base)/tv/\(tmdbId)?api_key=\(apiKey)&language=en-US"
+        let locale = DeviceLocale.current()
+        let urlString = "\(base)/tv/\(tmdbId)?api_key=\(apiKey)&language=\(locale.tmdbLanguage)"
         let data = try await get(urlString)
         return try JSONDecoder().decode(TMDBTVDetail.self, from: data)
     }
 
     /// Movie metadata from TMDB — the movie counterpart to `getTVDetail`.
     func getMovieDetail(tmdbId: Int) async throws -> TMDBMovieDetail {
-        let urlString = "\(base)/movie/\(tmdbId)?api_key=\(apiKey)&language=en-US"
+        let locale = DeviceLocale.current()
+        let urlString = "\(base)/movie/\(tmdbId)?api_key=\(apiKey)&language=\(locale.tmdbLanguage)"
         let data = try await get(urlString)
         return try JSONDecoder().decode(TMDBMovieDetail.self, from: data)
     }
 
     func getSeason(tmdbId: Int, seasonNumber: Int) async throws -> TMDBSeason {
-        let urlString = "\(base)/tv/\(tmdbId)/season/\(seasonNumber)?api_key=\(apiKey)&language=en-US"
+        let locale = DeviceLocale.current()
+        let urlString = "\(base)/tv/\(tmdbId)/season/\(seasonNumber)?api_key=\(apiKey)&language=\(locale.tmdbLanguage)"
         let data = try await get(urlString)
         return try JSONDecoder().decode(TMDBSeason.self, from: data)
     }
 
     func getEpisode(tmdbId: Int, season: Int, episode: Int) async throws -> TMDBEpisode {
-        let urlString = "\(base)/tv/\(tmdbId)/season/\(season)/episode/\(episode)?api_key=\(apiKey)&language=en-US"
+        let locale = DeviceLocale.current()
+        let urlString = "\(base)/tv/\(tmdbId)/season/\(season)/episode/\(episode)?api_key=\(apiKey)&language=\(locale.tmdbLanguage)"
         let data = try await get(urlString)
         return try JSONDecoder().decode(TMDBEpisode.self, from: data)
     }
 
     /// Currently-airing TV shows (used as the "New Episodes" fallback when Supabase is empty).
     func getOnTheAir(page: Int = 1) async throws -> [TMDBResult] {
-        let urlString = "\(base)/tv/on_the_air?api_key=\(apiKey)&language=en-US&page=\(page)"
+        let locale = DeviceLocale.current()
+        let urlString = "\(base)/tv/on_the_air?api_key=\(apiKey)&language=\(locale.tmdbLanguage)&page=\(page)"
         let data = try await get(urlString)
         let env = try JSONDecoder().decode(TMDBTrendingEnvelope.self, from: data)
         return env.results.map { stamp($0, mediaType: "tv") }
@@ -377,7 +382,8 @@ nonisolated struct TMDBService {
 
     /// Movies currently in theaters (US).
     func getNowPlayingMovies() async throws -> [TMDBResult] {
-        let urlString = "\(base)/movie/now_playing?api_key=\(apiKey)&language=en-US&region=US&page=1"
+        let locale = DeviceLocale.current()
+        let urlString = "\(base)/movie/now_playing?api_key=\(apiKey)&language=\(locale.tmdbLanguage)&region=\(locale.region)&page=1"
         let data = try await get(urlString)
         let env = try JSONDecoder().decode(TMDBTrendingEnvelope.self, from: data)
         return env.results.map { stamp($0, mediaType: "movie") }
@@ -419,7 +425,8 @@ nonisolated struct TMDBService {
 
     /// Popular TV shows trending globally.
     func getPopularTV(page: Int = 1) async throws -> [TMDBResult] {
-        let urlString = "\(base)/tv/popular?api_key=\(apiKey)&language=en-US&page=\(page)"
+        let locale = DeviceLocale.current()
+        let urlString = "\(base)/tv/popular?api_key=\(apiKey)&language=\(locale.tmdbLanguage)&page=\(page)"
         let data = try await get(urlString)
         let env = try JSONDecoder().decode(TMDBTrendingEnvelope.self, from: data)
         return env.results.map { stamp($0, mediaType: "tv") }
@@ -427,7 +434,8 @@ nonisolated struct TMDBService {
 
     /// Upcoming movies with known release dates, sorted by popularity.
     func getUpcomingMovies() async throws -> [TMDBResult] {
-        let urlString = "\(base)/movie/upcoming?api_key=\(apiKey)&language=en-US&page=1"
+        let locale = DeviceLocale.current()
+        let urlString = "\(base)/movie/upcoming?api_key=\(apiKey)&language=\(locale.tmdbLanguage)&page=1"
         let data = try await get(urlString)
         let env = try JSONDecoder().decode(TMDBTrendingEnvelope.self, from: data)
         return env.results.map { stamp($0, mediaType: "movie") }
@@ -435,7 +443,8 @@ nonisolated struct TMDBService {
 
     /// Popular ended TV shows for the "Binge Ready" fallback.
     func getDiscoverEnded() async throws -> [TMDBResult] {
-        let urlString = "\(base)/discover/tv?api_key=\(apiKey)&language=en-US&sort_by=popularity.desc&with_status=Ended&page=1"
+        let locale = DeviceLocale.current()
+        let urlString = "\(base)/discover/tv?api_key=\(apiKey)&language=\(locale.tmdbLanguage)&sort_by=popularity.desc&with_status=Ended&page=1"
         let data = try await get(urlString)
         let env = try JSONDecoder().decode(TMDBTrendingEnvelope.self, from: data)
         return env.results.map { stamp($0, mediaType: "tv") }
@@ -443,7 +452,8 @@ nonisolated struct TMDBService {
 
     /// Popular shows for a single TMDB genre id. Defaults to TV; pass "movie" for movie-only genres like Romance (10749).
     func getDiscoverByGenre(_ genreId: Int, mediaType: String = "tv") async throws -> [TMDBResult] {
-        let urlString = "\(base)/discover/\(mediaType)?api_key=\(apiKey)&language=en-US&sort_by=popularity.desc&with_genres=\(genreId)&page=1"
+        let locale = DeviceLocale.current()
+        let urlString = "\(base)/discover/\(mediaType)?api_key=\(apiKey)&language=\(locale.tmdbLanguage)&sort_by=popularity.desc&with_genres=\(genreId)&page=1"
         let data = try await get(urlString)
         let env = try JSONDecoder().decode(TMDBTrendingEnvelope.self, from: data)
         return env.results.map { stamp($0, mediaType: mediaType) }
@@ -452,8 +462,9 @@ nonisolated struct TMDBService {
     /// International / foreign-language TV — surfaces popular non-English shows across
     /// major language markets so the "International" genre tile has real content.
     func getDiscoverInternational() async throws -> [TMDBResult] {
+        let locale = DeviceLocale.current()
         let languages = "ko|ja|fr|de|es|it|pt|hi|ar|tr|sv|no|da|fi|nl|pl|th|zh"
-        let urlString = "\(base)/discover/tv?api_key=\(apiKey)&language=en-US&sort_by=popularity.desc&with_original_language=\(languages)&page=1"
+        let urlString = "\(base)/discover/tv?api_key=\(apiKey)&language=\(locale.tmdbLanguage)&sort_by=popularity.desc&with_original_language=\(languages)&page=1"
         let data = try await get(urlString)
         let env = try JSONDecoder().decode(TMDBTrendingEnvelope.self, from: data)
         return env.results.map { stamp($0, mediaType: "tv") }
@@ -465,15 +476,16 @@ nonisolated struct TMDBService {
     /// consistent. The `with_type` parameter was removed — it was set to 0
     /// (Documentary), which silently filtered out all scripted series.
     func discoverByProvider(providerId: Int, limit: Int = 15) async throws -> [TMDBResult] {
-        let region = DeviceLocale.current().region.uppercased()
-        let urlString = "\(base)/discover/tv?api_key=\(apiKey)&language=en-US&sort_by=popularity.desc&watch_region=\(region)&with_watch_providers=\(providerId)&with_watch_monetization_types=flatrate%7Cads&page=1"
+        let locale = DeviceLocale.current()
+        let urlString = "\(base)/discover/tv?api_key=\(apiKey)&language=\(locale.tmdbLanguage)&sort_by=popularity.desc&watch_region=\(locale.region)&with_watch_providers=\(providerId)&with_watch_monetization_types=flatrate%7Cads&page=1"
         let data = try await get(urlString)
         let env = try JSONDecoder().decode(TMDBTrendingEnvelope.self, from: data)
         return Array(env.results.map { stamp($0, mediaType: "tv") }.prefix(limit))
     }
 
     func getTopRated() async throws -> [TMDBResult] {
-        let urlString = "\(base)/tv/top_rated?api_key=\(apiKey)&language=en-US&page=1"
+        let locale = DeviceLocale.current()
+        let urlString = "\(base)/tv/top_rated?api_key=\(apiKey)&language=\(locale.tmdbLanguage)&page=1"
         let data = try await get(urlString)
         let env = try JSONDecoder().decode(TMDBTrendingEnvelope.self, from: data)
         return env.results.map { stamp($0, mediaType: "tv") }
@@ -555,8 +567,9 @@ nonisolated struct TMDBService {
     /// seasons) because TMDB's main `/tv/{id}/videos` often only carries the
     /// original pilot trailer.
     func getTrailerCandidates(tmdbId: Int) async throws -> [String] {
+        let locale = DeviceLocale.current()
         // 1. Grab the main video list.
-        let mainUrl = "\(base)/tv/\(tmdbId)/videos?api_key=\(apiKey)&language=en-US"
+        let mainUrl = "\(base)/tv/\(tmdbId)/videos?api_key=\(apiKey)&language=\(locale.tmdbLanguage)"
         let mainData = try await get(mainUrl)
         let mainEnv = try JSONDecoder().decode(TMDBVideosEnvelope.self, from: mainData)
         var allVideos = mainEnv.results
@@ -567,7 +580,7 @@ nonisolated struct TMDBService {
             let startSeason = seasons
             let endSeason = max(1, seasons - 2)
             for season in stride(from: startSeason, through: endSeason, by: -1) {
-                guard let seasonData = try? await get("\(base)/tv/\(tmdbId)/season/\(season)/videos?api_key=\(apiKey)&language=en-US"),
+                guard let seasonData = try? await get("\(base)/tv/\(tmdbId)/season/\(season)/videos?api_key=\(apiKey)&language=\(locale.tmdbLanguage)"),
                       let seasonEnv = try? JSONDecoder().decode(TMDBVideosEnvelope.self, from: seasonData)
                 else { continue }
                 allVideos.append(contentsOf: seasonEnv.results)
@@ -603,7 +616,8 @@ nonisolated struct TMDBService {
     /// Ordered list of YouTube trailer/teaser candidate keys for a movie,
     /// mirroring `getTrailerCandidates` — capped at four, YouTube-only.
     func getMovieTrailerCandidates(tmdbId: Int) async throws -> [String] {
-        let urlString = "\(base)/movie/\(tmdbId)/videos?api_key=\(apiKey)&language=en-US"
+        let locale = DeviceLocale.current()
+        let urlString = "\(base)/movie/\(tmdbId)/videos?api_key=\(apiKey)&language=\(locale.tmdbLanguage)"
         let data = try await get(urlString)
         let env = try JSONDecoder().decode(TMDBVideosEnvelope.self, from: data)
         let yt = env.results.filter { $0.site == "YouTube" && ($0.type == "Trailer" || $0.type == "Teaser") }
@@ -650,8 +664,9 @@ nonisolated struct TMDBService {
     }
 
     private func videos(tmdbId: Int, isTV: Bool) async throws -> [TMDBVideo] {
+        let locale = DeviceLocale.current()
         let kind = isTV ? "tv" : "movie"
-        let urlString = "\(base)/\(kind)/\(tmdbId)/videos?api_key=\(apiKey)&language=en-US"
+        let urlString = "\(base)/\(kind)/\(tmdbId)/videos?api_key=\(apiKey)&language=\(locale.tmdbLanguage)"
         let data = try await get(urlString)
         let env = try JSONDecoder().decode(TMDBVideosEnvelope.self, from: data)
         let order: [String: Int] = ["Trailer": 0, "Teaser": 1, "Featurette": 2, "Clip": 3]
@@ -686,7 +701,8 @@ nonisolated struct TMDBService {
 
     /// Parameterized trending fetch — lets SearchView pull TV and movies separately.
     func getTrending(mediaType: String, timeWindow: String) async throws -> [TMDBResult] {
-        let urlString = "\(base)/trending/\(mediaType)/\(timeWindow)?api_key=\(apiKey)&language=en-US"
+        let locale = DeviceLocale.current()
+        let urlString = "\(base)/trending/\(mediaType)/\(timeWindow)?api_key=\(apiKey)&language=\(locale.tmdbLanguage)"
         let data = try await get(urlString)
         let env = try JSONDecoder().decode(TMDBTrendingEnvelope.self, from: data)
         return env.results
@@ -709,9 +725,10 @@ nonisolated struct TMDBService {
     }
 
     func getTrending(page: Int = 1) async throws -> [TMDBResult] {
+        let locale = DeviceLocale.current()
         // Use the mixed `all/week` endpoint so the trending pool contains
         // both popular shows AND movies — the hero carousel needs variety.
-        let urlString = "\(base)/trending/all/week?api_key=\(apiKey)&language=en-US&page=\(page)"
+        let urlString = "\(base)/trending/all/week?api_key=\(apiKey)&language=\(locale.tmdbLanguage)&page=\(page)"
         let data = try await get(urlString)
         let env = try JSONDecoder().decode(TMDBTrendingEnvelope.self, from: data)
         // Filter to tv + movie only (the `all` endpoint can also return people).
@@ -737,7 +754,8 @@ nonisolated struct TMDBService {
     /// Popular TV shows for a specific streaming provider using TMDB's discover
     /// endpoint. Filters to free + ad-supported content available in the US.
     func getPopularOnService(tmdbProviderId: Int) async throws -> [TMDBResult] {
-        let urlString = "\(base)/discover/tv?api_key=\(apiKey)&language=en-US&sort_by=popularity.desc&watch_region=US&with_watch_providers=\(tmdbProviderId)&with_watch_monetization_types=flatrate%7Cads&page=1"
+        let locale = DeviceLocale.current()
+        let urlString = "\(base)/discover/tv?api_key=\(apiKey)&language=\(locale.tmdbLanguage)&sort_by=popularity.desc&watch_region=\(locale.region)&with_watch_providers=\(tmdbProviderId)&with_watch_monetization_types=flatrate%7Cads&page=1"
         let data = try await get(urlString)
         let env = try JSONDecoder().decode(TMDBTrendingEnvelope.self, from: data)
         return env.results.map { stamp($0, mediaType: "tv") }
@@ -747,7 +765,8 @@ nonisolated struct TMDBService {
     /// using TMDB's discover endpoint filtered to flat-rate + ad-supported
     /// titles available in the US. Mirrors `getPopularOnService` but for movies.
     func getPopularMoviesOnService(tmdbProviderId: Int, page: Int = 1) async throws -> [TMDBResult] {
-        let urlString = "\(base)/discover/movie?api_key=\(apiKey)&language=en-US&sort_by=popularity.desc&watch_region=US&with_watch_providers=\(tmdbProviderId)&page=\(page)"
+        let locale = DeviceLocale.current()
+        let urlString = "\(base)/discover/movie?api_key=\(apiKey)&language=\(locale.tmdbLanguage)&sort_by=popularity.desc&watch_region=\(locale.region)&with_watch_providers=\(tmdbProviderId)&page=\(page)"
         let data = try await get(urlString)
         let env = try JSONDecoder().decode(TMDBTrendingEnvelope.self, from: data)
         return env.results.map { stamp($0, mediaType: "movie") }
@@ -758,10 +777,11 @@ nonisolated struct TMDBService {
     /// screen. Pages through `pages` results and de-duplicates by id while
     /// preserving order. Defaults to TV; pass "movie" for movie-only genres.
     func getPopularOnServiceByGenre(tmdbProviderId: Int, genreId: Int, mediaType: String = "tv", pages: Int = 2) async throws -> [TMDBResult] {
+        let locale = DeviceLocale.current()
         var collected: [TMDBResult] = []
         var seen = Set<Int>()
         for page in 1...max(1, pages) {
-            let urlString = "\(base)/discover/\(mediaType)?api_key=\(apiKey)&language=en-US&sort_by=popularity.desc&watch_region=US&with_watch_providers=\(tmdbProviderId)&with_watch_monetization_types=flatrate%7Cads&with_genres=\(genreId)&page=\(page)"
+            let urlString = "\(base)/discover/\(mediaType)?api_key=\(apiKey)&language=\(locale.tmdbLanguage)&sort_by=popularity.desc&watch_region=\(locale.region)&with_watch_providers=\(tmdbProviderId)&with_watch_monetization_types=flatrate%7Cads&with_genres=\(genreId)&page=\(page)"
             let data = try await get(urlString)
             let env = try JSONDecoder().decode(TMDBTrendingEnvelope.self, from: data)
             for r in env.results.map({ stamp($0, mediaType: mediaType) }) where seen.insert(r.id).inserted {
@@ -777,11 +797,12 @@ nonisolated struct TMDBService {
     /// original-language list used by `getDiscoverInternational` instead of a
     /// genre. Keeps mediaType tv.
     func getPopularOnServiceInternational(tmdbProviderId: Int, pages: Int = 2) async throws -> [TMDBResult] {
+        let locale = DeviceLocale.current()
         let languages = "ko%7Cja%7Cfr%7Cde%7Ces%7Cit%7Cpt%7Chi%7Car%7Ctr%7Csv%7Cno%7Cda%7Cfi%7Cnl%7Cpl%7Cth%7Czh"
         var collected: [TMDBResult] = []
         var seen = Set<Int>()
         for page in 1...max(1, pages) {
-            let urlString = "\(base)/discover/tv?api_key=\(apiKey)&language=en-US&sort_by=popularity.desc&watch_region=US&with_watch_providers=\(tmdbProviderId)&with_watch_monetization_types=flatrate%7Cads&with_original_language=\(languages)&page=\(page)"
+            let urlString = "\(base)/discover/tv?api_key=\(apiKey)&language=\(locale.tmdbLanguage)&sort_by=popularity.desc&watch_region=\(locale.region)&with_watch_providers=\(tmdbProviderId)&with_watch_monetization_types=flatrate%7Cads&with_original_language=\(languages)&page=\(page)"
             let data = try await get(urlString)
             let env = try JSONDecoder().decode(TMDBTrendingEnvelope.self, from: data)
             for r in env.results.map({ stamp($0, mediaType: "tv") }) where seen.insert(r.id).inserted {
@@ -801,6 +822,7 @@ nonisolated struct TMDBService {
     /// de-duplicates by id while preserving order. Media type is stamped
     /// exactly like `getPopularOnService` / `getPopularMoviesOnService`.
     func getRecentlyAddedOnService(tmdbProviderId: Int, pages: Int = 2) async throws -> [TMDBResult] {
+        let locale = DeviceLocale.current()
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(secondsFromGMT: 0) ?? .current
         let fmt = DateFormatter()
@@ -814,7 +836,7 @@ nonisolated struct TMDBService {
         var collected: [TMDBResult] = []
         var seen = Set<Int>()
         for page in 1...max(1, pages) {
-            let urlString = "\(base)/discover/tv?api_key=\(apiKey)&language=en-US&sort_by=first_air_date.desc&watch_region=US&with_watch_providers=\(tmdbProviderId)&with_watch_monetization_types=flatrate%7Cads&first_air_date.gte=\(lower)&first_air_date.lte=\(upper)&page=\(page)"
+            let urlString = "\(base)/discover/tv?api_key=\(apiKey)&language=\(locale.tmdbLanguage)&sort_by=first_air_date.desc&watch_region=\(locale.region)&with_watch_providers=\(tmdbProviderId)&with_watch_monetization_types=flatrate%7Cads&first_air_date.gte=\(lower)&first_air_date.lte=\(upper)&page=\(page)"
             let data = try await get(urlString)
             let env = try JSONDecoder().decode(TMDBTrendingEnvelope.self, from: data)
             for r in env.results.map({ stamp($0, mediaType: "tv") })
@@ -823,7 +845,7 @@ nonisolated struct TMDBService {
             }
         }
         for page in 1...max(1, pages) {
-            let urlString = "\(base)/discover/movie?api_key=\(apiKey)&language=en-US&sort_by=primary_release_date.desc&watch_region=US&with_watch_providers=\(tmdbProviderId)&with_watch_monetization_types=flatrate%7Cads&primary_release_date.gte=\(lower)&primary_release_date.lte=\(upper)&page=\(page)"
+            let urlString = "\(base)/discover/movie?api_key=\(apiKey)&language=\(locale.tmdbLanguage)&sort_by=primary_release_date.desc&watch_region=\(locale.region)&with_watch_providers=\(tmdbProviderId)&with_watch_monetization_types=flatrate%7Cads&primary_release_date.gte=\(lower)&primary_release_date.lte=\(upper)&page=\(page)"
             let data = try await get(urlString)
             let env = try JSONDecoder().decode(TMDBTrendingEnvelope.self, from: data)
             for r in env.results.map({ stamp($0, mediaType: "movie") })
@@ -838,7 +860,8 @@ nonisolated struct TMDBService {
     /// the daily zeitgeist of titles freshly hitting streaming services. Uses
     /// TMDB's `trending/all/day` endpoint and filters out people results.
     func getNewToday() async throws -> [TMDBResult] {
-        let urlString = "\(base)/trending/all/day?api_key=\(apiKey)&language=en-US"
+        let locale = DeviceLocale.current()
+        let urlString = "\(base)/trending/all/day?api_key=\(apiKey)&language=\(locale.tmdbLanguage)"
         let data = try await get(urlString)
         let env = try JSONDecoder().decode(TMDBTrendingEnvelope.self, from: data)
         return env.results

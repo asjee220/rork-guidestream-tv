@@ -1,6 +1,7 @@
 package com.rork.guidestreamtvandroid.data.remote
 
 import com.rork.guidestreamtvandroid.AppConfig
+import com.rork.guidestreamtvandroid.data.DeviceLocale
 import com.rork.guidestreamtvandroid.data.models.TMDBResult
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
@@ -58,7 +59,7 @@ class TMDBService {
         val trimmed = query.trim()
         if (trimmed.isEmpty()) return emptyList()
         val encoded = java.net.URLEncoder.encode(trimmed, "UTF-8")
-        val url = "$base/search/multi?query=$encoded&api_key=$apiKey&language=en-US&page=1&include_adult=false"
+        val url = "$base/search/multi?query=$encoded&api_key=$apiKey&language=${DeviceLocale.tmdbLanguage}&page=1&include_adult=false"
         return try {
             val response: TMDBResultEnvelope = client.get(url).body()
             response.results.filter { it.mediaType == "tv" || it.mediaType == "movie" }
@@ -69,43 +70,43 @@ class TMDBService {
 
     /** Trending TV shows this week. */
     suspend fun getTrendingTV(page: Int = 1): List<TMDBResult> {
-        return fetchList("$base/trending/tv/week?api_key=$apiKey&language=en-US&page=$page", "tv")
+        return fetchList("$base/trending/tv/week?api_key=$apiKey&language=${DeviceLocale.tmdbLanguage}&page=$page", "tv")
     }
 
     /** Currently airing TV shows. */
     suspend fun getOnTheAir(): List<TMDBResult> {
-        return fetchList("$base/tv/on_the_air?api_key=$apiKey&language=en-US&page=1", "tv")
+        return fetchList("$base/tv/on_the_air?api_key=$apiKey&language=${DeviceLocale.tmdbLanguage}&page=1", "tv")
     }
 
     /** Movies currently in theaters (US). */
     suspend fun getNowPlayingMovies(): List<TMDBResult> {
-        return fetchList("$base/movie/now_playing?api_key=$apiKey&language=en-US&region=US&page=1", "movie")
+        return fetchList("$base/movie/now_playing?api_key=$apiKey&language=${DeviceLocale.tmdbLanguage}&region=${DeviceLocale.region}&page=1", "movie")
     }
 
     /** Popular TV shows. */
     suspend fun getPopularTV(): List<TMDBResult> {
-        return fetchList("$base/tv/popular?api_key=$apiKey&language=en-US&page=1", "tv")
+        return fetchList("$base/tv/popular?api_key=$apiKey&language=${DeviceLocale.tmdbLanguage}&page=1", "tv")
     }
 
     /** Upcoming movies with known release dates. */
     suspend fun getUpcomingMovies(): List<TMDBResult> {
-        return fetchList("$base/movie/upcoming?api_key=$apiKey&language=en-US&page=1", "movie")
+        return fetchList("$base/movie/upcoming?api_key=$apiKey&language=${DeviceLocale.tmdbLanguage}&page=1", "movie")
     }
 
     /** Popular ended TV shows for "Binge Ready". */
     suspend fun getDiscoverEnded(): List<TMDBResult> {
-        return fetchList("$base/discover/tv?api_key=$apiKey&language=en-US&sort_by=popularity.desc&with_status=Ended&page=1", "tv")
+        return fetchList("$base/discover/tv?api_key=$apiKey&language=${DeviceLocale.tmdbLanguage}&sort_by=popularity.desc&with_status=Ended&page=1", "tv")
     }
 
     /** Popular shows for a single TMDB genre id. */
     suspend fun getDiscoverByGenre(genreId: Int, mediaType: String = "tv"): List<TMDBResult> {
-        return fetchList("$base/discover/$mediaType?api_key=$apiKey&language=en-US&sort_by=popularity.desc&with_genres=$genreId&page=1", mediaType)
+        return fetchList("$base/discover/$mediaType?api_key=$apiKey&language=${DeviceLocale.tmdbLanguage}&sort_by=popularity.desc&with_genres=$genreId&page=1", mediaType)
     }
 
     /** International / foreign-language TV. */
     suspend fun getDiscoverInternational(): List<TMDBResult> {
         val languages = "ko|ja|fr|de|es|it|pt|hi|ar|tr|sv|no|da|fi|nl|pl|th|zh"
-        return fetchList("$base/discover/tv?api_key=$apiKey&language=en-US&sort_by=popularity.desc&with_original_language=$languages&page=1", "tv")
+        return fetchList("$base/discover/tv?api_key=$apiKey&language=${DeviceLocale.tmdbLanguage}&sort_by=popularity.desc&with_original_language=$languages&page=1", "tv")
     }
 
     /** Onboarding show-picker: popular TV series on a specific streaming
@@ -114,8 +115,7 @@ class TMDBService {
      *  parameter was removed — it was set to 0 (Documentary), which silently
      *  filtered out all scripted series. */
     suspend fun discoverByProvider(providerId: Int, limit: Int = 15): List<TMDBResult> {
-        val region = java.util.Locale.getDefault().country.ifEmpty { "US" }.uppercase()
-        val results = fetchList("$base/discover/tv?api_key=$apiKey&language=en-US&sort_by=popularity.desc&watch_region=$region&with_watch_providers=$providerId&with_watch_monetization_types=flatrate%7Cads&page=1", "tv")
+        val results = fetchList("$base/discover/tv?api_key=$apiKey&language=${DeviceLocale.tmdbLanguage}&sort_by=popularity.desc&watch_region=${DeviceLocale.region}&with_watch_providers=$providerId&with_watch_monetization_types=flatrate%7Cads&page=1", "tv")
         return results.take(limit)
     }
 
@@ -124,7 +124,7 @@ class TMDBService {
         val collected = mutableListOf<TMDBResult>()
         val seen = mutableSetOf<Int>()
         for (page in 1..maxOf(1, pages)) {
-            val results = fetchList("$base/discover/tv?api_key=$apiKey&language=en-US&sort_by=popularity.desc&watch_region=US&with_watch_providers=$providerId&with_watch_monetization_types=flatrate%7Cads&page=$page", "tv")
+            val results = fetchList("$base/discover/tv?api_key=$apiKey&language=${DeviceLocale.tmdbLanguage}&sort_by=popularity.desc&watch_region=${DeviceLocale.region}&with_watch_providers=$providerId&with_watch_monetization_types=flatrate%7Cads&page=$page", "tv")
             for (r in results) if (seen.add(r.id)) collected.add(r)
         }
         return collected
@@ -135,7 +135,7 @@ class TMDBService {
         val collected = mutableListOf<TMDBResult>()
         val seen = mutableSetOf<Int>()
         for (page in 1..maxOf(1, pages)) {
-            val results = fetchList("$base/discover/movie?api_key=$apiKey&language=en-US&sort_by=popularity.desc&watch_region=US&with_watch_providers=$providerId&page=$page", "movie")
+            val results = fetchList("$base/discover/movie?api_key=$apiKey&language=${DeviceLocale.tmdbLanguage}&sort_by=popularity.desc&watch_region=${DeviceLocale.region}&with_watch_providers=$providerId&page=$page", "movie")
             for (r in results) if (seen.add(r.id)) collected.add(r)
         }
         return collected
@@ -146,7 +146,7 @@ class TMDBService {
         val collected = mutableListOf<TMDBResult>()
         val seen = mutableSetOf<Int>()
         for (page in 1..maxOf(1, pages)) {
-            val results = fetchList("$base/discover/$mediaType?api_key=$apiKey&language=en-US&sort_by=popularity.desc&watch_region=US&with_watch_providers=$providerId&with_watch_monetization_types=flatrate%7Cads&with_genres=$genreId&page=$page", mediaType)
+            val results = fetchList("$base/discover/$mediaType?api_key=$apiKey&language=${DeviceLocale.tmdbLanguage}&sort_by=popularity.desc&watch_region=${DeviceLocale.region}&with_watch_providers=$providerId&with_watch_monetization_types=flatrate%7Cads&with_genres=$genreId&page=$page", mediaType)
             for (r in results) if (seen.add(r.id)) collected.add(r)
         }
         return collected
@@ -158,7 +158,7 @@ class TMDBService {
         val collected = mutableListOf<TMDBResult>()
         val seen = mutableSetOf<Int>()
         for (page in 1..maxOf(1, pages)) {
-            val results = fetchList("$base/discover/tv?api_key=$apiKey&language=en-US&sort_by=popularity.desc&watch_region=US&with_watch_providers=$providerId&with_watch_monetization_types=flatrate%7Cads&with_original_language=$languages&page=$page", "tv")
+            val results = fetchList("$base/discover/tv?api_key=$apiKey&language=${DeviceLocale.tmdbLanguage}&sort_by=popularity.desc&watch_region=${DeviceLocale.region}&with_watch_providers=$providerId&with_watch_monetization_types=flatrate%7Cads&with_original_language=$languages&page=$page", "tv")
             for (r in results) if (seen.add(r.id)) collected.add(r)
         }
         return collected
@@ -182,11 +182,11 @@ class TMDBService {
         val collected = mutableListOf<TMDBResult>()
         val seen = mutableSetOf<Int>()
         for (page in 1..maxOf(1, pages)) {
-            val results = fetchList("$base/discover/tv?api_key=$apiKey&language=en-US&sort_by=first_air_date.desc&watch_region=US&with_watch_providers=$providerId&with_watch_monetization_types=flatrate%7Cads&first_air_date.gte=$lower&first_air_date.lte=$upper&page=$page", "tv")
+            val results = fetchList("$base/discover/tv?api_key=$apiKey&language=${DeviceLocale.tmdbLanguage}&sort_by=first_air_date.desc&watch_region=${DeviceLocale.region}&with_watch_providers=$providerId&with_watch_monetization_types=flatrate%7Cads&first_air_date.gte=$lower&first_air_date.lte=$upper&page=$page", "tv")
             for (r in results) if (!r.posterPath.isNullOrEmpty() && seen.add(r.id)) collected.add(r)
         }
         for (page in 1..maxOf(1, pages)) {
-            val results = fetchList("$base/discover/movie?api_key=$apiKey&language=en-US&sort_by=primary_release_date.desc&watch_region=US&with_watch_providers=$providerId&with_watch_monetization_types=flatrate%7Cads&primary_release_date.gte=$lower&primary_release_date.lte=$upper&page=$page", "movie")
+            val results = fetchList("$base/discover/movie?api_key=$apiKey&language=${DeviceLocale.tmdbLanguage}&sort_by=primary_release_date.desc&watch_region=${DeviceLocale.region}&with_watch_providers=$providerId&with_watch_monetization_types=flatrate%7Cads&primary_release_date.gte=$lower&primary_release_date.lte=$upper&page=$page", "movie")
             for (r in results) if (!r.posterPath.isNullOrEmpty() && seen.add(r.id)) collected.add(r)
         }
         return collected
@@ -194,7 +194,7 @@ class TMDBService {
 
     /** Top-rated TV shows. */
     suspend fun getTopRated(): List<TMDBResult> {
-        return fetchList("$base/tv/top_rated?api_key=$apiKey&language=en-US&page=1", "tv")
+        return fetchList("$base/tv/top_rated?api_key=$apiKey&language=${DeviceLocale.tmdbLanguage}&page=1", "tv")
     }
 
     // ── TV Detail ────────────────────────────────────────────────────
@@ -268,7 +268,7 @@ class TMDBService {
 
     suspend fun getTVDetail(tmdbId: Int): TMDBTVDetail? {
         return try {
-            client.get("$base/tv/$tmdbId?api_key=$apiKey&language=en-US").body()
+            client.get("$base/tv/$tmdbId?api_key=$apiKey&language=${DeviceLocale.tmdbLanguage}").body()
         } catch (_: Exception) { null }
     }
 
@@ -292,7 +292,7 @@ class TMDBService {
      */
     suspend fun getMovieDetail(tmdbId: Int): TMDBTVDetail? {
         return try {
-            val movie: TMDBMovieDetailDTO = client.get("$base/movie/$tmdbId?api_key=$apiKey&language=en-US").body()
+            val movie: TMDBMovieDetailDTO = client.get("$base/movie/$tmdbId?api_key=$apiKey&language=${DeviceLocale.tmdbLanguage}").body()
             TMDBTVDetail(
                 id = movie.id,
                 name = movie.title,
@@ -309,7 +309,7 @@ class TMDBService {
 
     suspend fun getSeason(tmdbId: Int, seasonNumber: Int): TMDBSeason? {
         return try {
-            client.get("$base/tv/$tmdbId/season/$seasonNumber?api_key=$apiKey&language=en-US").body()
+            client.get("$base/tv/$tmdbId/season/$seasonNumber?api_key=$apiKey&language=${DeviceLocale.tmdbLanguage}").body()
         } catch (_: Exception) { null }
     }
 
@@ -326,7 +326,7 @@ class TMDBService {
     suspend fun getTrailerCandidates(tmdbId: Int, isTV: Boolean = true): List<String> {
         val kind = if (isTV) "tv" else "movie"
         return try {
-            val main: TMDBVideosEnvelope = client.get("$base/$kind/$tmdbId/videos?api_key=$apiKey&language=en-US").body()
+            val main: TMDBVideosEnvelope = client.get("$base/$kind/$tmdbId/videos?api_key=$apiKey&language=${DeviceLocale.tmdbLanguage}").body()
             val allVideos = main.results.toMutableList()
 
             // For multi-season TV shows, pull season-specific videos too.
@@ -339,7 +339,7 @@ class TMDBService {
                     for (season in startSeason downTo endSeason) {
                         try {
                             val seasonEnv: TMDBVideosEnvelope =
-                                client.get("$base/tv/$tmdbId/season/$season/videos?api_key=$apiKey&language=en-US").body()
+                                client.get("$base/tv/$tmdbId/season/$season/videos?api_key=$apiKey&language=${DeviceLocale.tmdbLanguage}").body()
                             allVideos.addAll(seasonEnv.results)
                         } catch (_: Exception) { /* skip this season */ }
                     }
@@ -389,7 +389,7 @@ class TMDBService {
     private suspend fun videos(tmdbId: Int, isTV: Boolean): List<TMDBVideo> {
         val kind = if (isTV) "tv" else "movie"
         return try {
-            val response: TMDBVideosEnvelope = client.get("$base/$kind/$tmdbId/videos?api_key=$apiKey&language=en-US").body()
+            val response: TMDBVideosEnvelope = client.get("$base/$kind/$tmdbId/videos?api_key=$apiKey&language=${DeviceLocale.tmdbLanguage}").body()
             val order = mapOf("Trailer" to 0, "Teaser" to 1, "Featurette" to 2, "Clip" to 3)
             response.results
                 .filter { it.site == "YouTube" && order.containsKey(it.type) }
@@ -437,7 +437,7 @@ class TMDBService {
 
     suspend fun getTVGenres(): List<TMDBGenre> {
         return try {
-            val response: TMDBGenreListEnvelope = client.get("$base/genre/tv/list?api_key=$apiKey&language=en-US").body()
+            val response: TMDBGenreListEnvelope = client.get("$base/genre/tv/list?api_key=$apiKey&language=${DeviceLocale.tmdbLanguage}").body()
             response.genres
         } catch (_: Exception) { emptyList() }
     }
