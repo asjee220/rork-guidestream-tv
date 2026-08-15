@@ -62,4 +62,19 @@ enum DisplayFormatting {
     static func seasonLabel(_ n: Int) -> String {
         "Season \(n)"
     }
+
+    /// "1 creator" / "5 creators"
+    static func creators(_ n: Int) -> String {
+        "\(n) creator\(n == 1 ? "" : "s")"
+    }
+
+    /// "1 device" / "5 devices"
+    static func devices(_ n: Int) -> String {
+        "\(n) device\(n == 1 ? "" : "s")"
+    }
+
+    /// "1 Season" / "5 Seasons" (capital S, matches existing Reels output)
+    static func seasons(_ n: Int) -> String {
+        "\(n) Season\(n == 1 ? "" : "s")"
+    }
 }

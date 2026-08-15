@@ -588,7 +588,7 @@ final class ReelsViewModel {
 
                     let runtimeText: String = {
                         if let m = detail?.runtimeMinutes, let seasons = detail?.numberOfSeasons {
-                            return "\(m)m avg · \(seasons) Season\(seasons == 1 ? "" : "s")"
+                            return "\(m)m avg · \(DisplayFormatting.seasons(seasons))"
                         } else if let m = detail?.runtimeMinutes {
                             return "\(m)m avg"
                         }

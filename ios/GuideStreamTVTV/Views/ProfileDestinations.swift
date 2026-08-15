@@ -475,7 +475,7 @@ struct ConnectedServicesView: View {
 
     private var bottomBar: some View {
         VStack(spacing: 10) {
-            Text("\(selected.count) service\(selected.count == 1 ? "" : "s") selected")
+            Text("\(DisplayFormatting.services(selected.count)) selected")
                 .scaledFont(size: 12)
                 .foregroundStyle(Color.textSecondary)
 

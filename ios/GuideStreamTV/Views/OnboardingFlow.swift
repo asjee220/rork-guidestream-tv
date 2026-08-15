@@ -840,7 +840,7 @@ struct ConnectServicesView: View {
             }
 
             VStack(spacing: 14) {
-                Text("\(selected.count) service\(selected.count == 1 ? "" : "s") selected")
+                Text("\(DisplayFormatting.services(selected.count)) selected")
                     .font(.custom("SF Pro Text", size: 13))
                     .foregroundStyle(Color.textSecondary)
 
@@ -1159,10 +1159,10 @@ struct StayNotifiedView: View {
     private var notifySubtitle: String {
         var parts: [String] = []
         if showCount > 0 {
-            parts.append("\(showCount) show\(showCount == 1 ? "" : "s")")
+            parts.append(DisplayFormatting.shows(showCount))
         }
         if creatorCount > 0 {
-            parts.append("\(creatorCount) creator\(creatorCount == 1 ? "" : "s")")
+            parts.append(DisplayFormatting.creators(creatorCount))
         }
         if parts.isEmpty {
             return "Turn on alerts so you never miss a new episode."

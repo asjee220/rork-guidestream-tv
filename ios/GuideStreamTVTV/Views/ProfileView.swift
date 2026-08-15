@@ -290,7 +290,7 @@ struct ProfileView: View {
                 icon: "tv.fill",
                 iconTint: Color(red: 0.95, green: 0.55, blue: 0.20),
                 title: "Connected Services",
-                subtitle: "\(stats.servicesCount) service\(stats.servicesCount == 1 ? "" : "s") connected",
+                subtitle: "\(DisplayFormatting.services(stats.servicesCount)) connected",
                 onTap: { path.append(.connectedServices) }
             )
             ProfileRowDivider()
@@ -298,7 +298,7 @@ struct ProfileView: View {
                 icon: "iphone",
                 iconTint: Color(red: 0.55, green: 0.40, blue: 0.95),
                 title: "Devices",
-                subtitle: "\(stats.devicesCount) device\(stats.devicesCount == 1 ? "" : "s") registered",
+                subtitle: "\(DisplayFormatting.devices(stats.devicesCount)) registered",
                 onTap: { path.append(.devices) }
             )
             ProfileRowDivider()
