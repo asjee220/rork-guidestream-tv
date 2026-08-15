@@ -318,13 +318,22 @@ private nonisolated struct TMDBProvidersEnvelope: Decodable, Sendable {
 
 // MARK: - Service
 
+/// Actor-isolated store for English overview fallbacks, preventing concurrent
+/// mutation when parallel detail-fetch calls refetch with `language=en-US`.
+private actor EnglishOverviewCache {
+    private var cache: [String: String] = [:]
+
+    func get(_ key: String) -> String? { cache[key] }
+    func set(_ key: String, _ value: String) { cache[key] = value }
+}
+
 nonisolated struct TMDBService {
     static let shared = TMDBService()
 
     private let apiKey = "233f8054219ef58bc928549b4b5bab50"
     private let base = "https://api.themoviedb.org/3"
 
-    nonisolated(unsafe) private static var englishOverviewCache: [String: String] = [:]
+    private static let englishOverviewCache = EnglishOverviewCache()
 
     /// Wraps `searchContent` so SearchView callers can use the shorter name.
     func search(query: String) async throws -> [TMDBResult] {
@@ -351,12 +360,12 @@ nonisolated struct TMDBService {
         var detail = try JSONDecoder().decode(TMDBTVDetail.self, from: data)
         if !locale.tmdbLanguage.hasPrefix("en") && (detail.overview?.isEmpty ?? true) {
             let cacheKey = "tv:\(tmdbId)"
-            if let cached = Self.englishOverviewCache[cacheKey] {
+            if let cached = await Self.englishOverviewCache.get(cacheKey) {
                 detail.overview = cached
             } else if let enData = try? await get("\(base)/tv/\(tmdbId)?api_key=\(apiKey)&language=en-US"),
                       let enDetail = try? JSONDecoder().decode(TMDBTVDetail.self, from: enData),
                       let enOverview = enDetail.overview, !enOverview.isEmpty {
-                Self.englishOverviewCache[cacheKey] = enOverview
+                await Self.englishOverviewCache.set(cacheKey, enOverview)
                 detail.overview = enOverview
             }
         }
@@ -371,12 +380,12 @@ nonisolated struct TMDBService {
         var detail = try JSONDecoder().decode(TMDBMovieDetail.self, from: data)
         if !locale.tmdbLanguage.hasPrefix("en") && (detail.overview?.isEmpty ?? true) {
             let cacheKey = "movie:\(tmdbId)"
-            if let cached = Self.englishOverviewCache[cacheKey] {
+            if let cached = await Self.englishOverviewCache.get(cacheKey) {
                 detail.overview = cached
             } else if let enData = try? await get("\(base)/movie/\(tmdbId)?api_key=\(apiKey)&language=en-US"),
                       let enDetail = try? JSONDecoder().decode(TMDBMovieDetail.self, from: enData),
                       let enOverview = enDetail.overview, !enOverview.isEmpty {
-                Self.englishOverviewCache[cacheKey] = enOverview
+                await Self.englishOverviewCache.set(cacheKey, enOverview)
                 detail.overview = enOverview
             }
         }
