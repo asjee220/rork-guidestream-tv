@@ -4,6 +4,7 @@ import android.content.Context
 import android.os.Build
 import androidx.core.content.pm.PackageInfoCompat
 import com.rork.guidestreamtvandroid.data.remote.SupabaseManager
+import com.rork.guidestreamtvandroid.data.repository.WatchIntentLogger
 import io.github.jan.supabase.postgrest.postgrest
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -35,9 +36,14 @@ class DeviceSessionService private constructor(private val context: Context) {
     var lastReason: String? = null
         private set
 
+    @Volatile private var coldLaunchCounted = false
+
+    @Volatile private var lastForegroundTouchMs: Long = 0L
+
     private val prefs by lazy { context.getSharedPreferences("gs_prefs", Context.MODE_PRIVATE) }
 
     private val sessionCountKey = "gs.sessionCount"
+    private val lastBackgroundedAtKey = "gs.lastBackgroundedAt"
     val sessionCount: Int get() = prefs.getInt(sessionCountKey, 0)
 
     private val deviceModel: String = run {
@@ -60,6 +66,51 @@ class DeviceSessionService private constructor(private val context: Context) {
         val next = sessionCount + 1
         prefs.edit().putInt(sessionCountKey, next).apply()
         upsert("session_started")
+    }
+
+    /** Record the moment the app enters the background. Read by [handleForeground]
+     * on the next return to determine whether enough time has passed to start
+     * a new session. */
+    fun noteBackgrounded() {
+        prefs.edit().putLong(lastBackgroundedAtKey, System.currentTimeMillis()).apply()
+    }
+
+    /** Called on every foreground transition (activity start 0→1). The first
+     * call in a process is a no-op so the cold-launch increment in
+     * [GuideStreamTVApp.onCreate] remains the only initial session count
+     * bump. Subsequent calls check the background duration: 30+ minutes
+     * starts a new session; under 30 minutes issues a `foreground_touch`
+     * upsert at most once every 5 minutes. */
+    fun handleForeground() {
+        if (!coldLaunchCounted) {
+            coldLaunchCounted = true
+            return
+        }
+
+        val backgroundedAtMs = prefs.getLong(lastBackgroundedAtKey, 0L)
+        if (backgroundedAtMs == 0L) return
+        prefs.edit().remove(lastBackgroundedAtKey).apply()
+
+        val nowMs = System.currentTimeMillis()
+        val elapsedSeconds = (nowMs - backgroundedAtMs) / 1000
+
+        if (elapsedSeconds >= 1800) {
+            val next = sessionCount + 1
+            prefs.edit().putInt(sessionCountKey, next).apply()
+            upsert("session_resumed")
+            lastForegroundTouchMs = nowMs
+            WatchIntentLogger.get().log(WatchIntentLogger.IntentEventType.APP_OPENED)
+        } else {
+            val shouldTouch = if (lastForegroundTouchMs > 0L) {
+                (nowMs - lastForegroundTouchMs) / 1000 > 300
+            } else {
+                true
+            }
+            if (shouldTouch) {
+                lastForegroundTouchMs = nowMs
+                upsert("foreground_touch")
+            }
+        }
     }
 
     fun upsert(reason: String) {

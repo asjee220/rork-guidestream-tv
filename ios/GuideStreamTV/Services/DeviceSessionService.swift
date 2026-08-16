@@ -79,6 +79,17 @@ final class DeviceSessionService {
     /// see which trigger fired last.
     private(set) var lastReason: String?
 
+    /// UserDefaults key storing the Date the app was last backgrounded.
+    private let lastBackgroundedAtKey = "gs.lastBackgroundedAt"
+
+    /// True once the first `handleForeground()` call has been processed so
+    /// the cold-launch increment from `ContentView.task` is the only one.
+    private var coldLaunchCounted = false
+
+    /// Timestamp of the most recent `foreground_touch` upsert. Used to
+    /// debounce foreground upserts when the user rapidly switches apps.
+    private var lastForegroundTouch: Date?
+
     /// Per-install session counter. Increments once per cold launch via
     /// `incrementSessionAndUpsert()`.
     private let sessionCountKey = "gs.sessionCount"
@@ -92,6 +103,59 @@ final class DeviceSessionService {
         let next = sessionCount + 1
         UserDefaults.standard.set(next, forKey: sessionCountKey)
         upsert(reason: "session_started")
+    }
+
+    /// Record the moment the app enters the background. Read by
+    /// `handleForeground()` on the next return to determine whether enough
+    /// time has passed to start a new session.
+    func noteBackgrounded() {
+        UserDefaults.standard.set(Date(), forKey: lastBackgroundedAtKey)
+    }
+
+    /// Called on every `.active` scene-phase transition. The first call in
+    /// a process is a no-op so the cold-launch increment in
+    /// `ContentView.task` remains the only initial session count bump.
+    /// Subsequent calls check the background duration: 30+ minutes starts
+    /// a new session; under 30 minutes issues a `foreground_touch` upsert
+    /// at most once every 5 minutes.
+    func handleForeground() {
+        guard coldLaunchCounted else {
+            coldLaunchCounted = true
+            return
+        }
+
+        guard let backgroundedAt = UserDefaults.standard.object(
+            forKey: lastBackgroundedAtKey
+        ) as? Date else {
+            return
+        }
+
+        UserDefaults.standard.removeObject(forKey: lastBackgroundedAtKey)
+
+        let now = Date()
+        let elapsed = now.timeIntervalSince(backgroundedAt)
+
+        if elapsed >= 1800 {
+            let next = sessionCount + 1
+            UserDefaults.standard.set(next, forKey: sessionCountKey)
+            upsert(reason: "session_resumed")
+            lastForegroundTouch = now
+            WatchIntentLogger.shared.log(
+                eventType: .sessionStarted,
+                metadata: ["resumed": true]
+            )
+        } else {
+            let shouldTouch: Bool
+            if let lastTouch = lastForegroundTouch {
+                shouldTouch = now.timeIntervalSince(lastTouch) > 300
+            } else {
+                shouldTouch = true
+            }
+            if shouldTouch {
+                lastForegroundTouch = now
+                upsert(reason: "foreground_touch")
+            }
+        }
     }
 
     /// Fire-and-forget upsert. Reason is logged to the console for tracing

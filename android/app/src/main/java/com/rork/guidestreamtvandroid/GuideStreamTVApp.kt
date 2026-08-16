@@ -1,6 +1,8 @@
 package com.rork.guidestreamtvandroid
 
+import android.app.Activity
 import android.app.Application
+import android.os.Bundle
 import android.util.Log
 import com.rork.guidestreamtvandroid.data.DeviceLocale
 import com.rork.guidestreamtvandroid.data.local.DeviceIdentity
@@ -78,9 +80,39 @@ class GuideStreamTVApp : Application() {
         // Log app opened + bump session counter
         safe("appOpened") { WatchIntentLogger.get().log(WatchIntentLogger.IntentEventType.APP_OPENED) }
         safe("sessionUpsert") { DeviceSessionService.get().incrementSessionAndUpsert() }
+
+        // Track foreground/background transitions via activity lifecycle.
+        // A rise from zero to one started-activity means the app returned to
+        // the foreground; a return to zero means it went to the background.
+        // This replaces ProcessLifecycleOwner (no extra Gradle dependency).
+        safe("activityLifecycle") {
+            registerActivityLifecycleCallbacks(object : Application.ActivityLifecycleCallbacks {
+                override fun onActivityStarted(activity: Activity) {
+                    startedActivityCount++
+                    if (startedActivityCount == 1) {
+                        DeviceSessionService.get().handleForeground()
+                    }
+                }
+
+                override fun onActivityStopped(activity: Activity) {
+                    startedActivityCount--
+                    if (startedActivityCount == 0) {
+                        DeviceSessionService.get().noteBackgrounded()
+                    }
+                }
+
+                override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) {}
+                override fun onActivityResumed(activity: Activity) {}
+                override fun onActivityPaused(activity: Activity) {}
+                override fun onActivitySaveInstanceState(activity: Activity, outState: Bundle) {}
+                override fun onActivityDestroyed(activity: Activity) {}
+            })
+        }
     }
 
     private val adScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    @Volatile private var startedActivityCount = 0
 
     private inline fun safe(step: String, block: () -> Unit) {
         try {

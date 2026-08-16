@@ -17,7 +17,11 @@ struct GuideStreamTVApp: App {
             ContentView()
                 .preferredColorScheme(.dark)
                 .onChange(of: scenePhase) { _, newPhase in
-                    if newPhase == .active {
+                    switch newPhase {
+                    case .active:
+                        // Record foreground transitions for session analytics
+                        // before refreshing widget/push state.
+                        DeviceSessionService.shared.handleForeground()
                         // Every time the user brings the app to the foreground,
                         // kick the widget timelines so the widget picks up any
                         // data that may have been written while the app was
@@ -29,6 +33,10 @@ struct GuideStreamTVApp: App {
                         // `push_tokens`. Idempotent — only fires when the user
                         // already granted permission; never shows the dialog.
                         Task { await PushTokenManager.shared.refreshRegistrationIfAuthorized() }
+                    case .background:
+                        DeviceSessionService.shared.noteBackgrounded()
+                    default:
+                        break
                     }
                 }
                 .task { await RemoteConfigService.shared.load() }
