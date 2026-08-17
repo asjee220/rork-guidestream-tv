@@ -125,21 +125,28 @@ final class AuthViewModel {
         do {
             let session = try await SupabaseManager.shared.client.auth.session
             self.currentUser = session.user
-            await loadDisplayName()
-            await restoreOnboardingState()
-            // Claim any guest-era rows on this device before the first fetch
-            // so they are attributed to this account. Best-effort — a failure
-            // never blocks the sync below.
-            await StreamsViewModel.shared.claimDeviceRows()
+            // Run the five independent Supabase round-trips concurrently so
+            // cold launch isn't gated on five sequential network calls.
+            let userId = session.user.id.uuidString
+            await withTaskGroup(of: Void.self) { group in
+                group.addTask { await self.loadDisplayName() }
+                group.addTask { await self.restoreOnboardingState() }
+                // Claim any guest-era rows on this device before the first fetch
+                // so they are attributed to this account. Best-effort — a failure
+                // never blocks the sync below.
+                group.addTask { await StreamsViewModel.shared.claimDeviceRows() }
+                // A token may have arrived from APNs before session restore
+                // completed — persist it now that we have an authenticated user.
+                group.addTask { await PushTokenManager.shared.flushPendingToken() }
+                // Hydrate coach marks from Supabase so cross-device sign-in
+                // doesn't re-show tours the user already completed.
+                group.addTask { await CoachMarkManager.shared.hydrateFromSupabase(userId: userId) }
+                for await _ in group { }
+            }
             // Pick up any guest-era watch list rows and refresh from Supabase
-            // so the list is in sync on cold launch.
+            // so the list is in sync on cold launch. Fires only after the
+            // group returns so it still follows claimDeviceRows.
             Task { await StreamsViewModel.shared.syncLocalToSupabase() }
-            // A token may have arrived from APNs before session restore
-            // completed — persist it now that we have an authenticated user.
-            await PushTokenManager.shared.flushPendingToken()
-            // Hydrate coach marks from Supabase so cross-device sign-in
-            // doesn't re-show tours the user already completed.
-            await CoachMarkManager.shared.hydrateFromSupabase(userId: session.user.id.uuidString)
         } catch {
             self.currentUser = nil
         }

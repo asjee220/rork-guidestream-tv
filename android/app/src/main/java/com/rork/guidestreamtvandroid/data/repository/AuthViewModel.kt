@@ -16,6 +16,8 @@ import io.github.jan.supabase.auth.user.UserInfo
 import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.postgrest.query.Columns
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -241,18 +243,39 @@ class AuthViewModel private constructor(private val context: Context) : ViewMode
                 val session = auth.currentSessionOrNull()
                 if (session != null) {
                     _currentUser.value = session.user
-                    loadDisplayName()
-                    restoreOnboardingState()
-                    // Claim any guest-era rows on this device before the first
-                    // fetch so they are attributed to this account.
-                    StreamsViewModel.get().claimDeviceRows()
+                    // Run the five independent Supabase round-trips concurrently
+                    // so cold launch isn't gated on five sequential network calls.
+                    // Each job catches its own errors so a single failure stays
+                    // non-fatal and never aborts the others.
+                    val jobs = listOf(
+                        async(Dispatchers.IO) { try { loadDisplayName() } catch (_: Exception) {} },
+                        async(Dispatchers.IO) { try { restoreOnboardingState() } catch (_: Exception) {} },
+                        // Claim any guest-era rows on this device before the first
+                        // fetch so they are attributed to this account.
+                        async(Dispatchers.IO) { try { StreamsViewModel.get().claimDeviceRows() } catch (_: Exception) {} },
+                        // flushPendingToken and resaveCachedToken stay sequential
+                        // inside one shared job, in that order.
+                        async(Dispatchers.IO) {
+                            try {
+                                PushTokenManager.get().flushPendingToken()
+                                PushTokenManager.get().resaveCachedToken()
+                            } catch (_: Exception) {}
+                        },
+                        async(Dispatchers.IO) {
+                            try {
+                                CoachMarkManager.get()
+                                    .hydrateFromSupabase(session.user!!.id, session.user!!.email)
+                            } catch (_: Exception) {}
+                        }
+                    )
+                    jobs.awaitAll()
+                    // Pick up any guest-era watch list rows and refresh from
+                    // Supabase so the list is in sync on cold launch. Fires
+                    // only after awaitAll() returns so it still follows
+                    // claimDeviceRows.
                     launch(Dispatchers.IO) {
                         StreamsViewModel.get().syncLocalToSupabase()
                     }
-                    PushTokenManager.get().flushPendingToken()
-                    PushTokenManager.get().resaveCachedToken()
-                    CoachMarkManager.get()
-                        .hydrateFromSupabase(session.user!!.id, session.user!!.email)
                 }
             } catch (_: Throwable) {
                 _currentUser.value = null
