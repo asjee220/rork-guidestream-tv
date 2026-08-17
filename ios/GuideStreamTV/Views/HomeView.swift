@@ -1321,6 +1321,11 @@ struct HomeView: View {
                 for await _ in group { }
             }
 
+            // Watchlist-derived sections (Top Picks genre, TVDB upcoming) must
+            // run after streams.refreshAll() completes so topGenreFromWatchList()
+            // sees a populated userStreams array on cold launch.
+            Task { await loadWatchlistDerivedSections() }
+
             // Stage 2: Live status, creator uploads, and recommended creators concurrently.
             await withTaskGroup(of: Void.self) { group in
                 group.addTask { await subscribeToLiveStatus() }
@@ -1637,40 +1642,37 @@ struct HomeView: View {
             Task {
                 await loadPopularOnServices()
                 await loadNowAndNext()
-                // TVDB enrichment — non-blocking, silently ignored when TVDB is down.
-                Task { await fetchTVDBUpcoming() }
             // Fetch expiring titles from the server-backed expiring_titles
             // table (refreshed daily by the refresh_expiring_titles function).
             await refreshExpiringFromServer()
             // Push fresh widget feed via App Group UserDefaults.
             await pushWidgetFeed()
-            let topGenreId = topGenreFromWatchList()
-            if topGenreId.id != selectedGenreId {
-                selectedGenreId = topGenreId.id
-                selectedGenreName = topGenreId.name
-                if let rec = try? await TMDBService.shared.getDiscoverByGenre(topGenreId.id) {
-                    recommendedShows = rec
-                }
-            } else {
-                recommendedShows = genreShows
-            }
             }
         } else {
             await loadPopularOnServices()
             await loadNowAndNext()
-            Task { await fetchTVDBUpcoming() }
             await refreshExpiringFromServer()
             await pushWidgetFeed()
-            let topGenreId = topGenreFromWatchList()
-            if topGenreId.id != selectedGenreId {
-                selectedGenreId = topGenreId.id
-                selectedGenreName = topGenreId.name
-                if let rec = try? await TMDBService.shared.getDiscoverByGenre(topGenreId.id) {
-                    recommendedShows = rec
-                }
-            } else {
-                recommendedShows = genreShows
+            await loadWatchlistDerivedSections()
+        }
+    }
+
+    /// Watchlist-derived sections: TVDB upcoming episodes and Top Picks
+    /// genre resolution. Extracted so it can run after streams.refreshAll()
+    /// completes in the .task block, ensuring topGenreFromWatchList() sees
+    /// a populated userStreams array on cold launch instead of the Drama fallback.
+    private func loadWatchlistDerivedSections() async {
+        // TVDB enrichment — non-blocking, silently ignored when TVDB is down.
+        Task { await fetchTVDBUpcoming() }
+        let topGenreId = topGenreFromWatchList()
+        if topGenreId.id != selectedGenreId {
+            selectedGenreId = topGenreId.id
+            selectedGenreName = topGenreId.name
+            if let rec = try? await TMDBService.shared.getDiscoverByGenre(topGenreId.id) {
+                recommendedShows = rec
             }
+        } else {
+            recommendedShows = genreShows
         }
     }
 
@@ -1734,9 +1736,9 @@ struct HomeView: View {
         }
         guard !toFetch.isEmpty else { return }
 
-        // Cap at 8 in flight using a sliding window so large watchlists
+        // Cap at 16 in flight using a sliding window so large watchlists
         // never flood the TMDB provider endpoint.
-        let maxConcurrent = 8
+        let maxConcurrent = 16
         var cursor = 0
         let resolved: [(Int, Platform)] = await withTaskGroup(of: (Int, Platform)?.self) { group in
             func schedule(_ r: TMDBResult) {
