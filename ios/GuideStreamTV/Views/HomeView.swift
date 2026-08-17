@@ -1619,7 +1619,7 @@ struct HomeView: View {
         if let tr { topRated = tr }
         if let genre { genreShows = genre }
         sportsGames = s
-        await hydrateProviders(maxItems: 40)
+        await hydrateProviders(maxItems: 60)
 
         // Refresh the watched set so Top Picks exclusion is fresh on Home.
         Task { await SocialViewModel.shared.loadAllWatched() }
@@ -1726,7 +1726,8 @@ struct HomeView: View {
     /// so the rendering layer can hide them.
     private func hydrateProviders(maxItems: Int? = nil) async {
         let combined: [TMDBResult] = trending + onAir + bingeFallback + newToday + genreShows + recommendedShows
-        let unique = Array(Dictionary(grouping: combined, by: { $0.id }).compactMapValues { $0.first }.values)
+        var seen = Set<Int>()
+        let unique = combined.filter { seen.insert($0.id).inserted }
         var toFetch = unique.filter { providerByTmdb[$0.id] == nil }
         if let maxItems {
             toFetch = Array(toFetch.prefix(maxItems))
