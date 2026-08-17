@@ -545,11 +545,19 @@ final class ReelsViewModel {
         // without overloading the resolver or TMDB endpoints.
         let maxConcurrent = 8
         return await withTaskGroup(of: (Int, TrailerItem?).self) { group in
+            // Hoisted before the loop so the sliding-window drain can write
+            // completed results into the same dictionary used by the final
+            // drain — otherwise `group.next()` consumes a value and discards it,
+            // silently dropping every result past the first maxConcurrent.
+            var indexed: [Int: TrailerItem] = [:]
             for (i, r) in results.enumerated() {
                 if i >= maxConcurrent {
                     // Wait for one task to finish before spawning the next, so
-                    // at most maxConcurrent are ever in flight.
-                    if let _ = await group.next() { }
+                    // at most maxConcurrent are ever in flight. The completed
+                    // value is stored in `indexed` so nothing is lost.
+                    if let (doneIndex, doneItem) = await group.next(), let doneItem {
+                        indexed[doneIndex] = doneItem
+                    }
                 }
                 group.addTask { [tmdb, subscribedServiceIds] in
                     // Only fetch the TV detail endpoint for TV shows — calling
@@ -667,9 +675,7 @@ final class ReelsViewModel {
                     ))
                 }
             }
-            // Collect keyed by original index so order is stable regardless of
-            // which task finished first.
-            var indexed: [Int: TrailerItem] = [:]
+            // Drain the remaining tasks into the same `indexed` dictionary.
             for await (i, item) in group {
                 if let item { indexed[i] = item }
             }
@@ -720,9 +726,16 @@ final class ReelsViewModel {
         // resolver and TMDB are not flooded when the upcoming list is long.
         let maxConcurrent = 8
         return await withTaskGroup(of: (Int, TrailerItem?).self) { group in
+            // Hoisted before the loop so the sliding-window drain can write
+            // completed results into the same dictionary used by the final
+            // drain — otherwise `group.next()` consumes a value and discards it,
+            // silently dropping every result past the first maxConcurrent.
+            var indexed: [Int: TrailerItem] = [:]
             for (i, entry) in deduped.enumerated() {
                 if i >= maxConcurrent {
-                    if let _ = await group.next() { }
+                    if let (doneIndex, doneItem) = await group.next(), let doneItem {
+                        indexed[doneIndex] = doneItem
+                    }
                 }
                 let release = entry.release
                 let releaseDate = entry.date
@@ -778,7 +791,7 @@ final class ReelsViewModel {
                     ))
                 }
             }
-            var indexed: [Int: TrailerItem] = [:]
+            // Drain the remaining tasks into the same `indexed` dictionary.
             for await (i, item) in group {
                 if let item { indexed[i] = item }
             }
