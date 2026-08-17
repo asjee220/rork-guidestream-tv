@@ -439,10 +439,9 @@ struct ConnectServicesView: View {
                     .frame(height: 56)
                     .background(
                         LinearGradient(
-                            colors: [Color.orange, Color.orange.opacity(0.85)],
+                            colors: [Color.orange.opacity(selected.isEmpty ? 0.35 : 1.0), Color.orange.opacity((selected.isEmpty ? 0.35 : 1.0) * 0.85)],
                             startPoint: .top, endPoint: .bottom
                         )
-                        .opacity(selected.isEmpty ? 0.35 : 1.0)
                     )
                     .clipShape(Capsule())
                     .shadow(color: Color.orange.opacity(selected.isEmpty ? 0.0 : 0.45),

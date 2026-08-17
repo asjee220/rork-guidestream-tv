@@ -295,10 +295,9 @@ struct EmailAuthView: View {
             .frame(height: 54)
             .background(
                 LinearGradient(
-                    colors: [Color.orange, Color.orange.opacity(0.85)],
+                    colors: [Color.orange.opacity(canSubmit ? 1.0 : 0.4), Color.orange.opacity((canSubmit ? 1.0 : 0.4) * 0.85)],
                     startPoint: .top, endPoint: .bottom
                 )
-                .opacity(canSubmit ? 1.0 : 0.4)
             )
             .clipShape(Capsule())
             .shadow(color: Color.orange.opacity(canSubmit ? 0.45 : 0), radius: 22, x: 0, y: 0)
@@ -551,10 +550,9 @@ struct ForgotPasswordSheet: View {
                                 .frame(height: 52)
                                 .background(
                                     LinearGradient(
-                                        colors: [Color.orange, Color.orange.opacity(0.85)],
+                                        colors: [Color.orange.opacity(canSend ? 1 : 0.4), Color.orange.opacity((canSend ? 1 : 0.4) * 0.85)],
                                         startPoint: .top, endPoint: .bottom
                                     )
-                                    .opacity(canSend ? 1 : 0.4)
                                 )
                                 .clipShape(Capsule())
                                 .shadow(color: Color.orange.opacity(canSend ? 0.4 : 0),

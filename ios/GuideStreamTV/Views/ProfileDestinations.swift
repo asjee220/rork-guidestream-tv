@@ -1661,10 +1661,9 @@ private struct ProfileEditorSheet: View {
                             .frame(height: 52)
                             .background(
                                 LinearGradient(
-                                    colors: [Color.orange, Color.orange.opacity(0.85)],
+                                    colors: [Color.orange.opacity(name.trimmingCharacters(in: .whitespaces).isEmpty ? 0.4 : 1), Color.orange.opacity((name.trimmingCharacters(in: .whitespaces).isEmpty ? 0.4 : 1) * 0.85)],
                                     startPoint: .top, endPoint: .bottom
                                 )
-                                .opacity(name.trimmingCharacters(in: .whitespaces).isEmpty ? 0.4 : 1)
                             )
                             .clipShape(Capsule())
                             .shadow(color: Color.orange.opacity(0.5), radius: 18)
