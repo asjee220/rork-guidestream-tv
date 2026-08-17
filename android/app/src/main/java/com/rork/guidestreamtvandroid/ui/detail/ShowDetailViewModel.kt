@@ -7,6 +7,7 @@ import com.rork.guidestreamtvandroid.data.models.TitleId
 import com.rork.guidestreamtvandroid.data.remote.TMDBService
 import com.rork.guidestreamtvandroid.data.repository.StreamsViewModel
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -66,6 +67,14 @@ class ShowDetailViewModel : ViewModel() {
                     _isLoading.value = false
                     return@launch
                 }
+                // Start watch-provider and trailer fetches immediately — both
+                // need only tmdbId and don't depend on the detail response.
+                val providerJob = async(Dispatchers.IO) {
+                    try { tmdb.getTopWatchProvider(tmdbId) } catch (_: Exception) { null }
+                }
+                val trailerJob = async(Dispatchers.IO) {
+                    try { tmdb.getTrailerKey(tmdbId) } catch (_: Exception) { null }
+                }
                 if (isTV) {
                     val detailResult = tmdb.getTVDetail(tmdbId)
                     // Legacy heal — watch-list rows saved before media types were
@@ -107,10 +116,10 @@ class ShowDetailViewModel : ViewModel() {
                     // Movie — load metadata from TMDB, mirroring the TV path.
                     _detail.value = tmdb.getMovieDetail(tmdbId)
                 }
-                val provider = tmdb.getTopWatchProvider(tmdbId)
+                val provider = providerJob.await()
                 _topProvider.value = provider
                 _platform.value = Platform.from(provider?.providerName)
-                val trailer = tmdb.getTrailerKey(tmdbId)
+                val trailer = trailerJob.await()
                 _trailerKey.value = trailer
             } catch (e: Exception) {
                 _errorMessage.value = e.message ?: "Failed to load"

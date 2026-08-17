@@ -91,6 +91,9 @@ final class ShowDetailViewModel {
         errorMessage = nil
 
         if let tmdbId = Int(titleId), isTV {
+            // Start the streaming-source resolve immediately — it needs only
+            // tmdbId and isTV, so it overlaps the getTVDetail round-trip.
+            let resolveTask = Task { await StreamingSourceResolver.shared.resolve(tmdbId: tmdbId, isTV: isTV) }
             let tmdbResult: TMDBTVDetail? = try? await TMDBService.shared.getTVDetail(tmdbId: tmdbId)
 
             // Legacy heal — watch-list rows saved before media types were
@@ -151,8 +154,7 @@ final class ShowDetailViewModel {
             self.currentSeasonNumber = seasonNum
 
             // Resolve streaming sources through the shared resolver
-            let r = await StreamingSourceResolver.shared.resolve(tmdbId: tmdbId, isTV: isTV)
-            self.resolved = r
+            self.resolved = await resolveTask.value
 
             // Season fetch wrapped in try‑catch so a TMDB outage doesn't
             // leave the episodes section silently blank.
@@ -191,10 +193,11 @@ final class ShowDetailViewModel {
     /// it into the shared `detail` shape. Used by both the explicit movie path
     /// and the legacy tv→movie heal.
     private func loadAsMovie(tmdbId: Int) async {
-        let r = await StreamingSourceResolver.shared.resolve(tmdbId: tmdbId, isTV: false)
-        self.resolved = r
+        let resolveTask = Task { await StreamingSourceResolver.shared.resolve(tmdbId: tmdbId, isTV: false) }
+        let movieTask = Task { try await TMDBService.shared.getMovieDetail(tmdbId: tmdbId) }
+        self.resolved = await resolveTask.value
         do {
-            let movie = try await TMDBService.shared.getMovieDetail(tmdbId: tmdbId)
+            let movie = try await movieTask.value
             detail = WatchmodeTitleDetail(
                 id: tmdbId,
                 title: movie.title,
@@ -590,17 +593,26 @@ struct ShowDetailScreen: View {
         }
         .task(id: titleId) {
             vm.startLoad(titleId: titleId, isTV: isTV, expectedTitle: title)
-            // Load Trailers & Clips directly off the TMDB id (available
-            // immediately) so the row populates even when the detail fetch
-            // fails or the title carries the wrong isTV flag. getTitleVideos
-            // falls back to the other media type when the primary is empty.
-            if let tmdbId = resolvedTmdbId {
-                let vids = (try? await TMDBService.shared.getTitleVideos(tmdbId: tmdbId, isTV: isTV)) ?? []
-                trailerVideos = vids
+            // Load Trailers & Clips and resolve the per-episode deep link
+            // concurrently — both depend only on tmdbId / activeService.
+            await withTaskGroup(of: Void.self) { group in
+                // Load Trailers & Clips directly off the TMDB id (available
+                // immediately) so the row populates even when the detail fetch
+                // fails or the title carries the wrong isTV flag. getTitleVideos
+                // falls back to the other media type when the primary is empty.
+                if let tmdbId = resolvedTmdbId {
+                    group.addTask {
+                        let vids = (try? await TMDBService.shared.getTitleVideos(tmdbId: tmdbId, isTV: self.isTV)) ?? []
+                        self.trailerVideos = vids
+                    }
+                }
+                // Resolve per-episode deep link from Watchmode so the watch
+                // button opens the exact episode in the streaming app.
+                group.addTask {
+                    await self.resolveEpisodeDeepLink(forService: self.activeService?.name)
+                }
+                for await _ in group { }
             }
-            // Resolve per-episode deep link from Watchmode so the watch
-            // button opens the exact episode in the streaming app.
-            await resolveEpisodeDeepLink(forService: activeService?.name)
         }
         .onChange(of: selectedServiceName) { _, _ in
             // Re-resolve the episode-level deep link for the newly selected
