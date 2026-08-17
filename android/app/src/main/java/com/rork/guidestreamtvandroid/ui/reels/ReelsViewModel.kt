@@ -105,9 +105,17 @@ class ReelsViewModel : ViewModel() {
         _isLoading.value = true
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                val trending = tmdb.getTrendingTV()
-                val onAir = tmdb.getOnTheAir()
-                val upcoming = StreamingUpcomingService.get().fetchUpcoming()?.map { it.toTMDBResult() } ?: emptyList()
+                // Fetch the three independent sources concurrently so a slow
+                // TMDB endpoint doesn't stall the others before For You can
+                // even start resolving.
+                val (trending, onAir, upcoming) = coroutineScope {
+                    val trendingDeferred = async { tmdb.getTrendingTV() }
+                    val onAirDeferred = async { tmdb.getOnTheAir() }
+                    val upcomingDeferred = async {
+                        StreamingUpcomingService.get().fetchUpcoming()?.map { it.toTMDBResult() } ?: emptyList()
+                    }
+                    Triple(trendingDeferred.await(), onAirDeferred.await(), upcomingDeferred.await())
+                }
 
                 // For You is the tab that opens first, so it is resolved and
                 // published before the others. Every later tab is appended as
