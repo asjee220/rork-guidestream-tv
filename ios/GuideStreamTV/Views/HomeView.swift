@@ -321,6 +321,22 @@ struct ComingToStreamingItem: Identifiable, Hashable {
     let whereText: String
 }
 
+// MARK: - Home Fetch
+
+/// Collects results from the twelve concurrent home-screen fetches so
+/// they can run in a single `withTaskGroup` instead of sequentially.
+private enum HomeFetch {
+    case trending(page: Int, shows: [TMDBResult]?)
+    case onAir([TMDBResult]?)
+    case ended([TMDBResult]?)
+    case newToday([TMDBResult]?)
+    case sports([SportsGame])
+    case topRated([TMDBResult]?)
+    case genre([TMDBResult]?)
+    case newReleases([StreamingRelease]?)
+    case upcoming([StreamingUpcoming]?)
+}
+
 // MARK: - HomeView
 
 struct HomeView: View {
@@ -1295,21 +1311,25 @@ struct HomeView: View {
             }
         }
         .task {
-            await clearBadgeAndMarkSeen()
-            await streams.refreshAll()
-            // Kick off creator recommendations early so the panel populates
-            // alongside the rest of the home screen sections.
-            // Hero-critical path: load the data the carousel needs and
-            // render it immediately so the hero appears first, then fill
-            // in non-critical sections asynchronously.
-            await loadTrendingIfNeeded(deferNonCritical: true)
-            // Live status + creator uploads
-            await subscribeToLiveStatus()
+            // Fire-and-forget: clear badge without blocking the home load.
+            Task { await clearBadgeAndMarkSeen() }
+
+            // Stage 1: Refresh streams and load trending content concurrently.
+            await withTaskGroup(of: Void.self) { group in
+                group.addTask { await streams.refreshAll() }
+                group.addTask { await loadTrendingIfNeeded(deferNonCritical: true) }
+                for await _ in group { }
+            }
+
+            // Stage 2: Live status, creator uploads, and recommended creators concurrently.
+            await withTaskGroup(of: Void.self) { group in
+                group.addTask { await subscribeToLiveStatus() }
+                group.addTask { await loadCreatorUploads() }
+                group.addTask { await loadRecommendedCreators() }
+                for await _ in group { }
+            }
+
             buildLiveCreators()
-            await loadCreatorUploads()
-            // Wait for creator recommendations BEFORE flipping homeContentReady
-            // so the "Creators for You" panel never renders in a stale/empty state.
-            await loadRecommendedCreators()
             rebuildHeroRail()
             // Show the hero carousel and all sections that have data RIGHT NOW.
             // Non-hero sections (Coming Soon, platform rows, expiring) populate
@@ -1328,6 +1348,10 @@ struct HomeView: View {
                     coachMark.startHomeTour()
                 }
             }
+
+            // Fire-and-forget: hydrate the remaining providers (beyond the first 40).
+            Task { await hydrateProviders() }
+
             // Continue loading non-critical sections in the background.
             await loadComingToStreaming()
             await hydrateSourceImages()
@@ -1518,20 +1542,63 @@ struct HomeView: View {
         // Refresh the provider brand map from the server (fire-and-forget;
         // cached rows from UserDefaults are already loaded at init).
         Task { await ProviderBrandMapService.shared.refresh() }
-        // Fetch sequentially to avoid the async let deallocation race
-        // that crashes when the view is dismissed mid-load.
-        let t1 = try? await TMDBService.shared.getTrending(page: 1)
-        let t2 = try? await TMDBService.shared.getTrending(page: 2)
-        let t3 = try? await TMDBService.shared.getTrending(page: 3)
-        let t4 = try? await TMDBService.shared.getTrending(page: 4)
-        let a = try? await TMDBService.shared.getOnTheAir()
-        let e = try? await TMDBService.shared.getDiscoverEnded()
-        let n = try? await TMDBService.shared.getNewToday()
-        let s = await SportsService.shared.fetchAll()
-        let tr = try? await TMDBService.shared.getTopRated()
-        let genre = try? await TMDBService.shared.getDiscoverByGenre(selectedGenreId)
-        let nr = await StreamingReleasesService.shared.fetchReleases()
-        let up = await StreamingUpcomingService.shared.fetchUpcoming()
+        // Fetch all twelve data sources concurrently via a task group to
+        // avoid twelve sequential round-trips. Each fetch preserves its
+        // existing try? or non-throwing form.
+        let genreId = selectedGenreId
+        let fetched: [HomeFetch] = await withTaskGroup(of: HomeFetch.self) { group in
+            group.addTask { .trending(page: 1, shows: try? await TMDBService.shared.getTrending(page: 1)) }
+            group.addTask { .trending(page: 2, shows: try? await TMDBService.shared.getTrending(page: 2)) }
+            group.addTask { .trending(page: 3, shows: try? await TMDBService.shared.getTrending(page: 3)) }
+            group.addTask { .trending(page: 4, shows: try? await TMDBService.shared.getTrending(page: 4)) }
+            group.addTask { .onAir(try? await TMDBService.shared.getOnTheAir()) }
+            group.addTask { .ended(try? await TMDBService.shared.getDiscoverEnded()) }
+            group.addTask { .newToday(try? await TMDBService.shared.getNewToday()) }
+            group.addTask { .sports(await SportsService.shared.fetchAll()) }
+            group.addTask { .topRated(try? await TMDBService.shared.getTopRated()) }
+            group.addTask { .genre(try? await TMDBService.shared.getDiscoverByGenre(genreId)) }
+            group.addTask { .newReleases(await StreamingReleasesService.shared.fetchReleases()) }
+            group.addTask { .upcoming(await StreamingUpcomingService.shared.fetchUpcoming()) }
+            var out: [HomeFetch] = []
+            for await item in group { out.append(item) }
+            return out
+        }
+
+        // Extract results by case, defaulting to the same nil/empty values
+        // the original sequential code produced.
+        var t1: [TMDBResult]? = nil
+        var t2: [TMDBResult]? = nil
+        var t3: [TMDBResult]? = nil
+        var t4: [TMDBResult]? = nil
+        var a: [TMDBResult]? = nil
+        var e: [TMDBResult]? = nil
+        var n: [TMDBResult]? = nil
+        var s: [SportsGame] = []
+        var tr: [TMDBResult]? = nil
+        var genre: [TMDBResult]? = nil
+        var nr: [StreamingRelease]? = nil
+        var up: [StreamingUpcoming]? = nil
+
+        for item in fetched {
+            switch item {
+            case .trending(let page, let shows):
+                switch page {
+                case 1: t1 = shows
+                case 2: t2 = shows
+                case 3: t3 = shows
+                case 4: t4 = shows
+                default: break
+                }
+            case .onAir(let val): a = val
+            case .ended(let val): e = val
+            case .newToday(let val): n = val
+            case .sports(let val): s = val
+            case .topRated(let val): tr = val
+            case .genre(let val): genre = val
+            case .newReleases(let val): nr = val
+            case .upcoming(let val): up = val
+            }
+        }
 
         // Concatenate all trending pages and de-duplicate by id, preserving
         // first-seen order (later pages can repeat earlier titles).
@@ -1552,10 +1619,10 @@ struct HomeView: View {
         if let tr { topRated = tr }
         if let genre { genreShows = genre }
         sportsGames = s
-        await hydrateProviders()
+        await hydrateProviders(maxItems: 40)
 
         // Refresh the watched set so Top Picks exclusion is fresh on Home.
-        await SocialViewModel.shared.loadAllWatched()
+        Task { await SocialViewModel.shared.loadAllWatched() }
 
         // Resolve the user's taste genres in the background. Additive and
         // best-effort — never blocks the Top Picks row from rendering.
@@ -1657,14 +1724,21 @@ struct HomeView: View {
     /// Look up the top US streaming provider for every loaded TMDB result in parallel.
     /// Items with no recognised streaming service are intentionally left out of the dictionary
     /// so the rendering layer can hide them.
-    private func hydrateProviders() async {
+    private func hydrateProviders(maxItems: Int? = nil) async {
         let combined: [TMDBResult] = trending + onAir + bingeFallback + newToday + genreShows + recommendedShows
         let unique = Array(Dictionary(grouping: combined, by: { $0.id }).compactMapValues { $0.first }.values)
-        let toFetch = unique.filter { providerByTmdb[$0.id] == nil }
+        var toFetch = unique.filter { providerByTmdb[$0.id] == nil }
+        if let maxItems {
+            toFetch = Array(toFetch.prefix(maxItems))
+        }
         guard !toFetch.isEmpty else { return }
 
+        // Cap at 8 in flight using a sliding window so large watchlists
+        // never flood the TMDB provider endpoint.
+        let maxConcurrent = 8
+        var cursor = 0
         let resolved: [(Int, Platform)] = await withTaskGroup(of: (Int, Platform)?.self) { group in
-            for r in toFetch {
+            func schedule(_ r: TMDBResult) {
                 group.addTask {
                     let provider = try? await TMDBService.shared.getTopWatchProvider(tmdbId: r.id, isTV: r.isTV)
                     guard let provider else { return nil }
@@ -1673,9 +1747,13 @@ struct HomeView: View {
                     return (r.id, platform)
                 }
             }
+            while cursor < toFetch.count && cursor < maxConcurrent {
+                schedule(toFetch[cursor]); cursor += 1
+            }
             var out: [(Int, Platform)] = []
             for await pair in group {
                 if let pair { out.append(pair) }
+                if cursor < toFetch.count { schedule(toFetch[cursor]); cursor += 1 }
             }
             return out
         }
