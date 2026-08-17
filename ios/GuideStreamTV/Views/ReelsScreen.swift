@@ -268,27 +268,21 @@ final class ReelsViewModel {
 
         print("[REELS] Fetched sources: trending=\(trending.count) onAir=\(onAir.count) mine=\(mine.count) popularTV=\(popularTV.count) streamingMovies=\(streamingMovies.count) comingSoonReleases=\(comingSoonReleases.count)")
 
-        // Build trailer items for every source concurrently. Each buildItems call
-        // itself spawns a capped task group internally, so the six sources all
-        // resolve in parallel without overwhelming TMDB.
-        async let forYouItems: [TrailerItem] = buildItems(from: mineResults(mine), tab: .forYou)
-        async let trendingItems: [TrailerItem] = buildItems(from: Array(trending.prefix(50)), tab: .trending)
-        async let newItems: [TrailerItem] = buildItems(from: Array(onAir.prefix(50)), tab: .new)
-        async let popularTVItems: [TrailerItem] = buildItems(from: Array(popularTV.prefix(50)), tab: .forYou)
-        async let comingSoonItems: [TrailerItem] = buildComingSoonItems(from: comingSoonReleases)
-        async let streamingMovieItems: [TrailerItem] = buildItems(from: Array(streamingMovies.prefix(50)), tab: .forYou)
+        // Build trailer items for each source sequentially. Each buildItems call
+        // itself spawns a task group internally, so the six sources resolve
+        // one at a time without stacking ~48 concurrent requests on TMDB and
+        // the Supabase trailer resolver.
+        let forYouItems = await buildItems(from: mineResults(mine), tab: .forYou)
+        let trendingItems = await buildItems(from: Array(trending.prefix(50)), tab: .trending)
+        let newItems = await buildItems(from: Array(onAir.prefix(50)), tab: .new)
+        let popularTVItems = await buildItems(from: Array(popularTV.prefix(50)), tab: .forYou)
+        let comingSoonItems = await buildComingSoonItems(from: comingSoonReleases)
+        let streamingMovieItems = await buildItems(from: Array(streamingMovies.prefix(50)), tab: .forYou)
 
-        let forYouBuilt = await forYouItems
-        let trendingBuilt = await trendingItems
-        let newBuilt = await newItems
-        let popularTVBuilt = await popularTVItems
-        let comingSoonBuilt = await comingSoonItems
-        let streamingMoviesBuilt = await streamingMovieItems
-
-        print("[REELS] Built items: forYou=\(forYouBuilt.count) trending=\(trendingBuilt.count) new=\(newBuilt.count) popularTV=\(popularTVBuilt.count) comingSoon=\(comingSoonBuilt.count) streamingMovies=\(streamingMoviesBuilt.count)")
+        print("[REELS] Built items: forYou=\(forYouItems.count) trending=\(trendingItems.count) new=\(newItems.count) popularTV=\(popularTVItems.count) comingSoon=\(comingSoonItems.count) streamingMovies=\(streamingMovieItems.count)")
 
         // Backfill For You feed with trending when the account has a light watchlist.
-        var forYouCombined = forYouBuilt + popularTVBuilt
+        var forYouCombined = forYouItems + popularTVItems
         if forYouCombined.count < 10 {
             let trendingFallback = (try? await tmdb.getTrending()) ?? []
             let needed = max(0, 10 - forYouCombined.count)
@@ -301,12 +295,12 @@ final class ReelsViewModel {
         // Intersperse streaming movies with For You content so movies appear
         // early in the feed rather than buried after 100+ TV reels.
         var combined: [TrailerItem] = []
-        let interleaveCount = max(forYouCombined.count, streamingMoviesBuilt.count)
+        let interleaveCount = max(forYouCombined.count, streamingMovieItems.count)
         for i in 0..<interleaveCount {
             if i < forYouCombined.count { combined.append(forYouCombined[i]) }
-            if i < streamingMoviesBuilt.count { combined.append(streamingMoviesBuilt[i]) }
+            if i < streamingMovieItems.count { combined.append(streamingMovieItems[i]) }
         }
-        combined += trendingBuilt + newBuilt + comingSoonBuilt
+        combined += trendingItems + newItems + comingSoonItems
 
         // Deduplicate by trailer key so the same video doesn't appear twice.
         // The seen set persists in the view model so later paginated batches
@@ -396,12 +390,9 @@ final class ReelsViewModel {
         let movies = await moviesResult
 
         var newItems: [TrailerItem] = []
-        // Build the four batches concurrently; each buildItems call spawns its
-        // own capped task group internally.
-        async let popularTVItems: [TrailerItem] = (!skipPopularTV && popularTV?.isEmpty == false) ? buildItems(from: popularTV ?? [], tab: .forYou) : []
-        async let trendingItems: [TrailerItem] = (!skipTrending && trending?.isEmpty == false) ? buildItems(from: trending ?? [], tab: .trending) : []
-        async let onAirItems: [TrailerItem] = (!skipOnTheAir && onAir?.isEmpty == false) ? buildItems(from: onAir ?? [], tab: .new) : []
-        async let movieItems: [TrailerItem] = (!skipMovies && movies?.0.isEmpty == false) ? buildItems(from: movies?.0 ?? [], tab: .forYou) : []
+        // Build the four batches sequentially; each buildItems call spawns its
+        // own task group internally, so stacking them would multiply the
+        // in-flight request count by four.
 
         if !skipPopularTV, let results = popularTV {
             if results.isEmpty {
@@ -424,10 +415,10 @@ final class ReelsViewModel {
             }
         }
 
-        newItems += await popularTVItems
-        newItems += await trendingItems
-        newItems += await onAirItems
-        newItems += await movieItems
+        newItems += (!skipPopularTV && popularTV?.isEmpty == false) ? await buildItems(from: popularTV ?? [], tab: .forYou) : []
+        newItems += (!skipTrending && trending?.isEmpty == false) ? await buildItems(from: trending ?? [], tab: .trending) : []
+        newItems += (!skipOnTheAir && onAir?.isEmpty == false) ? await buildItems(from: onAir ?? [], tab: .new) : []
+        newItems += (!skipMovies && movies?.0.isEmpty == false) ? await buildItems(from: movies?.0 ?? [], tab: .forYou) : []
 
         // Session-wide dedup — drop anything already in the feed.
         let fresh = newItems.filter { seenTrailerKeys.insert($0.trailerKey).inserted }
@@ -540,25 +531,12 @@ final class ReelsViewModel {
         // every result in this batch sees a consistent view. Set<String> is
         // Sendable, so capturing it into the task closures needs no actor hop.
         let subscribedServiceIds = Set(AuthViewModel.shared.selectedServices.map { $0.lowercased() })
-        // Cap concurrency to avoid hammering TMDB/Supabase with 50 simultaneous
-        // requests per source. A sliding window of 8 keeps the pipeline full
-        // without overloading the resolver or TMDB endpoints.
-        let maxConcurrent = 8
         return await withTaskGroup(of: (Int, TrailerItem?).self) { group in
-            // Hoisted before the loop so the sliding-window drain can write
-            // completed results into the same dictionary used by the final
-            // drain — otherwise `group.next()` consumes a value and discards it,
-            // silently dropping every result past the first maxConcurrent.
+            // Hoisted before the loop so completed results are written into the
+            // same dictionary used by the final drain, preserving stable
+            // ordering regardless of task completion order.
             var indexed: [Int: TrailerItem] = [:]
             for (i, r) in results.enumerated() {
-                if i >= maxConcurrent {
-                    // Wait for one task to finish before spawning the next, so
-                    // at most maxConcurrent are ever in flight. The completed
-                    // value is stored in `indexed` so nothing is lost.
-                    if let (doneIndex, doneItem) = await group.next(), let doneItem {
-                        indexed[doneIndex] = doneItem
-                    }
-                }
                 group.addTask { [tmdb, subscribedServiceIds] in
                     // Only fetch the TV detail endpoint for TV shows — calling
                     // /tv/{movieId} for movies returns a slow 404 and blocks the
@@ -722,21 +700,12 @@ final class ReelsViewModel {
         outDF.dateFormat = "MMM d"
         outDF.locale = Locale(identifier: "en_US_POSIX")
 
-        // Sliding-window cap of 8 concurrent resolves so the Supabase trailer
-        // resolver and TMDB are not flooded when the upcoming list is long.
-        let maxConcurrent = 8
         return await withTaskGroup(of: (Int, TrailerItem?).self) { group in
-            // Hoisted before the loop so the sliding-window drain can write
-            // completed results into the same dictionary used by the final
-            // drain — otherwise `group.next()` consumes a value and discards it,
-            // silently dropping every result past the first maxConcurrent.
+            // Hoisted before the loop so completed results are written into the
+            // same dictionary used by the final drain, preserving stable
+            // ordering regardless of task completion order.
             var indexed: [Int: TrailerItem] = [:]
             for (i, entry) in deduped.enumerated() {
-                if i >= maxConcurrent {
-                    if let (doneIndex, doneItem) = await group.next(), let doneItem {
-                        indexed[doneIndex] = doneItem
-                    }
-                }
                 let release = entry.release
                 let releaseDate = entry.date
                 let tmdbId = release.tmdbId
