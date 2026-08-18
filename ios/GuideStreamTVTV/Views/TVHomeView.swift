@@ -31,6 +31,18 @@ private struct ComingToStreamingItem: Identifiable {
     var id: Int { result.id }
 }
 
+private struct NowNextItem: Identifiable {
+    let release: TVStreamingRelease
+    let badge: String
+    var id: Int { release.tmdbId }
+}
+
+private struct NowAndNextRail: Identifiable {
+    let service: StreamingService
+    let items: [NowNextItem]
+    var id: String { service.id }
+}
+
 struct TVHomeView: View {
     @State private var trending: [TVTMDBResult] = []
     @State private var newEpisodes: [TVTMDBResult] = []
@@ -48,6 +60,7 @@ struct TVHomeView: View {
     @State private var comingToStreaming: [ComingToStreamingItem] = []
     @State private var popularOnService: [String: [TVTMDBResult]] = [:]
     @State private var recommendedCreators: [TVRecommendedCreator] = []
+    @State private var nowAndNextRails: [NowAndNextRail] = []
 
     /// Maps tvOS StreamingCatalog ids to TMDB Watch provider ids so
     /// `getPopularOnService` / `getPopularMoviesOnService` can query the
@@ -72,6 +85,15 @@ struct TVHomeView: View {
             LazyVStack(alignment: .leading, spacing: 56) {
                 heroSection
                     .padding(.top, 8)
+
+                // Now & Next on {service} — one rail per subscribed service
+                ForEach(nowAndNextRails) { rail in
+                    TVRail(title: "Now & Next on \(rail.service.name)", accent: rail.service.color, count: rail.items.count) {
+                        ForEach(rail.items) { item in
+                            nowNextCard(for: item, accent: rail.service.color)
+                        }
+                    }
+                }
 
                 // 1. Everyone's Watching
                 if !everyonesWatching.isEmpty {
@@ -305,6 +327,37 @@ struct TVHomeView: View {
         }
     }
 
+    /// Now & Next card — shows the NOW or NEXT badge as subtitle and opens
+    /// the title sheet with the media-type hint from the streaming_releases
+    /// / streaming_upcoming row.
+    private func nowNextCard(for item: NowNextItem, accent: Color) -> some View {
+        let release = item.release
+        let posterUrl = release.posterUrl?.isEmpty == false
+            ? release.posterUrl
+            : TVTMDBImage.url(release.posterPath, size: .poster500)
+        let titleId = "tmdb:\(release.isTV ? "tv" : "movie"):\(release.tmdbId)"
+        return TVPosterCard(
+            title: release.title,
+            subtitle: item.badge,
+            posterUrl: posterUrl,
+            accent: accent,
+            isSaved: streams.contains(titleId: titleId)
+        ) {
+            pendingDetail = TVTitleDetail(
+                titleId: titleId,
+                title: release.title,
+                overview: nil,
+                posterUrl: posterUrl,
+                backdropUrl: nil,
+                tag: release.isTV ? "SERIES" : "MOVIE",
+                accent: accent,
+                year: nil,
+                platform: nil,
+                isTVHint: release.isTV
+            )
+        }
+    }
+
     // MARK: - Popular on service ordering
 
     /// Returns subscribed services in StreamingCatalog order, filtered to
@@ -336,8 +389,9 @@ struct TVHomeView: View {
         async let comingTask: Void = buildComingToStreaming()
         async let popularTask: Void = buildPopularOnService()
         async let creatorsTask: Void = buildRecommendedCreators()
+        async let nowNextTask: Void = buildNowAndNext()
 
-        await (heroTask, everyoneTask, comingTask, popularTask, creatorsTask)
+        await (heroTask, everyoneTask, comingTask, popularTask, creatorsTask, nowNextTask)
     }
 
     // MARK: - Hero assembly
@@ -512,6 +566,47 @@ struct TVHomeView: View {
             if !items.isEmpty { map[serviceId] = items }
         }
         popularOnService = map
+    }
+
+    // MARK: - Now & Next on {service}
+
+    /// Fetches streaming_releases (NOW) and streaming_upcoming (NEXT) from
+    /// Supabase, filters by each subscribed service's TMDB provider id, and
+    /// builds one rail per service that has at least one row. Reads services
+    /// fresh on each load from AuthViewModel.shared.selectedServices.
+    private func buildNowAndNext() async {
+        let services = StreamingCatalog.ordered(from: AuthViewModel.shared.selectedServices)
+            .filter { tmdbProviderIdMap[$0.id] != nil }
+        guard !services.isEmpty else { return }
+
+        async let releasesResult = TVStreamingReleasesService.shared.fetchReleases()
+        async let upcomingResult = TVStreamingReleasesService.shared.fetchUpcoming()
+
+        let releases = await releasesResult ?? []
+        let upcoming = await upcomingResult ?? []
+
+        var rails: [NowAndNextRail] = []
+        for service in services {
+            guard let providerId = tmdbProviderIdMap[service.id] else { continue }
+
+            var items: [NowNextItem] = []
+
+            // NOW: releases matching this service
+            for release in releases where release.sourceId == providerId {
+                items.append(NowNextItem(release: release, badge: "NOW"))
+            }
+
+            // NEXT: upcoming matching this service
+            for release in upcoming where release.sourceId == providerId {
+                items.append(NowNextItem(release: release, badge: "NEXT"))
+            }
+
+            if !items.isEmpty {
+                rails.append(NowAndNextRail(service: service, items: items))
+            }
+        }
+
+        nowAndNextRails = rails
     }
 
     // MARK: - Recommended creators

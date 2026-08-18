@@ -2,13 +2,16 @@
 //  TVWatchIntentLogger.swift
 //  GuideStreamTVTV
 //
-//  No-op stub for tvOS — WatchIntentLogger records user actions to Supabase,
-//  but on Apple TV the interaction surface is watched directly on the device
-//  so the analytics pipeline isn't needed. Kept as a stub so shared views
-//  compile cleanly.
+//  Writes user-intent events to the shared Supabase `watch_intent_events`
+//  table — the same table the iOS app writes to. Fires from a detached
+//  Task so the insert never blocks the main thread or throws into the UI.
+//  Guests and signed-out viewers are silently skipped (no user_id means
+//  no row). Device id is resolved from TVDeviceIdentity, the same source
+//  used everywhere else in this target.
 //
 
 import Foundation
+import Supabase
 
 enum IntentEventType: String {
     case cardTapped = "card_tapped"
@@ -43,8 +46,10 @@ enum IntentEventType: String {
     case watchedToggled = "watched_toggled"
 }
 
-/// Fire-and-forget stub — all calls silently succeed. The real iOS
-/// implementation writes to a Supabase `watch_intent_events` table.
+/// Fire-and-forget logger that inserts a row into `watch_intent_events`
+/// for every meaningful user action. Only fires for authenticated users —
+/// guests and signed-out viewers are silently skipped. All failures are
+/// swallowed so the UI is never affected by an analytics write.
 @MainActor
 final class WatchIntentLogger {
     static let shared = WatchIntentLogger()
@@ -55,7 +60,48 @@ final class WatchIntentLogger {
         titleId: String? = nil,
         platformId: String? = nil,
         metadata: [String: Any]? = nil
-    ) {}
+    ) {
+        // Skip entirely when the viewer is a guest or signed out — no
+        // user_id means no insert.
+        let userId = AuthViewModel.shared.currentUser?.id.uuidString
+        guard let userId, !userId.isEmpty, !AuthViewModel.shared.isGuest else { return }
+
+        let deviceId = TVDeviceIdentity.shared.deviceId
+        let event = eventType.rawValue
+        let titleIdCopy = titleId
+        let platformIdCopy: String? = {
+            guard let raw = platformId, !raw.isEmpty else { return platformId }
+            return raw.lowercased()
+        }()
+
+        // Build merged metadata on the main actor so the [String: Any]
+        // dict never crosses the Sendable boundary as-is.
+        var mergedMeta: [String: Any] = metadata ?? [:]
+        mergedMeta["device_id"] = deviceId
+        mergedMeta["is_guest"] = false
+        mergedMeta["is_authenticated"] = true
+        let metadataJSON: AnyJSON? = Self.toAnyJSON(mergedMeta)
+
+        Task.detached {
+            var payload: [String: AnyJSON] = [
+                "event_type": .string(event),
+                "device_id": .string(deviceId),
+                "user_id": .string(userId)
+            ]
+            if let titleIdCopy { payload["title_id"] = .string(titleIdCopy) }
+            if let platformIdCopy { payload["platform_id"] = .string(platformIdCopy) }
+            if let metadataJSON { payload["metadata"] = metadataJSON }
+
+            // Silent — never block, never throw into the UI, never log
+            // to the console.
+            do {
+                try await SupabaseManager.shared.client
+                    .from("watch_intent_events")
+                    .insert(payload)
+                    .execute()
+            } catch { }
+        }
+    }
 
     /// Lowercases and dashes a free-form title into a stable id slug.
     static func titleSlug(_ title: String) -> String {
@@ -68,5 +114,27 @@ final class WatchIntentLogger {
         while slug.contains("--") { slug = slug.replacingOccurrences(of: "--", with: "-") }
         slug = slug.trimmingCharacters(in: CharacterSet(charactersIn: "-"))
         return "tt-\(slug)"
+    }
+
+    // MARK: - AnyJSON conversion
+
+    nonisolated private static func toAnyJSON(_ value: Any) -> AnyJSON? {
+        switch value {
+        case let s as String: return .string(s)
+        case let b as Bool: return .bool(b)
+        case let i as Int: return .integer(i)
+        case let d as Double: return .double(d)
+        case let f as CGFloat: return .double(Double(f))
+        case let arr as [Any]:
+            return .array(arr.compactMap { toAnyJSON($0) })
+        case let dict as [String: Any]:
+            var out: [String: AnyJSON] = [:]
+            for (k, v) in dict {
+                if let j = toAnyJSON(v) { out[k] = j }
+            }
+            return .object(out)
+        default:
+            return .string(String(describing: value))
+        }
     }
 }

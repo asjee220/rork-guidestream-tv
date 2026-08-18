@@ -22,6 +22,14 @@ struct TVAccountView: View {
         return "Signed out"
     }
 
+    private var appVersion: String {
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
+    }
+
+    private var buildNumber: String {
+        Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1"
+    }
+
     private var subtitle: String {
         if auth.isAuthenticated {
             return auth.currentUser?.email ?? "Apple account"
@@ -89,6 +97,11 @@ struct TVAccountView: View {
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: 640)
                     .padding(.top, 24)
+
+                Text("Version \(appVersion) (Build \(buildNumber))")
+                    .font(.system(size: 16))
+                    .foregroundStyle(TVTheme.textTertiary)
+                    .multilineTextAlignment(.center)
             }
         }
     }
