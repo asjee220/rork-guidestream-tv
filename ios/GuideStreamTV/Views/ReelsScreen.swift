@@ -249,22 +249,15 @@ final class ReelsViewModel {
         adSlotCount = 0
         rakutenIndex = 0
 
-        // Fetch source lists in parallel — including movies currently on the
-        // user's subscribed services so the feed includes streaming movies,
-        // not just theatrical / upcoming titles.
-        async let trendingResult: [TMDBResult] = (try? await tmdb.getTrending()) ?? []
-        async let onAirResult: [TMDBResult] = (try? await tmdb.getOnTheAir()) ?? []
-        async let mineResult: [UserStream] = fetchMyStreams()
-        async let popularTVResult: [TMDBResult] = (try? await tmdb.getPopularTV()) ?? []
-        async let streamingMoviesResult: [TMDBResult] = fetchStreamingMovies()
-        async let comingSoonResult = await StreamingUpcomingService.shared.fetchUpcoming() ?? []
-
-        let trending = await trendingResult
-        let onAir = await onAirResult
-        let mine = await mineResult
-        let popularTV = await popularTVResult
-        let streamingMovies = await streamingMoviesResult
-        let comingSoonReleases = await comingSoonResult
+        // Fetch source lists — including movies currently on the user's
+        // subscribed services so the feed includes streaming movies, not just
+        // theatrical / upcoming titles.
+        let trending = (try? await tmdb.getTrending()) ?? []
+        let onAir = (try? await tmdb.getOnTheAir()) ?? []
+        let mine = await fetchMyStreams()
+        let popularTV = (try? await tmdb.getPopularTV()) ?? []
+        let streamingMovies = await fetchStreamingMovies()
+        let comingSoonReleases = await StreamingUpcomingService.shared.fetchUpcoming() ?? []
 
         print("[REELS] Fetched sources: trending=\(trending.count) onAir=\(onAir.count) mine=\(mine.count) popularTV=\(popularTV.count) streamingMovies=\(streamingMovies.count) comingSoonReleases=\(comingSoonReleases.count)")
 
@@ -377,17 +370,10 @@ final class ReelsViewModel {
         let skipMovies = exhaustedSources.contains(.streamingMovies)
 
         // nil = fetch failed (or skipped); [] = successful empty page.
-        // All four paginated sources fetch concurrently so a single slow
-        // source does not stall the whole batch.
-        async let popularTVResult: [TMDBResult]? = skipPopularTV ? nil : (try? await tmdb.getPopularTV(page: page))
-        async let trendingResult: [TMDBResult]? = skipTrending ? nil : (try? await tmdb.getTrending(page: page))
-        async let onAirResult: [TMDBResult]? = skipOnTheAir ? nil : (try? await tmdb.getOnTheAir(page: page))
-        async let moviesResult: ([TMDBResult], Bool)? = skipMovies ? nil : fetchMoreStreamingMovies(page: page)
-
-        let popularTV = await popularTVResult
-        let trending = await trendingResult
-        let onAir = await onAirResult
-        let movies = await moviesResult
+        let popularTV: [TMDBResult]? = skipPopularTV ? nil : (try? await tmdb.getPopularTV(page: page))
+        let trending: [TMDBResult]? = skipTrending ? nil : (try? await tmdb.getTrending(page: page))
+        let onAir: [TMDBResult]? = skipOnTheAir ? nil : (try? await tmdb.getOnTheAir(page: page))
+        let movies: ([TMDBResult], Bool)? = skipMovies ? nil : await fetchMoreStreamingMovies(page: page)
 
         var newItems: [TrailerItem] = []
         // Build the four batches sequentially; each buildItems call spawns its
@@ -495,30 +481,30 @@ final class ReelsViewModel {
 
     /// Fetches popular movies currently streaming across ALL major services
     /// (not just the ones the user has chosen) so the reels feed always
-    /// includes movies available to watch now. All 19 providers run in a single
-    /// task group so the big five are no longer serialized ahead of the rest.
+    /// includes movies available to watch now. The big five providers are
+    /// fetched sequentially first, then the secondary providers run in a task
+    /// group so the big-five counts are logged separately.
     private func fetchStreamingMovies() async -> [TMDBResult] {
-        // Big five first so their counts are logged separately.
         let bigFiveIds = [8, 9, 337, 1899, 15]
         let secondaryProviderIds = [350, 2303, 386, 43, 37, 283, 526, 584, 11, 151, 257, 73, 300, 192]
-        let allProviderIds = bigFiveIds + secondaryProviderIds
 
-        // ([results], isBigFive) per task so we can split the counts for the log.
-        let fetched: [([TMDBResult], Bool)] = await withTaskGroup(of: ([TMDBResult], Bool).self) { group in
-            for (i, pid) in allProviderIds.enumerated() {
-                let isBigFive = i < bigFiveIds.count
+        var bigFiveResults: [TMDBResult] = []
+        for pid in bigFiveIds {
+            let results = (try? await tmdb.getPopularMoviesOnService(tmdbProviderId: pid)) ?? []
+            bigFiveResults += results
+        }
+
+        let secondaryResults: [TMDBResult] = await withTaskGroup(of: [TMDBResult].self) { group in
+            for pid in secondaryProviderIds {
                 group.addTask { [tmdb] in
-                    let results = (try? await tmdb.getPopularMoviesOnService(tmdbProviderId: pid)) ?? []
-                    return (results, isBigFive)
+                    (try? await tmdb.getPopularMoviesOnService(tmdbProviderId: pid)) ?? []
                 }
             }
-            var all: [([TMDBResult], Bool)] = []
-            for await results in group { all.append(results) }
+            var all: [TMDBResult] = []
+            for await results in group { all.append(contentsOf: results) }
             return all
         }
 
-        let bigFiveResults = fetched.filter { $0.1 }.flatMap { $0.0 }
-        let secondaryResults = fetched.filter { !$0.1 }.flatMap { $0.0 }
         let allSources = bigFiveResults + secondaryResults
         var seen = Set<Int>()
         let deduped = allSources.filter { seen.insert($0.id).inserted }
@@ -531,12 +517,8 @@ final class ReelsViewModel {
         // every result in this batch sees a consistent view. Set<String> is
         // Sendable, so capturing it into the task closures needs no actor hop.
         let subscribedServiceIds = Set(AuthViewModel.shared.selectedServices.map { $0.lowercased() })
-        return await withTaskGroup(of: (Int, TrailerItem?).self) { group in
-            // Hoisted before the loop so completed results are written into the
-            // same dictionary used by the final drain, preserving stable
-            // ordering regardless of task completion order.
-            var indexed: [Int: TrailerItem] = [:]
-            for (i, r) in results.enumerated() {
+        return await withTaskGroup(of: TrailerItem?.self) { group in
+            for r in results {
                 group.addTask { [tmdb, subscribedServiceIds] in
                     // Only fetch the TV detail endpoint for TV shows — calling
                     // /tv/{movieId} for movies returns a slow 404 and blocks the
@@ -557,14 +539,14 @@ final class ReelsViewModel {
                     //  * [...] → verified keys; first is primary, rest fallback.
                     let candidates: [String]
                     if let resolved {
-                        if resolved.isEmpty { return (i, nil) }
+                        if resolved.isEmpty { return nil }
                         candidates = resolved
                     } else {
                         let single = (try? await (r.isTV ? tmdb.getTrailerKey(tmdbId: r.id) : tmdb.getMovieTrailerKey(tmdbId: r.id))) ?? nil
-                        guard let single, !single.isEmpty else { return (i, nil) }
+                        guard let single, !single.isEmpty else { return nil }
                         candidates = [single]
                     }
-                    guard let key = candidates.first, !key.isEmpty, !pool.isEmpty else { return (i, nil) }
+                    guard let key = candidates.first, !key.isEmpty, !pool.isEmpty else { return nil }
                     let fallbackKeys = Array(candidates.dropFirst())
 
                     // topProvider reproduces current behavior: the pool element
@@ -596,7 +578,7 @@ final class ReelsViewModel {
                     // Reels must point at an app users can actually open — skip titles
                     // with no verified US streaming provider.
                     guard let chosen, let _ = ReelPlatform.recognizedKey(for: chosen.providerName) else {
-                        return (i, nil)
+                        return nil
                     }
 
                     let name = detail?.name ?? r.displayName
@@ -624,7 +606,7 @@ final class ReelsViewModel {
                     let embed: URL? = URL(string: "https://www.youtube.com/watch?v=\(key)")
                     let identity = String(name.prefix(3)).uppercased()
 
-                    return (i, TrailerItem(
+                    return TrailerItem(
                         id: key,
                         tmdbId: r.id,
                         showName: name,
@@ -650,14 +632,14 @@ final class ReelsViewModel {
                         gradeColor: plat.grade,
                         isSponsored: false,
                         isTV: r.isTV
-                    ))
+                    )
                 }
             }
-            // Drain the remaining tasks into the same `indexed` dictionary.
-            for await (i, item) in group {
-                if let item { indexed[i] = item }
+            var out: [TrailerItem] = []
+            for await item in group {
+                if let item { out.append(item) }
             }
-            return results.indices.compactMap { indexed[$0] }
+            return out
         }
     }
 
@@ -700,12 +682,8 @@ final class ReelsViewModel {
         outDF.dateFormat = "MMM d"
         outDF.locale = Locale(identifier: "en_US_POSIX")
 
-        return await withTaskGroup(of: (Int, TrailerItem?).self) { group in
-            // Hoisted before the loop so completed results are written into the
-            // same dictionary used by the final drain, preserving stable
-            // ordering regardless of task completion order.
-            var indexed: [Int: TrailerItem] = [:]
-            for (i, entry) in deduped.enumerated() {
+        return await withTaskGroup(of: TrailerItem?.self) { group in
+            for entry in deduped {
                 let release = entry.release
                 let releaseDate = entry.date
                 let tmdbId = release.tmdbId
@@ -715,14 +693,14 @@ final class ReelsViewModel {
                     let resolved = await TrailerResolveService.resolve(tmdbId: tmdbId, isTV: false)
                     let candidates: [String]
                     if let resolved {
-                        if resolved.isEmpty { return (i, nil) }
+                        if resolved.isEmpty { return nil }
                         candidates = resolved
                     } else {
                         let single = (try? await tmdb.getMovieTrailerKey(tmdbId: tmdbId)) ?? nil
-                        guard let single, !single.isEmpty else { return (i, nil) }
+                        guard let single, !single.isEmpty else { return nil }
                         candidates = [single]
                     }
-                    guard let key = candidates.first, !key.isEmpty else { return (i, nil) }
+                    guard let key = candidates.first, !key.isEmpty else { return nil }
                     let fallbackKeys = Array(candidates.dropFirst())
 
                     let name = release.title ?? ""
@@ -731,7 +709,7 @@ final class ReelsViewModel {
                     let embed: URL? = URL(string: "https://www.youtube.com/watch?v=\(key)")
                     let identity = String(name.prefix(3)).uppercased()
 
-                    return (i, TrailerItem(
+                    return TrailerItem(
                         id: key,
                         tmdbId: tmdbId,
                         showName: name,
@@ -757,14 +735,14 @@ final class ReelsViewModel {
                         gradeColor: Color.navy.opacity(0.15),
                         isSponsored: false,
                         isTV: false
-                    ))
+                    )
                 }
             }
-            // Drain the remaining tasks into the same `indexed` dictionary.
-            for await (i, item) in group {
-                if let item { indexed[i] = item }
+            var out: [TrailerItem] = []
+            for await item in group {
+                if let item { out.append(item) }
             }
-            return deduped.indices.compactMap { indexed[$0] }
+            return out
         }
     }
 
