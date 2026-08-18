@@ -19,7 +19,6 @@ enum ProfileRoute: Hashable {
     case watchList
     case connectedServices
     case devices
-    case widget
     case notifications
     case profiles
     case help
@@ -86,7 +85,7 @@ struct ProfileView: View {
                             .padding(.top, 4)
 
                         versionLabel
-                            .padding(.top, 8)
+                            .padding(.top, 24)
 
                         // Floating tab bar safe area
                         Color.clear.frame(height: 110)
@@ -103,7 +102,6 @@ struct ProfileView: View {
                 case .watchList: WatchListView()
                 case .connectedServices: ConnectedServicesView()
                 case .devices: DevicesView()
-                case .widget: WidgetSetupView()
                 case .notifications: NotificationsSettingsView()
                 case .profiles: ProfilesView()
                 case .help: HelpFeedbackView()
@@ -303,14 +301,6 @@ struct ProfileView: View {
             )
             ProfileRowDivider()
             ProfileRow(
-                icon: "square.text.square.fill",
-                iconTint: Color(red: 0.95, green: 0.78, blue: 0.20),
-                title: "iOS Widget",
-                subtitle: "Next episodes on your Home Screen",
-                onTap: { path.append(.widget) }
-            )
-            ProfileRowDivider()
-            ProfileRow(
                 icon: "bell.fill",
                 iconTint: Color(red: 0.95, green: 0.45, blue: 0.55),
                 title: "Notifications",
@@ -371,8 +361,9 @@ struct ProfileView: View {
 
     private var versionLabel: some View {
         Text("Version \(appVersion) (Build \(buildNumber))")
-            .scaledFont(size: 12)
-            .foregroundStyle(Color.textTertiary)
+            .font(.system(size: 16))
+            .foregroundStyle(TVTheme.textTertiary)
+            .multilineTextAlignment(.center)
             .frame(maxWidth: .infinity)
     }
 

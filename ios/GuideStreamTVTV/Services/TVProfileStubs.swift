@@ -208,13 +208,83 @@ final class ProfileStatsService {
         AuthViewModel.shared.selectedServices.count
     }
 
-    /// Stub refresh — tvOS doesn't drive Supabase reads for stats, so this
-    /// just keeps cached UserDefaults values without flickering.
+    /// Refreshes stats from Supabase — mirrors the iOS ProfileStatsService.
+    /// Calls the existing get_profile_stats RPC for shows/hours, and counts
+    /// device_sessions rows for devices. Persists to UserDefaults so the UI
+    /// never flashes to zero on cold launch. On failure, cached values are
+    /// left untouched and lastError is set. Never crashes or blocks the UI.
     func refresh() async {
         isRefreshing = true
         defer { isRefreshing = false }
-        // No-op for tvOS.
+
+        async let engagementTask: Void = refreshEngagement()
+        async let devicesTask: Void = refreshDevices()
+        _ = await (engagementTask, devicesTask)
     }
+
+    // MARK: - Private
+
+    private func refreshEngagement() async {
+        let auth = AuthViewModel.shared
+
+        // Skip silently for guests / signed-out viewers.
+        guard auth.isAuthenticated, let uid = auth.currentUser?.id.uuidString else {
+            return
+        }
+
+        let params: [String: String] = ["p_user_id": uid]
+
+        do {
+            let rows: [TVProfileStatsRow] = try await SupabaseManager.shared.client
+                .rpc("get_profile_stats", params: params)
+                .execute()
+                .value
+
+            guard let stats = rows.first else {
+                lastError = "get_profile_stats returned no rows"
+                return
+            }
+
+            self.showsCount = stats.shows_count
+            self.hoursWatched = stats.hours_watched
+
+            UserDefaults.standard.set(showsCount, forKey: "gs.tv.stats.showsCount")
+            UserDefaults.standard.set(hoursWatched, forKey: "gs.tv.stats.hoursWatched")
+            lastError = nil
+        } catch {
+            lastError = error.localizedDescription
+        }
+    }
+
+    private func refreshDevices() async {
+        guard let uid = AuthViewModel.shared.currentUser?.id.uuidString else {
+            return
+        }
+        do {
+            let rows: [TVDeviceCountRow] = try await SupabaseManager.shared.client
+                .from("device_sessions")
+                .select("device_id")
+                .eq("user_id", value: uid)
+                .execute()
+                .value
+            let count = max(1, rows.count)
+            self.devicesCount = count
+            UserDefaults.standard.set(count, forKey: "gs.tv.stats.devicesCount")
+        } catch {
+            lastError = error.localizedDescription
+        }
+    }
+}
+
+// MARK: - Decoding helpers
+
+nonisolated private struct TVProfileStatsRow: Decodable, Sendable {
+    let shows_count: Int
+    let hours_watched: Double
+}
+
+nonisolated private struct TVDeviceCountRow: Decodable, Sendable {
+    let device_id: String
 }
 
 // MARK: - SupabaseSchemaProbe (no-op stub)

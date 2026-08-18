@@ -95,20 +95,20 @@ struct TVHomeView: View {
                     }
                 }
 
-                // 1. Everyone's Watching
-                if !everyonesWatching.isEmpty {
-                    TVRail(title: "Everyone's Watching", accent: TVTheme.orange, count: everyonesWatching.count) {
-                        ForEach(everyonesWatching) { item in
-                            everyonesWatchingCard(for: item)
-                        }
-                    }
-                }
-
-                // 2. New Episodes (unchanged)
+                // 1. New Episodes
                 if !newEpisodes.isEmpty {
                     TVRail(title: "New Episodes", accent: TVTheme.blue, count: newEpisodes.count) {
                         ForEach(newEpisodes) { item in
                             posterCard(for: item, accent: TVTheme.blue)
+                        }
+                    }
+                }
+
+                // 2. Everyone's Watching
+                if !everyonesWatching.isEmpty {
+                    TVRail(title: "Everyone's Watching", accent: TVTheme.orange, count: everyonesWatching.count) {
+                        ForEach(everyonesWatching) { item in
+                            everyonesWatchingCard(for: item)
                         }
                     }
                 }
@@ -133,16 +133,7 @@ struct TVHomeView: View {
                     }
                 }
 
-                // 5. Creators / Podcasts for You
-                if !recommendedCreators.isEmpty {
-                    TVRail(title: "Creators / Podcasts for You", accent: TVTheme.blue, count: recommendedCreators.count) {
-                        ForEach(recommendedCreators) { creator in
-                            creatorCard(for: creator)
-                        }
-                    }
-                }
-
-                // 6. Live Sports (unchanged)
+                // 5. Live Sports
                 if !sports.isEmpty {
                     TVRail(title: "Live Sports", accent: TVTheme.blue, count: sports.count) {
                         ForEach(sports) { game in

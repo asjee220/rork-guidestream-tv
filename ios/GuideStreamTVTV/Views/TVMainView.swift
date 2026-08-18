@@ -22,7 +22,7 @@ struct TVMainView: View {
             TVWatchListView()
                 .tabItem { Label("Watch List", systemImage: "popcorn.fill") }
 
-            TVAccountView(onSignOut: onSignOut)
+            ProfileView()
                 .tabItem { Label("Account", systemImage: "person.crop.circle.fill") }
         }
         .background(TVTheme.bg.ignoresSafeArea())

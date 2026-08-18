@@ -612,11 +612,11 @@ struct SportsView: View {
         if !broadcasts.isEmpty {
             HStack(spacing: 6) {
                 Text("ON:")
-                    .scaledFont(size: 9, weight: .bold)
+                    .scaledFont(size: 11, weight: .bold)
                     .foregroundStyle(Color.white.opacity(0.35))
                 ForEach(broadcasts.prefix(4), id: \.self) { name in
                     Text(name)
-                        .scaledFont(size: 9, weight: .black)
+                        .scaledFont(size: 11, weight: .black)
                         .foregroundStyle(.white)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 3)
