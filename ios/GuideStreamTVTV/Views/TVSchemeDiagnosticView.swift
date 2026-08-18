@@ -19,12 +19,23 @@ struct TVSchemeDiagnosticView: View {
         let serviceName: String
         let serviceColor: Color
         var titleName: String?
+        var matchedSourceName: String?
+        var extractedContentId: String?
         var contentURLString: String?
         var playURL: URL?
         var appHomeURL: URL?
         var unavailableReason: String?
         var openAppResult: Bool?
-        var playTitleResult: Bool?
+        var candidateResults: [String: Bool] = [:]
+        var lastPressedURL: String?
+    }
+
+    /// One testable URL in the candidate row. `id` is the tag, unique
+    /// within a row so ForEach identity is stable across re-renders.
+    struct DiagnosticCandidate: Identifiable {
+        let id: String
+        let tag: String
+        let url: URL
     }
 
     @State private var rows: [DiagnosticRow] = []
@@ -104,6 +115,12 @@ struct TVSchemeDiagnosticView: View {
     @ViewBuilder
     private func rowView(for row: Binding<DiagnosticRow>) -> some View {
         let r = row.wrappedValue
+        let candidates = buildCandidates(
+            serviceId: r.id,
+            contentURL: r.contentURLString.flatMap { URL(string: $0) },
+            playURL: r.playURL,
+            contentId: r.extractedContentId
+        )
 
         VStack(alignment: .leading, spacing: 14) {
             // Service name
@@ -128,11 +145,24 @@ struct TVSchemeDiagnosticView: View {
                     .foregroundStyle(TVTheme.textPrimary)
                     .lineLimit(2)
 
+                // Matched source name
+                if let sourceName = r.matchedSourceName {
+                    Text("Matched source: \(sourceName)")
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundStyle(TVTheme.textSecondary)
+                }
+
+                // Extracted content id
+                Text("Content ID: \(r.extractedContentId ?? "no id extracted")")
+                    .font(.system(size: 16, weight: .medium, design: .monospaced))
+                    .foregroundStyle(r.extractedContentId != nil ? TVTheme.blue : TVTheme.textTertiary)
+
                 urlLabel("contentURL", r.contentURLString)
                 urlLabel("playURL", r.playURL?.absoluteString)
                 urlLabel("appHomeURL", r.appHomeURL?.absoluteString)
 
-                HStack(spacing: 20) {
+                // Candidate buttons row (Open app + all candidates)
+                HStack(spacing: 16) {
                     Button {
                         openURL(r.appHomeURL, binding: row, keyPath: \.openAppResult)
                     } label: {
@@ -141,13 +171,23 @@ struct TVSchemeDiagnosticView: View {
                     .buttonStyle(.card)
                     .disabled(r.appHomeURL == nil)
 
-                    Button {
-                        openURL(r.playURL, binding: row, keyPath: \.playTitleResult)
-                    } label: {
-                        resultButtonLabel("Play title", result: r.playTitleResult, enabled: r.playURL != nil)
+                    ForEach(candidates) { candidate in
+                        Button {
+                            openCandidate(candidate.url, tag: candidate.tag, binding: row)
+                        } label: {
+                            resultButtonLabel(candidate.tag, result: r.candidateResults[candidate.tag], enabled: true)
+                        }
+                        .buttonStyle(.card)
                     }
-                    .buttonStyle(.card)
-                    .disabled(r.playURL == nil)
+                }
+
+                // Mono-spaced last pressed URL
+                if let last = r.lastPressedURL {
+                    Text(last)
+                        .font(.system(size: 13, weight: .medium, design: .monospaced))
+                        .foregroundStyle(TVTheme.textTertiary)
+                        .lineLimit(2)
+                        .truncationMode(.middle)
                 }
             }
         }
@@ -202,7 +242,7 @@ struct TVSchemeDiagnosticView: View {
         }
     }
 
-    // MARK: - Open URL (direct, no openChain)
+    // MARK: - Open URL (direct, no openChain) — for Open app button
 
     private func openURL(
         _ url: URL?,
@@ -210,9 +250,120 @@ struct TVSchemeDiagnosticView: View {
         keyPath: WritableKeyPath<DiagnosticRow, Bool?>
     ) {
         guard let url else { return }
+        binding.wrappedValue.lastPressedURL = url.absoluteString
         UIApplication.shared.open(url, options: [:]) { success in
             binding.wrappedValue[keyPath: keyPath] = success
         }
+    }
+
+    // MARK: - Open candidate URL (direct, no openChain)
+
+    private func openCandidate(
+        _ url: URL,
+        tag: String,
+        binding: Binding<DiagnosticRow>
+    ) {
+        binding.wrappedValue.lastPressedURL = url.absoluteString
+        UIApplication.shared.open(url, options: [:]) { success in
+            binding.wrappedValue.candidateResults[tag] = success
+        }
+    }
+
+    // MARK: - Candidate builder
+
+    /// Builds the ordered list of candidate URLs for a service row.
+    /// Candidate 1 ("https"): raw contentURL from Watchmode, no rewriting.
+    /// Candidate 2 ("resolver"): playURL from TVOSDeepLinker.resolve.
+    /// Candidates 3+: per-service scheme guesses from the extracted content id.
+    private func buildCandidates(
+        serviceId: String,
+        contentURL: URL?,
+        playURL: URL?,
+        contentId: String?
+    ) -> [DiagnosticCandidate] {
+        var candidates: [DiagnosticCandidate] = []
+
+        // 1. Raw contentURL — always rendered when present
+        if let contentURL {
+            candidates.append(DiagnosticCandidate(id: "https", tag: "https", url: contentURL))
+        }
+
+        // 2. Resolver playURL — omitted when nil
+        if let playURL {
+            candidates.append(DiagnosticCandidate(id: "resolver", tag: "resolver", url: playURL))
+        }
+
+        // 3. Per-service scheme guesses — omitted when id is nil or not an identifier
+        if let contentId, isLikelyIdentifier(contentId) {
+            for guess in schemeGuesses(for: serviceId, contentId: contentId) {
+                if let url = URL(string: guess.urlString) {
+                    candidates.append(DiagnosticCandidate(id: guess.tag, tag: guess.tag, url: url))
+                }
+            }
+        }
+
+        return candidates
+    }
+
+    // MARK: - Scheme guesses
+
+    /// Per-service scheme guesses built from the extracted content id.
+    /// Returns an empty array for services with no documented schemes.
+    private func schemeGuesses(for serviceId: String, contentId: String) -> [(tag: String, urlString: String)] {
+        switch serviceId {
+        case "peacock":
+            return [
+                ("peacock:watch", "peacock://watch/\(contentId)"),
+                ("peacock:asset", "peacock://asset/\(contentId)")
+            ]
+        case "disney":
+            return [
+                ("disney:video", "disneyplus://video/\(contentId)"),
+                ("disney:content", "disneyplus://content/\(contentId)")
+            ]
+        case "paramount":
+            return [
+                ("paramount:video", "paramountplus://video/\(contentId)"),
+                ("paramount:watch", "paramountplus://watch/\(contentId)")
+            ]
+        case "max":
+            return [
+                ("max:video", "max://video/\(contentId)"),
+                ("hbomax:video", "hbomax://video/\(contentId)")
+            ]
+        case "prime":
+            return [
+                ("aiv:resume", "aiv://aiv/resume?asin=\(contentId)"),
+                ("prime:watch", "primevideo://watch/\(contentId)")
+            ]
+        case "appletv":
+            return [
+                ("videos:show", "videos://tv.apple.com/show/\(contentId)")
+            ]
+        case "crunchyroll":
+            return [
+                ("crunchy:media", "crunchyroll://media/\(contentId)")
+            ]
+        case "starz":
+            return [
+                ("starz:content", "starz://content/\(contentId)")
+            ]
+        default:
+            return []
+        }
+    }
+
+    // MARK: - Identifier check
+
+    /// Returns false when the extracted id is a URL path-structure word
+    /// (e.g. "watch", "title") rather than a real content identifier.
+    private func isLikelyIdentifier(_ id: String) -> Bool {
+        let pathWords: Set<String> = [
+            "watch", "title", "search", "browse", "results", "show",
+            "movie", "series", "season", "episode", "content", "video",
+            "media", "asset", "play", "home", "movies", "tv"
+        ]
+        return !pathWords.contains(id.lowercased())
     }
 
     // MARK: - Loading
@@ -229,6 +380,8 @@ struct TVSchemeDiagnosticView: View {
                 serviceName: service.name,
                 serviceColor: service.color,
                 titleName: nil,
+                matchedSourceName: nil,
+                extractedContentId: nil,
                 contentURLString: nil,
                 playURL: nil,
                 appHomeURL: nil,
@@ -265,11 +418,26 @@ struct TVSchemeDiagnosticView: View {
                 continue
             }
 
-            // Find the source matching this service by catalog id.
-            let matchingSource = resolved.usSources.first { source in
+            // Find the source matching this service.
+            // 1. Exact match via Platform.from(providerName:)?.catalogId
+            // 2. Fallback: first source whose name, lowercased, contains the
+            //    catalogue service name as a substring — so "STARZ (Via Hulu)"
+            //    matches "Starz" and "Crunchyroll Premium" matches "Crunchyroll".
+            let serviceNameLower = service.name.lowercased()
+
+            let exactMatch = resolved.usSources.first { source in
                 Platform.from(providerName: source.name)?.catalogId == service.id
             } ?? resolved.primarySource.flatMap { primary in
-                guard Platform.from(providerName: primary.name)?.catalogId == service.id else { return nil as TVWatchmodeResolver.TVResolvedSource? }
+                guard Platform.from(providerName: primary.name)?.catalogId == service.id
+                else { return nil as TVWatchmodeResolver.TVResolvedSource? }
+                return primary
+            }
+
+            let matchingSource = exactMatch ?? resolved.usSources.first { source in
+                source.name.lowercased().contains(serviceNameLower)
+            } ?? resolved.primarySource.flatMap { primary in
+                guard primary.name.lowercased().contains(serviceNameLower)
+                else { return nil as TVWatchmodeResolver.TVResolvedSource? }
                 return primary
             }
 
@@ -280,8 +448,11 @@ struct TVSchemeDiagnosticView: View {
                 continue
             }
 
+            row.matchedSourceName = source.name
+
             let contentURL = source.webUrl.flatMap { URL(string: $0) }
-            row.contentURLString = source.webUrl ?? "nil"
+            row.contentURLString = source.webUrl
+            row.extractedContentId = TVOSDeepLinker.extractContentId(from: contentURL)
 
             let target = TVOSDeepLinker.resolve(
                 platform: source.name,
@@ -291,10 +462,6 @@ struct TVSchemeDiagnosticView: View {
 
             row.playURL = target.playURL
             row.appHomeURL = target.appHomeURL
-
-            if target.playURL == nil && target.appHomeURL == nil {
-                row.unavailableReason = "TVOSDeepLinker.resolve returned nil for both playURL and appHomeURL"
-            }
 
             rows.append(row)
         }

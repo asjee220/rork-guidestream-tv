@@ -298,7 +298,7 @@ enum TVOSDeepLinker {
     /// Pulls the numeric/string content id from a resolved web URL. Handles
     /// the common `/watch/{id}`, `/title/{id}`, `?v={id}` shapes. Returns nil
     /// when the URL is search-only or unrecognized.
-    private static func extractContentId(from url: URL?) -> String? {
+    static func extractContentId(from url: URL?) -> String? {
         guard let url else { return nil }
         let comps = URLComponents(url: url, resolvingAgainstBaseURL: false)
 
