@@ -26,7 +26,7 @@ final class TVAffiliateService {
 
     /// Decoded row from `public.affiliate_advertisers`. Only the columns
     /// needed for resolution and App Store linking are selected.
-    nonisolated struct Advertiser: Decodable, Sendable {
+    nonisolated struct Advertiser: Decodable, Sendable, Hashable {
         let key: String
         let displayName: String
         let aliases: [String]
