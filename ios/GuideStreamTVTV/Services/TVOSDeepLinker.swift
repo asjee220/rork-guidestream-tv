@@ -104,6 +104,17 @@ enum TVOSDeepLinker {
         openChain(chain, completion: completion)
     }
 
+    /// Opens an `itms-apps` URL on the Apple TV. Calls
+    /// `UIApplication.shared.open` exactly once and forwards the result.
+    /// Never falls back to an `https` apps.apple.com URL and never calls
+    /// `canOpenURL` — the system handles availability.
+    @MainActor
+    static func openAppStore(itmsURL: URL, completion: ((Bool) -> Void)?) {
+        UIApplication.shared.open(itmsURL, options: [:]) { success in
+            completion?(success)
+        }
+    }
+
     /// Returns true when the streaming app for `platform` can actually be
     /// launched from another app on tvOS via a registered URL scheme. Only
     /// Netflix, Hulu, YouTube, and the Apple TV app are verified-launchable

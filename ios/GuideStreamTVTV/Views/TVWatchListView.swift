@@ -13,6 +13,7 @@ struct TVWatchListView: View {
     @State private var streams = TVStreamsViewModel.shared
     @State private var social = SocialViewModel.shared
     @State private var pendingDetail: TVTitleDetail?
+    @State private var loggedImpressionKeys: Set<String> = []
 
     private let columns: [GridItem] = Array(
         repeating: GridItem(.fixed(260), spacing: 36),
@@ -33,7 +34,7 @@ struct TVWatchListView: View {
                             .padding(.top, 24)
 
                         LazyVGrid(columns: columns, alignment: .leading, spacing: 48) {
-                            ForEach(sortedStreams) { row in
+                            ForEach(Array(sortedStreams.enumerated()), id: \.element.id) { index, row in
                                 TVPosterCard(
                                     title: row.title ?? row.titleId,
                                     subtitle: row.platform,
@@ -80,6 +81,12 @@ struct TVWatchListView: View {
                                             .padding(10)
                                     }
                                 }
+
+                                // Sponsored chip beneath the first grid row
+                                if index == 5, let chip = watchlistSponsoredChip {
+                                    TVSponsoredChip(data: chip)
+                                        .gridCellColumns(columns.count)
+                                }
                             }
                         }
                         .padding(.horizontal, 80)
@@ -94,7 +101,9 @@ struct TVWatchListView: View {
             await streams.fetchWatchlistSeen()
             await streams.backfillPosters()
             await social.loadAllWatched()
+            await TVAffiliateService.shared.fetchIfNeeded()
         }
+        .onDisappear { loggedImpressionKeys.removeAll() }
         .sheet(item: $pendingDetail) { detail in
             TVTitleSheet(detail: detail) { _ in
                 pendingDetail = nil
@@ -136,6 +145,29 @@ struct TVWatchListView: View {
                 ProgressView().tint(.white)
             }
         }
+    }
+
+    // MARK: - Sponsored chip
+
+    /// Resolves a sponsored chip for the Watch List: walks the sorted
+    /// streams, finds the first whose `platform` resolves to a gap-service
+    /// advertiser with a non-nil `appStoreURL`. Maximum one chip on this
+    /// screen.
+    private var watchlistSponsoredChip: SponsoredChipData? {
+        for row in sortedStreams {
+            guard let platform = row.platform else { continue }
+            guard let advertiser = TVAffiliateService.shared.advertiser(forProviderName: platform) else { continue }
+            guard advertiser.appStoreURL != nil else { continue }
+            guard TVAffiliateService.shared.isGapService(platform) else { continue }
+            return SponsoredChipData(
+                advertiser: advertiser,
+                titleName: row.title ?? row.titleId,
+                titleId: row.titleId,
+                providerName: platform,
+                surface: "watchlist"
+            )
+        }
+        return nil
     }
 
     private var emptyState: some View {

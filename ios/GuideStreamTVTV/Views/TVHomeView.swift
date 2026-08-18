@@ -62,6 +62,11 @@ struct TVHomeView: View {
     @State private var recommendedCreators: [TVRecommendedCreator] = []
     @State private var nowAndNextRails: [NowAndNextRail] = []
 
+    /// Sponsored-chip impression dedup: stores advertiser keys already
+    /// logged on this screen so scrolling doesn't fire duplicate
+    /// `ad_impression` events. Cleared on disappear.
+    @State private var loggedImpressionKeys: Set<String> = []
+
     /// Maps tvOS StreamingCatalog ids to TMDB Watch provider ids so
     /// `getPopularOnService` / `getPopularMoviesOnService` can query the
     /// correct provider.
@@ -95,6 +100,12 @@ struct TVHomeView: View {
                     }
                 }
 
+                // Sponsored chip beneath Now & Next — first gap-service
+                // advertiser with a non-nil appStoreURL from the rail's items.
+                if let chip = nowNextSponsoredChip {
+                    TVSponsoredChip(data: chip)
+                }
+
                 // 1. New Episodes
                 if !newEpisodes.isEmpty {
                     TVRail(title: "New Episodes", accent: TVTheme.blue, count: newEpisodes.count) {
@@ -111,6 +122,12 @@ struct TVHomeView: View {
                             everyonesWatchingCard(for: item)
                         }
                     }
+                }
+
+                // Sponsored chip beneath Everyone's Watching — first
+                // gap-service advertiser from the items' provider names.
+                if let chip = everyonesWatchingSponsoredChip {
+                    TVSponsoredChip(data: chip)
                 }
 
                 // 3. Coming to Streaming
@@ -156,6 +173,7 @@ struct TVHomeView: View {
         }
         .background(TVTheme.backgroundGradient)
         .task { await loadAll() }
+        .onDisappear { loggedImpressionKeys.removeAll() }
         .sheet(item: $pendingDetail) { detail in
             TVTitleSheet(detail: detail) { isSaved in
                 pendingDetail = nil
@@ -390,8 +408,63 @@ struct TVHomeView: View {
         async let popularTask: Void = buildPopularOnService()
         async let creatorsTask: Void = buildRecommendedCreators()
         async let nowNextTask: Void = buildNowAndNext()
+        async let affiliateTask: Void = TVAffiliateService.shared.fetchIfNeeded()
 
-        await (heroTask, everyoneTask, comingTask, popularTask, creatorsTask, nowNextTask)
+        await (heroTask, everyoneTask, comingTask, popularTask, creatorsTask, nowNextTask, affiliateTask)
+    }
+
+    // MARK: - Sponsored chips
+
+    /// Resolves a sponsored chip for the Now & Next rail: walks the items
+    /// across all Now & Next rails, finds the first whose `sourceName`
+    /// resolves to a gap-service advertiser with a non-nil `appStoreURL`,
+    /// and returns a `SponsoredChipData` if one hasn't already been shown.
+    /// Deduplicates against the Everyone's Watching chip so the same
+    /// advertiser key never appears twice on one screen.
+    private var nowNextSponsoredChip: SponsoredChipData? {
+        for rail in nowAndNextRails {
+            for item in rail.items {
+                let providerName = item.release.sourceName
+                guard let advertiser = TVAffiliateService.shared.advertiser(forProviderName: providerName) else { continue }
+                guard advertiser.appStoreURL != nil else { continue }
+                guard TVAffiliateService.shared.isGapService(providerName) else { continue }
+                let titleId = "tmdb:\(item.release.isTV ? "tv" : "movie"):\(item.release.tmdbId)"
+                let chip = SponsoredChipData(
+                    advertiser: advertiser,
+                    titleName: item.release.title,
+                    titleId: titleId,
+                    providerName: providerName,
+                    surface: "home_now_next"
+                )
+                return chip
+            }
+        }
+        return nil
+    }
+
+    /// Resolves a sponsored chip for the Everyone's Watching rail: walks
+    /// the items, finds the first whose `providerName` resolves to a
+    /// gap-service advertiser with a non-nil `appStoreURL`, and returns a
+    /// `SponsoredChipData` if that advertiser key isn't already used by
+    /// the Now & Next chip. Maximum two chips per screen.
+    private var everyonesWatchingSponsoredChip: SponsoredChipData? {
+        let nowNextKey = nowNextSponsoredChip?.advertiser.key
+        for item in everyonesWatching {
+            guard let providerName = item.providerName else { continue }
+            guard let advertiser = TVAffiliateService.shared.advertiser(forProviderName: providerName) else { continue }
+            guard advertiser.appStoreURL != nil else { continue }
+            guard TVAffiliateService.shared.isGapService(providerName) else { continue }
+            if let nowNextKey, advertiser.key == nowNextKey { continue }
+            let chip = SponsoredChipData(
+                advertiser: advertiser,
+                titleName: item.result.displayName,
+                titleId: item.result.canonicalTitleId,
+                providerName: providerName,
+                surface: "home_everyones_watching"
+            )
+            return chip
+        }
+        return nil
     }
 
     // MARK: - Hero assembly
