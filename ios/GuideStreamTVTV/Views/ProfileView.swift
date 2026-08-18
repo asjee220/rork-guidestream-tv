@@ -41,6 +41,7 @@ struct ProfileView: View {
     @State private var showSignOutConfirm: Bool = false
     @State private var isSigningOut: Bool = false
     @State private var activeSheet: ProfileSheet?
+    @State private var showSchemeDiagnostics: Bool = false
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -87,6 +88,37 @@ struct ProfileView: View {
                         versionLabel
                             .padding(.top, 24)
 
+                        // TEMPORARY: throwaway QA screen for deep-link scheme testing.
+                        Button {
+                            showSchemeDiagnostics = true
+                        } label: {
+                            HStack(spacing: 14) {
+                                ZStack {
+                                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                        .fill(Color.white.opacity(0.07))
+                                    Image(systemName: "ant.fill")
+                                        .scaledFont(size: 16, weight: .semibold)
+                                        .foregroundStyle(Color.orange)
+                                }
+                                .frame(width: 36, height: 36)
+
+                                Text("Scheme diagnostics")
+                                    .scaledFont(size: 16, weight: .semibold)
+                                    .foregroundStyle(.white)
+
+                                Spacer(minLength: 8)
+
+                                Image(systemName: "chevron.right")
+                                    .scaledFont(size: 13, weight: .semibold)
+                                    .foregroundStyle(Color.textTertiary)
+                            }
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 14)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(ProfileRowButtonStyle())
+                        .padding(.top, 8)
+
                         // Floating tab bar safe area
                         Color.clear.frame(height: 110)
                     }
@@ -124,6 +156,9 @@ struct ProfileView: View {
             }
         }
         #endif
+        .fullScreenCover(isPresented: $showSchemeDiagnostics) {
+            TVSchemeDiagnosticView()
+        }
         .task {
             await stats.refresh()
             await streams.fetchUserStreams()
