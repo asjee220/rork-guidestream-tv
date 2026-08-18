@@ -133,7 +133,16 @@ struct TVHomeView: View {
                     }
                 }
 
-                // 5. Live Sports
+                // 5. Creators / Podcasts for You
+                if !recommendedCreators.isEmpty {
+                    TVRail(title: "Creators / Podcasts for You", accent: TVTheme.blue, count: recommendedCreators.count) {
+                        ForEach(recommendedCreators) { creator in
+                            creatorCard(for: creator)
+                        }
+                    }
+                }
+
+                // 6. Live Sports
                 if !sports.isEmpty {
                     TVRail(title: "Live Sports", accent: TVTheme.blue, count: sports.count) {
                         ForEach(sports) { game in
