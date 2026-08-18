@@ -62,11 +62,6 @@ struct TVHomeView: View {
     @State private var recommendedCreators: [TVRecommendedCreator] = []
     @State private var nowAndNextRails: [NowAndNextRail] = []
 
-    /// Sponsored-chip impression dedup: stores advertiser keys already
-    /// logged on this screen so scrolling doesn't fire duplicate
-    /// `ad_impression` events. Cleared on disappear.
-    @State private var loggedImpressionKeys: Set<String> = []
-
     /// Maps tvOS StreamingCatalog ids to TMDB Watch provider ids so
     /// `getPopularOnService` / `getPopularMoviesOnService` can query the
     /// correct provider.
@@ -104,6 +99,7 @@ struct TVHomeView: View {
                 // advertiser with a non-nil appStoreURL from the rail's items.
                 if let chip = nowNextSponsoredChip {
                     TVSponsoredChip(data: chip)
+                        .id("chip_\(chip.advertiser.key)_home_now_next")
                 }
 
                 // 1. New Episodes
@@ -128,6 +124,7 @@ struct TVHomeView: View {
                 // gap-service advertiser from the items' provider names.
                 if let chip = everyonesWatchingSponsoredChip {
                     TVSponsoredChip(data: chip)
+                        .id("chip_\(chip.advertiser.key)_home_everyones_watching")
                 }
 
                 // 3. Coming to Streaming
@@ -173,7 +170,6 @@ struct TVHomeView: View {
         }
         .background(TVTheme.backgroundGradient)
         .task { await loadAll() }
-        .onDisappear { loggedImpressionKeys.removeAll() }
         .sheet(item: $pendingDetail) { detail in
             TVTitleSheet(detail: detail) { isSaved in
                 pendingDetail = nil

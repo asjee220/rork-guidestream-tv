@@ -13,7 +13,6 @@ struct TVWatchListView: View {
     @State private var streams = TVStreamsViewModel.shared
     @State private var social = SocialViewModel.shared
     @State private var pendingDetail: TVTitleDetail?
-    @State private var loggedImpressionKeys: Set<String> = []
 
     private let columns: [GridItem] = Array(
         repeating: GridItem(.fixed(260), spacing: 36),
@@ -85,6 +84,7 @@ struct TVWatchListView: View {
                                 // Sponsored chip beneath the first grid row
                                 if index == 5, let chip = watchlistSponsoredChip {
                                     TVSponsoredChip(data: chip)
+                                        .id("chip_\(chip.advertiser.key)_watchlist")
                                         .gridCellColumns(columns.count)
                                 }
                             }
@@ -103,7 +103,6 @@ struct TVWatchListView: View {
             await social.loadAllWatched()
             await TVAffiliateService.shared.fetchIfNeeded()
         }
-        .onDisappear { loggedImpressionKeys.removeAll() }
         .sheet(item: $pendingDetail) { detail in
             TVTitleSheet(detail: detail) { _ in
                 pendingDetail = nil

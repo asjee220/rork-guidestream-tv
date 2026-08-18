@@ -31,6 +31,7 @@ struct TVSponsoredChip: View {
     let data: SponsoredChipData
 
     @FocusState private var isFocused: Bool
+    @State private var hasLoggedImpression = false
 
     var body: some View {
         Button {
@@ -110,6 +111,8 @@ struct TVSponsoredChip: View {
     }
 
     private func logImpression() {
+        guard !hasLoggedImpression else { return }
+        hasLoggedImpression = true
         WatchIntentLogger.shared.log(
             eventType: .adImpression,
             titleId: data.titleId,
