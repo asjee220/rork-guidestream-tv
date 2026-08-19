@@ -97,23 +97,24 @@ struct ProfileView: View {
                                     RoundedRectangle(cornerRadius: 10, style: .continuous)
                                         .fill(Color.white.opacity(0.07))
                                     Image(systemName: "ant.fill")
-                                        .scaledFont(size: 16, weight: .semibold)
+                                        .scaledFont(size: 24, weight: .semibold)
                                         .foregroundStyle(Color.orange)
                                 }
-                                .frame(width: 36, height: 36)
+                                .frame(width: 64, height: 64)
 
                                 Text("Scheme diagnostics")
-                                    .scaledFont(size: 16, weight: .semibold)
+                                    .scaledFont(size: 24, weight: .semibold)
                                     .foregroundStyle(.white)
 
                                 Spacer(minLength: 8)
 
                                 Image(systemName: "chevron.right")
-                                    .scaledFont(size: 13, weight: .semibold)
+                                    .scaledFont(size: 20, weight: .semibold)
                                     .foregroundStyle(Color.textTertiary)
                             }
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 14)
+                            .padding(.horizontal, 28)
+                            .padding(.vertical, 28)
+                            .frame(minHeight: 110)
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(ProfileRowButtonStyle())
@@ -122,7 +123,7 @@ struct ProfileView: View {
                         // Floating tab bar safe area
                         Color.clear.frame(height: 110)
                     }
-                    .padding(.horizontal, 20)
+                    .padding(.horizontal, 80)
                     .padding(.top, 8)
                 }
                 .tracksTabBarVisibility()
@@ -193,7 +194,7 @@ struct ProfileView: View {
     private var title: some View {
         HStack {
             Text("Profile")
-                .scaledFont(size: 30, weight: .heavy)
+                .scaledFont(size: 45, weight: .heavy)
                 .foregroundStyle(.white)
             Spacer()
         }
@@ -211,29 +212,29 @@ struct ProfileView: View {
                 ZStack {
                     Circle()
                         .fill(Color.orange.opacity(0.18))
-                        .frame(width: 38, height: 38)
+                        .frame(width: 64, height: 64)
                     Image(systemName: "exclamationmark.triangle.fill")
-                        .scaledFont(size: 16, weight: .bold)
+                        .scaledFont(size: 24, weight: .bold)
                         .foregroundStyle(Color.orange)
                 }
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Supabase setup needed")
-                        .scaledFont(size: 14, weight: .heavy)
+                        .scaledFont(size: 21, weight: .heavy)
                         .foregroundStyle(.white)
                         .lineLimit(1)
                     Text(bannerSubtitle)
-                        .scaledFont(size: 11)
+                        .scaledFont(size: 17)
                         .foregroundStyle(Color.white.opacity(0.75))
                         .lineLimit(2)
                 }
                 Spacer(minLength: 4)
                 Image(systemName: "chevron.right")
-                    .scaledFont(size: 12, weight: .bold)
+                    .scaledFont(size: 18, weight: .bold)
                     .foregroundStyle(Color.orange)
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 12)
-            .frame(maxWidth: .infinity)
+            .padding(.horizontal, 28)
+            .padding(.vertical, 28)
+            .frame(maxWidth: .infinity, minHeight: 110)
             .background(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
                     .fill(Color.orange.opacity(0.10))
@@ -265,14 +266,14 @@ struct ProfileView: View {
                 .accessibilityLabel("Profile avatar for \(displayName)")
 
             Text(displayName)
-                .scaledFont(size: 22, weight: .heavy)
+                .scaledFont(size: 33, weight: .heavy)
                 .foregroundStyle(.white)
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
 
             if let subtitle = subtitleLine {
                 Text(subtitle)
-                    .scaledFont(size: 12)
+                    .scaledFont(size: 18)
                     .foregroundStyle(Color.textSecondary)
                     .lineLimit(1)
             }
@@ -396,7 +397,7 @@ struct ProfileView: View {
 
     private var versionLabel: some View {
         Text("Version \(appVersion) (Build \(buildNumber))")
-            .font(.system(size: 16))
+            .font(.system(size: 24))
             .foregroundStyle(TVTheme.textTertiary)
             .multilineTextAlignment(.center)
             .frame(maxWidth: .infinity)
@@ -593,7 +594,7 @@ struct AvatarRing: View {
 
             // Initials
             Text(initials)
-                .scaledFont(size: size * 0.34, weight: fontWeight)
+                .scaledFont(size: size * 0.51, weight: fontWeight)
                 .foregroundStyle(.white)
                 .accessibilityHidden(true)
         }
@@ -620,13 +621,13 @@ private struct StatPill: View {
     var body: some View {
         VStack(spacing: 0) {
             Text("\(value) \(label)")
-                .scaledFont(size: 12, weight: .semibold)
+                .scaledFont(size: 18, weight: .semibold)
                 .foregroundStyle(Color.textSecondary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
         }
         .frame(maxWidth: .infinity)
-        .frame(height: 38)
+        .frame(minHeight: 76)
         .background(
             Capsule(style: .continuous)
                 .fill(Color.white.opacity(0.06))
@@ -670,7 +671,7 @@ struct ProfileRowDivider: View {
         Rectangle()
             .fill(Color.white.opacity(0.06))
             .frame(height: 0.5)
-            .padding(.leading, 66)
+            .padding(.leading, 106)
     }
 }
 
@@ -695,20 +696,20 @@ struct ProfileRow: View {
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
                         .fill(Color.white.opacity(0.07))
                     Image(systemName: icon)
-                        .scaledFont(size: 16, weight: .semibold)
+                        .scaledFont(size: 24, weight: .semibold)
                         .foregroundStyle(iconTint)
                 }
-                .frame(width: 36, height: 36)
+                .frame(width: 64, height: 64)
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)
-                        .scaledFont(size: 16, weight: .semibold)
+                        .scaledFont(size: 24, weight: .semibold)
                         .foregroundStyle(titleColor)
                         .lineLimit(1)
                         .minimumScaleFactor(0.85)
                     if !subtitle.isEmpty {
                         Text(subtitle)
-                            .scaledFont(size: 12)
+                            .scaledFont(size: 18)
                             .foregroundStyle(Color.textSecondary)
                             .lineLimit(2)
                     }
@@ -718,12 +719,13 @@ struct ProfileRow: View {
 
                 if !trailingHidden {
                     Image(systemName: "chevron.right")
-                        .scaledFont(size: 13, weight: .semibold)
+                        .scaledFont(size: 20, weight: .semibold)
                         .foregroundStyle(Color.textTertiary)
                 }
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 14)
+            .padding(.horizontal, 28)
+            .padding(.vertical, 28)
+            .frame(minHeight: 110)
             .contentShape(Rectangle())
         }
         .buttonStyle(ProfileRowButtonStyle())

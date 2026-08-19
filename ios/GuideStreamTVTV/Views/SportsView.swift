@@ -120,7 +120,7 @@ struct SportsView: View {
                 Color(hex: "04090F").ignoresSafeArea()
 
                 ScrollView(.vertical, showsIndicators: false) {
-                    LazyVStack(alignment: .leading, spacing: 16) {
+                    LazyVStack(alignment: .leading, spacing: 34) {
                         header
                         sportPills
                         if !derivedTeams.isEmpty {
@@ -146,7 +146,7 @@ struct SportsView: View {
                             }
                         }
                     }
-                    .padding(.horizontal, 16)
+                    .padding(.horizontal, 80)
                     .padding(.bottom, 100)
                     .padding(.top, 12)
                 }
@@ -205,13 +205,13 @@ struct SportsView: View {
         HStack(spacing: 10) {
             HStack(alignment: .firstTextBaseline, spacing: 0) {
                 Text("Guide")
-                    .scaledFont(size: 22, weight: .semibold)
+                    .scaledFont(size: 33, weight: .semibold)
                     .foregroundStyle(.white)
                 Text("Stream")
-                    .scaledFont(size: 22, weight: .semibold)
+                    .scaledFont(size: 33, weight: .semibold)
                     .foregroundStyle(Color(hex: "F5821F"))
                 Text(" TV")
-                    .scaledFont(size: 16, weight: .regular)
+                    .scaledFont(size: 24, weight: .regular)
                     .foregroundStyle(Color.white.opacity(0.45))
             }
             if !orderedSelectedServiceIds.isEmpty {
@@ -242,7 +242,7 @@ struct SportsView: View {
                         selectedSport = sport
                     } label: {
                         Text(sport)
-                            .scaledFont(size: 12, weight: .bold)
+                            .scaledFont(size: 18, weight: .bold)
                             .foregroundStyle(isActive ? Color.white : Color.white.opacity(0.5))
                             .padding(.horizontal, 14)
                             .padding(.vertical, 7)
@@ -270,15 +270,20 @@ struct SportsView: View {
     // MARK: - My Teams (derived from real games)
 
     private var myTeamsSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 34) {
             HStack {
                 Text("My Teams")
-                    .scaledFont(size: 16, weight: .bold)
+                    .scaledFont(size: 24, weight: .bold)
                     .foregroundStyle(.white)
                 Spacer()
-                Text("Edit")
-                    .scaledFont(size: 13, weight: .medium)
-                    .foregroundStyle(Color(hex: "1A6FE8"))
+                Button {
+                    // Placeholder — real favorites flow lives in Profile.
+                } label: {
+                    Text("Edit")
+                        .scaledFont(size: 20, weight: .medium)
+                        .foregroundStyle(Color(hex: "1A6FE8"))
+                }
+                .buttonStyle(.card)
             }
 
             ScrollView(.horizontal, showsIndicators: false) {
@@ -312,22 +317,22 @@ struct SportsView: View {
         VStack(spacing: 3) {
             RoundedRectangle(cornerRadius: 7)
                 .fill(team.color)
-                .frame(width: 26, height: 26)
+                .frame(width: 72, height: 72)
                 .overlay(
                     Text(team.abbrev)
-                        .scaledFont(size: 7, weight: .black)
+                        .scaledFont(size: 11, weight: .black)
                         .foregroundStyle(.white)
                 )
             Text(team.name)
-                .scaledFont(size: 9, weight: .semibold)
+                .scaledFont(size: 14, weight: .semibold)
                 .foregroundStyle(Color.white.opacity(0.6))
                 .lineLimit(1)
             Text(team.next)
-                .scaledFont(size: 8, weight: .bold)
+                .scaledFont(size: 12, weight: .bold)
                 .foregroundStyle(team.isLive ? Color(hex: "E50914") : Color(hex: "F5821F"))
         }
-        .padding(8)
-        .frame(minWidth: 64)
+        .padding(32)
+        .frame(minWidth: 270, minHeight: 180)
         .background(
             RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.04))
         )
@@ -343,17 +348,17 @@ struct SportsView: View {
         } label: {
             VStack(spacing: 3) {
                 Text("+")
-                    .scaledFont(size: 18, weight: .bold)
+                    .scaledFont(size: 27, weight: .bold)
                     .foregroundStyle(Color.white.opacity(0.2))
-                    .frame(width: 26, height: 26)
+                    .frame(width: 72, height: 72)
                 Text("Add")
-                    .scaledFont(size: 9, weight: .semibold)
+                    .scaledFont(size: 14, weight: .semibold)
                     .foregroundStyle(Color.white.opacity(0.4))
                 Text(" ")
-                    .scaledFont(size: 8, weight: .bold)
+                    .scaledFont(size: 12, weight: .bold)
             }
-            .padding(8)
-            .frame(minWidth: 58)
+            .padding(32)
+            .frame(minWidth: 270, minHeight: 180)
             .overlay(
                 RoundedRectangle(cornerRadius: 12)
                     .stroke(style: StrokeStyle(lineWidth: 1, dash: [4]))
@@ -380,7 +385,7 @@ struct SportsView: View {
     // MARK: - Live Now
 
     private var liveNowSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 34) {
             sectionHeader(title: "Live Now", count: liveGames.count) {
                 path.append(.allLive)
             }
@@ -400,10 +405,10 @@ struct SportsView: View {
                         .fill(Color(hex: "E50914"))
                         .frame(width: 6, height: 6)
                     Text("LIVE")
-                        .scaledFont(size: 9, weight: .black)
+                        .scaledFont(size: 14, weight: .black)
                         .foregroundStyle(Color(hex: "E50914"))
                     Text("\(game.sport) · \(game.statusDetail)")
-                        .scaledFont(size: 9, weight: .semibold)
+                        .scaledFont(size: 14, weight: .semibold)
                         .foregroundStyle(Color.white.opacity(0.5))
                         .lineLimit(1)
                 }
@@ -411,7 +416,7 @@ struct SportsView: View {
                 // The "Watch ▶" affordance now shares the same handler as the
                 // whole card — opens the SportsWatchSheet for this game.
                 Text("Watch ▶")
-                    .scaledFont(size: 11, weight: .bold)
+                    .scaledFont(size: 17, weight: .bold)
                     .foregroundStyle(.white)
                     .padding(.horizontal, 16)
                     .padding(.vertical, 8)
@@ -424,7 +429,7 @@ struct SportsView: View {
                 liveTeamBlock(team: game.away, leading: true)
                 Spacer()
                 Text("VS")
-                    .scaledFont(size: 11, weight: .bold)
+                    .scaledFont(size: 17, weight: .bold)
                     .foregroundStyle(Color.white.opacity(0.2))
                 Spacer()
                 liveTeamBlock(team: game.home, leading: false)
@@ -432,7 +437,8 @@ struct SportsView: View {
 
             broadcastsRow(game.broadcasts)
         }
-        .padding(12)
+        .padding(46)
+        .frame(minHeight: 210)
         .background(
             RoundedRectangle(cornerRadius: 16).fill(Color(hex: "161B27"))
         )
@@ -445,13 +451,13 @@ struct SportsView: View {
     private func liveTeamBlock(team: GameTeam, leading: Bool) -> some View {
         let scoreColor: Color = team.isWinner ? .white : Color.white.opacity(0.55)
         return VStack(spacing: 4) {
-            TeamLogoBadge(team: team, size: 50, cornerRadius: 10, inset: 6, abbreviationFontSize: 9)
+            TeamLogoBadge(team: team, size: 110, cornerRadius: 22, inset: 13, abbreviationFontSize: 14)
             Text(team.shortName)
-                .scaledFont(size: 10, weight: .semibold)
+                .scaledFont(size: 15, weight: .semibold)
                 .foregroundStyle(Color.white.opacity(0.6))
                 .lineLimit(1)
             Text(team.score)
-                .scaledFont(size: 24, weight: .black)
+                .scaledFont(size: 36, weight: .black)
                 .foregroundStyle(scoreColor)
         }
         .frame(maxWidth: .infinity, alignment: leading ? .leading : .trailing)
@@ -460,7 +466,7 @@ struct SportsView: View {
     // MARK: - Upcoming
 
     private var upcomingSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 34) {
             sectionHeader(title: upcomingTitle, count: upcomingGames.count) {
                 path.append(.allUpcoming)
             }
@@ -483,30 +489,31 @@ struct SportsView: View {
     private func upcomingGameCard(_ game: SportsGame) -> some View {
         return VStack(spacing: 8) {
             HStack(spacing: 8) {
-                TeamLogoBadge(team: game.away, size: 40, cornerRadius: 8, inset: 5, abbreviationFontSize: 7)
+                TeamLogoBadge(team: game.away, size: 110, cornerRadius: 22, inset: 13, abbreviationFontSize: 11)
                 Text("vs")
-                    .scaledFont(size: 11, weight: .bold)
+                    .scaledFont(size: 17, weight: .bold)
                     .foregroundStyle(Color.white.opacity(0.3))
-                TeamLogoBadge(team: game.home, size: 40, cornerRadius: 8, inset: 5, abbreviationFontSize: 7)
+                TeamLogoBadge(team: game.home, size: 110, cornerRadius: 22, inset: 13, abbreviationFontSize: 11)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("\(game.away.shortName) vs \(game.home.shortName)")
-                        .scaledFont(size: 13, weight: .bold)
+                        .scaledFont(size: 20, weight: .bold)
                         .foregroundStyle(.white)
                         .lineLimit(1)
                     Text("\(game.sport) · \(game.statusDetail)")
-                        .scaledFont(size: 10)
+                        .scaledFont(size: 15)
                         .foregroundStyle(Color.white.opacity(0.4))
                         .lineLimit(1)
                 }
                 Spacer()
                 Image(systemName: "chevron.right")
-                    .scaledFont(size: 12, weight: .bold)
+                    .scaledFont(size: 18, weight: .bold)
                     .foregroundStyle(Color.white.opacity(0.35))
             }
 
             broadcastsRow(game.broadcasts)
         }
-        .padding(12)
+        .padding(46)
+        .frame(minHeight: 210)
         .background(
             RoundedRectangle(cornerRadius: 16).fill(Color(hex: "161B27"))
         )
@@ -519,7 +526,7 @@ struct SportsView: View {
     // MARK: - Final
 
     private var finalSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 34) {
             sectionHeader(title: "Final", count: finalGames.count) {
                 path.append(.allFinal)
             }
@@ -535,44 +542,45 @@ struct SportsView: View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
-                    TeamLogoBadge(team: game.away, size: 18, cornerRadius: 5, inset: 3, abbreviationFontSize: 6)
+                    TeamLogoBadge(team: game.away, size: 110, cornerRadius: 22, inset: 13, abbreviationFontSize: 9)
                     Text(game.away.abbreviation)
-                        .scaledFont(size: 11, weight: .bold)
+                        .scaledFont(size: 17, weight: .bold)
                         .foregroundStyle(game.away.isWinner ? .white : Color.white.opacity(0.5))
                     Spacer()
                     Text(game.away.score)
-                        .scaledFont(size: 14, weight: .black)
+                        .scaledFont(size: 21, weight: .black)
                         .foregroundStyle(game.away.isWinner ? .white : Color.white.opacity(0.5))
                 }
                 HStack(spacing: 6) {
-                    TeamLogoBadge(team: game.home, size: 18, cornerRadius: 5, inset: 3, abbreviationFontSize: 6)
+                    TeamLogoBadge(team: game.home, size: 110, cornerRadius: 22, inset: 13, abbreviationFontSize: 9)
                     Text(game.home.abbreviation)
-                        .scaledFont(size: 11, weight: .bold)
+                        .scaledFont(size: 17, weight: .bold)
                         .foregroundStyle(game.home.isWinner ? .white : Color.white.opacity(0.5))
                     Spacer()
                     Text(game.home.score)
-                        .scaledFont(size: 14, weight: .black)
+                        .scaledFont(size: 21, weight: .black)
                         .foregroundStyle(game.home.isWinner ? .white : Color.white.opacity(0.5))
                 }
             }
-            .frame(width: 110)
+            .frame(minWidth: 165)
 
-            Rectangle().fill(Color.white.opacity(0.06)).frame(width: 1, height: 36)
+            Rectangle().fill(Color.white.opacity(0.06)).frame(width: 1, height: 54)
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(game.statusDetail)
-                    .scaledFont(size: 10, weight: .bold)
+                    .scaledFont(size: 15, weight: .bold)
                     .foregroundStyle(Color.white.opacity(0.55))
                 Text(game.sport)
-                    .scaledFont(size: 9, weight: .semibold)
+                    .scaledFont(size: 14, weight: .semibold)
                     .foregroundStyle(Color.white.opacity(0.35))
             }
             Spacer()
             Image(systemName: "chevron.right")
-                .scaledFont(size: 12, weight: .bold)
+                .scaledFont(size: 18, weight: .bold)
                 .foregroundStyle(Color.white.opacity(0.35))
         }
-        .padding(12)
+        .padding(46)
+        .frame(minHeight: 210)
         .background(
             RoundedRectangle(cornerRadius: 14).fill(Color(hex: "12161F"))
         )
@@ -589,11 +597,11 @@ struct SportsView: View {
         if !broadcasts.isEmpty {
             HStack(spacing: 6) {
                 Text("ON:")
-                    .scaledFont(size: 11, weight: .bold)
+                    .scaledFont(size: 17, weight: .bold)
                     .foregroundStyle(Color.white.opacity(0.35))
                 ForEach(broadcasts.prefix(4), id: \.self) { name in
                     Text(name)
-                        .scaledFont(size: 11, weight: .black)
+                        .scaledFont(size: 17, weight: .black)
                         .foregroundStyle(.white)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 3)
@@ -630,7 +638,7 @@ struct SportsView: View {
             ForEach(0..<3, id: \.self) { _ in
                 RoundedRectangle(cornerRadius: 16)
                     .fill(Color.white.opacity(0.04))
-                    .frame(height: 120)
+                    .frame(height: 180)
                     .overlay(
                         RoundedRectangle(cornerRadius: 16)
                             .stroke(Color.white.opacity(0.06), lineWidth: 1)
@@ -643,10 +651,10 @@ struct SportsView: View {
     private var emptyState: some View {
         VStack(spacing: 8) {
             Image(systemName: "sportscourt")
-                .scaledFont(size: 28)
+                .scaledFont(size: 42)
                 .foregroundStyle(Color.white.opacity(0.3))
             Text(loadError ?? "No \(selectedSport) games today.")
-                .scaledFont(size: 13, weight: .medium)
+                .scaledFont(size: 20, weight: .medium)
                 .foregroundStyle(Color.white.opacity(0.5))
         }
         .frame(maxWidth: .infinity)
@@ -658,10 +666,10 @@ struct SportsView: View {
     private func sectionHeader(title: String, count: Int, onSeeAll: @escaping () -> Void) -> some View {
         HStack(spacing: 8) {
             Text(title)
-                .scaledFont(size: 16, weight: .bold)
+                .scaledFont(size: 24, weight: .bold)
                 .foregroundStyle(.white)
             Text("\(count)")
-                .scaledFont(size: 11, weight: .bold)
+                .scaledFont(size: 17, weight: .bold)
                 .foregroundStyle(Color.white.opacity(0.5))
                 .padding(.horizontal, 7)
                 .padding(.vertical, 2)
@@ -672,13 +680,13 @@ struct SportsView: View {
             Button(action: onSeeAll) {
                 HStack(spacing: 4) {
                     Text("See all")
-                        .scaledFont(size: 13, weight: .medium)
+                        .scaledFont(size: 20, weight: .medium)
                     Image(systemName: "arrow.right")
-                        .scaledFont(size: 11, weight: .bold)
+                        .scaledFont(size: 17, weight: .bold)
                 }
                 .foregroundStyle(Color(hex: "1A6FE8"))
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.card)
         }
     }
 }
