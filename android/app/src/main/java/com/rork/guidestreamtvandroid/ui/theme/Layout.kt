@@ -7,6 +7,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -55,10 +57,16 @@ fun rememberWidthClass(): GSWidthClass {
     }
 }
 
+/** Vertical drawing bleed kept outside the clip (shadows, glows). */
+private val ClipBleed = 48.dp
+
 /**
  * Clamps the modified content to [GSWidthClass.contentMaxWidth] and centres
  * it horizontally, so wide-window content forms even gutters instead of
- * stretching edge to edge. A no-op in compact so phone layouts are untouched.
+ * stretching edge to edge. The clamped content is clipped to that frame
+ * horizontally so full-bleed rails can no longer draw past the clamp's
+ * trailing edge — with vertical bleed so shadows and glows keep drawing
+ * past the frame. A no-op in compact so phone layouts are untouched.
  */
 fun Modifier.gsContentWidth(widthClass: GSWidthClass): Modifier {
     val maxWidth = GSWidthClass.contentMaxWidth(widthClass) ?: return this
@@ -66,4 +74,17 @@ fun Modifier.gsContentWidth(widthClass: GSWidthClass): Modifier {
         .fillMaxWidth()
         .wrapContentWidth(align = Alignment.CenterHorizontally)
         .widthIn(max = maxWidth)
+        .drawWithContent {
+            val bleedPx = ClipBleed.toPx()
+            clipRect(
+                left = 0f,
+                top = -bleedPx,
+                right = size.width,
+                bottom = size.height + bleedPx,
+            ) {
+                // clipRect's block is a plain DrawScope, so drawContent needs
+                // the outer ContentDrawScope receiver explicitly.
+                this@drawWithContent.drawContent()
+            }
+        }
 }

@@ -346,6 +346,12 @@ struct HomeView: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.tabBarVisibility) private var tabBarVisibility
     @State private var coachMark = CoachMarkManager.shared
+    /// Top safe-area inset measured at the pinned header overlay. The header
+    /// and its matching scroll-content spacer grow by this amount so the
+    /// wordmark stays clear of the status bar on tablets; it reads zero
+    /// wherever the header already sits below the safe area, leaving phone
+    /// layout byte-for-byte unchanged.
+    @State private var headerTopInset: CGFloat = 0
 
     @State private var widgetBannerDismissed: Bool = false
     /// Inline sponsored slot indices dismissed for this session.
@@ -470,7 +476,7 @@ struct HomeView: View {
                 ScrollViewReader { scrollProxy in
                 ScrollView(showsIndicators: false) {
                     VStack(spacing: 20) {
-                        Color.clear.frame(height: 56)
+                        Color.clear.frame(height: 56 + headerTopInset)
 
                         // Search bar tap target — opens SearchView
                         Button {
@@ -1106,7 +1112,8 @@ struct HomeView: View {
                 VStack(spacing: 0) {
                     PageBar(
                         selectedServiceIds: orderedSelectedServiceIds,
-                        onServicesPill: { showServicesSheet = true }
+                        onServicesPill: { showServicesSheet = true },
+                        topInset: headerTopInset
                     )
                     if let session = castPlayback.current {
                         PlayingOnBanner(
@@ -1142,6 +1149,13 @@ struct HomeView: View {
                         .frame(height: 0.5)
                 }
                 .animation(.spring(response: 0.4, dampingFraction: 0.82), value: castPlayback.current?.id)
+                .onGeometryChange(for: CGFloat.self) { proxy in
+                    proxy.safeAreaInsets.top
+                } action: { topInset in
+                    if topInset != headerTopInset {
+                        headerTopInset = topInset
+                    }
+                }
 
 
             }
@@ -2803,6 +2817,10 @@ struct HomeView: View {
 private struct PageBar: View {
     let selectedServiceIds: [String]
     let onServicesPill: () -> Void
+    /// Top safe-area inset at the pinned bar. The bar grows by this amount so
+    /// its content sits below the status bar; zero wherever the bar already
+    /// sits below the safe area (all phones), rendering identical to before.
+    let topInset: CGFloat
 
     var body: some View {
         HStack(spacing: 10) {
@@ -2817,6 +2835,7 @@ private struct PageBar: View {
         }
         .padding(.horizontal, 12)
         .frame(height: 56)
+        .padding(.top, topInset)
     }
 }
 

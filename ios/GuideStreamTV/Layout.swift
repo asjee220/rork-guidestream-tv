@@ -46,9 +46,17 @@ enum GSWidthClass {
 
 /// Clamps the modified view to `GSWidthClass.contentMaxWidth` for the
 /// enclosing width and centres it horizontally, so wide-window content forms
-/// even gutters instead of stretching edge to edge. Compact widths pass
-/// through completely unchanged.
+/// even gutters instead of stretching edge to edge. The clamped content is
+/// clipped to that frame horizontally so full-bleed rails can no longer draw
+/// past the clamp's trailing edge — with vertical bleed so shadows, glows and
+/// other intentional overflow keep drawing past the frame. Compact widths
+/// pass through completely unchanged and unclipped.
 struct GSContentWidthModifier: ViewModifier {
+
+    /// Vertical drawing bleed kept outside the clip so effects that extend
+    /// past the frame (pill shadows, FAB glows) are not cut.
+    private static let clipBleed: CGFloat = 48
+
     @State private var widthClass: GSWidthClass = .compact
 
     func body(content: Content) -> some View {
@@ -56,6 +64,9 @@ struct GSContentWidthModifier: ViewModifier {
             if let maxWidth = GSWidthClass.contentMaxWidth(for: widthClass) {
                 content
                     .frame(maxWidth: maxWidth)
+                    .padding(.vertical, Self.clipBleed)
+                    .clipped()
+                    .padding(.vertical, -Self.clipBleed)
                     .frame(maxWidth: .infinity)
             } else {
                 content
@@ -73,8 +84,9 @@ struct GSContentWidthModifier: ViewModifier {
 }
 
 extension View {
-    /// Clamps this view to the adaptive content width for the current window
-    /// and centres it horizontally. No-op at compact widths.
+    /// Clamps this view to the adaptive content width for the current window,
+    /// centres it horizontally, and clips the clamped content to its frame.
+    /// No-op at compact widths.
     func gsContentWidth() -> some View {
         modifier(GSContentWidthModifier())
     }

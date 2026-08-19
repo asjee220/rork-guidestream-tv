@@ -65,6 +65,8 @@ import com.rork.guidestreamtvandroid.ui.theme.OutlineVariant
 import com.rork.guidestreamtvandroid.ui.theme.SurfaceContainer
 import com.rork.guidestreamtvandroid.ui.theme.TextPrimary
 import com.rork.guidestreamtvandroid.ui.theme.TextTertiary
+import com.rork.guidestreamtvandroid.ui.theme.gsContentWidth
+import com.rork.guidestreamtvandroid.ui.theme.rememberWidthClass
 
 /**
  * Floating glass tab bar with Home, Reels, Sports, Profile + detached Ask FAB.
@@ -78,11 +80,15 @@ fun FloatingTabBar(
 ) {
     val coachMark = CoachMarkManager.get()
     val density = LocalDensity.current
+    // Adaptive width class for tablet windows — clamps and centres the bar
+    // like the Home feed content (no-op on phones).
+    val widthClass = rememberWidthClass()
     Row(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 8.dp)
-            .padding(bottom = 4.dp),
+            .padding(bottom = 4.dp)
+            .gsContentWidth(widthClass),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
