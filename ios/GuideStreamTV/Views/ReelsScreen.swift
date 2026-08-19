@@ -1005,7 +1005,7 @@ struct ReelsScreen: View {
             // visible scrollable area exactly (otherwise neighbouring reels peek
             // above the floating nav and the screen looks "split in two").
             let fullSize = CGSize(
-                width: geo.size.width,
+                width: geo.size.width + geo.safeAreaInsets.leading + geo.safeAreaInsets.trailing,
                 height: geo.size.height + geo.safeAreaInsets.top + geo.safeAreaInsets.bottom
             )
             let topInset = geo.safeAreaInsets.top
