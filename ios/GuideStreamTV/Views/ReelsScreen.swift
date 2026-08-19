@@ -2387,7 +2387,9 @@ private struct ReelView: View {
     /// the fading row's opacity can't take it with the rail.
     @ViewBuilder
     private var landscapeActions: some View {
-        railButtons(iconSize: 19)
+        HStack(alignment: .center, spacing: 22) {
+            railButtons(iconSize: 19)
+        }
     }
 
     /// The unchanged primary CTA for this reel — same component, same wiring.
