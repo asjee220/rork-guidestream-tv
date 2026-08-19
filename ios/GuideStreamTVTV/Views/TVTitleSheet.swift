@@ -554,7 +554,7 @@ struct TVTitleSheet: View {
             HStack(spacing: 10) {
                 Image(systemName: isWatched ? "eye.fill" : "eye")
                     .font(.system(size: 24, weight: .bold))
-                Text(isWatched ? "Watched" : "Mark Watched")
+                Text(isWatched ? "Watched" : "Watched?")
                     .font(.system(size: 22, weight: .semibold))
             }
             .foregroundStyle(isWatched ? TVTheme.blue : .white)

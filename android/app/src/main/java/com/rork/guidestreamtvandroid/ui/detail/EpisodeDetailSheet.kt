@@ -441,7 +441,7 @@ fun EpisodeDetailSheet(
                 ) {
                     CircleAction(
                         icon = Icons.Filled.Visibility,
-                        label = if (isWatched) "Watched" else "Watch?",
+                        label = if (isWatched) "Watched" else "Watched?",
                         tint = if (isWatched) BrandBlue else TextPrimary,
                         showDot = false,
                     ) {

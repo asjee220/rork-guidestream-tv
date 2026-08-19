@@ -2296,7 +2296,7 @@ private struct ReelView: View {
 
             RailButton(
                 icon: isWatched ? "eye.fill" : "eye",
-                label: isWatched ? "Watched" : "Watch?",
+                label: isWatched ? "Watched" : "Watched?",
                 tint: isWatched ? Color(hex: "1A6FE8") : .white,
                 iconSize: iconSize,
                 action: onWatched

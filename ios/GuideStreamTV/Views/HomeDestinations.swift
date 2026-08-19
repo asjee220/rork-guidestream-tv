@@ -1066,7 +1066,7 @@ struct EpisodeDetailSheet: View {
         return HStack(spacing: 0) {
             circleAction(
                 icon: social.isWatched(key) ? "eye.fill" : "eye",
-                label: social.isWatched(key) ? "Watched" : "Watch?",
+                label: social.isWatched(key) ? "Watched" : "Watched?",
                 tint: social.isWatched(key) ? Color(hex: "1A6FE8") : .white,
                 showDot: false
             ) {
