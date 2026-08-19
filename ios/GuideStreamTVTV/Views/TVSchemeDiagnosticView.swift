@@ -86,6 +86,9 @@ struct TVSchemeDiagnosticView: View {
                     Color.clear.frame(height: 60)
                 }
                 .padding(.bottom, 40)
+                // Focus container for the whole stack so focus can travel
+                // from the header Done button down into the service rows.
+                .focusSection()
             }
         }
         .task { await loadAll() }
@@ -104,8 +107,13 @@ struct TVSchemeDiagnosticView: View {
                     .foregroundStyle(TVTheme.textTertiary)
             }
             Spacer()
-            Button("Done") { dismiss() }
-                .buttonStyle(.card)
+            DiagnosticGhostButton {
+                dismiss()
+            } label: { focused in
+                Text("Done")
+                    .font(.system(size: 20, weight: .medium))
+                    .foregroundStyle(focused ? Color.navy : TVTheme.orange)
+            }
         }
         .padding(.horizontal, 80)
         .padding(.top, 24)
@@ -164,22 +172,23 @@ struct TVSchemeDiagnosticView: View {
 
                 // Candidate buttons row (Open app + all candidates)
                 HStack(spacing: 16) {
-                    Button {
+                    DiagnosticGhostButton {
                         openURL(r.appHomeURL, binding: row, keyPath: \.openAppResult)
-                    } label: {
-                        resultButtonLabel("Open app", result: r.openAppResult, note: r.openAppNote, enabled: r.appHomeURL != nil)
+                    } label: { focused in
+                        resultButtonLabel("Open app", result: r.openAppResult, note: r.openAppNote, enabled: r.appHomeURL != nil, focused: focused)
                     }
-                    .buttonStyle(.card)
 
                     ForEach(candidates) { candidate in
-                        Button {
+                        DiagnosticGhostButton {
                             openCandidate(candidate.url, tag: candidate.tag, binding: row)
-                        } label: {
-                            resultButtonLabel(candidate.tag, result: r.candidateResults[candidate.tag], enabled: true)
+                        } label: { focused in
+                            resultButtonLabel(candidate.tag, result: r.candidateResults[candidate.tag], enabled: true, focused: focused)
                         }
-                        .buttonStyle(.card)
                     }
                 }
+                // Focus container so focus can move horizontally across
+                // this row's buttons once it has entered the row.
+                .focusSection()
 
                 // Mono-spaced last pressed URL
                 if let last = r.lastPressedURL {
@@ -202,6 +211,10 @@ struct TVSchemeDiagnosticView: View {
                 }
         )
         .padding(.horizontal, 80)
+        // Focus container for the row itself so focus can enter the first
+        // row and move between rows even though rows sit in a plain VStack
+        // inside a ScrollView.
+        .focusSection()
     }
 
     // MARK: - URL label
@@ -223,11 +236,11 @@ struct TVSchemeDiagnosticView: View {
     // MARK: - Button label
 
     @ViewBuilder
-    private func resultButtonLabel(_ title: String, result: Bool?, note: String? = nil, enabled: Bool) -> some View {
+    private func resultButtonLabel(_ title: String, result: Bool?, note: String? = nil, enabled: Bool, focused: Bool) -> some View {
         HStack(spacing: 10) {
             Text(title)
                 .font(.system(size: 18, weight: .semibold))
-                .foregroundStyle(enabled ? .white : TVTheme.textTertiary)
+                .foregroundStyle(enabled ? (focused ? Color.navy : .white) : TVTheme.textTertiary)
             if let result {
                 Text(result ? "PASS" : "FAIL")
                     .font(.system(size: 14, weight: .heavy))
@@ -478,5 +491,40 @@ struct TVSchemeDiagnosticView: View {
         }
 
         isLoading = false
+    }
+}
+
+// MARK: - Ghost secondary control
+
+/// Orange-outlined ghost button used by every control on this screen
+/// (Done, Open app, and each candidate). Mirrors GhostButton in
+/// SportsView.swift: orange text inside a 2pt orange rounded outline on
+/// a clear background, inverting to a filled orange pill with dark text
+/// when focused. Focus is read with @FocusState bound to the Button —
+/// the pattern proven to track focus on this platform — instead of the
+/// broken @Environment(\.isFocused)-inside-a-ButtonStyle approach.
+private struct DiagnosticGhostButton<Label: View>: View {
+    let action: () -> Void
+    @ViewBuilder let label: (_ isFocused: Bool) -> Label
+
+    @FocusState private var isFocused: Bool
+
+    var body: some View {
+        Button(action: action) {
+            label(isFocused)
+                .padding(.horizontal, 28)
+                .padding(.vertical, 14)
+                .background(
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(isFocused ? TVTheme.orange : Color.clear)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(TVTheme.orange, lineWidth: 2)
+                )
+        }
+        .buttonStyle(.plain)
+        .focused($isFocused)
+        .animation(.spring(response: 0.3, dampingFraction: 0.85), value: isFocused)
     }
 }
