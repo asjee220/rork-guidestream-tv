@@ -195,7 +195,7 @@ final class NativeAdContainer: UIView {
         ctaButton.clipsToBounds = true
         ctaButton.isUserInteractionEnabled = false
         if isFeedChip {
-            ctaButton.directionalContentEdgeInsets = NSDirectionalEdgeInsets(top: 6, leading: 12, bottom: 6, trailing: 12)
+            ctaButton.contentEdgeInsets = UIEdgeInsets(top: 6, left: 12, bottom: 6, right: 12)
         } else {
             ctaButton.contentEdgeInsets = UIEdgeInsets(top: 4, left: 8, bottom: 4, right: 8)
         }
