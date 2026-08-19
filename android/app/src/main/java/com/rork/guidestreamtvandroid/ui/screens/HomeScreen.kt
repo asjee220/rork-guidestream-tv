@@ -56,6 +56,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
@@ -63,6 +65,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
+import com.rork.guidestreamtvandroid.data.remote.TMDBService
 import com.rork.guidestreamtvandroid.data.repository.CoachMarkManager
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
@@ -1051,6 +1054,21 @@ private fun TodaysPickSpotlight(
         "${com.rork.guidestreamtvandroid.AppConfig.TMDB_IMAGE_BASE}w500$clean"
     }
 
+    // streaming_releases has no backdrop column — resolve a 16:9 backdrop
+    // client-side from TMDB. Keyed on tmdbId so the fetch never re-runs on
+    // recomposition or scroll; failures fall back to the poster treatment.
+    val tmdb = remember { TMDBService.get() }
+    var backdropUrl by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(pick.tmdbId) {
+        backdropUrl = try {
+            val detail = if (pick.tmdbType == "tv") tmdb.getTVDetail(pick.tmdbId) else tmdb.getMovieDetail(pick.tmdbId)
+            detail?.backdropPath?.let { path ->
+                val clean = if (path.startsWith("/")) path else "/$path"
+                "${com.rork.guidestreamtvandroid.AppConfig.TMDB_IMAGE_BASE}w1280$clean"
+            }
+        } catch (_: Exception) { null }
+    }
+
     Column(
         modifier = Modifier
             .padding(horizontal = 12.dp, vertical = 8.dp)
@@ -1097,10 +1115,24 @@ private fun TodaysPickSpotlight(
                 .fillMaxWidth()
                 .aspectRatio(16f / 9f),
         ) {
-            RemoteImage(
-                url = posterUrl,
-                modifier = Modifier.fillMaxSize(),
-            )
+            if (backdropUrl != null) {
+                RemoteImage(
+                    url = backdropUrl,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            } else {
+                RemoteImage(
+                    url = posterUrl,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .blur(20.dp)
+                        .alpha(0.55f),
+                )
+                RemoteImage(
+                    url = posterUrl,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
             // Gradient overlay for readability
             Box(
                 modifier = Modifier

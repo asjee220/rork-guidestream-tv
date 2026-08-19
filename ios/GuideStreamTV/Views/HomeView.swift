@@ -2870,6 +2870,11 @@ private struct TodaysPickSection: View {
     let isSubscribed: Bool
     let onTap: () -> Void
 
+    /// 16:9 backdrop resolved client-side from TMDB (streaming_releases has no
+    /// backdrop column). Until it arrives — or forever, if TMDB fails — the
+    /// poster renders as a blurred fill behind a fitted, non-cropped copy.
+    @State private var backdropUrl: String?
+
     private let orange = Color(red: 0xF5 / 255, green: 0x82 / 255, blue: 0x1F / 255)
 
     var body: some View {
@@ -2895,14 +2900,35 @@ private struct TodaysPickSection: View {
 
                 // 16:9 backdrop
                 ZStack {
-                    RemoteImage(
-                        urlString: pick.posterUrl,
-                        contentMode: .fill,
-                        fallbackColors: HomeFallback.posterColors
-                    )
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 200)
-                        .clipped()
+                    if let backdropUrl {
+                        RemoteImage(
+                            urlString: backdropUrl,
+                            contentMode: .fill,
+                            fallbackColors: HomeFallback.posterColors
+                        )
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 200)
+                            .clipped()
+                    } else {
+                        RemoteImage(
+                            urlString: pick.posterUrl,
+                            contentMode: .fill,
+                            fallbackColors: HomeFallback.posterColors
+                        )
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 200)
+                            .blur(radius: 20)
+                            .opacity(0.55)
+                            .clipped()
+                        RemoteImage(
+                            urlString: pick.posterUrl,
+                            contentMode: .fit,
+                            fallbackColors: HomeFallback.posterColors
+                        )
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 200)
+                            .clipped()
+                    }
                     LinearGradient(
                         colors: [Color.black.opacity(0.0), Color.black.opacity(0.65)],
                         startPoint: .center,
@@ -2972,6 +2998,17 @@ private struct TodaysPickSection: View {
             .clipShape(RoundedRectangle(cornerRadius: 12))
         }
         .buttonStyle(.plain)
+        .task(id: pick.tmdbId) {
+            do {
+                if pick.tmdbType == "tv" {
+                    backdropUrl = try await TMDBService.shared.getTVDetail(tmdbId: pick.tmdbId).backdropUrl
+                } else {
+                    backdropUrl = try await TMDBService.shared.getMovieDetail(tmdbId: pick.tmdbId).backdropUrl
+                }
+            } catch {
+                // Backdrop is decorative — the poster fallback stays up.
+            }
+        }
     }
 
     /// "Wednesday, Jul 22" format for the trailing date.
