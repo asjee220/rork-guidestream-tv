@@ -367,18 +367,13 @@ struct EpisodeDetailSheet: View {
              "NBC shows & live sports · Free tier")
         ]
 
-        // Prefer a service the user doesn't already own and isn't the
-        // current platform. If they own everything, fall back to any pool
-        // entry that isn't the current platform so an ad still appears.
-        if let preferred = pool.first(where: { entry in
+        // Hard filter: only a service the user doesn't already own and that
+        // isn't the current platform. Returns nil when every entry is owned —
+        // the banner then suppresses the Rakuten card instead of advertising
+        // a service the user already subscribes to.
+        return pool.first(where: { entry in
             entry.0 != current && !owned.contains(entry.0)
-        }) {
-            return (preferred.0, preferred.1, preferred.2)
-        }
-        if let fallback = pool.first(where: { $0.0 != current }) {
-            return (fallback.0, fallback.1, fallback.2)
-        }
-        return pool.first.map { ($0.0, $0.1, $0.2) }
+        }).map { ($0.0, $0.1, $0.2) }
     }
 
     private func normalisedServiceKey(_ raw: String) -> String {
@@ -905,6 +900,21 @@ struct EpisodeDetailSheet: View {
                 },
                 onDismiss: { adDismissed = true },
                 adSource: "episode_detail_sheet"
+            )
+            .padding(.horizontal, 20)
+        } else if !adDismissed {
+            // Every pool service is owned — suppress the Rakuten card but
+            // keep the slot mounted so AdMob can still fill it natively.
+            SponsoredSlotView(
+                service: nil,
+                fallbackName: "",
+                fallbackColor: .white,
+                headline: "",
+                subtitle: "",
+                onTap: {},
+                onDismiss: { adDismissed = true },
+                adSource: "episode_detail_sheet",
+                allowRakutenFallback: false
             )
             .padding(.horizontal, 20)
         }

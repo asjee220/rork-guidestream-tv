@@ -4,9 +4,11 @@
 //
 //  Shared inline ad slot view used by HomeView, HomeDestinations drill-down
 //  grids/lists, and SearchView. Holds the eight-entry affiliate offer pool,
-//  selects an offer by slot index (preferring services the user hasn't
-//  selected), and renders a SponsoredSlotView with the appropriate adSource,
-//  sectionKey, and preferredSource. The caller owns dismissal state.
+//  selects an offer by slot index from the services the user hasn't
+//  selected, and renders a SponsoredSlotView with the appropriate adSource,
+//  sectionKey, and preferredSource. When every pool service is owned the
+//  Rakuten card is suppressed and the slot renders native-AdMob-only. The
+//  caller owns dismissal state.
 //
 
 import SwiftUI
@@ -45,38 +47,58 @@ struct InlineAdSlotView: View {
 
     var body: some View {
         let offer = InlineAdSlotView.selectOffer(for: slotIndex)
-        let service = StreamingCatalog.service(for: offer.serviceId)
-        SponsoredSlotView(
-            service: service,
-            fallbackName: service?.name ?? offer.headline,
-            fallbackColor: service?.glow ?? .white,
-            headline: offer.headline,
-            subtitle: offer.subtitle,
-            onTap: {
-                RakutenManager.shared.openAffiliateLink(
-                    serviceId: offer.serviceId,
-                    metadata: ["section": "\(sectionKey)_\(slotIndex)"]
-                )
-                WatchIntentLogger.shared.log(
-                    eventType: .cardTapped,
-                    metadata: ["section": "\(sectionKey)_\(slotIndex)"]
-                )
-            },
-            onDismiss: onDismiss,
-            adSource: adSource,
-            compact: true,
-            preferredSource: slotIndex % 2 == 0 ? .adMobFirst : .rakutenFirst
-        )
+        if let offer {
+            let service = StreamingCatalog.service(for: offer.serviceId)
+            SponsoredSlotView(
+                service: service,
+                fallbackName: service?.name ?? offer.headline,
+                fallbackColor: service?.glow ?? .white,
+                headline: offer.headline,
+                subtitle: offer.subtitle,
+                onTap: {
+                    RakutenManager.shared.openAffiliateLink(
+                        serviceId: offer.serviceId,
+                        metadata: ["section": "\(sectionKey)_\(slotIndex)"]
+                    )
+                    WatchIntentLogger.shared.log(
+                        eventType: .cardTapped,
+                        metadata: ["section": "\(sectionKey)_\(slotIndex)"]
+                    )
+                },
+                onDismiss: onDismiss,
+                adSource: adSource,
+                compact: true,
+                preferredSource: slotIndex % 2 == 0 ? .adMobFirst : .rakutenFirst
+            )
+        } else {
+            // Every affiliate service is owned — never render a Rakuten card
+            // for something the user already has. Keep the slot mounted with
+            // allowRakutenFallback false so AdMob can still fill it natively,
+            // and collapse to nothing when it can't.
+            SponsoredSlotView(
+                service: nil,
+                fallbackName: "",
+                fallbackColor: .white,
+                headline: "",
+                subtitle: "",
+                onTap: {},
+                onDismiss: onDismiss,
+                adSource: adSource,
+                compact: true,
+                preferredSource: slotIndex % 2 == 0 ? .adMobFirst : .rakutenFirst,
+                allowRakutenFallback: false
+            )
+        }
     }
 
-    /// Picks the affiliate offer for a slot, rotating by slot index and
-    /// preferring a service the user hasn't already selected. Falls back
-    /// to the full pool when the unowned subset has fewer than four entries
-    /// so seven home slots can't repeat the same two offers.
-    private static func selectOffer(for slotIndex: Int) -> (serviceId: String, headline: String, subtitle: String) {
+    /// Picks the affiliate offer for a slot from the pool entries the user
+    /// doesn't already subscribe to, rotating by slot index. Returns nil
+    /// when every pool service is owned — the caller then suppresses the
+    /// Rakuten card instead of advertising an owned service.
+    private static func selectOffer(for slotIndex: Int) -> (serviceId: String, headline: String, subtitle: String)? {
         let owned = AuthViewModel.shared.selectedServices
         let unowned = inlineAdOfferPool.filter { !owned.contains($0.serviceId) }
-        let chosen = unowned.count >= 4 ? unowned : inlineAdOfferPool
-        return chosen[slotIndex % chosen.count]
+        guard !unowned.isEmpty else { return nil }
+        return unowned[slotIndex % unowned.count]
     }
 }

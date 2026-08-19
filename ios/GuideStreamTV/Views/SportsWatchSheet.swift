@@ -78,14 +78,15 @@ struct SportsWatchSheet: View {
             return "hulu"
         }()
 
-        // If the user owns the target service, pick the first reasonable
-        // alternative so an ad still appears.
-        let resolvedTarget: String = {
+        // Hard filter: if the user owns the broadcast-derived target, pick
+        // the first unowned alternative. When every service is owned this
+        // resolves to nil so no Rakuten card advertises an owned service.
+        let resolvedTarget: String? = {
             guard owned.contains(target) else { return target }
             let fallbackOrder = ["peacock", "paramount", "hbo",
                                   "disney", "prime", "appletv",
                                   "hulu", "netflix"]
-            return fallbackOrder.first { !owned.contains($0) } ?? target
+            return fallbackOrder.first { !owned.contains($0) }
         }()
 
         let copy: [String: (String, String)] = [
@@ -104,8 +105,8 @@ struct SportsWatchSheet: View {
             "hulu": ("Live sports on Hulu + Live TV",
                      "ESPN, FOX, CBS, NBC & more · $82.99/mo")
         ]
-        guard let c = copy[resolvedTarget] else { return nil }
-        return (resolvedTarget, c.0, c.1)
+        guard let resolved = resolvedTarget, let c = copy[resolved] else { return nil }
+        return (resolved, c.0, c.1)
     }
 
     private var gameTitle: String {
@@ -271,6 +272,21 @@ struct SportsWatchSheet: View {
                 },
                 onDismiss: { adDismissed = true },
                 adSource: "sports_watch_sheet"
+            )
+            .padding(.horizontal, 20)
+        } else if !adDismissed {
+            // Every service is owned — suppress the Rakuten card but keep
+            // the slot mounted so AdMob can still fill it natively.
+            SponsoredSlotView(
+                service: nil,
+                fallbackName: "",
+                fallbackColor: .white,
+                headline: "",
+                subtitle: "",
+                onTap: {},
+                onDismiss: { adDismissed = true },
+                adSource: "sports_watch_sheet",
+                allowRakutenFallback: false
             )
             .padding(.horizontal, 20)
         }

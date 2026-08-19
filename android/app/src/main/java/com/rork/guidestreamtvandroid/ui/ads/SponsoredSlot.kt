@@ -61,7 +61,11 @@ enum class PooledAdSource {
  * SponsoredSlotView. Renders a compact glass card with a "Sponsored" label and
  * a dismiss control. ADMOB_FIRST attempts a native AdMob unit and swaps to the
  * Rakuten affiliate presentation if it fails to fill; RAKUTEN_FIRST renders the
- * Rakuten presentation directly, so a slot is never blank.
+ * Rakuten presentation directly, so a slot is never blank. When
+ * [allowRakutenFallback] is false the Rakuten presentation is never rendered,
+ * the native AdMob path is attempted regardless of [preferredSource], and a
+ * failed native fill renders nothing at all — no card, no header, no
+ * impression log — so an unfillable slot occupies no space.
  */
 @Composable
 fun SponsoredSlot(
@@ -74,20 +78,36 @@ fun SponsoredSlot(
     modifier: Modifier = Modifier,
     adSource: String = "home_inline",
     sectionKey: String = "home_inline_ad",
+    allowRakutenFallback: Boolean = true,
 ) {
     val context = LocalContext.current
 
-    // Log a single ad impression when this slot first composes.
-    LaunchedEffect(serviceId) {
-        WatchIntentLogger.get().log(
-            WatchIntentLogger.IntentEventType.AD_IMPRESSION,
-            metadata = mapOf("ad_type" to adSource, "source" to adSource),
-        )
-    }
-
     // For ADMOB_FIRST, track whether the AdMob unit failed so we can backfill.
     var adMobFailed by remember(serviceId) { mutableStateOf(false) }
-    val showRakuten = preferredSource == PooledAdSource.RAKUTEN_FIRST || adMobFailed
+    var adMobLoaded by remember(serviceId) { mutableStateOf(false) }
+
+    // Hard off-switch: when the Rakuten fallback is disallowed, always
+    // attempt the native AdMob path regardless of preferredSource and never
+    // render the Rakuten affiliate presentation.
+    val showRakuten = allowRakutenFallback &&
+        (preferredSource == PooledAdSource.RAKUTEN_FIRST || adMobFailed)
+
+    // No eligible Rakuten offer and the native unit failed to fill — render
+    // nothing at all: no card container, no Sponsored header, no impression.
+    if (!allowRakutenFallback && adMobFailed) return
+
+    // Log a single ad impression once the slot actually renders something.
+    // Fallback-free slots log only after the native ad has loaded, so a
+    // no-fill slot logs nothing at all.
+    val shouldLogImpression = allowRakutenFallback || adMobLoaded
+    LaunchedEffect(serviceId, shouldLogImpression) {
+        if (shouldLogImpression) {
+            WatchIntentLogger.get().log(
+                WatchIntentLogger.IntentEventType.AD_IMPRESSION,
+                metadata = mapOf("ad_type" to adSource, "source" to adSource),
+            )
+        }
+    }
 
     Column(
         modifier = modifier
@@ -143,6 +163,7 @@ fun SponsoredSlot(
             )
         } else {
             NativeAdCard(
+                onAdLoaded = { adMobLoaded = true },
                 onAdFailedToLoad = { adMobFailed = true },
             )
         }

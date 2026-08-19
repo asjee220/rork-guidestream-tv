@@ -27,10 +27,11 @@ val inlineAdPool: List<Triple<String, String, String>> = listOf(
 
 /**
  * Shared inline ad slot — mirrors iOS InlineAdSlotView. Selects an offer by
- * slot index (preferring services the user hasn't selected, falling back to
- * the full pool when the unowned subset has fewer than four entries), and
- * renders a SponsoredSlot with the appropriate adSource, sectionKey, and
- * preferredSource. The caller owns dismissal state via the dismissed map.
+ * slot index from the pool entries the user hasn't selected (hard filter),
+ * and renders a SponsoredSlot with the appropriate adSource, sectionKey,
+ * and preferredSource. When every pool service is owned the Rakuten card is
+ * suppressed and the slot renders native-AdMob-only. The caller owns
+ * dismissal state via the dismissed map.
  */
 @Composable
 fun InlineAdSlot(
@@ -44,27 +45,34 @@ fun InlineAdSlot(
     if (dismissed[slotIndex] == true) return
 
     val offer = selectOffer(slotIndex, selectedServices)
-    val service = StreamingCatalog.service(offer.first)
+    val service = offer?.let { StreamingCatalog.service(it.first) }
 
     Box(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
         SponsoredSlot(
             preferredSource = if (slotIndex % 2 == 0) PooledAdSource.ADMOB_FIRST else PooledAdSource.RAKUTEN_FIRST,
             service = service,
-            serviceId = offer.first,
-            headline = offer.second,
-            subtitle = offer.third,
+            serviceId = offer?.first ?: "",
+            headline = offer?.second ?: "",
+            subtitle = offer?.third ?: "",
             onDismiss = onDismiss,
             adSource = adSource,
             sectionKey = sectionKey,
+            allowRakutenFallback = offer != null,
         )
     }
 }
 
+/**
+ * Picks the affiliate offer for a slot from the pool entries the user
+ * doesn't already subscribe to, rotating by slot index. Returns null when
+ * every pool service is owned — the caller then suppresses the Rakuten
+ * card instead of advertising an owned service.
+ */
 private fun selectOffer(
     slotIndex: Int,
     selectedServices: Set<String>,
-): Triple<String, String, String> {
+): Triple<String, String, String>? {
     val unowned = inlineAdPool.filter { it.first !in selectedServices }
-    val pool = if (unowned.size >= 4) unowned else inlineAdPool
-    return pool[slotIndex % pool.size]
+    if (unowned.isEmpty()) return null
+    return unowned[slotIndex % unowned.size]
 }

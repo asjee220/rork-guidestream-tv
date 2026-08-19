@@ -539,6 +539,21 @@ struct CreatorDetailView: View {
                 adSource: "creator_detail_sheet"
             )
             .padding(.horizontal, 20)
+        } else if !adDismissed {
+            // Every pool service is owned — suppress the Rakuten card but
+            // keep the slot mounted so AdMob can still fill it natively.
+            SponsoredSlotView(
+                service: nil,
+                fallbackName: "",
+                fallbackColor: .white,
+                headline: "",
+                subtitle: "",
+                onTap: {},
+                onDismiss: { adDismissed = true },
+                adSource: "creator_detail_sheet",
+                allowRakutenFallback: false
+            )
+            .padding(.horizontal, 20)
         }
 #else
         EmptyView()
@@ -546,7 +561,9 @@ struct CreatorDetailView: View {
     }
 
     /// Chooses the first streaming service from the pool that the user doesn't
-    /// already own so the affiliate prompt is for something new.
+    /// already own so the affiliate prompt is for something new. Returns nil
+    /// when every pool service is owned — the banner then suppresses the
+    /// Rakuten card instead of advertising an owned service.
     private var affiliateAdData: (serviceId: String, headline: String, subtext: String)? {
         let owned = AuthViewModel.shared.selectedServices.map { normalisedServiceKey($0) }
         let pool: [(String, String, String)] = [
@@ -559,10 +576,8 @@ struct CreatorDetailView: View {
             ("paramount", "NFL on CBS & live sports", "Paramount+ · Try free"),
             ("peacock", "Stream free on Peacock", "NBC shows & live sports · Free tier")
         ]
-        if let preferred = pool.first(where: { !owned.contains($0.0) }) {
-            return (preferred.0, preferred.1, preferred.2)
-        }
-        return pool.first.map { ($0.0, $0.1, $0.2) }
+        return pool.first(where: { !owned.contains($0.0) })
+            .map { ($0.0, $0.1, $0.2) }
     }
 
     private func normalisedServiceKey(_ raw: String) -> String {

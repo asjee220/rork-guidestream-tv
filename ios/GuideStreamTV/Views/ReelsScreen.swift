@@ -1742,18 +1742,12 @@ private struct ReelView: View {
             ("paramount","Paramount+", Color(red:0x00/255, green:0x64/255, blue:0xFF/255), "NFL on CBS & live sports", "Paramount+ · Try free"),
             ("peacock", "Peacock", Color.black, "Stream free on Peacock", "NBC shows & live sports · Free tier")
         ]
-        // Prefer services the user doesn't already own AND aren't the
-        // current platform. If everything is owned, drop the owned filter so
-        // an ad still appears (only excluding the current platform). If even
-        // that's empty, fall back to the full pool.
-        let preferred = pool.filter { entry in
+        // Hard filter: only services the user doesn't already own AND that
+        // aren't the current platform. When that set is empty the carousel
+        // is suppressed entirely rather than advertising an owned service.
+        let eligible = pool.filter { entry in
             entry.0 != current && !selected.contains(entry.0)
         }
-        let secondary = pool.filter { $0.0 != current }
-        let eligible: [(String, String, Color, String, String)]
-        if !preferred.isEmpty { eligible = preferred }
-        else if !secondary.isEmpty { eligible = secondary }
-        else { eligible = pool }
         guard !eligible.isEmpty else { return [] }
         // Rotate so different shows lead with different services.
         let shift = abs(trailer.tmdbId) % eligible.count

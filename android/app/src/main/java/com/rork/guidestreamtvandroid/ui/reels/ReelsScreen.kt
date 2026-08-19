@@ -1945,11 +1945,11 @@ private val reelAdPool: List<Triple<String, String, String>> = listOf(
 )
 
 /**
- * Mirrors iOS resolveGlassAds: build "preferred" = pool entries whose
- * serviceId != currentPlatform and not in selected; "secondary" = entries
- * whose serviceId != currentPlatform; pick eligible = preferred.ifEmpty {
- * secondary.ifEmpty { reelAdPool } }; rotate by shift = abs(tmdbId) %
- * eligible.size so different titles lead with different services.
+ * Mirrors iOS resolveGlassAds: hard filter — returns only pool entries whose
+ * serviceId != currentPlatform and that are not in selected. When that set
+ * is empty the ad carousel is suppressed entirely (ReelAdCarousel renders
+ * nothing). Rotates by shift = abs(tmdbId) % eligible.size so different
+ * titles lead with different services.
  */
 private fun resolveReelAds(
     currentPlatform: String,
@@ -1958,13 +1958,8 @@ private fun resolveReelAds(
     count: Int = 8,
 ): List<Triple<String, String, String>> {
     val current = currentPlatform.lowercase()
-    val preferred = reelAdPool.filter { it.first != current && it.first !in selected }
-    val secondary = reelAdPool.filter { it.first != current }
-    val eligible: List<Triple<String, String, String>> = when {
-        preferred.isNotEmpty() -> preferred
-        secondary.isNotEmpty() -> secondary
-        else -> reelAdPool
-    }
+    val owned = selected.map { it.lowercase() }.toSet()
+    val eligible = reelAdPool.filter { it.first != current && it.first !in owned }
     if (eligible.isEmpty()) return emptyList()
     val shift = abs(tmdbId) % eligible.size
     val rotated = eligible.drop(shift) + eligible.take(shift)

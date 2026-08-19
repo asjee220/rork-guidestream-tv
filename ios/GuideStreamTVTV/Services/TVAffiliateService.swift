@@ -107,11 +107,15 @@ final class TVAffiliateService {
     }
 
     /// Returns `true` only when the catalogue id resolved from the provider
-    /// name is absent from the viewer's `selectedServices`. Reads
+    /// name is absent from the viewer's `selectedServices`. Both sides are
+    /// normalised through `Platform.normalizeCatalogId` so an `hbo`
+    /// selection matches the tvOS `max` catalogue id and vice versa. Reads
     /// `AuthViewModel.shared.selectedServices` fresh on every call so a
     /// service toggle that happens mid-session is respected immediately.
     func isGapService(_ name: String?) -> Bool {
         guard let catalogId = Platform.from(providerName: name)?.catalogId else { return false }
-        return !AuthViewModel.shared.selectedServices.contains(catalogId)
+        let owned = AuthViewModel.shared.selectedServices
+            .map { Platform.normalizeCatalogId($0) }
+        return !owned.contains(Platform.normalizeCatalogId(catalogId))
     }
 }

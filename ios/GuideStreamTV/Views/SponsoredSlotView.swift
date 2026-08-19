@@ -44,6 +44,13 @@ struct SponsoredSlotView: View {
     /// are unchanged.
     var preferredSource: PooledAdSource = .adMobFirst
 
+    /// When false the Rakuten affiliate card is never rendered — the slot
+    /// attempts the AdMob native path regardless of `preferredSource` and
+    /// collapses to `EmptyView` when no native ad is available, so an
+    /// unfillable slot occupies no space. Used when every affiliate offer
+    /// would advertise a service the user already subscribes to.
+    var allowRakutenFallback: Bool = true
+
     /// Fixed height for the native card. Sized to fully contain the 120pt
     /// media square plus padding, the two-line headline, body, advertiser,
     /// CTA, Ad attribution badge, AdChoices, and dismiss control without
@@ -68,7 +75,7 @@ struct SponsoredSlotView: View {
         Group {
             if let nativeAd = currentNativeAd {
                 nativeCard(nativeAd)
-            } else {
+            } else if allowRakutenFallback {
                 SponsoredAffiliateCard(
                     service: service,
                     fallbackName: fallbackName,
@@ -79,6 +86,10 @@ struct SponsoredSlotView: View {
                     onDismiss: onDismiss,
                     compact: compact
                 )
+            } else {
+                // No eligible Rakuten offer and no native fill — render
+                // nothing rather than advertise an owned service.
+                EmptyView()
             }
         }
         .onAppear { fetchNativeAd() }
@@ -110,7 +121,7 @@ struct SponsoredSlotView: View {
                     metadata: ["ad_type": "native", "source": adSource]
                 )
             }
-        } else {
+        } else if allowRakutenFallback {
             // Fallback if cast fails (shouldn't happen, but never blank).
             SponsoredAffiliateCard(
                 service: service,
@@ -122,6 +133,8 @@ struct SponsoredSlotView: View {
                 onDismiss: onDismiss,
                 compact: compact
             )
+        } else {
+            EmptyView()
         }
         #else
         // Simulator: never reached because nextNativeAd() returns nil.
@@ -137,11 +150,14 @@ struct SponsoredSlotView: View {
     /// in flight and attempts to claim one ad from the pool. Once an ad is
     /// claimed it is never replaced, so we bail early if we already have one. On
     /// simulator or no-fill this stays nil and the Rakuten fallback renders.
+    /// Rakuten-first slots never claim a native ad, so the Rakuten
+    /// affiliate card always renders as the guaranteed backfill. Slots
+    /// with `allowRakutenFallback == false` always attempt the native
+    /// path regardless of `preferredSource`, because the Rakuten card is
+    /// not an option for them.
     private func fetchNativeAd() {
         guard currentNativeAd == nil else { return }
-        // Rakuten-first slots never claim a native ad, so the Rakuten
-        // affiliate card always renders as the guaranteed backfill.
-        guard preferredSource != .rakutenFirst else { return }
+        guard allowRakutenFallback || preferredSource != .rakutenFirst else { return }
         AdManager.shared.start()
         AdManager.shared.loadNativePool()
         if let ad = AdManager.shared.nextNativeAd() {

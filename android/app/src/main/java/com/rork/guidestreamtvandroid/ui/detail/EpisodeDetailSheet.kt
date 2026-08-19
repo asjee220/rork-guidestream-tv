@@ -482,13 +482,14 @@ fun EpisodeDetailSheet(
                     Box(Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
                         SponsoredSlot(
                             preferredSource = PooledAdSource.RAKUTEN_FIRST,
-                            service = StreamingCatalog.service(offer.first),
-                            serviceId = offer.first,
-                            headline = offer.second,
-                            subtitle = offer.third,
+                            service = offer?.let { StreamingCatalog.service(it.first) },
+                            serviceId = offer?.first ?: "",
+                            headline = offer?.second ?: "",
+                            subtitle = offer?.third ?: "",
                             onDismiss = { adDismissed = true },
                             adSource = "episode_detail_sheet",
                             sectionKey = "episode_detail_sheet_ad",
+                            allowRakutenFallback = offer != null,
                         )
                     }
                 }
@@ -841,24 +842,18 @@ private fun openWatchTarget(
 
 /**
  * Selects an affiliate offer from the pool, mirroring iOS `affiliateAdData`.
- * Prefers a service the user doesn't already have and that isn't the title's
- * current platform; falls back to any non-current entry, then to the first
- * entry overall so the slot is never blank.
+ * Hard filter: only a service the user doesn't already have and that isn't
+ * the title's current platform. Returns null when every entry is owned —
+ * the caller then suppresses the Rakuten card instead of advertising an
+ * owned service.
  */
 private fun selectAffiliateOffer(
     currentSourceName: String?,
     selectedServices: Set<String>,
-): Triple<String, String, String> {
+): Triple<String, String, String>? {
     val current = normalisedServiceKey(currentSourceName.orEmpty())
     val owned = selectedServices.map { normalisedServiceKey(it) }.toSet()
-
-    inlineAdPool.firstOrNull { it.first != current && it.first !in owned }
-        ?.let { return it }
-
-    inlineAdPool.firstOrNull { it.first != current }
-        ?.let { return it }
-
-    return inlineAdPool.first()
+    return inlineAdPool.firstOrNull { it.first != current && it.first !in owned }
 }
 
 /**
