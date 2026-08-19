@@ -66,6 +66,7 @@ struct SportsView: View {
         let next: String
         let isLive: Bool
         let teamUid: String
+        let logoURL: String?
     }
 
     private var filteredGames: [SportsGame] {
@@ -98,7 +99,8 @@ struct SportsView: View {
                 color: color,
                 next: label,
                 isLive: game?.state == .live,
-                teamUid: uid
+                teamUid: uid,
+                logoURL: logoURLForFavorite(game, teamUid: uid, teamAbbr: row.team_abbr)
             )
         }
     }
@@ -119,6 +121,20 @@ struct SportsView: View {
         if let next = upcoming.first { return next }
         let finals = games.filter { $0.state == .post && matches($0) }.sorted { a, b in a.startDate > b.startDate }
         if let recent = finals.first { return recent }
+        return nil
+    }
+
+    /// Resolves the crest URL for a favorited team from its matched game —
+    /// the same `logoURL` property the game-row badges render. Matches by
+    /// uid first, then abbreviation, mirroring `findGameForFavorite`.
+    private func logoURLForFavorite(_ game: SportsGame?, teamUid: String, teamAbbr: String?) -> String? {
+        guard let game else { return nil }
+        if game.away.uid == teamUid { return game.away.logoURL }
+        if game.home.uid == teamUid { return game.home.logoURL }
+        if let teamAbbr {
+            if game.away.abbreviation == teamAbbr { return game.away.logoURL }
+            if game.home.abbreviation == teamAbbr { return game.home.logoURL }
+        }
         return nil
     }
 
@@ -426,16 +442,53 @@ struct SportsView: View {
         }
     }
 
+    /// Chip crest. With a loaded logo it follows the exact async image path
+    /// the game-row badges use — rounded rect at 7% team colour, crest scaled
+    /// to fit with a 3pt inset. Falls back to the existing full-colour
+    /// abbreviation square when the URL is missing or the load fails.
+    @ViewBuilder
+    private func teamChipBadge(_ team: TeamChip) -> some View {
+        if let logoURL = team.logoURL,
+           !logoURL.isEmpty,
+           let url = URL(string: logoURL) {
+            AsyncImage(url: url) { phase in
+                switch phase {
+                case .success(let image):
+                    RoundedRectangle(cornerRadius: 7)
+                        .fill(team.color.opacity(0.07))
+                        .frame(width: 26, height: 26)
+                        .overlay {
+                            image
+                                .resizable()
+                                .scaledToFit()
+                                .padding(3)
+                        }
+                        .clipShape(RoundedRectangle(cornerRadius: 7))
+                case .empty, .failure:
+                    chipFallbackBadge(team)
+                @unknown default:
+                    chipFallbackBadge(team)
+                }
+            }
+        } else {
+            chipFallbackBadge(team)
+        }
+    }
+
+    private func chipFallbackBadge(_ team: TeamChip) -> some View {
+        RoundedRectangle(cornerRadius: 7)
+            .fill(team.color)
+            .frame(width: 26, height: 26)
+            .overlay(
+                Text(team.abbrev)
+                    .scaledFont(size: 7, weight: .black)
+                    .foregroundStyle(.white)
+            )
+    }
+
     private func teamChipContent(_ team: TeamChip) -> some View {
         VStack(spacing: 3) {
-            RoundedRectangle(cornerRadius: 7)
-                .fill(team.color)
-                .frame(width: 26, height: 26)
-                .overlay(
-                    Text(team.abbrev)
-                        .scaledFont(size: 7, weight: .black)
-                        .foregroundStyle(.white)
-                )
+            teamChipBadge(team)
             Text(team.name)
                 .scaledFont(size: 9, weight: .semibold)
                 .foregroundStyle(Color.white.opacity(0.6))

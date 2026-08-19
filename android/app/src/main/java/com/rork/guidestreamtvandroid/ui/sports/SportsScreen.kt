@@ -144,6 +144,7 @@ fun SportsScreen(
                 abbrev = row.teamAbbr ?: (row.teamName ?: row.teamUid).take(3).uppercase(),
                 name = row.teamName ?: row.teamAbbr ?: "",
                 colorHex = colorHexForFavorite(game, row.teamUid),
+                logoUrl = logoUrlForFavorite(game, row.teamUid, row.teamAbbr),
                 statusLabel = teamStatusLabel(game),
                 isLive = game?.state == "live",
             )
@@ -386,6 +387,7 @@ data class TeamChip(
     val abbrev: String,
     val name: String,
     val colorHex: String?,
+    val logoUrl: String?,
     val statusLabel: String,
     val isLive: Boolean,
 )
@@ -437,15 +439,21 @@ private fun MyTeamsSection(
                             .padding(8.dp)
                             .width(64.dp),
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .size(26.dp)
-                                .clip(RoundedCornerShape(7.dp))
-                                .background(hexToColor(chip.colorHex, Color.White.copy(alpha = 0.15f))),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Text(chip.abbrev.take(3), fontSize = 8.sp, fontWeight = FontWeight.Black, color = Color.White)
-                        }
+                        TeamLogo(
+                            team = SportsGame.TeamSummary(
+                                name = chip.name,
+                                abbreviation = chip.abbrev,
+                                uid = chip.uid,
+                                displayName = chip.name,
+                                shortName = chip.name,
+                                primaryHex = chip.colorHex,
+                                logoUrl = chip.logoUrl,
+                            ),
+                            size = 26.dp,
+                            cornerRadius = 7.dp,
+                            inset = 3.dp,
+                            abbreviationFontSize = 8.sp,
+                        )
                         Text(chip.name, fontSize = 9.sp, fontWeight = FontWeight.SemiBold, color = Color.White.copy(alpha = 0.6f), maxLines = 1)
                         Text(
                             chip.statusLabel,
@@ -786,6 +794,22 @@ private fun colorHexForFavorite(game: SportsGame?, uid: String): String? {
     if (game == null) return null
     if (game.away.uid == uid) return game.away.primaryHex
     if (game.home.uid == uid) return game.home.primaryHex
+    return null
+}
+
+/**
+ * Resolves the crest URL for a favorited team from its matched game — the
+ * same logoUrl the game-row badges render. Matches by uid first, then
+ * abbreviation, mirroring findGameForFavorite.
+ */
+private fun logoUrlForFavorite(game: SportsGame?, uid: String, abbr: String?): String? {
+    if (game == null) return null
+    if (game.away.uid == uid) return game.away.logoUrl
+    if (game.home.uid == uid) return game.home.logoUrl
+    if (abbr != null) {
+        if (game.away.abbreviation == abbr) return game.away.logoUrl
+        if (game.home.abbreviation == abbr) return game.home.logoUrl
+    }
     return null
 }
 
