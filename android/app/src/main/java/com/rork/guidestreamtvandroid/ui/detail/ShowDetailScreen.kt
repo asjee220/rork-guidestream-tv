@@ -396,7 +396,7 @@ fun ShowDetailScreen(
                     // Watched toggle
                     CircleAction(
                         icon = Icons.Filled.Visibility,
-                        label = "Watched",
+                        label = if (isWatched) "Watched" else "Watch?",
                         tint = if (isWatched) BrandBlue else TextPrimary,
                         showDot = false,
                     ) {

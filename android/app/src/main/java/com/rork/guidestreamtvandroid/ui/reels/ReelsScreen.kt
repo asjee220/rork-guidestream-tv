@@ -1892,7 +1892,7 @@ private fun ReelRailButtons(
         // Watched
         RailButton(
             icon = Icons.Filled.Visibility,
-            label = "Watched",
+            label = if (isWatched) "Watched" else "Watch?",
             tint = if (isWatched) BrandBlue else TextPrimary,
             iconSize = iconSize,
             onClick = onToggleWatched,

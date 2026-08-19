@@ -269,7 +269,7 @@ struct CreatorDetailView: View {
 
             creatorCircleAction(
                 icon: social.isWatched(titleId) ? "eye.fill" : "eye",
-                label: "Watched",
+                label: social.isWatched(titleId) ? "Watched" : "Watch?",
                 tint: social.isWatched(titleId) ? Color(hex: "1A6FE8") : .white,
                 isLoading: isTogglingWatched
             ) {
