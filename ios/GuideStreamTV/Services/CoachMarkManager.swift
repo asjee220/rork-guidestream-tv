@@ -126,9 +126,22 @@ final class CoachMarkManager {
     /// pending authoritative remote clear.
     private let pendingRemoteResetKey = "gs.coachMarkPendingRemoteReset"
 
+    /// Per-mark count of times that mark was skipped for being unmeasurable.
+    /// Device-local (never synced): a mark that keeps failing to measure is
+    /// retired after two attempts so its tour can finish.
+    private let attemptsKey = "gs.coachMarkAttempts"
+    private var skipAttempts: [String: Int] = [:]
+
+    /// Per-install count of how many times each tour has started. Caps the
+    /// tours at three starts so a never-measuring mark cannot re-arm the
+    /// tour on every session. Device-local.
+    private let tourRunsKey = "gs.coachMarkTourRuns"
+    private var tourRuns: [String: Int] = [:]
+
     private init() {
         applyOneTimeResetIfNeeded()
         loadFromUserDefaults()
+        loadDeviceLocalCounters()
     }
 
     /// Runs at most once per install per `coachMarkResetVersion`. Clears the
@@ -158,6 +171,29 @@ final class CoachMarkManager {
         }
     }
 
+    /// Loads the device-local counters (skip attempts + tour runs). Unlike
+    /// `seenKeys`, these are deliberately never cleared on sign-out or synced
+    /// to Supabase — they are per-install circuit breakers.
+    private func loadDeviceLocalCounters() {
+        if let data = defaults.data(forKey: attemptsKey),
+           let dict = try? JSONDecoder().decode([String: Int].self, from: data) {
+            skipAttempts = dict
+        }
+        if let data = defaults.data(forKey: tourRunsKey),
+           let dict = try? JSONDecoder().decode([String: Int].self, from: data) {
+            tourRuns = dict
+        }
+    }
+
+    private func saveDeviceLocalCounters() {
+        if let data = try? JSONEncoder().encode(skipAttempts) {
+            defaults.set(data, forKey: attemptsKey)
+        }
+        if let data = try? JSONEncoder().encode(tourRuns) {
+            defaults.set(data, forKey: tourRunsKey)
+        }
+    }
+
     // MARK: - Tour gating
 
     var homeTourDone: Bool { seenKeys["home_tour_done"] != nil }
@@ -168,6 +204,9 @@ final class CoachMarkManager {
                              homeContentReady: Bool, tabBarVisible: Bool) -> Bool {
         guard isSignedIn, hasCompletedOnboarding, homeContentReady,
               tabBarVisible, !homeTourDone, !isShowing else { return false }
+        // Hard per-install cap: the home tour never starts more than three
+        // times, regardless of how the previous attempts ended.
+        if (tourRuns["home"] ?? 0) >= 3 { return false }
         let unseen = CoachMark.homeTour.filter { seenKeys[$0.key] == nil }
         return !unseen.isEmpty
     }
@@ -175,6 +214,9 @@ final class CoachMarkManager {
     /// Returns true if the sheet tour should fire now.
     func shouldStartSheetTour(sourcesResolved: Bool) -> Bool {
         guard !sheetTourDone, !isShowing, sourcesResolved else { return false }
+        // Hard per-install cap: the sheet tour never starts more than three
+        // times, regardless of how the previous attempts ended.
+        if (tourRuns["sheet"] ?? 0) >= 3 { return false }
         let unseen = CoachMark.sheetTour.filter { seenKeys[$0.key] == nil }
         return !unseen.isEmpty
     }
@@ -184,6 +226,8 @@ final class CoachMarkManager {
     func startHomeTour() {
         let unseen = CoachMark.homeTour.filter { seenKeys[$0.key] == nil }
         guard !unseen.isEmpty else { return }
+        tourRuns["home"] = (tourRuns["home"] ?? 0) + 1
+        saveDeviceLocalCounters()
         activeTour = unseen
         activeTourIsHome = true
         currentIndex = 0
@@ -197,6 +241,8 @@ final class CoachMarkManager {
     func startSheetTour() {
         let unseen = CoachMark.sheetTour.filter { seenKeys[$0.key] == nil }
         guard !unseen.isEmpty else { return }
+        tourRuns["sheet"] = (tourRuns["sheet"] ?? 0) + 1
+        saveDeviceLocalCounters()
         activeTour = unseen
         activeTourIsHome = false
         currentIndex = 0
@@ -277,13 +323,32 @@ final class CoachMarkManager {
         measureAttempt = 0
     }
 
-    /// Moves past the current mark *without* persisting it, so a mark whose
-    /// anchor could not be measured is retried on a later session instead of
-    /// being burned. When it is the last mark, the tour is dismissed without
-    /// writing either the mark key or the tour-level done key.
+    /// Moves past the current mark whose anchor could not be measured. The
+    /// mark is retried on a later session up to two times; on the second
+    /// failed attempt it is retired via `markAsSeen` so the tour can finish.
+    /// When it is the last mark and every mark in the tour's full definition
+    /// is now seen, the tour-level done key is written (without the
+    /// completion toast) so the tour never re-arms.
     func skipUnmeasurableMark() {
-        guard currentMark != nil else { return }
+        guard let mark = currentMark else { return }
+        // Count this skip per mark key and retire the mark after two failed
+        // attempts so the tour cannot loop on it forever.
+        let attempts = (skipAttempts[mark.key] ?? 0) + 1
+        skipAttempts[mark.key] = attempts
+        saveDeviceLocalCounters()
+        if attempts >= 2 {
+            markAsSeen(mark.key)
+        }
         if currentIndex + 1 >= activeTour.count {
+            // If the full definition of this tour has no unseen marks left
+            // (everything seen or retired), write the tour-level done key so
+            // shouldStartHomeTour / shouldStartSheetTour stop re-arming it.
+            // No completion toast: the user never actually finished it.
+            let fullTour = activeTourIsHome ? CoachMark.homeTour : CoachMark.sheetTour
+            let allSeen = fullTour.allSatisfy { seenKeys[$0.key] != nil }
+            if allSeen {
+                markAsSeen(activeTourIsHome ? "home_tour_done" : "sheet_tour_done")
+            }
             genreHighlightActive = false
             dismissTour()
         } else {
