@@ -1263,7 +1263,7 @@ private struct WatchProfileRow: View {
             .padding(.vertical, 14)
             .contentShape(Rectangle())
         }
-        .buttonStyle(ProfileRowButtonStyle())
+        .buttonStyle(.card)
     }
 }
 
@@ -1738,6 +1738,6 @@ private struct FAQRow: View {
             .padding(.vertical, 14)
             .contentShape(Rectangle())
         }
-        .buttonStyle(ProfileRowButtonStyle())
+        .buttonStyle(.card)
     }
 }

@@ -117,7 +117,7 @@ struct ProfileView: View {
                             .frame(minHeight: 110)
                             .contentShape(Rectangle())
                         }
-                        .buttonStyle(ProfileRowButtonStyle())
+                        .buttonStyle(.card)
                         .padding(.top, 8)
 
                         // Floating tab bar safe area
@@ -235,16 +235,8 @@ struct ProfileView: View {
             .padding(.horizontal, 28)
             .padding(.vertical, 28)
             .frame(maxWidth: .infinity, minHeight: 110)
-            .background(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(Color.orange.opacity(0.10))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .stroke(Color.orange.opacity(0.40), lineWidth: 1)
-            )
         }
-        .buttonStyle(ProfileRowButtonStyle(cornerRadius: 14))
+        .buttonStyle(.card)
         .accessibilityLabel("Supabase setup needed. Open diagnostics.")
     }
 
@@ -659,6 +651,7 @@ struct ProfileCard<Content: View>: View {
             RoundedRectangle(cornerRadius: 22, style: .continuous)
                 .stroke(Color.white.opacity(0.08), lineWidth: 1)
         )
+        .clipShape(.rect(cornerRadius: 22))
     }
 }
 
@@ -727,46 +720,11 @@ struct ProfileRow: View {
             .frame(minHeight: 110)
             .contentShape(Rectangle())
         }
-        .buttonStyle(ProfileRowButtonStyle())
+        .buttonStyle(.card)
     }
 
     private func tap() {
         onTap()
-    }
-}
-
-struct ProfileRowButtonStyle: ButtonStyle {
-    /// Row corner radius used by the focus ring. Defaults to the card's 22pt;
-    /// the Supabase banner passes its own 14pt.
-    var cornerRadius: CGFloat = 22
-
-    func makeBody(configuration: Configuration) -> some View {
-        ProfileRowFocusBody(configuration: configuration, cornerRadius: cornerRadius)
-    }
-}
-
-/// `ButtonStyle.Configuration` carries no focus information on tvOS, so the
-/// label is wrapped in this view which reads focus from the environment and
-/// draws the remote-focus treatment (white ring + subtle lift) on top of the
-/// existing pressed treatment.
-private struct ProfileRowFocusBody: View {
-    let configuration: ButtonStyle.Configuration
-    let cornerRadius: CGFloat
-    @Environment(\.isFocused) private var isFocused
-
-    var body: some View {
-        configuration.label
-            .background(
-                configuration.isPressed ? Color.white.opacity(0.04) : Color.clear
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .strokeBorder(Color.white, lineWidth: 3)
-                    .opacity(isFocused ? 1 : 0)
-            )
-            .scaleEffect(isFocused ? 1.02 : (configuration.isPressed ? 0.985 : 1.0))
-            .animation(.easeOut(duration: 0.18), value: isFocused)
-            .animation(.easeOut(duration: 0.18), value: configuration.isPressed)
     }
 }
 
