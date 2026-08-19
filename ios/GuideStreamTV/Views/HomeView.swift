@@ -1075,6 +1075,7 @@ struct HomeView: View {
                         Color.clear.frame(height: 96)
                     }
                     .padding(.top, 4)
+                    .gsContentWidth()
                 }
                 .tracksTabBarVisibility()
                 .refreshable {

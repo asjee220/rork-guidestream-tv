@@ -133,6 +133,8 @@ import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.rememberCoroutineScope
 import com.rork.guidestreamtvandroid.ui.theme.SurfaceContainer
 import com.rork.guidestreamtvandroid.ui.theme.TextTertiary
+import com.rork.guidestreamtvandroid.ui.theme.gsContentWidth
+import com.rork.guidestreamtvandroid.ui.theme.rememberWidthClass
 import kotlinx.coroutines.launch
 
 /**
@@ -243,6 +245,9 @@ fun HomeScreen(
         coachMark.markScrollSettled()
     }
 
+    // Adaptive width class for tablet/split-screen windows (no-op on phones).
+    val widthClass = rememberWidthClass()
+
     Box(modifier = modifier.fillMaxSize()) {
         PullToRefreshBox(
             isRefreshing = isRefreshing,
@@ -276,7 +281,8 @@ fun HomeScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .verticalScroll(scrollState),
+            .verticalScroll(scrollState)
+            .gsContentWidth(widthClass),
     ) {
         // Reserve space for the pinned PageBar (status bar + 56dp bar height).
         Spacer(Modifier.statusBarsPadding().height(56.dp))
