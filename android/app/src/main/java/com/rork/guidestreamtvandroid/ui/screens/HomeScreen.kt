@@ -265,7 +265,9 @@ fun HomeScreen(
                 }
             },
             state = pullState,
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier
+                .fillMaxSize()
+                .gsContentWidth(widthClass),
             indicator = {
                 PullToRefreshDefaults.Indicator(
                     modifier = Modifier
@@ -281,8 +283,7 @@ fun HomeScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .verticalScroll(scrollState)
-            .gsContentWidth(widthClass),
+            .verticalScroll(scrollState),
     ) {
         // Reserve space for the pinned PageBar (status bar + 56dp bar height).
         Spacer(Modifier.statusBarsPadding().height(56.dp))
@@ -859,7 +860,9 @@ fun HomeScreen(
         // Pinned top bar — wordmark left, services pill right (mirrors iOS PageBar)
         GsTopBar(
             elevated = isBarElevated,
-            modifier = Modifier.align(Alignment.TopStart),
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .gsContentWidth(widthClass),
         ) {
             val serviceIds = StreamingCatalog.ordered(selectedServices).map { it.id }
             if (serviceIds.isNotEmpty()) {

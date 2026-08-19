@@ -1081,8 +1081,8 @@ struct HomeView: View {
                         Color.clear.frame(height: 96)
                     }
                     .padding(.top, 4)
-                    .gsContentWidth()
                 }
+                .gsContentWidth()
                 .tracksTabBarVisibility()
                 .refreshable {
                     await streams.refreshAll()
@@ -1136,6 +1136,7 @@ struct HomeView: View {
                         .transition(.move(edge: .top).combined(with: .opacity))
                     }
                 }
+                .gsContentWidth()
                 .background {
                     ZStack {
                         Rectangle().fill(.ultraThinMaterial).opacity(0.61)
