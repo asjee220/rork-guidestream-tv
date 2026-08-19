@@ -315,9 +315,20 @@ struct SportsWatchSheet: View {
                         .scaledFont(size: 8, weight: .heavy)
                         .tracking(1)
                         .foregroundStyle(.white.opacity(0.65))
-                    Text(game.away.abbreviation)
-                        .scaledFont(size: 22, weight: .black)
-                        .foregroundStyle(.white)
+                    HStack(spacing: 6) {
+                        if let logoURL = game.away.logoURL, !logoURL.isEmpty, let url = URL(string: logoURL) {
+                            AsyncImage(url: url) { phase in
+                                if case .success(let image) = phase {
+                                    image.resizable().scaledToFit().frame(width: 22, height: 22)
+                                } else {
+                                    EmptyView()
+                                }
+                            }
+                        }
+                        Text(game.away.abbreviation)
+                            .scaledFont(size: 22, weight: .black)
+                            .foregroundStyle(.white)
+                    }
                 }
                 .padding(10)
             }
@@ -329,9 +340,20 @@ struct SportsWatchSheet: View {
                         .scaledFont(size: 8, weight: .heavy)
                         .tracking(1)
                         .foregroundStyle(.white.opacity(0.65))
-                    Text(game.home.abbreviation)
-                        .scaledFont(size: 22, weight: .black)
-                        .foregroundStyle(.white)
+                    HStack(spacing: 6) {
+                        Text(game.home.abbreviation)
+                            .scaledFont(size: 22, weight: .black)
+                            .foregroundStyle(.white)
+                        if let logoURL = game.home.logoURL, !logoURL.isEmpty, let url = URL(string: logoURL) {
+                            AsyncImage(url: url) { phase in
+                                if case .success(let image) = phase {
+                                    image.resizable().scaledToFit().frame(width: 22, height: 22)
+                                } else {
+                                    EmptyView()
+                                }
+                            }
+                        }
+                    }
                 }
                 .padding(10)
             }

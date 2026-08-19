@@ -21,16 +21,19 @@ struct SportsGameDetailView: View {
 
                 // Scoreline
                 HStack(spacing: 0) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        HStack(spacing: 8) {
-                            Text(game.away.shortName)
-                                .scaledFont(size: 22, weight: .bold)
-                                .foregroundStyle(game.away.isWinner ? .white : Color.white.opacity(0.55))
-                            favoriteStar(team: game.away)
-                        }
-                        Text(game.away.score)
+                    VStack(alignment: .leading, spacing: 8) {
+                        TeamLogoBadge(team: game.away, size: 56, cornerRadius: 14, inset: 8, abbreviationFontSize: 13)
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack(spacing: 8) {
+                                Text(game.away.shortName)
+                                    .scaledFont(size: 22, weight: .bold)
+                                    .foregroundStyle(game.away.isWinner ? .white : Color.white.opacity(0.55))
+                                favoriteStar(team: game.away)
+                            }
+                            Text(game.away.score)
                             .scaledFont(size: 36, weight: .black)
                             .foregroundStyle(game.away.isWinner ? .white : Color.white.opacity(0.55))
+                        }
                     }
                     Spacer()
                     Text(game.state == .pre ? "vs" : game.state == .live ? "LIVE" : "FINAL")
@@ -40,16 +43,19 @@ struct SportsGameDetailView: View {
                         .padding(.vertical, 6)
                         .background(Capsule().fill(Color.white.opacity(0.08)))
                     Spacer()
-                    VStack(alignment: .trailing, spacing: 4) {
-                        HStack(spacing: 8) {
-                            favoriteStar(team: game.home)
-                            Text(game.home.shortName)
-                                .scaledFont(size: 22, weight: .bold)
-                                .foregroundStyle(game.home.isWinner ? .white : Color.white.opacity(0.55))
-                        }
-                        Text(game.home.score)
+                    VStack(alignment: .trailing, spacing: 8) {
+                        TeamLogoBadge(team: game.home, size: 56, cornerRadius: 14, inset: 8, abbreviationFontSize: 13)
+                        VStack(alignment: .trailing, spacing: 4) {
+                            HStack(spacing: 8) {
+                                favoriteStar(team: game.home)
+                                Text(game.home.shortName)
+                                    .scaledFont(size: 22, weight: .bold)
+                                    .foregroundStyle(game.home.isWinner ? .white : Color.white.opacity(0.55))
+                            }
+                            Text(game.home.score)
                             .scaledFont(size: 36, weight: .black)
                             .foregroundStyle(game.home.isWinner ? .white : Color.white.opacity(0.55))
+                        }
                     }
                 }
 

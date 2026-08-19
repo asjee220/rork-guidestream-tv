@@ -37,6 +37,7 @@ struct GameTeam: Hashable {
     let score: String
     let primaryHex: String?
     let isWinner: Bool
+    var logoURL: String? = nil
 }
 
 // MARK: - Streaming Simulcast Companions
@@ -225,7 +226,8 @@ final class SportsService {
             shortName: c.team?.shortDisplayName ?? c.team?.name ?? "—",
             score: c.score ?? "0",
             primaryHex: c.team?.color,
-            isWinner: c.winner ?? false
+            isWinner: c.winner ?? false,
+            logoURL: c.team?.logo
         )
     }
 
@@ -318,4 +320,5 @@ nonisolated struct ESPNTeam: Decodable {
     let shortDisplayName: String?
     let name: String?
     let color: String?
+    let logo: String?
 }

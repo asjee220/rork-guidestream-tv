@@ -27,6 +27,9 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
+import coil3.compose.SubcomposeAsyncImage
+import coil3.request.crossfade
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -528,6 +531,71 @@ private fun SectionHeader(title: String, count: Int, onSeeAll: () -> Unit) {
     }
 }
 
+// MARK: - Team Logo badge
+
+/**
+ * Reusable team logo badge. With a non-blank logo URL it draws a rounded
+ * rectangle at 7% team colour with the logo scaled to fit and inset.
+ * With a missing or failed logo it falls back to the full-colour
+ * abbreviation badge. The badge is always `size x size`.
+ */
+@Composable
+internal fun TeamLogo(
+    team: SportsGame.TeamSummary,
+    size: androidx.compose.ui.unit.Dp,
+    cornerRadius: androidx.compose.ui.unit.Dp,
+    inset: androidx.compose.ui.unit.Dp,
+    abbreviationFontSize: androidx.compose.ui.unit.TextUnit,
+    modifier: Modifier = Modifier,
+) {
+    val logoFillColor = team.primaryHex?.let { hexToColor(it, Color.White.copy(alpha = 0.07f)).copy(alpha = 0.07f) } ?: Color.White.copy(alpha = 0.07f)
+    val fallbackColor = hexToColor(team.primaryHex, Color.White.copy(alpha = 0.2f))
+    val shape = remember(cornerRadius) { RoundedCornerShape(cornerRadius) }
+
+    val logoUrl = team.logoUrl?.takeIf { it.isNotBlank() }
+    if (logoUrl != null) {
+        SubcomposeAsyncImage(
+            model = logoUrl,
+            contentDescription = team.abbreviation,
+            modifier = modifier
+                .size(size)
+                .clip(shape)
+                .background(logoFillColor),
+            contentScale = ContentScale.Fit,
+            loading = { FallbackBadge(team.abbreviation, fallbackColor, shape, abbreviationFontSize) },
+            error = { FallbackBadge(team.abbreviation, fallbackColor, shape, abbreviationFontSize) },
+            success = { state ->
+                androidx.compose.foundation.Image(
+                    painter = state.painter,
+                    contentDescription = team.abbreviation,
+                    modifier = Modifier.size(size).padding(inset),
+                    contentScale = ContentScale.Fit,
+                )
+            },
+        )
+    } else {
+        FallbackBadge(team.abbreviation, fallbackColor, shape, abbreviationFontSize, modifier.size(size))
+    }
+}
+
+@Composable
+private fun FallbackBadge(
+    abbreviation: String,
+    color: Color,
+    shape: androidx.compose.ui.graphics.Shape,
+    fontSize: androidx.compose.ui.unit.TextUnit,
+    modifier: Modifier = Modifier,
+) {
+    Box(
+        modifier = modifier
+            .clip(shape)
+            .background(color),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(abbreviation, fontSize = fontSize, fontWeight = FontWeight.Black, color = Color.White)
+    }
+}
+
 // MARK: - Game rows (shared with SportsListView)
 
 @Composable
@@ -574,15 +642,7 @@ private fun LiveTeamBlock(team: SportsGame.TeamSummary, modifier: Modifier, alig
         horizontalAlignment = align,
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        Box(
-            modifier = Modifier
-                .size(38.dp)
-                .clip(RoundedCornerShape(10.dp))
-                .background(hexToColor(team.primaryHex)),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(team.abbreviation, fontSize = 9.sp, fontWeight = FontWeight.Black, color = Color.White)
-        }
+        TeamLogo(team, size = 50.dp, cornerRadius = 10.dp, inset = 6.dp, abbreviationFontSize = 9.sp)
         Text(team.shortName.ifEmpty { team.abbreviation }, fontSize = 10.sp, fontWeight = FontWeight.SemiBold, color = Color.White.copy(alpha = 0.6f), maxLines = 1)
         Text(team.score.ifEmpty { "0" }, fontSize = 24.sp, fontWeight = FontWeight.Black, color = if (team.isWinner) Color.White else Color.White.copy(alpha = 0.55f))
     }
@@ -619,15 +679,7 @@ fun UpcomingGameRow(game: SportsGame, onClick: () -> Unit) {
 
 @Composable
 private fun TeamBadge(team: SportsGame.TeamSummary) {
-    Box(
-        modifier = Modifier
-            .size(30.dp)
-            .clip(RoundedCornerShape(8.dp))
-            .background(hexToColor(team.primaryHex)),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(team.abbreviation, fontSize = 7.sp, fontWeight = FontWeight.Black, color = Color.White)
-    }
+    TeamLogo(team, size = 40.dp, cornerRadius = 8.dp, inset = 5.dp, abbreviationFontSize = 7.sp)
 }
 
 @Composable
@@ -662,7 +714,8 @@ fun FinalGameRow(game: SportsGame, onClick: () -> Unit) {
 @Composable
 private fun FinalScoreLine(team: SportsGame.TeamSummary) {
     val color = if (team.isWinner) Color.White else Color.White.copy(alpha = 0.5f)
-    Row(verticalAlignment = Alignment.CenterVertically) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        TeamLogo(team, size = 18.dp, cornerRadius = 5.dp, inset = 3.dp, abbreviationFontSize = 6.sp)
         Text(team.abbreviation, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = color)
         Spacer(Modifier.weight(1f))
         Text(team.score.ifEmpty { "0" }, fontSize = 14.sp, fontWeight = FontWeight.Black, color = color)

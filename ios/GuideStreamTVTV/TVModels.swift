@@ -140,6 +140,7 @@ struct TVGameTeam: Hashable {
     let score: String
     let primaryHex: String?
     let isWinner: Bool
+    var logoURL: String? = nil
 }
 
 // MARK: - Title recency (Supabase `title_recency`)

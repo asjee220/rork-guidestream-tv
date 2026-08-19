@@ -514,7 +514,17 @@ private fun HeaderRow(game: SportsGame) {
                 ) {
                     Column {
                         Text("AWAY", fontSize = 8.sp, fontWeight = FontWeight.Black, color = Color.White.copy(alpha = 0.65f))
-                        Text(game.away.abbreviation, fontSize = 22.sp, fontWeight = FontWeight.Black, color = Color.White)
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            if (!game.away.logoUrl.isNullOrBlank()) {
+                                coil3.compose.AsyncImage(
+                                    model = game.away.logoUrl,
+                                    contentDescription = game.away.abbreviation,
+                                    modifier = Modifier.size(22.dp),
+                                    contentScale = androidx.compose.ui.layout.ContentScale.Fit,
+                                )
+                            }
+                            Text(game.away.abbreviation, fontSize = 22.sp, fontWeight = FontWeight.Black, color = Color.White)
+                        }
                     }
                 }
                 Box(
@@ -527,7 +537,17 @@ private fun HeaderRow(game: SportsGame) {
                 ) {
                     Column(horizontalAlignment = Alignment.End) {
                         Text("HOME", fontSize = 8.sp, fontWeight = FontWeight.Black, color = Color.White.copy(alpha = 0.65f))
-                        Text(game.home.abbreviation, fontSize = 22.sp, fontWeight = FontWeight.Black, color = Color.White)
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text(game.home.abbreviation, fontSize = 22.sp, fontWeight = FontWeight.Black, color = Color.White)
+                            if (!game.home.logoUrl.isNullOrBlank()) {
+                                coil3.compose.AsyncImage(
+                                    model = game.home.logoUrl,
+                                    contentDescription = game.home.abbreviation,
+                                    modifier = Modifier.size(22.dp),
+                                    contentScale = androidx.compose.ui.layout.ContentScale.Fit,
+                                )
+                            }
+                        }
                     }
                 }
             }

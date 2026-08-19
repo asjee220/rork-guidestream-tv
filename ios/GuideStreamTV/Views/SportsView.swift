@@ -536,17 +536,9 @@ struct SportsView: View {
     }
 
     private func liveTeamBlock(team: GameTeam, leading: Bool) -> some View {
-        let color = team.primaryHex.map { Color(hex: $0) } ?? Color.white.opacity(0.2)
         let scoreColor: Color = team.isWinner ? .white : Color.white.opacity(0.55)
         return VStack(spacing: 4) {
-            RoundedRectangle(cornerRadius: 10)
-                .fill(color)
-                .frame(width: 38, height: 38)
-                .overlay(
-                    Text(team.abbreviation)
-                        .scaledFont(size: 9, weight: .black)
-                        .foregroundStyle(.white)
-                )
+            TeamLogoBadge(team: team, size: 50, cornerRadius: 10, inset: 6, abbreviationFontSize: 9)
             Text(team.shortName)
                 .scaledFont(size: 10, weight: .semibold)
                 .foregroundStyle(Color.white.opacity(0.6))
@@ -582,30 +574,13 @@ struct SportsView: View {
     }
 
     private func upcomingGameCard(_ game: SportsGame) -> some View {
-        let awayColor = game.away.primaryHex.map { Color(hex: $0) } ?? Color.white.opacity(0.2)
-        let homeColor = game.home.primaryHex.map { Color(hex: $0) } ?? Color.white.opacity(0.2)
-
         return VStack(spacing: 8) {
             HStack(spacing: 8) {
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(awayColor)
-                    .frame(width: 30, height: 30)
-                    .overlay(
-                        Text(game.away.abbreviation)
-                            .scaledFont(size: 7, weight: .black)
-                            .foregroundStyle(.white)
-                    )
+                TeamLogoBadge(team: game.away, size: 40, cornerRadius: 8, inset: 5, abbreviationFontSize: 7)
                 Text("vs")
                     .scaledFont(size: 11, weight: .bold)
                     .foregroundStyle(Color.white.opacity(0.3))
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(homeColor)
-                    .frame(width: 30, height: 30)
-                    .overlay(
-                        Text(game.home.abbreviation)
-                            .scaledFont(size: 7, weight: .black)
-                            .foregroundStyle(.white)
-                    )
+                TeamLogoBadge(team: game.home, size: 40, cornerRadius: 8, inset: 5, abbreviationFontSize: 7)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("\(game.away.shortName) vs \(game.home.shortName)")
                         .scaledFont(size: 13, weight: .bold)
@@ -653,6 +628,7 @@ struct SportsView: View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
+                    TeamLogoBadge(team: game.away, size: 18, cornerRadius: 5, inset: 3, abbreviationFontSize: 6)
                     Text(game.away.abbreviation)
                         .scaledFont(size: 11, weight: .bold)
                         .foregroundStyle(game.away.isWinner ? .white : Color.white.opacity(0.5))
@@ -662,6 +638,7 @@ struct SportsView: View {
                         .foregroundStyle(game.away.isWinner ? .white : Color.white.opacity(0.5))
                 }
                 HStack(spacing: 6) {
+                    TeamLogoBadge(team: game.home, size: 18, cornerRadius: 5, inset: 3, abbreviationFontSize: 6)
                     Text(game.home.abbreviation)
                         .scaledFont(size: 11, weight: .bold)
                         .foregroundStyle(game.home.isWinner ? .white : Color.white.opacity(0.5))

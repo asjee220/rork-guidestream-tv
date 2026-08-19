@@ -42,7 +42,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.rork.guidestreamtvandroid.data.models.SportsGame
 import com.rork.guidestreamtvandroid.data.repository.TeamFavoritesService
-import com.rork.guidestreamtvandroid.ui.components.RemoteImage
 import com.rork.guidestreamtvandroid.ui.components.glassCard
 import com.rork.guidestreamtvandroid.ui.theme.BottomSafeSpacer
 import com.rork.guidestreamtvandroid.ui.theme.BrandOrange
@@ -138,6 +137,14 @@ fun SportsGameDetailScreen(
             ) {
                 // Away team
                 Column(modifier = Modifier.weight(1f)) {
+                    TeamLogo(
+                        team = game.away,
+                        size = 56.dp,
+                        cornerRadius = 14.dp,
+                        inset = 8.dp,
+                        abbreviationFontSize = 13.sp,
+                    )
+                    Spacer(Modifier.height(8.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
                             text = game.away.abbreviation.take(3),
@@ -179,6 +186,14 @@ fun SportsGameDetailScreen(
                     modifier = Modifier.weight(1f),
                     horizontalAlignment = Alignment.End,
                 ) {
+                    TeamLogo(
+                        team = game.home,
+                        size = 56.dp,
+                        cornerRadius = 14.dp,
+                        inset = 8.dp,
+                        abbreviationFontSize = 13.sp,
+                    )
+                    Spacer(Modifier.height(8.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         FavoriteStar(
                             isFavorite = homeFav,
