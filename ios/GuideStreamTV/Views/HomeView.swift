@@ -393,6 +393,10 @@ struct HomeView: View {
     @State private var expiringPosterUrls: [Int: String] = [:]
     @State private var selectedGenreId: Int = 80
     @State private var selectedGenreName: String = "Crime"
+    /// Media-type sentinel for the selected genre tile ("tv", "movie",
+    /// "international", "anime") so a home refresh refetches the same kind
+    /// of content the user selected.
+    @State private var selectedGenreMediaType: String = "tv"
     @State private var tvdbUpcomingItems: [TVDBUpcomingItem] = []
     @State private var genreHighlighted: Bool = false
     @State private var comingToStreaming: [ComingToStreamingItem] = []
@@ -877,20 +881,12 @@ struct HomeView: View {
                         GenreDiscoverySection(highlighted: CoachMarkManager.shared.genreHighlightActive, selectedGenreId: selectedGenreId) { genreId, genreName, mediaType in
                             selectedGenreId = genreId
                             selectedGenreName = genreName
+                            selectedGenreMediaType = mediaType
                             withAnimation(.spring(response: 0.3, dampingFraction: 0.75)) {
                                 scrollProxy.scrollTo("browseByGenre", anchor: .top)
                             }
                             Task {
-                                let shows: [TMDBResult]?
-                                switch mediaType {
-                                case "movie":
-                                    shows = try? await TMDBService.shared.getDiscoverByGenre(genreId, mediaType: "movie")
-                                case "international":
-                                    shows = try? await TMDBService.shared.getDiscoverInternational()
-                                default:
-                                    shows = try? await TMDBService.shared.getDiscoverByGenre(genreId)
-                                }
-                                if let shows {
+                                if let shows = await Self.fetchGenreShows(genreId: genreId, mediaType: mediaType) {
                                     genreShows = shows
                                     recommendedShows = shows
                                     await hydrateProviders()
@@ -1542,6 +1538,24 @@ struct HomeView: View {
         StreamingCatalog.ordered(from: auth.selectedServices).map { $0.id }
     }
 
+    /// Shared genre-rail fetch used by both the genre tile tap and the
+    /// home refresh in `loadTrendingIfNeeded`, so a reload keeps the
+    /// selected genre's media type (e.g. Anime stays anime instead of
+    /// falling back to western animation). Static so the task-group child
+    /// in the home fetch captures no view state.
+    private static func fetchGenreShows(genreId: Int, mediaType: String) async -> [TMDBResult]? {
+        switch mediaType {
+        case "movie":
+            return try? await TMDBService.shared.getDiscoverByGenre(genreId, mediaType: "movie")
+        case "international":
+            return try? await TMDBService.shared.getDiscoverInternational()
+        case "anime":
+            return try? await TMDBService.shared.getDiscoverAnime()
+        default:
+            return try? await TMDBService.shared.getDiscoverByGenre(genreId)
+        }
+    }
+
     private func loadTrendingIfNeeded(deferNonCritical: Bool = false) async {
         // Always load TMDB content so the hero, new-episodes, and binge sections never fall back to a gradient-only state.
         // Refresh the provider brand map from the server (fire-and-forget;
@@ -1551,6 +1565,7 @@ struct HomeView: View {
         // avoid twelve sequential round-trips. Each fetch preserves its
         // existing try? or non-throwing form.
         let genreId = selectedGenreId
+        let genreMediaType = selectedGenreMediaType
         let fetched: [HomeFetch] = await withTaskGroup(of: HomeFetch.self) { group in
             group.addTask { .trending(page: 1, shows: try? await TMDBService.shared.getTrending(page: 1)) }
             group.addTask { .trending(page: 2, shows: try? await TMDBService.shared.getTrending(page: 2)) }
@@ -1561,7 +1576,7 @@ struct HomeView: View {
             group.addTask { .newToday(try? await TMDBService.shared.getNewToday()) }
             group.addTask { .sports(await SportsService.shared.fetchAll()) }
             group.addTask { .topRated(try? await TMDBService.shared.getTopRated()) }
-            group.addTask { .genre(try? await TMDBService.shared.getDiscoverByGenre(genreId)) }
+            group.addTask { .genre(await Self.fetchGenreShows(genreId: genreId, mediaType: genreMediaType)) }
             group.addTask { .newReleases(await StreamingReleasesService.shared.fetchReleases()) }
             group.addTask { .upcoming(await StreamingUpcomingService.shared.fetchUpcoming()) }
             var out: [HomeFetch] = []
@@ -4105,6 +4120,7 @@ private struct GenreDiscoverySection: View {
     /// Genre data: (id, name, icon, color, mediaType).
     /// "movie" is used for Romance (10749 is a movie-only TMDB genre).
     /// "international" triggers a foreign-language TV discovery call.
+    /// "anime" triggers a Japanese-language animation TV discovery call.
     private let genres: [(Int, String, String, Color, String)] = [
         (80, "Crime & Thriller", "flame", Color(red:0.86,green:0.15,blue:0.15), "tv"),
         (10765, "Sci-Fi", "sparkles", Color(red:0.55,green:0.36,blue:0.96), "tv"),
@@ -4113,7 +4129,8 @@ private struct GenreDiscoverySection: View {
         (10759, "Action", "bolt", Color(red:0.96,green:0.38,blue:0.15), "tv"),
         (99, "Documentary", "video", Color(red:0.10,green:0.60,blue:0.88), "tv"),
         (10749, "Romance", "heart.fill", Color(red:0.98,green:0.28,blue:0.52), "movie"),
-        (10769, "International", "globe", Color(red:0.18,green:0.65,blue:0.55), "international")
+        (10769, "International", "globe", Color(red:0.18,green:0.65,blue:0.55), "international"),
+        (16, "Anime", "sparkle", Color(red:0.80,green:0.20,blue:0.75), "anime")
     ]
 
     var body: some View {

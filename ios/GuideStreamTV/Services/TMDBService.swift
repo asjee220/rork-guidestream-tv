@@ -505,6 +505,18 @@ nonisolated struct TMDBService {
         return env.results.map { stamp($0, mediaType: "tv") }
     }
 
+    /// Japanese animated TV (anime). TMDB genre 16 is Animation, not anime,
+    /// so anime is discovered as popular TV with genre 16 restricted to
+    /// Japanese original-language titles so the "Anime" genre tile shows
+    /// Japanese animation and not western animation.
+    func getDiscoverAnime() async throws -> [TMDBResult] {
+        let locale = DeviceLocale.current()
+        let urlString = "\(base)/discover/tv?api_key=\(apiKey)&language=\(locale.tmdbLanguage)&sort_by=popularity.desc&with_genres=16&with_original_language=ja&page=1"
+        let data = try await get(urlString)
+        let env = try JSONDecoder().decode(TMDBTrendingEnvelope.self, from: data)
+        return env.results.map { stamp($0, mediaType: "tv") }
+    }
+
     /// Onboarding show-picker: popular TV series on a specific streaming
     /// service. Uses the device's resolved region (US fallback) and the same
     /// flatrate+ads monetization filter as the home rails so results are

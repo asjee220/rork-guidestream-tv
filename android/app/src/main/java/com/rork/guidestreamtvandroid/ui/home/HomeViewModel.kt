@@ -103,6 +103,12 @@ class HomeViewModel : ViewModel() {
     private val _selectedGenreName = MutableStateFlow("Crime")
     val selectedGenreName: StateFlow<String> = _selectedGenreName.asStateFlow()
 
+    /** Media-type sentinel for the selected genre tile ("tv", "movie",
+     *  "international", "anime") so a feed refresh refetches the same kind
+     *  of content the user selected. */
+    private val _selectedGenreMediaType = MutableStateFlow("tv")
+    val selectedGenreMediaType: StateFlow<String> = _selectedGenreMediaType.asStateFlow()
+
     private val _recommendedCreators = MutableStateFlow<List<RecommendedCreator>>(emptyList())
     val recommendedCreators: StateFlow<List<RecommendedCreator>> = _recommendedCreators.asStateFlow()
 
@@ -228,7 +234,7 @@ class HomeViewModel : ViewModel() {
                         }
                     }
                 },
-                launch { _genreShows.value = tmdb.getDiscoverByGenre(80) }, // Crime
+                launch { _genreShows.value = fetchGenreShows(80, _selectedGenreMediaType.value) }, // Crime
             )
             // Watchdog: never let a stalled request hold the skeleton. The
             // jobs were launched above, OUTSIDE this block, so a timeout
@@ -775,14 +781,26 @@ class HomeViewModel : ViewModel() {
     fun loadGenre(genreId: Int, genreName: String, mediaType: String) {
         _selectedGenreId.value = genreId
         _selectedGenreName.value = genreName
+        _selectedGenreMediaType.value = mediaType
         viewModelScope.launch(Dispatchers.IO) {
-            val results = when (mediaType) {
-                "movie" -> tmdb.getDiscoverByGenre(genreId, "movie")
-                "international" -> tmdb.getDiscoverInternational()
-                else -> tmdb.getDiscoverByGenre(genreId)
-            }
+            val results = fetchGenreShows(genreId, mediaType)
             _genreShows.value = results
             resolveProviders(results)
+        }
+    }
+
+    /**
+     * Shared genre-rail fetch used by [loadGenre], the initial genre load in
+     * [loadAll], and the genre refetch in [refreshFeed] so every path keeps
+     * the selected genre's media type (e.g. Anime stays anime instead of
+     * falling back to western animation).
+     */
+    private suspend fun fetchGenreShows(genreId: Int, mediaType: String): List<TMDBResult> {
+        return when (mediaType) {
+            "movie" -> tmdb.getDiscoverByGenre(genreId, "movie")
+            "international" -> tmdb.getDiscoverInternational()
+            "anime" -> tmdb.getDiscoverAnime()
+            else -> tmdb.getDiscoverByGenre(genreId)
         }
     }
 
@@ -846,7 +864,7 @@ class HomeViewModel : ViewModel() {
                     catch (_: Exception) {}
                 },
                 launch(Dispatchers.IO) {
-                    try { _genreShows.value = tmdb.getDiscoverByGenre(_selectedGenreId.value) }
+                    try { _genreShows.value = fetchGenreShows(_selectedGenreId.value, _selectedGenreMediaType.value) }
                     catch (c: CancellationException) { throw c }
                     catch (_: Exception) {}
                 },

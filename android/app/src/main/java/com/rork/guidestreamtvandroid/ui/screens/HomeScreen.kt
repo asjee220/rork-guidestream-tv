@@ -2040,6 +2040,7 @@ private val browseGenres: List<GenrePill> = listOf(
     GenrePill(99, "Documentary", "tv"),
     GenrePill(10749, "Romance", "movie"),
     GenrePill(10769, "International", "international"),
+    GenrePill(16, "Anime", "anime"),
 )
 
 @Composable

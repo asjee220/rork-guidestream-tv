@@ -111,6 +111,13 @@ class TMDBService {
         return fetchList("$base/discover/tv?api_key=$apiKey&language=${DeviceLocale.tmdbLanguage}&sort_by=popularity.desc&with_original_language=$languages&page=1", "tv")
     }
 
+    /** Japanese animated TV (anime). TMDB genre 16 is Animation, not anime,
+     *  so anime is discovered as popular TV with genre 16 restricted to
+     *  Japanese original-language titles. */
+    suspend fun getDiscoverAnime(): List<TMDBResult> {
+        return fetchList("$base/discover/tv?api_key=$apiKey&language=${DeviceLocale.tmdbLanguage}&sort_by=popularity.desc&with_genres=16&with_original_language=ja&page=1", "tv")
+    }
+
     /** Onboarding show-picker: popular TV series on a specific streaming
      *  service. Uses the device's resolved region (US fallback) and the same
      *  flatrate+ads monetization filter as the home rails. The with_type
