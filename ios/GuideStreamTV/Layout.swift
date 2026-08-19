@@ -5,6 +5,24 @@
 
 import SwiftUI
 
+/// Root-measured window width in points. Published once by `ContentView`'s
+/// root `GeometryReader` so every `gsContentWidth()` call site resolves its
+/// width class against the same window measurement — mirroring Android's
+/// `rememberWidthClass()`, which reads `LocalConfiguration`. `nil` (e.g.
+/// previews or a subtree presented outside the root hierarchy) means the
+/// window is unknown, which resolves to compact so nothing clamps.
+private struct GSWindowWidthKey: EnvironmentKey {
+    static let defaultValue: CGFloat? = nil
+}
+
+extension EnvironmentValues {
+    /// The current window width measured at the app root, if available.
+    var gsWindowWidth: CGFloat? {
+        get { self[GSWindowWidthKey.self] }
+        set { self[GSWindowWidthKey.self] = newValue }
+    }
+}
+
 /// Adaptive width classes shared by every surface that needs to reflow for
 /// tablets and large windows. Breakpoints match the Android port exactly:
 /// below 600pt is phone-like, 600..<840 is a small tablet or split view,
@@ -57,9 +75,16 @@ struct GSContentWidthModifier: ViewModifier {
     /// past the frame (pill shadows, FAB glows) are not cut.
     private static let clipBleed: CGFloat = 48
 
-    @State private var widthClass: GSWidthClass = .compact
+    @Environment(\.gsWindowWidth) private var windowWidth: CGFloat?
 
     func body(content: Content) -> some View {
+        // Resolve against the root-measured window width instead of measuring
+        // this modifier's own subtree — self-measurement is circular: a
+        // modifier whose frame is already constrained by its parent settles
+        // on the parent's proposal, not the window, so call sites like the
+        // pinned top bar escaped the clamp on iPad. A nil value (outside the
+        // root hierarchy) resolves to compact and passes through unchanged.
+        let widthClass = GSWidthClass.from(width: windowWidth ?? 0)
         Group {
             if let maxWidth = GSWidthClass.contentMaxWidth(for: widthClass) {
                 content
@@ -70,14 +95,6 @@ struct GSContentWidthModifier: ViewModifier {
                     .frame(maxWidth: .infinity)
             } else {
                 content
-            }
-        }
-        .onGeometryChange(for: CGFloat.self) { proxy in
-            proxy.size.width
-        } action: { width in
-            let resolved = GSWidthClass.from(width: width)
-            if resolved != widthClass {
-                widthClass = resolved
             }
         }
     }
