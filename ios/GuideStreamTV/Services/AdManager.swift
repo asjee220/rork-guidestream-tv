@@ -48,7 +48,7 @@ final class AdManager: NSObject, ObservableObject, FullScreenContentDelegate, Na
         didStart = true
 
         let parameters = RequestParameters()
-        parameters.tagForUnderAgeOfConsent = false
+        parameters.isTaggedForUnderAgeOfConsent = false
         ConsentInformation.shared.requestConsentInfoUpdate(with: parameters) { [weak self] consentError in
             if let consentError {
                 print("[AdManager] Consent info update failed: \(consentError.localizedDescription)")
