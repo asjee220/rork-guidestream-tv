@@ -34,4 +34,25 @@ enum GSWidthClass {
     }
 }
 
+extension GSWidthClass {
+    /// Horizontal padding for home section containers. Full-width on tablets
+    /// (expanded) so the content stretches edge-to-edge like Sports; phones
+    /// and split-view windows keep their existing 12pt gutters.
+    var homeHorizontalPadding: CGFloat {
+        switch self {
+        case .expanded: return 0
+        case .medium, .compact: return 12
+        }
+    }
+
+    /// Horizontal padding for the home search bar. Full-width on tablets,
+    /// 16pt on phones.
+    var homeSearchHorizontalPadding: CGFloat {
+        switch self {
+        case .expanded: return 0
+        case .medium, .compact: return 16
+        }
+    }
+}
+
 

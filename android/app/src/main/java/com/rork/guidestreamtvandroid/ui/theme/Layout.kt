@@ -3,6 +3,8 @@ package com.rork.guidestreamtvandroid.ui.theme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
 
 /**
  * Adaptive width classes shared by every surface that needs to reflow for
@@ -40,4 +42,21 @@ fun rememberWidthClass(): GSWidthClass {
         GSWidthClass.from(configuration.screenWidthDp)
     }
 }
+
+/** Horizontal padding for home section containers. Full-width on tablets
+ * (expanded) so the content stretches edge-to-edge like Sports; phones and
+ * split-view windows keep their existing 12dp gutters. */
+val GSWidthClass.homeHorizontalPadding: Dp
+    get() = when (this) {
+        GSWidthClass.Expanded -> 0.dp
+        else -> 12.dp
+    }
+
+/** Horizontal padding for the home search bar. Full-width on tablets, 16dp on phones. */
+val GSWidthClass.homeSearchHorizontalPadding: Dp
+    get() = when (this) {
+        GSWidthClass.Expanded -> 0.dp
+        else -> 16.dp
+    }
+
 

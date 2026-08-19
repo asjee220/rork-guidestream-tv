@@ -352,6 +352,9 @@ struct HomeView: View {
     /// wherever the header already sits below the safe area, leaving phone
     /// layout byte-for-byte unchanged.
     @State private var headerTopInset: CGFloat = 0
+    /// Current window width class, used to make home section containers
+    /// stretch edge-to-edge on tablets while keeping phone gutters unchanged.
+    @State private var homeWidthClass: GSWidthClass = .compact
 
     @State private var widgetBannerDismissed: Bool = false
     /// Inline sponsored slot indices dismissed for this session.
@@ -449,7 +452,7 @@ struct HomeView: View {
                 sectionKey: "home_inline_ad",
                 onDismiss: { dismissedAdSlots.insert(slotIndex) }
             )
-            .padding(.horizontal, 12)
+            .padding(.horizontal, homeWidthClass.homeHorizontalPadding)
         }
     }
 
@@ -472,6 +475,14 @@ struct HomeView: View {
                 }
                 .ignoresSafeArea()
                 .allowsHitTesting(false)
+                .onGeometryChange(for: CGFloat.self) { proxy in
+                    proxy.size.width
+                } action: { width in
+                    let resolved = GSWidthClass.from(width: width)
+                    if resolved != homeWidthClass {
+                        homeWidthClass = resolved
+                    }
+                }
 
                 ScrollViewReader { scrollProxy in
                 ScrollView(showsIndicators: false) {
@@ -501,15 +512,16 @@ struct HomeView: View {
                             .clipShape(RoundedRectangle(cornerRadius: 14))
                         }
                         .buttonStyle(.plain)
-                        .padding(.horizontal, 16)
+                        .padding(.horizontal, homeWidthClass.homeSearchHorizontalPadding)
                         .anchorPreference(key: CoachMarkAnchorKey.self, value: .bounds) {
                             ["search": $0]
                         }
 
                         if !homeContentReady {
-                            HomeHeroCarouselShimmer()
+                            HomeHeroCarouselShimmer(widthClass: homeWidthClass)
                         } else if !heroRailItems.isEmpty {
                             HomeHeroCarousel(
+                                widthClass: homeWidthClass,
                                 items: heroRailItems,
                                 onSelectMedia: { result, platform in
                                     WatchIntentLogger.shared.log(
@@ -570,7 +582,7 @@ struct HomeView: View {
 
                         if !homeContentReady {
                             HomeShimmerSection(title: "My Watch List")
-                                .padding(.horizontal, 12)
+                                .padding(.horizontal, homeWidthClass.homeHorizontalPadding)
                         } else {
                             WatchListSection(
                                 items: watchListEpisodes,
@@ -588,12 +600,12 @@ struct HomeView: View {
                                 },
                                 onSignIn: { showEmailAuth = true }
                             )
-                            .padding(.horizontal, 12)
+                            .padding(.horizontal, homeWidthClass.homeHorizontalPadding)
                         }
 
                         if !homeContentReady {
                             HomeShimmerSection(title: "Today's Pick")
-                                .padding(.horizontal, 12)
+                                .padding(.horizontal, homeWidthClass.homeHorizontalPadding)
                         } else if let pick = todaysPick {
                             TodaysPickSection(pick: pick, isSubscribed: isSubscribedToService(pick.sourceName)) {
                                 WatchIntentLogger.shared.log(
@@ -612,7 +624,7 @@ struct HomeView: View {
                                     isTV: pick.tmdbType == "tv"
                                 ))
                             }
-                            .padding(.horizontal, 12)
+                            .padding(.horizontal, homeWidthClass.homeHorizontalPadding)
                         }
 
                         // FIXME: Temporarily disabled — re-enable when new episodes are populated
@@ -651,7 +663,7 @@ struct HomeView: View {
 
                         if !homeContentReady {
                             HomeShimmerSection(title: "Coming to Streaming")
-                                .padding(.horizontal, 12)
+                                .padding(.horizontal, homeWidthClass.homeHorizontalPadding)
                         } else if !comingToStreaming.isEmpty {
                             ComingToStreamingSection(
                                 items: comingToStreaming,
@@ -664,12 +676,12 @@ struct HomeView: View {
                                     detailSubject = .show(item.show)
                                 }
                             )
-                            .padding(.horizontal, 12)
+                            .padding(.horizontal, homeWidthClass.homeHorizontalPadding)
                         }
 
                         if !homeContentReady {
                             HomeShimmerSection(title: "New This Week")
-                                .padding(.horizontal, 12)
+                                .padding(.horizontal, homeWidthClass.homeHorizontalPadding)
                         } else if !whatsNewTodayShows.isEmpty {
                             WhatsNewTodaySection(
                                 shows: whatsNewTodayShows,
@@ -689,7 +701,7 @@ struct HomeView: View {
                                     detailSubject = .show(show)
                                 }
                             )
-                            .padding(.horizontal, 12)
+                            .padding(.horizontal, homeWidthClass.homeHorizontalPadding)
                         }
 
                         // Inline sponsored slot #0 — after What's New Today
@@ -697,7 +709,7 @@ struct HomeView: View {
 
                         if !homeContentReady {
                             HomeShimmerSection(title: "Top Picks for You")
-                                .padding(.horizontal, 12)
+                                .padding(.horizontal, homeWidthClass.homeHorizontalPadding)
                         } else if !topPicksShows.isEmpty {
                             TopPicksSection(
                                 shows: topPicksShows,
@@ -717,16 +729,16 @@ struct HomeView: View {
                                     detailSubject = .show(show)
                                 }
                             )
-                            .padding(.horizontal, 12)
+                            .padding(.horizontal, homeWidthClass.homeHorizontalPadding)
                         }
 
                         if !homeContentReady {
                             HomeShimmerSection(title: "Creators/Podcasts for You")
-                                .padding(.horizontal, 12)
+                                .padding(.horizontal, homeWidthClass.homeHorizontalPadding)
                         } else if hasFollowedCreators {
                             if recommendedCreators.isEmpty {
                                 CreatorsForYouEmptyState()
-                                    .padding(.horizontal, 12)
+                                    .padding(.horizontal, homeWidthClass.homeHorizontalPadding)
                             } else {
                                 CreatorsForYouSection(
                                     creators: recommendedCreators,
@@ -743,7 +755,7 @@ struct HomeView: View {
                                         )
                                     }
                                 )
-                                .padding(.horizontal, 12)
+                                .padding(.horizontal, homeWidthClass.homeHorizontalPadding)
                             }
                         }
 
@@ -752,7 +764,7 @@ struct HomeView: View {
 
                         if !homeContentReady {
                             HomeShimmerSection(title: "Everyone's Watching")
-                                .padding(.horizontal, 12)
+                                .padding(.horizontal, homeWidthClass.homeHorizontalPadding)
                         } else if !trendingRankedShows.isEmpty {
                             TrendingRankedSection(
                                 shows: trendingRankedShows,
@@ -772,7 +784,7 @@ struct HomeView: View {
                                     detailSubject = .show(show)
                                 }
                             )
-                            .padding(.horizontal, 12)
+                            .padding(.horizontal, homeWidthClass.homeHorizontalPadding)
                         }
 
                         // Inline sponsored slot #2 — after Everyone's Watching, before Leaving Soon
@@ -780,7 +792,7 @@ struct HomeView: View {
 
                         if !homeContentReady {
                             HomeShimmerSection(title: "Leaving Soon")
-                                .padding(.horizontal, 12)
+                                .padding(.horizontal, homeWidthClass.homeHorizontalPadding)
                         } else if !leavingSoonShows.isEmpty {
                             LeavingSoonSection(
                                 shows: leavingSoonShows,
@@ -800,7 +812,7 @@ struct HomeView: View {
                                     detailSubject = .show(show)
                                 }
                             )
-                            .padding(.horizontal, 12)
+                            .padding(.horizontal, homeWidthClass.homeHorizontalPadding)
                         }
 
                         // Inline sponsored slot #3 — after Leaving Soon
@@ -809,9 +821,9 @@ struct HomeView: View {
                         if !homeContentReady {
                             ForEach(StreamingCatalog.ordered(from: auth.selectedServices), id: \.id) { service in
                                 HomeShimmerSection(title: "Popular on \(service.name)")
-                                    .padding(.horizontal, 12)
+                                    .padding(.horizontal, homeWidthClass.homeHorizontalPadding)
                                 HomeShimmerSection(title: "Now & Next on \(service.name)")
-                                    .padding(.horizontal, 12)
+                                    .padding(.horizontal, homeWidthClass.homeHorizontalPadding)
                             }
                         } else {
                             ForEach(Array(StreamingCatalog.ordered(from: auth.selectedServices).enumerated()), id: \.element.id) { index, service in
@@ -849,7 +861,7 @@ struct HomeView: View {
                                             }
                                         }
                                     )
-                                    .padding(.horizontal, 12)
+                                    .padding(.horizontal, homeWidthClass.homeHorizontalPadding)
                                 }
                                 if let nowNext = nowNextByService[service.id], !nowNext.isEmpty {
                                     NowAndNextSection(
@@ -872,7 +884,7 @@ struct HomeView: View {
                                             path.append(.nowAndNext(serviceId: service.id))
                                         }
                                     )
-                                    .padding(.horizontal, 12)
+                                    .padding(.horizontal, homeWidthClass.homeHorizontalPadding)
                                 }
                                 // Dynamic per-service ad after every second service (index % 2 == 1)
                                 if index % 2 == 1 {
@@ -900,14 +912,14 @@ struct HomeView: View {
                             }
                         }
                         .id("browseByGenre")
-                        .padding(.horizontal, 12)
+                        .padding(.horizontal, homeWidthClass.homeHorizontalPadding)
                         .anchorPreference(key: CoachMarkAnchorKey.self, value: .bounds) {
                             ["genre": $0]
                         }
 
                         if !homeContentReady {
                             HomeShimmerSection(title: "Browsing \(selectedGenreName)")
-                                .padding(.horizontal, 12)
+                                .padding(.horizontal, homeWidthClass.homeHorizontalPadding)
                         } else if !recommendedShows.isEmpty {
                             let recShows = recommendedShows
                                 .filter { providerByTmdb[$0.id] != nil }
@@ -929,7 +941,7 @@ struct HomeView: View {
                                         detailSubject = .show(show)
                                     }
                                 )
-                                .padding(.horizontal, 12)
+                                .padding(.horizontal, homeWidthClass.homeHorizontalPadding)
                                 .anchorPreference(key: CoachMarkAnchorKey.self, value: .bounds) {
                                     ["because_you_watch": $0]
                                 }
@@ -941,7 +953,7 @@ struct HomeView: View {
 
                         if !homeContentReady {
                             HomeShimmerSection(title: "Top rated right now")
-                                .padding(.horizontal, 12)
+                                .padding(.horizontal, homeWidthClass.homeHorizontalPadding)
                         } else if !topRatedShows.isEmpty {
                             TopRatedSection(
                                 shows: topRatedShows,
@@ -954,7 +966,7 @@ struct HomeView: View {
                                     detailSubject = .show(show)
                                 }
                             )
-                            .padding(.horizontal, 12)
+                            .padding(.horizontal, homeWidthClass.homeHorizontalPadding)
                         }
 
                         // Inline sponsored slot #6 — after Top rated right now, before New seasons
@@ -962,7 +974,7 @@ struct HomeView: View {
 
                         if !homeContentReady {
                             HomeShimmerSection(title: "New seasons — shows you follow")
-                                .padding(.horizontal, 12)
+                                .padding(.horizontal, homeWidthClass.homeHorizontalPadding)
                         } else if !newSeasonsYouKnow.isEmpty {
                             NewSeasonsSection(
                                 results: newSeasonsYouKnow,
@@ -977,12 +989,12 @@ struct HomeView: View {
                                     detailSubject = .show(show)
                                 }
                             )
-                            .padding(.horizontal, 12)
+                            .padding(.horizontal, homeWidthClass.homeHorizontalPadding)
                         }
 
                         if !homeContentReady {
                             HomeShimmerSection(title: "Upcoming Episodes")
-                                .padding(.horizontal, 12)
+                                .padding(.horizontal, homeWidthClass.homeHorizontalPadding)
                         } else if !tvdbUpcomingItems.isEmpty {
                             UpcomingEpisodesRow(
                                 items: tvdbUpcomingItems,
@@ -1003,7 +1015,7 @@ struct HomeView: View {
                                     ))
                                 }
                             )
-                            .padding(.horizontal, 12)
+                            .padding(.horizontal, homeWidthClass.homeHorizontalPadding)
                         }
 
                         // Inline sponsored slot #7 — after Upcoming Episodes, before widget banner
@@ -1017,7 +1029,7 @@ struct HomeView: View {
                                 },
                                 onDismiss: { withAnimation(.easeOut(duration: 0.25)) { widgetBannerDismissed = true } }
                             )
-                            .padding(.horizontal, 12)
+                            .padding(.horizontal, homeWidthClass.homeHorizontalPadding)
                             .transition(.opacity.combined(with: .move(edge: .top)))
                         }
 
@@ -1025,7 +1037,7 @@ struct HomeView: View {
                         // showing fake "continue watching" entries for shows the user never opened is worse than nothing.
                         if !homeContentReady {
                             HomeShimmerSection(title: "Continue Watching")
-                                .padding(.horizontal, 12)
+                                .padding(.horizontal, homeWidthClass.homeHorizontalPadding)
                         } else if !continueWatchingEpisodes.isEmpty {
                             ContinueWatchingSection(
                                 episodes: continueWatchingEpisodes,
@@ -1045,12 +1057,12 @@ struct HomeView: View {
                                     detailSubject = .episode(ep)
                                 }
                             )
-                            .padding(.horizontal, 12)
+                            .padding(.horizontal, homeWidthClass.homeHorizontalPadding)
                         }
 
                         if !homeContentReady {
                             HomeShimmerSection(title: "Binge Worthy")
-                                .padding(.horizontal, 12)
+                                .padding(.horizontal, homeWidthClass.homeHorizontalPadding)
                         } else if !bingeReadyShows.isEmpty {
                             BingeReadySection(
                                 sectionTitle: bingeReadyTitle,
@@ -1072,7 +1084,7 @@ struct HomeView: View {
                                     detailSubject = .show(show)
                                 }
                             )
-                            .padding(.horizontal, 12)
+                            .padding(.horizontal, homeWidthClass.homeHorizontalPadding)
                         }
 
                         // Inline sponsored slot #8 — after Binge Worthy
@@ -1130,7 +1142,7 @@ struct HomeView: View {
                                 }
                             }
                         )
-                        .padding(.horizontal, 14)
+                        .padding(.horizontal, homeWidthClass.homeHorizontalPadding)
                         .padding(.top, 6)
                         .transition(.move(edge: .top).combined(with: .opacity))
                     }
@@ -2844,13 +2856,15 @@ private struct PageBar: View {
 /// Matches the real carousel's size and card shape so the page feels
 /// populated immediately, then crossfades to the real carousel once data arrives.
 private struct HomeHeroCarouselShimmer: View {
+    let widthClass: GSWidthClass
+
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 14) {
                 ForEach(0..<3, id: \.self) { i in
                     RoundedRectangle(cornerRadius: 18, style: .continuous)
                         .fill(Color.white.opacity(0.05))
-                        .frame(width: 280, height: 250)
+                        .frame(width: widthClass == .expanded ? 340 : 280, height: 250)
                         .overlay(
                             RoundedRectangle(cornerRadius: 18, style: .continuous)
                                 .fill(
@@ -2871,7 +2885,7 @@ private struct HomeHeroCarouselShimmer: View {
                         )
                 }
             }
-            .padding(.horizontal, 12)
+            .padding(.horizontal, widthClass == .expanded ? 0 : 12)
         }
         .disabled(true)
         .frame(height: 250)

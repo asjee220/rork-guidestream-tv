@@ -70,6 +70,7 @@ enum HeroItem: Identifiable {
 }
 
 struct HomeHeroCarousel: View {
+    let widthClass: GSWidthClass
     let items: [HeroItem]
     let onSelectMedia: (TMDBResult, Platform?) -> Void
     let onSelectGame: (SportsGame) -> Void
@@ -97,7 +98,9 @@ struct HomeHeroCarousel: View {
                         // Slightly narrower than the container so the next
                         // card peeks ~26pt past the right edge. Capped at 460pt
                         // so the hero doesn't fill the full width on iPad.
-                        min(max(length - 60, 240), 460)
+                        // On expanded tablets the card fills the full width
+                        // like the Sports cards.
+                        widthClass == .expanded ? length : min(max(length - 60, 240), 460)
                     }
                     .scrollTransition(.interactive) { content, phase in
                         content
@@ -108,7 +111,7 @@ struct HomeHeroCarousel: View {
             }
             .scrollTargetLayout()
         }
-        .contentMargins(.horizontal, 20, for: .scrollContent)
+        .contentMargins(.horizontal, widthClass == .expanded ? 0 : 20, for: .scrollContent)
         .scrollTargetBehavior(.viewAligned)
         .scrollClipDisabled()
         .frame(height: 250)

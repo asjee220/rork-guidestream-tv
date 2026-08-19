@@ -133,6 +133,10 @@ import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.rememberCoroutineScope
 import com.rork.guidestreamtvandroid.ui.theme.SurfaceContainer
 import com.rork.guidestreamtvandroid.ui.theme.TextTertiary
+import com.rork.guidestreamtvandroid.ui.theme.GSWidthClass
+import com.rork.guidestreamtvandroid.ui.theme.homeHorizontalPadding
+import com.rork.guidestreamtvandroid.ui.theme.homeSearchHorizontalPadding
+import com.rork.guidestreamtvandroid.ui.theme.rememberWidthClass
 import kotlinx.coroutines.launch
 
 /**
@@ -243,6 +247,11 @@ fun HomeScreen(
         coachMark.markScrollSettled()
     }
 
+    // Adaptive width class for tablet/split-screen windows. Used to stretch the
+    // Home search bar, hero carousel and section rails edge-to-edge on tablets
+    // while keeping phone gutters unchanged.
+    val widthClass = rememberWidthClass()
+
     Box(modifier = modifier.fillMaxSize()) {
         PullToRefreshBox(
             isRefreshing = isRefreshing,
@@ -282,7 +291,9 @@ fun HomeScreen(
         Spacer(Modifier.statusBarsPadding().height(56.dp))
 
         // Search bar
-        SearchBar(onClick = onOpenSearch,
+        SearchBar(
+            widthClass = widthClass,
+            onClick = onOpenSearch,
             modifier = Modifier.onGloballyPositioned { coords ->
                 coachMark.setMeasuredRect("search", coords.boundsInRoot())
             })
@@ -294,6 +305,7 @@ fun HomeScreen(
             }
         } else if (trending.isNotEmpty()) {
             HeroCarousel(
+                widthClass = widthClass,
                 items = trending.filter { providerByTmdb[it.id] != null }.take(15),
                 providerByTmdb = providerByTmdb,
                 onOpen = { result ->
@@ -315,7 +327,7 @@ fun HomeScreen(
 
         // My Watch List
         if (!homeReady) {
-            ShimmerSection("My Watch List", Modifier.padding(horizontal = 12.dp, vertical = 8.dp))
+            ShimmerSection("My Watch List", Modifier.padding(horizontal = widthClass.homeHorizontalPadding, vertical = 8.dp))
         } else {
             WatchListSection(
                 streams = userStreams,
@@ -351,7 +363,7 @@ fun HomeScreen(
 
         // Today's Pick — daily spotlight from streaming_releases
         if (!homeReady) {
-            ShimmerSection("Today's Pick", Modifier.padding(horizontal = 12.dp, vertical = 8.dp))
+            ShimmerSection("Today's Pick", Modifier.padding(horizontal = widthClass.homeHorizontalPadding, vertical = 8.dp))
         } else if (todaysPick != null) {
             TodaysPickSpotlight(
                 pick = todaysPick!!,
@@ -374,7 +386,7 @@ fun HomeScreen(
 
         // Coming to Streaming (upcoming movies)
         if (!homeReady) {
-            ShimmerSection("Coming to Streaming", Modifier.padding(horizontal = 12.dp, vertical = 8.dp))
+            ShimmerSection("Coming to Streaming", Modifier.padding(horizontal = widthClass.homeHorizontalPadding, vertical = 8.dp))
         } else if (upcoming.isNotEmpty()) {
             PosterSection(
                 title = "Coming to Streaming",
@@ -393,7 +405,7 @@ fun HomeScreen(
 
         // New This Week (streaming releases from the last 7 days)
         if (!homeReady) {
-            ShimmerSection("New This Week", Modifier.padding(horizontal = 12.dp, vertical = 8.dp))
+            ShimmerSection("New This Week", Modifier.padding(horizontal = widthClass.homeHorizontalPadding, vertical = 8.dp))
         } else if (newReleases.isNotEmpty()) {
             PosterSection(
                 title = "New This Week",
@@ -449,7 +461,7 @@ fun HomeScreen(
 
         // Top Picks for You (trending scored)
         if (!homeReady) {
-            ShimmerSection("Top Picks for You", Modifier.padding(horizontal = 12.dp, vertical = 8.dp))
+            ShimmerSection("Top Picks for You", Modifier.padding(horizontal = widthClass.homeHorizontalPadding, vertical = 8.dp))
         } else if (trending.isNotEmpty()) {
             val topPicks = topPicksAll.take(20)
             PosterSection(
@@ -481,7 +493,7 @@ fun HomeScreen(
 
         // Creators/Podcasts for You
         if (!homeReady) {
-            ShimmerSection("Creators/Podcasts for You", Modifier.padding(horizontal = 12.dp, vertical = 8.dp))
+            ShimmerSection("Creators/Podcasts for You", Modifier.padding(horizontal = widthClass.homeHorizontalPadding, vertical = 8.dp))
         } else {
             val hasFollowedCreators = userStreams.any { SourceKind.from(it.titleId).isNonTMDB }
             if (hasFollowedCreators) {
@@ -530,7 +542,7 @@ fun HomeScreen(
 
         // Everyone's Watching (ranked)
         if (!homeReady) {
-            ShimmerSection("Everyone's Watching", Modifier.padding(horizontal = 12.dp, vertical = 8.dp))
+            ShimmerSection("Everyone's Watching", Modifier.padding(horizontal = widthClass.homeHorizontalPadding, vertical = 8.dp))
         } else if (trending.isNotEmpty()) {
             // Build rank lookup from the de-duplicated trending array before
             // any filtering, so trueRanks reflects the real TMDB trending
@@ -570,7 +582,7 @@ fun HomeScreen(
 
         // Leaving Soon — server-backed rows from the expiring_titles table
         if (!homeReady) {
-            ShimmerSection("Leaving Soon", Modifier.padding(horizontal = 12.dp, vertical = 8.dp))
+            ShimmerSection("Leaving Soon", Modifier.padding(horizontal = widthClass.homeHorizontalPadding, vertical = 8.dp))
         } else if (leavingSoon.isNotEmpty()) {
             PosterSection(
                 title = "Leaving Soon",
@@ -608,8 +620,8 @@ fun HomeScreen(
         val services = StreamingCatalog.ordered(selectedServices)
         if (!homeReady) {
             services.take(3).forEach { svc ->
-                ShimmerSection("Popular on ${svc.name}", Modifier.padding(horizontal = 12.dp, vertical = 8.dp))
-                ShimmerSection("Now & Next on ${svc.name}", Modifier.padding(horizontal = 12.dp, vertical = 8.dp))
+                ShimmerSection("Popular on ${svc.name}", Modifier.padding(horizontal = widthClass.homeHorizontalPadding, vertical = 8.dp))
+                ShimmerSection("Now & Next on ${svc.name}", Modifier.padding(horizontal = widthClass.homeHorizontalPadding, vertical = 8.dp))
             }
         } else {
             services.forEachIndexed { index, svc ->
@@ -710,7 +722,7 @@ fun HomeScreen(
 
         // Because You Watch (genre discovery)
         if (!homeReady) {
-            ShimmerSection("Browsing $selectedGenreName", Modifier.padding(horizontal = 12.dp, vertical = 8.dp))
+            ShimmerSection("Browsing $selectedGenreName", Modifier.padding(horizontal = widthClass.homeHorizontalPadding, vertical = 8.dp))
         } else if (genreShows.isNotEmpty()) {
             Box(
                 modifier = Modifier.onGloballyPositioned { coords ->
@@ -744,7 +756,7 @@ fun HomeScreen(
 
         // Top Rated
         if (!homeReady) {
-            ShimmerSection("Top rated right now", Modifier.padding(horizontal = 12.dp, vertical = 8.dp))
+            ShimmerSection("Top rated right now", Modifier.padding(horizontal = widthClass.homeHorizontalPadding, vertical = 8.dp))
         } else if (topRated.isNotEmpty()) {
             PosterSection(
                 title = "Top rated right now",
@@ -772,7 +784,7 @@ fun HomeScreen(
 
         // New seasons — shows you follow (on-air titles from the user's watch list)
         if (!homeReady) {
-            ShimmerSection("New seasons — shows you follow", Modifier.padding(horizontal = 12.dp, vertical = 8.dp))
+            ShimmerSection("New seasons — shows you follow", Modifier.padding(horizontal = widthClass.homeHorizontalPadding, vertical = 8.dp))
         } else {
             val savedIds = userStreams.mapNotNull { TitleId.tmdbId(it.titleId) }.toSet()
             val newSeasons = onAir.filter { it.id in savedIds }.take(8)
@@ -804,7 +816,7 @@ fun HomeScreen(
 
         // Binge Worthy (ended shows)
         if (!homeReady) {
-            ShimmerSection("Binge Worthy", Modifier.padding(horizontal = 12.dp, vertical = 8.dp))
+            ShimmerSection("Binge Worthy", Modifier.padding(horizontal = widthClass.homeHorizontalPadding, vertical = 8.dp))
         } else if (bingeReady.isNotEmpty()) {
             val bingeTitle = if (userStreams.isEmpty()) "Binge Worthy" else "Binge Ready 🎉"
             PosterSection(
@@ -883,11 +895,15 @@ fun HomeScreen(
 // ── Search Bar ──────────────────────────────────────────────────────────────
 
 @Composable
-private fun SearchBar(onClick: () -> Unit, modifier: Modifier = Modifier) {
+private fun SearchBar(
+    widthClass: GSWidthClass,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 12.dp)
+            .padding(horizontal = widthClass.homeSearchHorizontalPadding)
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
@@ -915,13 +931,14 @@ private fun SearchBar(onClick: () -> Unit, modifier: Modifier = Modifier) {
 
 @Composable
 private fun HeroCarousel(
+    widthClass: GSWidthClass,
     items: List<TMDBResult>,
     providerByTmdb: Map<Int, Platform>,
     onOpen: (TMDBResult) -> Unit,
 ) {
     if (items.isEmpty()) return
     LazyRow(
-        contentPadding = PaddingValues(horizontal = 12.dp),
+        contentPadding = PaddingValues(horizontal = widthClass.homeHorizontalPadding),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         modifier = Modifier.padding(vertical = 8.dp),
     ) {
@@ -930,7 +947,7 @@ private fun HeroCarousel(
             val accent = platform?.color ?: BrandOrange
             Box(
                 modifier = Modifier
-                    .width(280.dp)
+                    .width(if (widthClass == GSWidthClass.Expanded) 360.dp else 280.dp)
                     .aspectRatio(1.7f)
                     .clip(RoundedCornerShape(16.dp))
                     .clickable(
@@ -1256,7 +1273,7 @@ private fun WatchListSection(
             )
         } else {
             // Guest with no items — invitation, not a sign-in wall.
-            Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+            Column(Modifier.padding(horizontal = rememberWidthClass().homeHorizontalPadding, vertical = 8.dp)) {
                 Row(verticalAlignment = Alignment.Bottom) {
                     Text(
                         text = "My Watch List",
