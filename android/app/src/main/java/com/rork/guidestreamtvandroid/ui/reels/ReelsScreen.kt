@@ -5,8 +5,12 @@ import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.content.res.Configuration
 import android.net.Uri
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.EaseOut
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -266,25 +270,34 @@ fun ReelsScreen(
     val isLandscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
     val (landscapeLeading, landscapeTrailing) = landscapeSideInsets()
 
-    // Landscape-only: the whole chrome layer auto-hides 3s after the last touch
-    // and returns on any tap. Independent of ReelView's showControls / 2.2s
-    // flash timer, which keeps driving the center play-pause exactly as before.
+    // Landscape-only: the transient chrome (top bar, metadata, social rail,
+    // scrubber) auto-hides 3s after the last touch and returns on any tap.
+    // landscapeChromePresent keeps the transient row in layout until 0.55s
+    // after the fade starts, when it leaves layout so the persistent group
+    // (ad, chips, CTA) settles into the vacated space. Independent of
+    // ReelView's showControls / 2.2s flash timer, which keeps driving the
+    // center play-pause exactly as before.
     var landscapeChromeVisible by remember { mutableStateOf(true) }
+    var landscapeChromePresent by remember { mutableStateOf(true) }
     var chromeHideJob by remember { mutableStateOf<Job?>(null) }
     val chromeScope = rememberCoroutineScope()
     val chromeAlpha by animateFloatAsState(
         targetValue = if (!isLandscape || landscapeChromeVisible) 1f else 0f,
-        animationSpec = tween(durationMillis = 220),
+        animationSpec = tween(durationMillis = 450, easing = EaseOut),
         label = "reelChromeAlpha",
     )
     fun revealChrome() {
         chromeHideJob?.cancel()
         landscapeChromeVisible = true
+        landscapeChromePresent = true
         // Portrait never hides chrome, so no countdown is armed there.
         if (!isLandscape) return
         chromeHideJob = chromeScope.launch {
             delay(3000)
             landscapeChromeVisible = false
+            // 0.55s after the fade started the transient row leaves layout.
+            delay(550)
+            landscapeChromePresent = false
         }
     }
 
@@ -353,6 +366,7 @@ fun ReelsScreen(
                     landscapeLeading = landscapeLeading,
                     landscapeTrailing = landscapeTrailing,
                     chromeVisible = landscapeChromeVisible,
+                    chromePresent = landscapeChromePresent,
                     chromeAlpha = chromeAlpha,
                     onRevealChrome = { revealChrome() },
                     isPlaying = isPlaying,
@@ -594,6 +608,7 @@ private fun ReelView(
     landscapeLeading: Dp = 44.dp,
     landscapeTrailing: Dp = 44.dp,
     chromeVisible: Boolean = true,
+    chromePresent: Boolean = true,
     chromeAlpha: Float = 1f,
     onRevealChrome: () -> Unit = {},
     isLiked: Boolean = false,
@@ -877,18 +892,20 @@ private fun ReelView(
         }
         }
 
-        // Landscape chrome — the scrubber sits directly above one horizontal row
-        // (metadata leading, actions trailing) inside the same bottom container,
-        // so the 14dp gap holds regardless of how tall the metadata renders.
-        if (isLandscape && chromeAlpha > 0.01f) {
+        // Landscape chrome — the scrubber sits directly above the transient
+        // row (metadata leading, rail trailing) inside the same bottom
+        // container, so the gap holds regardless of how tall the metadata
+        // renders. The persistent group (ad carousel, chips, CTA) never
+        // fades; only the metadata row and scrubber auto-hide.
+        if (isLandscape) {
             Column(
                 modifier = Modifier
                     .align(Alignment.BottomStart)
                     .fillMaxWidth()
                     .padding(start = landscapeLeading, end = landscapeTrailing)
-                    .padding(bottom = 15.dp + systemBottomInset())
-                    .alpha(chromeAlpha),
+                    .padding(bottom = 15.dp + systemBottomInset()),
             ) {
+                // Persistent: the ad carousel (with its dots) never fades.
                 if (isCurrent && !reel.isSponsored) {
                     ReelAdCarousel(
                         reel = reel,
@@ -897,79 +914,101 @@ private fun ReelView(
                     )
                     Spacer(Modifier.height(9.dp))
                 }
+                // Transient: the scrubber fades with the chrome but keeps
+                // its layout slot.
                 if (isCurrent && !allCandidatesFailed) {
                     ReelScrubber(
                         progress = progress,
                         onSeek = { fraction -> seekToFraction = fraction },
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .alpha(chromeAlpha),
                     )
                     Spacer(Modifier.height(9.dp))
                 }
-                Row(verticalAlignment = Alignment.Bottom) {
-                    // Metadata — no trailing gutter reserved, the rail is in-row.
-                    Column(modifier = Modifier.weight(1f)) {
-                        ReelChipsRow(reel = reel, injected = injected)
-                        Spacer(Modifier.height(8.dp))
-                        Text(
-                            text = reel.showName,
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                        if (reel.synopsis.isNotBlank()) {
-                            Spacer(Modifier.height(6.dp))
+                // Transient row: metadata leading, rail trailing. Fades
+                // with the chrome, then leaves layout 0.55s after the fade
+                // started so the persistent group slides into the vacated
+                // space.
+                AnimatedVisibility(
+                    visible = chromePresent,
+                    enter = expandVertically(animationSpec = tween(500, easing = EaseOut)),
+                    exit = shrinkVertically(animationSpec = tween(500, easing = EaseOut)),
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.Bottom,
+                        modifier = Modifier.alpha(chromeAlpha),
+                    ) {
+                        // Metadata — no trailing gutter reserved, the rail is in-row.
+                        Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = reel.synopsis,
-                                fontSize = 12.sp,
-                                color = Color.White.copy(alpha = 0.80f),
+                                text = reel.showName,
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                             )
-                        }
-                    }
-                    Spacer(Modifier.width(16.dp))
-                    // Actions — the same rail buttons laid out horizontally, then
-                    // the unchanged action pill.
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(22.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        ReelRailButtons(
-                            reel = reel,
-                            isLiked = isLiked,
-                            likeCount = likeCount,
-                            isSaved = isSaved,
-                            isWatched = isWatched,
-                            onLike = onLike,
-                            onToggleSave = onToggleSave,
-                            onToggleWatched = onToggleWatched,
-                            onMore = onMore,
-                            onShare = onShare,
-                            iconSize = 19.dp,
-                        )
-                        if (reel.isSponsored) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
+                            if (reel.synopsis.isNotBlank()) {
+                                Spacer(Modifier.height(6.dp))
                                 Text(
-                                    text = "Learn more",
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = Color.White,
-                                )
-                                Spacer(Modifier.width(6.dp))
-                                Icon(
-                                    imageVector = Icons.Filled.KeyboardArrowDown,
-                                    contentDescription = null,
-                                    tint = Color.White.copy(alpha = 0.70f),
-                                    modifier = Modifier.size(16.dp),
+                                    text = reel.synopsis,
+                                    fontSize = 12.sp,
+                                    color = Color.White.copy(alpha = 0.80f),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
                                 )
                             }
-                        } else if (injected) {
-                            WatchNowSwitcher(sources = sources, onOpenSource = onOpenSource)
-                        } else {
-                            PlayOnPill(onClick = onShowDetail)
                         }
+                        Spacer(Modifier.width(16.dp))
+                        // Actions — the same rail buttons laid out horizontally.
+                        // The action pill moved into the persistent row below so
+                        // the fading row's alpha can't take it with the rail.
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(22.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            ReelRailButtons(
+                                reel = reel,
+                                isLiked = isLiked,
+                                likeCount = likeCount,
+                                isSaved = isSaved,
+                                isWatched = isWatched,
+                                onLike = onLike,
+                                onToggleSave = onToggleSave,
+                                onToggleWatched = onToggleWatched,
+                                onMore = onMore,
+                                onShare = onShare,
+                                iconSize = 19.dp,
+                            )
+                        }
+                    }
+                }
+                // Persistent: the chips row with the CTA pill pinned to the
+                // trailing edge, bottom-aligned with the chips.
+                Row(verticalAlignment = Alignment.Bottom) {
+                    ReelChipsRow(reel = reel, injected = injected)
+                    Spacer(Modifier.weight(1f))
+                    if (reel.isSponsored) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = "Learn more",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = Color.White,
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            Icon(
+                                imageVector = Icons.Filled.KeyboardArrowDown,
+                                contentDescription = null,
+                                tint = Color.White.copy(alpha = 0.70f),
+                                modifier = Modifier.size(16.dp),
+                            )
+                        }
+                    } else if (injected) {
+                        WatchNowSwitcher(sources = sources, onOpenSource = onOpenSource)
+                    } else {
+                        PlayOnPill(onClick = onShowDetail)
                     }
                 }
             }
@@ -1163,20 +1202,25 @@ private fun InjectedReelsScreen(
 
     // Landscape-only auto-hiding chrome, identical to the main feed.
     var landscapeChromeVisible by remember { mutableStateOf(true) }
+    var landscapeChromePresent by remember { mutableStateOf(true) }
     var chromeHideJob by remember { mutableStateOf<Job?>(null) }
     val chromeScope = rememberCoroutineScope()
     val chromeAlpha by animateFloatAsState(
         targetValue = if (!isLandscape || landscapeChromeVisible) 1f else 0f,
-        animationSpec = tween(durationMillis = 220),
+        animationSpec = tween(durationMillis = 450, easing = EaseOut),
         label = "injectedReelChromeAlpha",
     )
     fun revealChrome() {
         chromeHideJob?.cancel()
         landscapeChromeVisible = true
+        landscapeChromePresent = true
         if (!isLandscape) return
         chromeHideJob = chromeScope.launch {
             delay(3000)
             landscapeChromeVisible = false
+            // 0.55s after the fade started the transient row leaves layout.
+            delay(550)
+            landscapeChromePresent = false
         }
     }
 
@@ -1245,6 +1289,7 @@ private fun InjectedReelsScreen(
                     landscapeLeading = landscapeLeading,
                     landscapeTrailing = landscapeTrailing,
                     chromeVisible = landscapeChromeVisible,
+                    chromePresent = landscapeChromePresent,
                     chromeAlpha = chromeAlpha,
                     onRevealChrome = { revealChrome() },
                     isPlaying = isPlaying,

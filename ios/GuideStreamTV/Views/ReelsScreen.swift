@@ -960,10 +960,15 @@ struct ReelsScreen: View {
     /// Live translation while the user drags down to dismiss. Used to slide
     /// the whole feed down for visual feedback before commit.
     @State private var dismissDragOffset: CGFloat = 0
-    /// Landscape-only chrome visibility. The whole overlay layer (top bar,
-    /// metadata, action rail, scrubber) fades out 3s after the last touch and
-    /// returns on any tap. Portrait never consults this.
+    /// Landscape-only chrome visibility. The transient overlay layer (top
+    /// bar, metadata, social rail, scrubber) fades out 3s after the last touch
+    /// and returns on any tap. Portrait never consults this.
     @State private var landscapeChromeVisible: Bool = true
+    /// Landscape-only: whether the transient metadata/rail row still occupies
+    /// layout. Flips false 0.55s after the fade starts so the row leaves the
+    /// layout and the persistent group (ad, chips, CTA) settles into the
+    /// vacated space. Persistent chrome never fades.
+    @State private var landscapeChromePresent: Bool = true
     @State private var chromeHideTask: Task<Void, Never>?
     /// Mirrors the geometry-derived orientation so the immersive modifiers —
     /// which must sit on the view root, outside the GeometryReader — can read
@@ -1325,12 +1330,21 @@ struct ReelsScreen: View {
         chromeHideTask?.cancel()
         withAnimation(.easeOut(duration: 0.2)) {
             landscapeChromeVisible = true
+            landscapeChromePresent = true
         }
         chromeHideTask = Task { @MainActor in
             try? await Task.sleep(for: .seconds(3.0))
             guard !Task.isCancelled else { return }
-            withAnimation(.easeOut(duration: 0.4)) {
+            withAnimation(.easeOut(duration: 0.45)) {
                 landscapeChromeVisible = false
+            }
+            // 0.55s after the fade started (0.10s after it finished) the
+            // transient row leaves layout so the persistent group slides
+            // into the vacated space over 0.50s.
+            try? await Task.sleep(for: .seconds(0.55))
+            guard !Task.isCancelled else { return }
+            withAnimation(.easeOut(duration: 0.50)) {
+                landscapeChromePresent = false
             }
         }
     }
@@ -1340,6 +1354,7 @@ struct ReelsScreen: View {
     private func pinChromeVisible() {
         chromeHideTask?.cancel()
         landscapeChromeVisible = true
+        landscapeChromePresent = true
     }
 
     private func handleDismiss() {
@@ -1363,6 +1378,7 @@ struct ReelsScreen: View {
                 landscapeLeading: leadingInset,
                 landscapeTrailing: trailingInset,
                 chromeVisible: landscapeChromeVisible,
+                chromePresent: landscapeChromePresent,
                 onRevealChrome: { armChromeHide() },
                 isPlaying: isCurrent && isPlaying,
                 isMuted: isMuted,
@@ -1511,6 +1527,7 @@ struct ReelsScreen: View {
             landscapeLeading: leadingInset,
             landscapeTrailing: trailingInset,
             chromeVisible: landscapeChromeVisible,
+            chromePresent: landscapeChromePresent,
             onRevealChrome: { armChromeHide() },
             isPlaying: isCurrent && isPlaying,
             isMuted: isMuted,
@@ -1654,6 +1671,10 @@ private struct ReelView: View {
     var landscapeTrailing: CGFloat = 44
     /// Landscape-only: whether the auto-hiding chrome layer is showing.
     var chromeVisible: Bool = true
+    /// Landscape-only: whether the transient metadata/rail row still occupies
+    /// layout. When false the row is removed from layout and the persistent
+    /// group (ad, chips, CTA) settles into the vacated space.
+    var chromePresent: Bool = true
     /// Landscape-only: reveals the chrome and restarts its 3s countdown.
     var onRevealChrome: () -> Void = {}
     let isPlaying: Bool
@@ -2033,21 +2054,43 @@ private struct ReelView: View {
                 VStack {
                     Spacer()
                     VStack(alignment: .leading, spacing: 9) {
+                        // Persistent: the ad carousel (with its dots) never fades.
                         if !trailer.isSponsored, !glassAdDismissed, !glassAdTargets.isEmpty {
                             adCarousel
                                 .frame(maxWidth: 370, alignment: .leading)
                                 .opacity(glassAdVisible ? 1 : 0)
                                 .allowsHitTesting(glassAdVisible)
                         }
+                        // Transient: the scrubber fades with the chrome but
+                        // keeps its layout slot.
                         // Neighbouring reels have no playback position to show,
                         // so they render the row without a dead 0% bar above it.
                         if isCurrent && !allCandidatesFailed {
                             scrubberBar
+                                .opacity(chromeVisible ? 1 : 0)
+                                .allowsHitTesting(chromeVisible)
+                                .animation(.easeOut(duration: 0.45), value: chromeVisible)
                         }
+                        // Transient row: title, synopsis, social rail. Fades
+                        // with the chrome, then leaves layout 0.55s after the
+                        // fade started so the persistent group slides into the
+                        // vacated space.
+                        if chromePresent {
+                            HStack(alignment: .bottom, spacing: 16) {
+                                landscapeMetadata
+                                Spacer(minLength: 0)
+                                landscapeActions
+                            }
+                            .opacity(chromeVisible ? 1 : 0)
+                            .allowsHitTesting(chromeVisible)
+                            .animation(.easeOut(duration: 0.45), value: chromeVisible)
+                        }
+                        // Persistent: the chips row with the CTA pill pinned
+                        // to the trailing edge, bottom-aligned with the chips.
                         HStack(alignment: .bottom, spacing: 16) {
-                            landscapeMetadata
+                            chipsRow
                             Spacer(minLength: 0)
-                            landscapeActions
+                            landscapeActionPill
                         }
                     }
                     .padding(.leading, landscapeLeading)
@@ -2057,9 +2100,11 @@ private struct ReelView: View {
                     // Clamping it keeps the row as tight to the bottom as
                     // Android's, while still clearing the edge-swipe strip.
                     .padding(.bottom, min(bottomInset, 8) + 15)
+                    // Removing the transient row from layout lets the
+                    // container settle naturally over 0.50s — no measured
+                    // heights, no computed offsets.
+                    .animation(.easeOut(duration: 0.50), value: chromePresent)
                 }
-                .opacity(chromeVisible ? 1 : 0)
-                .allowsHitTesting(chromeVisible)
             }
 
             // Landscape top bar trailing edge — the mute toggle moves up here,
@@ -2312,15 +2357,13 @@ private struct ReelView: View {
 
     // MARK: Landscape chrome
 
-    /// Leading half of the landscape bottom row: chips, a single-line 16pt
-    /// title, and a single-line 12pt synopsis. Runtime and the TVDB banner are
-    /// deliberately dropped — there is no vertical room for them.
+    /// Leading half of the landscape transient row: a single-line 16pt title
+    /// and a single-line 12pt synopsis. The chips row moved down into the
+    /// persistent group, and runtime / the TVDB banner are deliberately
+    /// dropped — there is no vertical room for them.
     @ViewBuilder
     private var landscapeMetadata: some View {
         VStack(alignment: .leading, spacing: 0) {
-            chipsRow
-                .padding(.bottom, 8)
-
             Text(trailer.showName)
                 .scaledFont(size: 16, weight: .bold)
                 .tracking(-0.8)
@@ -2339,14 +2382,12 @@ private struct ReelView: View {
         }
     }
 
-    /// Trailing half of the landscape bottom row: the rail buttons laid out
-    /// horizontally, then the same action pill portrait uses.
+    /// Trailing half of the landscape transient row: the rail buttons laid
+    /// out horizontally. The action pill moved into the persistent group so
+    /// the fading row's opacity can't take it with the rail.
     @ViewBuilder
     private var landscapeActions: some View {
-        HStack(alignment: .center, spacing: 22) {
-            railButtons(iconSize: 19)
-            landscapeActionPill
-        }
+        railButtons(iconSize: 19)
     }
 
     /// The unchanged primary CTA for this reel — same component, same wiring.
