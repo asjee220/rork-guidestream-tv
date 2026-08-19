@@ -62,6 +62,7 @@ struct SportsView: View {
         let next: String
         let isLive: Bool
         let logoURL: String?
+        let team: TVGameTeam
     }
 
     private var filteredGames: [SportsGame] {
@@ -97,7 +98,8 @@ struct SportsView: View {
                     color: color,
                     next: label,
                     isLive: game.state == .live,
-                    logoURL: team.logoURL
+                    logoURL: team.logoURL,
+                    team: team
                 ))
                 if chips.count >= 5 { break }
             }
@@ -280,14 +282,9 @@ struct SportsView: View {
                     .scaledFont(size: 24, weight: .bold)
                     .foregroundStyle(.white)
                 Spacer()
-                Button {
+                GhostButton(title: "Edit") {
                     // Placeholder — real favorites flow lives in Profile.
-                } label: {
-                    Text("Edit")
-                        .scaledFont(size: 20, weight: .medium)
-                        .foregroundStyle(Color(hex: "1A6FE8"))
                 }
-                .buttonStyle(.card)
             }
 
             ScrollView(.horizontal, showsIndicators: false) {
@@ -317,54 +314,9 @@ struct SportsView: View {
         }
     }
 
-    /// Chip crest. With a loaded logo it follows the exact async image
-    /// loading path the game-row TeamLogoBadge uses — rounded rect at 7%
-    /// team colour, crest scaled to fit with a 9pt inset. Falls back to
-    /// the existing full-colour abbreviation square when the URL is
-    /// missing or the image fails to load.
-    @ViewBuilder
-    private func teamChipBadge(_ team: TeamChip) -> some View {
-        if let logoURL = team.logoURL,
-           !logoURL.isEmpty,
-           let url = URL(string: logoURL) {
-            AsyncImage(url: url) { phase in
-                switch phase {
-                case .success(let image):
-                    RoundedRectangle(cornerRadius: 7)
-                        .fill(team.color.opacity(0.07))
-                        .frame(width: 72, height: 72)
-                        .overlay {
-                            image
-                                .resizable()
-                                .scaledToFit()
-                                .padding(9)
-                        }
-                        .clipShape(RoundedRectangle(cornerRadius: 7))
-                case .empty, .failure:
-                    chipFallbackBadge(team)
-                @unknown default:
-                    chipFallbackBadge(team)
-                }
-            }
-        } else {
-            chipFallbackBadge(team)
-        }
-    }
-
-    private func chipFallbackBadge(_ team: TeamChip) -> some View {
-        RoundedRectangle(cornerRadius: 7)
-            .fill(team.color)
-            .frame(width: 72, height: 72)
-            .overlay(
-                Text(team.abbrev)
-                    .scaledFont(size: 11, weight: .black)
-                    .foregroundStyle(.white)
-            )
-    }
-
     private func teamChip(_ team: TeamChip) -> some View {
         VStack(spacing: 3) {
-            teamChipBadge(team)
+            TeamLogoBadge(team: team.team, size: 72, cornerRadius: 7, inset: 9, abbreviationFontSize: 11)
             Text(team.name)
                 .scaledFont(size: 14, weight: .semibold)
                 .foregroundStyle(Color.white.opacity(0.6))
@@ -721,17 +673,45 @@ struct SportsView: View {
                     Capsule().fill(Color.white.opacity(0.08))
                 )
             Spacer()
-            Button(action: onSeeAll) {
-                HStack(spacing: 4) {
-                    Text("See all")
-                        .scaledFont(size: 20, weight: .medium)
-                    Image(systemName: "arrow.right")
-                        .scaledFont(size: 17, weight: .bold)
-                }
-                .foregroundStyle(Color(hex: "1A6FE8"))
-            }
-            .buttonStyle(.card)
+            GhostButton(title: "See all", action: onSeeAll)
         }
+    }
+}
+
+// MARK: - Ghost secondary affordance
+
+/// Ghosted secondary button used by the My Teams "Edit" affordance and every
+/// section "See all": orange text inside a 2pt orange rounded outline on a
+/// clear background, inverting to a filled orange pill with dark text when
+/// focused so the focused control is unmistakable at ten feet. Focus is read
+/// with @FocusState bound to the Button — the pattern used by TVPosterCard
+/// and TVSponsoredChip — because @Environment(\.isFocused) inside a
+/// ButtonStyle does not track the button's own focus on tvOS.
+private struct GhostButton: View {
+    let title: String
+    let action: () -> Void
+
+    @FocusState private var isFocused: Bool
+
+    var body: some View {
+        Button(action: action) {
+            Text(title)
+                .scaledFont(size: 20, weight: .medium)
+                .foregroundStyle(isFocused ? Color.navy : TVTheme.orange)
+                .padding(.horizontal, 28)
+                .padding(.vertical, 14)
+                .background(
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(isFocused ? TVTheme.orange : Color.clear)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(TVTheme.orange, lineWidth: 2)
+                )
+        }
+        .buttonStyle(.plain)
+        .focused($isFocused)
+        .animation(.spring(response: 0.3, dampingFraction: 0.85), value: isFocused)
     }
 }
 
