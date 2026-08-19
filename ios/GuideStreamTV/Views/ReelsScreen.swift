@@ -1724,6 +1724,10 @@ private struct ReelView: View {
     @State private var glassAdVisible: Bool = false
     @State private var glassAdFadeTask: Task<Void, Never>? = nil
     @State private var adAdvanceTask: Task<Void, Never>? = nil
+    /// Live mirror of `isCurrent` for the ad auto-advance loop. `isCurrent`
+    /// is a plain let frozen into the Task closure at creation; reading this
+    /// @State instead lets the loop observe reel changes while it runs.
+    @State private var adCarouselActive: Bool = false
 
     /// The YouTube video id currently loading: the primary key at index 0, or
     /// the corresponding fallback key thereafter.
@@ -2202,8 +2206,12 @@ private struct ReelView: View {
             }
         }
         .clipped()
-        .onAppear { armGlassAdFade() }
+        .onAppear {
+            adCarouselActive = isCurrent
+            armGlassAdFade()
+        }
         .onChange(of: isCurrent) { _, nowCurrent in
+            adCarouselActive = nowCurrent
             if nowCurrent {
                 armGlassAdFade()
             } else {
@@ -2530,9 +2538,9 @@ private struct ReelView: View {
         adAdvanceTask?.cancel()
         guard glassAdTargets.count > 1 else { return }
         adAdvanceTask = Task { @MainActor in
-            while !Task.isCancelled, isCurrent, glassAdVisible, !glassAdDismissed {
+            while !Task.isCancelled, adCarouselActive, glassAdVisible, !glassAdDismissed {
                 try? await Task.sleep(for: .seconds(5.5))
-                guard !Task.isCancelled, isCurrent, glassAdVisible, !glassAdDismissed else { break }
+                guard !Task.isCancelled, adCarouselActive, glassAdVisible, !glassAdDismissed else { break }
                 withAnimation(.easeInOut(duration: 0.3)) {
                     adPage = (adPage + 1) % glassAdTargets.count
                 }
@@ -2632,10 +2640,11 @@ private struct ReelView: View {
 // MARK: - Reel Affiliate Row Card
 
 /// Page 2 of the Reels ad carousel. Claims a native AdMob ad from the shared
-/// pool (observing nativePoolTick for late fills) and renders a compact
-/// NativeAdCardView; falls back to the Rakuten affiliate card when no ad is
-/// available. Only fetches when this reel is the current one so background
-/// reels never drain the pool.
+/// pool and renders a compact NativeAdCardView; falls back to the Rakuten
+/// affiliate card when no ad is available. Resolves its content exactly once
+/// — a page that could not claim renders the Rakuten backfill permanently,
+/// so a late pool fill never swaps a live page mid-animation. Only fetches
+/// when this reel is the current one so background reels never drain the pool.
 private struct ReelNativeAdPage: View {
     let pageIndex: Int
     let visiblePage: Int
@@ -2644,7 +2653,9 @@ private struct ReelNativeAdPage: View {
     let onDismiss: () -> Void
 
     @State private var claimedAd: AnyObject? = nil
-    @ObservedObject private var adManager = AdManager.shared
+    /// Set the first time this page is eligible to claim. Once true the body
+    /// never switches branches — the Rakuten backfill is permanent.
+    @State private var resolved: Bool = false
 
     var body: some View {
         Group {
@@ -2669,30 +2680,27 @@ private struct ReelNativeAdPage: View {
             }
         }
         .onAppear { fetch() }
-        .onChange(of: adManager.nativePoolTick) { _, _ in
-            fetch()
-        }
         .onChange(of: visiblePage) { _, _ in
             fetch()
         }
     }
 
     private func fetch() {
+        guard !resolved else { return }
         guard isCurrent else { return }
         guard abs(visiblePage - pageIndex) <= 1 else { return }
-        guard claimedAd == nil else { return }
         AdManager.shared.start()
         AdManager.shared.loadNativePool()
         if let ad = AdManager.shared.nextNativeAd() {
             claimedAd = ad
         }
+        resolved = true
     }
 }
 
 /// Compact 68pt-tall affiliate row card for the Reels ad carousel. Renders a
 /// horizontal row with a 44pt brand tile, headline/subtitle/Sponsored footer,
-/// a Get offer pill, and a dismiss control. Tapping the card opens the
-/// Rakuten affiliate link; tapping dismiss hides the card for the session.
+/// and a Get offer pill. Tapping the card opens the Rakuten affiliate link.
 private struct ReelAffiliateRowCard: View {
     let serviceId: String
     let fallbackName: String
@@ -2731,8 +2739,6 @@ private struct ReelAffiliateRowCard: View {
                     .padding(.horizontal, 12)
                     .padding(.vertical, 7)
                     .background(RoundedRectangle(cornerRadius: 14).fill(Color(hex: "F5821F")))
-                Spacer().frame(width: 6)
-                dismissControl
             }
             .padding(12)
             .frame(maxWidth: .infinity)
@@ -2766,17 +2772,6 @@ private struct ReelAffiliateRowCard: View {
             }
         }
         .frame(width: 44, height: 44)
-    }
-
-    private var dismissControl: some View {
-        Button(action: onDismiss) {
-            Image(systemName: "xmark")
-                .scaledFont(size: 16, weight: .semibold)
-                .foregroundStyle(Color.white.opacity(0.45))
-                .frame(width: 24, height: 24)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
     }
 
     private var service: StreamingService? {

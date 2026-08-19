@@ -4,11 +4,10 @@
 //
 //  Shared frosted-glass affiliate banner with thinned frost layer. Renders a Rakuten "Stream more on…"
 //  card with a branded service tile, headline, subtitle, "Sponsored · Rakuten"
-//  footer, and a top-trailing dismiss button — all on a see-through
-//  ultraThinMaterial + navy-tinted background so the playing video/content
-//  behind remains visible. Used by the Reels glass overlay, episode/creator
-//  detail sheets, and the sports watch sheet so every surface shows the
-//  identical card.
+//  footer — all on a see-through ultraThinMaterial + navy-tinted background
+//  so the playing video/content behind remains visible. Used by the Reels
+//  glass overlay, episode/creator detail sheets, and the sports watch sheet
+//  so every surface shows the identical card.
 //
 
 import SwiftUI
@@ -45,57 +44,39 @@ struct SponsoredAffiliateCard: View {
 
     private var fullBody: some View {
         Button(action: onTap) {
-            ZStack(alignment: .topTrailing) {
-                HStack(spacing: 10) {
-                    // Brand tile — 40×40 rounded square
-                    brandTile
+            HStack(spacing: 10) {
+                // Brand tile — 40×40 rounded square
+                brandTile
 
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(headline)
-                            .scaledFont(size: 12, weight: .bold)
-                            .foregroundStyle(.white)
-                            .lineLimit(1)
-                        Text(subtitle)
-                            .scaledFont(size: 10)
-                            .foregroundStyle(Color.white.opacity(0.62))
-                        Text("Sponsored · Rakuten")
-                            .scaledFont(size: 9)
-                            .foregroundStyle(Color.white.opacity(0.45))
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(headline)
+                        .scaledFont(size: 12, weight: .bold)
+                        .foregroundStyle(.white)
+                        .lineLimit(1)
+                    Text(subtitle)
+                        .scaledFont(size: 10)
+                        .foregroundStyle(Color.white.opacity(0.62))
+                    Text("Sponsored · Rakuten")
+                        .scaledFont(size: 9)
+                        .foregroundStyle(Color.white.opacity(0.45))
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 10)
-                .background(
-                    RoundedRectangle(cornerRadius: 14)
-                        .fill(.ultraThinMaterial.opacity(0.67))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 14)
-                                .fill(Color(red: 8/255, green: 14/255, blue: 24/255).opacity(0.19))
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 14)
-                                .stroke(Color.white.opacity(0.11), lineWidth: 0.5)
-                        )
-                        .shadow(color: Color.black.opacity(0.35), radius: 14, y: 4)
-                )
-
-                // Dismiss X — sits above the card so taps never hit onTap
-                Button {
-                    withAnimation(.easeOut(duration: 0.2)) {
-                        onDismiss()
-                    }
-                } label: {
-                    Image(systemName: "xmark")
-                        .scaledFont(size: 12, weight: .semibold)
-                        .foregroundStyle(Color.white.opacity(0.40))
-                        .frame(width: 28, height: 28)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .padding(.top, 8)
-                .padding(.trailing, 8)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .background(
+                RoundedRectangle(cornerRadius: 14)
+                    .fill(.ultraThinMaterial.opacity(0.67))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 14)
+                            .fill(Color(red: 8/255, green: 14/255, blue: 24/255).opacity(0.19))
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 14)
+                            .stroke(Color.white.opacity(0.11), lineWidth: 0.5)
+                    )
+                    .shadow(color: Color.black.opacity(0.35), radius: 14, y: 4)
+            )
             .clipShape(RoundedRectangle(cornerRadius: 14))
         }
         .buttonStyle(.plain)
@@ -105,58 +86,41 @@ struct SponsoredAffiliateCard: View {
 
     private var compactBody: some View {
         Button(action: onTap) {
-            ZStack(alignment: .topTrailing) {
-                HStack(spacing: 10) {
-                    compactBrandTile
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(headline)
-                            .scaledFont(size: 13, weight: .heavy)
-                            .foregroundStyle(.white)
-                            .lineLimit(2)
+            HStack(spacing: 10) {
+                compactBrandTile
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(headline)
+                        .scaledFont(size: 13, weight: .heavy)
+                        .foregroundStyle(.white)
+                        .lineLimit(2)
+                        .truncationMode(.tail)
+                    if !subtitle.isEmpty {
+                        Text(subtitle)
+                            .scaledFont(size: 10)
+                            .foregroundStyle(Color.white.opacity(0.62))
+                            .lineLimit(3)
                             .truncationMode(.tail)
-                        if !subtitle.isEmpty {
-                            Text(subtitle)
-                                .scaledFont(size: 10)
-                                .foregroundStyle(Color.white.opacity(0.62))
-                                .lineLimit(3)
-                                .truncationMode(.tail)
-                        }
                     }
-                    Spacer(minLength: 0)
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 10)
-                .frame(height: 120)
-                .frame(maxWidth: .infinity)
-                .background(
-                    RoundedRectangle(cornerRadius: 14)
-                        .fill(.ultraThinMaterial.opacity(0.67))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 14)
-                                .fill(Color(red: 8/255, green: 14/255, blue: 24/255).opacity(0.19))
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 14)
-                                .stroke(Color.white.opacity(0.11), lineWidth: 0.5)
-                        )
-                        .shadow(color: Color.black.opacity(0.35), radius: 14, y: 4)
-                )
-
-                Button {
-                    withAnimation(.easeOut(duration: 0.2)) {
-                        onDismiss()
-                    }
-                } label: {
-                    Image(systemName: "xmark")
-                        .scaledFont(size: 12, weight: .semibold)
-                        .foregroundStyle(Color.white.opacity(0.40))
-                        .frame(width: 28, height: 28)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .padding(.top, 8)
-                .padding(.trailing, 8)
+                Spacer(minLength: 0)
             }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .frame(height: 120)
+            .frame(maxWidth: .infinity)
+            .background(
+                RoundedRectangle(cornerRadius: 14)
+                    .fill(.ultraThinMaterial.opacity(0.67))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 14)
+                            .fill(Color(red: 8/255, green: 14/255, blue: 24/255).opacity(0.19))
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 14)
+                            .stroke(Color.white.opacity(0.11), lineWidth: 0.5)
+                    )
+                    .shadow(color: Color.black.opacity(0.35), radius: 14, y: 4)
+            )
             .clipShape(RoundedRectangle(cornerRadius: 14))
             .overlay(alignment: .topLeading) {
                 adMarker

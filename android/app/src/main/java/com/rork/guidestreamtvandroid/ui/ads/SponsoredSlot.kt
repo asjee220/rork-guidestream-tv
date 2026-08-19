@@ -15,9 +15,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -59,8 +56,8 @@ enum class PooledAdSource {
 
 /**
  * Pooled inline sponsored slot inserted between home feed rows — mirrors iOS
- * SponsoredSlotView. Renders a compact glass card with a "Sponsored" label and
- * a dismiss control. ADMOB_FIRST attempts a native AdMob unit and swaps to the
+ * SponsoredSlotView. Renders a compact glass card with a "Sponsored" label.
+ * ADMOB_FIRST attempts a native AdMob unit and swaps to the
  * Rakuten affiliate presentation if it fails to fill; RAKUTEN_FIRST renders the
  * Rakuten presentation directly, so a slot is never blank. When
  * [allowRakutenFallback] is false the Rakuten presentation is never rendered,
@@ -123,36 +120,19 @@ fun SponsoredSlot(
             )
             .padding(12.dp),
     ) {
-        // Header — "Sponsored" label + dismiss x (feed chip: "AD", no dismiss)
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(4.dp))
-                    .background(BrandOrange.copy(alpha = 0.2f))
-                    .padding(horizontal = 6.dp, vertical = 2.dp),
-            ) {
-                Text(
-                    text = if (feedStyle) "AD" else "Sponsored",
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = BrandOrange,
-                )
-            }
-            Spacer(Modifier.weight(1f))
-            if (!feedStyle) {
-                Icon(
-                    imageVector = Icons.Filled.Close,
-                    contentDescription = "Dismiss ad",
-                    tint = TextTertiary,
-                    modifier = Modifier
-                        .size(20.dp)
-                        .clip(RoundedCornerShape(10.dp))
-                        .clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null,
-                        ) { onDismiss() },
-                )
-            }
+        // Header — "Sponsored"/"AD" label
+        Box(
+            modifier = Modifier
+                .clip(RoundedCornerShape(4.dp))
+                .background(BrandOrange.copy(alpha = 0.2f))
+                .padding(horizontal = 6.dp, vertical = 2.dp),
+        ) {
+            Text(
+                text = if (feedStyle) "AD" else "Sponsored",
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Bold,
+                color = BrandOrange,
+            )
         }
         Spacer(Modifier.height(8.dp))
 

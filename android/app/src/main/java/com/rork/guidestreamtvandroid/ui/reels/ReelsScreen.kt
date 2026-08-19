@@ -51,7 +51,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.KeyboardArrowDown
@@ -2014,8 +2013,8 @@ private fun resolveReelAds(
 /**
  * Compact reel affiliate carousel that mirrors the iOS adCarousel. Renders a
  * HorizontalPager of [ReelAffiliateCard] items with dot indicators beneath.
- * Fades in after a short delay only while the reel is the current page; logs a
- * single AD_IMPRESSION on first show; dismissible for the session.
+ * Fades in after a short delay only while the reel is the current page, logs
+ * a single AD_IMPRESSION on first show, and auto-advances every 5.5s.
  */
 @Composable
 private fun ReelAdCarousel(
@@ -2056,6 +2055,19 @@ private fun ReelAdCarousel(
     if (offers.isEmpty() || dismissed || !isCurrent || !visible) return
 
     val pagerState = rememberPagerState(pageCount = { offers.size })
+
+    // Auto-advance the carousel on the same 5.5s cadence as iOS. A manual
+    // swipe skips that cycle (isScrollInProgress) and the timer resumes from
+    // wherever the user lands; the effect restarts when the reel, its
+    // visibility, or the offer count changes.
+    LaunchedEffect(reel.id, visible, offers.size) {
+        if (!visible || dismissed || !isCurrent || offers.size <= 1) return@LaunchedEffect
+        while (visible && !dismissed && isCurrent && offers.size > 1) {
+            delay(5500)
+            if (pagerState.isScrollInProgress) continue
+            pagerState.animateScrollToPage((pagerState.currentPage + 1) % pagerState.pageCount)
+        }
+    }
 
     Column(modifier = Modifier.alpha(0.83f).let { m ->
         if (maxWidth != null) m.widthIn(max = maxWidth) else m
@@ -2113,8 +2125,8 @@ private fun ReelAdCarousel(
 /**
  * Compact glass affiliate card for the reel carousel — a rounded 14dp
  * container with a dark backing and a hairline border so text stays legible
- * over bright trailer frames. Tapping the card (excluding the dismiss icon)
- * opens the Rakuten affiliate link and logs AFFILIATE_LINK_TAPPED.
+ * over bright trailer frames. Tapping the card opens the Rakuten affiliate
+ * link and logs AFFILIATE_LINK_TAPPED.
  */
 @Composable
 private fun ReelAffiliateCard(
@@ -2208,24 +2220,6 @@ private fun ReelAffiliateCard(
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Bold,
                     color = Color.White,
-                )
-            }
-            Spacer(Modifier.width(6.dp))
-            Box(
-                modifier = Modifier
-                    .size(24.dp)
-                    .clip(CircleShape)
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                    ) { onDismiss() },
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    imageVector = Icons.Filled.Close,
-                    contentDescription = "Dismiss ad",
-                    tint = TextTertiary,
-                    modifier = Modifier.size(16.dp),
                 )
             }
         }

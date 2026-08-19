@@ -46,7 +46,7 @@ struct NativeAdCardView: UIViewRepresentable {
 }
 
 /// Container view that hosts the `GADNativeAdView` and all asset subviews,
-/// plus the "Ad" badge, dismiss button, and AdChoices marker. Laid out with
+/// plus the "Ad" badge and AdChoices marker. Laid out with
 /// AutoLayout so text of varying lengths clips gracefully.
 final class NativeAdContainer: UIView {
 
@@ -71,7 +71,6 @@ final class NativeAdContainer: UIView {
     private let ctaButton = UIButton(type: .system)
     private let advertiserLabel = UILabel()
     private let adBadge = UILabel()
-    private let dismissButton = UIButton(type: .system)
     private let adChoicesContainer = AdChoicesView()
 
     /// Text-stack leading constraint anchored to the icon — swappeable in
@@ -231,18 +230,6 @@ final class NativeAdContainer: UIView {
         adBadge.translatesAutoresizingMaskIntoConstraints = false
         adView.addSubview(adBadge)
 
-        // Dismiss X — sits to the left of AdChoices in the top-trailing area so
-        // it never covers the AdChoices control. Decorative (not a registered
-        // asset), so it stays on the container view. Not rendered on the feed
-        // chip — the caller's dismissal closure stays wired, just unused.
-        if !isFeedChip {
-            dismissButton.setImage(UIImage(systemName: "xmark"), for: .normal)
-            dismissButton.tintColor = UIColor.white.withAlphaComponent(0.40)
-            dismissButton.translatesAutoresizingMaskIntoConstraints = false
-            dismissButton.addTarget(self, action: #selector(dismissTapped), for: .touchUpInside)
-            addSubview(dismissButton)
-        }
-
         // Build constraints — common ones always active, media/icon and
         // chip-specific ones branched on compact / isFeedChip.
         var constraints: [NSLayoutConstraint] = []
@@ -324,18 +311,6 @@ final class NativeAdContainer: UIView {
                 adBadge.widthAnchor.constraint(greaterThanOrEqualToConstant: 20),
                 adBadge.trailingAnchor.constraint(lessThanOrEqualTo: adView.trailingAnchor, constant: -8),
                 adBadge.bottomAnchor.constraint(lessThanOrEqualTo: adView.bottomAnchor, constant: -8),
-            ])
-        }
-
-        // Dismiss — immediately to the left of AdChoices, top of card, so it
-        // never covers the AdChoices control. Decorative (container view);
-        // not rendered on the feed chip.
-        if !isFeedChip {
-            constraints.append(contentsOf: [
-                dismissButton.topAnchor.constraint(equalTo: topAnchor, constant: 4),
-                dismissButton.trailingAnchor.constraint(equalTo: adChoicesContainer.leadingAnchor, constant: -4),
-                dismissButton.widthAnchor.constraint(equalToConstant: 28),
-                dismissButton.heightAnchor.constraint(equalToConstant: 28),
             ])
         }
 
@@ -473,11 +448,6 @@ final class NativeAdContainer: UIView {
                height: rect.height.rounded(.down))
     }
 
-    // MARK: - Actions
-
-    @objc private func dismissTapped() {
-        onDismiss?()
-    }
 }
 #else
 // Simulator / no-SDK: provide an empty stub so SponsoredSlotView's #else
