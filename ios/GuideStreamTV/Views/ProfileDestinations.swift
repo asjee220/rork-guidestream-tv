@@ -1792,6 +1792,10 @@ struct HelpFeedbackView: View {
     @State private var showDiagnostics: Bool = false
     @State private var expandedFAQ: UUID?
 
+    /// Shared ad manager — observed so the Ad Privacy Options row appears
+    /// as soon as UMP says a privacy options entry point is required.
+    @ObservedObject private var adManager = AdManager.shared
+
     private let supportEmail = "support@guidestream.tv"
     private let privacyURL = URL(string: "https://guidestream.tv/privacy")!
     private let termsURL = URL(string: "https://guidestream.tv/terms")!
@@ -1894,6 +1898,16 @@ struct HelpFeedbackView: View {
                     subtitle: "The fine print",
                     onTap: { open(termsURL) }
                 )
+                if adManager.privacyOptionsRequired {
+                    ProfileRowDivider()
+                    ProfileRow(
+                        icon: "hand.raised.fill",
+                        iconTint: Color.textSecondary,
+                        title: "Ad Privacy Options",
+                        subtitle: "Manage your ad consent choices",
+                        onTap: { adManager.presentPrivacyOptions() }
+                    )
+                }
                 ProfileRowDivider()
                 ProfileRow(
                     icon: "play.rectangle.fill",

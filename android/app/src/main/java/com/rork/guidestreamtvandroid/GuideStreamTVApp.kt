@@ -17,14 +17,7 @@ import com.rork.guidestreamtvandroid.data.repository.StreamsViewModel
 import com.rork.guidestreamtvandroid.data.repository.TeamFavoritesService
 import com.rork.guidestreamtvandroid.data.repository.WatchIntentLogger
 import com.rork.guidestreamtvandroid.push.GuideStreamFirebaseMessagingService
-import com.rork.guidestreamtvandroid.ui.ads.AdManager
 import com.rork.guidestreamtvandroid.widget.WidgetDataService
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * Application entry point — initializes all singleton services.
@@ -61,21 +54,10 @@ class GuideStreamTVApp : Application() {
         // Restore session on cold launch
         safe("restoreSession") { AuthViewModel.get().restoreSession() }
 
-        // Initialize AdMob. The interstitial preload is deferred until
-        // after the remote config fetch resolves (with a 2s safety timeout)
-        // so the first request uses the remote ad unit id when available.
-        // Any failure still results in a preload with fallback values.
-        safe("AdMob") {
-            AdManager.get().initialize(this)
-            adScope.launch {
-                withTimeoutOrNull(2000L) {
-                    RemoteConfigService.load()
-                }
-                withContext(Dispatchers.Main) {
-                    AdManager.get().preloadInterstitial(this@GuideStreamTVApp)
-                }
-            }
-        }
+        // AdMob now starts from MainActivity.onCreate: UMP consent is
+        // gathered there (after the remote config await with the same 2s
+        // safety timeout) before the SDK initializes, so no ad request can
+        // fire before consent is resolved.
 
         // Log app opened + bump session counter
         safe("appOpened") { WatchIntentLogger.get().log(WatchIntentLogger.IntentEventType.APP_OPENED) }
@@ -109,8 +91,6 @@ class GuideStreamTVApp : Application() {
             })
         }
     }
-
-    private val adScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     @Volatile private var startedActivityCount = 0
 

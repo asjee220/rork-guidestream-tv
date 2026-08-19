@@ -1,5 +1,6 @@
 package com.rork.guidestreamtvandroid.ui.profile
 
+import android.app.Activity
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -39,6 +40,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -46,6 +48,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.rork.guidestreamtvandroid.data.models.StreamingCatalog
 import com.rork.guidestreamtvandroid.data.repository.AuthViewModel
+import com.rork.guidestreamtvandroid.ui.ads.AdManager
 import com.rork.guidestreamtvandroid.ui.components.glassCard
 import com.rork.guidestreamtvandroid.ui.theme.BrandOrange
 import com.rork.guidestreamtvandroid.ui.theme.GlassFill
@@ -400,6 +403,20 @@ fun HelpScreen(
         HelpRow("Contact Support", "Email us at support@guidestream.tv")
         HelpRow("Privacy Policy", "How we handle your data")
         HelpRow("Terms of Service", "Our terms and conditions")
+        // Ad privacy options entry point — only rendered where UMP says one
+        // is required (EEA/UK). Hidden, not disabled, elsewhere.
+        val adManager = AdManager.get()
+        val privacyOptionsRequired by adManager.privacyOptionsRequired.collectAsState()
+        if (privacyOptionsRequired) {
+            val context = LocalContext.current
+            HelpRow(
+                "Ad Privacy Options",
+                "Manage your ad consent choices",
+                onClick = {
+                    (context as? Activity)?.let { adManager.showPrivacyOptions(it) }
+                },
+            )
+        }
         HelpRow("About", "Guide Stream TV v1.0")
 
         Spacer(Modifier.height(40.dp))
@@ -407,13 +424,22 @@ fun HelpScreen(
 }
 
 @Composable
-private fun HelpRow(title: String, subtitle: String) {
+private fun HelpRow(title: String, subtitle: String, onClick: (() -> Unit)? = null) {
+    val baseModifier = Modifier
+        .fillMaxWidth()
+        .padding(vertical = 3.dp)
+        .glassCard(10)
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 3.dp)
-            .glassCard(10)
-            .padding(14.dp),
+        modifier = (
+            if (onClick != null) {
+                baseModifier.clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                ) { onClick() }
+            } else {
+                baseModifier
+            }
+            ).padding(14.dp),
     ) {
         Column {
             Text(title, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)

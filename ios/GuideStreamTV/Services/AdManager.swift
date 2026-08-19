@@ -16,6 +16,7 @@ import UIKit
 
 #if canImport(GoogleMobileAds) && !targetEnvironment(simulator)
 import GoogleMobileAds
+import UserMessagingPlatform
 import AppTrackingTransparency
 
 @MainActor
@@ -32,24 +33,72 @@ final class AdManager: NSObject, ObservableObject, FullScreenContentDelegate, Na
     private var didStart = false
 
     /// Initialises the SDK once and preloads the interstitial + native pool.
-    /// On iOS 14+ requests App Tracking Transparency authorization first, then
-    /// initialises once the user responds (so the SDK can access IDFA). Ads
-    /// serve regardless of the user's choice — we gate on the request
-    /// *completing*, never on it being granted. Safe to call multiple times.
+    /// Runs the UMP consent flow first — consent info update, then the consent
+    /// form when the GDPR message requires one — followed by the ATT
+    /// authorization request, and only initialises the ad SDK when consent
+    /// allows ad requests (`canRequestAds`). Ads serve regardless of the
+    /// user's ATT choice — we gate on the request *completing*, never on it
+    /// being granted. A UMP error never blocks the chain: the ATT prompt
+    /// still fires and the SDK still starts whenever consent permits. Safe to
+    /// call multiple times; an already-satisfied form is never re-presented.
     /// No-op on simulator (the build excludes this entire class body via the
     /// compile-time guard above).
     func start() {
         guard !didStart else { return }
         didStart = true
+
+        let parameters = RequestParameters()
+        parameters.tagForUnderAgeOfConsent = false
+        ConsentInformation.shared.requestConsentInfoUpdate(with: parameters) { [weak self] consentError in
+            if let consentError {
+                print("[AdManager] Consent info update failed: \(consentError.localizedDescription)")
+            }
+            Task { @MainActor in
+                self?.presentConsentFormIfRequired()
+            }
+        }
+    }
+
+    /// Loads and presents the UMP consent form if the GDPR message requires
+    /// one, then moves on to the ATT prompt. A missing root view controller
+    /// or a form error skips the form and falls straight through — the ATT
+    /// request and the `canRequestAds` check always run.
+    private func presentConsentFormIfRequired() {
+        guard let rootViewController = Self.rootViewController() else {
+            proceedToATT()
+            return
+        }
+        ConsentForm.loadAndPresentIfRequired(from: rootViewController) { [weak self] formError in
+            if let formError {
+                print("[AdManager] Consent form failed: \(formError.localizedDescription)")
+            }
+            Task { @MainActor in
+                guard let self else { return }
+                self.refreshPrivacyOptionsRequirement()
+                self.proceedToATT()
+            }
+        }
+    }
+
+    /// Requests App Tracking Transparency authorization, then starts the ad
+    /// SDK once the request completes (gated on completion, never on grant).
+    private func proceedToATT() {
         if #available(iOS 14, *) {
             ATTrackingManager.requestTrackingAuthorization { _ in
                 Task { @MainActor in
-                    self.startSDKAndPreload()
+                    self.startSDKIfConsented()
                 }
             }
         } else {
-            startSDKAndPreload()
+            startSDKIfConsented()
         }
+    }
+
+    /// Starts the Google Mobile Ads SDK and preloads the interstitial + native
+    /// pool, but only when UMP consent allows ad requests.
+    private func startSDKIfConsented() {
+        guard ConsentInformation.shared.canRequestAds else { return }
+        startSDKAndPreload()
     }
 
     /// Starts the Google Mobile Ads SDK and preloads the interstitial + native
@@ -59,6 +108,36 @@ final class AdManager: NSObject, ObservableObject, FullScreenContentDelegate, Na
             self?.loadInterstitial()
             self?.loadNativePool()
         }
+    }
+
+    // MARK: - UMP privacy options
+
+    /// True when UMP requires a privacy options entry point (EEA/UK). Drives
+    /// the "Ad Privacy Options" row in Help & Feedback.
+    @Published private(set) var privacyOptionsRequired: Bool = false
+
+    /// Presents the UMP privacy options form from the key window's root view
+    /// controller and refreshes `privacyOptionsRequired` once dismissed.
+    func presentPrivacyOptions() {
+        guard let rootViewController = Self.rootViewController() else { return }
+        ConsentForm.presentPrivacyOptionsForm(from: rootViewController) { [weak self] _ in
+            Task { @MainActor in
+                self?.refreshPrivacyOptionsRequirement()
+            }
+        }
+    }
+
+    private func refreshPrivacyOptionsRequirement() {
+        privacyOptionsRequired = ConsentInformation.shared.privacyOptionsRequirementStatus == .required
+    }
+
+    /// Resolves the key window's root view controller across all connected
+    /// scenes. Returns nil when no key window exists yet — callers treat that
+    /// as "skip the form".
+    private static func rootViewController() -> UIViewController? {
+        UIApplication.shared.connectedScenes
+            .compactMap { ($0 as? UIWindowScene)?.windows.first(where: \.isKeyWindow)?.rootViewController }
+            .first
     }
 
     // MARK: - Ad unit IDs
@@ -235,6 +314,14 @@ final class AdManager: NSObject, ObservableObject {
         didStart = true
         // AdMob SDK intentionally not initialized — no SDK on simulator.
     }
+
+    // MARK: - UMP privacy options (stubbed — no UMP SDK on simulator)
+
+    /// Mirrors the real class so Help & Feedback compiles on simulator builds.
+    @Published private(set) var privacyOptionsRequired: Bool = false
+
+    /// No-op stub.
+    func presentPrivacyOptions() {}
 
     // MARK: - Ad unit IDs (kept for future wiring)
 

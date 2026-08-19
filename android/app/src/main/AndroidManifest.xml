@@ -57,10 +57,11 @@
             </intent-filter>
         </service>
 
-        <!-- AdMob App ID -->
+        <!-- AdMob App ID — resolved from the ANDROID_ADMOB_APP_ID manifest
+             placeholder (see app/build.gradle.kts); test app id fallback. -->
         <meta-data
             android:name="com.google.android.gms.ads.APPLICATION_ID"
-            android:value="ca-app-pub-3940256099942544~1458002511" />
+            android:value="${ANDROID_ADMOB_APP_ID}" />
 
         <!-- Default FCM notification channel: notification-payload pushes are
              rendered by the Firebase SDK without invoking onMessageReceived;

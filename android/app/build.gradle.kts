@@ -16,6 +16,12 @@ android {
         targetSdk = 36
         versionCode = 17
         versionName = "1.0.16"
+
+        // Production AdMob app id — supplied via the ANDROID_ADMOB_APP_ID env
+        // var at release build time; falls back to Google's test app id so
+        // local and debug builds keep serving test ads.
+        manifestPlaceholders["ANDROID_ADMOB_APP_ID"] = System.getenv("ANDROID_ADMOB_APP_ID")
+            ?: "ca-app-pub-3940256099942544~1458002511"
     }
 
     buildTypes {
@@ -72,6 +78,7 @@ dependencies {
     implementation(libs.supabase.postgrest)
     implementation(libs.androidx.datastore.preferences)
     implementation(libs.play.services.ads)
+    implementation(libs.user.messaging.platform)
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.messaging)
     implementation(libs.androidx.glance.appwidget)

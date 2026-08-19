@@ -28,11 +28,19 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import android.util.Log
+import com.rork.guidestreamtvandroid.data.remote.RemoteConfigService
 import com.rork.guidestreamtvandroid.data.remote.SupabaseManager
 import com.rork.guidestreamtvandroid.data.repository.AuthViewModel
 import com.rork.guidestreamtvandroid.data.repository.PushTokenManager
 import com.rork.guidestreamtvandroid.data.repository.StreamsViewModel
 import io.github.jan.supabase.auth.handleDeeplinks
+import com.rork.guidestreamtvandroid.ui.ads.AdManager
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import com.rork.guidestreamtvandroid.ui.navigation.AppRouter
 import com.rork.guidestreamtvandroid.ui.navigation.MainScreen
 import com.rork.guidestreamtvandroid.ui.navigation.PendingTitleRoute
@@ -63,6 +71,9 @@ class MainActivity : ComponentActivity() {
             Log.w("GSPush", "post-grant push registration failed: ${t.message}")
         }
     }
+
+    /** Background scope for the deferred UMP-consent → AdMob startup step. */
+    private val adConsentScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -118,6 +129,20 @@ class MainActivity : ComponentActivity() {
         val hasCompletedOnboarding = prefs.getBoolean("gs.onboardingComplete", false)
         if (hasCompletedOnboarding) {
             requestNotificationPermissionIfNeeded()
+        }
+
+        // Gather UMP ad consent (EEA/UK users see the Google consent form
+        // before any ad request), then initialize AdMob only when consent
+        // allows ad requests. Remote config is awaited first with the same
+        // 2s safety timeout the old Application AdMob block used, so the
+        // first request uses the remote ad unit id when available.
+        adConsentScope.launch {
+            withTimeoutOrNull(2000L) {
+                RemoteConfigService.load()
+            }
+            withContext(Dispatchers.Main) {
+                AdManager.get().gatherConsentThenInitialize(this@MainActivity)
+            }
         }
     }
 
