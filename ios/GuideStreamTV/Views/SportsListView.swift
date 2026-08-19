@@ -36,26 +36,48 @@ struct TeamLogoBadge: View {
            !logoURL.isEmpty,
            let url = URL(string: logoURL) {
             AsyncImage(url: url) { phase in
-                switch phase {
-                case .success(let image):
-                    RoundedRectangle(cornerRadius: cornerRadius)
-                        .fill(logoFillColor)
-                        .frame(width: size, height: size)
-                        .overlay {
-                            image
-                                .resizable()
-                                .scaledToFit()
-                                .padding(inset)
-                        }
-                        .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
-                case .empty, .failure:
-                    fallbackBadge
-                @unknown default:
-                    fallbackBadge
+                Group {
+                    switch phase {
+                    case .success(let image):
+                        RoundedRectangle(cornerRadius: cornerRadius)
+                            .fill(logoFillColor)
+                            .frame(width: size, height: size)
+                            .overlay {
+                                image
+                                    .resizable()
+                                    .scaledToFit()
+                                    .padding(inset)
+                            }
+                            .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
+                    case .empty:
+                        // Loading — quiet placeholder at the same size, radius
+                        // and 7% tint as the loaded state so the crest fades in
+                        // instead of the solid abbreviation square flashing
+                        // first.
+                        RoundedRectangle(cornerRadius: cornerRadius)
+                            .fill(logoFillColor)
+                            .frame(width: size, height: size)
+                    case .failure:
+                        fallbackBadge
+                    @unknown default:
+                        fallbackBadge
+                    }
                 }
+                .animation(.easeOut(duration: 0.2), value: phaseKey(phase))
             }
         } else {
             fallbackBadge
+        }
+    }
+
+    /// Stable Equatable key for the load phase so the badge can cross-fade
+    /// between states — AsyncImagePhase itself does not conform to Equatable.
+    private func phaseKey(_ phase: AsyncImagePhase) -> Int {
+        switch phase {
+        case .empty: return 0
+        case .success: return 1
+        case .failure: return 2
+        @unknown default: return 3
         }
     }
 
