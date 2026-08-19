@@ -4,8 +4,11 @@ import android.util.Log
 import com.rork.guidestreamtvandroid.data.models.SportsGame
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
+import io.ktor.client.plugins.DefaultRequest
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.request.get
+import io.ktor.client.request.header
+import io.ktor.http.HttpHeaders
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -23,6 +26,17 @@ import kotlinx.serialization.json.Json
 class SportsService {
 
     private val client = HttpClient {
+        // ESPN's CDN (Akamai) 403s requests whose User-Agent doesn't match the
+        // client's fingerprint. Ktor's Android engine sends no UA by default,
+        // so every scoreboard request returned 403 with an HTML error page
+        // (which then broke JSON parsing downstream). The engine is
+        // HttpURLConnection, which is backed by OkHttp internally, so an
+        // okhttp UA is fingerprint-coherent and verified accepted by ESPN;
+        // desktop browser agent strings get blocked on fingerprint mismatch.
+        install(DefaultRequest) {
+            header(HttpHeaders.UserAgent, "okhttp/4.12.0")
+            header(HttpHeaders.Accept, "application/json")
+        }
         install(ContentNegotiation) {
             json(Json { ignoreUnknownKeys = true; coerceInputValues = true; isLenient = true })
         }

@@ -38,6 +38,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.SportsBasketball
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.ChevronRight
@@ -112,6 +113,7 @@ fun SportsScreen(
     val vm = SportsViewModel.get()
     val games by vm.games.collectAsStateWithLifecycle()
     val isLoading by vm.isLoading.collectAsStateWithLifecycle()
+    val lastLoadFailed by vm.lastLoadFailed.collectAsStateWithLifecycle()
     val selectedSport by vm.selectedSport.collectAsStateWithLifecycle()
 
     val authVm = AuthViewModel.get()
@@ -256,6 +258,8 @@ fun SportsScreen(
             // Content
             if (isLoading && games.isEmpty()) {
                 items(3) { LoadingCard() }
+            } else if (lastLoadFailed && games.isEmpty()) {
+                item { LoadFailedState(onRetry = { vm.fetchGames() }) }
             } else if (filtered.isEmpty()) {
                 item { EmptyState(activeSport) }
             } else {
@@ -773,6 +777,42 @@ private fun EmptyState(sport: String) {
             fontWeight = FontWeight.Medium,
             color = Color.White.copy(alpha = 0.5f),
         )
+    }
+}
+
+/** Distinct total-fetch-failure state — retry re-runs the load. */
+@Composable
+private fun LoadFailedState(onRetry: () -> Unit) {
+    Column(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 40.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Icon(Icons.Filled.CloudOff, contentDescription = null, tint = LiveRed.copy(alpha = 0.6f), modifier = Modifier.size(28.dp))
+        Text(
+            text = "Couldn't load scores.",
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Medium,
+            color = Color.White.copy(alpha = 0.5f),
+        )
+        Text(
+            text = "Check your connection and try again.",
+            fontSize = 12.sp,
+            color = Color.White.copy(alpha = 0.35f),
+        )
+        Box(
+            modifier = Modifier
+                .padding(top = 4.dp)
+                .clip(CircleShape)
+                .background(BrandOrange)
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                ) { onRetry() }
+                .padding(horizontal = 18.dp, vertical = 8.dp),
+        ) {
+            Text("Retry", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.White)
+        }
     }
 }
 

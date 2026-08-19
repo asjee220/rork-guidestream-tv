@@ -25,6 +25,16 @@ class SportsViewModel : ViewModel() {
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
+    /**
+     * True when the last load attempt failed on every endpoint — fetchAll
+     * swallows per-endpoint errors and returns an empty list when all nine
+     * fail, so an empty result is treated as a total fetch failure rather
+     * than an empty schedule. Lets the UI show a retry state instead of the
+     * false "No games today.".
+     */
+    private val _lastLoadFailed = MutableStateFlow(false)
+    val lastLoadFailed: StateFlow<Boolean> = _lastLoadFailed.asStateFlow()
+
     private val _selectedSport = MutableStateFlow<String?>(null)
     val selectedSport: StateFlow<String?> = _selectedSport.asStateFlow()
 
@@ -43,7 +53,9 @@ class SportsViewModel : ViewModel() {
         _isLoading.value = true
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                _games.value = sportsService.fetchAll()
+                val result = sportsService.fetchAll()
+                _games.value = result
+                _lastLoadFailed.value = result.isEmpty()
             } finally {
                 _isLoading.value = false
             }
@@ -60,15 +72,18 @@ class SportsViewModel : ViewModel() {
      * try/catch that swallows non-cancellation exceptions and leaves the
      * previous [_games] value intact on failure. Deliberately does not set
      * [_isLoading] so the pinned header spinner and the pull indicator never
-     * both appear at once.
+     * both appear at once. Updates [lastLoadFailed] to match the outcome.
      */
     suspend fun refreshGamesNow() {
         try {
-            _games.value = sportsService.fetchAll()
+            val result = sportsService.fetchAll()
+            _games.value = result
+            _lastLoadFailed.value = result.isEmpty()
         } catch (c: CancellationException) {
             throw c
         } catch (_: Exception) {
             // Leave previous _games value intact on failure.
+            _lastLoadFailed.value = true
         }
     }
 
