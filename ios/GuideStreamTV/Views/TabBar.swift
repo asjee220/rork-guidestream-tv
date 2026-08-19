@@ -74,7 +74,6 @@ struct FloatingTabBar: View {
         }
         .padding(.horizontal, 8)
         .padding(.bottom, 4)
-        .gsContentWidth()
         .onAppear {
             withAnimation(.easeInOut(duration: 1.55).repeatForever(autoreverses: true)) {
                 isGlowExpanded = true

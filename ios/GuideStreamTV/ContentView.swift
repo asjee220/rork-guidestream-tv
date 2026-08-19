@@ -21,22 +21,6 @@ struct ContentView: View {
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
-        // Single root measurement of the window width, published into the
-        // environment so every `gsContentWidth()` call site on every screen
-        // resolves its width class against the same value (matching Android's
-        // `rememberWidthClass()`). The frame keeps the root content filling
-        // the geometry exactly as it filled the window before, so layout,
-        // safe areas, the full-bleed atmosphere background and the tab bar
-        // overlay are unchanged; GeometryReader re-reports live on rotation,
-        // Stage Manager resize and Split View.
-        GeometryReader { geo in
-            rootContent
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .environment(\.gsWindowWidth, geo.size.width)
-        }
-    }
-
-    private var rootContent: some View {
         ZStack {
             if auth.isSignedIn && auth.hasCompletedOnboarding {
                 mainApp

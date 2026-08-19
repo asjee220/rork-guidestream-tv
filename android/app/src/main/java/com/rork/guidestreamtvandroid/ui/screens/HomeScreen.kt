@@ -133,8 +133,6 @@ import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.rememberCoroutineScope
 import com.rork.guidestreamtvandroid.ui.theme.SurfaceContainer
 import com.rork.guidestreamtvandroid.ui.theme.TextTertiary
-import com.rork.guidestreamtvandroid.ui.theme.gsContentWidth
-import com.rork.guidestreamtvandroid.ui.theme.rememberWidthClass
 import kotlinx.coroutines.launch
 
 /**
@@ -245,9 +243,6 @@ fun HomeScreen(
         coachMark.markScrollSettled()
     }
 
-    // Adaptive width class for tablet/split-screen windows (no-op on phones).
-    val widthClass = rememberWidthClass()
-
     Box(modifier = modifier.fillMaxSize()) {
         PullToRefreshBox(
             isRefreshing = isRefreshing,
@@ -265,9 +260,7 @@ fun HomeScreen(
                 }
             },
             state = pullState,
-            modifier = Modifier
-                .fillMaxSize()
-                .gsContentWidth(widthClass),
+            modifier = Modifier.fillMaxSize(),
             indicator = {
                 PullToRefreshDefaults.Indicator(
                     modifier = Modifier
@@ -860,9 +853,7 @@ fun HomeScreen(
         // Pinned top bar — wordmark left, services pill right (mirrors iOS PageBar)
         GsTopBar(
             elevated = isBarElevated,
-            modifier = Modifier
-                .align(Alignment.TopStart)
-                .gsContentWidth(widthClass),
+            modifier = Modifier.align(Alignment.TopStart),
         ) {
             val serviceIds = StreamingCatalog.ordered(selectedServices).map { it.id }
             if (serviceIds.isNotEmpty()) {
