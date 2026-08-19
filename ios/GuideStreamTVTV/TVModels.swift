@@ -122,7 +122,10 @@ struct TVSportsGame: Identifiable, Hashable {
     let leagueShort: String
     let state: TVGameState
     let statusDetail: String
-    let startDate: Date
+    /// ESPN start time. Optional — events whose date fails to parse keep nil
+    /// rather than receiving a fabricated `now` that would render as a
+    /// bogus chip time.
+    let startDate: Date?
     let home: TVGameTeam
     let away: TVGameTeam
     let broadcasts: [String]

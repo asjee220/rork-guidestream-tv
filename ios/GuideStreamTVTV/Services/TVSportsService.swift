@@ -105,7 +105,7 @@ final class TVSportsService {
             for await games in group { all.append(contentsOf: games) }
             return all.sorted { a, b in
                 if a.state.isLive != b.state.isLive { return a.state.isLive }
-                return a.startDate < b.startDate
+                return (a.startDate ?? .distantFuture) < (b.startDate ?? .distantFuture)
             }
         }
     }
@@ -162,7 +162,7 @@ final class TVSportsService {
             leagueShort: ev.season?.slug ?? sport,
             state: state,
             statusDetail: detail,
-            startDate: parseDate(ev.date) ?? Date(),
+            startDate: parseDate(ev.date),
             home: makeTeam(from: homeRaw),
             away: makeTeam(from: awayRaw),
             broadcasts: broadcasts

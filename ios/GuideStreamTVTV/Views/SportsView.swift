@@ -61,6 +61,7 @@ struct SportsView: View {
         let color: Color
         let next: String
         let isLive: Bool
+        let logoURL: String?
     }
 
     private var filteredGames: [SportsGame] {
@@ -77,8 +78,9 @@ struct SportsView: View {
     /// store would replace this derivation.
     private var derivedTeams: [TeamChip] {
         let cal = Calendar.current
-        let pool = (liveGames + upcomingGames).filter {
-            $0.state == .live || cal.isDateInToday($0.startDate) || $0.startDate.timeIntervalSinceNow < 60 * 60 * 24 * 7
+        let pool = (liveGames + upcomingGames).filter { game in
+            guard let date = game.startDate else { return true }
+            return game.state == .live || cal.isDateInToday(date) || date.timeIntervalSinceNow < 60 * 60 * 24 * 7
         }
         var seen = Set<String>()
         var chips: [TeamChip] = []
@@ -94,7 +96,8 @@ struct SportsView: View {
                     name: team.shortName,
                     color: color,
                     next: label,
-                    isLive: game.state == .live
+                    isLive: game.state == .live,
+                    logoURL: team.logoURL
                 ))
                 if chips.count >= 5 { break }
             }
@@ -105,13 +108,14 @@ struct SportsView: View {
 
     private func nextLabel(for game: SportsGame, cal: Calendar) -> String {
         if game.state == .live { return "LIVE" }
+        guard let date = game.startDate else { return "" }
         let f = DateFormatter()
-        if cal.isDateInToday(game.startDate) {
+        if cal.isDateInToday(date) {
             f.dateFormat = "h:mm a"
-            return f.string(from: game.startDate)
+            return f.string(from: date)
         }
         f.dateFormat = "EEE"
-        return f.string(from: game.startDate)
+        return f.string(from: date)
     }
 
     var body: some View {
@@ -313,23 +317,63 @@ struct SportsView: View {
         }
     }
 
+    /// Chip crest. With a loaded logo it follows the exact async image
+    /// loading path the game-row TeamLogoBadge uses — rounded rect at 7%
+    /// team colour, crest scaled to fit with a 9pt inset. Falls back to
+    /// the existing full-colour abbreviation square when the URL is
+    /// missing or the image fails to load.
+    @ViewBuilder
+    private func teamChipBadge(_ team: TeamChip) -> some View {
+        if let logoURL = team.logoURL,
+           !logoURL.isEmpty,
+           let url = URL(string: logoURL) {
+            AsyncImage(url: url) { phase in
+                switch phase {
+                case .success(let image):
+                    RoundedRectangle(cornerRadius: 7)
+                        .fill(team.color.opacity(0.07))
+                        .frame(width: 72, height: 72)
+                        .overlay {
+                            image
+                                .resizable()
+                                .scaledToFit()
+                                .padding(9)
+                        }
+                        .clipShape(RoundedRectangle(cornerRadius: 7))
+                case .empty, .failure:
+                    chipFallbackBadge(team)
+                @unknown default:
+                    chipFallbackBadge(team)
+                }
+            }
+        } else {
+            chipFallbackBadge(team)
+        }
+    }
+
+    private func chipFallbackBadge(_ team: TeamChip) -> some View {
+        RoundedRectangle(cornerRadius: 7)
+            .fill(team.color)
+            .frame(width: 72, height: 72)
+            .overlay(
+                Text(team.abbrev)
+                    .scaledFont(size: 11, weight: .black)
+                    .foregroundStyle(.white)
+            )
+    }
+
     private func teamChip(_ team: TeamChip) -> some View {
         VStack(spacing: 3) {
-            RoundedRectangle(cornerRadius: 7)
-                .fill(team.color)
-                .frame(width: 72, height: 72)
-                .overlay(
-                    Text(team.abbrev)
-                        .scaledFont(size: 11, weight: .black)
-                        .foregroundStyle(.white)
-                )
+            teamChipBadge(team)
             Text(team.name)
                 .scaledFont(size: 14, weight: .semibold)
                 .foregroundStyle(Color.white.opacity(0.6))
                 .lineLimit(1)
-            Text(team.next)
-                .scaledFont(size: 12, weight: .bold)
-                .foregroundStyle(team.isLive ? Color(hex: "E50914") : Color(hex: "F5821F"))
+            if !team.next.isEmpty {
+                Text(team.next)
+                    .scaledFont(size: 12, weight: .bold)
+                    .foregroundStyle(team.isLive ? Color(hex: "E50914") : Color(hex: "F5821F"))
+            }
         }
         .padding(32)
         .frame(minWidth: 270, minHeight: 180)
@@ -480,7 +524,7 @@ struct SportsView: View {
 
     private var upcomingTitle: String {
         let cal = Calendar.current
-        if let first = upcomingGames.first, cal.isDateInToday(first.startDate) {
+        if let first = upcomingGames.first, let date = first.startDate, cal.isDateInToday(date) {
             return "Tonight"
         }
         return "Upcoming"

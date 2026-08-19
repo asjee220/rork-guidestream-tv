@@ -45,7 +45,13 @@ struct SportsWatchSheet: View {
         case .pre:
             let when = formattedStartLocal
             if let b = primaryBroadcast {
+                if when.isEmpty {
+                    return "Coming soon on \(b). Set a reminder so you don't miss tip-off — or tap watch when the broadcast goes live."
+                }
                 return "\(when) on \(b). Set a reminder so you don't miss tip-off — or tap watch when the broadcast goes live."
+            }
+            if when.isEmpty {
+                return "Broadcast info will appear closer to game time. Set a reminder to get a heads-up."
             }
             return "\(when). Broadcast info will appear closer to game time. Set a reminder to get a heads-up."
         case .post:
@@ -70,10 +76,11 @@ struct SportsWatchSheet: View {
     }
 
     private var formattedStartLocal: String {
+        guard let date = game.startDate else { return "" }
         let f = DateFormatter()
         f.dateStyle = .medium
         f.timeStyle = .short
-        return f.string(from: game.startDate)
+        return f.string(from: date)
     }
 
     var body: some View {
@@ -479,7 +486,9 @@ struct SportsWatchSheet: View {
     private var availabilityLabel: String {
         switch game.state {
         case .live: return "Streaming live now"
-        case .pre: return "Coverage starts at \(formattedStartLocal)"
+        case .pre:
+            let when = formattedStartLocal
+            return when.isEmpty ? "Coverage time to be confirmed" : "Coverage starts at \(when)"
         case .post: return "Highlights and replay available"
         }
     }
