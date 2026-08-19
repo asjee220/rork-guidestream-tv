@@ -55,13 +55,24 @@ struct SponsoredSlotView: View {
     /// media square plus padding, the two-line headline, body, advertiser,
     /// CTA, Ad attribution badge, AdChoices, and dismiss control without
     /// clipping, while staying close to the full SponsoredAffiliateCard height
-    /// so the fallback→native upgrade is seamless.
+    /// so the fallback→native upgrade is seamless. Inline feed slots
+    /// (compactNative + feedStyle) pin 88 instead — see
+    /// `effectiveNativeCardHeight`.
     var nativeCardHeight: CGFloat = 136
 
     /// When true the native card uses the compact icon-based layout.
-    /// Forwarded into NativeAdCardView so inline slots get the 56pt icon
-    /// layout while detail-sheet callers keep the full 120pt media square.
-    var compactNative: Bool = false
+    /// Forwarded into NativeAdCardView; defaults to true because every
+    /// current caller (inline feed slots + the three detail sheets) wants
+    /// the icon layout. The Reels carousel calls NativeAdCardView directly
+    /// and is unaffected by this default.
+    var compactNative: Bool = true
+
+    /// When true (with `compactNative`) both the native card and the Rakuten
+    /// fallback render the compact 88pt inline-feed chip row: opaque surface,
+    /// 60pt icon/tile, orange AD badge, orange pill CTA, no dismiss X.
+    /// Defaults to true so the three detail-sheet callers pick up the chip
+    /// with no edits; pass false to keep the taller cards.
+    var feedStyle: Bool = true
 
     /// Native ad pulled from the pool on appear. nil → Rakuten fallback.
     @State private var currentNativeAd: AnyObject? = nil
@@ -70,6 +81,12 @@ struct SponsoredSlotView: View {
     /// pool fills (via nativePoolTick), letting a late-arriving ad upgrade the
     /// Rakuten fallback to a native card.
     @ObservedObject private var adManager = AdManager.shared
+
+    /// Inline feed slots (compactNative + feedStyle) pin the 88pt chip row;
+    /// every other combination keeps the full-height card.
+    private var effectiveNativeCardHeight: CGFloat {
+        compactNative && feedStyle ? 88 : nativeCardHeight
+    }
 
     var body: some View {
         Group {
@@ -84,7 +101,8 @@ struct SponsoredSlotView: View {
                     subtitle: subtitle,
                     onTap: onTap,
                     onDismiss: onDismiss,
-                    compact: compact
+                    compact: compact,
+                    feedStyle: feedStyle
                 )
             } else {
                 // No eligible Rakuten offer and no native fill — render
@@ -104,7 +122,7 @@ struct SponsoredSlotView: View {
     private func nativeCard(_ nativeAd: AnyObject) -> some View {
         #if canImport(GoogleMobileAds) && !targetEnvironment(simulator)
         if let ad = nativeAd as? NativeAd {
-            NativeAdCardView(nativeAd: ad, compact: compactNative) {
+            NativeAdCardView(nativeAd: ad, compact: compactNative, feedStyle: feedStyle) {
                 onDismiss()
             }
             // A UIViewRepresentable reports no intrinsic height, so SwiftUI
@@ -114,7 +132,7 @@ struct SponsoredSlotView: View {
             // closely matches the full SponsoredAffiliateCard so upgrading
             // from the Rakuten fallback causes no visible layout jump.
             .frame(maxWidth: .infinity)
-            .frame(height: nativeCardHeight)
+            .frame(height: effectiveNativeCardHeight)
             .onAppear {
                 WatchIntentLogger.shared.log(
                     eventType: .adImpression,
@@ -131,7 +149,8 @@ struct SponsoredSlotView: View {
                 subtitle: subtitle,
                 onTap: onTap,
                 onDismiss: onDismiss,
-                compact: compact
+                compact: compact,
+                feedStyle: feedStyle
             )
         } else {
             EmptyView()

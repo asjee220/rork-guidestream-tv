@@ -39,6 +39,7 @@ import com.rork.guidestreamtvandroid.data.remote.RemoteConfigService
 import com.rork.guidestreamtvandroid.ui.theme.BrandOrange
 import com.rork.guidestreamtvandroid.ui.theme.GlassFill
 import com.rork.guidestreamtvandroid.ui.theme.GlassStroke
+import com.rork.guidestreamtvandroid.ui.theme.SurfaceDark
 import com.rork.guidestreamtvandroid.ui.theme.TextPrimary
 import com.rork.guidestreamtvandroid.ui.theme.TextSecondary
 import com.rork.guidestreamtvandroid.ui.theme.TextTertiary
@@ -46,49 +47,91 @@ import com.rork.guidestreamtvandroid.ui.theme.TextTertiary
 /**
  * Native ad card — mirrors iOS NativeAdCardView.
  * Renders an AdMob banner ad inside a glass card with an "Ad" badge.
+ * When [feedStyle] is true the card renders the compact 88dp inline-feed
+ * chip instead: opaque SurfaceDark, orange AD badge, banner filling the
+ * remaining height. The default (false) path is unchanged so the Reels
+ * carousel keeps its existing card.
  */
 @Composable
 fun NativeAdCard(
     modifier: Modifier = Modifier,
     compact: Boolean = false,
+    feedStyle: Boolean = false,
     onAdLoaded: () -> Unit = {},
     onAdFailedToLoad: () -> Unit = {},
 ) {
-    Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
-            .background(GlassFill)
-            .border(1.dp, GlassStroke, RoundedCornerShape(14.dp))
-            .padding(if (compact) 8.dp else 12.dp),
-    ) {
-        // "Ad" badge
-        Row(verticalAlignment = Alignment.CenterVertically) {
+    if (feedStyle) {
+        Column(
+            modifier = modifier
+                .fillMaxWidth()
+                .height(88.dp)
+                .clip(RoundedCornerShape(14.dp))
+                .background(SurfaceDark)
+                .border(1.dp, Color.White.copy(alpha = 0.10f), RoundedCornerShape(14.dp))
+                .padding(12.dp),
+        ) {
+            // Inline AD badge
             Box(
                 modifier = Modifier
                     .clip(RoundedCornerShape(4.dp))
-                    .background(BrandOrange.copy(alpha = 0.2f))
+                    .background(BrandOrange.copy(alpha = 0.18f))
                     .padding(horizontal = 6.dp, vertical = 2.dp),
             ) {
                 Text(
-                    text = "Ad",
-                    fontSize = 11.sp,
+                    text = "AD",
+                    fontSize = 9.sp,
                     fontWeight = FontWeight.Bold,
                     color = BrandOrange,
                 )
             }
-            Spacer(Modifier.weight(1f))
+            Spacer(Modifier.height(8.dp))
+            // Banner ad — same ad unit resolution as the standard card.
+            BannerAd(
+                adUnitId = RemoteConfigService.adUnit("native") ?: AppConfig.ADMOB_NATIVE_AD_UNIT_ID,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                onAdLoaded = onAdLoaded,
+                onAdFailedToLoad = onAdFailedToLoad,
+            )
         }
-        Spacer(Modifier.height(8.dp))
-        // Banner ad
-        BannerAd(
-            adUnitId = RemoteConfigService.adUnit("native") ?: AppConfig.ADMOB_NATIVE_AD_UNIT_ID,
-            modifier = Modifier
+    } else {
+        Column(
+            modifier = modifier
                 .fillMaxWidth()
-                .height(if (compact) 50.dp else 100.dp),
-            onAdLoaded = onAdLoaded,
-            onAdFailedToLoad = onAdFailedToLoad,
-        )
+                .clip(RoundedCornerShape(14.dp))
+                .background(GlassFill)
+                .border(1.dp, GlassStroke, RoundedCornerShape(14.dp))
+                .padding(if (compact) 8.dp else 12.dp),
+        ) {
+            // "Ad" badge
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(BrandOrange.copy(alpha = 0.2f))
+                        .padding(horizontal = 6.dp, vertical = 2.dp),
+                ) {
+                    Text(
+                        text = "Ad",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = BrandOrange,
+                    )
+                }
+                Spacer(Modifier.weight(1f))
+            }
+            Spacer(Modifier.height(8.dp))
+            // Banner ad
+            BannerAd(
+                adUnitId = RemoteConfigService.adUnit("native") ?: AppConfig.ADMOB_NATIVE_AD_UNIT_ID,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(if (compact) 50.dp else 100.dp),
+                onAdLoaded = onAdLoaded,
+                onAdFailedToLoad = onAdFailedToLoad,
+            )
+        }
     }
 }
 

@@ -68,7 +68,8 @@ struct InlineAdSlotView: View {
                 onDismiss: onDismiss,
                 adSource: adSource,
                 compact: true,
-                preferredSource: slotIndex % 2 == 0 ? .adMobFirst : .rakutenFirst
+                preferredSource: slotIndex % 2 == 0 ? .adMobFirst : .rakutenFirst,
+                compactNative: true
             )
         } else {
             // Every affiliate service is owned — never render a Rakuten card
@@ -86,7 +87,8 @@ struct InlineAdSlotView: View {
                 adSource: adSource,
                 compact: true,
                 preferredSource: slotIndex % 2 == 0 ? .adMobFirst : .rakutenFirst,
-                allowRakutenFallback: false
+                allowRakutenFallback: false,
+                compactNative: true
             )
         }
     }

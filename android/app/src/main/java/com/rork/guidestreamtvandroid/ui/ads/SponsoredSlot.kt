@@ -42,6 +42,7 @@ import com.rork.guidestreamtvandroid.ui.theme.GlassFill
 import com.rork.guidestreamtvandroid.ui.theme.GlassStroke
 import com.rork.guidestreamtvandroid.ui.theme.OutlineVariant
 import com.rork.guidestreamtvandroid.ui.theme.SurfaceContainer
+import com.rork.guidestreamtvandroid.ui.theme.SurfaceDark
 import com.rork.guidestreamtvandroid.ui.theme.TextPrimary
 import com.rork.guidestreamtvandroid.ui.theme.TextSecondary
 import com.rork.guidestreamtvandroid.ui.theme.TextTertiary
@@ -79,6 +80,7 @@ fun SponsoredSlot(
     adSource: String = "home_inline",
     sectionKey: String = "home_inline_ad",
     allowRakutenFallback: Boolean = true,
+    feedStyle: Boolean = true,
 ) {
     val context = LocalContext.current
 
@@ -113,11 +115,15 @@ fun SponsoredSlot(
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(14.dp))
-            .background(GlassFill)
-            .border(1.dp, GlassStroke, RoundedCornerShape(14.dp))
+            .background(if (feedStyle) SurfaceDark else GlassFill)
+            .border(
+                1.dp,
+                if (feedStyle) Color.White.copy(alpha = 0.10f) else GlassStroke,
+                RoundedCornerShape(14.dp),
+            )
             .padding(12.dp),
     ) {
-        // Header — "Sponsored" label + dismiss x
+        // Header — "Sponsored" label + dismiss x (feed chip: "AD", no dismiss)
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(
                 modifier = Modifier
@@ -126,25 +132,27 @@ fun SponsoredSlot(
                     .padding(horizontal = 6.dp, vertical = 2.dp),
             ) {
                 Text(
-                    text = "Sponsored",
+                    text = if (feedStyle) "AD" else "Sponsored",
                     fontSize = 10.sp,
                     fontWeight = FontWeight.Bold,
                     color = BrandOrange,
                 )
             }
             Spacer(Modifier.weight(1f))
-            Icon(
-                imageVector = Icons.Filled.Close,
-                contentDescription = "Dismiss ad",
-                tint = TextTertiary,
-                modifier = Modifier
-                    .size(20.dp)
-                    .clip(RoundedCornerShape(10.dp))
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                    ) { onDismiss() },
-            )
+            if (!feedStyle) {
+                Icon(
+                    imageVector = Icons.Filled.Close,
+                    contentDescription = "Dismiss ad",
+                    tint = TextTertiary,
+                    modifier = Modifier
+                        .size(20.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                        ) { onDismiss() },
+                )
+            }
         }
         Spacer(Modifier.height(8.dp))
 
@@ -153,6 +161,7 @@ fun SponsoredSlot(
                 service = service,
                 headline = headline,
                 subtitle = subtitle,
+                feedStyle = feedStyle,
                 onClick = {
                     RakutenManager.get().openAffiliateLink(
                         serviceId = serviceId,
@@ -163,6 +172,7 @@ fun SponsoredSlot(
             )
         } else {
             NativeAdCard(
+                feedStyle = feedStyle,
                 onAdLoaded = { adMobLoaded = true },
                 onAdFailedToLoad = { adMobFailed = true },
             )
@@ -179,6 +189,7 @@ private fun RakutenAffiliatePresentation(
     service: StreamingService?,
     headline: String,
     subtitle: String,
+    feedStyle: Boolean,
     onClick: () -> Unit,
 ) {
     Row(
@@ -193,10 +204,10 @@ private fun RakutenAffiliatePresentation(
         // Brand tile
         Box(
             modifier = Modifier
-                .size(56.dp)
-                .clip(RoundedCornerShape(8.dp))
+                .size(if (feedStyle) 60.dp else 56.dp)
+                .clip(RoundedCornerShape(if (feedStyle) 10.dp else 8.dp))
                 .background(service?.bg ?: SurfaceContainer)
-                .border(0.5.dp, OutlineVariant, RoundedCornerShape(8.dp)),
+                .border(0.5.dp, OutlineVariant, RoundedCornerShape(if (feedStyle) 10.dp else 8.dp)),
             contentAlignment = Alignment.Center,
         ) {
             Text(
@@ -235,7 +246,7 @@ private fun RakutenAffiliatePresentation(
         Box(
             modifier = Modifier
                 .heightIn(min = 28.dp)
-                .clip(RoundedCornerShape(8.dp))
+                .clip(RoundedCornerShape(if (feedStyle) 12.dp else 8.dp))
                 .background(BrandOrange)
                 .padding(horizontal = 12.dp, vertical = 6.dp),
             contentAlignment = Alignment.Center,
