@@ -26,6 +26,7 @@ struct TVSchemeDiagnosticView: View {
         var appHomeURL: URL?
         var unavailableReason: String?
         var openAppResult: Bool?
+        var openAppNote: String?
         var candidateResults: [String: Bool] = [:]
         var lastPressedURL: String?
     }
@@ -166,10 +167,9 @@ struct TVSchemeDiagnosticView: View {
                     Button {
                         openURL(r.appHomeURL, binding: row, keyPath: \.openAppResult)
                     } label: {
-                        resultButtonLabel("Open app", result: r.openAppResult, enabled: r.appHomeURL != nil)
+                        resultButtonLabel("Open app", result: r.openAppResult, note: r.openAppNote, enabled: r.appHomeURL != nil)
                     }
                     .buttonStyle(.card)
-                    .disabled(r.appHomeURL == nil)
 
                     ForEach(candidates) { candidate in
                         Button {
@@ -223,7 +223,7 @@ struct TVSchemeDiagnosticView: View {
     // MARK: - Button label
 
     @ViewBuilder
-    private func resultButtonLabel(_ title: String, result: Bool?, enabled: Bool) -> some View {
+    private func resultButtonLabel(_ title: String, result: Bool?, note: String? = nil, enabled: Bool) -> some View {
         HStack(spacing: 10) {
             Text(title)
                 .font(.system(size: 18, weight: .semibold))
@@ -238,6 +238,12 @@ struct TVSchemeDiagnosticView: View {
                         Capsule()
                             .fill(result ? Color.green.opacity(0.2) : Color.red.opacity(0.2))
                     )
+            } else if let note {
+                // Nil-URL outcome — shown instead of PASS/FAIL so pressing a
+                // button with nothing to open still reports visibly.
+                Text(note)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(TVTheme.textTertiary)
             }
         }
     }
@@ -249,7 +255,12 @@ struct TVSchemeDiagnosticView: View {
         binding: Binding<DiagnosticRow>,
         keyPath: WritableKeyPath<DiagnosticRow, Bool?>
     ) {
-        guard let url else { return }
+        guard let url else {
+            // No .disabled — a disabled button is unfocusable on tvOS and
+            // strands focus. Keep the button enabled and report instead.
+            binding.wrappedValue.openAppNote = "no URL to test"
+            return
+        }
         binding.wrappedValue.lastPressedURL = url.absoluteString
         UIApplication.shared.open(url, options: [:]) { success in
             binding.wrappedValue[keyPath: keyPath] = success
