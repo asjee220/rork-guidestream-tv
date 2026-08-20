@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.height
@@ -516,12 +517,14 @@ private fun HeaderRow(game: SportsGame) {
                         Text("AWAY", fontSize = 8.sp, fontWeight = FontWeight.Black, color = Color.White.copy(alpha = 0.65f))
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             if (!game.away.logoUrl.isNullOrBlank()) {
-                                coil3.compose.AsyncImage(
-                                    model = game.away.logoUrl,
-                                    contentDescription = game.away.abbreviation,
-                                    modifier = Modifier.size(22.dp),
-                                    contentScale = androidx.compose.ui.layout.ContentScale.Fit,
-                                )
+                                TeamCrestPlate(size = 22.dp, cornerRadius = 6.dp) {
+                                    coil3.compose.AsyncImage(
+                                        model = game.away.logoUrl,
+                                        contentDescription = game.away.abbreviation,
+                                        modifier = Modifier.fillMaxSize().padding(3.dp),
+                                        contentScale = androidx.compose.ui.layout.ContentScale.Fit,
+                                    )
+                                }
                             }
                             Text(game.away.abbreviation, fontSize = 22.sp, fontWeight = FontWeight.Black, color = Color.White)
                         }
@@ -540,12 +543,14 @@ private fun HeaderRow(game: SportsGame) {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             Text(game.home.abbreviation, fontSize = 22.sp, fontWeight = FontWeight.Black, color = Color.White)
                             if (!game.home.logoUrl.isNullOrBlank()) {
-                                coil3.compose.AsyncImage(
-                                    model = game.home.logoUrl,
-                                    contentDescription = game.home.abbreviation,
-                                    modifier = Modifier.size(22.dp),
-                                    contentScale = androidx.compose.ui.layout.ContentScale.Fit,
-                                )
+                                TeamCrestPlate(size = 22.dp, cornerRadius = 6.dp) {
+                                    coil3.compose.AsyncImage(
+                                        model = game.home.logoUrl,
+                                        contentDescription = game.home.abbreviation,
+                                        modifier = Modifier.fillMaxSize().padding(3.dp),
+                                        contentScale = androidx.compose.ui.layout.ContentScale.Fit,
+                                    )
+                                }
                             }
                         }
                     }

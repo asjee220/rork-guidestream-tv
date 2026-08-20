@@ -442,10 +442,10 @@ struct SportsView: View {
         }
     }
 
-    /// Chip crest. With a loaded logo it follows the exact async image path
-    /// the game-row badges use — rounded rect at 7% team colour, crest scaled
-    /// to fit with a 3pt inset. Falls back to the existing full-colour
-    /// abbreviation square when the URL is missing or the load fails.
+    /// Chip crest. With a loaded logo it renders on the shared neutral light
+    /// plate ([TeamCrestPlate]) — crest scaled to fit with a 3pt inset. Falls
+    /// back to the existing full-colour abbreviation square when the URL is
+    /// missing or the load fails.
     @ViewBuilder
     private func teamChipBadge(_ team: TeamChip) -> some View {
         if let logoURL = team.logoURL,
@@ -454,16 +454,7 @@ struct SportsView: View {
             AsyncImage(url: url) { phase in
                 switch phase {
                 case .success(let image):
-                    RoundedRectangle(cornerRadius: 7)
-                        .fill(team.color.opacity(0.07))
-                        .frame(width: 26, height: 26)
-                        .overlay {
-                            image
-                                .resizable()
-                                .scaledToFit()
-                                .padding(3)
-                        }
-                        .clipShape(RoundedRectangle(cornerRadius: 7))
+                    TeamCrestPlate(size: 26, cornerRadius: 7, inset: 3, image: image)
                 case .empty, .failure:
                     chipFallbackBadge(team)
                 @unknown default:

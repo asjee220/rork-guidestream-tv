@@ -12,9 +12,9 @@ import UIKit
 
 // MARK: - Team Logo Badge
 
-/// Reusable team logo badge. With a non-blank logo URL it draws a rounded
-/// rectangle at 7% team colour with the logo scaled to fit and inset. With
-/// a missing or failed logo it falls back to the full-colour abbreviation
+/// Reusable team logo badge. With a non-blank logo URL it draws the crest on
+/// the shared neutral light plate ([TeamCrestPlate]) scaled to fit and inset.
+/// With a missing or failed logo it falls back to the full-colour abbreviation
 /// badge. The badge is always `size × size`.
 struct TeamLogoBadge: View {
     let team: GameTeam
@@ -27,10 +27,6 @@ struct TeamLogoBadge: View {
         team.primaryHex.map { Color(hex: $0) } ?? Color.white.opacity(0.2)
     }
 
-    private var logoFillColor: Color {
-        team.primaryHex.map { Color(hex: $0).opacity(0.07) } ?? Color.white.opacity(0.07)
-    }
-
     var body: some View {
         if let logoURL = team.logoURL,
            !logoURL.isEmpty,
@@ -39,23 +35,14 @@ struct TeamLogoBadge: View {
                 Group {
                     switch phase {
                     case .success(let image):
-                        RoundedRectangle(cornerRadius: cornerRadius)
-                            .fill(logoFillColor)
-                            .frame(width: size, height: size)
-                            .overlay {
-                                image
-                                    .resizable()
-                                    .scaledToFit()
-                                    .padding(inset)
-                            }
-                            .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
+                        TeamCrestPlate(size: size, cornerRadius: cornerRadius, inset: inset, image: image)
                     case .empty:
                         // Loading — quiet placeholder at the same size, radius
-                        // and 7% tint as the loaded state so the crest fades in
-                        // instead of the solid abbreviation square flashing
-                        // first.
+                        // and neutral fill as the loaded state so the crest
+                        // fades in instead of the solid abbreviation square
+                        // flashing first.
                         RoundedRectangle(cornerRadius: cornerRadius)
-                            .fill(logoFillColor)
+                            .fill(TeamCrestPlate.fillColor)
                             .frame(width: size, height: size)
                     case .failure:
                         fallbackBadge

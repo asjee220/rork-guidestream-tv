@@ -335,7 +335,7 @@ struct SportsWatchSheet: View {
                         if let logoURL = game.away.logoURL, !logoURL.isEmpty, let url = URL(string: logoURL) {
                             AsyncImage(url: url) { phase in
                                 if case .success(let image) = phase {
-                                    image.resizable().scaledToFit().frame(width: 22, height: 22)
+                                    TeamCrestPlate(size: 22, cornerRadius: 6, inset: 3, image: image)
                                 } else {
                                     EmptyView()
                                 }
@@ -363,7 +363,7 @@ struct SportsWatchSheet: View {
                         if let logoURL = game.home.logoURL, !logoURL.isEmpty, let url = URL(string: logoURL) {
                             AsyncImage(url: url) { phase in
                                 if case .success(let image) = phase {
-                                    image.resizable().scaledToFit().frame(width: 22, height: 22)
+                                    TeamCrestPlate(size: 22, cornerRadius: 6, inset: 3, image: image)
                                 } else {
                                     EmptyView()
                                 }

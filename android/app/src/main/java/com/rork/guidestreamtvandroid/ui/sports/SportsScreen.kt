@@ -546,8 +546,8 @@ private fun SectionHeader(title: String, count: Int, onSeeAll: () -> Unit) {
 // MARK: - Team Logo badge
 
 /**
- * Reusable team logo badge. With a non-blank logo URL it draws a rounded
- * rectangle at 7% team colour with the logo scaled to fit and inset.
+ * Reusable team logo badge. With a non-blank logo URL it draws the crest on
+ * the shared neutral light plate (TeamCrestPlate) scaled to fit and inset.
  * With a missing or failed logo it falls back to the full-colour
  * abbreviation badge. The badge is always `size x size`.
  */
@@ -560,31 +560,29 @@ internal fun TeamLogo(
     abbreviationFontSize: androidx.compose.ui.unit.TextUnit,
     modifier: Modifier = Modifier,
 ) {
-    val logoFillColor = team.primaryHex?.let { hexToColor(it, Color.White.copy(alpha = 0.07f)).copy(alpha = 0.07f) } ?: Color.White.copy(alpha = 0.07f)
     val fallbackColor = hexToColor(team.primaryHex, Color.White.copy(alpha = 0.2f))
     val shape = remember(cornerRadius) { RoundedCornerShape(cornerRadius) }
 
     val logoUrl = team.logoUrl?.takeIf { it.isNotBlank() }
     if (logoUrl != null) {
-        SubcomposeAsyncImage(
-            model = logoUrl,
-            contentDescription = team.abbreviation,
-            modifier = modifier
-                .size(size)
-                .clip(shape)
-                .background(logoFillColor),
-            contentScale = ContentScale.Fit,
-            loading = { FallbackBadge(team.abbreviation, fallbackColor, shape, abbreviationFontSize) },
-            error = { FallbackBadge(team.abbreviation, fallbackColor, shape, abbreviationFontSize) },
-            success = { state ->
-                androidx.compose.foundation.Image(
-                    painter = state.painter,
-                    contentDescription = team.abbreviation,
-                    modifier = Modifier.size(size).padding(inset),
-                    contentScale = ContentScale.Fit,
-                )
-            },
-        )
+        TeamCrestPlate(size = size, cornerRadius = cornerRadius, modifier = modifier) {
+            SubcomposeAsyncImage(
+                model = logoUrl,
+                contentDescription = team.abbreviation,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Fit,
+                loading = { FallbackBadge(team.abbreviation, fallbackColor, shape, abbreviationFontSize) },
+                error = { FallbackBadge(team.abbreviation, fallbackColor, shape, abbreviationFontSize) },
+                success = { state ->
+                    androidx.compose.foundation.Image(
+                        painter = state.painter,
+                        contentDescription = team.abbreviation,
+                        modifier = Modifier.fillMaxSize().padding(inset),
+                        contentScale = ContentScale.Fit,
+                    )
+                },
+            )
+        }
     } else {
         FallbackBadge(team.abbreviation, fallbackColor, shape, abbreviationFontSize, modifier.size(size))
     }
