@@ -16,6 +16,7 @@ enum HomeRoute: Hashable {
     case leavingSoon
     case popularOnServiceCategories(serviceId: String, providerId: Int)
     case nowAndNext(serviceId: String)
+    case aroundTheWorld(regionCode: String)
 }
 
 // MARK: - Popular on Service — category browse
@@ -262,6 +263,202 @@ struct PopularOnServiceCategoriesView: View {
         }
         resultsByCategory[cat.id] = results.prefix(25).map { poster(from: $0) }
         loadingCategories.remove(cat.id)
+    }
+}
+
+// MARK: - Around the World — country browse
+
+/// Full-screen country browser reached via the "Around the World" home rail.
+/// A country pill row and a service pill row sit above a two-column poster
+/// grid; every country + provider combination loads lazily and is cached in
+/// memory. Pure TMDB — provider ids are region-specific and come verbatim
+/// from `CountryCatalog`. The country row seeds to the passed region and the
+/// service row seeds to that country's first provider, reseeding whenever the
+/// country changes.
+struct AroundTheWorldView: View {
+    let initialRegionCode: String
+    var onSelect: (PosterShow) -> Void
+
+    @State private var selectedRegionCode: String
+    @State private var selectedProviderId: Int
+    /// In-memory cache keyed "REGION-providerId".
+    @State private var resultsByKey: [String: [PosterShow]] = [:]
+    @State private var loadingKeys: Set<String> = []
+
+    private let columns = [
+        GridItem(.flexible(), spacing: 14),
+        GridItem(.flexible(), spacing: 14)
+    ]
+
+    init(initialRegionCode: String, onSelect: @escaping (PosterShow) -> Void) {
+        self.initialRegionCode = initialRegionCode
+        self.onSelect = onSelect
+        let entry = CountryCatalog.entry(forRegionCode: initialRegionCode) ?? CountryCatalog.countryOfDay
+        _selectedRegionCode = State(initialValue: entry.regionCode)
+        _selectedProviderId = State(initialValue: entry.providers.first?.id ?? 0)
+    }
+
+    private var entry: CountryCatalogEntry {
+        CountryCatalog.entry(forRegionCode: selectedRegionCode) ?? CountryCatalog.countryOfDay
+    }
+
+    private var cacheKey: String { "\(entry.regionCode)-\(selectedProviderId)" }
+    private var currentShows: [PosterShow] { resultsByKey[cacheKey] ?? [] }
+    private var currentIsLoading: Bool { loadingKeys.contains(cacheKey) }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            countryPillRow
+                .padding(.top, 10)
+                .padding(.bottom, 6)
+            servicePillRow
+                .padding(.bottom, 8)
+            Text("\(currentShows.count) titles · availability shown for \(entry.displayName)")
+                .scaledFont(size: 12)
+                .foregroundStyle(Color.textSecondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 20)
+                .padding(.bottom, 8)
+            contentRegion
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .background(BrandBackground())
+        .navigationTitle("Around the World")
+        .navigationBarTitleDisplayMode(.large)
+        .toolbarBackground(Color.navy, for: .navigationBar)
+        .toolbarColorScheme(.dark, for: .navigationBar)
+        .task { await loadSelected() }
+        .onChange(of: selectedRegionCode) { _, _ in Task { await loadSelected() } }
+        .onChange(of: selectedProviderId) { _, _ in Task { await loadSelected() } }
+    }
+
+    // MARK: - Pill rows
+
+    private var countryPillRow: some View {
+        pillRow(items: CountryCatalog.entries.map { ($0.id, $0.displayName) },
+                selectedId: entry.regionCode) { regionCode in
+            guard regionCode != entry.regionCode,
+                  let next = CountryCatalog.entry(forRegionCode: regionCode) else { return }
+            // Reseed the service row to the new country's first provider.
+            selectedProviderId = next.providers.first?.id ?? 0
+            selectedRegionCode = next.regionCode
+        }
+    }
+
+    private var servicePillRow: some View {
+        pillRow(items: entry.providers.map { (String($0.id), $0.name) },
+                selectedId: String(selectedProviderId)) { providerId in
+            selectedProviderId = Int(providerId) ?? selectedProviderId
+        }
+    }
+
+    /// Shared pill row — identical styling to the Popular-on-Service pills.
+    private func pillRow(items: [(id: String, name: String)], selectedId: String, action: @escaping (String) -> Void) -> some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(items, id: \.id) { item in
+                    let isSelected = item.id == selectedId
+                    Button {
+                        action(item.id)
+                    } label: {
+                        Text(item.name)
+                            .scaledFont(size: 13, weight: .semibold)
+                            .foregroundStyle(isSelected ? Color.black : Color.white.opacity(0.85))
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 8)
+                            .background(
+                                Capsule().fill(isSelected ? Color.orange : Color.white.opacity(0.10))
+                            )
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 20)
+        }
+        .overlay(alignment: .trailing) {
+            LinearGradient(
+                colors: [Color.navy.opacity(0), Color.navy],
+                startPoint: .leading,
+                endPoint: .trailing
+            )
+            .frame(width: 44)
+            .allowsHitTesting(false)
+        }
+    }
+
+    // MARK: - Content
+
+    @ViewBuilder
+    private var contentRegion: some View {
+        if currentShows.isEmpty && currentIsLoading {
+            VStack {
+                Spacer()
+                ProgressView().tint(.white)
+                Spacer()
+            }
+        } else if currentShows.isEmpty {
+            VStack(spacing: 10) {
+                Spacer()
+                Image(systemName: "tray")
+                    .scaledFont(size: 34, weight: .regular)
+                    .foregroundStyle(Color.white.opacity(0.35))
+                Text("Nothing here yet")
+                    .scaledFont(size: 15, weight: .semibold)
+                    .foregroundStyle(Color.white.opacity(0.55))
+                Spacer()
+            }
+            .frame(maxWidth: .infinity)
+        } else {
+            ScrollView {
+                LazyVStack(spacing: 16) {
+                    LazyVGrid(columns: columns, spacing: 16) {
+                        ForEach(currentShows) { show in
+                            Button(action: { onSelect(show) }) {
+                                BingeGridCard(show: show, tag: entry.displayName.uppercased())
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+                .padding(.horizontal, 20)
+                .padding(.top, 12)
+                .padding(.bottom, 120)
+            }
+        }
+    }
+
+    // MARK: - Loading
+
+    private func poster(from r: TMDBResult) -> PosterShow {
+        PosterShow(
+            title: r.displayName,
+            meta: r.year.map { "\($0)" } ?? (r.isTV ? "Series" : "Movie"),
+            posterColors: HomeFallback.posterColors,
+            symbol: "play.fill",
+            posterUrl: r.posterUrl,
+            tmdbId: r.id,
+            isTV: r.isTV
+        )
+    }
+
+    /// Loads the selected country + provider combination once, then caches.
+    private func loadSelected() async {
+        let key = cacheKey
+        guard resultsByKey[key] == nil,
+              !loadingKeys.contains(key),
+              let provider = entry.providers.first(where: { $0.id == selectedProviderId })
+        else { return }
+        loadingKeys.insert(key)
+        let results = (try? await TMDBService.shared.discoverByProvider(
+            providerId: provider.id,
+            limit: 40,
+            region: entry.regionCode,
+            originalLanguage: entry.originalLanguage,
+            voteCountGte: 100,
+            withoutKeywords: "198385"
+        )) ?? []
+        resultsByKey[key] = results.map { poster(from: $0) }
+        loadingKeys.remove(key)
     }
 }
 

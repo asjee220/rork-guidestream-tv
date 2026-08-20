@@ -431,6 +431,12 @@ struct HomeView: View {
     /// finished loading. While false, section containers render immediately with
     /// shimmer placeholders; flipping to true transitions real content in smoothly.
     @State private var homeContentReady = false
+    /// Around the World rail — today's rotating country and its first
+    /// provider's top ten titles. Loaded fire-and-forget; the rail hides
+    /// entirely when the fetch fails or returns nothing.
+    @State private var aroundTheWorldEntry: CountryCatalogEntry? = nil
+    @State private var aroundTheWorldProviderName: String? = nil
+    @State private var aroundTheWorldShows: [PosterShow] = []
     /// Recommended creators/podcasts based on followed creators' categories.
     /// Populated asynchronously; empty when the user has no followed creators.
     @State private var recommendedCreators: [RecommendedCreator] = []
@@ -1090,6 +1096,46 @@ struct HomeView: View {
                         // Inline sponsored slot #8 — after Binge Worthy
                         inlineAdSlot(8)
 
+                        // Around the World — rotating daily country rail
+                        if let aroundCountry = aroundTheWorldEntry,
+                           let aroundProvider = aroundTheWorldProviderName,
+                           !aroundTheWorldShows.isEmpty {
+                            SectionGlassCard(
+                                title: "Around the World",
+                                onSeeAll: {
+                                    WatchIntentLogger.shared.log(
+                                        eventType: .cardTapped,
+                                        metadata: ["section": "around_the_world_see_all"]
+                                    )
+                                    path.append(.aroundTheWorld(regionCode: aroundCountry.regionCode))
+                                }
+                            ) {
+                                VStack(alignment: .leading, spacing: 6) {
+                                    Text("Streaming in \(aroundCountry.displayName) today · \(aroundProvider)")
+                                        .scaledFont(size: 12)
+                                        .foregroundStyle(Color.textSecondary)
+                                        .padding(.horizontal, 12)
+                                    ScrollView(.horizontal, showsIndicators: false) {
+                                        HStack(spacing: 10) {
+                                            ForEach(aroundTheWorldShows) { show in
+                                                PosterCard(show: show, tag: "AROUND THE WORLD", onTap: {
+                                                    WatchIntentLogger.shared.log(
+                                                        eventType: .cardTapped,
+                                                        titleId: WatchIntentLogger.titleSlug(show.title),
+                                                        metadata: ["section": "around_the_world"]
+                                                    )
+                                                    detailSubject = .show(show)
+                                                })
+                                            }
+                                        }
+                                        .padding(.horizontal, 12)
+                                        .padding(.vertical, 6)
+                                    }
+                                }
+                            }
+                            .padding(.horizontal, homeWidthClass.homeHorizontalPadding)
+                        }
+
                         Color.clear.frame(height: 96)
                     }
                     .padding(.top, 4)
@@ -1258,6 +1304,10 @@ struct HomeView: View {
                         tag: "NOW & NEXT",
                         onSelect: { show in detailSubject = .show(show) }
                     )
+                case .aroundTheWorld(let regionCode):
+                    AroundTheWorldView(initialRegionCode: regionCode) { show in
+                        detailSubject = .show(show)
+                    }
                 }
             }
             .sheet(item: $detailSubject) { subject in
@@ -1347,6 +1397,9 @@ struct HomeView: View {
             // run after streams.refreshAll() completes so topGenreFromWatchList()
             // sees a populated userStreams array on cold launch.
             Task { await loadWatchlistDerivedSections() }
+
+            // Around the World rail — fire-and-forget so it never blocks Home.
+            Task { await loadAroundTheWorldRail() }
 
             // Stage 2: Live status, creator uploads, and recommended creators concurrently.
             await withTaskGroup(of: Void.self) { group in
@@ -2182,6 +2235,39 @@ struct HomeView: View {
                     isTV: r.isTV
                 )
             }
+    }
+
+    // MARK: - Around the World
+
+    /// Loads the rotating "Around the World" rail: today's country and its
+    /// first provider's top ten titles. Fire-and-forget — never blocks Home,
+    /// and the rail hides entirely when the fetch fails or returns nothing.
+    private func loadAroundTheWorldRail() async {
+        let country = CountryCatalog.countryOfDay
+        guard let provider = country.providers.first else { return }
+        let results = (try? await TMDBService.shared.discoverByProvider(
+            providerId: provider.id,
+            limit: 10,
+            region: country.regionCode,
+            originalLanguage: country.originalLanguage,
+            voteCountGte: 100,
+            withoutKeywords: "198385"
+        )) ?? []
+        guard !results.isEmpty else { return }
+        aroundTheWorldEntry = country
+        aroundTheWorldProviderName = provider.name
+        aroundTheWorldShows = results.map { r in
+            PosterShow(
+                title: r.displayName,
+                meta: r.year.map { "\($0)" } ?? (r.isTV ? "Series" : "Movie"),
+                posterColors: HomeFallback.posterColors,
+                symbol: "play.tv.fill",
+                posterUrl: r.posterUrl,
+                tmdbId: r.id,
+                voteAverage: r.voteAverage,
+                isTV: r.isTV
+            )
+        }
     }
 
     // MARK: - Today's Pick

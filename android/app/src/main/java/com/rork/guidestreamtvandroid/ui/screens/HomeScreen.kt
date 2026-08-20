@@ -151,6 +151,7 @@ fun HomeScreen(
     onOpenTitle: (PendingTitleRoute) -> Unit = {},
     onOpenSearch: () -> Unit = {},
     onSeeAllPopular: (serviceId: String, providerId: Int) -> Unit = { _, _ -> },
+    onOpenAroundTheWorld: (regionCode: String) -> Unit = {},
     onSeeAllList: (HomeListTarget) -> Unit = {},
     onOpenWatchList: () -> Unit = {},
     onOpenWidgetSetup: () -> Unit = {},
@@ -174,6 +175,7 @@ fun HomeScreen(
     val selectedGenreId by homeVm.selectedGenreId.collectAsStateWithLifecycle()
     val recommendedCreators by homeVm.recommendedCreators.collectAsStateWithLifecycle()
     val popularByService by homeVm.popularByService.collectAsStateWithLifecycle()
+    val aroundTheWorldRail by homeVm.aroundTheWorld.collectAsStateWithLifecycle()
     val nowNextByService by homeVm.nowNextByService.collectAsStateWithLifecycle()
     val providerByTmdb by homeVm.providerByTmdb.collectAsStateWithLifecycle()
     val preferredGenres by homeVm.preferredGenres.collectAsStateWithLifecycle()
@@ -849,6 +851,32 @@ fun HomeScreen(
             sectionKey = "home_inline_ad",
             dismissed = dismissedAdSlots,
         )
+
+        // Around the World — rotating daily country rail (after Binge Worthy)
+        if (homeReady) {
+            aroundTheWorldRail?.let { around ->
+                AroundTheWorldSection(
+                    subtitle = "Streaming in ${around.country.displayName} today · ${around.providerName}",
+                    shows = around.shows.take(10),
+                    onOpen = { r ->
+                        WatchIntentLogger.get().log(
+                            WatchIntentLogger.IntentEventType.CARD_TAPPED,
+                            titleId = r.id.toString(),
+                            metadata = mapOf("section" to "around_the_world"),
+                        )
+                        onOpenTitle(PendingTitleRoute(titleId = r.id.toString(), titleName = r.displayName, isTv = r.isTV))
+                    },
+                    onSeeAll = {
+                        WatchIntentLogger.get().log(
+                            WatchIntentLogger.IntentEventType.CARD_TAPPED,
+                            metadata = mapOf("section" to "around_the_world_see_all"),
+                        )
+                        onOpenAroundTheWorld(around.country.regionCode)
+                    },
+                    modifier = Modifier.padding(horizontal = widthClass.homeHorizontalPadding, vertical = 8.dp),
+                )
+            }
+        }
 
         // Widget promo banner
         WidgetPromoBanner(
@@ -1769,6 +1797,70 @@ private fun PopularOnServiceSection(
                 PosterCardWithBadge(
                     show = r,
                     platformColor = accentColor,
+                    badgeText = null,
+                    onClick = { onOpen(r) },
+                )
+            }
+        }
+    }
+}
+
+// ── Around the World Section ────────────────────────────────────────────────
+
+@Composable
+private fun AroundTheWorldSection(
+    subtitle: String,
+    shows: List<TMDBResult>,
+    onOpen: (TMDBResult) -> Unit,
+    onSeeAll: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    if (shows.isEmpty()) return
+    Column(modifier) {
+        Row(verticalAlignment = Alignment.Bottom) {
+            Text(
+                text = "Around the World",
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold,
+                color = TextPrimary,
+            )
+            Spacer(Modifier.width(6.dp))
+            Box(
+                modifier = Modifier
+                    .size(6.dp)
+                    .clip(RoundedCornerShape(3.dp))
+                    .background(BrandOrange)
+                    .align(Alignment.Bottom),
+            )
+            Spacer(Modifier.weight(1f))
+            Text(
+                text = "See all",
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = BrandOrange,
+                modifier = Modifier
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                    ) { onSeeAll() },
+            )
+        }
+        Spacer(Modifier.height(2.dp))
+        Text(
+            text = subtitle,
+            fontSize = 12.sp,
+            color = TextSecondary,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Spacer(Modifier.height(10.dp))
+        LazyRow(
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            items(shows) { r ->
+                PosterCardWithBadge(
+                    show = r,
+                    platformColor = BrandOrange,
                     badgeText = null,
                     onClick = { onOpen(r) },
                 )

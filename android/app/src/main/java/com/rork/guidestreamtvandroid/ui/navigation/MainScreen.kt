@@ -39,6 +39,7 @@ import com.rork.guidestreamtvandroid.ui.detail.ShowDetailScreen
 import com.rork.guidestreamtvandroid.ui.reels.ReelsScreen
 import com.rork.guidestreamtvandroid.ui.screens.HomeListScreen
 import com.rork.guidestreamtvandroid.ui.screens.HomeScreen
+import com.rork.guidestreamtvandroid.ui.screens.AroundTheWorldScreen
 import com.rork.guidestreamtvandroid.ui.screens.PopularOnServiceCategoriesScreen
 import com.rork.guidestreamtvandroid.ui.screens.WatchListScreen
 import com.rork.guidestreamtvandroid.ui.screens.WidgetSetupScreen
@@ -89,6 +90,8 @@ fun MainScreen(
     var showCreatorDetail by remember { mutableStateOf<String?>(null) }
     var selectedGame by remember { mutableStateOf<com.rork.guidestreamtvandroid.data.models.SportsGame?>(null) }
     var showPopularCategories by remember { mutableStateOf<PopularCategoriesTarget?>(null) }
+    // Around the World country browser — holds the seed region code.
+    var showAroundTheWorld by remember { mutableStateOf<String?>(null) }
     var showHomeList by remember { mutableStateOf<HomeListTarget?>(null) }
     var showWatchList by remember { mutableStateOf(false) }
     var showWidgetSetup by remember { mutableStateOf(false) }
@@ -153,6 +156,7 @@ fun MainScreen(
                     onSeeAllPopular = { serviceId, providerId ->
                         showPopularCategories = PopularCategoriesTarget(serviceId, providerId)
                     },
+                    onOpenAroundTheWorld = { regionCode -> showAroundTheWorld = regionCode },
                     onSeeAllList = { target -> showHomeList = target },
                     onOpenWatchList = { showWatchList = true },
                     onOpenWidgetSetup = { showWidgetSetup = true },
@@ -185,7 +189,7 @@ fun MainScreen(
         }
 
         // Full-screen overlay open flag — hides the floating tab bar behind opaque covers
-        val overlayOpen = showDetail != null || showCreatorDetail != null || showSearch || selectedGame != null || showPopularCategories != null || showHomeList != null || showWatchList || showWidgetSetup || showAskSheet
+        val overlayOpen = showDetail != null || showCreatorDetail != null || showSearch || selectedGame != null || showPopularCategories != null || showAroundTheWorld != null || showHomeList != null || showWatchList || showWidgetSetup || showAskSheet
 
         // Show detail (full-screen cover equivalent)
         showDetail?.let { route ->
@@ -278,6 +282,31 @@ fun MainScreen(
                     onBack = { showPopularCategories = null },
                     onOpenTitle = { route ->
                         showPopularCategories = null
+                        val kind = SourceKind.from(route.titleId)
+                        if (kind.isNonTMDB) {
+                            showCreatorDetail = route.titleId
+                        } else {
+                            detailSheetRoute = route
+                        }
+                    },
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
+        }
+
+        // Around the World country browser (full-screen cover equivalent)
+        showAroundTheWorld?.let { regionCode ->
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Navy)
+                    .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { },
+            ) {
+                AroundTheWorldScreen(
+                    regionCode = regionCode,
+                    onBack = { showAroundTheWorld = null },
+                    onOpenTitle = { route ->
+                        showAroundTheWorld = null
                         val kind = SourceKind.from(route.titleId)
                         if (kind.isNonTMDB) {
                             showCreatorDetail = route.titleId

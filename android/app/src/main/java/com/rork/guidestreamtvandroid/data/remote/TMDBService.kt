@@ -122,9 +122,25 @@ class TMDBService {
      *  service. Uses the device's resolved region (US fallback) and the same
      *  flatrate+ads monetization filter as the home rails. The with_type
      *  parameter was removed — it was set to 0 (Documentary), which silently
-     *  filtered out all scripted series. */
-    suspend fun discoverByProvider(providerId: Int, limit: Int = 15): List<TMDBResult> {
-        val results = fetchList("$base/discover/tv?api_key=$apiKey&language=${DeviceLocale.tmdbLanguage}&sort_by=popularity.desc&watch_region=${DeviceLocale.region}&with_watch_providers=$providerId&with_watch_monetization_types=flatrate%7Cads&page=1", "tv")
+     *  filtered out all scripted series.
+     *
+     *  Optional filters (all default null → current behaviour) let other
+     *  surfaces target a specific region, original language, minimum vote
+     *  count, and excluded keyword ids — used by the Around the World browse
+     *  feature. Each param is appended to the query only when non-null. */
+    suspend fun discoverByProvider(
+        providerId: Int,
+        limit: Int = 15,
+        region: String? = null,
+        originalLanguage: String? = null,
+        voteCountGte: Int? = null,
+        withoutKeywords: String? = null,
+    ): List<TMDBResult> {
+        var url = "$base/discover/tv?api_key=$apiKey&language=${DeviceLocale.tmdbLanguage}&sort_by=popularity.desc&watch_region=${region ?: DeviceLocale.region}&with_watch_providers=$providerId&with_watch_monetization_types=flatrate%7Cads&page=1"
+        if (originalLanguage != null) url += "&with_original_language=$originalLanguage"
+        if (voteCountGte != null) url += "&vote_count.gte=$voteCountGte"
+        if (withoutKeywords != null) url += "&without_keywords=$withoutKeywords"
+        val results = fetchList(url, "tv")
         return results.take(limit)
     }
 

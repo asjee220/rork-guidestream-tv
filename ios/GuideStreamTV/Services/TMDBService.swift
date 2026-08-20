@@ -522,9 +522,24 @@ nonisolated struct TMDBService {
     /// flatrate+ads monetization filter as the home rails so results are
     /// consistent. The `with_type` parameter was removed — it was set to 0
     /// (Documentary), which silently filtered out all scripted series.
-    func discoverByProvider(providerId: Int, limit: Int = 15) async throws -> [TMDBResult] {
+    ///
+    /// Optional filters (all default nil → current behaviour) let other
+    /// surfaces target a specific region, original language, minimum vote
+    /// count, and excluded keyword ids — used by the Around the World browse
+    /// feature. Each param is appended to the query only when non-nil.
+    func discoverByProvider(
+        providerId: Int,
+        limit: Int = 15,
+        region: String? = nil,
+        originalLanguage: String? = nil,
+        voteCountGte: Int? = nil,
+        withoutKeywords: String? = nil
+    ) async throws -> [TMDBResult] {
         let locale = DeviceLocale.current()
-        let urlString = "\(base)/discover/tv?api_key=\(apiKey)&language=\(locale.tmdbLanguage)&sort_by=popularity.desc&watch_region=\(locale.region)&with_watch_providers=\(providerId)&with_watch_monetization_types=flatrate%7Cads&page=1"
+        var urlString = "\(base)/discover/tv?api_key=\(apiKey)&language=\(locale.tmdbLanguage)&sort_by=popularity.desc&watch_region=\(region ?? locale.region)&with_watch_providers=\(providerId)&with_watch_monetization_types=flatrate%7Cads&page=1"
+        if let originalLanguage { urlString += "&with_original_language=\(originalLanguage)" }
+        if let voteCountGte { urlString += "&vote_count.gte=\(voteCountGte)" }
+        if let withoutKeywords { urlString += "&without_keywords=\(withoutKeywords)" }
         let data = try await get(urlString)
         let env = try JSONDecoder().decode(TMDBTrendingEnvelope.self, from: data)
         return Array(env.results.map { stamp($0, mediaType: "tv") }.prefix(limit))

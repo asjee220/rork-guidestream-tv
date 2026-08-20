@@ -2,6 +2,8 @@ package com.rork.guidestreamtvandroid.ui.home
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.rork.guidestreamtvandroid.data.CountryCatalog
+import com.rork.guidestreamtvandroid.data.CountryCatalogEntry
 import com.rork.guidestreamtvandroid.data.models.Platform
 import com.rork.guidestreamtvandroid.data.models.SourceKind
 import com.rork.guidestreamtvandroid.data.models.StreamingCatalog
@@ -56,6 +58,17 @@ data class NowNextEntry(
     /** True for streaming_releases rows — renders the green NEW pill.
      * False with null [dateText] marks a TMDB backfill card (no pill). */
     val isNow: Boolean,
+)
+
+/**
+ * The loaded "Around the World" rail: the country + provider it was built
+ * from, plus the top ten titles for that combination. Null until loaded;
+ * the rail hides when the fetch fails or returns nothing.
+ */
+data class AroundTheWorldRail(
+    val country: CountryCatalogEntry,
+    val providerName: String,
+    val shows: List<TMDBResult>,
 )
 
 class HomeViewModel : ViewModel() {
@@ -114,6 +127,11 @@ class HomeViewModel : ViewModel() {
 
     private val _popularByService = MutableStateFlow<Map<String, List<TMDBResult>>>(emptyMap())
     val popularByService: StateFlow<Map<String, List<TMDBResult>>> = _popularByService.asStateFlow()
+
+    /** "Around the World" rail — today's rotating country's first provider's
+     *  top ten titles. Loaded fire-and-forget; never gates [homeContentReady]. */
+    private val _aroundTheWorld = MutableStateFlow<AroundTheWorldRail?>(null)
+    val aroundTheWorld: StateFlow<AroundTheWorldRail?> = _aroundTheWorld.asStateFlow()
 
     /** Assembled "Now & Next on {service}" rail entries keyed by catalogue service id. */
     private val _nowNextByService = MutableStateFlow<Map<String, List<NowNextEntry>>>(emptyMap())
@@ -259,6 +277,8 @@ class HomeViewModel : ViewModel() {
             launchDeferred { pushWidgetFeed() }
             launchDeferred { _upcoming.value = tmdb.getUpcomingMovies() }
             launchDeferred { _bingeReady.value = tmdb.getDiscoverEnded() }
+            // Around the World rail — fire-and-forget so it never blocks Home.
+            launchDeferred { loadAroundTheWorldRail() }
             // Second provider pass. The 8s watchdog can flip the gate while
             // trending is still empty, so first suspend until the list is
             // non-empty, then resolve the first 40. Idempotent:
@@ -367,6 +387,32 @@ class HomeViewModel : ViewModel() {
             if (items.isNotEmpty()) next[serviceId] = items
         }
         _popularByService.value = next
+    }
+
+    /**
+     * Loads the rotating "Around the World" rail: today's country and its
+     * first provider's top ten titles. Fire-and-forget — never blocks Home,
+     * and the rail stays hidden when the fetch fails or returns nothing.
+     */
+    private suspend fun loadAroundTheWorldRail() {
+        val country = CountryCatalog.countryOfDay
+        val provider = country.providers.firstOrNull() ?: return
+        val results = try {
+            tmdb.discoverByProvider(
+                providerId = provider.id,
+                limit = 10,
+                region = country.regionCode,
+                originalLanguage = country.originalLanguage,
+                voteCountGte = 100,
+                withoutKeywords = "198385",
+            )
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            emptyList()
+        }
+        if (results.isEmpty()) return
+        _aroundTheWorld.value = AroundTheWorldRail(country, provider.name, results)
     }
 
     /**
