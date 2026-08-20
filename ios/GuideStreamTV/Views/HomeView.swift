@@ -1229,7 +1229,10 @@ struct HomeView: View {
                 }
                 .animation(.spring(response: 0.4, dampingFraction: 0.82), value: castPlayback.current?.id)
                 .onGeometryChange(for: CGFloat.self) { proxy in
-                    proxy.safeAreaInsets.top
+                    // Zero when the header already sits below the status bar
+                    // (all phones); iPad / Stage Manager windows whose header
+                    // starts at the very top still get the full clearance.
+                    max(0, proxy.safeAreaInsets.top - proxy.frame(in: .global).minY)
                 } action: { topInset in
                     if topInset != headerTopInset {
                         headerTopInset = topInset
