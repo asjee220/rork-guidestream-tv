@@ -402,8 +402,8 @@ class HomeViewModel : ViewModel() {
                 providerId = provider.id,
                 limit = 10,
                 region = country.regionCode,
-                originalLanguage = country.originalLanguage,
-                voteCountGte = 100,
+                originalLanguage = country.effectiveOriginalLanguage(provider),
+                voteCountGte = country.voteFloor(provider),
                 withoutKeywords = "198385",
             )
         } catch (cancelled: CancellationException) {

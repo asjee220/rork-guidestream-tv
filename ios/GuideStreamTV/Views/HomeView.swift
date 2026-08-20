@@ -2249,8 +2249,8 @@ struct HomeView: View {
             providerId: provider.id,
             limit: 10,
             region: country.regionCode,
-            originalLanguage: country.originalLanguage,
-            voteCountGte: 100,
+            originalLanguage: country.effectiveOriginalLanguage(for: provider),
+            voteCountGte: country.voteFloor(for: provider),
             withoutKeywords: "198385"
         )) ?? []
         guard !results.isEmpty else { return }

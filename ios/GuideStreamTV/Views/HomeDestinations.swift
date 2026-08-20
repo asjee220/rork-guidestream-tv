@@ -453,8 +453,8 @@ struct AroundTheWorldView: View {
             providerId: provider.id,
             limit: 40,
             region: entry.regionCode,
-            originalLanguage: entry.originalLanguage,
-            voteCountGte: 100,
+            originalLanguage: entry.effectiveOriginalLanguage(for: provider),
+            voteCountGte: entry.voteFloor(for: provider),
             withoutKeywords: "198385"
         )) ?? []
         resultsByKey[key] = results.map { poster(from: $0) }
