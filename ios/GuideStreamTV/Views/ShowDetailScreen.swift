@@ -153,21 +153,26 @@ final class ShowDetailViewModel {
             }
             self.currentSeasonNumber = seasonNum
 
-            // Resolve streaming sources through the shared resolver
-            self.resolved = await resolveTask.value
+            // Season fetch needs only tmdbId and seasonNum — start it now so
+            // it overlaps the streaming resolve instead of waiting for it.
+            let seasonTask = Task { try await TMDBService.shared.getSeason(tmdbId: tmdbId, seasonNumber: seasonNum) }
+
+            // TVDB enrichment fires alongside the core data loads —
+            // non-blocking, silently ignored on failure so the sheet always
+            // renders.
+            Task { await enrichWithTVDB(tmdbId: tmdbId) }
 
             // Season fetch wrapped in try‑catch so a TMDB outage doesn't
             // leave the episodes section silently blank.
             do {
-                self.season = try await TMDBService.shared.getSeason(tmdbId: tmdbId, seasonNumber: seasonNum)
+                self.season = try await seasonTask.value
             } catch {
                 errorMessage = "Failed to load episodes for this season"
                 self.season = nil
             }
 
-            // TVDB enrichment fires after core data loads — non-blocking,
-            // silently ignored on failure so the sheet always renders.
-            Task { await enrichWithTVDB(tmdbId: tmdbId) }
+            // Resolve streaming sources through the shared resolver
+            self.resolved = await resolveTask.value
         } else {
             // Movie — load metadata from TMDB (mirroring the TV path). A TMDB id
             // must never be routed through Watchmode's titleDetail, which would
