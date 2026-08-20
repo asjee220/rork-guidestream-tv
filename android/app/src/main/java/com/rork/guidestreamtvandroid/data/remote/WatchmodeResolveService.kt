@@ -16,6 +16,7 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 
@@ -76,30 +77,67 @@ object WatchmodeResolveService {
             val client = HttpClient {
                 install(ContentNegotiation) { json(Json { ignoreUnknownKeys = true }) }
             }
-            val url = "${SupabaseConfig.URL.trim()}/functions/v1/watchmode_resolve"
-            val body = buildJsonObject {
-                put("tmdbId", JsonPrimitive(tmdbId))
-                put("isTV", JsonPrimitive(isTV))
-                put("subscribedServices", JsonArray(subscribedServices.map { JsonPrimitive(it) }))
-                if (season != null) put("season", JsonPrimitive(season))
-                if (episode != null) put("episode", JsonPrimitive(episode))
-                if (episodePlatformHint != null) put("episodePlatformHint", JsonPrimitive(episodePlatformHint))
-                if (sourceId != null) put("sourceId", JsonPrimitive(sourceId))
+            try {
+                val url = "${SupabaseConfig.URL.trim()}/functions/v1/watchmode_resolve"
+                val decoded = post(client, url, buildBody(tmdbId, isTV, subscribedServices, season, episode, episodePlatformHint, sourceId))
+                    ?: return WatchmodeResolveResponse()
+                // A saved movie stored with the wrong media type resolves to
+                // no sources at all — retry exactly once with isTV omitted so
+                // the server probes TV then movie, and keep the retry only
+                // when it found something.
+                if (decoded.primarySource == null && decoded.usSources.isEmpty()) {
+                    val retried = post(client, url, buildBody(tmdbId, null, subscribedServices, season, episode, episodePlatformHint, sourceId))
+                    if (retried != null && (retried.primarySource != null || retried.usSources.isNotEmpty())) {
+                        return retried
+                    }
+                }
+                decoded
+            } finally {
+                client.close()
             }
+        } catch (_: Exception) {
+            WatchmodeResolveResponse()
+        }
+    }
+
+    /**
+     * Builds the request body, omitting null parameters rather than sending
+     * nulls; a null [isTV] is omitted so the server probes both media types.
+     */
+    private fun buildBody(
+        tmdbId: Int,
+        isTV: Boolean?,
+        subscribedServices: List<String>,
+        season: Int?,
+        episode: Int?,
+        episodePlatformHint: String?,
+        sourceId: Int?,
+    ) = buildJsonObject {
+        put("tmdbId", JsonPrimitive(tmdbId))
+        if (isTV != null) put("isTV", JsonPrimitive(isTV))
+        put("subscribedServices", JsonArray(subscribedServices.map { JsonPrimitive(it) }))
+        if (season != null) put("season", JsonPrimitive(season))
+        if (episode != null) put("episode", JsonPrimitive(episode))
+        if (episodePlatformHint != null) put("episodePlatformHint", JsonPrimitive(episodePlatformHint))
+        if (sourceId != null) put("sourceId", JsonPrimitive(sourceId))
+    }
+
+    /**
+     * Single POST + decode. Returns null on transport failure, non-200
+     * status, or decode failure so the caller never retries those.
+     */
+    private suspend fun post(client: HttpClient, url: String, payload: JsonObject): WatchmodeResolveResponse? {
+        return try {
             val response: HttpResponse = client.post(url) {
                 contentType(ContentType.Application.Json)
                 header(HttpHeaders.ContentType, "application/json")
                 header("apikey", SupabaseConfig.ANON_KEY)
                 header(HttpHeaders.Authorization, "Bearer ${SupabaseConfig.ANON_KEY}")
-                setBody(body.toString())
+                setBody(payload.toString())
             }
-            if (response.status.value == 200) {
-                response.body()
-            } else {
-                WatchmodeResolveResponse()
-            }
+            if (response.status.value == 200) response.body() else null
         } catch (_: Exception) {
-            WatchmodeResolveResponse()
+            null
         }
     }
 }

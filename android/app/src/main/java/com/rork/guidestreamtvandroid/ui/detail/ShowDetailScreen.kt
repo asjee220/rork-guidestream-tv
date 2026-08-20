@@ -120,6 +120,7 @@ fun ShowDetailScreen(
     val isLoading by vm.isLoading.collectAsStateWithLifecycle()
     val errorMessage by vm.errorMessage.collectAsStateWithLifecycle()
     val currentSeason by vm.currentSeasonNumber.collectAsStateWithLifecycle()
+    val effectiveIsTV by vm.effectiveIsTV.collectAsStateWithLifecycle()
     val userStreams by streamsVm.userStreams.collectAsStateWithLifecycle()
     val watchedIds by streamsVm.watchedIds.collectAsStateWithLifecycle()
 
@@ -152,17 +153,17 @@ fun ShowDetailScreen(
             s.isNotEmpty() && (n.contains(s) || s.contains(n))
         }
     }
-    androidx.compose.runtime.LaunchedEffect(titleId, detail?.id) {
+    androidx.compose.runtime.LaunchedEffect(titleId, detail?.id, effectiveIsTV) {
         val tid = TitleId.tmdbId(titleId)
         if (tid != null) {
-            if (isTV && detail == null) return@LaunchedEffect
-            val seasonNum = if (isTV) detail?.lastEpisodeToAir?.seasonNumber else null
-            val episodeNum = if (isTV) detail?.lastEpisodeToAir?.episodeNumber else null
+            if (effectiveIsTV && detail == null) return@LaunchedEffect
+            val seasonNum = if (effectiveIsTV) detail?.lastEpisodeToAir?.seasonNumber else null
+            val episodeNum = if (effectiveIsTV) detail?.lastEpisodeToAir?.episodeNumber else null
             val subscribedNames = StreamingCatalog.ordered(selectedServices).map { it.name }
             val response = try {
                 withContext(Dispatchers.IO) {
                     WatchmodeResolveService.resolve(
-                        tid, isTV,
+                        tid, effectiveIsTV,
                         subscribedServices = subscribedNames,
                         season = seasonNum,
                         episode = episodeNum,
@@ -191,11 +192,11 @@ fun ShowDetailScreen(
     var reelsStartIndex by remember { mutableStateOf(0) }
 
     // Load on first composition
-    androidx.compose.runtime.LaunchedEffect(titleId) {
+    androidx.compose.runtime.LaunchedEffect(titleId, effectiveIsTV) {
         vm.loadIfNeeded(titleId, isTV, expectedTitle = titleName)
         val tid = TitleId.tmdbId(titleId)
         trailerVideos = if (tid != null) {
-            try { TMDBService.get().getTitleVideos(tid, isTV) } catch (_: Exception) { emptyList() }
+            try { TMDBService.get().getTitleVideos(tid, effectiveIsTV) } catch (_: Exception) { emptyList() }
         } else emptyList()
     }
     androidx.compose.runtime.LaunchedEffect(detail?.name) {
@@ -358,13 +359,13 @@ fun ShowDetailScreen(
                             episodeSource = null
                             val tid = TitleId.tmdbId(titleId)
                             if (tid != null) {
-                                val seasonNum = if (isTV) detail?.lastEpisodeToAir?.seasonNumber else null
-                                val episodeNum = if (isTV) detail?.lastEpisodeToAir?.episodeNumber else null
+                                val seasonNum = if (effectiveIsTV) detail?.lastEpisodeToAir?.seasonNumber else null
+                                val episodeNum = if (effectiveIsTV) detail?.lastEpisodeToAir?.episodeNumber else null
                                 scope.launch {
                                     val resp = try {
                                         withContext(Dispatchers.IO) {
                                             WatchmodeResolveService.resolve(
-                                                tid, isTV,
+                                                tid, effectiveIsTV,
                                                 sourceId = source.sourceId,
                                                 season = seasonNum,
                                                 episode = episodeNum,

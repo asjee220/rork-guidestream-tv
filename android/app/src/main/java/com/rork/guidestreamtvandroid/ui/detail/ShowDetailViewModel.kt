@@ -45,6 +45,13 @@ class ShowDetailViewModel : ViewModel() {
     private val _currentSeasonNumber = MutableStateFlow(1)
     val currentSeasonNumber: StateFlow<Int> = _currentSeasonNumber.asStateFlow()
 
+    /** Media type after the legacy heal — starts as the caller's [isTV] and
+     *  flips to false when a saved TV row turns out to be a movie. The screen
+     *  uses this instead of its own isTV parameter for streaming-source and
+     *  video lookups, so a healed movie resolves sources as a movie. */
+    private val _effectiveIsTV = MutableStateFlow(true)
+    val effectiveIsTV: StateFlow<Boolean> = _effectiveIsTV.asStateFlow()
+
     private var loadedTitleId: String? = null
 
     companion object {
@@ -57,6 +64,7 @@ class ShowDetailViewModel : ViewModel() {
     fun loadIfNeeded(titleId: String, isTV: Boolean, expectedTitle: String? = null) {
         if (loadedTitleId == titleId) return
         loadedTitleId = titleId
+        _effectiveIsTV.value = isTV
         _isLoading.value = true
         _errorMessage.value = null
         viewModelScope.launch(Dispatchers.IO) {
@@ -96,6 +104,7 @@ class ShowDetailViewModel : ViewModel() {
                     if (detailResult == null || healedMovie != null) {
                         _detail.value = healedMovie
                         if (healedMovie != null) {
+                            _effectiveIsTV.value = false
                             // Persist the correction once for saved watch-list
                             // rows so the heal never has to fire again.
                             val streams = StreamsViewModel.get()
@@ -163,5 +172,6 @@ class ShowDetailViewModel : ViewModel() {
         _errorMessage.value = null
         _isLoading.value = false
         _currentSeasonNumber.value = 1
+        _effectiveIsTV.value = true
     }
 }
