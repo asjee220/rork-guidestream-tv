@@ -1154,7 +1154,7 @@ struct HomeView: View {
                     }
                     .padding(.top, 4)
                 }
-                .safeAreaInset(edge: .top, spacing: 0) {
+                .safeAreaInset(edge: .top, spacing: 5) {
                     VStack(spacing: 0) {
                         PageBar(
                             selectedServiceIds: orderedSelectedServiceIds,
@@ -2952,7 +2952,7 @@ private struct PageBar: View {
             }
         }
         .padding(.horizontal, 12)
-        .frame(height: 56)
+        .frame(height: 55)
     }
 }
 
