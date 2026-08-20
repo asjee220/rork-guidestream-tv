@@ -1319,10 +1319,8 @@ struct EpisodeDetailSheet: View {
                 icon: "tv",
                 label: "Send to TV",
                 tint: .white,
-                showDot: false,
-                isLoading: isResolvingEpisodeSources
+                showDot: false
             ) {
-                guard !isResolvingEpisodeSources else { return }
                 UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                 showCastSheet = true
             }

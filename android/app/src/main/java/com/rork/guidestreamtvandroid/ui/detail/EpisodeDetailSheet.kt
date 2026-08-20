@@ -465,9 +465,8 @@ fun EpisodeDetailSheet(
                         label = "Send to TV",
                         tint = TextPrimary,
                         showDot = false,
-                        isLoading = isResolvingSources,
                     ) {
-                        if (!isResolvingSources) showCast = true
+                        showCast = true
                     }
                 }
 
