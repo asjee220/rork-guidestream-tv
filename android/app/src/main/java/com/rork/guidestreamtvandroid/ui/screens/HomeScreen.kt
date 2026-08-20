@@ -1151,6 +1151,7 @@ private fun TodaysPickSpotlight(
                 fontWeight = FontWeight.Black,
                 color = orange,
                 letterSpacing = 1.2.sp,
+                maxLines = 1,
             )
             Spacer(Modifier.weight(1f))
             Text(
@@ -1158,6 +1159,9 @@ private fun TodaysPickSpotlight(
                 fontSize = 15.sp,
                 fontWeight = FontWeight.Medium,
                 color = Color.White.copy(alpha = 0.5f),
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis,
             )
         }
 
