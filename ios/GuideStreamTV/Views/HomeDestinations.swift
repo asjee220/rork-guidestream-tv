@@ -976,10 +976,11 @@ struct EpisodeDetailSheet: View {
             return nil
         }()
 
+        // Hint-free so this call is a cache hit for prefetched titles (the
+        // resolver's cache key includes episodePlatformHint).
         let r = await StreamingSourceResolver.shared.resolve(
             tmdbId: tmdbId,
-            isTV: isTV,
-            episodePlatformHint: hint
+            isTV: isTV
         )
 
         await MainActor.run {
@@ -987,6 +988,19 @@ struct EpisodeDetailSheet: View {
             self.resolvedOverview = r.overview
             self.resolvedProviderName = r.providerNameFallback
             self.allSources = r.usSources
+            // Bias the primary toward the episode row's known platform when
+            // it's one of the resolved US sources (case-insensitive, either
+            // direction — same match as PlayOnBottomSheet.resolveStreamingSource),
+            // falling back to primarySource when nothing matches.
+            if let hint {
+                let key = hint.lowercased()
+                if let match = r.usSources.first(where: {
+                    let n = $0.name.lowercased()
+                    return n.contains(key) || key.contains(n)
+                }) {
+                    self.resolvedSource = match
+                }
+            }
         }
     }
 

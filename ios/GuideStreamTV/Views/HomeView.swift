@@ -1070,7 +1070,7 @@ struct HomeView: View {
                                         titleId: String(item.id),
                                         metadata: ["section": "upcoming_episodes"]
                                     )
-                                    prefetchResolve(tmdbId: item.id, isTV: true)
+                                    prefetchResolve(tmdbId: item.id, isTV: true, season: item.seasonNumber, episode: item.episodeNumber)
                                     detailSubject = .show(PosterShow(
                                         title: item.showTitle,
                                         meta: item.platform?.name ?? "Upcoming",
@@ -1503,9 +1503,15 @@ struct HomeView: View {
     /// Warms the streaming-source resolve cache for a title the user is about
     /// to open, so the detail sheet's own resolve call is an instant cache hit
     /// (see StreamingSourceResolver). Fire-and-forget; no-ops without a TMDB id.
-    private func prefetchResolve(tmdbId: Int?, isTV: Bool) {
+    /// When both season and episode are provided, also warms Watchmode's
+    /// episode-level resolve (the same hint-free call the sheet's Send-to-TV
+    /// spinner waits on) so that round trip is a cache hit too.
+    private func prefetchResolve(tmdbId: Int?, isTV: Bool, season: Int? = nil, episode: Int? = nil) {
         guard let tmdbId else { return }
         Task { _ = await StreamingSourceResolver.shared.resolve(tmdbId: tmdbId, isTV: isTV) }
+        if let season, let episode {
+            Task { _ = await WatchmodeResolveService.resolve(tmdbId: tmdbId, isTV: isTV, season: season, episode: episode) }
+        }
     }
 
     /// Clear the app icon badge and flag day-old new episodes as seen so the next launch doesn't re-pulse them.
