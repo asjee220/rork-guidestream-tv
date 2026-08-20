@@ -1142,12 +1142,12 @@ private fun TodaysPickSpotlight(
         ) {
             Text(
                 text = "\uD83D\uDD25",
-                fontSize = 14.sp,
+                fontSize = 17.sp,
             )
             Spacer(Modifier.width(6.dp))
             Text(
                 text = "TODAY'S PICK",
-                fontSize = 12.sp,
+                fontSize = 15.sp,
                 fontWeight = FontWeight.Black,
                 color = orange,
                 letterSpacing = 1.2.sp,
@@ -1155,7 +1155,7 @@ private fun TodaysPickSpotlight(
             Spacer(Modifier.weight(1f))
             Text(
                 text = dateString,
-                fontSize = 12.sp,
+                fontSize = 15.sp,
                 fontWeight = FontWeight.Medium,
                 color = Color.White.copy(alpha = 0.5f),
             )

@@ -3043,16 +3043,19 @@ private struct TodaysPickSection: View {
                 // Eyebrow row: flame + "TODAY'S PICK" + trailing date
                 HStack(spacing: 8) {
                     Image(systemName: "flame.fill")
-                        .font(.system(size: 14, weight: .bold))
+                        .scaledFont(size: 17, weight: .bold)
                         .foregroundStyle(orange)
                     Text("TODAY'S PICK")
-                        .font(.system(size: 12, weight: .heavy))
+                        .scaledFont(size: 15, weight: .heavy)
                         .tracking(1.2)
                         .foregroundStyle(orange)
+                        .lineLimit(1)
                     Spacer()
                     Text(dateString)
-                        .font(.system(size: 12, weight: .medium))
+                        .scaledFont(size: 15, weight: .medium)
                         .foregroundStyle(Color.white.opacity(0.5))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.5)
                 }
                 .padding(.horizontal, 16)
                 .padding(.top, 14)
