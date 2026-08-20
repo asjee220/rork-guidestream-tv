@@ -146,7 +146,7 @@ struct PlayOnBottomSheet: View {
             )
         }
         #endif
-        .task(id: tmdbId ?? -1) {
+        .task(id: isOpen ? (tmdbId ?? -1) : nil) {
             await resolveStreamingSource()
         }
     }

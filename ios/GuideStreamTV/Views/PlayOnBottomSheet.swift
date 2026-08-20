@@ -290,7 +290,7 @@ struct PlayOnBottomSheet: View {
                 watchmodeSource: resolvedSource
             )
         }
-        .task(id: tmdbId ?? -1) {
+        .task(id: isOpen ? (tmdbId ?? -1) : nil) {
             episodeSourceUnavailable = false
             isResolvingEpisodeSources = false
             await resolveStreamingSource()
