@@ -346,12 +346,6 @@ struct HomeView: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.tabBarVisibility) private var tabBarVisibility
     @State private var coachMark = CoachMarkManager.shared
-    /// Top safe-area inset measured at the pinned header overlay. The header
-    /// and its matching scroll-content spacer grow by this amount so the
-    /// wordmark stays clear of the status bar on tablets; it reads zero
-    /// wherever the header already sits below the safe area, leaving phone
-    /// layout byte-for-byte unchanged.
-    @State private var headerTopInset: CGFloat = 0
     /// Current window width class, used to make home section containers
     /// stretch edge-to-edge on tablets while keeping phone gutters unchanged.
     @State private var homeWidthClass: GSWidthClass = .compact
@@ -493,8 +487,6 @@ struct HomeView: View {
                 ScrollViewReader { scrollProxy in
                 ScrollView(showsIndicators: false) {
                     VStack(spacing: 20) {
-                        Color.clear.frame(height: 56 + headerTopInset)
-
                         // Search bar tap target — opens SearchView
                         Button {
                             showSearch = true
@@ -1162,6 +1154,47 @@ struct HomeView: View {
                     }
                     .padding(.top, 4)
                 }
+                .safeAreaInset(edge: .top, spacing: 0) {
+                    VStack(spacing: 0) {
+                        PageBar(
+                            selectedServiceIds: orderedSelectedServiceIds,
+                            onServicesPill: { showServicesSheet = true }
+                        )
+                        if let session = castPlayback.current {
+                            PlayingOnBanner(
+                                session: session,
+                                onTapRemote: {
+                                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                    if session.deviceKind == .roku {
+                                        castPlayback.openRokuRemote()
+                                    }
+                                },
+                                onDismiss: {
+                                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                    withAnimation(.easeOut(duration: 0.25)) {
+                                        castPlayback.stop()
+                                    }
+                                }
+                            )
+                            .padding(.horizontal, homeWidthClass.homeHorizontalPadding)
+                            .padding(.top, 6)
+                            .transition(.move(edge: .top).combined(with: .opacity))
+                        }
+                    }
+                    .background {
+                        ZStack {
+                            Rectangle().fill(.ultraThinMaterial).opacity(0.61)
+                            Rectangle().fill(Color(red: 8/255, green: 14/255, blue: 24/255).opacity(0.18))
+                        }
+                        .ignoresSafeArea(edges: .top)
+                    }
+                    .overlay(alignment: .bottom) {
+                        Rectangle()
+                            .fill(Color.white.opacity(0.05))
+                            .frame(height: 0.5)
+                    }
+                    .animation(.spring(response: 0.4, dampingFraction: 0.82), value: castPlayback.current?.id)
+                }
                 .tracksTabBarVisibility()
                 .refreshable {
                     await streams.refreshAll()
@@ -1187,58 +1220,6 @@ struct HomeView: View {
                     }
                 }
                 } // ScrollViewReader
-
-                VStack(spacing: 0) {
-                    PageBar(
-                        selectedServiceIds: orderedSelectedServiceIds,
-                        onServicesPill: { showServicesSheet = true },
-                        topInset: headerTopInset
-                    )
-                    if let session = castPlayback.current {
-                        PlayingOnBanner(
-                            session: session,
-                            onTapRemote: {
-                                UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                                if session.deviceKind == .roku {
-                                    castPlayback.openRokuRemote()
-                                }
-                            },
-                            onDismiss: {
-                                UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                                withAnimation(.easeOut(duration: 0.25)) {
-                                    castPlayback.stop()
-                                }
-                            }
-                        )
-                        .padding(.horizontal, homeWidthClass.homeHorizontalPadding)
-                        .padding(.top, 6)
-                        .transition(.move(edge: .top).combined(with: .opacity))
-                    }
-                }
-                .background {
-                    ZStack {
-                        Rectangle().fill(.ultraThinMaterial).opacity(0.61)
-                        Rectangle().fill(Color(red: 8/255, green: 14/255, blue: 24/255).opacity(0.18))
-                    }
-                    .ignoresSafeArea(edges: .top)
-                }
-                .overlay(alignment: .bottom) {
-                    Rectangle()
-                        .fill(Color.white.opacity(0.05))
-                        .frame(height: 0.5)
-                }
-                .animation(.spring(response: 0.4, dampingFraction: 0.82), value: castPlayback.current?.id)
-                .onGeometryChange(for: CGFloat.self) { proxy in
-                    // Zero when the header already sits below the status bar
-                    // (all phones); iPad / Stage Manager windows whose header
-                    // starts at the very top still get the full clearance.
-                    max(0, proxy.safeAreaInsets.top - proxy.frame(in: .global).minY)
-                } action: { topInset in
-                    if topInset != headerTopInset {
-                        headerTopInset = topInset
-                    }
-                }
-
 
             }
             .background(BrandBackground())
@@ -2958,10 +2939,6 @@ struct HomeView: View {
 private struct PageBar: View {
     let selectedServiceIds: [String]
     let onServicesPill: () -> Void
-    /// Top safe-area inset at the pinned bar. The bar grows by this amount so
-    /// its content sits below the status bar; zero wherever the bar already
-    /// sits below the safe area (all phones), rendering identical to before.
-    let topInset: CGFloat
 
     var body: some View {
         HStack(spacing: 10) {
@@ -2976,7 +2953,6 @@ private struct PageBar: View {
         }
         .padding(.horizontal, 12)
         .frame(height: 56)
-        .padding(.top, topInset)
     }
 }
 
