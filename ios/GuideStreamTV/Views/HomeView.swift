@@ -536,6 +536,7 @@ struct HomeView: View {
                                         platformId: platform?.name.lowercased() ?? "tmdb",
                                         metadata: ["section": "hero_carousel"]
                                     )
+                                    prefetchResolve(tmdbId: result.id, isTV: result.isTV)
                                     detailSubject = .show(mediaAsPoster(result, platform: platform))
                                 },
                                 onSelectGame: { game in
@@ -619,6 +620,7 @@ struct HomeView: View {
                                     titleId: String(pick.tmdbId),
                                     metadata: ["section": "todays_pick"]
                                 )
+                                prefetchResolve(tmdbId: pick.tmdbId, isTV: pick.tmdbType == "tv")
                                 detailSubject = .show(PosterShow(
                                     title: pick.title,
                                     meta: pick.sourceName ?? "",
@@ -695,6 +697,7 @@ struct HomeView: View {
                                                         titleId: WatchIntentLogger.titleSlug(show.title),
                                                         metadata: ["section": "around_the_world"]
                                                     )
+                                                    prefetchResolve(tmdbId: show.tmdbId, isTV: show.isTV)
                                                     detailSubject = .show(show)
                                                 })
                                             }
@@ -726,6 +729,7 @@ struct HomeView: View {
                                         titleId: WatchIntentLogger.titleSlug(item.show.title),
                                         metadata: ["section": "coming_to_streaming"]
                                     )
+                                    prefetchResolve(tmdbId: item.show.tmdbId, isTV: item.show.isTV)
                                     detailSubject = .show(item.show)
                                 }
                             )
@@ -751,6 +755,7 @@ struct HomeView: View {
                                         titleId: WatchIntentLogger.titleSlug(show.title),
                                         metadata: ["section": "whats_new_today"]
                                     )
+                                    prefetchResolve(tmdbId: show.tmdbId, isTV: show.isTV)
                                     detailSubject = .show(show)
                                 }
                             )
@@ -779,6 +784,7 @@ struct HomeView: View {
                                         titleId: WatchIntentLogger.titleSlug(show.title),
                                         metadata: ["section": "top_picks"]
                                     )
+                                    prefetchResolve(tmdbId: show.tmdbId, isTV: show.isTV)
                                     detailSubject = .show(show)
                                 }
                             )
@@ -834,6 +840,7 @@ struct HomeView: View {
                                         titleId: WatchIntentLogger.titleSlug(show.title),
                                         metadata: ["section": "everyones_watching"]
                                     )
+                                    prefetchResolve(tmdbId: show.tmdbId, isTV: show.isTV)
                                     detailSubject = .show(show)
                                 }
                             )
@@ -862,6 +869,7 @@ struct HomeView: View {
                                         titleId: WatchIntentLogger.titleSlug(show.title),
                                         metadata: ["section": "leaving_soon"]
                                     )
+                                    prefetchResolve(tmdbId: show.tmdbId, isTV: show.isTV)
                                     detailSubject = .show(show)
                                 }
                             )
@@ -902,6 +910,7 @@ struct HomeView: View {
                                                 titleId: WatchIntentLogger.titleSlug(show.title),
                                                 metadata: ["section": "popular_on_\(service.id)"]
                                             )
+                                            prefetchResolve(tmdbId: show.tmdbId, isTV: show.isTV)
                                             detailSubject = .show(show)
                                         },
                                         onSeeAll: tmdbProviderIdMap[service.id].map { providerId in
@@ -927,6 +936,7 @@ struct HomeView: View {
                                                 titleId: WatchIntentLogger.titleSlug(entry.show.title),
                                                 metadata: ["section": "now_next_\(service.id)"]
                                             )
+                                            prefetchResolve(tmdbId: entry.show.tmdbId, isTV: entry.show.isTV)
                                             detailSubject = .show(entry.show)
                                         },
                                         onSeeAll: {
@@ -991,6 +1001,7 @@ struct HomeView: View {
                                                 "genre": selectedGenreName
                                             ]
                                         )
+                                        prefetchResolve(tmdbId: show.tmdbId, isTV: show.isTV)
                                         detailSubject = .show(show)
                                     }
                                 )
@@ -1016,6 +1027,7 @@ struct HomeView: View {
                                         titleId: WatchIntentLogger.titleSlug(show.title),
                                         metadata: ["section": "top_rated"]
                                     )
+                                    prefetchResolve(tmdbId: show.tmdbId, isTV: show.isTV)
                                     detailSubject = .show(show)
                                 }
                             )
@@ -1039,6 +1051,7 @@ struct HomeView: View {
                                         titleId: WatchIntentLogger.titleSlug(show.title),
                                         metadata: ["section": "new_seasons"]
                                     )
+                                    prefetchResolve(tmdbId: show.tmdbId, isTV: show.isTV)
                                     detailSubject = .show(show)
                                 }
                             )
@@ -1057,6 +1070,7 @@ struct HomeView: View {
                                         titleId: String(item.id),
                                         metadata: ["section": "upcoming_episodes"]
                                     )
+                                    prefetchResolve(tmdbId: item.id, isTV: true)
                                     detailSubject = .show(PosterShow(
                                         title: item.showTitle,
                                         meta: item.platform?.name ?? "Upcoming",
@@ -1134,6 +1148,7 @@ struct HomeView: View {
                                         titleId: WatchIntentLogger.titleSlug(show.title),
                                         metadata: ["section": "binge_ready"]
                                     )
+                                    prefetchResolve(tmdbId: show.tmdbId, isTV: show.isTV)
                                     detailSubject = .show(show)
                                 }
                             )
@@ -1483,6 +1498,14 @@ struct HomeView: View {
             )
             detailSubject = .show(show)
         }
+    }
+
+    /// Warms the streaming-source resolve cache for a title the user is about
+    /// to open, so the detail sheet's own resolve call is an instant cache hit
+    /// (see StreamingSourceResolver). Fire-and-forget; no-ops without a TMDB id.
+    private func prefetchResolve(tmdbId: Int?, isTV: Bool) {
+        guard let tmdbId else { return }
+        Task { _ = await StreamingSourceResolver.shared.resolve(tmdbId: tmdbId, isTV: isTV) }
     }
 
     /// Clear the app icon badge and flag day-old new episodes as seen so the next launch doesn't re-pulse them.

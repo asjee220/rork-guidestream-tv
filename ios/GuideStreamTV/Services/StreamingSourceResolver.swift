@@ -53,6 +53,20 @@ nonisolated struct ResolvedStreaming: Sendable {
 nonisolated struct StreamingSourceResolver {
     static let shared = StreamingSourceResolver()
 
+    // MARK: - Cache
+
+    /// NSCache wrapper so the Sendable `ResolvedStreaming` value can be
+    /// stored in NSCache (mirrors WatchmodeResolveService.ResponseBox).
+    private final class ResolvedBox: NSObject {
+        let value: ResolvedStreaming
+        init(_ value: ResolvedStreaming) { self.value = value }
+    }
+
+    /// In-memory cache of resolved streaming data so reopening a title is
+    /// instant — a hit returns immediately with no network call. Keyed by
+    /// tmdbId, isTV, and episodePlatformHint.
+    private static let resolveCache = NSCache<NSString, ResolvedBox>()
+
     // MARK: Public API
 
     /// Resolves streaming information for a title identified by TMDB id.
@@ -73,6 +87,12 @@ nonisolated struct StreamingSourceResolver {
         isTV: Bool,
         episodePlatformHint: String? = nil
     ) async -> ResolvedStreaming {
+        // Cache hit — return immediately without any network call.
+        let cacheKey = "\(tmdbId)-\(isTV)-\(episodePlatformHint ?? "")" as NSString
+        if let cached = Self.resolveCache.object(forKey: cacheKey) {
+            return cached.value
+        }
+
         // Snapshot the user's subscribed services on the main actor. The
         // resolver is a nonisolated struct, so we hop to the main actor to
         // read AuthViewModel.shared.selectedServices. Set<String> is Sendable,
@@ -102,12 +122,17 @@ nonisolated struct StreamingSourceResolver {
         // the TMDB provider/network tiebreakers. providerNameFallback
         // preserves the old TMDB-only fallback when Watchmode had no
         // usable sources but TMDB knew a provider name.
-        return ResolvedStreaming(
+        let resolved = ResolvedStreaming(
             primarySource: response.primarySource,
             usSources: response.usSources,
             providerNameFallback: response.providerNameFallback,
             availabilityRegions: response.availabilityRegions ?? [],
             overview: response.overview
         )
+
+        // Write through on every successful resolve. The `.empty` transport-
+        // failure return above stays uncached so a later call can retry.
+        Self.resolveCache.setObject(ResolvedBox(resolved), forKey: cacheKey)
+        return resolved
     }
 }
