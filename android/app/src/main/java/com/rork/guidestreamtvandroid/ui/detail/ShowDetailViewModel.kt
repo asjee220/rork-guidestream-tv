@@ -62,9 +62,11 @@ class ShowDetailViewModel : ViewModel() {
     }
 
     fun loadIfNeeded(titleId: String, isTV: Boolean, expectedTitle: String? = null) {
+        // Set before the early-return guard so re-entering an already-loaded
+        // title cannot leave a stale value from a previously viewed title.
+        _effectiveIsTV.value = isTV
         if (loadedTitleId == titleId) return
         loadedTitleId = titleId
-        _effectiveIsTV.value = isTV
         _isLoading.value = true
         _errorMessage.value = null
         viewModelScope.launch(Dispatchers.IO) {

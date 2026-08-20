@@ -62,8 +62,9 @@ nonisolated enum WatchmodeResolveService {
     ///
     /// - Parameters:
     ///   - tmdbId: The TMDB id of the title.
-    ///   - isTV: Whether the id is a TV series. When nil the server probes
-    ///     TV then movie and reports what it found in `resolvedMediaType`.
+    ///   - isTV: Whether the id is a TV series. The server falls back to
+    ///     the other media type itself and reports what it found in
+    ///     `resolvedMediaType`.
     ///   - season: Season number for episode-level lookups.
     ///   - episode: Episode number for episode-level lookups.
     ///   - episodePlatformHint: A service name to prioritise for episode
@@ -73,12 +74,10 @@ nonisolated enum WatchmodeResolveService {
     /// - Returns: The decoded `Response` on any HTTP 200 (including a
     ///   response with empty `usSources`), or `nil` only on transport
     ///   failure, non-200 status, or decode failure so callers can
-    ///   distinguish a Supabase outage from an empty result. When `isTV`
-    ///   was supplied and the response has no sources, exactly one retry
-    ///   with `isTV` omitted probes the other media type server-side.
+    ///   distinguish a Supabase outage from an empty result.
     static func resolve(
         tmdbId: Int,
-        isTV: Bool? = nil,
+        isTV: Bool,
         season: Int? = nil,
         episode: Int? = nil,
         episodePlatformHint: String? = nil,
@@ -95,44 +94,17 @@ nonisolated enum WatchmodeResolveService {
             return cached.response
         }
 
+        let base = SupabaseConfig.url.trimmingCharacters(in: .whitespaces)
+        guard let url = URL(string: "\(base)/functions/v1/watchmode_resolve") else { return nil }
+
         // Build body, omitting nil parameters rather than sending nulls.
-        var body: [String: Any] = ["tmdbId": tmdbId]
-        if let isTV { body["isTV"] = isTV }
+        var body: [String: Any] = ["tmdbId": tmdbId, "isTV": isTV]
         if let season { body["season"] = season }
         if let episode { body["episode"] = episode }
         if let episodePlatformHint { body["episodePlatformHint"] = episodePlatformHint }
         if let sourceId { body["sourceId"] = sourceId }
         if !subscribedServices.isEmpty { body["subscribedServices"] = subscribedServices }
 
-        guard let decoded = await post(body) else { return nil }
-
-        // Saved movies stored with the wrong media type can resolve to no
-        // sources at all — when the caller committed to a media type, retry
-        // exactly once with isTV omitted so the server probes TV then movie,
-        // and keep the retry only when it found something.
-        var result = decoded
-        if isTV != nil, decoded.primarySource == nil, decoded.usSources.isEmpty {
-            var retryBody = body
-            retryBody.removeValue(forKey: "isTV")
-            if let retried = await post(retryBody),
-               retried.primarySource != nil || !retried.usSources.isEmpty {
-                result = retried
-            }
-        }
-
-        // Cache episode-level responses — only the finally-returned response.
-        if isEpisodeLookup {
-            episodeCache.setObject(ResponseBox(result), forKey: cacheKey)
-        }
-
-        return result
-    }
-
-    /// Single POST + decode against the `watchmode_resolve` edge function.
-    /// Returns nil on transport failure, non-200 status, or decode failure.
-    private static func post(_ body: [String: Any]) async -> Response? {
-        let base = SupabaseConfig.url.trimmingCharacters(in: .whitespaces)
-        guard let url = URL(string: "\(base)/functions/v1/watchmode_resolve") else { return nil }
         guard let httpBody = try? JSONSerialization.data(withJSONObject: body) else { return nil }
 
         var request = URLRequest(url: url)
@@ -151,6 +123,13 @@ nonisolated enum WatchmodeResolveService {
         }
 
         guard let http = response as? HTTPURLResponse, http.statusCode == 200 else { return nil }
-        return try? JSONDecoder().decode(Response.self, from: data)
+        guard let decoded = try? JSONDecoder().decode(Response.self, from: data) else { return nil }
+
+        // Cache episode-level responses.
+        if isEpisodeLookup {
+            episodeCache.setObject(ResponseBox(decoded), forKey: cacheKey)
+        }
+
+        return decoded
     }
 }

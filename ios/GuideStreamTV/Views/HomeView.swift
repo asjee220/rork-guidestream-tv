@@ -713,6 +713,13 @@ struct HomeView: View {
                         } else if !comingToStreaming.isEmpty {
                             ComingToStreamingSection(
                                 items: comingToStreaming,
+                                onSeeAll: {
+                                    WatchIntentLogger.shared.log(
+                                        eventType: .cardTapped,
+                                        metadata: ["section": "coming_to_streaming_see_all"]
+                                    )
+                                    path.append(.comingToStreaming)
+                                },
                                 onOpen: { item in
                                     WatchIntentLogger.shared.log(
                                         eventType: .cardTapped,
@@ -1247,6 +1254,11 @@ struct HomeView: View {
                 case .whatsNewToday:
                     WhatsNewTodayListView(
                         shows: allWhatsNewTodayShows,
+                        onSelect: { show in detailSubject = .show(show) }
+                    )
+                case .comingToStreaming:
+                    WhatsNewTodayListView(
+                        shows: comingToStreaming.map { $0.show },
                         onSelect: { show in detailSubject = .show(show) }
                     )
                 case .widgetSetup:
@@ -4912,10 +4924,11 @@ private struct NowNextPosterCard: View {
 
 private struct ComingToStreamingSection: View {
     let items: [ComingToStreamingItem]
+    var onSeeAll: (() -> Void)?
     let onOpen: (ComingToStreamingItem) -> Void
 
     var body: some View {
-        SectionGlassCard(title: "Coming to Streaming", highlighted: true, onSeeAll: nil) {
+        SectionGlassCard(title: "Coming to Streaming", highlighted: true, onSeeAll: onSeeAll) {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 10) {
                     ForEach(items) { item in

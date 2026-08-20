@@ -428,6 +428,13 @@ fun HomeScreen(
                     )
                     onOpenTitle(PendingTitleRoute(titleId = r.id.toString(), titleName = r.displayName, isTv = false, isComingToStreaming = true))
                 },
+                onSeeAll = {
+                    WatchIntentLogger.get().log(
+                        WatchIntentLogger.IntentEventType.CARD_TAPPED,
+                        metadata = mapOf("section" to "coming_to_streaming_see_all"),
+                    )
+                    onSeeAllList(HomeListTarget(title = "Coming to Streaming", tag = "COMING SOON", shows = upcoming, providerByTmdb = providerByTmdb))
+                },
             )
         }
 

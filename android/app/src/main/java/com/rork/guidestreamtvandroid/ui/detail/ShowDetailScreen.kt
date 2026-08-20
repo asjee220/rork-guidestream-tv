@@ -192,8 +192,12 @@ fun ShowDetailScreen(
     var reelsStartIndex by remember { mutableStateOf(0) }
 
     // Load on first composition
-    androidx.compose.runtime.LaunchedEffect(titleId, effectiveIsTV) {
+    androidx.compose.runtime.LaunchedEffect(titleId) {
         vm.loadIfNeeded(titleId, isTV, expectedTitle = titleName)
+    }
+    // Trailers & clips — keyed on the healed media type so a legacy TV row
+    // that heals to a movie refetches videos from the movie endpoint.
+    androidx.compose.runtime.LaunchedEffect(titleId, effectiveIsTV) {
         val tid = TitleId.tmdbId(titleId)
         trailerVideos = if (tid != null) {
             try { TMDBService.get().getTitleVideos(tid, effectiveIsTV) } catch (_: Exception) { emptyList() }

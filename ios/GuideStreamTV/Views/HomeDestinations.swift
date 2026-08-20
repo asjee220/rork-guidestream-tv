@@ -9,6 +9,7 @@ enum HomeRoute: Hashable {
     case newEpisodes
     case bingeWorthy
     case whatsNewToday
+    case comingToStreaming
     case widgetSetup
     case continueWatching
     case topPicks
