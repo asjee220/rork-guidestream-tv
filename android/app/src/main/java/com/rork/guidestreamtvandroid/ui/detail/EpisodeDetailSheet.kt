@@ -41,11 +41,13 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -65,6 +67,7 @@ import com.rork.guidestreamtvandroid.data.models.Platform
 import com.rork.guidestreamtvandroid.data.models.StreamingCatalog
 import com.rork.guidestreamtvandroid.data.models.TitleId
 import com.rork.guidestreamtvandroid.data.remote.TMDBService
+import com.rork.guidestreamtvandroid.data.remote.TvCastDiscovery
 import com.rork.guidestreamtvandroid.data.remote.WatchmodeResolveResponse
 import com.rork.guidestreamtvandroid.data.remote.WatchmodeResolveService
 import com.rork.guidestreamtvandroid.data.remote.WatchmodeSrc
@@ -198,6 +201,9 @@ fun EpisodeDetailSheet(
     // Streaming sources are pointless for a title that has not landed yet, so
     // the coming-to-streaming layout skips the Watchmode round trip entirely.
     LaunchedEffect(tmdbId, isTV, detail?.id, route.isComingToStreaming) {
+        // Pre-warm TV device discovery so the cast sheet opens with a
+        // populated device list instead of scanning after the user taps.
+        TvCastDiscovery.shared.prewarm()
         val tid = tmdbId ?: return@LaunchedEffect
         if (route.isComingToStreaming) return@LaunchedEffect
         if (isTV && detail == null) return@LaunchedEffect
@@ -228,6 +234,17 @@ fun EpisodeDetailSheet(
         // !isShowing so nested sheets don't double-trigger.
         if (!route.isComingToStreaming && coachMark.shouldStartSheetTour(sourcesResolved = true)) {
             coachMark.startSheetTour()
+        }
+    }
+
+    // Stop a pre-warmed discovery scan when this sheet closes without casting;
+    // while the cast sheet is open its own onDispose owns stopping the scan.
+    val currentShowCast by rememberUpdatedState(showCast)
+    DisposableEffect(Unit) {
+        onDispose {
+            if (!currentShowCast) {
+                TvCastDiscovery.shared.stop()
+            }
         }
     }
 

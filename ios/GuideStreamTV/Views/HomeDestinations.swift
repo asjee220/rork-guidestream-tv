@@ -877,6 +877,9 @@ struct EpisodeDetailSheet: View {
                     }
                 }
             }()
+            // Pre-warm TV device discovery so the cast sheet opens with a
+            // populated device list instead of scanning after the user taps.
+            TVCastDiscovery.shared.prewarm()
             await _source
             await _episode
             // Resolve per-episode deep link from Watchmode's episode-level
@@ -937,6 +940,14 @@ struct EpisodeDetailSheet: View {
         }
         .onDisappear {
             coachMark.handleBackground()
+        }
+        .onDisappear {
+            // Stop a pre-warmed discovery scan when this sheet closes without
+            // casting; a scan handed to an open cast sheet is left for that
+            // sheet's own onDisappear to stop.
+            if !showCastSheet {
+                TVCastDiscovery.shared.stop()
+            }
         }
         }
     }

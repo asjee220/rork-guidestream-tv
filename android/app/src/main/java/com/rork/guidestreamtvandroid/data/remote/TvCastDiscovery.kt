@@ -56,6 +56,9 @@ class TvCastDiscovery {
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private var scanJob: Job? = null
 
+    /** Wall-clock millis of the last completed scan; null until one finishes. */
+    @Volatile private var lastScanCompletedAt: Long? = null
+
     fun start() {
         if (_isScanning.value) return
         _isScanning.value = true
@@ -67,14 +70,14 @@ class TvCastDiscovery {
         scanJob = scope.launch {
             val localIP = localIPv4Address()
             if (localIP == null) {
-                _isScanning.value = false
+                setScanFinished()
                 return@launch
             }
             _localIpv4.value = localIP
 
             val parts = localIP.split(".")
             if (parts.size != 4) {
-                _isScanning.value = false
+                setScanFinished()
                 return@launch
             }
             val prefix = "${parts[0]}.${parts[1]}.${parts[2]}."
@@ -106,13 +109,35 @@ class TvCastDiscovery {
                 }
                 index = end
             }
-            _isScanning.value = false
+            setScanFinished()
         }
     }
 
     fun stop() {
         scanJob?.cancel()
         _isScanning.value = false
+    }
+
+    /**
+     * Starts a scan unless one is already running or a scan that found devices
+     * finished within the last 60 seconds — lets callers pre-warm discovery so
+     * the cast sheet opens with a populated list instead of scanning on open.
+     */
+    fun prewarm() {
+        if (_isScanning.value) return
+        val completedAt = lastScanCompletedAt
+        if (_devices.value.isNotEmpty() &&
+            completedAt != null &&
+            System.currentTimeMillis() - completedAt < 60_000L
+        ) {
+            return
+        }
+        start()
+    }
+
+    private fun setScanFinished() {
+        _isScanning.value = false
+        lastScanCompletedAt = System.currentTimeMillis()
     }
 
     /**
@@ -281,5 +306,11 @@ class TvCastDiscovery {
             }
         }
         return false
+    }
+
+    companion object {
+        /** Shared instance so callers can pre-warm discovery before the cast
+         *  sheet opens (counterpart of iOS TVCastDiscovery.shared). */
+        val shared = TvCastDiscovery()
     }
 }

@@ -60,8 +60,14 @@ struct DiscoveredTVDevice: Identifiable, Equatable {
 @MainActor
 @Observable
 final class TVCastDiscovery {
+    /// Shared instance so callers can pre-warm a scan before the cast sheet
+    /// opens — the sheet then reuses it instead of re-sweeping the LAN.
+    static let shared = TVCastDiscovery()
+
     private(set) var devices: [DiscoveredTVDevice] = []
     private(set) var isScanning: Bool = false
+    /// When the last scan completed; feeds prewarm()'s freshness guard.
+    private(set) var lastScanCompletedAt: Date? = nil
 
     // Diagnostics surfaced to the UI so the user (and us) can see what the
     // scan actually saw, instead of an opaque empty list.
@@ -113,6 +119,21 @@ final class TVCastDiscovery {
             // Samsung Tizen TVs use SSDP (UDP multicast) not Bonjour.
             startSSDPProbe()
         }
+    }
+
+    /// Starts a scan unless one is already running or a scan that found
+    /// devices finished within the last 60 seconds — lets callers pre-warm
+    /// discovery so the cast sheet opens with a populated list instead of
+    /// scanning on open. stop() leaves `devices` populated, so a stopped
+    /// scan's results still render on the next open.
+    func prewarm(rokuOnly: Bool = true) {
+        if isScanning { return }
+        if !devices.isEmpty,
+           let completedAt = lastScanCompletedAt,
+           Date().timeIntervalSince(completedAt) < 60 {
+            return
+        }
+        start(rokuOnly: rokuOnly)
     }
 
     func stop() {
@@ -912,7 +933,10 @@ final class TVCastDiscovery {
     fileprivate func setLocalIPv4(_ ip: String) { localIPv4 = ip }
     fileprivate func setTotalHosts(_ total: Int) { totalHosts = total }
     fileprivate func incrementScannedHosts() { scannedHosts += 1 }
-    fileprivate func setScanFinished() { isScanning = false }
+    fileprivate func setScanFinished() {
+        isScanning = false
+        lastScanCompletedAt = Date()
+    }
     fileprivate func recordBonjourEndpoints(_ count: Int) {
         bonjourEndpointsSeen = max(bonjourEndpointsSeen, count)
     }

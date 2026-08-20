@@ -95,7 +95,7 @@ fun CastToTVSheet(
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
 
-    val discovery = remember { TvCastDiscovery() }
+    val discovery = TvCastDiscovery.shared
     val devices by discovery.devices.collectAsStateWithLifecycle()
     val isScanning by discovery.isScanning.collectAsStateWithLifecycle()
     val localIpv4 by discovery.localIpv4.collectAsStateWithLifecycle()
@@ -109,7 +109,7 @@ fun CastToTVSheet(
     var manualProbeError by remember { mutableStateOf(false) }
 
     DisposableEffect(Unit) {
-        discovery.start()
+        discovery.prewarm()
         onDispose { discovery.stop() }
     }
 

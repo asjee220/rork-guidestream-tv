@@ -33,7 +33,7 @@ struct CastToTVSheet: View {
     /// resolve episode-level Watchmode sources (e.g. EpisodeDetailSheet).
     var episodeRokuURL: String? = nil
 
-    @State private var discovery: TVCastDiscovery = TVCastDiscovery()
+    private let discovery = TVCastDiscovery.shared
     @State private var sendingDeviceId: String? = nil
     @State private var toast: ToastState? = nil
     @State private var playingOn: PlayingOnState? = nil
@@ -97,7 +97,7 @@ struct CastToTVSheet: View {
             .presentationDetents([.medium, .large])
             .presentationSizing(.page)
             .sheetSurface(.raised)
-            .onAppear { startScan() }
+            .onAppear { startScan(prewarm: true) }
             .onDisappear {
                 discovery.stop()
                 permissionCheckTask?.cancel()
@@ -611,16 +611,22 @@ struct CastToTVSheet: View {
     /// devices appear after a short window, iOS has either denied Local Network
     /// access or there's genuinely nothing on the LAN — either way, surfacing
     /// the "Open Settings" affordance is the right call.
-    private func startScan() {
+    private func startScan(prewarm: Bool = false) {
         showPermissionPrompt = false
         permissionCheckTask?.cancel()
-        discovery.stop()
 
         // Skip scanning entirely in the cloud simulator — it can't reach the
         // user's home Wi-Fi, so the empty state explains what to do instead.
         guard !isRunningInSimulator else { return }
 
-        discovery.start(rokuOnly: true)
+        if prewarm {
+            // Reuse a scan that's already running or freshly finished so the
+            // sheet opens with its devices instead of re-sweeping the LAN.
+            discovery.prewarm()
+        } else {
+            discovery.stop()
+            discovery.start(rokuOnly: true)
+        }
 
         // Poll for scan completion instead of a blind 6-second sleep.
         // Show the permission prompt only once the scan has finished and
