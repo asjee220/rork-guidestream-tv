@@ -50,6 +50,9 @@ data class WatchmodeResolveResponse(
     val overview: String? = null,
     @SerialName("provider_name_fallback") val providerNameFallback: String? = null,
     @SerialName("episode_source") val episodeSource: WatchmodeSrc? = null,
+    /** Region codes where the title streams, so a title with no US sources
+     *  can read as unavailable instead of an empty row. */
+    @SerialName("availability_regions") val availabilityRegions: List<String> = emptyList(),
 )
 
 /**

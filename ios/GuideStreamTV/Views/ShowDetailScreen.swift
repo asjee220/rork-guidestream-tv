@@ -1243,10 +1243,29 @@ struct ShowDetailScreen: View {
 
             let services = sortedServices
             if services.isEmpty {
-                Text(vm.isLoading ? "Finding services…" : "No streaming sources found.")
-                    .scaledFont(size: 13)
-                    .foregroundStyle(Color.textSecondary)
+                if vm.isLoading {
+                    Text("Finding services…")
+                        .scaledFont(size: 13)
+                        .foregroundStyle(Color.textSecondary)
+                        .padding(.horizontal, 20)
+                } else if !vm.resolved.availabilityRegions.isEmpty {
+                    // No US sources, but the title streams elsewhere — read as
+                    // unavailable instead of an empty row.
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Not available in the \(homeRegionDisplayName)")
+                            .scaledFont(size: 13, weight: .semibold)
+                            .foregroundStyle(.white)
+                        Text("Streaming in \(availabilityRegionsSummary(vm.resolved.availabilityRegions))")
+                            .scaledFont(size: 13)
+                            .foregroundStyle(Color.textSecondary)
+                    }
                     .padding(.horizontal, 20)
+                } else {
+                    Text("No streaming sources found.")
+                        .scaledFont(size: 13)
+                        .foregroundStyle(Color.textSecondary)
+                        .padding(.horizontal, 20)
+                }
             } else {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 10) {
@@ -1273,6 +1292,27 @@ struct ShowDetailScreen: View {
 
         }
         .padding(.top, 24)
+    }
+
+    /// Home-region display name, mapped from the literal "US" region code so
+    /// the unavailable label is stable regardless of the device's region.
+    private var homeRegionDisplayName: String {
+        Self.regionDisplayName("US")
+    }
+
+    /// Up to three comma-separated country names, then " +N more".
+    private func availabilityRegionsSummary(_ codes: [String]) -> String {
+        let names = codes.map(Self.regionDisplayName)
+        let shown = names.prefix(3).joined(separator: ", ")
+        let extra = names.count - min(3, names.count)
+        return extra > 0 ? "\(shown) +\(extra) more" : shown
+    }
+
+    /// Localized country name for an ISO region code; raw code on miss.
+    private static func regionDisplayName(_ code: String) -> String {
+        let trimmed = code.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        guard !trimmed.isEmpty else { return code }
+        return Locale.current.localizedString(forRegionCode: trimmed) ?? trimmed
     }
 
     // MARK: Fan activity

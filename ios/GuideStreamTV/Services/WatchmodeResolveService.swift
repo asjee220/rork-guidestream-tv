@@ -31,6 +31,9 @@ nonisolated enum WatchmodeResolveService {
         let providerNameFallback: String?
         let episodeSource: WatchmodeSource?
         let resolvedMediaType: String?
+        /// Region codes where the title streams (ISO 3166-1 alpha-2), so a
+        /// title with no US sources can read as unavailable rather than empty.
+        let availabilityRegions: [String]?
 
         enum CodingKeys: String, CodingKey {
             case primarySource = "primary_source"
@@ -39,6 +42,7 @@ nonisolated enum WatchmodeResolveService {
             case providerNameFallback = "provider_name_fallback"
             case episodeSource = "episode_source"
             case resolvedMediaType = "resolved_media_type"
+            case availabilityRegions = "availability_regions"
         }
     }
 

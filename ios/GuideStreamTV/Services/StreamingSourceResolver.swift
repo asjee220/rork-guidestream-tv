@@ -32,6 +32,10 @@ nonisolated struct ResolvedStreaming: Sendable {
     /// watch-provider name. Callers use this as a label fallback.
     let providerNameFallback: String?
 
+    /// Region codes where the title streams even though it has no US
+    /// sources — drives the "Not available in the …" state.
+    let availabilityRegions: [String]
+
     /// Watchmode plot overview, captured regardless of source resolution.
     let overview: String?
 
@@ -39,6 +43,7 @@ nonisolated struct ResolvedStreaming: Sendable {
         primarySource: nil,
         usSources: [],
         providerNameFallback: nil,
+        availabilityRegions: [],
         overview: nil
     )
 }
@@ -101,6 +106,7 @@ nonisolated struct StreamingSourceResolver {
             primarySource: response.primarySource,
             usSources: response.usSources,
             providerNameFallback: response.providerNameFallback,
+            availabilityRegions: response.availabilityRegions ?? [],
             overview: response.overview
         )
     }

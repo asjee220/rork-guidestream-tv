@@ -142,6 +142,7 @@ fun ShowDetailScreen(
     val authVm = AuthViewModel.get()
     val selectedServices by authVm.selectedServices.collectAsStateWithLifecycle()
     var usSources by remember { mutableStateOf<List<WatchmodeSrc>>(emptyList()) }
+    var availabilityRegions by remember { mutableStateOf<List<String>>(emptyList()) }
     var selectedSource by remember { mutableStateOf<WatchmodeSrc?>(null) }
     var episodeSource by remember { mutableStateOf<WatchmodeSrc?>(null) }
     val isSourceSubscribed: (String) -> Boolean = { name ->
@@ -171,6 +172,7 @@ fun ShowDetailScreen(
                 WatchmodeResolveResponse()
             }
             usSources = response.usSources
+            availabilityRegions = response.availabilityRegions
             episodeSource = response.episodeSource
             selectedSource = response.primarySource
                 ?: response.usSources.firstOrNull {
@@ -350,6 +352,7 @@ fun ShowDetailScreen(
                         sources = usSources,
                         selectedSource = selectedSource,
                         isSourceSubscribed = isSourceSubscribed,
+                        availabilityRegions = availabilityRegions,
                         onSelect = { source ->
                             selectedSource = source
                             episodeSource = null
@@ -805,12 +808,33 @@ fun ShowDetailScreen(
     }
 }
 
+/** Home-region display name, mapped from the literal "US" code (not DeviceLocale). */
+private val homeRegionName: String by lazy { regionDisplayName("US") }
+
+/** Localized country name for an ISO region code; raw code on miss. */
+private fun regionDisplayName(code: String): String {
+    val trimmed = code.trim().uppercase()
+    if (trimmed.isEmpty()) return code
+    val name = java.util.Locale("", trimmed).displayCountry
+    return if (name.isBlank() || name == trimmed) trimmed else name
+}
+
+/** Up to three comma-separated country names, then " +N more". */
+private fun regionNamesSummary(codes: List<String>): String {
+    val names = codes.map { regionDisplayName(it) }
+    val shown = names.take(3).joinToString(", ")
+    val extra = names.size - 3
+    return if (extra > 0) "$shown +$extra more" else shown
+}
+
 /**
  * "Where to Watch" chip row. Renders one chip per US streaming source. When the
  * user is subscribed to two or more of the title's services, tapping a
  * subscribed chip makes it the active source (Watch button follows); every
- * other tap opens the source's web URL directly. Hidden when there are no
- * sources.
+ * other tap opens the source's web URL directly. When there are no US sources
+ * but the title streams elsewhere, renders the header plus an unavailable
+ * state listing the regions that carry it. Hidden only when there are no
+ * sources and no regions.
  */
 @Composable
 internal fun WhereToWatchRow(
@@ -818,8 +842,9 @@ internal fun WhereToWatchRow(
     selectedSource: WatchmodeSrc?,
     isSourceSubscribed: (String) -> Boolean,
     onSelect: (WatchmodeSrc) -> Unit,
+    availabilityRegions: List<String> = emptyList(),
 ) {
-    if (sources.isEmpty()) return
+    if (sources.isEmpty() && availabilityRegions.isEmpty()) return
     Spacer(Modifier.height(8.dp))
     Text(
         text = "Where to Watch",
@@ -828,6 +853,24 @@ internal fun WhereToWatchRow(
         color = TextPrimary,
         modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
     )
+    if (sources.isEmpty()) {
+        // No US sources, but the title streams elsewhere — read as
+        // unavailable instead of an empty row.
+        Column(Modifier.padding(horizontal = 16.dp)) {
+            Text(
+                text = "Not available in the $homeRegionName",
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = TextPrimary,
+            )
+            Text(
+                text = "Streaming in ${regionNamesSummary(availabilityRegions)}",
+                fontSize = 13.sp,
+                color = TextSecondary,
+            )
+        }
+        return
+    }
     LazyRow(
         contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
