@@ -386,6 +386,32 @@ fun HomeScreen(
             )
         }
 
+        // Around the World — rotating daily country rail
+        if (homeReady) {
+            aroundTheWorldRail?.let { around ->
+                AroundTheWorldSection(
+                    subtitle = "Streaming in ${around.country.displayName} today · ${around.providerName}",
+                    shows = around.shows.take(10),
+                    onOpen = { r ->
+                        WatchIntentLogger.get().log(
+                            WatchIntentLogger.IntentEventType.CARD_TAPPED,
+                            titleId = r.id.toString(),
+                            metadata = mapOf("section" to "around_the_world"),
+                        )
+                        onOpenTitle(PendingTitleRoute(titleId = r.id.toString(), titleName = r.displayName, isTv = r.isTV))
+                    },
+                    onSeeAll = {
+                        WatchIntentLogger.get().log(
+                            WatchIntentLogger.IntentEventType.CARD_TAPPED,
+                            metadata = mapOf("section" to "around_the_world_see_all"),
+                        )
+                        onOpenAroundTheWorld(around.country.regionCode)
+                    },
+                    modifier = Modifier.padding(horizontal = widthClass.homeHorizontalPadding, vertical = 8.dp),
+                )
+            }
+        }
+
         // Coming to Streaming (upcoming movies)
         if (!homeReady) {
             ShimmerSection("Coming to Streaming", Modifier.padding(horizontal = widthClass.homeHorizontalPadding, vertical = 8.dp))
@@ -851,32 +877,6 @@ fun HomeScreen(
             sectionKey = "home_inline_ad",
             dismissed = dismissedAdSlots,
         )
-
-        // Around the World — rotating daily country rail (after Binge Worthy)
-        if (homeReady) {
-            aroundTheWorldRail?.let { around ->
-                AroundTheWorldSection(
-                    subtitle = "Streaming in ${around.country.displayName} today · ${around.providerName}",
-                    shows = around.shows.take(10),
-                    onOpen = { r ->
-                        WatchIntentLogger.get().log(
-                            WatchIntentLogger.IntentEventType.CARD_TAPPED,
-                            titleId = r.id.toString(),
-                            metadata = mapOf("section" to "around_the_world"),
-                        )
-                        onOpenTitle(PendingTitleRoute(titleId = r.id.toString(), titleName = r.displayName, isTv = r.isTV))
-                    },
-                    onSeeAll = {
-                        WatchIntentLogger.get().log(
-                            WatchIntentLogger.IntentEventType.CARD_TAPPED,
-                            metadata = mapOf("section" to "around_the_world_see_all"),
-                        )
-                        onOpenAroundTheWorld(around.country.regionCode)
-                    },
-                    modifier = Modifier.padding(horizontal = widthClass.homeHorizontalPadding, vertical = 8.dp),
-                )
-            }
-        }
 
         // Widget promo banner
         WidgetPromoBanner(

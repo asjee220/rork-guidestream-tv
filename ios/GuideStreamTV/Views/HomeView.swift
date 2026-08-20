@@ -667,6 +667,46 @@ struct HomeView: View {
                         // )
                         // .padding(.horizontal, 20)
 
+                        // Around the World — rotating daily country rail
+                        if let aroundCountry = aroundTheWorldEntry,
+                           let aroundProvider = aroundTheWorldProviderName,
+                           !aroundTheWorldShows.isEmpty {
+                            SectionGlassCard(
+                                title: "Around the World",
+                                onSeeAll: {
+                                    WatchIntentLogger.shared.log(
+                                        eventType: .cardTapped,
+                                        metadata: ["section": "around_the_world_see_all"]
+                                    )
+                                    path.append(.aroundTheWorld(regionCode: aroundCountry.regionCode))
+                                }
+                            ) {
+                                VStack(alignment: .leading, spacing: 6) {
+                                    Text("Streaming in \(aroundCountry.displayName) today · \(aroundProvider)")
+                                        .scaledFont(size: 12)
+                                        .foregroundStyle(Color.textSecondary)
+                                        .padding(.horizontal, 12)
+                                    ScrollView(.horizontal, showsIndicators: false) {
+                                        HStack(spacing: 10) {
+                                            ForEach(aroundTheWorldShows) { show in
+                                                PosterCard(show: show, tag: "AROUND THE WORLD", onTap: {
+                                                    WatchIntentLogger.shared.log(
+                                                        eventType: .cardTapped,
+                                                        titleId: WatchIntentLogger.titleSlug(show.title),
+                                                        metadata: ["section": "around_the_world"]
+                                                    )
+                                                    detailSubject = .show(show)
+                                                })
+                                            }
+                                        }
+                                        .padding(.horizontal, 12)
+                                        .padding(.vertical, 6)
+                                    }
+                                }
+                            }
+                            .padding(.horizontal, homeWidthClass.homeHorizontalPadding)
+                        }
+
                         if !homeContentReady {
                             HomeShimmerSection(title: "Coming to Streaming")
                                 .padding(.horizontal, homeWidthClass.homeHorizontalPadding)
@@ -1095,46 +1135,6 @@ struct HomeView: View {
 
                         // Inline sponsored slot #8 — after Binge Worthy
                         inlineAdSlot(8)
-
-                        // Around the World — rotating daily country rail
-                        if let aroundCountry = aroundTheWorldEntry,
-                           let aroundProvider = aroundTheWorldProviderName,
-                           !aroundTheWorldShows.isEmpty {
-                            SectionGlassCard(
-                                title: "Around the World",
-                                onSeeAll: {
-                                    WatchIntentLogger.shared.log(
-                                        eventType: .cardTapped,
-                                        metadata: ["section": "around_the_world_see_all"]
-                                    )
-                                    path.append(.aroundTheWorld(regionCode: aroundCountry.regionCode))
-                                }
-                            ) {
-                                VStack(alignment: .leading, spacing: 6) {
-                                    Text("Streaming in \(aroundCountry.displayName) today · \(aroundProvider)")
-                                        .scaledFont(size: 12)
-                                        .foregroundStyle(Color.textSecondary)
-                                        .padding(.horizontal, 12)
-                                    ScrollView(.horizontal, showsIndicators: false) {
-                                        HStack(spacing: 10) {
-                                            ForEach(aroundTheWorldShows) { show in
-                                                PosterCard(show: show, tag: "AROUND THE WORLD", onTap: {
-                                                    WatchIntentLogger.shared.log(
-                                                        eventType: .cardTapped,
-                                                        titleId: WatchIntentLogger.titleSlug(show.title),
-                                                        metadata: ["section": "around_the_world"]
-                                                    )
-                                                    detailSubject = .show(show)
-                                                })
-                                            }
-                                        }
-                                        .padding(.horizontal, 12)
-                                        .padding(.vertical, 6)
-                                    }
-                                }
-                            }
-                            .padding(.horizontal, homeWidthClass.homeHorizontalPadding)
-                        }
 
                         Color.clear.frame(height: 96)
                     }
