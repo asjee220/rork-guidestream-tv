@@ -374,6 +374,14 @@ struct ShowDetailScreen: View {
     /// Trailers & clips for this title, loaded alongside the Deep Dives fetch.
     /// Empty until the title's videos resolve; drives the Trailers & Clips row.
     @State private var trailerVideos: [TMDBVideo] = []
+    /// True while the Trailers & Clips fetch is in flight — drives the
+    /// fixed-height shimmer placeholder so sections below don't shift.
+    @State private var isFetchingTrailers: Bool = false
+    /// True while a Deep Dives fetch is in flight — same purpose.
+    @State private var isFetchingDeepDives: Bool = false
+    /// Show title the Deep Dives fetch last ran with, so the onChange
+    /// corrections can no-op when TMDB resolves the same name.
+    @State private var deepDivesLoadedTitle: String?
     /// Item-driven presentation for the title-scoped Reels player. Using
     /// `fullScreenCover(item:)` guarantees the cover is built from the tapped
     /// feed — an `isPresented:` cover can evaluate its content with the stale
@@ -593,8 +601,9 @@ struct ShowDetailScreen: View {
         }
         .task(id: titleId) {
             vm.startLoad(titleId: titleId, isTV: isTV, expectedTitle: title)
-            // Load Trailers & Clips and resolve the per-episode deep link
-            // concurrently — both depend only on tmdbId / activeService.
+            // Load Trailers & Clips and Deep Dives, and resolve the per-episode
+            // deep link concurrently — all depend only on tmdbId / the local
+            // title, so none waits for the detail fetch round trip.
             await withTaskGroup(of: Void.self) { group in
                 // Load Trailers & Clips directly off the TMDB id (available
                 // immediately) so the row populates even when the detail fetch
@@ -602,8 +611,22 @@ struct ShowDetailScreen: View {
                 // falls back to the other media type when the primary is empty.
                 if let tmdbId = resolvedTmdbId {
                     group.addTask {
+                        self.isFetchingTrailers = true
                         let vids = (try? await TMDBService.shared.getTitleVideos(tmdbId: tmdbId, isTV: self.isTV)) ?? []
                         self.trailerVideos = vids
+                        self.isFetchingTrailers = false
+                    }
+                }
+                // Start Deep Dives from the local title (available immediately)
+                // instead of waiting for the TMDB detail round trip. The
+                // onChange handlers below still correct it when TMDB resolves
+                // a different name.
+                if let tmdbId = resolvedTmdbId, !title.isEmpty {
+                    group.addTask {
+                        self.isFetchingDeepDives = true
+                        self.deepDivesLoadedTitle = title
+                        await self.deepDivesVM.load(tmdbId: tmdbId, mediaType: self.isTV ? "tv" : "movie", showTitle: title)
+                        self.isFetchingDeepDives = false
                     }
                 }
                 // Resolve per-episode deep link from Watchmode so the watch
@@ -627,16 +650,27 @@ struct ShowDetailScreen: View {
         }
         .onChange(of: vm.tmdb?.name) { _, name in
             guard let name, !name.isEmpty, let tmdbId = resolvedTmdbId else { return }
+            // The initial concurrent load already fetched with the local title —
+            // no-op when creators are loaded and the resolved name matches, so a
+            // title whose TMDB name equals the local title never fetches twice.
+            if !deepDivesVM.creators.isEmpty, name == deepDivesLoadedTitle { return }
             Task {
+                isFetchingDeepDives = true
+                deepDivesLoadedTitle = name
                 await deepDivesVM.load(tmdbId: tmdbId, mediaType: isTV ? "tv" : "movie", showTitle: name)
+                isFetchingDeepDives = false
             }
         }
         .onChange(of: vm.detail?.title) { _, name in
             // Movies populate `vm.detail` (not `vm.tmdb`), so the TV trigger above
             // never fires for them. Mirror the Deep Dives load here for movies.
             guard !isTV, let name, !name.isEmpty, let tmdbId = resolvedTmdbId else { return }
+            if !deepDivesVM.creators.isEmpty, name == deepDivesLoadedTitle { return }
             Task {
+                isFetchingDeepDives = true
+                deepDivesLoadedTitle = name
                 await deepDivesVM.load(tmdbId: tmdbId, mediaType: "movie", showTitle: name)
+                isFetchingDeepDives = false
             }
         }
         .fullScreenCover(item: $trailerReels) { reels in
@@ -653,7 +687,11 @@ struct ShowDetailScreen: View {
     @ViewBuilder
     private var trailersSection: some View {
         if trailerVideos.isEmpty {
-            EmptyView()
+            if isFetchingTrailers {
+                trailersShimmer
+            } else {
+                EmptyView()
+            }
         } else {
             VStack(alignment: .leading, spacing: 10) {
                 Text("Trailers & Clips")
@@ -677,6 +715,45 @@ struct ShowDetailScreen: View {
             }
             .padding(.top, 18)
         }
+    }
+
+    /// Fixed-height placeholder matching the loaded Trailers & Clips layout
+    /// (header + 130×195 cards) so sections below don't shift when the row
+    /// populates. Shimmer treatment matches HomeShimmerSection.
+    private var trailersShimmer: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Trailers & Clips")
+                .scaledFont(size: 17, weight: .semibold)
+                .foregroundStyle(.white)
+                .padding(.horizontal, 20)
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    ForEach(0..<6, id: \.self) { i in
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .fill(Color.white.opacity(0.06))
+                            .frame(width: 130, height: 195)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .fill(
+                                        LinearGradient(
+                                            colors: [
+                                                Color.white.opacity(0.0),
+                                                Color.white.opacity(0.06),
+                                                Color.white.opacity(0.0)
+                                            ],
+                                            startPoint: UnitPoint(x: CGFloat(i) * 0.35 - 1.2, y: 0.5),
+                                            endPoint: UnitPoint(x: CGFloat(i) * 0.35 - 0.2, y: 0.5)
+                                        )
+                                    )
+                            )
+                    }
+                }
+                .padding(.horizontal, 20)
+            }
+            .disabled(true)
+        }
+        .padding(.top, 18)
     }
 
     private func trailerCard(_ video: TMDBVideo) -> some View {
@@ -1146,7 +1223,59 @@ struct ShowDetailScreen: View {
 
     @ViewBuilder
     private var deepDivesSection: some View {
-        DeepDivesView(creators: deepDivesVM.creators)
+        if deepDivesVM.creators.isEmpty {
+            if isFetchingDeepDives {
+                deepDivesShimmer
+            } else {
+                EmptyView()
+            }
+        } else {
+            DeepDivesView(creators: deepDivesVM.creators)
+        }
+    }
+
+    /// Fixed-height placeholder matching the loaded Deep Dives layout (header,
+    /// subtitle, 150-wide creator cards) so sections below don't shift when
+    /// the row populates. Shimmer treatment matches HomeShimmerSection.
+    private var deepDivesShimmer: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Deep Dives")
+                .scaledFont(size: 17, weight: .semibold)
+                .foregroundStyle(.white)
+                .padding(.horizontal, 20)
+
+            Text("Video essays & theories about this show")
+                .scaledFont(size: 12)
+                .foregroundStyle(Color.textSecondary)
+                .padding(.horizontal, 20)
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    ForEach(0..<4, id: \.self) { i in
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .fill(Color.white.opacity(0.06))
+                            .frame(width: 150, height: 140)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                    .fill(
+                                        LinearGradient(
+                                            colors: [
+                                                Color.white.opacity(0.0),
+                                                Color.white.opacity(0.06),
+                                                Color.white.opacity(0.0)
+                                            ],
+                                            startPoint: UnitPoint(x: CGFloat(i) * 0.35 - 1.2, y: 0.5),
+                                            endPoint: UnitPoint(x: CGFloat(i) * 0.35 - 0.2, y: 0.5)
+                                        )
+                                    )
+                            )
+                    }
+                }
+                .padding(.horizontal, 20)
+            }
+            .disabled(true)
+        }
+        .padding(.top, 18)
     }
 
     // MARK: Episodes
