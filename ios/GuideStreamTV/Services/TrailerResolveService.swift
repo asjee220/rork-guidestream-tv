@@ -21,11 +21,27 @@
 import Foundation
 
 nonisolated enum TrailerResolveService {
+    /// A single verified playable video, with its TMDB type ("Trailer",
+    /// "Teaser", "Featurette", "Clip") when the server knows it.
+    struct ResolvedVideo: Decodable {
+        let key: String
+        let type: String?
+    }
+
+    /// Resolved trailer payload: every verified playable key in rank order,
+    /// plus the tier-0/1 `videos` subset (up to 3, priority order) that the
+    /// Reels feed gives its own reel.
+    struct ResolvedTrailers {
+        let keys: [String]
+        let videos: [ResolvedVideo]
+    }
+
     /// Shape returned by the `trailer_resolve` edge function.
     private struct Response: Decodable {
         let ok: Bool
         let cached: Bool
         let keys: [String]
+        let videos: [ResolvedVideo]?
     }
 
     /// Resolves the verified, playable YouTube trailer keys for a title in
@@ -33,13 +49,13 @@ nonisolated enum TrailerResolveService {
     ///
     /// The optional return is deliberately load-bearing and the two cases must
     /// never be conflated:
-    ///  * Returns the decoded `keys` array on any HTTP 200 — **including an
-    ///    empty array**, which is the server telling us this title has no
+    ///  * Returns the decoded payload on any HTTP 200 — **including an empty
+    ///    `keys` array**, which is the server telling us this title has no
     ///    playable trailer at all (the caller drops it from the feed).
     ///  * Returns `nil` only when the call itself fails — a transport error, a
     ///    non-200 status, or a decode failure (the caller degrades to the
     ///    unverified TMDB key so a brief Supabase outage doesn't empty the feed).
-    static func resolve(tmdbId: Int, isTV: Bool) async -> [String]? {
+    static func resolve(tmdbId: Int, isTV: Bool) async -> ResolvedTrailers? {
         let base = SupabaseConfig.url.trimmingCharacters(in: .whitespaces)
         guard let url = URL(string: "\(base)/functions/v1/trailer_resolve") else { return nil }
 
@@ -66,6 +82,6 @@ nonisolated enum TrailerResolveService {
 
         guard let http = response as? HTTPURLResponse, http.statusCode == 200 else { return nil }
         guard let decoded = try? JSONDecoder().decode(Response.self, from: data) else { return nil }
-        return decoded.keys
+        return ResolvedTrailers(keys: decoded.keys, videos: decoded.videos ?? [])
     }
 }

@@ -517,7 +517,7 @@ final class ReelsViewModel {
         // every result in this batch sees a consistent view. Set<String> is
         // Sendable, so capturing it into the task closures needs no actor hop.
         let subscribedServiceIds = Set(AuthViewModel.shared.selectedServices.map { $0.lowercased() })
-        return await withTaskGroup(of: TrailerItem?.self) { group in
+        return await withTaskGroup(of: [TrailerItem].self) { group in
             for r in results {
                 group.addTask { [tmdb, subscribedServiceIds] in
                     // Only fetch the TV detail endpoint for TV shows — calling
@@ -528,26 +528,43 @@ final class ReelsViewModel {
                     // resolver only returns keys that are embeddable, public,
                     // processed, and not US-blocked, so the first key is trusted
                     // to play — no client-side ranking can replicate that.
-                    let resolved: [String]? = await TrailerResolveService.resolve(tmdbId: r.id, isTV: r.isTV)
+                    let resolved: TrailerResolveService.ResolvedTrailers? = await TrailerResolveService.resolve(tmdbId: r.id, isTV: r.isTV)
                     let poolOptional: [TMDBWatchProvider]? = try? await tmdb.getWatchProviders(tmdbId: r.id, isTV: r.isTV)
                     let pool = poolOptional ?? []
 
-                    // Three-way handling of the resolver result:
-                    //  * nil → the call failed; degrade to the unverified TMDB
-                    //    key so a brief Supabase outage doesn't empty the feed.
-                    //  * [] → the title has no playable trailer at all; drop it.
-                    //  * [...] → verified keys; first is primary, rest fallback.
-                    let candidates: [String]
+                    // Multi-video handling of the resolver result:
+                    //  * nil → the call failed; degrade to ONE reel on the
+                    //    unverified TMDB key so a brief Supabase outage doesn't
+                    //    empty the feed.
+                    //  * keys empty → the title has no playable trailer at
+                    //    all; drop it.
+                    //  * videos non-empty → one reel per tier-0/1 video, with
+                    //    the remaining keys as every reel's fallback pool.
+                    //  * videos empty → one reel on the top-ranked key, the
+                    //    rest fallbacks.
+                    let primaryKeys: [String]
+                    let fallbackPool: [String]
+                    var typeByKey: [String: String] = [:]
                     if let resolved {
-                        if resolved.isEmpty { return nil }
-                        candidates = resolved
+                        if resolved.keys.isEmpty { return [] }
+                        if !resolved.videos.isEmpty {
+                            primaryKeys = resolved.videos.map(\.key).filter { !$0.isEmpty }
+                            for video in resolved.videos {
+                                if let type = video.type, !type.isEmpty {
+                                    typeByKey[video.key] = type
+                                }
+                            }
+                        } else {
+                            primaryKeys = Array(resolved.keys.prefix(1))
+                        }
+                        fallbackPool = resolved.keys.filter { !primaryKeys.contains($0) }
                     } else {
                         let single = (try? await (r.isTV ? tmdb.getTrailerKey(tmdbId: r.id) : tmdb.getMovieTrailerKey(tmdbId: r.id))) ?? nil
-                        guard let single, !single.isEmpty else { return nil }
-                        candidates = [single]
+                        guard let single, !single.isEmpty else { return [] }
+                        primaryKeys = [single]
+                        fallbackPool = []
                     }
-                    guard let key = candidates.first, !key.isEmpty, !pool.isEmpty else { return nil }
-                    let fallbackKeys = Array(candidates.dropFirst())
+                    guard !primaryKeys.isEmpty, !pool.isEmpty else { return [] }
 
                     // topProvider reproduces current behavior: the pool element
                     // with the lowest displayPriority (nil treated as large).
@@ -578,7 +595,7 @@ final class ReelsViewModel {
                     // Reels must point at an app users can actually open — skip titles
                     // with no verified US streaming provider.
                     guard let chosen, let _ = ReelPlatform.recognizedKey(for: chosen.providerName) else {
-                        return nil
+                        return []
                     }
 
                     let name = detail?.name ?? r.displayName
@@ -600,44 +617,61 @@ final class ReelsViewModel {
                     let posterPath = detail?.posterPath ?? r.posterPath
                     let backdrop = TMDBImage.url(backdropPath, size: .backdrop1280).flatMap { URL(string: $0) }
                     let poster = TMDBImage.url(posterPath, size: .poster342).flatMap { URL(string: $0) }
-                    let thumb = URL(string: "https://img.youtube.com/vi/\(key)/maxresdefault.jpg")
-                    // We no longer load a remote embed URL — YouTubePlayerView builds inline HTML
-                    // from the trailerKey to avoid embed error 153 (referrer/origin restrictions).
-                    let embed: URL? = URL(string: "https://www.youtube.com/watch?v=\(key)")
                     let identity = String(name.prefix(3)).uppercased()
 
-                    return TrailerItem(
-                        id: key,
-                        tmdbId: r.id,
-                        showName: name,
-                        synopsis: overview,
-                        genre: "\(genreName.uppercased())\(year.map { " · \($0)" } ?? "")",
-                        runtime: runtimeText,
-                        platformId: plat.id,
-                        platformName: plat.name,
-                        platformColor: plat.color,
-                        platformTextColor: .white,
-                        backdropURL: backdrop,
-                        posterURL: poster,
-                        trailerKey: key,
-                        fallbackKeys: fallbackKeys,
-                        thumbnailURL: thumb,
-                        youtubeURL: embed,
-                        deepLinkURL: nil,
-                        voteAverage: detail?.voteAverage ?? (r.voteAverage ?? 0),
-                        likes: 0,
-                        comments: 0,
-                        tab: tab,
-                        identityCode: identity,
-                        gradeColor: plat.grade,
-                        isSponsored: false,
-                        isTV: r.isTV
-                    )
+                    // One reel per primary key — shared metadata, per-key
+                    // thumbnail / watch URL, and the remaining verified keys as
+                    // every reel's fallback pool.
+                    return primaryKeys.map { key in
+                        let thumb = URL(string: "https://img.youtube.com/vi/\(key)/maxresdefault.jpg")
+                        // We no longer load a remote embed URL — YouTubePlayerView builds inline HTML
+                        // from the trailerKey to avoid embed error 153 (referrer/origin restrictions).
+                        let embed: URL? = URL(string: "https://www.youtube.com/watch?v=\(key)")
+                        return TrailerItem(
+                            id: key,
+                            tmdbId: r.id,
+                            showName: name,
+                            synopsis: overview,
+                            genre: "\(genreName.uppercased())\(year.map { " · \($0)" } ?? "")",
+                            runtime: runtimeText,
+                            platformId: plat.id,
+                            platformName: plat.name,
+                            platformColor: plat.color,
+                            platformTextColor: .white,
+                            backdropURL: backdrop,
+                            posterURL: poster,
+                            trailerKey: key,
+                            fallbackKeys: fallbackPool,
+                            thumbnailURL: thumb,
+                            youtubeURL: embed,
+                            deepLinkURL: nil,
+                            voteAverage: detail?.voteAverage ?? (r.voteAverage ?? 0),
+                            likes: 0,
+                            comments: 0,
+                            tab: tab,
+                            identityCode: identity,
+                            gradeColor: plat.grade,
+                            isSponsored: false,
+                            isTV: r.isTV,
+                            videoType: typeByKey[key]
+                        )
+                    }
                 }
             }
+            // Per-title reel groups, flattened round-robin: every title's
+            // first reel precedes any title's second, while each title's own
+            // video priority order is preserved within the feed.
+            var groups: [[TrailerItem]] = []
+            for await items in group {
+                groups.append(items)
+            }
             var out: [TrailerItem] = []
-            for await item in group {
-                if let item { out.append(item) }
+            if let maxCount = groups.map(\.count).max() {
+                for lap in 0..<maxCount {
+                    for titleGroup in groups where lap < titleGroup.count {
+                        out.append(titleGroup[lap])
+                    }
+                }
             }
             return out
         }
@@ -693,8 +727,8 @@ final class ReelsViewModel {
                     let resolved = await TrailerResolveService.resolve(tmdbId: tmdbId, isTV: false)
                     let candidates: [String]
                     if let resolved {
-                        if resolved.isEmpty { return nil }
-                        candidates = resolved
+                        if resolved.keys.isEmpty { return nil }
+                        candidates = resolved.keys
                     } else {
                         let single = (try? await tmdb.getMovieTrailerKey(tmdbId: tmdbId)) ?? nil
                         guard let single, !single.isEmpty else { return nil }

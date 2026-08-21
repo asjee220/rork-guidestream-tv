@@ -165,49 +165,84 @@ class ReelsViewModel : ViewModel() {
         tab: ReelTab,
     ): List<TrailerItem> = coroutineScope {
         val gate = Semaphore(RESOLVE_CONCURRENCY)
-        results.take(20)
+        val groups: List<List<TrailerItem>> = results.take(20)
             .map { r -> async { gate.withPermit { buildTrailer(r, tab) } } }
             .awaitAll()
-            .filterNotNull()
+        // Round-robin flatten: every title's first reel precedes any title's
+        // second, while each title's own video priority order is preserved.
+        val out = mutableListOf<TrailerItem>()
+        val maxCount = groups.maxOfOrNull { it.size } ?: 0
+        for (lap in 0 until maxCount) {
+            for (titleGroup in groups) {
+                if (lap < titleGroup.size) out += titleGroup[lap]
+            }
+        }
+        out
     }
 
-    /** Resolves one TMDB result into a reel, or null when it has no playable trailer. */
-    private suspend fun buildTrailer(r: TMDBResult, tab: ReelTab): TrailerItem? {
-        // Server-verified playable keys in rank order. Three-way handling:
-        //  * null → resolver unreachable; degrade to the unverified TMDB key
-        //    so a brief Supabase outage doesn't empty the feed.
-        //  * empty → title has no playable trailer at all; skip it entirely.
-        //  * non-empty → first key is primary, the rest are fallbacks.
+    /**
+     * Resolves one TMDB result into its reels — one per tier-0/1 video, or an
+     * empty list when it has no playable trailer.
+     */
+    private suspend fun buildTrailer(r: TMDBResult, tab: ReelTab): List<TrailerItem> {
+        // Server-verified playable keys in rank order. Multi-video handling:
+        //  * null → resolver unreachable; degrade to ONE reel on the
+        //    unverified TMDB key so a brief Supabase outage doesn't empty the
+        //    feed.
+        //  * keys empty → title has no playable trailer at all; skip it.
+        //  * videos non-empty → one reel per tier-0/1 video, remaining keys
+        //    become every reel's fallback pool.
+        //  * videos empty → one reel on the top-ranked key, the rest fallbacks.
         val resolved = TrailerResolveService.resolve(r.id, r.isTV)
-        val candidates: List<String> = when {
-            resolved == null -> listOf(tmdb.getTrailerKey(r.id, r.isTV) ?: return null)
-            resolved.isEmpty() -> return null
-            else -> resolved
+        val primaryKeys: List<String>
+        val fallbackPool: List<String>
+        val typeByKey = mutableMapOf<String, String>()
+        when {
+            resolved == null -> {
+                val single = tmdb.getTrailerKey(r.id, r.isTV) ?: return emptyList()
+                primaryKeys = listOf(single)
+                fallbackPool = emptyList()
+            }
+            resolved.keys.isEmpty() -> return emptyList()
+            else -> {
+                if (resolved.videos.isNotEmpty()) {
+                    primaryKeys = resolved.videos.map { it.key }.filter { it.isNotEmpty() }
+                    for (video in resolved.videos) {
+                        val type = video.type
+                        if (!type.isNullOrEmpty()) typeByKey[video.key] = type
+                    }
+                } else {
+                    primaryKeys = resolved.keys.take(1)
+                }
+                fallbackPool = resolved.keys.filter { it !in primaryKeys }
+            }
         }
-        val key = candidates.firstOrNull() ?: return null
+        if (primaryKeys.isEmpty()) return emptyList()
         val provider = tmdb.getTopWatchProvider(r.id, r.isTV)
         val platform = Platform.from(provider?.providerName)
-        if (platform == null && tab != ReelTab.COMING_SOON) return null
-        return TrailerItem(
-            id = key,
-            tmdbId = r.id,
-            showName = r.displayName,
-            synopsis = r.overview ?: "",
-            genre = if (r.isTV) "Series" else "Movie",
-            runtime = "",
-            platformId = platform?.name?.lowercase() ?: "",
-            platformName = platform?.name ?: "Streaming",
-            platformColor = platform?.color ?: androidx.compose.ui.graphics.Color(0xFFF5821F),
-            backdropUrl = r.backdropUrl,
-            posterUrl = r.posterUrl,
-            trailerKey = key,
-            fallbackKeys = candidates.drop(1),
-            thumbnailUrl = "https://img.youtube.com/vi/$key/hqdefault.jpg",
-            // (fallbackKeys carries the remaining verified keys in rank order)
-            voteAverage = r.voteAverage ?: 7.0,
-            tab = tab,
-            isTV = r.isTV,
-        )
+        if (platform == null && tab != ReelTab.COMING_SOON) return emptyList()
+        return primaryKeys.map { key ->
+            TrailerItem(
+                id = key,
+                tmdbId = r.id,
+                showName = r.displayName,
+                synopsis = r.overview ?: "",
+                genre = if (r.isTV) "Series" else "Movie",
+                runtime = "",
+                platformId = platform?.name?.lowercase() ?: "",
+                platformName = platform?.name ?: "Streaming",
+                platformColor = platform?.color ?: androidx.compose.ui.graphics.Color(0xFFF5821F),
+                backdropUrl = r.backdropUrl,
+                posterUrl = r.posterUrl,
+                trailerKey = key,
+                fallbackKeys = fallbackPool,
+                thumbnailUrl = "https://img.youtube.com/vi/$key/hqdefault.jpg",
+                voteAverage = r.voteAverage ?: 7.0,
+                tab = tab,
+                isTV = r.isTV,
+                videoType = typeByKey[key],
+            )
+        }
     }
 
     fun setTab(tab: ReelTab) {

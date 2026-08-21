@@ -18,6 +18,16 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 
 /**
+ * One verified playable video, with its TMDB type ("Trailer", "Teaser",
+ * "Featurette", "Clip") when the server knows it.
+ */
+@Serializable
+data class ResolvedVideo(
+    val key: String = "",
+    val type: String? = null,
+)
+
+/**
  * Envelope for the `trailer_resolve` edge function response.
  */
 @Serializable
@@ -25,6 +35,7 @@ data class TrailerResolveResponse(
     val ok: Boolean = false,
     val cached: Boolean = false,
     val keys: List<String> = emptyList(),
+    val videos: List<ResolvedVideo> = emptyList(),
 )
 
 /**
@@ -57,14 +68,14 @@ object TrailerResolveService {
      *
      * The nullable return is load-bearing and the two cases must never be
      * conflated:
-     *  * Returns the decoded keys list on HTTP 200 — **including an empty
+     *  * Returns the decoded response on HTTP 200 — **including an empty keys
      *    list**, which means the title has no playable trailer at all (the
      *    caller drops it from the feed).
      *  * Returns null only when the call itself fails (a non-200 status or any
      *    caught exception), so the caller can degrade to the unverified TMDB
      *    key rather than emptying the feed.
      */
-    suspend fun resolve(tmdbId: Int, isTV: Boolean): List<String>? {
+    suspend fun resolve(tmdbId: Int, isTV: Boolean): TrailerResolveResponse? {
         return try {
             val url = "${SupabaseConfig.URL.trim()}/functions/v1/trailer_resolve"
             val body = buildJsonObject {
@@ -79,8 +90,7 @@ object TrailerResolveService {
                 setBody(body.toString())
             }
             if (response.status.value == 200) {
-                val resp: TrailerResolveResponse = response.body()
-                resp.keys
+                response.body<TrailerResolveResponse>()
             } else {
                 null
             }
