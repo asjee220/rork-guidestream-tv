@@ -42,7 +42,7 @@ enum ReelTab: String, CaseIterable, Hashable {
 }
 
 struct TrailerItem: Identifiable, Hashable {
-    let id: String          // YouTube video ID (or "sponsored-<n>")
+    var id: String          // YouTube video ID (or "sponsored-<n>")
     let tmdbId: Int
     let showName: String
     let synopsis: String
@@ -331,9 +331,12 @@ final class ReelsViewModel {
                 if adSlotCount % 2 == 1 {
                     // Odd ad slots (after reels 3, 9, 15...) → Rakuten
                     if !rakutenReels.isEmpty {
-                        out.append(
-                            rakutenReels[rakutenIndex % rakutenReels.count]
-                        )
+                        // Insert a copy with the slot number appended to its
+                        // id — the pool's ids repeat whenever a creative
+                        // cycles, and duplicate ids break ForEach identity.
+                        var adReel = rakutenReels[rakutenIndex % rakutenReels.count]
+                        adReel.id = "\(adReel.id)-\(adSlotCount)"
+                        out.append(adReel)
                         rakutenIndex += 1
                     }
                 }
@@ -345,8 +348,11 @@ final class ReelsViewModel {
         if isInitialLoad {
             let hasRakuten = out.contains { $0.isSponsored }
             if !hasRakuten, let first = rakutenReels.first {
+                // Same slot-suffixed uniquing as the cadence insert above.
+                var safetyReel = first
+                safetyReel.id = "\(safetyReel.id)-\(adSlotCount)"
                 let insertAt = min(2, out.count)
-                out.insert(first, at: insertAt)
+                out.insert(safetyReel, at: insertAt)
             }
         }
         return out
@@ -1129,6 +1135,21 @@ struct ReelsScreen: View {
                     }
                 }
 
+                // Top-band drag catcher for swipe-down-to-dismiss. The dismiss
+                // drag no longer rides the outer container — where it raced the
+                // paging ScrollView and could swallow the first swipe — so
+                // drags starting below this band page the feed untouched.
+                if canDismissSwipe {
+                    VStack(spacing: 0) {
+                        Color.clear
+                            .frame(height: 140)
+                            .contentShape(Rectangle())
+                            .simultaneousGesture(dismissDrag)
+                        Spacer()
+                    }
+                    .ignoresSafeArea()
+                }
+
                 // Top-left dismiss chevron + tab pills. Sits above all reel
                 // content with a glassy background so it stays legible.
                 VStack(spacing: 0) {
@@ -1197,29 +1218,6 @@ struct ReelsScreen: View {
                     pinChromeVisible()
                 }
             }
-            // Swipe-down-to-dismiss. Runs *simultaneously* with the inner
-            // paging ScrollView, but we only react to drags that begin at the
-            // first reel and pull downward — so neighbour reel paging is
-            // untouched.
-            .simultaneousGesture(
-                DragGesture(minimumDistance: 24)
-                    .onChanged { value in
-                        guard canDismissSwipe, value.translation.height > 0 else { return }
-                        // Resist a little so the drag feels weighty.
-                        dismissDragOffset = value.translation.height * 0.55
-                    }
-                    .onEnded { value in
-                        let translation = value.translation.height
-                        let predicted = value.predictedEndTranslation.height
-                        if canDismissSwipe && translation > 110 && predicted > 180 {
-                            handleDismiss()
-                        } else {
-                            withAnimation(.spring(response: 0.34, dampingFraction: 0.86)) {
-                                dismissDragOffset = 0
-                            }
-                        }
-                    }
-            )
         }
         // Landscape goes fully immersive, matching Android: the status bar and
         // the home indicator both hide so the trailer is genuinely full-bleed.
@@ -1355,6 +1353,30 @@ struct ReelsScreen: View {
             return (injectedScrolledID ?? injectedStartIndex) == 0
         }
         return vm.currentIndex == 0 && !vm.allTrailers.isEmpty
+    }
+
+    /// Swipe-down-to-dismiss drag, extracted verbatim from the old outer-
+    /// container modifier. Only reacts to downward drags while
+    /// `canDismissSwipe`, and is attached (simultaneously) solely to the
+    /// top-band drag catcher above the paging ScrollView.
+    private var dismissDrag: some Gesture {
+        DragGesture(minimumDistance: 24)
+            .onChanged { value in
+                guard canDismissSwipe, value.translation.height > 0 else { return }
+                // Resist a little so the drag feels weighty.
+                dismissDragOffset = value.translation.height * 0.55
+            }
+            .onEnded { value in
+                let translation = value.translation.height
+                let predicted = value.predictedEndTranslation.height
+                if canDismissSwipe && translation > 110 && predicted > 180 {
+                    handleDismiss()
+                } else {
+                    withAnimation(.spring(response: 0.34, dampingFraction: 0.86)) {
+                        dismissDragOffset = 0
+                    }
+                }
+            }
     }
 
     /// Reveals the landscape chrome and restarts its 3s auto-hide countdown.
