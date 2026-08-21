@@ -5,5 +5,6 @@ import SwiftUI
 struct GuideStreamWidgetBundle: WidgetBundle {
     var body: some Widget {
         GuideStreamWidget()
+        SportsLiveActivity()
     }
 }

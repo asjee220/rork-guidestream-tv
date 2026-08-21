@@ -24,6 +24,7 @@ struct SportsWatchSheet: View {
     @State private var isTogglingLike: Bool = false
     @State private var adDismissed: Bool = false
     @State private var selectedBroadcast: String?
+    @State private var liveActivity = SportsLiveActivityController.shared
 
     private var awayColor: Color { game.away.primaryHex.map { Color(hex: $0) } ?? Color(white: 0.18) }
     private var homeColor: Color { game.home.primaryHex.map { Color(hex: $0) } ?? Color(white: 0.18) }
@@ -167,6 +168,10 @@ struct SportsWatchSheet: View {
                 headerRow
                     .padding(.horizontal, 20)
                     .padding(.bottom, 18)
+
+                if liveActivityToggleAvailable {
+                    liveActivitySection
+                }
 
                 Rectangle()
                     .fill(Color.white.opacity(0.08))
@@ -320,6 +325,98 @@ struct SportsWatchSheet: View {
 
             Spacer(minLength: 0)
         }
+    }
+
+    /// Whether the live-score Live Activity capsule should appear at all:
+    /// Live Activities enabled AND the game is live or starts within an hour.
+    private var liveActivityToggleAvailable: Bool {
+        guard liveActivity.isAvailable else { return false }
+        switch game.state {
+        case .live:
+            return true
+        case .pre:
+            return game.startDate.timeIntervalSinceNow <= 60 * 60
+        case .post:
+            return false
+        }
+    }
+
+    private var isTrackingThisGame: Bool {
+        liveActivity.trackedGameId == game.id
+    }
+
+    private var isTrackingOtherGame: Bool {
+        guard let tracked = liveActivity.trackedGameId else { return false }
+        return tracked != game.id
+    }
+
+    /// Full-width "track live score" capsule with its 11pt hint. Three
+    /// states: idle, tracking this game, another game tracked (switch).
+    private var liveActivitySection: some View {
+        VStack(spacing: 8) {
+            Button {
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                if isTrackingThisGame {
+                    Task { await liveActivity.stop() }
+                } else {
+                    let broadcast = activeBroadcast ?? ""
+                    Task { await liveActivity.start(game: game, broadcast: broadcast) }
+                }
+            } label: {
+                HStack(spacing: 8) {
+                    if isTrackingThisGame {
+                        LiveActivityPulseDot(color: Color(hex: "F5821F"), size: 7)
+                    }
+                    Text(liveActivityCapsuleTitle)
+                        .scaledFont(size: 14, weight: .semibold)
+                        .foregroundStyle(liveActivityCapsuleTextColor)
+                }
+                .frame(maxWidth: .infinity)
+                .frame(height: 48)
+                .background(Capsule().fill(liveActivityCapsuleFill))
+                .overlay(Capsule().stroke(liveActivityCapsuleBorder, lineWidth: 1))
+            }
+            .buttonStyle(.plain)
+
+            Text(liveActivityHint)
+                .scaledFont(size: 11)
+                .foregroundStyle(Color.white.opacity(0.45))
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: .infinity)
+        }
+        .padding(.horizontal, 20)
+        .padding(.top, 18)
+        .padding(.bottom, 18)
+    }
+
+    private var liveActivityCapsuleTitle: String {
+        if isTrackingThisGame { return "Tracking · Stop" }
+        if isTrackingOtherGame { return "Switch to this game" }
+        return "Track live score"
+    }
+
+    private var liveActivityCapsuleFill: Color {
+        if isTrackingThisGame { return Color(hex: "F5821F").opacity(0.16) }
+        if isTrackingOtherGame { return Color(red: 0x5B/255, green: 0xB0/255, blue: 0xFF/255).opacity(0.16) }
+        return Color.white.opacity(0.08)
+    }
+
+    private var liveActivityCapsuleBorder: Color {
+        if isTrackingThisGame { return Color(hex: "F5821F") }
+        if isTrackingOtherGame { return Color(red: 0x5B/255, green: 0xB0/255, blue: 0xFF/255) }
+        return Color.white.opacity(0.13)
+    }
+
+    private var liveActivityCapsuleTextColor: Color {
+        if isTrackingThisGame { return Color(hex: "F5821F") }
+        if isTrackingOtherGame { return Color(red: 0x5B/255, green: 0xB0/255, blue: 0xFF/255) }
+        return .white
+    }
+
+    private var liveActivityHint: String {
+        if isTrackingThisGame { return "Showing in your Dynamic Island. Ends automatically at final." }
+        if isTrackingOtherGame { return "Switching ends the game you're currently tracking." }
+        return "Live score in your Dynamic Island until the final whistle."
     }
 
     private var gameThumbnail: some View {
@@ -865,6 +962,23 @@ struct SportsWatchSheet: View {
             .foregroundStyle(Color.white.opacity(0.85))
         }
         .buttonStyle(.plain)
+    }
+}
+
+/// Small pulsing indicator dot used by the live-score tracking capsule.
+private struct LiveActivityPulseDot: View {
+    let color: Color
+    let size: CGFloat
+    @State private var pulsing: Bool = false
+
+    var body: some View {
+        Circle()
+            .fill(color)
+            .frame(width: size, height: size)
+            .scaleEffect(pulsing ? 1.3 : 0.75)
+            .opacity(pulsing ? 1.0 : 0.55)
+            .animation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true), value: pulsing)
+            .onAppear { pulsing = true }
     }
 }
 

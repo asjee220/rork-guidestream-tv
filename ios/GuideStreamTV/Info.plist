@@ -20,6 +20,10 @@
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 
+	<!-- ===== Live Activities (Dynamic Island live sports scores) ===== -->
+	<key>NSSupportsLiveActivities</key>
+	<true/>
+
 	<!-- ===== AdMob app ID (tilde format, from AdMob console App settings) ===== -->
 	<key>GADApplicationIdentifier</key>
 	<string>ca-app-pub-6595855555549220~9022522623</string>

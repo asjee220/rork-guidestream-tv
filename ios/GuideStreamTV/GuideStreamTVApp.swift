@@ -39,7 +39,10 @@ struct GuideStreamTVApp: App {
                         break
                     }
                 }
-                .task { await RemoteConfigService.shared.load() }
+                .task {
+                    await RemoteConfigService.shared.load()
+                    await SportsLiveActivityController.shared.reconcile()
+                }
                 .onOpenURL { url in
                     guard url.scheme == "guidestream" else { return }
 
@@ -55,6 +58,14 @@ struct GuideStreamTVApp: App {
                     // non-TMDB prefixed ids, ShowDetailScreen for bare TMDB ids.
                     if let host = url.host, host == "title" {
                         handleTitleDeepLink(url)
+                        return
+                    }
+
+                    // Game deep links (e.g. guidestream://game/{game_id}) —
+                    // used by the live-scores Live Activity — route into the
+                    // Sports tab's game detail screen.
+                    if let host = url.host, host == "game" {
+                        handleGameDeepLink(url)
                         return
                     }
 
@@ -94,6 +105,26 @@ struct GuideStreamTVApp: App {
             name: .guideStreamOpenTitle,
             object: nil,
             userInfo: ["titleId": rawTitleId]
+        )
+    }
+
+    /// Parses a `guidestream://game/{game_id}` URL and routes to the Sports
+    /// game detail screen. Mirrors `handleTitleDeepLink`: buffer for
+    /// cold-launch safety, then post for the warm path.
+    private func handleGameDeepLink(_ url: URL) {
+        let gameId = url.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        guard !gameId.isEmpty else {
+            print("[DeepLink] game URL missing game_id: \(url)")
+            return
+        }
+        print("[DeepLink] game deep link: game_id=\(gameId)")
+        Task { @MainActor in
+            PendingRouteInbox.shared.setGameId(gameId)
+        }
+        NotificationCenter.default.post(
+            name: .guideStreamOpenSports,
+            object: nil,
+            userInfo: ["gameId": gameId]
         )
     }
 

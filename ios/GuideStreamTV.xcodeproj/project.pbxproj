@@ -76,6 +76,13 @@
 			);
 			target = 105FC5792E9EAD3100EA8BCF /* GuideStreamTV */;
 		};
+		XXBEA0D9E3F1C5A7B8D02EXX /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Models/SportsActivityAttributes.swift,
+			);
+			target = XX6E895901CF0DAEECE76CXX /* GuideStreamWidget */;
+		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -139,6 +146,7 @@
 			sourceTree = "<group>";
 			exceptions = (
 				XX9F4A1B2C3D4E5F6A7B8C9XX /* PBXFileSystemSynchronizedBuildFileExceptionSet */,
+				XXBEA0D9E3F1C5A7B8D02EXX /* PBXFileSystemSynchronizedBuildFileExceptionSet */,
 			);
 		};
 		105FC58C2E9EAD3200EA8BCF /* GuideStreamTVTests */ = {
