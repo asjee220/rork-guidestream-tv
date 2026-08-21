@@ -285,17 +285,15 @@ final class CoachMarkManager {
     }
 
     /// Skips the entire current tour, marking all remaining keys as seen.
+    /// Skip is a global opt-out: both tour-done keys are written so neither
+    /// tour ever re-arms for this account, and no completion toast fires.
     func skipTour() {
         let remaining = activeTour[currentIndex...]
         for mark in remaining {
             markAsSeen(mark.key)
         }
-        if activeTourIsHome {
-            markAsSeen("home_tour_done")
-            showCompletionToast()
-        } else {
-            markAsSeen("sheet_tour_done")
-        }
+        markAsSeen("home_tour_done")
+        markAsSeen("sheet_tour_done")
         genreHighlightActive = false
         dismissTour()
     }
@@ -529,6 +527,48 @@ final class CoachMarkManager {
     func clearForSignOut() {
         hideCompletionToast()
         dismissTour()
+    }
+
+    // MARK: - Replay
+
+    /// Set by `resetTours()` after the user asks to replay the app tour from
+    /// Profile; consumed by HomeView to restart the home tour from mark one.
+    private(set) var pendingReplay: Bool = false
+
+    func consumePendingReplay() {
+        pendingReplay = false
+    }
+
+    /// Wipes all tour progress locally (seen keys + device-local counters)
+    /// and remotely, then flags the home tour to replay from the first mark
+    /// once Home is visible again.
+    func resetTours() {
+        hideCompletionToast()
+        dismissTour()
+        seenKeys = [:]
+        defaults.removeObject(forKey: storageKey)
+        defaults.removeObject(forKey: attemptsKey)
+        defaults.removeObject(forKey: tourRunsKey)
+        skipAttempts = [:]
+        tourRuns = [:]
+        saveDeviceLocalCounters()
+        if let userId = AuthViewModel.shared.currentUser?.id.uuidString {
+            Task {
+                do {
+                    let empty: [String: String] = [:]
+                    try await SupabaseManager.shared.client
+                        .from("users")
+                        .update(["coach_marks_seen": empty])
+                        .eq("id", value: userId)
+                        .execute()
+                } catch {
+                    #if DEBUG
+                    print("[CoachMark] resetTours remote clear failed: \(error.localizedDescription)")
+                    #endif
+                }
+            }
+        }
+        pendingReplay = true
     }
 
     // MARK: - Completion toast

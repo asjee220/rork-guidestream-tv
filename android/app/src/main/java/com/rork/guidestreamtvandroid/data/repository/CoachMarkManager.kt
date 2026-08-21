@@ -267,12 +267,8 @@ class CoachMarkManager private constructor(private val context: Context) {
     fun skipTour() {
         val remaining = activeTour.drop(currentIndex)
         for (mark in remaining) markAsSeen(mark.key)
-        if (activeTourIsHome) {
-            markAsSeen("home_tour_done")
-            showCompletionToast()
-        } else {
-            markAsSeen("sheet_tour_done")
-        }
+        markAsSeen("home_tour_done")
+        markAsSeen("sheet_tour_done")
         genreHighlightActive = false
         dismissTour()
     }
@@ -438,6 +434,14 @@ class CoachMarkManager private constructor(private val context: Context) {
         } catch (_: Exception) { }
     }
 
+    /** Set by [resetTours]; consumed by the home tour trigger to replay from mark one. */
+    var pendingReplay: Boolean by mutableStateOf(false)
+        private set
+
+    fun consumePendingReplay() {
+        pendingReplay = false
+    }
+
     /**
      * Wipes all tour progress locally and remotely so both tours replay from
      * the first mark on the next eligible screen.
@@ -447,6 +451,7 @@ class CoachMarkManager private constructor(private val context: Context) {
         seenKeys = emptyMap()
         prefs.edit().remove(storageKey).apply()
         clearRemote()
+        pendingReplay = true
     }
 
     /**

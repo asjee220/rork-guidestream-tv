@@ -1393,6 +1393,18 @@ struct HomeView: View {
                 openPendingTitleRoute(route)
             }
         }
+        .onChange(of: coachMark.pendingReplay) { _, replay in
+            guard replay, homeContentReady, tabBarVisibility.isVisible else { return }
+            coachMark.consumePendingReplay()
+            if coachMark.shouldStartHomeTour(
+                isSignedIn: auth.isSignedIn,
+                hasCompletedOnboarding: auth.hasCompletedOnboarding,
+                homeContentReady: true,
+                tabBarVisible: tabBarVisibility.isVisible
+            ) {
+                coachMark.startHomeTour()
+            }
+        }
         .task {
             // Fire-and-forget: clear badge without blocking the home load.
             Task { await clearBadgeAndMarkSeen() }

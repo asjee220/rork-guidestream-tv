@@ -29,6 +29,7 @@ import androidx.compose.material.icons.filled.Devices
 import androidx.compose.material.icons.filled.Help
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Subscriptions
 import androidx.compose.material.icons.filled.Logout
@@ -83,6 +84,7 @@ import kotlinx.coroutines.launch
 fun ProfileScreen(
     modifier: Modifier = Modifier,
     onBack: (() -> Unit)? = null,
+    onReplayTour: (() -> Unit)? = null,
 ) {
     val authVm = AuthViewModel.get()
     val streamsVm = StreamsViewModel.get()
@@ -243,6 +245,14 @@ fun ProfileScreen(
             title = "Help & Feedback",
             subtitle = "Support, diagnostics",
             onClick = { showHelp = true },
+        )
+
+        ProfileRow(
+            icon = Icons.Filled.Refresh,
+            iconTint = BrandOrange,
+            title = "Replay App Tour",
+            subtitle = "See the walkthrough again",
+            onClick = { onReplayTour?.invoke() },
         )
 
         Spacer(Modifier.height(16.dp))

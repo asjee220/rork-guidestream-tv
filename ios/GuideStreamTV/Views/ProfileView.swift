@@ -34,6 +34,7 @@ enum ProfileSheet: String, Identifiable {
 // MARK: - ProfileView
 
 struct ProfileView: View {
+    @Environment(AppRouter.self) private var router
     @State private var auth = AuthViewModel.shared
     @State private var stats = ProfileStatsService.shared
     @State private var streams = StreamsViewModel.shared
@@ -323,6 +324,17 @@ struct ProfileView: View {
                 title: "Help & Feedback",
                 subtitle: "Get help or send feedback",
                 onTap: { path.append(.help) }
+            )
+            ProfileRowDivider()
+            ProfileRow(
+                icon: "arrow.clockwise",
+                iconTint: Color(red: 0.40, green: 0.85, blue: 0.70),
+                title: "Replay App Tour",
+                subtitle: "See the walkthrough again",
+                onTap: {
+                    CoachMarkManager.shared.resetTours()
+                    router.selectedTab = .home
+                }
             )
         }
     }

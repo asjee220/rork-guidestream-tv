@@ -184,6 +184,10 @@ fun MainScreen(
                     onBack = {
                         selectedTab = if (tabBeforeProfile == AppTab.PROFILE) AppTab.HOME else tabBeforeProfile
                     },
+                    onReplayTour = {
+                        coachMark.resetTours()
+                        selectedTab = AppTab.HOME
+                    },
                 )
             }
         }
@@ -448,7 +452,10 @@ fun MainScreen(
     }
 
     // Home tour trigger
-    LaunchedEffect(selectedTab, homeReady, tabBarVisible, isSignedIn, hasCompletedOnboarding) {
+    LaunchedEffect(selectedTab, homeReady, tabBarVisible, isSignedIn, hasCompletedOnboarding, coachMark.pendingReplay) {
+        if (coachMark.pendingReplay && selectedTab == AppTab.HOME) {
+            coachMark.consumePendingReplay()
+        }
         if (selectedTab == AppTab.HOME && coachMark.shouldStartHomeTour(
                 isSignedIn = isSignedIn,
                 hasCompletedOnboarding = hasCompletedOnboarding,
