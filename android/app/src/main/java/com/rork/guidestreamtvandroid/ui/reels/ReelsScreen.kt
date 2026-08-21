@@ -1831,7 +1831,7 @@ private fun ReelChipsRow(reel: TrailerItem, injected: Boolean) {
                 color = Color.White.copy(alpha = if (reel.isSponsored) 0.75f else 1f),
             )
         }
-        if (injected && !reel.videoType.isNullOrBlank()) {
+        if (!reel.videoType.isNullOrBlank() && (injected || !reel.videoType.equals("Trailer", ignoreCase = true))) {
             Spacer(Modifier.width(8.dp))
             Box(
                 modifier = Modifier

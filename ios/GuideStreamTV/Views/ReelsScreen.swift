@@ -2295,7 +2295,9 @@ private struct ReelView: View {
                 .background((trailer.isSponsored ? Color.white.opacity(0.06) : Color.white.opacity(0.12)))
                 .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.white.opacity(trailer.isSponsored ? 0.10 : 0.20)))
                 .clipShape(.rect(cornerRadius: 6))
-            if isInjected, let vtype = trailer.videoType, !vtype.isEmpty {
+            if let vtype = trailer.videoType,
+               !vtype.isEmpty,
+               isInjected || vtype.caseInsensitiveCompare("Trailer") != .orderedSame {
                 Text(vtype)
                     .scaledFont(size: 11, weight: .bold)
                     .foregroundStyle(.white)
