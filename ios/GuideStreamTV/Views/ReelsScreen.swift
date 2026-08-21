@@ -262,17 +262,18 @@ final class ReelsViewModel {
         print("[REELS] Fetched sources: trending=\(trending.count) onAir=\(onAir.count) mine=\(mine.count) popularTV=\(popularTV.count) streamingMovies=\(streamingMovies.count) comingSoonReleases=\(comingSoonReleases.count)")
 
         // Build trailer items for each source sequentially. Each buildItems call
-        // itself spawns a task group internally, so the six sources resolve
-        // one at a time without stacking ~48 concurrent requests on TMDB and
-        // the Supabase trailer resolver.
+        // itself spawns a task group internally, so the sources resolve one at
+        // a time without stacking ~48 concurrent requests on TMDB and the
+        // Supabase trailer resolver. Each batch is published to `allTrailers`
+        // the moment it resolves — the feed renders and is swipeable while
+        // the remaining sources are still loading — and the batches are
+        // assembled in the same order the old single-pass build used, so the
+        // final feed order and ad cadence are unchanged.
+        //
+        // Batch 1 — For You + popular TV + streaming movies, interleaved.
         let forYouItems = await buildItems(from: mineResults(mine), tab: .forYou)
-        let trendingItems = await buildItems(from: Array(trending.prefix(50)), tab: .trending)
-        let newItems = await buildItems(from: Array(onAir.prefix(50)), tab: .new)
         let popularTVItems = await buildItems(from: Array(popularTV.prefix(50)), tab: .forYou)
-        let comingSoonItems = await buildComingSoonItems(from: comingSoonReleases)
         let streamingMovieItems = await buildItems(from: Array(streamingMovies.prefix(50)), tab: .forYou)
-
-        print("[REELS] Built items: forYou=\(forYouItems.count) trending=\(trendingItems.count) new=\(newItems.count) popularTV=\(popularTVItems.count) comingSoon=\(comingSoonItems.count) streamingMovies=\(streamingMovieItems.count)")
 
         // Backfill For You feed with trending when the account has a light watchlist.
         var forYouCombined = forYouItems + popularTVItems
@@ -287,23 +288,40 @@ final class ReelsViewModel {
 
         // Intersperse streaming movies with For You content so movies appear
         // early in the feed rather than buried after 100+ TV reels.
-        var combined: [TrailerItem] = []
+        var firstBatch: [TrailerItem] = []
         let interleaveCount = max(forYouCombined.count, streamingMovieItems.count)
         for i in 0..<interleaveCount {
-            if i < forYouCombined.count { combined.append(forYouCombined[i]) }
-            if i < streamingMovieItems.count { combined.append(streamingMovieItems[i]) }
+            if i < forYouCombined.count { firstBatch.append(forYouCombined[i]) }
+            if i < streamingMovieItems.count { firstBatch.append(streamingMovieItems[i]) }
         }
-        combined += trendingItems + newItems + comingSoonItems
 
         // Deduplicate by trailer key so the same video doesn't appear twice.
-        // The seen set persists in the view model so later paginated batches
-        // keep deduplicating against everything already in the feed.
-        combined = combined.filter { seenTrailerKeys.insert($0.trailerKey).inserted }
+        // The seen set persists in the view model so every later batch —
+        // here and in pagination — keeps deduplicating against everything
+        // already in the feed.
+        firstBatch = firstBatch.filter { seenTrailerKeys.insert($0.trailerKey).inserted }
 
-        let finalFeed = weaveAds(into: combined, isInitialLoad: true)
+        // Publish batch 1 immediately.
+        self.allTrailers = weaveAds(into: firstBatch, isInitialLoad: true)
+        if !self.allTrailers.isEmpty { self.hasLoaded = true }
+        print("[REELS] First batch: forYou=\(forYouItems.count) popularTV=\(popularTVItems.count) streamingMovies=\(streamingMovieItems.count) → \(self.allTrailers.count) reels")
 
-        self.allTrailers = finalFeed
-        self.hasLoaded = !finalFeed.isEmpty
+        // Batch 2 — Trending.
+        let trendingItems = await buildItems(from: Array(trending.prefix(50)), tab: .trending)
+        self.allTrailers += weaveAds(into: trendingItems.filter { seenTrailerKeys.insert($0.trailerKey).inserted }, isInitialLoad: false)
+        if !self.allTrailers.isEmpty { self.hasLoaded = true }
+
+        // Batch 3 — New (on the air).
+        let newItems = await buildItems(from: Array(onAir.prefix(50)), tab: .new)
+        self.allTrailers += weaveAds(into: newItems.filter { seenTrailerKeys.insert($0.trailerKey).inserted }, isInitialLoad: false)
+        if !self.allTrailers.isEmpty { self.hasLoaded = true }
+
+        // Batch 4 — Coming soon.
+        let comingSoonItems = await buildComingSoonItems(from: comingSoonReleases)
+        self.allTrailers += weaveAds(into: comingSoonItems.filter { seenTrailerKeys.insert($0.trailerKey).inserted }, isInitialLoad: false)
+        if !self.allTrailers.isEmpty { self.hasLoaded = true }
+
+        print("[REELS] Feed complete: trending=\(trendingItems.count) new=\(newItems.count) comingSoon=\(comingSoonItems.count) → \(self.allTrailers.count) total reels")
 
         // Saved state now lives in the shared StreamsViewModel store, which
         // hydrates itself from the local cache on init and refreshes from
