@@ -368,6 +368,7 @@ struct ShowDetailScreen: View {
     @State private var synopsisExpanded: Bool = false
     @State private var notifyOn: Bool = true
     @State private var showComments: Bool = false
+    @State private var showShare: Bool = false
     @State private var streams = StreamsViewModel.shared
     @State private var social = SocialViewModel.shared
     @State private var isTogglingLike: Bool = false
@@ -594,6 +595,12 @@ struct ShowDetailScreen: View {
                 posterColors: [],
                 accent: Color.orange
             )
+        }
+        .sheet(isPresented: $showShare) {
+            SystemShareSheet(items: [
+                ShareService.shareURL(kind: isTV ? .tv : .movie, id: String(resolvedTmdbId ?? 0), title: displayTitle),
+                ShareService.shareMessage(title: displayTitle)
+            ])
         }
         .onAppear {
             WatchIntentLogger.shared.log(
@@ -1067,7 +1074,16 @@ struct ShowDetailScreen: View {
                 }
             },
             onBack: onBack,
-            onShare: {}
+            onShare: {
+                guard let tmdbId = resolvedTmdbId, tmdbId > 0 else { return }
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                WatchIntentLogger.shared.log(
+                    eventType: .shareTapped,
+                    titleId: String(tmdbId),
+                    metadata: ["surface": "show_detail", "kind": isTV ? "tv" : "movie"]
+                )
+                showShare = true
+            }
         )
     }
 

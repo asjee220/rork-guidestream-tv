@@ -58,6 +58,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.rork.guidestreamtvandroid.data.ShareLinks
 import com.rork.guidestreamtvandroid.data.models.DeepDiveCreator
 import com.rork.guidestreamtvandroid.data.models.Platform
 import com.rork.guidestreamtvandroid.data.models.StreamingCatalog
@@ -422,11 +423,20 @@ fun ShowDetailScreen(
                         tint = TextPrimary,
                         showDot = false,
                     ) {
-                        val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                            type = "text/plain"
-                            putExtra(Intent.EXTRA_TEXT, "https://www.themoviedb.org/${if (isTV) "tv" else "movie"}/$tmdbId")
+                        val tid = tmdbId
+                        if (tid != null && tid > 0) {
+                            ShareLinks.share(
+                                context,
+                                if (isTV) ShareLinks.Kind.TV else ShareLinks.Kind.MOVIE,
+                                tid.toString(),
+                                detail?.name ?: titleName,
+                            )
+                            WatchIntentLogger.get().log(
+                                WatchIntentLogger.IntentEventType.SHARE_TAPPED,
+                                titleId = tid.toString(),
+                                metadata = mapOf("surface" to "show_detail", "kind" to if (isTV) "tv" else "movie"),
+                            )
                         }
-                        context.startActivity(Intent.createChooser(shareIntent, "Share"))
                     }
                     // Send to TV
                     CircleAction(

@@ -1260,9 +1260,9 @@ struct EpisodeDetailSheet: View {
             }
 
             ShareLink(
-                item: URL(string: "https://guidestream.tv")!,
+                item: ShareService.shareURL(kind: isTV ? .tv : .movie, id: tmdbId.map(String.init) ?? "", title: title),
                 subject: Text(title),
-                message: Text("Watch \(title) on GuideStream TV")
+                message: Text(ShareService.shareMessage(title: title))
             ) {
                 VStack(spacing: 8) {
                     ZStack {
@@ -1278,6 +1278,14 @@ struct EpisodeDetailSheet: View {
                         .foregroundStyle(Color.white.opacity(0.7))
                 }
             }
+            .disabled((tmdbId ?? 0) <= 0)
+            .simultaneousGesture(TapGesture().onEnded {
+                WatchIntentLogger.shared.log(
+                    eventType: .shareTapped,
+                    titleId: tmdbId.map(String.init) ?? "",
+                    metadata: ["surface": "coming_soon_sheet", "kind": isTV ? "tv" : "movie"]
+                )
+            })
         }
         .frame(maxWidth: .infinity)
     }
@@ -1306,9 +1314,9 @@ struct EpisodeDetailSheet: View {
             .frame(maxWidth: .infinity)
 
             ShareLink(
-                item: URL(string: "https://guidestream.tv")!,
+                item: ShareService.shareURL(kind: isTV ? .tv : .movie, id: tmdbId.map(String.init) ?? "", title: title),
                 subject: Text(title),
-                message: Text("Watch \(title) on GuideStream TV")
+                message: Text(ShareService.shareMessage(title: title))
             ) {
                 VStack(spacing: 8) {
                     ZStack {
@@ -1324,6 +1332,14 @@ struct EpisodeDetailSheet: View {
                         .foregroundStyle(Color.white.opacity(0.7))
                 }
             }
+            .disabled((tmdbId ?? 0) <= 0)
+            .simultaneousGesture(TapGesture().onEnded {
+                WatchIntentLogger.shared.log(
+                    eventType: .shareTapped,
+                    titleId: tmdbId.map(String.init) ?? "",
+                    metadata: ["surface": "episode_detail_sheet", "kind": isTV ? "tv" : "movie"]
+                )
+            })
             .frame(maxWidth: .infinity)
 
             circleAction(

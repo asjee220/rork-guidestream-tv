@@ -55,6 +55,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.rork.guidestreamtvandroid.data.ShareLinks
 import com.rork.guidestreamtvandroid.data.models.Platform
 import com.rork.guidestreamtvandroid.data.models.SportsGame
 import com.rork.guidestreamtvandroid.data.repository.AuthViewModel
@@ -188,11 +189,12 @@ fun SportsWatchSheet(
                     label = "Share",
                     tint = Color.White,
                 ) {
-                    val share = Intent(Intent.ACTION_SEND).apply {
-                        type = "text/plain"
-                        putExtra(Intent.EXTRA_TEXT, "Watch $gameTitle on GuideStream TV\nhttps://guidestream.tv")
-                    }
-                    context.startActivity(Intent.createChooser(share, "Share"))
+                    ShareLinks.share(context, ShareLinks.Kind.GAME, game.id, gameTitle)
+                    WatchIntentLogger.get().log(
+                        WatchIntentLogger.IntentEventType.SHARE_TAPPED,
+                        titleId = game.id,
+                        metadata = mapOf("surface" to "sports_watch_sheet", "kind" to "game"),
+                    )
                 }
                 CircleAction(
                     icon = Icons.Filled.Tv,

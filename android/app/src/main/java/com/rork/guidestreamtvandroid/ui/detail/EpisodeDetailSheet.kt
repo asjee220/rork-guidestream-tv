@@ -63,6 +63,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.rork.guidestreamtvandroid.data.ShareLinks
 import com.rork.guidestreamtvandroid.data.models.Platform
 import com.rork.guidestreamtvandroid.data.models.StreamingCatalog
 import com.rork.guidestreamtvandroid.data.models.TitleId
@@ -800,25 +801,25 @@ private fun AboutSection(overview: String?, fallback: String) {
     }
 }
 
-/** Fires the platform share sheet with a canonical TMDB link for the title. */
+/** Fires the platform share sheet with the canonical GuideStream share link. */
 private fun shareTitle(
     context: android.content.Context,
     title: String,
     tmdbId: Int?,
     isTV: Boolean,
 ) {
-    val link = tmdbId?.let { "https://www.themoviedb.org/${if (isTV) "tv" else "movie"}/$it" }
-        ?: "https://guidestream.tv"
-    val intent = Intent(Intent.ACTION_SEND).apply {
-        type = "text/plain"
-        putExtra(Intent.EXTRA_SUBJECT, title)
-        putExtra(Intent.EXTRA_TEXT, "Watch $title on GuideStream TV\n$link")
-    }
-    try {
-        context.startActivity(Intent.createChooser(intent, "Share"))
-    } catch (_: Exception) {
-        // No share target available — nothing to recover from.
-    }
+    val tid = tmdbId?.takeIf { it > 0 }?.toString() ?: return
+    WatchIntentLogger.get().log(
+        WatchIntentLogger.IntentEventType.SHARE_TAPPED,
+        titleId = tid,
+        metadata = mapOf("surface" to "episode_detail_sheet", "kind" to if (isTV) "tv" else "movie"),
+    )
+    ShareLinks.share(
+        context,
+        if (isTV) ShareLinks.Kind.TV else ShareLinks.Kind.MOVIE,
+        tid,
+        title,
+    )
 }
 
 /**

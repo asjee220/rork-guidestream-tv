@@ -33,6 +33,7 @@ enum IntentEventType: String {
     case watchlistAdded = "watchlist_added"
     case watchlistRemoved = "watchlist_removed"
     case watchedToggled = "watched_toggled"
+    case shareTapped = "share_tapped"
 
     // Lifecycle events — fire whether signed in or not so we capture every device.
     case sessionStarted = "session_started"

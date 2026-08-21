@@ -30,6 +30,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Tv
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material3.CircularProgressIndicator
@@ -55,6 +56,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
+import com.rork.guidestreamtvandroid.data.ShareLinks
 import com.rork.guidestreamtvandroid.data.models.ContentSource
 import com.rork.guidestreamtvandroid.data.models.NewEpisodeRow
 import com.rork.guidestreamtvandroid.data.remote.SupabaseManager
@@ -330,6 +332,19 @@ fun CreatorDetailScreen(
                             titleName = source?.displayName,
                             mediaType = null,
                             tmdbId = null,
+                        )
+                    }
+
+                    CircleAction(
+                        icon = Icons.Filled.Share,
+                        label = "Share",
+                        tint = Color.White,
+                    ) {
+                        ShareLinks.share(context, ShareLinks.Kind.CREATOR, titleId, source?.displayName ?: titleId)
+                        WatchIntentLogger.get().log(
+                            WatchIntentLogger.IntentEventType.SHARE_TAPPED,
+                            titleId = titleId,
+                            metadata = mapOf("surface" to "creator_detail", "kind" to "creator"),
                         )
                     }
 

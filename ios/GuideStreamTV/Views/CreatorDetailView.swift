@@ -214,7 +214,7 @@ struct CreatorDetailView: View {
         }
         .sheet(isPresented: $showShareSheet) {
             if let source {
-                CreatorShareSheet(items: [shareURL(source: source)])
+                CreatorShareSheet(items: [shareURL(source: source), ShareService.shareMessage(title: source.displayName)])
             }
         }
         .sheet(isPresented: $showCastSheet) {
@@ -368,6 +368,11 @@ struct CreatorDetailView: View {
     private func triggerShare() {
 #if os(iOS)
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        WatchIntentLogger.shared.log(
+            eventType: .shareTapped,
+            titleId: titleId,
+            metadata: ["surface": "creator_detail", "kind": "creator"]
+        )
         showShareSheet = true
 #endif
     }
@@ -380,10 +385,7 @@ struct CreatorDetailView: View {
 
 #if os(iOS)
     private func shareURL(source: ContentSource) -> URL {
-        if let url = source.channelUrl ?? source.feedUrl, let u = URL(string: url) {
-            return u
-        }
-        return URL(string: "https://guidestream.tv")!
+        ShareService.shareURL(kind: .creator, id: titleId, title: source.displayName)
     }
 #endif
 

@@ -108,6 +108,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.rork.guidestreamtvandroid.BuildConfig
+import com.rork.guidestreamtvandroid.data.ShareLinks
 import com.rork.guidestreamtvandroid.data.models.Platform
 import com.rork.guidestreamtvandroid.data.models.StreamingCatalog
 import com.rork.guidestreamtvandroid.data.remote.WatchmodeResolveService
@@ -463,11 +464,22 @@ fun ReelsScreen(
                         )
                     },
                     onShare = {
-                        val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                            type = "text/plain"
-                            putExtra(Intent.EXTRA_TEXT, reel.youtubeUrl)
+                        if (reel.tmdbId > 0 && !reel.isSponsored) {
+                            ShareLinks.share(
+                                context,
+                                if (reel.isTV) ShareLinks.Kind.TV else ShareLinks.Kind.MOVIE,
+                                reel.tmdbId.toString(),
+                                reel.showName,
+                            )
+                            WatchIntentLogger.get().log(
+                                WatchIntentLogger.IntentEventType.SHARE_TAPPED,
+                                titleId = reel.tmdbId.toString(),
+                                metadata = mapOf(
+                                    "surface" to "reels_trailer",
+                                    "kind" to if (reel.isTV) "tv" else "movie",
+                                ),
+                            )
                         }
-                        context.startActivity(Intent.createChooser(shareIntent, "Share trailer"))
                     },
                 )
             }
@@ -499,11 +511,22 @@ fun ReelsScreen(
                         },
                         onShare = {
                             showMoreTmdb = null
-                            val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                                type = "text/plain"
-                                putExtra(Intent.EXTRA_TEXT, openedReel.youtubeUrl)
+                            if (openedReel.tmdbId > 0 && !openedReel.isSponsored) {
+                                ShareLinks.share(
+                                    context,
+                                    if (openedReel.isTV) ShareLinks.Kind.TV else ShareLinks.Kind.MOVIE,
+                                    openedReel.tmdbId.toString(),
+                                    openedReel.showName,
+                                )
+                                WatchIntentLogger.get().log(
+                                    WatchIntentLogger.IntentEventType.SHARE_TAPPED,
+                                    titleId = openedReel.tmdbId.toString(),
+                                    metadata = mapOf(
+                                        "surface" to "reels_trailer",
+                                        "kind" to if (openedReel.isTV) "tv" else "movie",
+                                    ),
+                                )
                             }
-                            context.startActivity(Intent.createChooser(shareIntent, "Share trailer"))
                         },
                         onPlayYoutube = {
                             showMoreTmdb = null
@@ -1347,11 +1370,22 @@ private fun InjectedReelsScreen(
                         )
                     },
                     onShare = {
-                        val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                            type = "text/plain"
-                            putExtra(Intent.EXTRA_TEXT, reel.youtubeUrl)
+                        if (reel.tmdbId > 0 && !reel.isSponsored) {
+                            ShareLinks.share(
+                                context,
+                                if (reel.isTV) ShareLinks.Kind.TV else ShareLinks.Kind.MOVIE,
+                                reel.tmdbId.toString(),
+                                reel.showName,
+                            )
+                            WatchIntentLogger.get().log(
+                                WatchIntentLogger.IntentEventType.SHARE_TAPPED,
+                                titleId = reel.tmdbId.toString(),
+                                metadata = mapOf(
+                                    "surface" to "reels_trailer",
+                                    "kind" to if (reel.isTV) "tv" else "movie",
+                                ),
+                            )
                         }
-                        context.startActivity(Intent.createChooser(shareIntent, "Share trailer"))
                     },
                     injected = true,
                     sources = sources,
@@ -1404,11 +1438,22 @@ private fun InjectedReelsScreen(
                         },
                         onShare = {
                             showMoreTmdb = null
-                            val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                                type = "text/plain"
-                                putExtra(Intent.EXTRA_TEXT, openedReel.youtubeUrl)
+                            if (openedReel.tmdbId > 0 && !openedReel.isSponsored) {
+                                ShareLinks.share(
+                                    context,
+                                    if (openedReel.isTV) ShareLinks.Kind.TV else ShareLinks.Kind.MOVIE,
+                                    openedReel.tmdbId.toString(),
+                                    openedReel.showName,
+                                )
+                                WatchIntentLogger.get().log(
+                                    WatchIntentLogger.IntentEventType.SHARE_TAPPED,
+                                    titleId = openedReel.tmdbId.toString(),
+                                    metadata = mapOf(
+                                        "surface" to "reels_trailer",
+                                        "kind" to if (openedReel.isTV) "tv" else "movie",
+                                    ),
+                                )
                             }
-                            context.startActivity(Intent.createChooser(shareIntent, "Share trailer"))
                         },
                         onPlayYoutube = {
                             showMoreTmdb = null

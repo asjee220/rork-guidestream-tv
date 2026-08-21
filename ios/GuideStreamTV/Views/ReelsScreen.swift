@@ -1326,6 +1326,11 @@ struct ReelsScreen: View {
                     },
                     onShare: {
                         showMore = false
+                        WatchIntentLogger.shared.log(
+                            eventType: .shareTapped,
+                            titleId: String(trailer.tmdbId),
+                            metadata: ["surface": "reels_trailer", "kind": trailer.isTV ? "tv" : "movie"]
+                        )
                         showShare = true
                     }
                 )
@@ -1514,7 +1519,14 @@ struct ReelsScreen: View {
                     UIImpactFeedbackGenerator(style: .light).impactOccurred()
                     vm.toggleWatched(trailer)
                 },
-                onShare: { showShare = true },
+                onShare: {
+                    WatchIntentLogger.shared.log(
+                        eventType: .shareTapped,
+                        titleId: String(trailer.tmdbId),
+                        metadata: ["surface": "reels_trailer", "kind": trailer.isTV ? "tv" : "movie"]
+                    )
+                    showShare = true
+                },
                 onMore: { showMore = true },
                 onTabSelect: { tab in
                     guard let idx = vm.allTrailers.firstIndex(where: { $0.tab == tab }) else { return }
@@ -1658,7 +1670,14 @@ struct ReelsScreen: View {
                 let mediaType = trailer.isTV ? "tv" : "movie"
                 Task { await SocialViewModel.shared.toggleWatched(titleId: tid, titleName: trailer.showName, mediaType: mediaType, tmdbId: trailer.tmdbId) }
             },
-            onShare: { showShare = true },
+            onShare: {
+                WatchIntentLogger.shared.log(
+                    eventType: .shareTapped,
+                    titleId: String(trailer.tmdbId),
+                    metadata: ["surface": "reels_trailer", "kind": trailer.isTV ? "tv" : "movie"]
+                )
+                showShare = true
+            },
             onMore: { showMore = true },
             onTabSelect: { _ in },
             onSponsorCTA: {},
@@ -3428,6 +3447,15 @@ struct TrailerShareSheet: View {
     @State private var didCopy: Bool = false
     @State private var showSystemShare: Bool = false
 
+    /// True when this reel can produce a share link — never for sponsored
+    /// reels or reels without a real TMDB id.
+    private var canShareLink: Bool { !trailer.isSponsored && trailer.tmdbId > 0 }
+
+    /// Canonical GuideStream share URL for this reel's title.
+    private var shareLinkURL: URL {
+        ShareService.shareURL(kind: trailer.isTV ? .tv : .movie, id: String(trailer.tmdbId), title: trailer.showName)
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 12) {
@@ -3474,7 +3502,8 @@ struct TrailerShareSheet: View {
             // Share grid
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 4), spacing: 16) {
                 ShareTile(icon: "link", label: didCopy ? "Copied" : "Copy") {
-                    UIPasteboard.general.string = "https://guidestream.tv/trailer/\(trailer.trailerKey)"
+                    guard canShareLink else { return }
+                    UIPasteboard.general.string = shareLinkURL.absoluteString
                     withAnimation { didCopy = true }
                 }
                 ShareTile(icon: "message.fill", label: "Messages") { open("sms:") }
@@ -3489,7 +3518,10 @@ struct TrailerShareSheet: View {
                     open("https://twitter.com/intent/tweet?url=\(enc)")
                 }
                 ShareTile(icon: "ellipsis.message", label: "Messenger") { open("fb-messenger://") }
-                ShareTile(icon: "ellipsis", label: "More") { showSystemShare = true }
+                ShareTile(icon: "ellipsis", label: "More") {
+                    guard canShareLink else { return }
+                    showSystemShare = true
+                }
                 ShareTile(icon: "square.and.arrow.down", label: "YouTube") {
                     UIPasteboard.general.string = "https://www.youtube.com/watch?v=\(trailer.trailerKey)"
                     UIImpactFeedbackGenerator(style: .light).impactOccurred()
@@ -3501,7 +3533,7 @@ struct TrailerShareSheet: View {
             Spacer()
         }
         .sheet(isPresented: $showSystemShare) {
-            ActivityView(activityItems: [URL(string: "https://guidestream.tv/trailer/\(trailer.trailerKey)") as Any, "\(trailer.showName) — watch the trailer on GuideStream TV"])
+            ActivityView(activityItems: [shareLinkURL, ShareService.shareMessage(title: trailer.showName)])
         }
     }
 

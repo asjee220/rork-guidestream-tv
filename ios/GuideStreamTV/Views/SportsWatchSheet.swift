@@ -576,9 +576,9 @@ struct SportsWatchSheet: View {
                 .frame(maxWidth: .infinity)
 
             ShareLink(
-                item: URL(string: "https://guidestream.tv")!,
+                item: ShareService.shareURL(kind: .game, id: game.id, title: gameTitle),
                 subject: Text(gameTitle),
-                message: Text("Watch \(gameTitle) on GuideStream TV")
+                message: Text(ShareService.shareMessage(title: gameTitle))
             ) {
                 VStack(spacing: 8) {
                     ZStack {
@@ -594,6 +594,13 @@ struct SportsWatchSheet: View {
                         .foregroundStyle(Color.white.opacity(0.7))
                 }
             }
+            .simultaneousGesture(TapGesture().onEnded {
+                WatchIntentLogger.shared.log(
+                    eventType: .shareTapped,
+                    titleId: game.id,
+                    metadata: ["surface": "sports_watch_sheet", "kind": "game"]
+                )
+            })
             .frame(maxWidth: .infinity)
 
             circleAction(
