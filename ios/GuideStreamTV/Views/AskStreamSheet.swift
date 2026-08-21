@@ -91,6 +91,7 @@ struct AskStreamSheet: View {
     @State private var selectedMatch: AgentTitleMatchModel? = nil
     @State private var auth = AuthViewModel.shared
     @State private var providerByResult: [Int: Platform] = [:]
+    @State private var streams = StreamsViewModel.shared
     @State private var isDictating: Bool = false
     @FocusState private var inputFocus: AskFocusField?
 
@@ -543,80 +544,91 @@ struct AskStreamSheet: View {
 
                 VStack(spacing: 10) {
                     ForEach(searchResults) { r in
-                        Button {
-                            haptic(.light)
-                            WatchIntentLogger.shared.log(
-                                eventType: .cardTapped,
-                                titleId: String(r.id),
-                                metadata: [
-                                    "source": "tmdb_search",
-                                    "type": r.mediaType ?? "unknown",
-                                    "query": query
-                                ]
-                            )
-                            onSelectResult(r)
-                        } label: {
-                            HStack(spacing: 12) {
-                                resultPoster(url: r.posterUrl)
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(r.displayName)
-                                        .font(.guideHeading(size: 15, weight: .semibold))
-                                        .foregroundStyle(.white)
-                                        .lineLimit(2)
-                                        .multilineTextAlignment(.leading)
+                        HStack(spacing: 10) {
+                            Button {
+                                haptic(.light)
+                                WatchIntentLogger.shared.log(
+                                    eventType: .cardTapped,
+                                    titleId: String(r.id),
+                                    metadata: [
+                                        "source": "tmdb_search",
+                                        "type": r.mediaType ?? "unknown",
+                                        "query": query
+                                    ]
+                                )
+                                onSelectResult(r)
+                            } label: {
+                                HStack(spacing: 12) {
+                                    resultPoster(url: r.posterUrl)
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text(r.displayName)
+                                            .font(.guideHeading(size: 15, weight: .semibold))
+                                            .foregroundStyle(.white)
+                                            .lineLimit(2)
+                                            .multilineTextAlignment(.leading)
 
-                                    HStack(spacing: 6) {
-                                        // Platform badge — the core fragmentation solve
-                                        if let platform = providerByResult[r.id] {
-                                            Text(platform.name)
+                                        HStack(spacing: 6) {
+                                            // Platform badge — the core fragmentation solve
+                                            if let platform = providerByResult[r.id] {
+                                                Text(platform.name)
+                                                    .font(.guideBody(size: 10, weight: .bold))
+                                                    .tracking(0.4)
+                                                    .foregroundStyle(.white)
+                                                    .padding(.horizontal, 8)
+                                                    .padding(.vertical, 3)
+                                                    .background(
+                                                        Capsule().fill(platform.color)
+                                                    )
+                                            } else {
+                                                // Skeleton pill while provider is loading
+                                                Capsule()
+                                                    .fill(Color.white.opacity(0.08))
+                                                    .frame(width: 72, height: 20)
+                                            }
+
+                                            if let y = r.year {
+                                                Text(String(y))
+                                                    .font(.guideBody(size: 12, weight: .regular))
+                                                    .foregroundStyle(Color.textSecondary)
+                                            }
+
+                                            let typeLabel = r.isTV ? "TV Series" : "Movie"
+                                            Text(typeLabel)
                                                 .font(.guideBody(size: 10, weight: .bold))
-                                                .tracking(0.4)
-                                                .foregroundStyle(.white)
+                                                .foregroundStyle(r.isTV ? Color.blue : Color.orange)
                                                 .padding(.horizontal, 8)
                                                 .padding(.vertical, 3)
                                                 .background(
-                                                    Capsule().fill(platform.color)
+                                                    Capsule().fill((r.isTV ? Color.blue : Color.orange).opacity(0.15))
                                                 )
-                                        } else {
-                                            // Skeleton pill while provider is loading
-                                            Capsule()
-                                                .fill(Color.white.opacity(0.08))
-                                                .frame(width: 72, height: 20)
+                                                .overlay(
+                                                    Capsule().stroke((r.isTV ? Color.blue : Color.orange).opacity(0.35), lineWidth: 1)
+                                                )
                                         }
-
-                                        if let y = r.year {
-                                            Text(String(y))
-                                                .font(.guideBody(size: 12, weight: .regular))
-                                                .foregroundStyle(Color.textSecondary)
-                                        }
-
-                                        let typeLabel = r.isTV ? "TV Series" : "Movie"
-                                        Text(typeLabel)
-                                            .font(.guideBody(size: 10, weight: .bold))
-                                            .foregroundStyle(r.isTV ? Color.blue : Color.orange)
-                                            .padding(.horizontal, 8)
-                                            .padding(.vertical, 3)
-                                            .background(
-                                                Capsule().fill((r.isTV ? Color.blue : Color.orange).opacity(0.15))
-                                            )
-                                            .overlay(
-                                                Capsule().stroke((r.isTV ? Color.blue : Color.orange).opacity(0.35), lineWidth: 1)
-                                            )
                                     }
+                                    Spacer()
+                                    Image(systemName: "chevron.right")
+                                        .scaledFont(size: 13, weight: .semibold)
+                                        .foregroundStyle(Color.white.opacity(0.30))
                                 }
-                                Spacer()
-                                Image(systemName: "chevron.right")
-                                    .scaledFont(size: 13, weight: .semibold)
-                                    .foregroundStyle(Color.white.opacity(0.30))
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 10)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                        .fill(Color.white.opacity(0.04))
+                                )
                             }
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 10)
-                            .background(
-                                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                    .fill(Color.white.opacity(0.04))
+                            .buttonStyle(.plain)
+
+                            saveToggleButton(
+                                titleId: String(r.id),
+                                title: r.displayName,
+                                posterUrl: r.posterUrl,
+                                platform: providerByResult[r.id]?.name,
+                                isTV: r.isTV,
+                                source: "ask_stream_search"
                             )
                         }
-                        .buttonStyle(.plain)
                     }
                 }
                 .padding(.horizontal, 16)
@@ -803,30 +815,94 @@ struct AskStreamSheet: View {
     }
 
     /// Horizontal scroll of poster cards for titles the agent matched.
-    /// Tapping a poster opens the title's detail screen.
+    /// Tapping a poster opens the title's detail screen; the trailing
+    /// bookmark saves or removes the title without leaving the sheet.
     private func matchPosterRail(matches: [AgentTitleMatchModel]) -> some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 12) {
                 ForEach(matches) { m in
-                    Button {
-                        haptic(.light)
-                        WatchIntentLogger.shared.log(
-                            eventType: .cardTapped,
+                    ZStack(alignment: .topTrailing) {
+                        Button {
+                            haptic(.light)
+                            WatchIntentLogger.shared.log(
+                                eventType: .cardTapped,
+                                titleId: String(m.id),
+                                platformId: m.providerName?.lowercased() ?? "ai_match",
+                                metadata: [
+                                    "source": "ask_stream_ai_match",
+                                    "title": m.title
+                                ]
+                            )
+                            selectedMatch = m
+                        } label: {
+                            AgentMatchCard(match: m)
+                        }
+                        .buttonStyle(.plain)
+
+                        saveToggleButton(
                             titleId: String(m.id),
-                            platformId: m.providerName?.lowercased() ?? "ai_match",
-                            metadata: [
-                                "source": "ask_stream_ai_match",
-                                "title": m.title
-                            ]
+                            title: m.title,
+                            posterUrl: m.posterUrl,
+                            platform: m.providerName,
+                            isTV: m.isTV,
+                            source: "ask_stream_ai_match"
                         )
-                        selectedMatch = m
-                    } label: {
-                        AgentMatchCard(match: m)
                     }
-                    .buttonStyle(.plain)
                 }
             }
         }
+    }
+
+    /// Inline watch-list toggle shared by AI match cards and search rows.
+    /// Lives as a sibling of (never nested inside) the card's open Button
+    /// so each gesture stays independent.
+    private func saveToggleButton(
+        titleId: String,
+        title: String,
+        posterUrl: String?,
+        platform: String?,
+        isTV: Bool,
+        source: String
+    ) -> some View {
+        let key = titleId.trimmingCharacters(in: .whitespacesAndNewlines)
+        let saved = streams.userStreams.contains { $0.titleId == key }
+        return Button {
+            guard !key.isEmpty else { return }
+            haptic(.light)
+            WatchIntentLogger.shared.log(
+                eventType: saved ? .streamRemoved : .streamAdded,
+                titleId: key,
+                platformId: platform,
+                metadata: [
+                    "source": source,
+                    "title": title,
+                    "posterUrl": posterUrl ?? "",
+                    "isTV": isTV
+                ]
+            )
+            // Unstructured Task: survives the sheet closing mid-write.
+            Task {
+                if saved {
+                    await streams.removeFromMyStreams(titleId: key)
+                } else {
+                    await streams.addToMyStreams(
+                        titleId: key,
+                        title: title,
+                        posterUrl: posterUrl,
+                        platform: platform,
+                        isTV: isTV
+                    )
+                }
+            }
+        } label: {
+            Image(systemName: saved ? "bookmark.fill" : "bookmark")
+                .scaledFont(size: 16, weight: .semibold)
+                .foregroundStyle(saved ? Color.orange : .white)
+                .padding(6)
+                .frame(width: 28, height: 28)
+                .background(Circle().fill(Color.black.opacity(0.55)))
+        }
+        .buttonStyle(.plain)
     }
 
     private func followUpButton(_ text: String) -> some View {

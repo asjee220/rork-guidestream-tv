@@ -31,6 +31,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Send
@@ -68,6 +69,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.rork.guidestreamtvandroid.SupabaseConfig
 import com.rork.guidestreamtvandroid.data.local.DeviceIdentity
 import com.rork.guidestreamtvandroid.data.local.SpeechInputService
@@ -75,6 +77,7 @@ import com.rork.guidestreamtvandroid.data.remote.SupabaseManager
 import com.rork.guidestreamtvandroid.data.remote.AgentTitleMatch
 import com.rork.guidestreamtvandroid.data.remote.StreamAgentService
 import com.rork.guidestreamtvandroid.data.repository.AuthViewModel
+import com.rork.guidestreamtvandroid.data.repository.StreamsViewModel
 import com.rork.guidestreamtvandroid.data.repository.WatchIntentLogger
 import com.rork.guidestreamtvandroid.ui.components.GsSheetDragHandle
 import com.rork.guidestreamtvandroid.ui.components.GsSheetHeader
@@ -184,6 +187,8 @@ fun AskStreamSheet(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val auth = AuthViewModel.get()
+    val streamsVm = StreamsViewModel.get()
+    val userStreams by streamsVm.userStreams.collectAsStateWithLifecycle()
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     var query by remember { mutableStateOf("") }
@@ -336,6 +341,40 @@ fun AskStreamSheet(
                                         isTv = match.isTV,
                                     ),
                                 )
+                            },
+                            isSaved = { match ->
+                                val key = match.id.toString()
+                                userStreams.any { it.titleId == key }
+                            },
+                            onToggleSave = { match ->
+                                val key = match.id.toString()
+                                val saved = userStreams.any { it.titleId == key }
+                                WatchIntentLogger.get().log(
+                                    if (saved) {
+                                        WatchIntentLogger.IntentEventType.STREAM_REMOVED
+                                    } else {
+                                        WatchIntentLogger.IntentEventType.STREAM_ADDED
+                                    },
+                                    titleId = key,
+                                    platformId = match.providerName,
+                                    metadata = mapOf(
+                                        "source" to "ask_stream_ai_match",
+                                        "title" to match.title,
+                                        "posterUrl" to (match.posterUrl ?: ""),
+                                        "isTV" to match.isTV,
+                                    ),
+                                )
+                                if (saved) {
+                                    streamsVm.removeFromMyStreams(key)
+                                } else {
+                                    streamsVm.addToMyStreams(
+                                        titleId = key,
+                                        title = match.title,
+                                        posterUrl = match.posterUrl,
+                                        platform = match.providerName,
+                                        isTv = match.isTV,
+                                    )
+                                }
                             },
                         )
                     }
@@ -498,6 +537,8 @@ private fun SuggestionChip(text: String, onClick: () -> Unit) {
 private fun MessageBubble(
     msg: AskChatMessage,
     onOpenTitle: (AgentTitleMatch) -> Unit,
+    isSaved: (AgentTitleMatch) -> Boolean,
+    onToggleSave: (AgentTitleMatch) -> Unit,
 ) {
     val alignment = if (msg.isUser) Alignment.End else Alignment.Start
     val bgColor = if (msg.isUser) BrandOrange else GlassFill
@@ -539,7 +580,12 @@ private fun MessageBubble(
         }
 
         if (msg.matches.isNotEmpty()) {
-            MatchPosterRail(matches = msg.matches, onOpenTitle = onOpenTitle)
+            MatchPosterRail(
+                matches = msg.matches,
+                onOpenTitle = onOpenTitle,
+                isSaved = isSaved,
+                onToggleSave = onToggleSave,
+            )
         }
     }
 }
@@ -552,6 +598,8 @@ private fun MessageBubble(
 private fun MatchPosterRail(
     matches: List<AgentTitleMatch>,
     onOpenTitle: (AgentTitleMatch) -> Unit,
+    isSaved: (AgentTitleMatch) -> Boolean,
+    onToggleSave: (AgentTitleMatch) -> Unit,
 ) {
     Row(
         modifier = Modifier
@@ -560,13 +608,23 @@ private fun MatchPosterRail(
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         matches.forEach { match ->
-            AgentMatchCard(match = match, onClick = { onOpenTitle(match) })
+            AgentMatchCard(
+                match = match,
+                onClick = { onOpenTitle(match) },
+                isSaved = isSaved(match),
+                onToggleSave = { onToggleSave(match) },
+            )
         }
     }
 }
 
 @Composable
-private fun AgentMatchCard(match: AgentTitleMatch, onClick: () -> Unit) {
+private fun AgentMatchCard(
+    match: AgentTitleMatch,
+    onClick: () -> Unit,
+    isSaved: Boolean,
+    onToggleSave: () -> Unit,
+) {
     val metaLine = remember(match.year, match.isTV) {
         listOfNotNull(match.year?.toString(), if (match.isTV) "Series" else "Movie")
             .joinToString(" · ")
@@ -626,6 +684,30 @@ private fun AgentMatchCard(match: AgentTitleMatch, onClick: () -> Unit) {
                         .clip(RoundedCornerShape(4.dp))
                         .background(BrandOrange)
                         .padding(horizontal = 6.dp, vertical = 3.dp),
+                )
+            }
+
+            // Watch-list save toggle — its own interaction source so tapping
+            // it never fires the card's open click.
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(6.dp)
+                    .size(28.dp)
+                    .clip(CircleShape)
+                    .background(Color.Black.copy(alpha = 0.55f))
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = onToggleSave,
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Bookmark,
+                    contentDescription = if (isSaved) "Remove from watch list" else "Save to watch list",
+                    tint = if (isSaved) BrandOrange else Color.White.copy(alpha = 0.7f),
+                    modifier = Modifier.size(16.dp),
                 )
             }
         }
