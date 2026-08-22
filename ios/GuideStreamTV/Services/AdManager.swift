@@ -30,7 +30,15 @@ final class AdManager: NSObject, ObservableObject, FullScreenContentDelegate, Na
 
     // MARK: - Startup
 
-    private var didStart = false
+    /// True while the consent → ATT → SDK-init chain is in flight. Reset to
+    /// false whenever the chain finishes WITHOUT initialising the SDK, so a
+    /// later slot appearance can retry instead of the app being permanently
+    /// ad-free after one transient consent failure.
+    private var startInFlight = false
+
+    /// True once `MobileAds.start` has actually completed. Guards the real
+    /// one-shot work and gates native-pool loads.
+    private(set) var didInitializeSDK = false
 
     /// Initialises the SDK once and preloads the interstitial + native pool.
     /// Runs the UMP consent flow first — consent info update, then the consent
@@ -44,8 +52,8 @@ final class AdManager: NSObject, ObservableObject, FullScreenContentDelegate, Na
     /// No-op on simulator (the build excludes this entire class body via the
     /// compile-time guard above).
     func start() {
-        guard !didStart else { return }
-        didStart = true
+        guard !didInitializeSDK, !startInFlight else { return }
+        startInFlight = true
 
         let parameters = RequestParameters()
         parameters.isTaggedForUnderAgeOfConsent = false
@@ -95,9 +103,17 @@ final class AdManager: NSObject, ObservableObject, FullScreenContentDelegate, Na
     }
 
     /// Starts the Google Mobile Ads SDK and preloads the interstitial + native
-    /// pool, but only when UMP consent allows ad requests.
+    /// pool, but only when UMP consent allows ad requests. When consent does
+    /// NOT allow ad requests we clear `startInFlight` so the next slot that
+    /// appears retries the whole chain — a transient consent-info failure (no
+    /// network at launch, UMP message not yet propagated) must not leave the
+    /// app permanently ad-free for the rest of the process lifetime.
     private func startSDKIfConsented() {
-        guard ConsentInformation.shared.canRequestAds else { return }
+        guard ConsentInformation.shared.canRequestAds else {
+            print("[AdManager] canRequestAds is false — SDK not started, will retry")
+            startInFlight = false
+            return
+        }
         startSDKAndPreload()
     }
 
@@ -105,8 +121,14 @@ final class AdManager: NSObject, ObservableObject, FullScreenContentDelegate, Na
     /// pool. Runs exactly once, after ATT authorization has been resolved.
     private func startSDKAndPreload() {
         MobileAds.shared.start { [weak self] _ in
-            self?.loadInterstitial()
-            self?.loadNativePool()
+            Task { @MainActor in
+                guard let self else { return }
+                self.didInitializeSDK = true
+                self.startInFlight = false
+                print("[AdManager] SDK initialized — preloading ads")
+                self.loadInterstitial()
+                self.loadNativePool()
+            }
         }
     }
 
@@ -253,7 +275,15 @@ final class AdManager: NSObject, ObservableObject, FullScreenContentDelegate, Na
     }
 
     /// Loads one or more native ads into the pool via GADAdLoader.
+    ///
+    /// No-ops until the SDK has actually initialized. Views call this on
+    /// appear, which can happen long before the consent → ATT → init chain
+    /// completes; issuing an AdLoader request that early both fails and
+    /// latches `nativeAdLoader` non-nil, which would block every subsequent
+    /// load for the rest of the process. `startSDKAndPreload` calls this
+    /// again the moment initialization finishes.
     func loadNativePool() {
+        guard didInitializeSDK else { return }
         guard nativeAdLoader == nil else { return }
         let multiAdOptions = MultipleAdsAdLoaderOptions()
         multiAdOptions.numberOfAds = 5
@@ -280,7 +310,7 @@ final class AdManager: NSObject, ObservableObject, FullScreenContentDelegate, Na
 
     nonisolated func adLoader(_ adLoader: AdLoader, didFailToReceiveAdWithError error: Error) {
         Task { @MainActor in
-            print("[AdManager] Native load failed: \(error.localizedDescription)")
+            print("[AdManager] Native load failed (unit \(self.nativeAdUnitID)): \(error.localizedDescription)")
             self.nativeAdLoader = nil
         }
     }

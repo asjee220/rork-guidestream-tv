@@ -176,7 +176,12 @@ struct SponsoredSlotView: View {
     /// not an option for them.
     private func fetchNativeAd() {
         guard currentNativeAd == nil else { return }
-        guard allowRakutenFallback || preferredSource != .rakutenFirst else { return }
+        // Skip the native claim ONLY when the Rakuten card is both preferred
+        // AND actually allowed. When `allowRakutenFallback` is false there is
+        // no other content for this slot, so the native path must always be
+        // attempted regardless of `preferredSource` — otherwise the slot can
+        // never render anything at all.
+        guard !(allowRakutenFallback && preferredSource == .rakutenFirst) else { return }
         AdManager.shared.start()
         AdManager.shared.loadNativePool()
         if let ad = AdManager.shared.nextNativeAd() {
