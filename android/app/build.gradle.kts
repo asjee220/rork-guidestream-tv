@@ -14,8 +14,8 @@ android {
         applicationId = "com.rork.guidestreamtvandroid"
         minSdk = 24
         targetSdk = 36
-        versionCode = 19
-        versionName = "1.0.18"
+        versionCode = 20
+        versionName = "1.0.19"
 
         // Production AdMob app id — supplied via the ANDROID_ADMOB_APP_ID env
         // var at release build time; falls back to Google's test app id so
