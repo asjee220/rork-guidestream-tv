@@ -23,6 +23,9 @@ final class SportsLiveActivityController {
     /// The game id of the currently tracked Live Activity; nil when idle.
     private(set) var trackedGameId: String?
 
+    /// Human-readable error from the most recent start attempt, if any.
+    private(set) var lastStartError: String?
+
     /// Push-token observers keyed by activity id. The observer does not
     /// survive process death — `reconcile()` re-attaches them on launch.
     private var tokenObservers: [String: Task<Void, Never>] = [:]
@@ -39,9 +42,11 @@ final class SportsLiveActivityController {
     /// Starts a Live Activity for `game`. Ends every running activity first
     /// (stamping ended_at on their rows), awaits the activity's FIRST push
     /// token — a placeholder token is never written — and only then inserts
-    /// the row. A throwing request leaves `trackedGameId` nil (idle).
+    /// the row. A throwing request leaves `trackedGameId` nil (idle) and
+    /// publishes a user-facing error message.
     func start(game: SportsGame, broadcast: String) async {
         await endRunningActivities()
+        lastStartError = nil
 
         let homeScore = Int(game.home.score) ?? 0
         let awayScore = Int(game.away.score) ?? 0
@@ -72,7 +77,9 @@ final class SportsLiveActivityController {
                 pushType: .token
             )
         } catch {
-            print("[LiveActivity] request failed: \(error.localizedDescription)")
+            let message = "[LiveActivity] request failed: \(error.localizedDescription)"
+            print(message)
+            lastStartError = "Live score tracking is unavailable. Make sure Live Activities are turned on in Settings > Face ID & Passcode."
             trackedGameId = nil
             return
         }
@@ -108,6 +115,12 @@ final class SportsLiveActivityController {
     func stop() async {
         await endRunningActivities()
         trackedGameId = nil
+        lastStartError = nil
+    }
+
+    /// Clears the user-facing error so the UI can dismiss it.
+    func clearLastError() {
+        lastStartError = nil
     }
 
     // MARK: - Reconcile

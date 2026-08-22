@@ -383,6 +383,18 @@ struct SportsWatchSheet: View {
                 .foregroundStyle(Color.white.opacity(0.45))
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: .infinity)
+
+            if let errorText = liveActivity.lastStartError {
+                Text(errorText)
+                    .scaledFont(size: 11)
+                    .foregroundStyle(Color(hex: "FF3B30") ?? .red)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, 4)
+                    .onTapGesture {
+                        liveActivity.clearLastError()
+                    }
+            }
         }
         .padding(.horizontal, 20)
         .padding(.top, 18)
