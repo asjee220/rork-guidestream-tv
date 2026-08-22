@@ -28,14 +28,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.runtime.collectAsState
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
 import com.google.android.gms.ads.AdListener
 import com.google.android.gms.ads.AdRequest
 import com.google.android.gms.ads.AdSize
 import com.google.android.gms.ads.AdView
 import com.google.android.gms.ads.LoadAdError
-import com.rork.guidestreamtvandroid.AppConfig
-import com.rork.guidestreamtvandroid.data.remote.RemoteConfigService
 import com.rork.guidestreamtvandroid.ui.theme.BrandOrange
 import com.rork.guidestreamtvandroid.ui.theme.GlassFill
 import com.rork.guidestreamtvandroid.ui.theme.GlassStroke
@@ -87,7 +87,7 @@ fun NativeAdCard(
             Spacer(Modifier.height(8.dp))
             // Banner ad — same ad unit resolution as the standard card.
             BannerAd(
-                adUnitId = RemoteConfigService.adUnit("native") ?: AppConfig.ADMOB_NATIVE_AD_UNIT_ID,
+                adUnitId = AdUnitResolver.native(LocalContext.current),
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f),
@@ -124,7 +124,7 @@ fun NativeAdCard(
             Spacer(Modifier.height(8.dp))
             // Banner ad
             BannerAd(
-                adUnitId = RemoteConfigService.adUnit("native") ?: AppConfig.ADMOB_NATIVE_AD_UNIT_ID,
+                adUnitId = AdUnitResolver.native(LocalContext.current),
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(if (compact) 50.dp else 100.dp),
@@ -136,7 +136,14 @@ fun NativeAdCard(
 }
 
 /**
- * Compose wrapper for AdMob banner AdView.
+ * Compose wrapper for an AdMob banner AdView.
+ *
+ * Waits for [AdManager.sdkInitialized] before creating the AdView: requesting
+ * an ad before MobileAds.initialize completes fails, and because the failure
+ * arrives asynchronously it used to mark the slot as "no fill" and swap in the
+ * fallback permanently. Every request is also issued exactly once — the old
+ * update block re-requested on each recomposition, which threw away in-flight
+ * loads and could spam the ad unit.
  */
 @Composable
 fun BannerAd(
@@ -145,7 +152,13 @@ fun BannerAd(
     onAdLoaded: () -> Unit = {},
     onAdFailedToLoad: () -> Unit = {},
 ) {
-    var adLoaded by remember { mutableStateOf(false) }
+    val adManager = AdManager.get()
+    val sdkReady by adManager.sdkInitialized.collectAsState()
+
+    // Nothing to show until the SDK is up; the slot stays collapsed rather
+    // than reporting a spurious failure.
+    if (!sdkReady) return
+
     AndroidView(
         modifier = modifier,
         factory = { context ->
@@ -154,20 +167,19 @@ fun BannerAd(
                 this.adUnitId = adUnitId
                 adListener = object : AdListener() {
                     override fun onAdLoaded() {
-                        adLoaded = true
+                        adManager.recordNativeLoaded()
                         onAdLoaded()
                     }
 
                     override fun onAdFailedToLoad(error: LoadAdError) {
+                        adManager.recordNativeError(
+                            "[${error.code}] ${error.message}",
+                        )
                         onAdFailedToLoad()
                     }
                 }
+                adManager.recordNativeAttempt()
                 loadAd(AdRequest.Builder().build())
-            }
-        },
-        update = { adView ->
-            if (!adLoaded) {
-                adView.loadAd(AdRequest.Builder().build())
             }
         },
     )

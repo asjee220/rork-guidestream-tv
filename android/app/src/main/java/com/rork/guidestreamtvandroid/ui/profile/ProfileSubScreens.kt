@@ -48,6 +48,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.rork.guidestreamtvandroid.data.models.StreamingCatalog
 import com.rork.guidestreamtvandroid.data.repository.AuthViewModel
+import com.rork.guidestreamtvandroid.ui.ads.AdDiagnosticsDialog
 import com.rork.guidestreamtvandroid.ui.ads.AdManager
 import com.rork.guidestreamtvandroid.ui.components.glassCard
 import com.rork.guidestreamtvandroid.ui.theme.BrandOrange
@@ -416,6 +417,17 @@ fun HelpScreen(
                     (context as? Activity)?.let { adManager.showPrivacyOptions(it) }
                 },
             )
+        }
+        // Ad stack inspector — explains why sponsored slots are empty on a
+        // real build (consent, SDK init, ad-unit mismatch, or no-fill).
+        var showAdDiagnostics by remember { mutableStateOf(false) }
+        HelpRow(
+            "Ad Diagnostics",
+            "Check why sponsored cards aren't showing",
+            onClick = { showAdDiagnostics = true },
+        )
+        if (showAdDiagnostics) {
+            AdDiagnosticsDialog(onDismiss = { showAdDiagnostics = false })
         }
         HelpRow("About", "Guide Stream TV v1.0")
 

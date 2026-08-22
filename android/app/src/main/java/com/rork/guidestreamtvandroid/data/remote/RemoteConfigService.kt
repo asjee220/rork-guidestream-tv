@@ -151,12 +151,11 @@ object RemoteConfigService {
                     "ads_android" -> {
                         newAds = json.decodeFromString(RemoteAdConfig.serializer(), data)
                     }
-                    "ads_ios" -> {
-                        // Only used as a fallback when ads_android is missing.
-                        if (newAds == null) {
-                            newAds = json.decodeFromString(RemoteAdConfig.serializer(), data)
-                        }
-                    }
+                    // NOTE: `ads_ios` is deliberately NOT read here. AdMob ad
+                    // units are bound to a single AdMob app, so the iOS units
+                    // can never serve on Android — requesting one fails every
+                    // time and produces a permanently blank ad slot. Android
+                    // uses `ads_android` or the bundled fallback units.
                     "affiliate_rakuten" -> {
                         newRakuten = json.decodeFromString(
                             RemoteRakutenConfig.serializer(),

@@ -49,6 +49,131 @@ class AdManager private constructor() {
     private var consentGathered = false
     private var adsInitialized = false
 
+    // MARK: Diagnostics
+
+    private val _sdkInitialized = MutableStateFlow(false)
+
+    /** True once MobileAds.initialize has completed. Gates all ad requests. */
+    val sdkInitialized: StateFlow<Boolean> = _sdkInitialized.asStateFlow()
+
+    private val _consentStatusText = MutableStateFlow("Not requested")
+    private val _canRequestAds = MutableStateFlow(false)
+    private val _lastNativeError = MutableStateFlow<String?>(null)
+    private val _lastInterstitialError = MutableStateFlow<String?>(null)
+    private val _nativeLoadAttempts = MutableStateFlow(0)
+    private val _nativeAdsReceived = MutableStateFlow(0)
+
+    /** Records that a banner/native request was issued. */
+    fun recordNativeAttempt() {
+        _nativeLoadAttempts.value += 1
+    }
+
+    /** Records a successful banner/native fill. */
+    fun recordNativeLoaded() {
+        _nativeAdsReceived.value += 1
+        _lastNativeError.value = null
+    }
+
+    /** Records a banner/native load failure with its AdMob error text. */
+    fun recordNativeError(message: String) {
+        _lastNativeError.value = message
+    }
+
+    /**
+     * Immutable snapshot of the whole ad stack, rendered by the Ad Diagnostics
+     * screen so a Play testing build can explain why slots are empty.
+     */
+    data class Diagnostics(
+        val sdkInitialized: Boolean,
+        val consentStatus: String,
+        val canRequestAds: Boolean,
+        val privacyOptionsRequired: Boolean,
+        val manifestAppId: String,
+        val nativeAdUnitId: String,
+        val interstitialAdUnitId: String,
+        val remoteUnitRejected: String?,
+        val nativeLoadAttempts: Int,
+        val nativeAdsReceived: Int,
+        val interstitialReady: Boolean,
+        val lastNativeError: String?,
+        val lastInterstitialError: String?,
+    ) {
+        /** Plain-English verdict naming the current blocker. */
+        val summary: String
+            get() = when {
+                remoteUnitRejected != null ->
+                    "Remote config supplied an ad unit from a different AdMob app. " +
+                        "Falling back to the bundled unit. $remoteUnitRejected"
+                !canRequestAds ->
+                    "Consent does not permit ad requests yet, so the ad SDK has not started."
+                !sdkInitialized ->
+                    "Ad SDK has not finished initializing. Tap Retry."
+                lastNativeError != null ->
+                    "SDK is running but the last ad request failed: $lastNativeError"
+                nativeAdsReceived == 0 && nativeLoadAttempts > 0 ->
+                    "Requests are going out but AdMob returned no ads yet — normal for a new ad unit."
+                nativeLoadAttempts == 0 ->
+                    "SDK is running but no ad request has been made yet."
+                else ->
+                    "Ad stack is healthy — $nativeAdsReceived ad(s) filled this session."
+            }
+
+        /** Multi-line report for the Copy button. */
+        val plainText: String
+            get() = buildString {
+                appendLine("Ad Diagnostics (Android)")
+                appendLine("------------------------")
+                appendLine("Summary: $summary")
+                appendLine()
+                appendLine("SDK initialized: $sdkInitialized")
+                appendLine("Consent status: $consentStatus")
+                appendLine("Can request ads: $canRequestAds")
+                appendLine("Privacy options required: $privacyOptionsRequired")
+                appendLine()
+                appendLine("Manifest app id: $manifestAppId")
+                appendLine("Native unit: $nativeAdUnitId")
+                appendLine("Interstitial unit: $interstitialAdUnitId")
+                appendLine("Remote unit rejected: ${remoteUnitRejected ?: "no"}")
+                appendLine()
+                appendLine("Load attempts: $nativeLoadAttempts")
+                appendLine("Ads received: $nativeAdsReceived")
+                appendLine("Interstitial ready: $interstitialReady")
+                appendLine("Last native error: ${lastNativeError ?: "none"}")
+                appendLine("Last interstitial error: ${lastInterstitialError ?: "none"}")
+            }
+    }
+
+    /** Builds a live diagnostics snapshot. */
+    fun diagnostics(context: Context): Diagnostics = Diagnostics(
+        sdkInitialized = _sdkInitialized.value,
+        consentStatus = _consentStatusText.value,
+        canRequestAds = _canRequestAds.value,
+        privacyOptionsRequired = _privacyOptionsRequired.value,
+        manifestAppId = AdUnitResolver.appId(context) ?: "(missing)",
+        nativeAdUnitId = AdUnitResolver.native(context),
+        interstitialAdUnitId = AdUnitResolver.interstitial(context),
+        remoteUnitRejected = AdUnitResolver.lastRejectionReason,
+        nativeLoadAttempts = _nativeLoadAttempts.value,
+        nativeAdsReceived = _nativeAdsReceived.value,
+        interstitialReady = _interstitialReady.value,
+        lastNativeError = _lastNativeError.value,
+        lastInterstitialError = _lastInterstitialError.value,
+    )
+
+    /**
+     * Clears cached errors and re-runs the consent/init chain, or re-requests
+     * ads when the SDK is already up. Backs the "Retry" diagnostics button.
+     */
+    fun retryFromDiagnostics(activity: Activity) {
+        _lastNativeError.value = null
+        _lastInterstitialError.value = null
+        if (_sdkInitialized.value) {
+            preloadInterstitial(activity)
+        } else {
+            gatherConsentThenInitialize(activity)
+        }
+    }
+
     private val _privacyOptionsRequired = MutableStateFlow(false)
 
     /** True when UMP requires a privacy options entry point (EEA/UK). */
@@ -104,11 +229,24 @@ class AdManager private constructor() {
 
     private fun maybeInitializeAndPreload(context: Context) {
         val consentInfo = consentInformation ?: return
+        _consentStatusText.value = describeConsent(consentInfo)
+        _canRequestAds.value = consentInfo.canRequestAds()
+        // Not latching `adsInitialized` on the consent-denied path means a
+        // later retry can still bring ads up, instead of the process staying
+        // permanently ad-free after one transient consent failure.
         if (adsInitialized || !consentInfo.canRequestAds()) return
         adsInitialized = true
         initialize(context)
         preloadInterstitial(context)
     }
+
+    private fun describeConsent(consentInfo: ConsentInformation): String =
+        when (consentInfo.consentStatus) {
+            ConsentInformation.ConsentStatus.NOT_REQUIRED -> "Not required"
+            ConsentInformation.ConsentStatus.REQUIRED -> "Required (form pending)"
+            ConsentInformation.ConsentStatus.OBTAINED -> "Obtained"
+            else -> "Unknown"
+        }
 
     private fun refreshPrivacyOptionsRequirement(consentInfo: ConsentInformation) {
         _privacyOptionsRequired.value =
@@ -118,7 +256,9 @@ class AdManager private constructor() {
 
     /** Initialize the Mobile Ads SDK. Call from Application.onCreate(). */
     fun initialize(context: Context) {
-        MobileAds.initialize(context) { }
+        MobileAds.initialize(context) {
+            _sdkInitialized.value = true
+        }
     }
 
     /** Preload an interstitial ad. Call after init. */
@@ -126,7 +266,7 @@ class AdManager private constructor() {
         val adRequest = AdRequest.Builder().build()
         InterstitialAd.load(
             context,
-            RemoteConfigService.adUnit("interstitial") ?: AppConfig.ADMOB_INTERSTITIAL_AD_UNIT_ID,
+            AdUnitResolver.interstitial(context),
             adRequest,
             object : InterstitialAdLoadCallback() {
                 override fun onAdLoaded(ad: InterstitialAd) {
@@ -148,6 +288,7 @@ class AdManager private constructor() {
                 override fun onAdFailedToLoad(error: LoadAdError) {
                     interstitialAd = null
                     _interstitialReady.value = false
+                    _lastInterstitialError.value = error.message
                 }
             },
         )
