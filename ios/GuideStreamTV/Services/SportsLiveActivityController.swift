@@ -69,25 +69,34 @@ final class SportsLiveActivityController {
             state: game.state.rawValue
         )
 
+        let content = ActivityContent(state: initialState, staleDate: nil)
+
+        // Two-step request. The push-token variant needs a valid APNs
+        // environment in the installed build's provisioning profile; when the
+        // app is side-loaded that entitlement can be stripped, which makes the
+        // `.token` request throw while a local-only activity still works.
+        // Falling back keeps the Dynamic Island score visible (updated by the
+        // app while it runs) instead of failing outright.
+        var usesPushUpdates = true
         let activity: Activity<SportsActivityAttributes>
         do {
-            activity = try Activity.request(
-                attributes: attributes,
-                content: ActivityContent(state: initialState, staleDate: nil),
-                pushType: .token
-            )
+            activity = try Activity.request(attributes: attributes, content: content, pushType: .token)
         } catch {
-            let message = "[LiveActivity] request failed: \(error.localizedDescription)"
-            print(message)
-            // Global Live Activities are on (the user checked), but Activity.request still failed.
-            // Common remaining causes: per-app toggle off in Settings > GuideStream TV > Live Activities,
-            // or the installed build was signed before the Live Activities entitlement was added.
-            lastStartError = "Live score tracking is unavailable. Check Settings > GuideStream TV > Live Activities. If it is already on, delete and reinstall the app."
-            trackedGameId = nil
-            return
+            print("[LiveActivity] push request failed: \(Self.diagnostic(for: error))")
+            do {
+                activity = try Activity.request(attributes: attributes, content: content, pushType: nil)
+                usesPushUpdates = false
+                print("[LiveActivity] started without push updates")
+            } catch {
+                print("[LiveActivity] local request failed: \(Self.diagnostic(for: error))")
+                lastStartError = Self.userMessage(for: error)
+                trackedGameId = nil
+                return
+            }
         }
 
         trackedGameId = game.id
+        guard usesPushUpdates else { return }
 
         var tokenHex: String?
         for await data in activity.pushTokenUpdates {
@@ -173,6 +182,51 @@ final class SportsLiveActivityController {
 
     private nonisolated static func hexEncoded(_ data: Data) -> String {
         data.map { String(format: "%02x", $0) }.joined()
+    }
+
+    /// Log-only description that names the ActivityKit failure case.
+    private nonisolated static func diagnostic(for error: Error) -> String {
+        guard let activityError = error as? ActivityAuthorizationError else {
+            return error.localizedDescription
+        }
+        let name: String
+        switch activityError {
+        case .attributesTooLarge: name = "attributesTooLarge"
+        case .denied: name = "denied"
+        case .globalMaximumExceeded: name = "globalMaximumExceeded"
+        case .malformedActivityIdentifier: name = "malformedActivityIdentifier"
+        case .missingProcessIdentifier: name = "missingProcessIdentifier"
+        case .persistenceFailure: name = "persistenceFailure"
+        case .reconnectNotPermitted: name = "reconnectNotPermitted"
+        case .targetMaximumExceeded: name = "targetMaximumExceeded"
+        case .unentitled: name = "unentitled"
+        case .unsupported: name = "unsupported"
+        case .unsupportedTarget: name = "unsupportedTarget"
+        case .visibility: name = "visibility"
+        @unknown default: name = "unknown"
+        }
+        return "\(name) — \(error.localizedDescription)"
+    }
+
+    /// Short, actionable message shown under the track button.
+    private nonisolated static func userMessage(for error: Error) -> String {
+        guard let activityError = error as? ActivityAuthorizationError else {
+            return "Live score tracking could not start. Please try again."
+        }
+        switch activityError {
+        case .denied:
+            return "Live Activities are turned off for GuideStream TV. Turn them on in Settings > GuideStream TV."
+        case .unsupported, .unsupportedTarget:
+            return "This device does not support Live Activities."
+        case .unentitled:
+            return "This build cannot start Live Activities. Reinstall the latest version from TestFlight or the App Store."
+        case .globalMaximumExceeded, .targetMaximumExceeded:
+            return "Too many Live Activities are running. Dismiss one and try again."
+        case .visibility:
+            return "Open GuideStream TV in the foreground to start tracking."
+        default:
+            return "Live score tracking could not start. Please try again."
+        }
     }
 
     private func insertRow(
