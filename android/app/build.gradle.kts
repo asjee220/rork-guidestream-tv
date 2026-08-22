@@ -22,6 +22,24 @@ android {
         // local and debug builds keep serving test ads.
         manifestPlaceholders["ANDROID_ADMOB_APP_ID"] = System.getenv("ANDROID_ADMOB_APP_ID")
             ?: "ca-app-pub-3940256099942544~1458002511"
+
+        // Bundled ad units — the last-resort fallback when the Supabase
+        // `ads_android` remote-config row is missing or carries units from a
+        // different AdMob app (AdUnitResolver validates the publisher prefix
+        // against the manifest app id at runtime). Real units arrive via env
+        // vars at release build time; test units keep debug builds filling.
+        buildConfigField(
+            "String",
+            "ADMOB_NATIVE_AD_UNIT_ID",
+            "\"${System.getenv("ANDROID_ADMOB_NATIVE_AD_UNIT_ID")
+                ?: "ca-app-pub-3940256099942544/2247696110"}\"",
+        )
+        buildConfigField(
+            "String",
+            "ADMOB_INTERSTITIAL_AD_UNIT_ID",
+            "\"${System.getenv("ANDROID_ADMOB_INTERSTITIAL_AD_UNIT_ID")
+                ?: "ca-app-pub-3940256099942544/1033173712"}\"",
+        )
     }
 
     buildTypes {

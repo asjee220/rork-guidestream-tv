@@ -24,8 +24,11 @@ object AppConfig {
     const val GOOGLE_WEB_CLIENT_ID =
         "740276432473-bk96lbtrbujhihq5dhhf2infrvbdddlt.apps.googleusercontent.com"
 
-    // AdMob test ad unit IDs
-    const val ADMOB_APP_ID = "ca-app-pub-3940256099942544~1458002511"
-    const val ADMOB_NATIVE_AD_UNIT_ID = "ca-app-pub-3940256099942544/2247696110"
-    const val ADMOB_INTERSTITIAL_AD_UNIT_ID = "ca-app-pub-3940256099942544/1033173712"
+    // Bundled AdMob ad units — injected from env vars at release build time
+    // (see build.gradle.kts buildConfigFields), falling back to Google's test
+    // units so debug builds keep serving ads. The Supabase `ads_android`
+    // remote-config row can override these without a new build; AdUnitResolver
+    // validates any remote unit's publisher against the manifest app id.
+    val ADMOB_NATIVE_AD_UNIT_ID: String = BuildConfig.ADMOB_NATIVE_AD_UNIT_ID
+    val ADMOB_INTERSTITIAL_AD_UNIT_ID: String = BuildConfig.ADMOB_INTERSTITIAL_AD_UNIT_ID
 }
