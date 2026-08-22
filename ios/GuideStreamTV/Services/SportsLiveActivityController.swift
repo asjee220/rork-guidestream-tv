@@ -79,7 +79,10 @@ final class SportsLiveActivityController {
         } catch {
             let message = "[LiveActivity] request failed: \(error.localizedDescription)"
             print(message)
-            lastStartError = "Live score tracking is unavailable. Make sure Live Activities are turned on in Settings > Face ID & Passcode."
+            // Global Live Activities are on (the user checked), but Activity.request still failed.
+            // Common remaining causes: per-app toggle off in Settings > GuideStream TV > Live Activities,
+            // or the installed build was signed before the Live Activities entitlement was added.
+            lastStartError = "Live score tracking is unavailable. Check Settings > GuideStream TV > Live Activities. If it is already on, delete and reinstall the app."
             trackedGameId = nil
             return
         }
