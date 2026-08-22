@@ -38,7 +38,79 @@ final class AdManager: NSObject, ObservableObject, FullScreenContentDelegate, Na
 
     /// True once `MobileAds.start` has actually completed. Guards the real
     /// one-shot work and gates native-pool loads.
-    private(set) var didInitializeSDK = false
+    @Published private(set) var didInitializeSDK = false
+
+    // MARK: - Diagnostics counters
+
+    /// Description of the last native-ad load failure, or nil when the most
+    /// recent load succeeded. Surfaced in the Ad Diagnostics sheet.
+    @Published private(set) var lastNativeError: String?
+
+    /// Description of the last interstitial load failure, or nil.
+    @Published private(set) var lastInterstitialError: String?
+
+    /// Native load requests issued this session.
+    @Published private(set) var nativeLoadAttempts: Int = 0
+
+    /// Native ads successfully received this session.
+    @Published private(set) var nativeAdsReceived: Int = 0
+
+    /// Live snapshot of the whole ad stack for the diagnostics sheet.
+    var diagnosticsSnapshot: AdDiagnostics {
+        AdDiagnostics(
+            sdkLinked: true,
+            didInitializeSDK: didInitializeSDK,
+            startInFlight: startInFlight,
+            consentStatus: Self.describeConsent(),
+            canRequestAds: ConsentInformation.shared.canRequestAds,
+            privacyOptionsRequired: privacyOptionsRequired,
+            trackingAuthorization: Self.describeATT(),
+            nativeAdUnitID: nativeAdUnitID,
+            interstitialAdUnitID: interstitialAdUnitID,
+            remoteConfigHasNativeUnit: RemoteConfigService.shared.adUnit("native") != nil,
+            nativePoolCount: nativePool.count,
+            nativeLoadAttempts: nativeLoadAttempts,
+            nativeAdsReceived: nativeAdsReceived,
+            hasInterstitial: hasInterstitial,
+            lastNativeError: lastNativeError,
+            lastInterstitialError: lastInterstitialError
+        )
+    }
+
+    private static func describeConsent() -> String {
+        switch ConsentInformation.shared.consentStatus {
+        case .notRequired: return "Not required"
+        case .required: return "Required (form pending)"
+        case .obtained: return "Obtained"
+        case .unknown: return "Unknown"
+        @unknown default: return "Unrecognized"
+        }
+    }
+
+    private static func describeATT() -> String {
+        guard #available(iOS 14, *) else { return "N/A (pre-iOS 14)" }
+        switch ATTrackingManager.trackingAuthorizationStatus {
+        case .authorized: return "Authorized"
+        case .denied: return "Denied"
+        case .restricted: return "Restricted"
+        case .notDetermined: return "Not determined"
+        @unknown default: return "Unrecognized"
+        }
+    }
+
+    /// Clears cached errors and forces a fresh pass through the startup or
+    /// load path. Backs the "Retry ad load" button in the diagnostics sheet.
+    func retryFromDiagnostics() {
+        lastNativeError = nil
+        lastInterstitialError = nil
+        if didInitializeSDK {
+            loadNativePool()
+            loadInterstitial()
+        } else {
+            startInFlight = false
+            start()
+        }
+    }
 
     /// Initialises the SDK once and preloads the interstitial + native pool.
     /// Runs the UMP consent flow first — consent info update, then the consent
@@ -210,8 +282,10 @@ final class AdManager: NSObject, ObservableObject, FullScreenContentDelegate, Na
                 self.interstitialLoadInProgress = false
                 if let error {
                     print("[AdManager] Interstitial load failed: \(error.localizedDescription)")
+                    self.lastInterstitialError = error.localizedDescription
                     return
                 }
+                self.lastInterstitialError = nil
                 self.interstitial = ad
                 self.interstitial?.fullScreenContentDelegate = self
             }
@@ -295,6 +369,7 @@ final class AdManager: NSObject, ObservableObject, FullScreenContentDelegate, Na
         )
         loader.delegate = self
         nativeAdLoader = loader
+        nativeLoadAttempts += 1
         loader.load(Request())
     }
 
@@ -304,6 +379,8 @@ final class AdManager: NSObject, ObservableObject, FullScreenContentDelegate, Na
         Task { @MainActor in
             nativeAd.delegate = self
             nativePool.append(nativeAd)
+            nativeAdsReceived += 1
+            lastNativeError = nil
             nativePoolTick += 1
         }
     }
@@ -311,6 +388,7 @@ final class AdManager: NSObject, ObservableObject, FullScreenContentDelegate, Na
     nonisolated func adLoader(_ adLoader: AdLoader, didFailToReceiveAdWithError error: Error) {
         Task { @MainActor in
             print("[AdManager] Native load failed (unit \(self.nativeAdUnitID)): \(error.localizedDescription)")
+            self.lastNativeError = error.localizedDescription
             self.nativeAdLoader = nil
         }
     }
@@ -344,6 +422,40 @@ final class AdManager: NSObject, ObservableObject {
         didStart = true
         // AdMob SDK intentionally not initialized — no SDK on simulator.
     }
+
+    // MARK: - Diagnostics (stubbed — mirrors the real class)
+
+    @Published private(set) var didInitializeSDK = false
+    @Published private(set) var lastNativeError: String?
+    @Published private(set) var lastInterstitialError: String?
+    @Published private(set) var nativeLoadAttempts: Int = 0
+    @Published private(set) var nativeAdsReceived: Int = 0
+
+    /// Snapshot reporting that no SDK is linked, so the diagnostics sheet
+    /// explains the simulator case instead of showing a misleading failure.
+    var diagnosticsSnapshot: AdDiagnostics {
+        AdDiagnostics(
+            sdkLinked: false,
+            didInitializeSDK: false,
+            startInFlight: false,
+            consentStatus: "N/A (no SDK)",
+            canRequestAds: false,
+            privacyOptionsRequired: false,
+            trackingAuthorization: "N/A (no SDK)",
+            nativeAdUnitID: nativeAdUnitID,
+            interstitialAdUnitID: interstitialAdUnitID,
+            remoteConfigHasNativeUnit: RemoteConfigService.shared.adUnit("native") != nil,
+            nativePoolCount: 0,
+            nativeLoadAttempts: 0,
+            nativeAdsReceived: 0,
+            hasInterstitial: false,
+            lastNativeError: nil,
+            lastInterstitialError: nil
+        )
+    }
+
+    /// No-op stub.
+    func retryFromDiagnostics() {}
 
     // MARK: - UMP privacy options (stubbed — no UMP SDK on simulator)
 
