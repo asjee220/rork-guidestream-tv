@@ -2063,9 +2063,10 @@ private fun resolveReelAds(
  * a single AD_IMPRESSION on first show, and auto-advances every 5.5s.
  *
  * When no affiliate offer is eligible (every pool service is owned or is
- * the reel's own platform), the pager and dots are replaced by a single
- * native ad card that logs one native AD_IMPRESSION on first show and
- * renders nothing at all once its request fails.
+ * the reel's own platform), a 3-page native-ad pager replaces the affiliate
+ * carousel: a failed page collapses to a transparent spacer, dots render
+ * only while at least one page can still fill, and the pager auto-advances
+ * on the same 5.5s cadence.
  */
 @Composable
 private fun ReelAdCarousel(
@@ -2107,33 +2108,70 @@ private fun ReelAdCarousel(
 
     if (offers.isEmpty()) {
         // Native-only path: every affiliate offer would advertise an owned or
-        // current-platform service. The pager and dots are replaced by a
-        // single native card inside the same 0.83-alpha column; it occupies
-        // no space until it fills, and the whole slot renders nothing once
-        // the native request fails.
-        if (nativeAdFailed[0] == true) return
+        // current-platform service. A 3-page native-ad pager replaces the
+        // affiliate carousel — a failed page collapses to a transparent 96dp
+        // spacer so the pager geometry stays stable, dots render only while
+        // at least one page can still fill, and the pager auto-advances on
+        // the same 5.5s cadence as the affiliate path.
+        val nativePagerState = rememberPagerState(pageCount = { 3 })
 
-        var nativeOnlyImpressionLogged by remember(reel.id) { mutableStateOf(false) }
-        LaunchedEffect(reel.id) {
-            if (!nativeOnlyImpressionLogged) {
-                nativeOnlyImpressionLogged = true
-                WatchIntentLogger.get().log(
-                    WatchIntentLogger.IntentEventType.AD_IMPRESSION,
-                    metadata = mapOf(
-                        "ad_type" to "native",
-                        "source" to "reel_ad_carousel",
-                    ),
-                )
+        LaunchedEffect(reel.id, visible, isCurrent) {
+            if (!visible || dismissed || !isCurrent) return@LaunchedEffect
+            while (visible && !dismissed && isCurrent) {
+                delay(5500)
+                if (nativePagerState.isScrollInProgress) continue
+                nativePagerState.animateScrollToPage((nativePagerState.currentPage + 1) % 3)
             }
         }
 
         Column(modifier = Modifier.alpha(0.83f).let { m ->
             if (maxWidth != null) m.widthIn(max = maxWidth) else m
         }) {
-            NativeAdCard(
-                compact = true,
-                onAdFailedToLoad = { nativeAdFailed[0] = true },
-            )
+            HorizontalPager(
+                state = nativePagerState,
+                modifier = Modifier.fillMaxWidth(),
+            ) { page ->
+                if (nativeAdFailed[page] == true) {
+                    Spacer(Modifier.height(96.dp))
+                } else {
+                    NativeAdCard(
+                        compact = true,
+                        onAdFailedToLoad = { nativeAdFailed[page] = true },
+                    )
+                    // Log native impression once when the page first shows.
+                    LaunchedEffect(nativePagerState.currentPage, page) {
+                        if (nativePagerState.currentPage == page && nativeImpressionLogged[page] != true) {
+                            nativeImpressionLogged[page] = true
+                            WatchIntentLogger.get().log(
+                                WatchIntentLogger.IntentEventType.AD_IMPRESSION,
+                                metadata = mapOf(
+                                    "ad_type" to "native",
+                                    "source" to "reel_ad_carousel",
+                                ),
+                            )
+                        }
+                    }
+                }
+            }
+            if ((0 until 3).any { nativeAdFailed[it] != true }) {
+                Spacer(Modifier.height(6.dp))
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(5.dp),
+                    modifier = Modifier.padding(start = 2.dp),
+                ) {
+                    repeat(3) { idx ->
+                        Box(
+                            modifier = Modifier
+                                .size(5.dp)
+                                .clip(CircleShape)
+                                .background(
+                                    if (idx == nativePagerState.currentPage) BrandOrange
+                                    else Color.White.copy(alpha = 0.28f),
+                                ),
+                        )
+                    }
+                }
+            }
         }
         return
     }

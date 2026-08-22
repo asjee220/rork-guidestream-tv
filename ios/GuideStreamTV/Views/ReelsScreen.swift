@@ -1814,6 +1814,7 @@ private struct ReelView: View {
     @State private var glassAdDismissed: Bool = false
     @State private var glassAdTargets: [(serviceId: String, name: String, color: Color, headline: String, subtitle: String)] = []
     @State private var adPage: Int = 0
+    @State private var filledNativeAdPages: Set<Int> = []
     @State private var glassAdVisible: Bool = false
     @State private var glassAdFadeTask: Task<Void, Never>? = nil
     @State private var adAdvanceTask: Task<Void, Never>? = nil
@@ -1844,6 +1845,12 @@ private struct ReelView: View {
     /// the bottom row in landscape, so nothing needs reserving there.
     private var metadataTrailingReserve: CGFloat {
         isLandscape ? 0 : 90
+    }
+
+    /// Page count for the reel ad carousel: 8 affiliate pages when Rakuten
+    /// offers are eligible, otherwise a 3-page native-only fallback carousel.
+    private var adPageCount: Int {
+        glassAdTargets.isEmpty ? 3 : glassAdTargets.count
     }
 
     private func resolveGlassAds(count: Int) -> [(serviceId: String, name: String, color: Color, headline: String, subtitle: String)] {
@@ -2527,17 +2534,48 @@ private struct ReelView: View {
     private var adCarousel: some View {
         if glassAdTargets.isEmpty {
             // No eligible Rakuten offers — every pool service is owned or is
-            // the reel's own platform. Render a single native-only page that
-            // occupies zero height (via its clear backfill) until the AdMob
-            // pool fills, instead of suppressing the slot entirely.
-            ReelNativeAdPage(
-                pageIndex: 0,
-                visiblePage: 0,
-                isCurrent: isCurrent,
-                retryUntilFilled: true,
-                rakutenBackfill: { AnyView(Color.clear.frame(height: 0)) },
-                onDismiss: { glassAdDismissed = true }
-            )
+            // the reel's own platform. Render a 3-page native-only carousel:
+            // unfilled pages are transparent, dots appear once any page
+            // fills, and it rotates on the same 5.5s cadence.
+            VStack(spacing: 0) {
+                TabView(selection: $adPage) {
+                    ForEach(0..<3, id: \.self) { idx in
+                        ReelNativeAdPage(
+                            pageIndex: idx,
+                            visiblePage: adPage,
+                            isCurrent: isCurrent,
+                            retryUntilFilled: true,
+                            rakutenBackfill: { AnyView(Color.clear.frame(height: 96)) },
+                            onDismiss: { glassAdDismissed = true },
+                            onFilled: { filled in
+                                if filled {
+                                    filledNativeAdPages.insert(idx)
+                                } else {
+                                    filledNativeAdPages.remove(idx)
+                                }
+                            }
+                        )
+                        .tag(idx)
+                    }
+                }
+                .tabViewStyle(.page(indexDisplayMode: .never))
+                .frame(height: 96)
+
+                if !filledNativeAdPages.isEmpty {
+                    HStack(spacing: 5) {
+                        ForEach(0..<3, id: \.self) { dotIdx in
+                            Circle()
+                                .fill(dotIdx == adPage ? Color(hex: "F5821F") : Color.white.opacity(0.28))
+                                .frame(width: 5, height: 5)
+                                .onTapGesture {
+                                    withAnimation(.easeInOut(duration: 0.25)) { adPage = dotIdx }
+                                }
+                        }
+                    }
+                    .padding(.leading, 2)
+                    .padding(.top, 6)
+                }
+            }
             .opacity(0.83)
         } else {
             VStack(spacing: 0) {
@@ -2618,6 +2656,7 @@ private struct ReelView: View {
         adAdvanceTask?.cancel()
         glassAdTargets = resolveGlassAds(count: 8)
         adPage = 0
+        filledNativeAdPages = []
         glassAdDismissed = false
         glassAdVisible = false
         glassAdFadeTask = Task { @MainActor in
@@ -2639,7 +2678,7 @@ private struct ReelView: View {
                 )
             }
             // Start auto-advance after the fade-in completes.
-            if glassAdTargets.count > 1 {
+            if adPageCount > 1 {
                 startAdAutoAdvance()
             }
         }
@@ -2647,13 +2686,13 @@ private struct ReelView: View {
 
     private func startAdAutoAdvance() {
         adAdvanceTask?.cancel()
-        guard glassAdTargets.count > 1 else { return }
+        guard adPageCount > 1 else { return }
         adAdvanceTask = Task { @MainActor in
             while !Task.isCancelled, adCarouselActive, glassAdVisible, !glassAdDismissed {
                 try? await Task.sleep(for: .seconds(5.5))
                 guard !Task.isCancelled, adCarouselActive, glassAdVisible, !glassAdDismissed else { break }
                 withAnimation(.easeInOut(duration: 0.3)) {
-                    adPage = (adPage + 1) % glassAdTargets.count
+                    adPage = (adPage + 1) % adPageCount
                 }
             }
         }
@@ -2769,6 +2808,9 @@ private struct ReelNativeAdPage: View {
 
     let rakutenBackfill: () -> AnyView
     let onDismiss: () -> Void
+    /// Reports whether this page holds a claimed native ad, called at the end
+    /// of every fetch attempt so the carousel can show dots only when filled.
+    var onFilled: (Bool) -> Void = { _ in }
 
     @State private var claimedAd: AnyObject? = nil
     /// Set the first time this page resolves. Once true the body never
@@ -2809,6 +2851,9 @@ private struct ReelNativeAdPage: View {
             guard retryUntilFilled else { return }
             fetch()
         }
+        .onChange(of: isCurrent) { _, _ in
+            fetch()
+        }
     }
 
     private func fetch() {
@@ -2827,6 +2872,7 @@ private struct ReelNativeAdPage: View {
         if claimedAd != nil || !retryUntilFilled {
             resolved = true
         }
+        onFilled(claimedAd != nil)
     }
 }
 
