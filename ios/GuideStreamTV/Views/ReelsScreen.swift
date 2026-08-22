@@ -2112,7 +2112,7 @@ private struct ReelView: View {
                                     .padding(.bottom, 2)
                                 }
                         } else {
-                            if !glassAdDismissed, !glassAdTargets.isEmpty {
+                            if !glassAdDismissed {
                                 adCarousel
                                     .frame(maxWidth: .infinity)
                                     .padding(.trailing, 16)
@@ -2152,7 +2152,7 @@ private struct ReelView: View {
                     Spacer()
                     VStack(alignment: .leading, spacing: 9) {
                         // Persistent: the ad carousel (with its dots) never fades.
-                        if !trailer.isSponsored, !glassAdDismissed, !glassAdTargets.isEmpty {
+                        if !trailer.isSponsored, !glassAdDismissed {
                             adCarousel
                                 .frame(maxWidth: 370, alignment: .leading)
                                 .opacity(glassAdVisible ? 1 : 0)
@@ -2525,46 +2525,62 @@ private struct ReelView: View {
 
     @ViewBuilder
     private var adCarousel: some View {
-        VStack(spacing: 0) {
-            TabView(selection: $adPage) {
-                ForEach(Array(glassAdTargets.enumerated()), id: \.offset) { idx, ad in
-                    Group {
-                        if [1, 2, 4, 5, 7].contains(idx) {
-                            #if canImport(GoogleMobileAds) && !targetEnvironment(simulator)
-                            ReelNativeAdPage(
-                                pageIndex: idx,
-                                visiblePage: adPage,
-                                isCurrent: isCurrent,
-                                rakutenBackfill: { AnyView(reelRakutenCard(ad)) },
-                                onDismiss: { glassAdDismissed = true }
-                            )
-                            #else
-                            reelRakutenCard(ad)
-                            #endif
-                        } else {
-                            reelRakutenCard(ad)
+        if glassAdTargets.isEmpty {
+            // No eligible Rakuten offers — every pool service is owned or is
+            // the reel's own platform. Render a single native-only page that
+            // occupies zero height (via its clear backfill) until the AdMob
+            // pool fills, instead of suppressing the slot entirely.
+            ReelNativeAdPage(
+                pageIndex: 0,
+                visiblePage: 0,
+                isCurrent: isCurrent,
+                retryUntilFilled: true,
+                rakutenBackfill: { AnyView(Color.clear.frame(height: 0)) },
+                onDismiss: { glassAdDismissed = true }
+            )
+            .opacity(0.83)
+        } else {
+            VStack(spacing: 0) {
+                TabView(selection: $adPage) {
+                    ForEach(Array(glassAdTargets.enumerated()), id: \.offset) { idx, ad in
+                        Group {
+                            if [1, 2, 4, 5, 7].contains(idx) {
+                                #if canImport(GoogleMobileAds) && !targetEnvironment(simulator)
+                                ReelNativeAdPage(
+                                    pageIndex: idx,
+                                    visiblePage: adPage,
+                                    isCurrent: isCurrent,
+                                    rakutenBackfill: { AnyView(reelRakutenCard(ad)) },
+                                    onDismiss: { glassAdDismissed = true }
+                                )
+                                #else
+                                reelRakutenCard(ad)
+                                #endif
+                            } else {
+                                reelRakutenCard(ad)
+                            }
                         }
+                        .tag(idx)
                     }
-                    .tag(idx)
                 }
-            }
-            .tabViewStyle(.page(indexDisplayMode: .never))
-            .frame(height: 96)
+                .tabViewStyle(.page(indexDisplayMode: .never))
+                .frame(height: 96)
 
-            HStack(spacing: 5) {
-                ForEach(0..<glassAdTargets.count, id: \.self) { dotIdx in
-                    Circle()
-                        .fill(dotIdx == adPage ? Color(hex: "F5821F") : Color.white.opacity(0.28))
-                        .frame(width: 5, height: 5)
-                        .onTapGesture {
-                            withAnimation(.easeInOut(duration: 0.25)) { adPage = dotIdx }
-                        }
+                HStack(spacing: 5) {
+                    ForEach(0..<glassAdTargets.count, id: \.self) { dotIdx in
+                        Circle()
+                            .fill(dotIdx == adPage ? Color(hex: "F5821F") : Color.white.opacity(0.28))
+                            .frame(width: 5, height: 5)
+                            .onTapGesture {
+                                withAnimation(.easeInOut(duration: 0.25)) { adPage = dotIdx }
+                            }
+                    }
                 }
+                .padding(.leading, 2)
+                .padding(.top, 6)
             }
-            .padding(.leading, 2)
-            .padding(.top, 6)
+            .opacity(0.83)
         }
-        .opacity(0.83)
     }
 
     @ViewBuilder
@@ -2744,13 +2760,24 @@ private struct ReelNativeAdPage: View {
     let pageIndex: Int
     let visiblePage: Int
     let isCurrent: Bool
+
+    /// When true the page keeps retrying on every nativePoolTick until an ad
+    /// is claimed, rendering its (zero-height) backfill in the meantime.
+    /// Used by the native-only carousel path where there is no Rakuten card
+    /// to fall back to.
+    var retryUntilFilled: Bool = false
+
     let rakutenBackfill: () -> AnyView
     let onDismiss: () -> Void
 
     @State private var claimedAd: AnyObject? = nil
-    /// Set the first time this page is eligible to claim. Once true the body
-    /// never switches branches — the Rakuten backfill is permanent.
+    /// Set the first time this page resolves. Once true the body never
+    /// switches branches — the Rakuten backfill is permanent.
     @State private var resolved: Bool = false
+
+    /// Observing AdManager lets onChange(of: nativePoolTick) actually fire,
+    /// so a retryUntilFilled page can claim an ad when the pool fills late.
+    @ObservedObject private var adManager = AdManager.shared
 
     var body: some View {
         Group {
@@ -2778,6 +2805,10 @@ private struct ReelNativeAdPage: View {
         .onChange(of: visiblePage) { _, _ in
             fetch()
         }
+        .onChange(of: adManager.nativePoolTick) { _, _ in
+            guard retryUntilFilled else { return }
+            fetch()
+        }
     }
 
     private func fetch() {
@@ -2789,7 +2820,13 @@ private struct ReelNativeAdPage: View {
         if let ad = AdManager.shared.nextNativeAd() {
             claimedAd = ad
         }
-        resolved = true
+        // Resolve permanently once an ad is claimed — or immediately when a
+        // Rakuten backfill exists, so a live page never swaps mid-animation.
+        // retryUntilFilled pages have no backfill content, so they keep
+        // retrying on each pool tick until an ad is finally claimed.
+        if claimedAd != nil || !retryUntilFilled {
+            resolved = true
+        }
     }
 }
 

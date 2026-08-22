@@ -46,9 +46,10 @@ struct SponsoredSlotView: View {
 
     /// When false the Rakuten affiliate card is never rendered — the slot
     /// attempts the AdMob native path regardless of `preferredSource` and
-    /// collapses to `EmptyView` when no native ad is available, so an
-    /// unfillable slot occupies no space. Used when every affiliate offer
-    /// would advertise a service the user already subscribes to.
+    /// collapses to a zero-height `Color.clear` when no native ad is
+    /// available, so an unfillable slot occupies no space. Used when every
+    /// affiliate offer would advertise a service the user already
+    /// subscribes to.
     var allowRakutenFallback: Bool = true
 
     /// Fixed height for the native card. Sized to fully contain the 120pt
@@ -105,9 +106,14 @@ struct SponsoredSlotView: View {
                     feedStyle: feedStyle
                 )
             } else {
-                // No eligible Rakuten offer and no native fill — render
-                // nothing rather than advertise an owned service.
-                EmptyView()
+                // No eligible Rakuten offer and no native fill — occupy zero
+                // height rather than advertise an owned service. Color.clear
+                // (not EmptyView) keeps the slot a live view node so
+                // onAppear and onChange(nativePoolTick) keep firing and a
+                // late pool fill can still upgrade this slot to a native ad.
+                Color.clear
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 0)
             }
         }
         .onAppear { fetchNativeAd() }
@@ -153,7 +159,10 @@ struct SponsoredSlotView: View {
                 feedStyle: feedStyle
             )
         } else {
-            EmptyView()
+            // Zero-height live node — see the matching branch in `body`.
+            Color.clear
+                .frame(maxWidth: .infinity)
+                .frame(height: 0)
         }
         #else
         // Simulator: never reached because nextNativeAd() returns nil.

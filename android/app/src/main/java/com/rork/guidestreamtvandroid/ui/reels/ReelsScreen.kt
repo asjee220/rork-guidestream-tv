@@ -2036,8 +2036,9 @@ private val reelAdPool: List<Triple<String, String, String>> = listOf(
 /**
  * Mirrors iOS resolveGlassAds: hard filter — returns only pool entries whose
  * serviceId != currentPlatform and that are not in selected. When that set
- * is empty the ad carousel is suppressed entirely (ReelAdCarousel renders
- * nothing). Rotates by shift = abs(tmdbId) % eligible.size so different
+ * is empty ReelAdCarousel falls back to a native-ad-only slot instead of
+ * rendering affiliate cards. Rotates by shift = abs(tmdbId) % eligible.size
+ * so different titles lead with different services.
  * titles lead with different services.
  */
 private fun resolveReelAds(
@@ -2060,6 +2061,11 @@ private fun resolveReelAds(
  * HorizontalPager of [ReelAffiliateCard] items with dot indicators beneath.
  * Fades in after a short delay only while the reel is the current page, logs
  * a single AD_IMPRESSION on first show, and auto-advances every 5.5s.
+ *
+ * When no affiliate offer is eligible (every pool service is owned or is
+ * the reel's own platform), the pager and dots are replaced by a single
+ * native ad card that logs one native AD_IMPRESSION on first show and
+ * renders nothing at all once its request fails.
  */
 @Composable
 private fun ReelAdCarousel(
@@ -2086,7 +2092,7 @@ private fun ReelAdCarousel(
     }
 
     LaunchedEffect(reel.id, visible) {
-        if (visible) {
+        if (visible && offers.isNotEmpty()) {
             WatchIntentLogger.get().log(
                 WatchIntentLogger.IntentEventType.AD_IMPRESSION,
                 metadata = mapOf(
@@ -2097,7 +2103,40 @@ private fun ReelAdCarousel(
         }
     }
 
-    if (offers.isEmpty() || dismissed || !isCurrent || !visible) return
+    if (dismissed || !isCurrent || !visible) return
+
+    if (offers.isEmpty()) {
+        // Native-only path: every affiliate offer would advertise an owned or
+        // current-platform service. The pager and dots are replaced by a
+        // single native card inside the same 0.83-alpha column; it occupies
+        // no space until it fills, and the whole slot renders nothing once
+        // the native request fails.
+        if (nativeAdFailed[0] == true) return
+
+        var nativeOnlyImpressionLogged by remember(reel.id) { mutableStateOf(false) }
+        LaunchedEffect(reel.id) {
+            if (!nativeOnlyImpressionLogged) {
+                nativeOnlyImpressionLogged = true
+                WatchIntentLogger.get().log(
+                    WatchIntentLogger.IntentEventType.AD_IMPRESSION,
+                    metadata = mapOf(
+                        "ad_type" to "native",
+                        "source" to "reel_ad_carousel",
+                    ),
+                )
+            }
+        }
+
+        Column(modifier = Modifier.alpha(0.83f).let { m ->
+            if (maxWidth != null) m.widthIn(max = maxWidth) else m
+        }) {
+            NativeAdCard(
+                compact = true,
+                onAdFailedToLoad = { nativeAdFailed[0] = true },
+            )
+        }
+        return
+    }
 
     val pagerState = rememberPagerState(pageCount = { offers.size })
 
