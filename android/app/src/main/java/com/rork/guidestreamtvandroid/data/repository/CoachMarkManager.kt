@@ -314,6 +314,7 @@ class CoachMarkManager private constructor(private val context: Context) {
     }
 
     fun setMeasuredRect(key: String, rect: Rect) {
+        if (measuredRects[key] == rect) return
         measuredRects[key] = rect
     }
 
