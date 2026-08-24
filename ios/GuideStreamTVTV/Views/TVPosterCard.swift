@@ -111,6 +111,10 @@ struct TVWideCard: View {
     let backdropUrl: String?
     let accent: Color
     let isSaved: Bool
+    /// Optional card width override — defaults to 480 so existing call
+    /// sites render exactly as before. Used by full-width layouts such as
+    /// the Home "Today's Pick" banner.
+    let width: CGFloat?
     let action: () -> Void
 
     @FocusState private var isFocused: Bool
@@ -121,6 +125,7 @@ struct TVWideCard: View {
         backdropUrl: String?,
         accent: Color = TVTheme.newsGreen,
         isSaved: Bool = false,
+        width: CGFloat? = nil,
         action: @escaping () -> Void
     ) {
         self.title = title
@@ -128,6 +133,7 @@ struct TVWideCard: View {
         self.backdropUrl = backdropUrl
         self.accent = accent
         self.isSaved = isSaved
+        self.width = width
         self.action = action
     }
 
@@ -190,7 +196,7 @@ struct TVWideCard: View {
         }
         .buttonStyle(.card)
         .focused($isFocused)
-        .frame(width: 480, height: 270)
+        .frame(width: width ?? 480, height: 270)
         .shadow(
             color: isFocused ? accent.opacity(0.55) : Color.black.opacity(0.45),
             radius: isFocused ? 36 : 14,

@@ -43,6 +43,19 @@ private struct NowAndNextRail: Identifiable {
     var id: String { service.id }
 }
 
+private struct TopPickItem: Identifiable {
+    let result: TVTMDBResult
+    let providerName: String
+    let score: Double
+    /// Trending position — breaks score ties deterministically.
+    let rank: Int
+    var matchPercent: Int {
+        let clamped = min(max(score, 0.50), 0.99)
+        return Int((clamped * 100).rounded())
+    }
+    var id: Int { result.id }
+}
+
 struct TVHomeView: View {
     @State private var trending: [TVTMDBResult] = []
     @State private var newEpisodes: [TVTMDBResult] = []
@@ -61,6 +74,13 @@ struct TVHomeView: View {
     @State private var popularOnService: [String: [TVTMDBResult]] = [:]
     @State private var recommendedCreators: [TVRecommendedCreator] = []
     @State private var nowAndNextRails: [NowAndNextRail] = []
+
+    /// Deterministic daily pick from streaming_releases, resolved once per
+    /// load. Nil when the table is empty or unreachable.
+    @State private var todaysPick: TVStreamingRelease?
+
+    /// Payload driving the shared See-all grid full-screen cover.
+    @State private var seeAllPayload: TVSeeAllGridPayload?
 
     /// Maps tvOS StreamingCatalog ids to TMDB Watch provider ids so
     /// `getPopularOnService` / `getPopularMoviesOnService` can query the
@@ -83,37 +103,25 @@ struct TVHomeView: View {
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
             LazyVStack(alignment: .leading, spacing: 56) {
+                // 1. Hero
                 heroSection
                     .padding(.top, 8)
 
-                // Now & Next on {service} — one rail per subscribed service
-                ForEach(nowAndNextRails) { rail in
-                    TVRail(title: "Now & Next on \(rail.service.name)", accent: rail.service.color, count: rail.items.count) {
-                        ForEach(rail.items) { item in
-                            nowNextCard(for: item, accent: rail.service.color)
-                        }
-                    }
-                }
-
-                // Sponsored chip beneath Now & Next — first gap-service
-                // advertiser with a non-nil appStoreURL from the rail's items.
-                if let chip = nowNextSponsoredChip {
-                    TVSponsoredChip(data: chip)
-                        .id("chip_\(chip.advertiser.key)_home_now_next")
-                }
-
-                // 1. New Episodes
-                if !newEpisodes.isEmpty {
-                    TVRail(title: "New Episodes", accent: TVTheme.blue, count: newEpisodes.count) {
-                        ForEach(newEpisodes) { item in
-                            posterCard(for: item, accent: TVTheme.blue)
-                        }
-                    }
-                }
-
                 // 2. Everyone's Watching
                 if !everyonesWatching.isEmpty {
-                    TVRail(title: "Everyone's Watching", accent: TVTheme.orange, count: everyonesWatching.count) {
+                    TVRail(
+                        title: "Everyone's Watching",
+                        accent: TVTheme.orange,
+                        count: everyonesWatching.count,
+                        seeAllKey: "everyones_watching",
+                        onSeeAll: {
+                            seeAllPayload = TVSeeAllGridPayload(
+                                title: "Everyone's Watching",
+                                accent: TVTheme.orange,
+                                items: everyonesWatchingGridItems
+                            )
+                        }
+                    ) {
                         ForEach(everyonesWatching) { item in
                             everyonesWatchingCard(for: item)
                         }
@@ -125,9 +133,99 @@ struct TVHomeView: View {
                 if let chip = everyonesWatchingSponsoredChip {
                     TVSponsoredChip(data: chip)
                         .id("chip_\(chip.advertiser.key)_home_everyones_watching")
+                        .padding(.horizontal, 80)
                 }
 
-                // 3. Coming to Streaming
+                // 3. Today's Pick — one full-width card, deterministic per
+                // local day.
+                if let pick = todaysPick {
+                    todaysPickSection(for: pick)
+                }
+
+                // 4. Top Picks for You
+                if !topPicks.isEmpty {
+                    TVRail(
+                        title: "Top Picks for You",
+                        accent: TVTheme.orange,
+                        count: topPicks.count,
+                        seeAllKey: "top_picks",
+                        onSeeAll: {
+                            seeAllPayload = TVSeeAllGridPayload(
+                                title: "Top Picks for You",
+                                accent: TVTheme.orange,
+                                items: topPicksGridItems
+                            )
+                        }
+                    ) {
+                        ForEach(topPicks) { item in
+                            topPickCard(for: item)
+                        }
+                    }
+                }
+
+                // 5. Popular on {service} — one rail per subscribed service
+                ForEach(popularOnServiceOrder, id: \.id) { service in
+                    if let items = popularOnService[service.id], !items.isEmpty {
+                        TVRail(
+                            title: "Popular on \(service.name)",
+                            accent: service.color,
+                            count: items.count,
+                            seeAllKey: "popular_\(service.id)",
+                            onSeeAll: {
+                                seeAllPayload = TVSeeAllGridPayload(
+                                    title: "Popular on \(service.name)",
+                                    accent: service.color,
+                                    items: popularGridItems(items)
+                                )
+                            }
+                        ) {
+                            ForEach(items) { item in
+                                posterCard(for: item, accent: service.color)
+                            }
+                        }
+                    }
+                }
+
+                // 6. Now & Next on {service} — one rail per subscribed service
+                ForEach(nowAndNextRails) { rail in
+                    TVRail(
+                        title: "Now & Next on \(rail.service.name)",
+                        accent: rail.service.color,
+                        count: rail.items.count,
+                        seeAllKey: "now_next_\(rail.service.id)",
+                        onSeeAll: {
+                            seeAllPayload = TVSeeAllGridPayload(
+                                title: "Now & Next on \(rail.service.name)",
+                                accent: rail.service.color,
+                                items: nowNextGridItems(for: rail)
+                            )
+                        }
+                    ) {
+                        ForEach(rail.items) { item in
+                            nowNextCard(for: item, accent: rail.service.color)
+                        }
+                    }
+                }
+
+                // Sponsored chip beneath the last Now & Next rail — first
+                // gap-service advertiser with a non-nil appStoreURL from
+                // the rail's items.
+                if let chip = nowNextSponsoredChip {
+                    TVSponsoredChip(data: chip)
+                        .id("chip_\(chip.advertiser.key)_home_now_next")
+                        .padding(.horizontal, 80)
+                }
+
+                // 7. New Episodes
+                if !newEpisodes.isEmpty {
+                    TVRail(title: "New Episodes", accent: TVTheme.blue, count: newEpisodes.count) {
+                        ForEach(newEpisodes) { item in
+                            posterCard(for: item, accent: TVTheme.blue)
+                        }
+                    }
+                }
+
+                // 8. Coming to Streaming
                 if !comingToStreaming.isEmpty {
                     TVRail(title: "Coming to Streaming", accent: TVTheme.orange, count: comingToStreaming.count) {
                         ForEach(comingToStreaming) { item in
@@ -136,18 +234,7 @@ struct TVHomeView: View {
                     }
                 }
 
-                // 4. Popular on {service} — one rail per subscribed service
-                ForEach(popularOnServiceOrder, id: \.id) { service in
-                    if let items = popularOnService[service.id], !items.isEmpty {
-                        TVRail(title: "Popular on \(service.name)", accent: service.color, count: items.count) {
-                            ForEach(items) { item in
-                                posterCard(for: item, accent: service.color)
-                            }
-                        }
-                    }
-                }
-
-                // 5. Creators / Podcasts for You
+                // 9. Creators / Podcasts for You
                 if !recommendedCreators.isEmpty {
                     TVRail(title: "Creators / Podcasts for You", accent: TVTheme.blue, count: recommendedCreators.count) {
                         ForEach(recommendedCreators) { creator in
@@ -156,7 +243,7 @@ struct TVHomeView: View {
                     }
                 }
 
-                // 6. Live Sports
+                // 10. Live Sports
                 if !sports.isEmpty {
                     TVRail(title: "Live Sports", accent: TVTheme.blue, count: sports.count) {
                         ForEach(sports) { game in
@@ -174,6 +261,9 @@ struct TVHomeView: View {
             TVTitleSheet(detail: detail) { isSaved in
                 pendingDetail = nil
             }
+        }
+        .fullScreenCover(item: $seeAllPayload) { payload in
+            TVSeeAllGridView(payload: payload, pendingDetail: $pendingDetail)
         }
     }
 
@@ -208,6 +298,129 @@ struct TVHomeView: View {
                     }
                 },
                 isSaved: { item in streams.contains(titleId: item.canonicalTitleId) }
+            )
+        }
+    }
+
+    // MARK: - Today's Pick
+
+    /// Single full-width card beneath the hero rails. The day-of-year
+    /// ordinal picks the row from the first 10 streaming_releases rows,
+    /// advancing past candidates with no poster art.
+    private func todaysPickSection(for pick: TVStreamingRelease) -> some View {
+        VStack(alignment: .leading, spacing: 24) {
+            HStack(spacing: 14) {
+                Capsule()
+                    .fill(TVTheme.orange)
+                    .frame(width: 6, height: 30)
+                    .shadow(color: TVTheme.orange.opacity(0.65), radius: 10)
+                Text("Today's Pick")
+                    .font(.system(size: 30, weight: .heavy))
+                    .foregroundStyle(.white)
+            }
+            .padding(.horizontal, 80)
+
+            GeometryReader { proxy in
+                todaysPickCard(for: pick, width: proxy.size.width)
+            }
+            .frame(height: 270)
+            .padding(.horizontal, 80)
+        }
+    }
+
+    /// Full-width TVWideCard for the daily pick — shows the title, the
+    /// source name, a Subscribed marker when the source is a subscribed
+    /// service, and opens TVTitleSheet through the shared pendingDetail
+    /// path.
+    private func todaysPickCard(for pick: TVStreamingRelease, width: CGFloat) -> some View {
+        let posterUrl = pick.posterUrl?.isEmpty == false
+            ? pick.posterUrl
+            : TVTMDBImage.url(pick.posterPath, size: .poster500)
+        let titleId = "tmdb:\(pick.isTV ? "tv" : "movie"):\(pick.tmdbId)"
+        let isSubscribed = pick.sourceName.map {
+            AuthViewModel.shared.subscribesToService(named: $0)
+        } ?? false
+        return TVWideCard(
+            title: pick.title,
+            subtitle: pick.sourceName,
+            backdropUrl: posterUrl,
+            accent: TVTheme.orange,
+            isSaved: streams.contains(titleId: titleId),
+            width: width
+        ) {
+            pendingDetail = TVTitleDetail(
+                titleId: titleId,
+                title: pick.title,
+                overview: nil,
+                posterUrl: posterUrl,
+                backdropUrl: nil,
+                tag: pick.isTV ? "SERIES" : "MOVIE",
+                accent: TVTheme.orange,
+                year: nil,
+                platform: nil,
+                isTVHint: pick.isTV
+            )
+        }
+        .overlay(alignment: .topLeading) {
+            if isSubscribed {
+                Text("SUBSCRIBED")
+                    .font(.system(size: 14, weight: .heavy))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(TVTheme.orange, in: Capsule())
+                    .padding(16)
+            }
+        }
+    }
+
+    // MARK: - Top Picks for You
+
+    /// Ranked from the provider-resolved trending items: watched titles are
+    /// excluded, each item scores 0.60 × (voteAverage/10) plus 0.20 when
+    /// the resolved provider is a subscribed service. Sorted by score
+    /// descending (trending rank breaks ties), capped at 20.
+    private var topPicks: [TopPickItem] {
+        let ranked = everyonesWatching.compactMap { item -> TopPickItem? in
+            guard let providerName = item.providerName else { return nil }
+            guard !SocialViewModel.shared.isWatched(item.result.canonicalTitleId) else { return nil }
+            var score = 0.60 * ((item.result.voteAverage ?? 7.0) / 10.0)
+            if AuthViewModel.shared.subscribesToService(named: providerName) {
+                score += 0.20
+            }
+            return TopPickItem(
+                result: item.result,
+                providerName: providerName,
+                score: score,
+                rank: item.rank
+            )
+        }
+        .sorted { lhs, rhs in
+            if lhs.score != rhs.score { return lhs.score > rhs.score }
+            return lhs.rank < rhs.rank
+        }
+        return Array(ranked.prefix(20))
+    }
+
+    private func topPickCard(for item: TopPickItem) -> some View {
+        TVPosterCard(
+            title: item.result.displayName,
+            subtitle: "\(item.matchPercent)% Match",
+            posterUrl: item.result.posterUrl,
+            accent: TVTheme.orange,
+            isSaved: streams.contains(titleId: item.result.canonicalTitleId)
+        ) {
+            pendingDetail = TVTitleDetail(
+                titleId: item.result.canonicalTitleId,
+                title: item.result.displayName,
+                overview: item.result.overview,
+                posterUrl: item.result.posterUrl,
+                backdropUrl: item.result.backdropUrl,
+                tag: item.result.isTV ? "SERIES" : "MOVIE",
+                accent: TVTheme.orange,
+                year: item.result.year,
+                platform: nil,
+                isTVHint: item.result.isTV
             )
         }
     }
@@ -382,6 +595,78 @@ struct TVHomeView: View {
         return StreamingCatalog.ordered(from: selected).filter { tmdbProviderIdMap[$0.id] != nil }
     }
 
+    // MARK: - See-all grid payloads
+
+    /// Grid payloads are built from the arrays the rails already hold in
+    /// state — opening a See-all grid never triggers a network call.
+    private var everyonesWatchingGridItems: [TVSeeAllGridItem] {
+        everyonesWatching.map { item in
+            TVSeeAllGridItem(
+                titleId: item.result.canonicalTitleId,
+                title: item.result.displayName,
+                subtitle: item.providerName,
+                posterUrl: item.result.posterUrl,
+                overview: item.result.overview,
+                backdropUrl: item.result.backdropUrl,
+                tag: item.result.isTV ? "SERIES" : "MOVIE",
+                year: item.result.year,
+                isTVHint: item.result.isTV
+            )
+        }
+    }
+
+    private var topPicksGridItems: [TVSeeAllGridItem] {
+        topPicks.map { item in
+            TVSeeAllGridItem(
+                titleId: item.result.canonicalTitleId,
+                title: item.result.displayName,
+                subtitle: "\(item.matchPercent)% Match",
+                posterUrl: item.result.posterUrl,
+                overview: item.result.overview,
+                backdropUrl: item.result.backdropUrl,
+                tag: item.result.isTV ? "SERIES" : "MOVIE",
+                year: item.result.year,
+                isTVHint: item.result.isTV
+            )
+        }
+    }
+
+    private func popularGridItems(_ items: [TVTMDBResult]) -> [TVSeeAllGridItem] {
+        items.map { item in
+            TVSeeAllGridItem(
+                titleId: item.canonicalTitleId,
+                title: item.displayName,
+                subtitle: item.isTV ? "Series" : "Movie",
+                posterUrl: item.posterUrl,
+                overview: item.overview,
+                backdropUrl: item.backdropUrl,
+                tag: item.isTV ? "SERIES" : "MOVIE",
+                year: item.year,
+                isTVHint: item.isTV
+            )
+        }
+    }
+
+    private func nowNextGridItems(for rail: NowAndNextRail) -> [TVSeeAllGridItem] {
+        rail.items.map { item in
+            let release = item.release
+            let posterUrl = release.posterUrl?.isEmpty == false
+                ? release.posterUrl
+                : TVTMDBImage.url(release.posterPath, size: .poster500)
+            return TVSeeAllGridItem(
+                titleId: "tmdb:\(release.isTV ? "tv" : "movie"):\(release.tmdbId)",
+                title: release.title,
+                subtitle: item.badge,
+                posterUrl: posterUrl,
+                overview: nil,
+                backdropUrl: nil,
+                tag: release.isTV ? "SERIES" : "MOVIE",
+                year: nil,
+                isTVHint: release.isTV
+            )
+        }
+    }
+
     // MARK: - Data loading
 
     private func loadAll() async {
@@ -390,8 +675,9 @@ struct TVHomeView: View {
         async let newEpisodesTask = (try? TVTMDBService.shared.getOnTheAir()) ?? []
         async let sportsTask = TVSportsService.shared.fetchAll()
         async let watchTask: Void = TVStreamsViewModel.shared.fetchUserStreams()
+        async let watchedTask: Void = SocialViewModel.shared.loadAllWatched()
 
-        let (t, ne, sp, _) = await (trendingTask, newEpisodesTask, sportsTask, watchTask)
+        let (t, ne, sp, _, _) = await (trendingTask, newEpisodesTask, sportsTask, watchTask, watchedTask)
         self.trending = t
         self.newEpisodes = ne
         self.sports = sp
@@ -404,9 +690,41 @@ struct TVHomeView: View {
         async let popularTask: Void = buildPopularOnService()
         async let creatorsTask: Void = buildRecommendedCreators()
         async let nowNextTask: Void = buildNowAndNext()
+        async let todaysPickTask: Void = buildTodaysPick()
         async let affiliateTask: Void = TVAffiliateService.shared.fetchIfNeeded()
 
-        await (heroTask, everyoneTask, comingTask, popularTask, creatorsTask, nowNextTask, affiliateTask)
+        await (heroTask, everyoneTask, comingTask, popularTask, creatorsTask, nowNextTask, todaysPickTask, affiliateTask)
+    }
+
+    // MARK: - Today's Pick resolution
+
+    /// Fetches the same streaming_releases rows the Now & Next NOW badge
+    /// reads and resolves the deterministic daily pick. A nil or empty
+    /// fetch leaves the section omitted entirely.
+    private func buildTodaysPick() async {
+        guard let releases = await TVStreamingReleasesService.shared.fetchReleases() else { return }
+        todaysPick = resolveTodaysPick(from: releases)
+    }
+
+    /// Day-of-year ordinal into the first 10 rows (in returned order),
+    /// advancing to the next index modulo count while the candidate's
+    /// posterUrl and posterPath are both empty.
+    private func resolveTodaysPick(from releases: [TVStreamingRelease]) -> TVStreamingRelease? {
+        let pool = Array(releases.prefix(10))
+        guard !pool.isEmpty else { return nil }
+        let count = pool.count
+        let dayOrdinal = Calendar.current.ordinality(of: .day, in: .year, for: Date()) ?? 0
+        let startIndex = dayOrdinal % count
+        var index = startIndex
+        for _ in 0..<count {
+            let candidate = pool[index]
+            let hasArt = (candidate.posterUrl?.isEmpty == false)
+                || (candidate.posterPath?.isEmpty == false)
+            if hasArt { return candidate }
+            index = (index + 1) % count
+        }
+        // Every candidate lacks art — fall back to the day's row.
+        return pool[startIndex]
     }
 
     // MARK: - Sponsored chips

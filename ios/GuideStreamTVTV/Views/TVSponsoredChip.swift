@@ -78,7 +78,7 @@ struct TVSponsoredChip: View {
             }
             .padding(.horizontal, 20)
             .padding(.vertical, 16)
-            .frame(minHeight: 120)
+            .frame(maxWidth: .infinity, minHeight: 132, alignment: .leading)
             .background(TVTheme.surface)
             .clipShape(.rect(cornerRadius: 10))
             .overlay {
@@ -91,7 +91,6 @@ struct TVSponsoredChip: View {
         }
         .buttonStyle(.card)
         .focused($isFocused)
-        .padding(.horizontal, 80)
         .onAppear { logImpression() }
         .animation(.spring(response: 0.35, dampingFraction: 0.75), value: isFocused)
     }
