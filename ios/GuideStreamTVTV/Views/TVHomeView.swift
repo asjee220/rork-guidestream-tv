@@ -701,7 +701,7 @@ struct TVHomeView: View {
         async let todaysPickTask: Void = buildTodaysPick()
         async let affiliateTask: Void = TVAffiliateService.shared.fetchIfNeeded()
 
-        await (heroTask, everyoneTask, comingTask, popularTask, creatorsTask, nowNextTask, todaysPickTask, affiliateTask)
+        _ = await (heroTask, everyoneTask, comingTask, popularTask, creatorsTask, nowNextTask, todaysPickTask, affiliateTask)
     }
 
     // MARK: - Today's Pick resolution
@@ -828,8 +828,8 @@ struct TVHomeView: View {
 
         // One batched featurette lookup for the final hero pool — exactly
         // one Supabase query per Home load, keyed by canonicalTitleId.
-        let pool = heroItems.map { (tmdbId: $0.id, isTV: $0.isTV) }
-        heroFeaturettes = await TVFeaturetteService.shared.fetchFeaturettes(for: pool)
+        let featurettePool = heroItems.map { (tmdbId: $0.id, isTV: $0.isTV) }
+        heroFeaturettes = await TVFeaturetteService.shared.fetchFeaturettes(for: featurettePool)
     }
 
     // MARK: - Everyone's Watching
