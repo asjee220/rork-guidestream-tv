@@ -17,11 +17,13 @@ struct TVMainView: View {
 
     /// Constant leading inset for the content screen. The collapsed rail
     /// occupies 32pt + 72pt = 104pt; the rail headers use 80pt of internal
-    /// horizontal gutter. Insetting the whole content container by 48pt
-    /// keeps every rail title and first poster at 128pt from the screen
-    /// edge, clear of the 104pt rail. The menu still overlays the same
-    /// content when it opens, and the content never shifts or resizes.
-    private let contentLeadingInset: CGFloat = 48
+    /// horizontal gutter. Insetting the whole content container by 72pt
+    /// puts every rail title and first poster at 152pt from the screen edge,
+    /// giving a 48pt margin beyond the rail so a focused first card —
+    /// including its focus ring and scale expansion — never slides behind
+    /// the panel. The menu still overlays the same content when it opens,
+    /// and the content never shifts or resizes.
+    private let contentLeadingInset: CGFloat = 72
 
     @State private var selection: TVSideMenuItem = .home
     @State private var menuIsOpen: Bool = false

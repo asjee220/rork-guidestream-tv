@@ -51,7 +51,10 @@ struct TVHeroCarousel: View {
     @State private var autoAdvanceDisabled: Bool = false
     @State private var menuRequestCount: Int = 0
 
-    @FocusState private var isCTAFocused: Bool
+    /// Bound from TVHomeView so the scroll content can declare the CTA the
+    /// default focus for the scene, preventing launch focus from landing on
+    /// a rail card and scrolling the hero off screen.
+    @FocusState.Binding var ctaFocused: Bool
     @FocusState private var heroRegionFocused: Bool
     /// Focus scope for the hero region. The Add to Watch List button is
     /// the default focus inside this scope so Home appears with the hero
@@ -65,7 +68,7 @@ struct TVHeroCarousel: View {
     /// The metadata block is visible while the hero region (or the CTA
     /// inside it) holds focus, and fades out when focus enters the rails.
     private var metadataVisible: Bool {
-        isCTAFocused || heroRegionFocused
+        ctaFocused || heroRegionFocused
     }
 
     var body: some View {
@@ -205,7 +208,7 @@ struct TVHeroCarousel: View {
                     .padding(.vertical, 18)
                 }
                 .buttonStyle(.card)
-                .focused($isCTAFocused)
+                .focused($ctaFocused)
                 .prefersDefaultFocus(true, in: heroNamespace)
                 .padding(.top, 6)
             }
@@ -331,7 +334,7 @@ struct TVHeroCarousel: View {
         endOfItemTask?.cancel()
         guard !autoAdvanceDisabled else { return }
         guard items.count > 1, index < items.count - 1 else { return }
-        if isCTAFocused || heroRegionFocused {
+        if ctaFocused || heroRegionFocused {
             dwellTask = Task { @MainActor in
                 try? await Task.sleep(for: .seconds(10))
                 guard !Task.isCancelled else { return }

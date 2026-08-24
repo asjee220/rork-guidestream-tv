@@ -70,6 +70,10 @@ struct TVHomeView: View {
 
     @State private var pendingDetail: TVTitleDetail?
 
+    /// Drives the hero's Add to Watch List button as the default focus for
+    /// the Home scene, so the app opens with the hero fully visible.
+    @FocusState private var heroCTAFocused: Bool
+
     @State private var streams = TVStreamsViewModel.shared
 
     // New rails
@@ -264,6 +268,7 @@ struct TVHomeView: View {
             }
         }
         .background(TVTheme.backgroundGradient)
+        .defaultFocus($heroCTAFocused, value: true)
         .task { await loadAll() }
         .sheet(item: $pendingDetail) { detail in
             TVTitleSheet(detail: detail) { isSaved in
@@ -294,6 +299,7 @@ struct TVHomeView: View {
         } else {
             TVHeroCarousel(
                 items: heroItems,
+                ctaFocused: $heroCTAFocused,
                 onToggleSave: { item in
                     Task {
                         await streams.toggle(

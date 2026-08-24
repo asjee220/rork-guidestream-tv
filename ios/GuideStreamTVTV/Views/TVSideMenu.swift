@@ -185,7 +185,7 @@ struct TVSideMenu: View {
             rowContent(for: item, isFocused: focusedItem == item)
                 .padding(.vertical, 6)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(TVMenuButtonStyle())
         .focused($focusedItem, equals: item)
         .focusEffectDisabled()
     }
@@ -235,5 +235,17 @@ struct TVSideMenu: View {
         // Collapse immediately and hand focus to the selected screen. The
         // already-selected screen stays mounted and untouched.
         close()
+    }
+}
+
+// MARK: - Button style
+
+/// A completely inert button style that returns the label untouched. This
+/// suppresses the default white focus plate that tvOS draws behind
+/// PlainButtonStyle on this SDK, leaving focus state entirely to the
+/// rowContent scale and text-color lift.
+private struct TVMenuButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
     }
 }
