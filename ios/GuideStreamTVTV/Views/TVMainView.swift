@@ -5,8 +5,9 @@
 //  Side-menu shell. The selected screen fills the frame while a leading
 //  overlay menu (TVSideMenu) handles navigation — content never shifts or
 //  resizes when the menu expands. The menu is collapsed at rest and opens
-//  only on a left move issued from the content's leading edge. Reels
-//  remains withheld for launch.
+//  only on a left move issued from the content's leading edge. Search and
+//  Reels are wired to placeholder screens so the menu structure matches the
+//  mockups; their full screens can be filled in later.
 //
 
 import SwiftUI
@@ -70,6 +71,8 @@ struct TVMainView: View {
         case .watchList: TVWatchListView()
         case .sports: SportsView()
         case .profile: ProfileView()
+        case .search: TVSearchView()
+        case .reels: TVReelsView()
         }
     }
 }

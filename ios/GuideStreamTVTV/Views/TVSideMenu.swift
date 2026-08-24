@@ -13,31 +13,39 @@
 
 import SwiftUI
 
-/// The four destinations the side menu routes to, in display order.
-/// Reels and Search are intentionally withheld for launch.
+/// The destinations the side menu routes to, in the order shown in the
+/// design mockups: Profile, Reels, Sports, Watchlist, Home, Search. Reels
+/// and Search are wired to placeholder screens for now so the menu
+// structure matches the mockups; the screens can be filled in later.
 enum TVSideMenuItem: String, CaseIterable, Identifiable {
-    case home
-    case watchList
-    case sports
     case profile
+    case reels
+    case sports
+    case watchList
+    case home
+    case search
 
     var id: String { rawValue }
 
     var label: String {
         switch self {
-        case .home: return "Home"
-        case .watchList: return "Watch List"
-        case .sports: return "Sports"
         case .profile: return "Profile"
+        case .reels: return "Reels"
+        case .sports: return "Sports"
+        case .watchList: return "Watchlist"
+        case .home: return "Home"
+        case .search: return "Search"
         }
     }
 
     var icon: String {
         switch self {
-        case .home: return "house.fill"
-        case .watchList: return "popcorn.fill"
-        case .sports: return "sportscourt.fill"
-        case .profile: return "person.crop.circle.fill"
+        case .profile: return "person.fill"
+        case .reels: return "play.fill"
+        case .sports: return "american.football.fill"
+        case .watchList: return "play.rectangle.fill"
+        case .home: return "house"
+        case .search: return "magnifyingglass"
         }
     }
 }
@@ -59,13 +67,29 @@ struct TVSideMenu: View {
     /// expansion is a pure width change.
     private let leadingInset: CGFloat = 32
     private let verticalInset: CGFloat = 48
+    /// Width of the orange selection indicator.
+    private let barWidth: CGFloat = 6
+    /// Height of the orange selection indicator.
+    private let barHeight: CGFloat = 44
+    /// Icon frame size.
+    private let iconFrame: CGFloat = 44
+    /// Icon image size.
+    private let iconSize: CGFloat = 28
+    /// Horizontal padding that centers the icon frame in the collapsed
+    /// 72pt rail while the 6pt selection bar sits flush at the left edge.
+    private let closedIconLeading: CGFloat = 14
+    /// Horizontal spacing from the selection bar to the icon when the menu
+    /// is open.
+    private let openIconLeading: CGFloat = 16
+    /// Spacing from the icon to the label in the open menu.
+    private let labelLeading: CGFloat = 10
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             brandMark
                 .padding(.top, 24)
                 .padding(.bottom, 28)
-                .padding(.leading, isOpen ? 22 : 8)
+                .padding(.leading, isOpen ? 22 : 16)
                 .padding(.trailing, 16)
 
             VStack(alignment: .leading, spacing: 16) {
@@ -162,38 +186,34 @@ struct TVSideMenu: View {
         } label: {
             rowContent(for: item)
                 .padding(.vertical, 6)
-                .background {
-                    if focusedItem == item {
-                        RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .fill(TVTheme.surfaceElevated)
-                    }
-                }
         }
         .buttonStyle(.plain)
         .focused($focusedItem, equals: item)
     }
 
-    /// Shared row layout: the orange selection bar sits at the panel's
-    /// leading edge, centered beside the icon in the collapsed rail and
-    /// revealed to the left of the icon+label when opened.
+    /// Shared row layout: the orange selection bar sits flush at the
+    /// panel's leading edge, and the icon is centered in the collapsed
+    /// rail. When opened, the label appears to the right. Selected items
+    /// use white icon/text; unselected items use the muted secondary
+    /// color. The design mockups show the orange bar itself as the only
+    /// selection indicator, so no background rectangle is drawn.
     private func rowContent(for item: TVSideMenuItem) -> some View {
         let isSelected = selection == item
         return HStack(spacing: 0) {
             Capsule()
                 .fill(isSelected ? TVTheme.orange : Color.clear)
-                .frame(width: 6, height: 44)
-                .padding(.leading, isOpen ? 0 : 21)
+                .frame(width: barWidth, height: barHeight)
             Image(systemName: item.icon)
-                .font(.system(size: 28, weight: .medium))
-                .foregroundStyle(isSelected ? TVTheme.orange : TVTheme.textSecondary)
-                .frame(width: 44, height: 44)
-                .padding(.leading, isOpen ? 16 : 8)
+                .font(.system(size: iconSize, weight: .medium))
+                .foregroundStyle(isSelected ? TVTheme.textPrimary : TVTheme.textSecondary)
+                .frame(width: iconFrame, height: iconFrame)
+                .padding(.leading, isOpen ? openIconLeading : closedIconLeading)
             if isOpen {
                 Text(item.label)
                     .font(.system(size: 24, weight: .semibold))
                     .foregroundStyle(isSelected ? TVTheme.textPrimary : TVTheme.textSecondary)
                     .lineLimit(1)
-                    .padding(.leading, 10)
+                    .padding(.leading, labelLeading)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
