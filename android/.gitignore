@@ -36,3 +36,8 @@ local.properties
 .env
 rork-eslint.config.js
 app/src/main/java/**/Config.kt
+
+# Upload signing - never commit
+keystore.properties
+*.jks
+*.keystore

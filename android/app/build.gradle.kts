@@ -1,3 +1,25 @@
+import java.util.Properties
+
+// Upload signing material. Never committed (see android/.gitignore).
+//   Local  : android/keystore.properties
+//   CI     : RELEASE_STORE_FILE / RELEASE_STORE_PASSWORD / RELEASE_KEY_ALIAS / RELEASE_KEY_PASSWORD
+// When none is present the release build is left UNSIGNED on purpose, so a
+// debug-signed artifact can never be produced and rejected by Play.
+val keystorePropsFile = rootProject.file("keystore.properties")
+val keystoreProps = Properties().apply {
+    if (keystorePropsFile.exists()) keystorePropsFile.inputStream().use { load(it) }
+}
+fun signingValue(key: String, env: String): String? =
+    keystoreProps.getProperty(key)?.takeIf { it.isNotBlank() }
+        ?: System.getenv(env)?.takeIf { it.isNotBlank() }
+
+val releaseStoreFile = signingValue("storeFile", "RELEASE_STORE_FILE")
+val releaseStorePassword = signingValue("storePassword", "RELEASE_STORE_PASSWORD")
+val releaseKeyAlias = signingValue("keyAlias", "RELEASE_KEY_ALIAS")
+val releaseKeyPassword = signingValue("keyPassword", "RELEASE_KEY_PASSWORD")
+val hasReleaseSigning = releaseStoreFile != null && releaseStorePassword != null &&
+    releaseKeyAlias != null && releaseKeyPassword != null
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -42,10 +64,29 @@ android {
         )
     }
 
+    signingConfigs {
+        if (hasReleaseSigning) {
+            create("release") {
+                storeFile = rootProject.file(releaseStoreFile!!)
+                storePassword = releaseStorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = if (hasReleaseSigning) {
+                signingConfigs.getByName("release")
+            } else {
+                logger.warn(
+                    "No upload keystore found - release build will be UNSIGNED. " +
+                        "Provide android/keystore.properties or the RELEASE_* env vars."
+                )
+                null
+            }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
