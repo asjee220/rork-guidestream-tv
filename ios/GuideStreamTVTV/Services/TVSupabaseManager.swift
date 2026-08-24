@@ -24,6 +24,14 @@ final class TVSupabaseManager: @unchecked Sendable {
         guard let url = URL(string: TVSupabaseConfig.url) else {
             fatalError("Invalid Supabase URL")
         }
-        self.client = SupabaseClient(supabaseURL: url, supabaseKey: TVSupabaseConfig.anonKey)
+        self.client = SupabaseClient(
+            supabaseURL: url,
+            supabaseKey: TVSupabaseConfig.anonKey,
+            options: SupabaseClientOptions(
+                auth: SupabaseClientOptions.AuthOptions(
+                    emitLocalSessionAsInitialSession: true
+                )
+            )
+        )
     }
 }

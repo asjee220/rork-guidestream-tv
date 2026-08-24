@@ -20,6 +20,14 @@ final class SupabaseManager {
         guard let url = URL(string: SupabaseConfig.url) else {
             fatalError("Invalid Supabase URL")
         }
-        self.client = SupabaseClient(supabaseURL: url, supabaseKey: SupabaseConfig.anonKey)
+        self.client = SupabaseClient(
+            supabaseURL: url,
+            supabaseKey: SupabaseConfig.anonKey,
+            options: SupabaseClientOptions(
+                auth: SupabaseClientOptions.AuthOptions(
+                    emitLocalSessionAsInitialSession: true
+                )
+            )
+        )
     }
 }
