@@ -53,6 +53,10 @@ struct TVHeroCarousel: View {
 
     @FocusState private var isCTAFocused: Bool
     @FocusState private var heroRegionFocused: Bool
+    /// Focus scope for the hero region. The Add to Watch List button is
+    /// the default focus inside this scope so Home appears with the hero
+    /// focused rather than the first rail card.
+    @Namespace private var heroNamespace
 
     private var currentItem: TVTMDBResult? {
         items.indices.contains(index) ? items[index] : nil
@@ -100,6 +104,7 @@ struct TVHeroCarousel: View {
         .clipped()
         .focusable()
         .focused($heroRegionFocused)
+        .focusScope(heroNamespace)
         .focusEffectDisabled()
         .onMoveCommand(perform: handleMoveCommand)
         .preference(key: TVHeroSideMenuRequestKey.self, value: menuRequestCount)
@@ -201,7 +206,7 @@ struct TVHeroCarousel: View {
                 }
                 .buttonStyle(.card)
                 .focused($isCTAFocused)
-                .prefersDefaultFocus(true)
+                .prefersDefaultFocus(true, in: heroNamespace)
                 .padding(.top, 6)
             }
             .padding(.horizontal, 80)
