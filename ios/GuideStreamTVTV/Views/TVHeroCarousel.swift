@@ -430,7 +430,11 @@ private struct TVHeroRotateModifier: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .rotation3DEffect(.degrees(angle), anchor: .leading)
+            .rotation3DEffect(
+                .degrees(angle),
+                axis: (x: 0, y: 1, z: 0),
+                anchor: .leading
+            )
             .offset(x: offset)
             .opacity(opacity)
     }
