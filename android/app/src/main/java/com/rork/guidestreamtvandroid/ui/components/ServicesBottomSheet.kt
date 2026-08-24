@@ -22,6 +22,7 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -41,13 +42,18 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -132,7 +138,7 @@ fun ServicesBottomSheet(
                         .padding(horizontal = 12.dp)
                         .navigationBarsPadding(),
                     horizontalArrangement = Arrangement.spacedBy(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(0.dp),
                 ) {
                     // Most popular section
                     if (filteredPopular.isNotEmpty()) {
@@ -142,7 +148,7 @@ fun ServicesBottomSheet(
                                 fontSize = 13.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 color = TextSecondary,
-                                modifier = Modifier.padding(bottom = 4.dp),
+                                modifier = Modifier.padding(bottom = 12.dp),
                             )
                         }
                         items(filteredPopular, key = { "popular_${it.id}" }) { svc ->
@@ -153,7 +159,7 @@ fun ServicesBottomSheet(
                             )
                         }
                         item(span = { GridItemSpan(maxLineSpan) }) {
-                            Spacer(Modifier.height(8.dp))
+                            Spacer(Modifier.height(16.dp))
                         }
                     }
 
@@ -165,14 +171,25 @@ fun ServicesBottomSheet(
                                 fontSize = 13.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 color = TextSecondary,
-                                modifier = Modifier.padding(bottom = 4.dp),
+                                modifier = Modifier.padding(bottom = 12.dp),
                             )
                         }
-                        items(filteredAll, key = { "all_${it.id}" }) { svc ->
+                        itemsIndexed(
+                            filteredAll,
+                            key = { _, svc -> "all_${svc.id}" },
+                            span = { _, _ -> GridItemSpan(maxLineSpan) },
+                        ) { idx, svc ->
+                            val rowPosition = when {
+                                filteredAll.size == 1 -> ServiceRowPosition.Only
+                                idx == 0 -> ServiceRowPosition.First
+                                idx == filteredAll.lastIndex -> ServiceRowPosition.Last
+                                else -> ServiceRowPosition.Middle
+                            }
                             ServiceToggleRowItem(
                                 service = svc,
                                 isSelected = svc.id in selected,
                                 onTap = { onToggle(svc.id) },
+                                position = rowPosition,
                             )
                         }
                     }
@@ -183,15 +200,69 @@ fun ServicesBottomSheet(
     }
 }
 
+/** Placement of an A–Z toggle row within its contiguous bordered group. */
+private enum class ServiceRowPosition { First, Middle, Last, Only }
+
 @Composable
 private fun ServiceToggleRowItem(
     service: StreamingService,
     isSelected: Boolean,
     onTap: () -> Unit,
+    position: ServiceRowPosition = ServiceRowPosition.Middle,
 ) {
+    val roundedTop = position == ServiceRowPosition.First || position == ServiceRowPosition.Only
+    val roundedBottom = position == ServiceRowPosition.Last || position == ServiceRowPosition.Only
+    val shape = RoundedCornerShape(
+        topStart = if (roundedTop) 14.dp else 0.dp,
+        topEnd = if (roundedTop) 14.dp else 0.dp,
+        bottomEnd = if (roundedBottom) 14.dp else 0.dp,
+        bottomStart = if (roundedBottom) 14.dp else 0.dp,
+    )
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .clip(shape)
+            .background(Color.White.copy(alpha = 0.04f))
+            .drawBehind {
+                // Contiguous group chrome matching the onboarding A–Z list:
+                // side hairlines on every row, cap hairlines + 14dp corners
+                // only on the first/last row, and a soft divider between rows
+                // instead of a hard border edge.
+                val stroke = 1.dp.toPx()
+                val radius = 14.dp.toPx()
+                val outline = Color.White.copy(alpha = 0.08f)
+                val topInset = if (roundedTop) radius else 0f
+                val bottomInset = if (roundedBottom) radius else 0f
+                val arcRadius = radius - stroke / 2f
+                drawLine(
+                    outline,
+                    Offset(stroke / 2f, topInset),
+                    Offset(stroke / 2f, size.height - bottomInset),
+                    stroke,
+                )
+                drawLine(
+                    outline,
+                    Offset(size.width - stroke / 2f, topInset),
+                    Offset(size.width - stroke / 2f, size.height - bottomInset),
+                    stroke,
+                )
+                if (roundedTop) {
+                    drawLine(outline, Offset(radius, stroke / 2f), Offset(size.width - radius, stroke / 2f), stroke)
+                    drawArc(outline, 180f, 90f, false, Offset(stroke / 2f, stroke / 2f), Size(arcRadius * 2, arcRadius * 2), style = Stroke(stroke))
+                    drawArc(outline, 270f, 90f, false, Offset(size.width - radius - arcRadius, stroke / 2f), Size(arcRadius * 2, arcRadius * 2), style = Stroke(stroke))
+                }
+                if (roundedBottom) {
+                    drawLine(outline, Offset(radius, size.height - stroke / 2f), Offset(size.width - radius, size.height - stroke / 2f), stroke)
+                    drawArc(outline, 90f, 90f, false, Offset(stroke / 2f, size.height - radius - arcRadius), Size(arcRadius * 2, arcRadius * 2), style = Stroke(stroke))
+                    drawArc(outline, 0f, 90f, false, Offset(size.width - radius - arcRadius, size.height - radius - arcRadius), Size(arcRadius * 2, arcRadius * 2), style = Stroke(stroke))
+                } else {
+                    drawRect(
+                        Color.White.copy(alpha = 0.06f),
+                        topLeft = Offset(0f, size.height - stroke),
+                        size = Size(size.width, stroke),
+                    )
+                }
+            }
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
@@ -205,6 +276,8 @@ private fun ServiceToggleRowItem(
             text = service.name,
             fontSize = 15.sp,
             color = Color.White,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f),
         )
         VisualSwitch(checked = isSelected)
@@ -277,7 +350,9 @@ private fun ServiceEditorTile(
     val borderColor = if (isSelected) accent else OutlineVariant
     val borderWidth = if (isSelected) 3.dp else 1.dp
     Column(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(bottom = 8.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Box(
