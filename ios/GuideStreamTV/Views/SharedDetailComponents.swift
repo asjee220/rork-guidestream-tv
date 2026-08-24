@@ -396,6 +396,112 @@ struct ServiceBadge: View {
     }
 }
 
+// MARK: - Grouped Where to Watch
+
+/// Minimal source shape the shared grouping and cheapest-line logic need, so
+/// both the detail sheet's raw `WatchmodeSource` values and the full detail
+/// screen's `WhereToWatchService` wrappers share one implementation.
+protocol GroupableWatchSource {
+    var name: String { get }
+    var type: String { get }
+    var price: Double? { get }
+}
+
+extension WatchmodeSource: GroupableWatchSource {}
+extension WhereToWatchService: GroupableWatchSource {}
+
+/// One labelled display tier of streaming sources.
+struct WatchSourceGroup<S: GroupableWatchSource> {
+    let label: String
+    let sources: [S]
+}
+
+/// Groups sources into four labelled tiers in display order: subscription,
+/// free, rent, buy. Within rent and buy the chips are ordered by price
+/// ascending with null-priced entries last. `tve` and untyped legacy sources
+/// ride with subscription; purchase/buy fold into buy. Operates only on the
+/// resolved sources it is handed — no network call.
+func watchSourceGroups<S: GroupableWatchSource>(_ sources: [S]) -> [WatchSourceGroup<S>] {
+    var subscription: [S] = []
+    var free: [S] = []
+    var rent: [S] = []
+    var buy: [S] = []
+    for source in sources {
+        switch source.type.lowercased() {
+        case "free": free.append(source)
+        case "rent": rent.append(source)
+        case "purchase", "buy": buy.append(source)
+        default: subscription.append(source) // sub, tve, untyped legacy
+        }
+    }
+    func byPriceAscending(_ list: [S]) -> [S] {
+        list.sorted { a, b in
+            switch (a.price, b.price) {
+            case let (ap?, bp?): return ap < bp
+            case (.some, .none): return true
+            case (.none, .some): return false
+            default: return false
+            }
+        }
+    }
+    return [
+        WatchSourceGroup(label: "Subscription", sources: subscription),
+        WatchSourceGroup(label: "Free", sources: free),
+        WatchSourceGroup(label: "Rent", sources: byPriceAscending(rent)),
+        WatchSourceGroup(label: "Buy", sources: byPriceAscending(buy)),
+    ]
+    .filter { !$0.sources.isEmpty }
+}
+
+/// Lowest-priced rent-or-buy source carrying a non-null price, or nil when
+/// no transactional offer has one.
+func cheapestTransactionalWatchSource<S: GroupableWatchSource>(_ sources: [S]) -> S? {
+    sources
+        .filter { source in
+            let t = source.type.lowercased()
+            return (t == "rent" || t == "purchase" || t == "buy") && source.price != nil
+        }
+        .min { ($0.price ?? 0) < ($1.price ?? 0) }
+}
+
+/// True when any sub-typed source is one the user is subscribed to — the
+/// cheapest line is omitted entirely in that case.
+func watchSourcesIncludeSubscribed<S: GroupableWatchSource>(
+    _ sources: [S],
+    isSubscribed: (String) -> Bool
+) -> Bool {
+    sources.contains {
+        $0.type.lowercased() == "sub" && isSubscribed($0.name)
+    }
+}
+
+/// Single summary line naming the lowest-priced transactional option. Rendered
+/// on the literal sheet depth tokens (#1B2739 fill, #2E3E58 hairline) rather
+/// than theme aliases.
+struct CheapestTonightLine<S: GroupableWatchSource>: View {
+    let source: S
+
+    private var verb: String {
+        source.type.lowercased() == "rent" ? "rent" : "buy"
+    }
+
+    var body: some View {
+        Text("Cheapest tonight: \(String(format: "$%.2f", source.price ?? 0)) \(verb) on \(gsDisplayName(for: source.name))")
+            .scaledFont(size: 13, weight: .semibold)
+            .foregroundStyle(Color.white.opacity(0.85))
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(Color(red: 0x1B / 255, green: 0x27 / 255, blue: 0x39 / 255))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .stroke(Color(red: 0x2E / 255, green: 0x3E / 255, blue: 0x58 / 255), lineWidth: 1)
+            )
+    }
+}
+
 // MARK: - Sticky compact header
 
 /// Sticky condensed header that fades in as the user scrolls past the hero.

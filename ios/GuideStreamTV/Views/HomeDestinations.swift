@@ -1055,67 +1055,6 @@ struct EpisodeDetailSheet: View {
 
     // MARK: - Where to watch row
 
-    /// One labelled tier of streaming sources.
-    private struct SourceGroup {
-        let label: String
-        let sources: [WatchmodeSource]
-    }
-
-    /// Sources grouped into four labelled tiers in display order:
-    /// subscription, free, rent, buy. Within rent and buy the chips are
-    /// ordered by price ascending with null-priced entries last. Built only
-    /// from data already resolved in `allSources` — no extra network call.
-    private var sourceGroups: [SourceGroup] {
-        var subscription: [WatchmodeSource] = []
-        var free: [WatchmodeSource] = []
-        var rent: [WatchmodeSource] = []
-        var buy: [WatchmodeSource] = []
-        for source in allSources {
-            switch source.type.lowercased() {
-            case "free": free.append(source)
-            case "rent": rent.append(source)
-            case "purchase", "buy": buy.append(source)
-            default: subscription.append(source) // sub, tve, untyped legacy
-            }
-        }
-        func byPriceAscending(_ list: [WatchmodeSource]) -> [WatchmodeSource] {
-            list.sorted { a, b in
-                switch (a.price, b.price) {
-                case let (ap?, bp?): return ap < bp
-                case (.some, .none): return true
-                case (.none, .some): return false
-                default: return false
-                }
-            }
-        }
-        return [
-            SourceGroup(label: "Subscription", sources: subscription),
-            SourceGroup(label: "Free", sources: free),
-            SourceGroup(label: "Rent", sources: byPriceAscending(rent)),
-            SourceGroup(label: "Buy", sources: byPriceAscending(buy)),
-        ]
-        .filter { !$0.sources.isEmpty }
-    }
-
-    /// Lowest-priced rent-or-buy source carrying a non-null price, or nil
-    /// when no transactional offer has one.
-    private var cheapestTransactionalSource: WatchmodeSource? {
-        allSources
-            .filter { source in
-                let t = source.type.lowercased()
-                return (t == "rent" || t == "purchase" || t == "buy") && source.price != nil
-            }
-            .min { ($0.price ?? 0) < ($1.price ?? 0) }
-    }
-
-    /// True when the title is already available on a sub-typed service the
-    /// user is subscribed to — the cheapest line is omitted entirely then.
-    private var isOnSubscribedService: Bool {
-        allSources.contains {
-            $0.type.lowercased() == "sub" && AuthViewModel.shared.subscribesToService(named: $0.name)
-        }
-    }
-
     @ViewBuilder
     private var whereToWatchRow: some View {
         if !allSources.isEmpty {
@@ -1125,11 +1064,14 @@ struct EpisodeDetailSheet: View {
                     .tracking(1.4)
                     .foregroundStyle(Color.white.opacity(0.45))
 
-                if let cheapest = cheapestTransactionalSource, !isOnSubscribedService {
-                    cheapestTonightLine(cheapest)
+                if let cheapest = cheapestTransactionalWatchSource(allSources),
+                   !watchSourcesIncludeSubscribed(allSources, isSubscribed: {
+                       AuthViewModel.shared.subscribesToService(named: $0)
+                   }) {
+                    CheapestTonightLine(source: cheapest)
                 }
 
-                ForEach(sourceGroups, id: \.label) { group in
+                ForEach(watchSourceGroups(allSources), id: \.label) { group in
                     VStack(alignment: .leading, spacing: 6) {
                         Text(group.label.uppercased())
                             .scaledFont(size: 11, weight: .bold)
@@ -1162,27 +1104,6 @@ struct EpisodeDetailSheet: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-    }
-
-    /// Single summary line above the groups naming the lowest-priced
-    /// transactional option. Rendered on the literal sheet depth tokens
-    /// (#1B2739 fill, #2E3E58 hairline) rather than theme aliases.
-    private func cheapestTonightLine(_ source: WatchmodeSource) -> some View {
-        let verb = source.type.lowercased() == "rent" ? "rent" : "buy"
-        let priceText = String(format: "$%.2f", source.price ?? 0)
-        return Text("Cheapest tonight: \(priceText) \(verb) on \(gsDisplayName(for: source.name))")
-            .scaledFont(size: 13, weight: .semibold)
-            .foregroundStyle(Color.white.opacity(0.85))
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .background(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(Color(red: 0x1B / 255, green: 0x27 / 255, blue: 0x39 / 255))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .stroke(Color(red: 0x2E / 255, green: 0x3E / 255, blue: 0x58 / 255), lineWidth: 1)
-            )
     }
 
 

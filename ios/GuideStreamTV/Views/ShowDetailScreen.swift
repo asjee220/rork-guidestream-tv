@@ -1414,26 +1414,46 @@ struct ShowDetailScreen: View {
                         .padding(.horizontal, 20)
                 }
             } else {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 10) {
-                        ForEach(services) { s in
-                            Button {
-                                UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                                selectedServiceName = s.name
-                            } label: {
-                                ServiceBadge(
-                                    name: s.name,
-                                    color: s.color,
-                                    isSubscribed: isSubscribedService(s.name),
-                                    isSelected: activeService?.name == s.name,
-                                    type: s.type,
-                                    price: s.price
-                                )
+                // Grouped tiers (subscription, free, rent, buy) with the
+                // cheapest-tonight summary — same shared helpers and chips as
+                // the detail sheet, so no grouping logic is duplicated.
+                if let cheapest = cheapestTransactionalWatchSource(services),
+                   !watchSourcesIncludeSubscribed(services, isSubscribed: {
+                       isSubscribedService($0)
+                   }) {
+                    CheapestTonightLine(source: cheapest)
+                        .padding(.horizontal, 20)
+                }
+
+                ForEach(watchSourceGroups(services), id: \.label) { group in
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(group.label.uppercased())
+                            .scaledFont(size: 11, weight: .bold)
+                            .tracking(1.0)
+                            .foregroundStyle(Color.white.opacity(0.35))
+                            .padding(.horizontal, 20)
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 10) {
+                                ForEach(group.sources) { s in
+                                    Button {
+                                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                        selectedServiceName = s.name
+                                    } label: {
+                                        ServiceBadge(
+                                            name: s.name,
+                                            color: s.color,
+                                            isSubscribed: isSubscribedService(s.name),
+                                            isSelected: activeService?.name == s.name,
+                                            type: s.type,
+                                            price: s.price
+                                        )
+                                    }
+                                    .buttonStyle(.plain)
+                                }
                             }
-                            .buttonStyle(.plain)
+                            .padding(.horizontal, 20)
                         }
                     }
-                    .padding(.horizontal, 20)
                 }
             }
 

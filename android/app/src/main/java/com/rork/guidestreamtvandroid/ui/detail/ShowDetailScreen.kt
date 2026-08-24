@@ -359,6 +359,7 @@ fun ShowDetailScreen(
                         selectedSource = selectedSource,
                         isSourceSubscribed = isSourceSubscribed,
                         availabilityRegions = availabilityRegions,
+                        grouped = true,
                         onSelect = { source ->
                             selectedSource = source
                             episodeSource = null
