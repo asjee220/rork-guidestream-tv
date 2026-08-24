@@ -4,7 +4,9 @@
 //
 //  Side-menu shell. The selected screen fills the frame while a leading
 //  overlay menu (TVSideMenu) handles navigation — content never shifts or
-//  resizes when the menu expands. Reels remains withheld for launch.
+//  resizes when the menu expands. The menu is collapsed at rest and opens
+//  only on a left move issued from the content's leading edge. Reels
+//  remains withheld for launch.
 //
 
 import SwiftUI
@@ -19,6 +21,15 @@ struct TVMainView: View {
         ZStack(alignment: .leading) {
             screen(for: selection)
                 .focusSection()
+                .onMoveCommand { direction in
+                    // The only thing that opens the menu: a deliberate left
+                    // move command issued from the content's leading edge —
+                    // the focus engine found nothing further left, so the
+                    // command falls through to here.
+                    if direction == .left, !menuIsOpen {
+                        menuIsOpen = true
+                    }
+                }
 
             // Leading-to-trailing scrim between the open menu and content.
             if menuIsOpen {
@@ -42,6 +53,13 @@ struct TVMainView: View {
             // The menu is closed on every screen entry, including returns
             // from sheets and full-screen covers.
             menuIsOpen = false
+        }
+        .onPreferenceChange(TVHeroSideMenuRequestKey.self) { count in
+            // A left move at the hero's first item falls through to the
+            // side menu rather than being swallowed by the hero.
+            if count > 0, !menuIsOpen {
+                menuIsOpen = true
+            }
         }
     }
 

@@ -63,6 +63,10 @@ struct TVHomeView: View {
     @State private var isLoading: Bool = true
     @State private var heroItems: [TVTMDBResult] = []
     @State private var heroLoading: Bool = true
+    /// canonicalTitleId -> hosted featurette URL for the hero pool.
+    /// Empty until the single batched lookup resolves after the pool is
+    /// final; a missing key renders that item as a still.
+    @State private var heroFeaturettes: [String: String] = [:]
 
     @State private var pendingDetail: TVTitleDetail?
 
@@ -103,9 +107,12 @@ struct TVHomeView: View {
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
             LazyVStack(alignment: .leading, spacing: 56) {
-                // 1. Hero
+                // 1. Hero — fills the safe area; the negative bottom pull
+                // lets the first rail peek over the hero art at the fold.
                 heroSection
+                    .containerRelativeFrame(.vertical)
                     .padding(.top, 8)
+                    .padding(.bottom, -144)
 
                 // 2. Everyone's Watching
                 if !everyonesWatching.isEmpty {
@@ -272,11 +279,10 @@ struct TVHomeView: View {
     @ViewBuilder
     private var heroSection: some View {
         if heroItems.isEmpty {
-            // Reserve the same height so the rails below don't jump
-            // when the data lands.
+            // Reserve the full-screen height so the rails below don't
+            // jump when the data lands.
             Rectangle()
                 .fill(TVTheme.surface)
-                .frame(height: 640)
                 .overlay {
                     if heroLoading {
                         ProgressView()
@@ -297,7 +303,8 @@ struct TVHomeView: View {
                         )
                     }
                 },
-                isSaved: { item in streams.contains(titleId: item.canonicalTitleId) }
+                isSaved: { item in streams.contains(titleId: item.canonicalTitleId) },
+                featurettes: heroFeaturettes
             )
         }
     }
@@ -817,6 +824,11 @@ struct TVHomeView: View {
             heroItems = survivors
         }
         heroLoading = false
+
+        // One batched featurette lookup for the final hero pool — exactly
+        // one Supabase query per Home load, keyed by canonicalTitleId.
+        let pool = heroItems.map { (tmdbId: $0.id, isTV: $0.isTV) }
+        heroFeaturettes = await TVFeaturetteService.shared.fetchFeaturettes(for: pool)
     }
 
     // MARK: - Everyone's Watching
