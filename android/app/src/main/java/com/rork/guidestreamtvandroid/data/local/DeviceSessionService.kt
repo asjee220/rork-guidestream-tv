@@ -179,6 +179,9 @@ class DeviceSessionService private constructor(private val context: Context) {
             put("last_seen_at", nowIso)
             put("os_version", Build.VERSION.RELEASE)
             put("device_model", deviceModel)
+            // Same IANA timezone column iOS writes so session rows carry the
+            // device's zone for notification scheduling.
+            put("timezone", java.util.TimeZone.getDefault().id)
             // Report the running build so device_sessions rows identify which
             // version each tester is on. On any lookup failure both keys are
             // simply omitted, matching the userId/email pattern below.

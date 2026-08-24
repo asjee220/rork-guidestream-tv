@@ -858,6 +858,7 @@ internal fun WhereToWatchRow(
     isSourceSubscribed: (String) -> Boolean,
     onSelect: (WatchmodeSrc) -> Unit,
     availabilityRegions: List<String> = emptyList(),
+    grouped: Boolean = false,
 ) {
     if (sources.isEmpty() && availabilityRegions.isEmpty()) return
     Spacer(Modifier.height(8.dp))
@@ -886,95 +887,233 @@ internal fun WhereToWatchRow(
         }
         return
     }
-    LazyRow(
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    if (grouped) {
+        GroupedWhereToWatch(
+            sources = sources,
+            selectedSource = selectedSource,
+            isSourceSubscribed = isSourceSubscribed,
+            onSelect = onSelect,
+        )
+    } else {
+        LazyRow(
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            items(sources) { source ->
+                WhereToWatchChip(
+                    source = source,
+                    selected = selectedSource?.sourceId == source.sourceId,
+                    subscribed = isSourceSubscribed(source.name),
+                    onSelect = onSelect,
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Sheet layout for [WhereToWatchRow]: a single "Cheapest tonight" summary
+ * above four labelled groups (subscription, free, rent, buy), rent and buy
+ * ordered by price ascending with null-priced entries last. Uses only the
+ * already-resolved sources — no extra network call.
+ */
+@Composable
+private fun GroupedWhereToWatch(
+    sources: List<WatchmodeSrc>,
+    selectedSource: WatchmodeSrc?,
+    isSourceSubscribed: (String) -> Boolean,
+    onSelect: (WatchmodeSrc) -> Unit,
+) {
+    val groups = whereToWatchGroups(sources)
+    val cheapest = sources
+        .filter { src ->
+            val t = src.type.lowercase()
+            (t == "rent" || t == "purchase" || t == "buy") && src.price != null
+        }
+        .minByOrNull { it.price ?: 0.0 }
+    val anySubscribed = sources.any {
+        it.type.lowercase() == "sub" && isSourceSubscribed(it.name)
+    }
+    Column {
+        if (cheapest != null && !anySubscribed) {
+            CheapestTonightLine(cheapest)
+        }
+        groups.forEach { (label, groupSources) ->
+            Text(
+                text = label.uppercase(),
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                color = TextSecondary,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+            )
+            LazyRow(
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                items(groupSources) { source ->
+                    WhereToWatchChip(
+                        source = source,
+                        selected = selectedSource?.sourceId == source.sourceId,
+                        subscribed = isSourceSubscribed(source.name),
+                        onSelect = onSelect,
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Single summary line naming the lowest-priced transactional option.
+ * Rendered on the literal sheet depth tokens (#1B2739 fill, #2E3E58
+ * hairline) rather than theme aliases.
+ */
+@Composable
+private fun CheapestTonightLine(source: WatchmodeSrc) {
+    val verb = if (source.type.lowercase() == "rent") "rent" else "buy"
+    val priceText = String.format(java.util.Locale.US, "$$%.2f", source.price ?: 0.0)
+    Text(
+        text = "Cheapest tonight: $priceText $verb on ${source.name}",
+        fontSize = 13.sp,
+        fontWeight = FontWeight.SemiBold,
+        color = Color.White.copy(alpha = 0.85f),
+        modifier = Modifier
+            .padding(horizontal = 16.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .background(Color(0xFF1B2739))
+            .border(1.dp, Color(0xFF2E3E58), RoundedCornerShape(10.dp))
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+    )
+}
+
+/**
+ * Splits sources into the four labelled display groups. `tve` and untyped
+ * legacy sources ride with subscription; purchase/buy fold into buy.
+ */
+private fun whereToWatchGroups(
+    sources: List<WatchmodeSrc>,
+): List<Pair<String, List<WatchmodeSrc>>> {
+    val subscription = mutableListOf<WatchmodeSrc>()
+    val free = mutableListOf<WatchmodeSrc>()
+    val rent = mutableListOf<WatchmodeSrc>()
+    val buy = mutableListOf<WatchmodeSrc>()
+    for (source in sources) {
+        when (source.type.lowercase()) {
+            "free" -> free.add(source)
+            "rent" -> rent.add(source)
+            "purchase", "buy" -> buy.add(source)
+            else -> subscription.add(source) // sub, tve, untyped legacy
+        }
+    }
+    // Price ascending, nulls last.
+    val byPrice = Comparator<WatchmodeSrc> { a, b ->
+        when {
+            a.price != null && b.price != null -> a.price!!.compareTo(b.price!!)
+            a.price != null -> -1
+            b.price != null -> 1
+            else -> 0
+        }
+    }
+    return listOf(
+        "Subscription" to subscription,
+        "Free" to free,
+        "Rent" to rent.sortedWith(byPrice),
+        "Buy" to buy.sortedWith(byPrice),
+    ).filter { it.second.isNotEmpty() }
+}
+
+/**
+ * One service chip — identical rendering in the flat and grouped layouts.
+ * "Subscribed" tag only for sub-typed sources the user has; transactional
+ * tiers always show their tier so a rent/buy brand match never reads as owned.
+ */
+@Composable
+private fun WhereToWatchChip(
+    source: WatchmodeSrc,
+    selected: Boolean,
+    subscribed: Boolean,
+    onSelect: (WatchmodeSrc) -> Unit,
+) {
+    val dotColor = Platform.from(source.name)?.color ?: BrandOrange
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(12.dp))
+            .background(dotColor.copy(alpha = if (subscribed) 0.28f else 0.18f))
+            .border(
+                width = if (selected) 2.dp else 1.dp,
+                color = if (selected) dotColor else dotColor.copy(alpha = if (subscribed) 0.70f else 0.45f),
+                shape = RoundedCornerShape(12.dp),
+            )
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+            ) {
+                onSelect(source)
+            }
+            .padding(horizontal = 14.dp, vertical = 10.dp),
     ) {
-        items(sources) { source ->
-            val subscribed = isSourceSubscribed(source.name)
-            val selected = selectedSource?.sourceId == source.sourceId
-            val dotColor = Platform.from(source.name)?.color ?: BrandOrange
+        Row(verticalAlignment = Alignment.CenterVertically) {
             Box(
                 modifier = Modifier
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(dotColor.copy(alpha = if (subscribed) 0.28f else 0.18f))
-                    .border(
-                        width = if (selected) 2.dp else 1.dp,
-                        color = if (selected) dotColor else dotColor.copy(alpha = if (subscribed) 0.70f else 0.45f),
-                        shape = RoundedCornerShape(12.dp),
-                    )
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                    ) {
-                        onSelect(source)
-                    }
-                    .padding(horizontal = 14.dp, vertical = 10.dp),
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        modifier = Modifier
-                            .size(8.dp)
-                            .clip(CircleShape)
-                            .background(dotColor),
-                    )
-                    Spacer(Modifier.width(8.dp))
+                    .size(8.dp)
+                    .clip(CircleShape)
+                    .background(dotColor),
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(
+                text = source.name,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = TextPrimary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            // Monetization tag: "Subscribed" only for sub-typed sources
+            // the user has — a rent/buy brand match never reads as owned.
+            val srcTier = source.type.lowercase()
+            val priceLabel = source.price?.let { String.format(java.util.Locale.US, "$%.2f", it) }
+            val tag = when {
+                subscribed && srcTier == "sub" -> "Subscribed"
+                srcTier == "rent" -> if (priceLabel != null) "Rent $priceLabel" else "Rent"
+                srcTier == "purchase" || srcTier == "buy" -> if (priceLabel != null) "Buy $priceLabel" else "Buy"
+                srcTier == "free" -> "Free"
+                srcTier == "tve" -> "TV"
+                else -> null
+            }
+            if (tag != null) {
+                Spacer(Modifier.width(8.dp))
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(
+                            if (tag == "Subscribed") Color(0xFF34C759).copy(alpha = 0.85f)
+                            else Color.White.copy(alpha = 0.18f),
+                        )
+                        .padding(horizontal = 6.dp, vertical = 2.dp),
+                ) {
                     Text(
-                        text = source.name,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = TextPrimary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
+                        text = tag,
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Black,
+                        color = Color.White,
                     )
-                    // Monetization tag: "Subscribed" only for sub-typed sources
-                    // the user has — a rent/buy brand match never reads as owned.
-                    val srcTier = source.type.lowercase()
-                    val priceLabel = source.price?.let { String.format(java.util.Locale.US, "$%.2f", it) }
-                    val tag = when {
-                        subscribed && srcTier == "sub" -> "Subscribed"
-                        srcTier == "rent" -> if (priceLabel != null) "Rent $priceLabel" else "Rent"
-                        srcTier == "purchase" || srcTier == "buy" -> if (priceLabel != null) "Buy $priceLabel" else "Buy"
-                        srcTier == "free" -> "Free"
-                        srcTier == "tve" -> "TV"
-                        else -> null
-                    }
-                    if (tag != null) {
-                        Spacer(Modifier.width(8.dp))
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(4.dp))
-                                .background(
-                                    if (tag == "Subscribed") Color(0xFF34C759).copy(alpha = 0.85f)
-                                    else Color.White.copy(alpha = 0.18f),
-                                )
-                                .padding(horizontal = 6.dp, vertical = 2.dp),
-                        ) {
-                            Text(
-                                text = tag,
-                                fontSize = 9.sp,
-                                fontWeight = FontWeight.Black,
-                                color = Color.White,
-                            )
-                        }
-                    }
-                    if (selected) {
-                        Spacer(Modifier.width(6.dp))
-                        Box(
-                            modifier = Modifier
-                                .size(16.dp)
-                                .clip(CircleShape)
-                                .background(BrandOrange),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Icon(
-                                imageVector = Icons.Filled.Check,
-                                contentDescription = "Selected",
-                                tint = Color.White,
-                                modifier = Modifier.size(10.dp),
-                            )
-                        }
-                    }
+                }
+            }
+            if (selected) {
+                Spacer(Modifier.width(6.dp))
+                Box(
+                    modifier = Modifier
+                        .size(16.dp)
+                        .clip(CircleShape)
+                        .background(BrandOrange),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Check,
+                        contentDescription = "Selected",
+                        tint = Color.White,
+                        modifier = Modifier.size(10.dp),
+                    )
                 }
             }
         }

@@ -526,6 +526,7 @@ fun EpisodeDetailSheet(
                         selectedSource = selectedSource,
                         isSourceSubscribed = isSourceSubscribed,
                         onSelect = { selectedSource = it },
+                        grouped = true,
                     )
                 }
 

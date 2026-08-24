@@ -70,6 +70,11 @@ private struct WatchListContent: View {
     /// Maps prefixed title_ids to their content_sources.image_url, used as a
     /// poster fallback so every creator/podcast/streamer always shows an image.
     @State private var sourceImageMap: [String: String] = [:]
+    /// Watch-list filter toggles — both default off, and both operate only on
+    /// data already in hand (subscriptions + the expiring-titles cache).
+    @State private var filterOnMyServices: Bool = false
+    @State private var filterLeavingSoon: Bool = false
+    @State private var reminders = ReleaseReminderService.shared
 
     var body: some View {
         ZStack {
@@ -111,6 +116,7 @@ private struct WatchListContent: View {
             await social.loadAllWatched()
             await hydrateLiveStatus()
             await hydrateSourceImages()
+            await refreshDepartureReminders()
         }
         .task {
             await subscribeToLiveStatus()
@@ -122,6 +128,7 @@ private struct WatchListContent: View {
             await social.loadAllWatched()
             await hydrateLiveStatus()
             await hydrateSourceImages()
+            await refreshDepartureReminders()
         }
     }
 
@@ -146,8 +153,14 @@ private struct WatchListContent: View {
                     .padding(.horizontal, 16)
                     .padding(.top, 8)
                     .padding(.bottom, 4)
+                filterBar
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 8)
+                if filteredStreams.isEmpty {
+                    filteredEmptyState
+                } else {
                 List {
-                    ForEach(sortedStreams) { item in
+                    ForEach(filteredStreams) { item in
                         Button {
                             UIImpactFeedbackGenerator(style: .light).impactOccurred()
                             let kind = SourceKind.from(titleId: item.titleId)
@@ -164,7 +177,11 @@ private struct WatchListContent: View {
                                 streamTitle: liveStatusMap[item.titleId]?.streamTitle,
                                 effectivePosterUrl: CreatorImageOverrides.resolve(titleId: item.titleId, stored: item.posterUrl ?? sourceImageMap[item.titleId]),
                                 isWatched: social.isWatched(item.titleId),
-                                badgeText: streams.newBadgeText(for: item)
+                                badgeText: streams.newBadgeText(for: item),
+                                expiryText: expiryBadgeText(for: item),
+                                isDepartureReminded: departureReminderKey(for: item)
+                                    .map { reminders.isReminded($0, kind: .departure) } ?? false,
+                                onToggleDepartureReminder: departureReminderAction(for: item)
                             )
                         }
                         .buttonStyle(.plain)
@@ -181,6 +198,7 @@ private struct WatchListContent: View {
                 }
                 .listStyle(.plain)
                 .scrollContentBackground(.hidden)
+                }
             }
         }
     }
@@ -307,6 +325,149 @@ private struct WatchListContent: View {
         }
     }
 
+    /// Two toggle chips above the saved list.
+    private var filterBar: some View {
+        HStack(spacing: 10) {
+            WatchListFilterChip(label: "On my services", isOn: filterOnMyServices) {
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                filterOnMyServices.toggle()
+            }
+            WatchListFilterChip(label: "Leaving soon", isOn: filterLeavingSoon) {
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                filterLeavingSoon.toggle()
+            }
+            Spacer(minLength: 0)
+        }
+    }
+
+    /// Empty state shown when the active filters exclude every saved title.
+    private var filteredEmptyState: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "line.3.horizontal.decrease.circle")
+                .scaledFont(size: 34, weight: .semibold)
+                .foregroundStyle(Color.white.opacity(0.35))
+            Text("No titles match these filters")
+                .scaledFont(size: 15, weight: .semibold)
+                .foregroundStyle(.white)
+            Text("Try turning a filter off.")
+                .scaledFont(size: 12)
+                .foregroundStyle(Color.textSecondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    // MARK: - Expiry cross-reference & filters
+
+    /// One matched expiring-titles row, reduced to what the badge needs.
+    private struct ExpiryInfo {
+        let leavingDate: String?
+        let serviceName: String?
+    }
+
+    /// Expiring rows keyed by tmdb id, taken from the data the Home rail
+    /// already fetched (ExpiringTitlesService cache) — never a new network
+    /// call and never a write to expiring_titles.
+    private var expiryByTmdbId: [Int: ExpiryInfo] {
+        Dictionary(
+            ExpiringTitlesService.shared.cachedRows.map {
+                ($0.tmdbId, ExpiryInfo(leavingDate: $0.leavingDate, serviceName: $0.serviceName))
+            },
+            uniquingKeysWith: { first, _ in first }
+        )
+    }
+
+    private func expiryInfo(for item: UserStream) -> ExpiryInfo? {
+        guard let id = TitleID.tmdbId(from: item.titleId) else { return nil }
+        return expiryByTmdbId[id]
+    }
+
+    private func isOnMyServices(_ item: UserStream) -> Bool {
+        guard let platform = item.platform, !platform.isEmpty else { return false }
+        return AuthViewModel.shared.subscribesToService(named: platform)
+    }
+
+    /// Saved titles after the active filters. Both filters on intersect;
+    /// neither on returns the unchanged sort order.
+    private var filteredStreams: [UserStream] {
+        guard filterOnMyServices || filterLeavingSoon else { return sortedStreams }
+        return sortedStreams.filter { item in
+            let onServicesOK = !filterOnMyServices || isOnMyServices(item)
+            let leavingOK = !filterLeavingSoon || expiryInfo(for: item) != nil
+            return onServicesOK && leavingOK
+        }
+    }
+
+    private func expiryBadgeText(for item: UserStream) -> String? {
+        expiryInfo(for: item).map { Self.badgeText(for: $0) }
+    }
+
+    /// Formats the matched row's leaving date + service into badge text.
+    private static func badgeText(for info: ExpiryInfo) -> String {
+        let dateText: String
+        if let dateStr = info.leavingDate,
+           let date = expiryDateParser.date(from: dateStr) {
+            dateText = expiryDisplayFormatter.string(from: date)
+        } else {
+            dateText = "soon"
+        }
+        var text = "Leaving \(dateText)"
+        if let service = info.serviceName, !service.isEmpty {
+            text += " · \(service)"
+        }
+        return text
+    }
+
+    private static let expiryDateParser: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = TimeZone(secondsFromGMT: 0)
+        f.dateFormat = "yyyy-MM-dd"
+        return f
+    }()
+
+    private static let expiryDisplayFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = TimeZone(secondsFromGMT: 0)
+        f.dateFormat = "MMM d"
+        return f
+    }()
+
+    private func departureReminderKey(for item: UserStream) -> String? {
+        guard let id = TitleID.tmdbId(from: item.titleId) else { return nil }
+        return String(id)
+    }
+
+    /// Bell action for a saved title matched as leaving — writes through the
+    /// same release_reminders path with reminder_kind 'departure'.
+    private func departureReminderAction(for item: UserStream) -> (() -> Void)? {
+        guard expiryInfo(for: item) != nil,
+              let key = departureReminderKey(for: item) else { return nil }
+        let tmdbId = Int(key)
+        let mediaType = (item.isTV ?? true) ? "tv" : "movie"
+        return {
+            Task {
+                await reminders.toggleReminder(
+                    titleId: key,
+                    tmdbId: tmdbId,
+                    source: "watchlist_leaving",
+                    kind: .departure,
+                    mediaType: mediaType
+                )
+            }
+        }
+    }
+
+    /// Refreshes departure-reminder state for every saved title matched
+    /// against the expiring cache.
+    private func refreshDepartureReminders() async {
+        for item in streams.userStreams {
+            guard let key = departureReminderKey(for: item),
+                  expiryInfo(for: item) != nil else { continue }
+            await reminders.refreshReminded(titleId: key, kind: .departure)
+        }
+    }
+
     /// Fetch live_status for saved creator/streamer items so LIVE/OFFLINE pills
     /// render immediately without waiting for a Realtime event.
     private func hydrateLiveStatus() async {
@@ -398,6 +559,13 @@ private struct WatchListRow: View {
     /// New-content badge text ("NEW EPISODE" or "NEW UPLOAD") from
     /// StreamsViewModel.newBadgeText, or nil when no badge should show.
     var badgeText: String? = nil
+    /// Expiry badge text ("Leaving Mar 3 · Netflix") from the matched
+    /// expiring-titles row, or nil when the title isn't leaving.
+    var expiryText: String? = nil
+    /// True when a departure reminder is set for this title.
+    var isDepartureReminded: Bool = false
+    /// Sets/unsets the departure reminder. nil when the title isn't leaving.
+    var onToggleDepartureReminder: (() -> Void)? = nil
 
     private var posterKind: SourceKind { SourceKind.from(titleId: item.titleId) }
 
@@ -493,6 +661,23 @@ private struct WatchListRow: View {
                         }
                     }
                 }
+                if let expiry = expiryText {
+                    Text(expiry)
+                        .scaledFont(size: 10, weight: .heavy)
+                        .tracking(0.3)
+                        .lineLimit(1)
+                        .foregroundStyle(Color.orange)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 3)
+                        .background(
+                            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                .fill(Color.orange.opacity(0.12))
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                .stroke(Color.orange.opacity(0.35), lineWidth: 1)
+                        )
+                }
                 Text(item.title ?? "Untitled")
                     .scaledFont(size: 16, weight: .semibold)
                     .foregroundStyle(Color.textPrimary)
@@ -510,6 +695,19 @@ private struct WatchListRow: View {
                 }
             }
             Spacer(minLength: 8)
+            if let onToggleDepartureReminder {
+                Button {
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    onToggleDepartureReminder()
+                } label: {
+                    Image(systemName: isDepartureReminded ? "bell.fill" : "bell")
+                        .scaledFont(size: 17, weight: .semibold)
+                        .foregroundStyle(isDepartureReminded ? Color.orange : Color.white.opacity(0.55))
+                        .frame(width: 36, height: 36)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
             Image(systemName: "chevron.right")
                 .scaledFont(size: 13, weight: .semibold)
                 .foregroundStyle(Color.textTertiary)
@@ -536,6 +734,43 @@ private struct WatchListRow: View {
     }()
 
 
+}
+
+// MARK: - Filter chip
+
+/// Small capsule toggle used by the watch-list filter bar. New sheet surface
+/// uses the literal depth tokens (#1B2739 fill, #2E3E58 raised) rather than
+/// theme aliases.
+private struct WatchListFilterChip: View {
+    let label: String
+    let isOn: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Text(label)
+                .scaledFont(size: 12, weight: .semibold)
+                .foregroundStyle(isOn ? .white : Color.white.opacity(0.55))
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .background(
+                    Capsule().fill(
+                        Color(
+                            red: isOn ? 0x2E / 255 : 0x1B / 255,
+                            green: isOn ? 0x3E / 255 : 0x27 / 255,
+                            blue: isOn ? 0x58 / 255 : 0x39 / 255
+                        )
+                    )
+                )
+                .overlay(
+                    Capsule().stroke(
+                        isOn ? Color.orange.opacity(0.85) : Color.white.opacity(0.10),
+                        lineWidth: 1
+                    )
+                )
+        }
+        .buttonStyle(.plain)
+    }
 }
 
 #Preview {

@@ -2,6 +2,7 @@ package com.rork.guidestreamtvandroid.ui.screens
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -26,7 +27,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.outlined.NotificationsNone
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -43,7 +46,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.rork.guidestreamtvandroid.data.models.Platform
+import com.rork.guidestreamtvandroid.data.models.StreamingCatalog
+import com.rork.guidestreamtvandroid.data.models.TitleId
 import com.rork.guidestreamtvandroid.data.models.UserStream
+import com.rork.guidestreamtvandroid.data.remote.ExpiringTitlesService
+import com.rork.guidestreamtvandroid.data.repository.AuthViewModel
+import com.rork.guidestreamtvandroid.data.repository.ReleaseReminderService
 import com.rork.guidestreamtvandroid.data.repository.StreamsViewModel
 import com.rork.guidestreamtvandroid.ui.components.RemoteImage
 import com.rork.guidestreamtvandroid.ui.navigation.PendingTitleRoute
@@ -88,6 +96,63 @@ fun WatchListScreen(
     val latestContentAt by streamsVm.latestContentAt.collectAsStateWithLifecycle()
     val latestContentKind by streamsVm.latestContentKind.collectAsStateWithLifecycle()
     val seenContentAt by streamsVm.seenContentAt.collectAsStateWithLifecycle()
+
+    val authVm = AuthViewModel.get()
+    val selectedServices by authVm.selectedServices.collectAsStateWithLifecycle()
+    val reminders = ReleaseReminderService.get()
+    val departureReminded by reminders.departureRemindedTitleIds.collectAsStateWithLifecycle()
+
+    // Watch-list filters — both default off, and both operate only on data
+    // already in hand (selected services + the expiring-titles cache the
+    // Home rail already fetched).
+    var filterOnMyServices by remember { mutableStateOf(false) }
+    var filterLeavingSoon by remember { mutableStateOf(false) }
+
+    // Expiring rows keyed by tmdb id — first row wins (soonest leaving date)
+    // when a title is leaving multiple services. Read straight from the
+    // service cache; never a new network call, never a write.
+    val expiryByTmdbId: Map<Int, ExpiringTitlesService.ExpiringTitleRow> = buildMap {
+        for (row in ExpiringTitlesService.get().cachedRows()) {
+            if (!containsKey(row.tmdbId)) put(row.tmdbId, row)
+        }
+    }
+
+    val isOnMyServices: (UserStream) -> Boolean = { stream ->
+        val platform = stream.platform
+        if (platform.isNullOrEmpty()) {
+            false
+        } else {
+            val n = platform.lowercase().filter { it.isLetterOrDigit() }
+            StreamingCatalog.ordered(selectedServices).any { svc ->
+                val s = svc.name.lowercase().filter { it.isLetterOrDigit() }
+                s.isNotEmpty() && (n.contains(s) || s.contains(n))
+            }
+        }
+    }
+
+    // Both filters on intersect; neither on leaves the saved order untouched.
+    val filteredStreams = if (!filterOnMyServices && !filterLeavingSoon) {
+        userStreams
+    } else {
+        userStreams.filter { stream ->
+            val onServicesOk = !filterOnMyServices || isOnMyServices(stream)
+            val leavingOk = !filterLeavingSoon ||
+                (TitleId.tmdbId(stream.titleId)?.let { expiryByTmdbId.containsKey(it) } == true)
+            onServicesOk && leavingOk
+        }
+    }
+
+    // Refresh departure-reminder state for every saved title matched
+    // against the expiring cache.
+    val expiryReminderKeys = userStreams.mapNotNull { stream ->
+        val id = TitleId.tmdbId(stream.titleId)
+        if (id != null && expiryByTmdbId.containsKey(id)) id.toString() else null
+    }
+    androidx.compose.runtime.LaunchedEffect(expiryReminderKeys) {
+        expiryReminderKeys.forEach {
+            reminders.refreshReminded(it, ReleaseReminderService.REMINDER_KIND_DEPARTURE)
+        }
+    }
 
     // Fetch watchlist_seen so the new-content badges reflect server state on
     // launch. Runs alongside the existing recency load in refreshAll.
@@ -143,6 +208,27 @@ fun WatchListScreen(
 
         Spacer(Modifier.height(8.dp))
 
+        // Watch-list filters — shown only when there are saved titles.
+        if (userStreams.isNotEmpty()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                WatchListFilterChip(
+                    label = "On my services",
+                    isOn = filterOnMyServices,
+                    onToggle = { filterOnMyServices = !filterOnMyServices },
+                )
+                WatchListFilterChip(
+                    label = "Leaving soon",
+                    isOn = filterLeavingSoon,
+                    onToggle = { filterLeavingSoon = !filterLeavingSoon },
+                )
+            }
+        }
+
         PullToRefreshBox(
             isRefreshing = isRefreshing,
             onRefresh = {
@@ -192,6 +278,31 @@ fun WatchListScreen(
                     textAlign = TextAlign.Center,
                 )
             }
+        } else if (filteredStreams.isEmpty()) {
+            // Filters excluded every saved title — explicit empty state.
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 36.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+            ) {
+                Text(
+                    text = "No titles match these filters",
+                    fontSize = 17.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White,
+                    textAlign = TextAlign.Center,
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = "Try turning a filter off.",
+                    fontSize = 13.sp,
+                    color = TextSecondary,
+                    textAlign = TextAlign.Center,
+                )
+            }
         } else {
             LazyVerticalGrid(
                 columns = GridCells.Fixed(2),
@@ -200,11 +311,30 @@ fun WatchListScreen(
                 verticalArrangement = Arrangement.spacedBy(16.dp),
                 modifier = Modifier.fillMaxSize(),
             ) {
-                gridItems(userStreams, key = { it.titleId }) { stream ->
+                gridItems(filteredStreams, key = { it.titleId }) { stream ->
+                    val tmdbKey = TitleId.tmdbId(stream.titleId)
                     WatchListGridCell(
                         stream = stream,
                         isWatched = watchedIds.contains(stream.titleId),
                         badgeText = streamsVm.newBadgeText(stream, latestContentAt, latestContentKind, seenContentAt),
+                        expiryText = tmdbKey?.let { expiryByTmdbId[it] }?.let { expiryBadgeText(it) },
+                        isDepartureReminded = tmdbKey != null &&
+                            departureReminded.contains(tmdbKey.toString()),
+                        onToggleDepartureReminder = if (tmdbKey != null &&
+                            expiryByTmdbId.containsKey(tmdbKey)
+                        ) {
+                            {
+                                reminders.toggleReminder(
+                                    titleId = tmdbKey.toString(),
+                                    tmdbId = tmdbKey,
+                                    source = "watchlist_leaving",
+                                    reminderKind = ReleaseReminderService.REMINDER_KIND_DEPARTURE,
+                                    mediaType = if (stream.isTv ?: true) "tv" else "movie",
+                                )
+                            }
+                        } else {
+                            null
+                        },
                         onClick = {
                             onOpenTitle(
                                 PendingTitleRoute(
@@ -229,6 +359,9 @@ private fun WatchListGridCell(
     stream: UserStream,
     isWatched: Boolean,
     badgeText: String?,
+    expiryText: String?,
+    isDepartureReminded: Boolean,
+    onToggleDepartureReminder: (() -> Unit)?,
     onClick: () -> Unit,
     onRemove: () -> Unit,
 ) {
@@ -348,6 +481,108 @@ private fun WatchListGridCell(
             color = TextTertiary,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
+        )
+        // Expiry badge + departure-reminder bell for saved titles matched
+        // against the expiring-titles cache.
+        if (expiryText != null) {
+            Spacer(Modifier.height(4.dp))
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Text(
+                    text = expiryText,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = BrandOrange,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                if (onToggleDepartureReminder != null) {
+                    Box(
+                        modifier = Modifier
+                            .size(26.dp)
+                            .clip(CircleShape)
+                            .background(
+                                if (isDepartureReminded) BrandOrange.copy(alpha = 0.22f)
+                                else Color(0xFF1B2739)
+                            )
+                            .border(
+                                width = 1.dp,
+                                color = if (isDepartureReminded) BrandOrange.copy(alpha = 0.5f)
+                                else Color(0xFF2E3E58),
+                                shape = CircleShape,
+                            )
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null,
+                            ) { onToggleDepartureReminder() },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            imageVector = if (isDepartureReminded) Icons.Filled.Notifications
+                            else Icons.Outlined.NotificationsNone,
+                            contentDescription = "Leaving soon reminder",
+                            tint = if (isDepartureReminded) BrandOrange else TextSecondary,
+                            modifier = Modifier.size(14.dp),
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Formats a matched expiring-titles row into badge text carrying the leaving
+ * date and service name.
+ */
+private fun expiryBadgeText(row: ExpiringTitlesService.ExpiringTitleRow): String {
+    val dateText = row.leavingDate
+        ?.let { runCatching { java.time.LocalDate.parse(it) }.getOrNull() }
+        ?.let { java.time.format.DateTimeFormatter.ofPattern("MMM d", java.util.Locale.US).format(it) }
+    return buildString {
+        append("Leaving ")
+        append(dateText ?: "soon")
+        if (!row.serviceName.isNullOrEmpty()) {
+            append(" · ")
+            append(row.serviceName)
+        }
+    }
+}
+
+/**
+ * Small capsule toggle used by the watch-list filter bar. New sheet surface
+ * uses the literal depth tokens (#1B2739 fill, #2E3E58 raised) rather than
+ * theme aliases.
+ */
+@Composable
+private fun WatchListFilterChip(
+    label: String,
+    isOn: Boolean,
+    onToggle: () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(16.dp))
+            .background(if (isOn) Color(0xFF2E3E58) else Color(0xFF1B2739))
+            .border(
+                width = 1.dp,
+                color = if (isOn) BrandOrange else Color.White.copy(alpha = 0.10f),
+                shape = RoundedCornerShape(16.dp),
+            )
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+            ) { onToggle() }
+            .padding(horizontal = 14.dp, vertical = 8.dp),
+    ) {
+        Text(
+            text = label,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = if (isOn) Color.White else TextSecondary,
         )
     }
 }

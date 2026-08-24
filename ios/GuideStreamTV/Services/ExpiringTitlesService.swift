@@ -18,6 +18,18 @@ final class ExpiringTitlesService {
 
     private init() {}
 
+    /// Rows from the most recent successful fetch — reused by the watch list
+    /// cross-reference so it never issues its own network call for expiry
+    /// data the Home rail already fetched.
+    private(set) var cachedRows: [ExpiringTitle] = []
+
+    /// Cached rows keyed by tmdb id. When a title appears more than once
+    /// (leaving multiple services) the first row wins — the fetch is ordered
+    /// soonest-leaving-date first, so that is the most urgent departure.
+    var cachedByTmdbId: [Int: ExpiringTitle] {
+        Dictionary(cachedRows.map { ($0.tmdbId, $0) }, uniquingKeysWith: { first, _ in first })
+    }
+
     /// Fetches all expiring titles ordered by leaving date (soonest first).
     /// Returns `nil` on failure so callers can leave the existing rail contents
     /// in place rather than clearing them. Never throws — mirrors how the other
@@ -30,6 +42,7 @@ final class ExpiringTitlesService {
                 .order("leaving_date", ascending: true)
                 .execute()
                 .value
+            cachedRows = rows
             return rows
         } catch {
             print("[ExpiringTitles] fetch failed: \(error.localizedDescription)")

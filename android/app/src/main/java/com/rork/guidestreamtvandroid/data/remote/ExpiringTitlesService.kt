@@ -15,6 +15,15 @@ import kotlinx.serialization.Serializable
  */
 class ExpiringTitlesService {
 
+    @Volatile private var cached: List<ExpiringTitleRow>? = null
+
+    /**
+     * Rows from the most recent successful fetch — reused by the watch list
+     * cross-reference so it never issues its own network call for expiry data
+     * the Home rail already fetched.
+     */
+    fun cachedRows(): List<ExpiringTitleRow> = cached ?: emptyList()
+
     @Serializable
     data class ExpiringTitleRow(
         @SerialName("tmdb_id") val tmdbId: Int,
@@ -37,11 +46,13 @@ class ExpiringTitlesService {
      */
     suspend fun fetchExpiring(): List<ExpiringTitleRow>? {
         return try {
-            SupabaseManager.client.postgrest["expiring_titles"]
+            val rows = SupabaseManager.client.postgrest["expiring_titles"]
                 .select {
                     order("leaving_date", Order.ASCENDING)
                 }
                 .decodeList<ExpiringTitleRow>()
+            cached = rows
+            rows
         } catch (e: Throwable) {
             if (e is CancellationException) throw e
             null
