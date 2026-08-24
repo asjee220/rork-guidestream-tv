@@ -108,11 +108,12 @@ struct TVHomeView: View {
         ScrollView(.vertical, showsIndicators: false) {
             LazyVStack(alignment: .leading, spacing: 56) {
                 // 1. Hero — fills the safe area; the negative bottom pull
-                // lets the first rail peek over the hero art at the fold.
+                // lets the first rail sit over the hero art at the fold so
+                // the embedded video / poster fades off into the rail.
                 heroSection
                     .containerRelativeFrame(.vertical)
                     .padding(.top, 8)
-                    .padding(.bottom, -144)
+                    .padding(.bottom, -160)
 
                 // 2. Everyone's Watching
                 if !everyonesWatching.isEmpty {

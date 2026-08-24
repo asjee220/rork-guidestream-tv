@@ -48,7 +48,7 @@ struct TVMainView: View {
             TVSideMenu(selection: $selection, isOpen: $menuIsOpen)
         }
         .animation(.easeOut(duration: 0.25), value: menuIsOpen)
-        .background(TVTheme.bg.ignoresSafeArea())
+        .background(TVTheme.backgroundGradient.ignoresSafeArea())
         .onChange(of: selection) { _, _ in
             // The menu is closed on every screen entry, including returns
             // from sheets and full-screen covers.

@@ -2,7 +2,9 @@
 //  TVHeroCarousel.swift
 //  GuideStreamTVTV
 //
-//  Full-screen featurette hero for Home. Each item fills the safe area:
+//  Full-screen featurette hero for Home. The embedded video or fallback
+//  poster image consumes the full width of the screen and fades off into
+//  the bottom of the first rail of content. Each item fills the safe area:
 //  a hosted featurette (public.title_featurettes) plays muted and exactly
 //  once when one resolves, otherwise the backdrop still drifts slowly
 //  from 1.0 to 1.08 under the same gradients. On advance the outgoing
@@ -124,7 +126,9 @@ struct TVHeroCarousel: View {
 
     /// One item's background: the drifting still always renders, with the
     /// muted featurette layer fading in above it once playback actually
-    /// starts (so a failed load or stall simply leaves the still).
+    /// starts (so a failed load or stall simply leaves the still). The
+    /// hero art fills the full width and fades off at the bottom into the
+    /// first rail of content.
     @ViewBuilder
     private func itemLayer(for item: TVTMDBResult) -> some View {
         ZStack {
@@ -138,9 +142,10 @@ struct TVHeroCarousel: View {
         .overlay {
             LinearGradient(
                 colors: [
-                    Color.clear,
-                    TVTheme.bg.opacity(0.55),
-                    TVTheme.bg
+                    Color(red: 0x04 / 255, green: 0x09 / 255, blue: 0x0F / 255).opacity(0.0),
+                    Color(red: 0x04 / 255, green: 0x09 / 255, blue: 0x0F / 255).opacity(0.35),
+                    Color(red: 0x04 / 255, green: 0x09 / 255, blue: 0x0F / 255).opacity(0.72),
+                    Color(red: 0x04 / 255, green: 0x09 / 255, blue: 0x0F / 255).opacity(0.92)
                 ],
                 startPoint: .top,
                 endPoint: .bottom
@@ -149,7 +154,7 @@ struct TVHeroCarousel: View {
         .overlay {
             LinearGradient(
                 colors: [
-                    TVTheme.bg.opacity(0.75),
+                    Color(red: 0x04 / 255, green: 0x09 / 255, blue: 0x0F / 255).opacity(0.75),
                     Color.clear
                 ],
                 startPoint: .leading,

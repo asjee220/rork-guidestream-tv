@@ -94,26 +94,33 @@ enum TVTheme {
     static let textTertiary = Color.white.opacity(0.40)
     static let hairline = Color.white.opacity(0.10)
 
-    /// Background gradient stack — sits behind every screen so the navy
-    /// stays atmospheric instead of feeling flat.
+    /// Background gradient stack — sits behind every screen. Deep midnight
+    /// navy top-left, soft blue glow from the upper area, and a warm
+    /// orange/brown glow in the lower-right corner matching the supplied
+    /// base background image.
     static var backgroundGradient: some View {
         ZStack {
             bg
-            LinearGradient(
+            // Subtle blue atmospheric haze, top-center.
+            RadialGradient(
                 colors: [
-                    Color(red: 0x12 / 255, green: 0x06 / 255, blue: 0x2A / 255).opacity(0.85),
+                    Color(red: 0x08 / 255, green: 0x1A / 255, blue: 0x33 / 255).opacity(0.55),
                     Color.clear
                 ],
-                startPoint: .topLeading,
-                endPoint: .center
+                center: UnitPoint(x: 0.55, y: 0.25),
+                startRadius: 0,
+                endRadius: 900
             )
-            LinearGradient(
+            // Warm orange/brown lower-right glow.
+            RadialGradient(
                 colors: [
-                    Color.clear,
-                    Color(red: 0x00 / 255, green: 0x10 / 255, blue: 0x2A / 255).opacity(0.75)
+                    Color(red: 0x4B / 255, green: 0x1C / 255, blue: 0x08 / 255).opacity(0.42),
+                    Color(red: 0x2E / 255, green: 0x12 / 255, blue: 0x06 / 255).opacity(0.18),
+                    Color.clear
                 ],
-                startPoint: .center,
-                endPoint: .bottomTrailing
+                center: UnitPoint(x: 0.85, y: 0.85),
+                startRadius: 0,
+                endRadius: 1200
             )
         }
         .ignoresSafeArea()

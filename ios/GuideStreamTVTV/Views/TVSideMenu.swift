@@ -2,14 +2,13 @@
 //  TVSideMenu.swift
 //  GuideStreamTVTV
 //
-//  Leading-edge navigation rail that replaces the tvOS tab bar. At rest
-//  it is collapsed to a floating, icon-only rounded panel with no
-//  focusable views, so launch focus always lands in the content. The ONLY
-//  thing that opens it is a left move command issued from the content's
-//  leading edge (handled in TVMainView); it then expands to 300pt over
-//  0.25s revealing the wordmark and labels. The menu overlays the
-//  content — screens never shift or resize. It closes on selection or
-//  when a right move hands focus back to the content.
+//  Leading-edge navigation rail that replaces the tvOS tab bar. Closed, it
+//  is a narrow 72pt icon-only floating panel with the brand icon at the
+//  top. Opened, it expands to 300pt and reveals the "GuideStream TV"
+//  wordmark with the brand icon plus labels. The menu only opens from a
+//  deliberate left move command in the content area; focus landing in the
+//  rail never opens it. It closes on selection, a right move, or focus
+//  returning to the content.
 //
 
 import SwiftUI
@@ -49,9 +48,11 @@ struct TVSideMenu: View {
 
     @FocusState private var focusedItem: TVSideMenuItem?
 
-    /// Floating collapsed panel width (icon-only).
-    private let closedWidth: CGFloat = 140
-    /// Expanded width over 0.25s easeOut.
+    /// Collapsed rail width — icon-only, narrow, with the brand icon at
+    /// the top. Mirrors the closed-state mockup.
+    private let closedWidth: CGFloat = 72
+    /// Expanded width — reveals the "GuideStream TV" wordmark with an
+    /// icon and labels. Mirrors the opened-state mockup.
     private let openWidth: CGFloat = 300
     /// Insets that make the panel read as a floating card rather than a
     /// full-height flush rail — kept identical in both states so the
@@ -62,12 +63,12 @@ struct TVSideMenu: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             brandMark
-                .padding(.top, 36)
-                .padding(.bottom, 56)
-                .padding(.leading, 26)
+                .padding(.top, 24)
+                .padding(.bottom, 28)
+                .padding(.leading, isOpen ? 22 : 8)
                 .padding(.trailing, 16)
 
-            VStack(alignment: .leading, spacing: 24) {
+            VStack(alignment: .leading, spacing: 16) {
                 ForEach(TVSideMenuItem.allCases) { item in
                     menuRow(for: item)
                 }
@@ -117,18 +118,25 @@ struct TVSideMenu: View {
 
     // MARK: - Brand mark
 
-    /// The GuideStream mark — icon-only when collapsed, the full nav-size
-    /// wordmark when expanded.
+    /// The GuideStream mark — icon-only when collapsed, the full
+    /// "GuideStream TV" wordmark with the brand icon when opened.
     @ViewBuilder
     private var brandMark: some View {
         if isOpen {
-            TVBrandWordmark(wordmarkSize: .nav)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                Image("GuideStreamLogo")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 40, height: 40)
+                TVBrandWordmark(wordmarkSize: .nav)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         } else {
             Image("GuideStreamLogo")
                 .resizable()
                 .scaledToFit()
-                .frame(width: 44, height: 44)
+                .frame(width: 40, height: 40)
                 .frame(maxWidth: .infinity)
         }
     }
@@ -166,25 +174,26 @@ struct TVSideMenu: View {
     }
 
     /// Shared row layout: the orange selection bar sits at the panel's
-    /// leading edge beside the icon (at the same x in both states), and
-    /// the label is revealed to the right when open.
+    /// leading edge, centered beside the icon in the collapsed rail and
+    /// revealed to the left of the icon+label when opened.
     private func rowContent(for item: TVSideMenuItem) -> some View {
         let isSelected = selection == item
         return HStack(spacing: 0) {
             Capsule()
                 .fill(isSelected ? TVTheme.orange : Color.clear)
                 .frame(width: 6, height: 44)
+                .padding(.leading, isOpen ? 0 : 21)
             Image(systemName: item.icon)
-                .font(.system(size: 44, weight: .medium))
+                .font(.system(size: 28, weight: .medium))
                 .foregroundStyle(isSelected ? TVTheme.orange : TVTheme.textSecondary)
                 .frame(width: 44, height: 44)
-                .padding(.leading, 24)
+                .padding(.leading, isOpen ? 16 : 8)
             if isOpen {
                 Text(item.label)
-                    .font(.system(size: 26, weight: .semibold))
+                    .font(.system(size: 24, weight: .semibold))
                     .foregroundStyle(isSelected ? TVTheme.textPrimary : TVTheme.textSecondary)
                     .lineLimit(1)
-                    .padding(.leading, 18)
+                    .padding(.leading, 10)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
