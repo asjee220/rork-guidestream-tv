@@ -201,6 +201,7 @@ struct TVHeroCarousel: View {
                 }
                 .buttonStyle(.card)
                 .focused($isCTAFocused)
+                .prefersDefaultFocus(true)
                 .padding(.top, 6)
             }
             .padding(.horizontal, 80)

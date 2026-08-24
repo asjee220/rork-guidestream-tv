@@ -13,17 +13,17 @@
 
 import SwiftUI
 
-/// The destinations the side menu routes to, in the order shown in the
-/// design mockups: Profile, Reels, Sports, Watchlist, Home, Search. Reels
-/// and Search are wired to placeholder screens for now so the menu
-// structure matches the mockups; the screens can be filled in later.
+/// The destinations the side menu routes to, in the top-to-bottom order
+/// shown in the design mockups: Search, Home, Watchlist, Sports, Reels,
+/// Profile. Reels and Search are wired to placeholder screens for now so
+/// the menu structure matches the mockups; the screens can be filled in later.
 enum TVSideMenuItem: String, CaseIterable, Identifiable {
-    case profile
-    case reels
-    case sports
-    case watchList
-    case home
     case search
+    case home
+    case watchList
+    case sports
+    case reels
+    case profile
 
     var id: String { rawValue }
 
@@ -142,8 +142,11 @@ struct TVSideMenu: View {
 
     // MARK: - Brand mark
 
-    /// The GuideStream mark — icon-only when collapsed, the full
-    /// "GuideStream TV" wordmark with the brand icon when opened.
+    /// The GuideStream mark — the square monogram icon when collapsed, the
+    /// full "GuideStream TV" wordmark with the brand icon when opened.
+    /// The open state and onboarding still use the horizontal wordmark
+    /// lockup asset (GuideStreamLogo); the collapsed rail uses the square
+    /// mark (GuideStreamMark) so it stays crisp at the small size.
     @ViewBuilder
     private var brandMark: some View {
         if isOpen {
@@ -157,7 +160,7 @@ struct TVSideMenu: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         } else {
-            Image("GuideStreamLogo")
+            Image("GuideStreamMark")
                 .resizable()
                 .scaledToFit()
                 .frame(width: 40, height: 40)

@@ -15,12 +15,21 @@ import SwiftUI
 struct TVMainView: View {
     let onSignOut: () -> Void
 
+    /// Constant leading inset for the content screen. The collapsed rail
+    /// occupies 32pt + 72pt = 104pt; the rail headers use 80pt of internal
+    /// horizontal gutter. Insetting the whole content container by 48pt
+    /// keeps every rail title and first poster at 128pt from the screen
+    /// edge, clear of the 104pt rail. The menu still overlays the same
+    /// content when it opens, and the content never shifts or resizes.
+    private let contentLeadingInset: CGFloat = 48
+
     @State private var selection: TVSideMenuItem = .home
     @State private var menuIsOpen: Bool = false
 
     var body: some View {
         ZStack(alignment: .leading) {
             screen(for: selection)
+                .padding(.leading, contentLeadingInset)
                 .focusSection()
                 .onMoveCommand { direction in
                     // The only thing that opens the menu: a deliberate left
