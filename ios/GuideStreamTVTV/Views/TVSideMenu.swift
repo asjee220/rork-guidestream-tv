@@ -150,15 +150,10 @@ struct TVSideMenu: View {
     @ViewBuilder
     private var brandMark: some View {
         if isOpen {
-            HStack(alignment: .firstTextBaseline, spacing: 10) {
-                Image("GuideStreamLogo")
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: 40, height: 40)
-                TVBrandWordmark(wordmarkSize: .nav)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            Image("GuideStreamMenuHeader")
+                .resizable()
+                .scaledToFit()
+                .frame(maxWidth: .infinity, alignment: .leading)
         } else {
             Image("GuideStreamMark")
                 .resizable()
@@ -178,7 +173,7 @@ struct TVSideMenu: View {
         if isOpen {
             menuButton(for: item)
         } else {
-            rowContent(for: item)
+            rowContent(for: item, isFocused: false)
                 .padding(.vertical, 6)
         }
     }
@@ -187,11 +182,12 @@ struct TVSideMenu: View {
         Button {
             select(item)
         } label: {
-            rowContent(for: item)
+            rowContent(for: item, isFocused: focusedItem == item)
                 .padding(.vertical, 6)
         }
         .buttonStyle(.plain)
         .focused($focusedItem, equals: item)
+        .focusEffectDisabled()
     }
 
     /// Shared row layout: the orange selection bar sits flush at the
@@ -200,26 +196,29 @@ struct TVSideMenu: View {
     /// use white icon/text; unselected items use the muted secondary
     /// color. The design mockups show the orange bar itself as the only
     /// selection indicator, so no background rectangle is drawn.
-    private func rowContent(for item: TVSideMenuItem) -> some View {
+    private func rowContent(for item: TVSideMenuItem, isFocused: Bool = false) -> some View {
         let isSelected = selection == item
+        let isActive = isSelected || isFocused
         return HStack(spacing: 0) {
             Capsule()
                 .fill(isSelected ? TVTheme.orange : Color.clear)
                 .frame(width: barWidth, height: barHeight)
             Image(systemName: item.icon)
                 .font(.system(size: iconSize, weight: .medium))
-                .foregroundStyle(isSelected ? TVTheme.textPrimary : TVTheme.textSecondary)
+                .foregroundStyle(isActive ? TVTheme.textPrimary : TVTheme.textSecondary)
                 .frame(width: iconFrame, height: iconFrame)
                 .padding(.leading, isOpen ? openIconLeading : closedIconLeading)
             if isOpen {
                 Text(item.label)
                     .font(.system(size: 24, weight: .semibold))
-                    .foregroundStyle(isSelected ? TVTheme.textPrimary : TVTheme.textSecondary)
+                    .foregroundStyle(isActive ? TVTheme.textPrimary : TVTheme.textSecondary)
                     .lineLimit(1)
                     .padding(.leading, labelLeading)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .scaleEffect(isFocused ? 1.06 : 1.0)
+        .animation(.easeOut(duration: 0.15), value: isFocused)
     }
 
     // MARK: - State
