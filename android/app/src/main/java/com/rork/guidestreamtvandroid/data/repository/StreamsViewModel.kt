@@ -715,7 +715,16 @@ class StreamsViewModel private constructor(context: Context) {
         val trimmedId = titleId.trim()
         if (trimmedId.isEmpty()) return
         val owner = currentUserId ?: DeviceIdentity.get().deviceId
-        val now = System.currentTimeMillis()
+        // Stamp at the latest known content date whenever that is ahead of now.
+        // `title_recency.last_content_at` is frequently a date-only air date
+        // stored at midnight UTC, so a show whose next episode lands later
+        // today already carries a `last_content_at` in the future. Stamping a
+        // plain `now` would leave `seen < last_content`, and `newBadgeText`
+        // would keep the chip alive through the very tap meant to clear it.
+        val now = maxOf(
+            System.currentTimeMillis(),
+            _latestContentAt.value[trimmedId] ?: Long.MIN_VALUE,
+        )
         // Optimistic clear so the badge vanishes before the server responds.
         _seenContentAt.value = _seenContentAt.value + (trimmedId to now)
         scope.launch {

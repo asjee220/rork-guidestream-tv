@@ -298,7 +298,13 @@ final class TVStreamsViewModel {
     /// otherwise the device id.
     func markWatchlistSeen(titleId: String) async {
         let owner = currentUserId?.uuidString ?? TVDeviceIdentity.shared.deviceId
-        let now = Date()
+        // Stamp at the latest known content date whenever that is ahead of now.
+        // `title_recency.last_content_at` is frequently a date-only air date
+        // stored at midnight UTC, so a show whose next episode lands later
+        // today already carries a `last_content_at` in the future. Stamping a
+        // plain `Date()` would leave `seen < last_content`, and `newBadgeText`
+        // would keep the chip alive through the very selection meant to clear it.
+        let now = max(Date(), latestContentAt[titleId] ?? .distantPast)
         // Optimistic clear so the badge vanishes before the server responds.
         seenContentAt[titleId] = now
         let payload: [String: AnyJSON] = [
