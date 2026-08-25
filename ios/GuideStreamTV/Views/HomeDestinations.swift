@@ -14,6 +14,7 @@ enum HomeRoute: Hashable {
     case continueWatching
     case topPicks
     case everyonesWatching
+    case creatorsForYou
     case leavingSoon
     case popularOnServiceCategories(serviceId: String, providerId: Int)
     case nowAndNext(serviceId: String)

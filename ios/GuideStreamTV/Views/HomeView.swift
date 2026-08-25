@@ -439,6 +439,15 @@ struct HomeView: View {
         streams.userStreams.contains { SourceKind.from(titleId: $0.titleId).isNonTMDB }
     }
 
+    /// Non-TMDB title_ids the recommender scores against. Shared by the rail's
+    /// own fetch and the "See all" screen's deeper one so both ask the same
+    /// question.
+    private var followedCreatorIds: [String] {
+        streams.userStreams
+            .filter { SourceKind.from(titleId: $0.titleId).isNonTMDB }
+            .map { $0.titleId }
+    }
+
     /// Compact inline sponsored slot inserted between home feed rows. Hidden
     /// once its index is dismissed for the session. Even slots prefer AdMob
     /// (Rakuten backfill); odd slots render the Rakuten card directly.
@@ -793,6 +802,13 @@ struct HomeView: View {
                             } else {
                                 CreatorsForYouSection(
                                     creators: recommendedCreators,
+                                    onSeeAll: {
+                                        WatchIntentLogger.shared.log(
+                                            eventType: .cardTapped,
+                                            metadata: ["section": "creators_for_you_see_all"]
+                                        )
+                                        path.append(.creatorsForYou)
+                                    },
                                     onOpen: { creator in
                                         WatchIntentLogger.shared.log(
                                             eventType: .cardTapped,
@@ -1269,6 +1285,23 @@ struct HomeView: View {
                         tag: "TOP PICK",
                         onSelect: { show in detailSubject = .show(show) }
                     )
+                case .creatorsForYou:
+                    CreatorsForYouListView(
+                        initialCreators: recommendedCreators,
+                        followedIds: followedCreatorIds,
+                        onSelect: { creator in
+                            WatchIntentLogger.shared.log(
+                                eventType: .cardTapped,
+                                titleId: creator.titleId,
+                                platformId: creator.sourceType,
+                                metadata: ["section": "creators_for_you_all"]
+                            )
+                            creatorDetailTarget = CreatorDetailTarget(
+                                titleId: creator.titleId,
+                                initialEpisode: nil
+                            )
+                        }
+                    )
                 case .everyonesWatching:
                     BingeWorthyListView(
                         shows: trendingRankedShows,
@@ -1604,9 +1637,7 @@ struct HomeView: View {
     /// (category-overlap → 72–98% match range). Only fetches when the user has
     /// followed at least one creator/podcast; returns empty otherwise.
     private func loadRecommendedCreators() async {
-        let followedIds = streams.userStreams
-            .filter { SourceKind.from(titleId: $0.titleId).isNonTMDB }
-            .map { $0.titleId }
+        let followedIds = followedCreatorIds
         print("[HomeView] loadRecommendedCreators: followedIds=\(followedIds)")
         guard !followedIds.isEmpty else {
             print("[HomeView] loadRecommendedCreators: no followed non-TMDB ids, bailing")
@@ -3431,6 +3462,7 @@ private struct TopPicksSection: View {
 
 private struct CreatorsForYouSection: View {
     let creators: [RecommendedCreator]
+    var onSeeAll: (() -> Void)? = nil
     let onOpen: (RecommendedCreator) -> Void
 
     /// Mustard/goldenrod accent for the section header and match chips.
@@ -3440,7 +3472,7 @@ private struct CreatorsForYouSection: View {
         SectionGlassCard(
             title: "Creators/Podcasts for You",
             accentColor: Self.mustardAccent,
-            onSeeAll: nil
+            onSeeAll: onSeeAll
         ) {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 10) {

@@ -292,7 +292,11 @@ final class ContentSourcesService {
     /// enriched via the YouTube Data API (topicDetails) so the algorithm has
     /// proper content-aware categories to match against. Falls back to
     /// description keyword extraction only when enrichment returns nothing.
-    func fetchRecommendedCreators(forFollowedIds followedIds: [String]) async throws -> [(titleId: String, displayName: String, imageUrl: String?, sourceType: String, category: String?, matchPercentage: Int)] {
+    /// - Parameter limit: How many recommendations to return. The home rail
+    ///   uses the default 12; the "See all" browse screen asks for more. The
+    ///   candidate pool scales with it so a large limit is never starved by the
+    ///   `content_sources` page size.
+    func fetchRecommendedCreators(forFollowedIds followedIds: [String], limit: Int = 12) async throws -> [(titleId: String, displayName: String, imageUrl: String?, sourceType: String, category: String?, matchPercentage: Int)] {
         guard !followedIds.isEmpty else {
             print("[ContentSources] fetchRecommendedCreators: empty followedIds, returning []")
             return []
@@ -372,7 +376,7 @@ final class ContentSourcesService {
             .select()
             .neq("source_type", value: "tmdb")
             .order("created_at", ascending: false)
-            .limit(200)
+            .limit(max(200, limit * 4))
             .execute()
             .value
         print("[ContentSources] allSources count=\(allSources.count)")
@@ -435,8 +439,8 @@ final class ContentSourcesService {
             if a.matchPercentage != b.matchPercentage { return a.matchPercentage > b.matchPercentage }
             return a.displayName.localizedStandardCompare(b.displayName) == .orderedAscending
         }
-        print("[ContentSources] scored count=\(scored.count), returning top \(min(12, scored.count))")
-        return Array(scored.prefix(12))
+        print("[ContentSources] scored count=\(scored.count), returning top \(min(limit, scored.count))")
+        return Array(scored.prefix(limit))
     }
 
     // MARK: - Keyword extraction from descriptions
