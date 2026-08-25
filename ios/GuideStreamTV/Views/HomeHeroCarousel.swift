@@ -114,7 +114,7 @@ struct HomeHeroCarousel: View {
         .contentMargins(.horizontal, widthClass == .expanded ? 0 : 20, for: .scrollContent)
         .scrollTargetBehavior(.viewAligned)
         .scrollClipDisabled()
-        .frame(height: 250)
+        .frame(height: widthClass.homeHeroHeight)
     }
 }
 

@@ -615,7 +615,11 @@ struct HomeView: View {
                             HomeShimmerSection(title: "Today's Pick")
                                 .padding(.horizontal, homeWidthClass.homeHorizontalPadding)
                         } else if let pick = todaysPick {
-                            TodaysPickSection(pick: pick, isSubscribed: isSubscribedToService(pick.sourceName)) {
+                            TodaysPickSection(
+                                pick: pick,
+                                isSubscribed: isSubscribedToService(pick.sourceName),
+                                widthClass: homeWidthClass
+                            ) {
                                 WatchIntentLogger.shared.log(
                                     eventType: .cardTapped,
                                     titleId: String(pick.tmdbId),
@@ -3013,7 +3017,10 @@ private struct HomeHeroCarouselShimmer: View {
                 ForEach(0..<3, id: \.self) { i in
                     RoundedRectangle(cornerRadius: 18, style: .continuous)
                         .fill(Color.white.opacity(0.05))
-                        .frame(width: widthClass == .expanded ? 340 : 280, height: 250)
+                        .frame(
+                            width: widthClass == .expanded ? 340 : 280,
+                            height: widthClass.homeHeroHeight
+                        )
                         .overlay(
                             RoundedRectangle(cornerRadius: 18, style: .continuous)
                                 .fill(
@@ -3037,7 +3044,7 @@ private struct HomeHeroCarouselShimmer: View {
             .padding(.horizontal, widthClass == .expanded ? 0 : 12)
         }
         .disabled(true)
-        .frame(height: 250)
+        .frame(height: widthClass.homeHeroHeight)
     }
 }
 
@@ -3050,7 +3057,14 @@ private struct HomeHeroCarouselShimmer: View {
 private struct TodaysPickSection: View {
     let pick: StreamingRelease
     let isSubscribed: Bool
+    /// Drives the backdrop height. Defaulted so nothing else has to change.
+    var widthClass: GSWidthClass = .compact
     let onTap: () -> Void
+
+    /// Backdrop height for the current width. See
+    /// `GSWidthClass.homeTodaysPickBackdropHeight` — a fixed 200 here made the
+    /// card 6.8:1 on a 13-inch iPad and sliced the artwork through the middle.
+    private var backdropHeight: CGFloat { widthClass.homeTodaysPickBackdropHeight }
 
     /// 16:9 backdrop resolved client-side from TMDB (streaming_releases has no
     /// backdrop column). Until it arrives — or forever, if TMDB fails — the
@@ -3092,7 +3106,7 @@ private struct TodaysPickSection: View {
                             fallbackColors: HomeFallback.posterColors
                         )
                             .frame(maxWidth: .infinity)
-                            .frame(height: 200)
+                            .frame(height: backdropHeight)
                             .clipped()
                     } else {
                         RemoteImage(
@@ -3101,7 +3115,7 @@ private struct TodaysPickSection: View {
                             fallbackColors: HomeFallback.posterColors
                         )
                             .frame(maxWidth: .infinity)
-                            .frame(height: 200)
+                            .frame(height: backdropHeight)
                             .blur(radius: 20)
                             .opacity(0.55)
                             .clipped()
@@ -3111,7 +3125,7 @@ private struct TodaysPickSection: View {
                             fallbackColors: HomeFallback.posterColors
                         )
                             .frame(maxWidth: .infinity)
-                            .frame(height: 200)
+                            .frame(height: backdropHeight)
                             .clipped()
                     }
                     LinearGradient(
@@ -3120,7 +3134,7 @@ private struct TodaysPickSection: View {
                         endPoint: .bottom
                     )
                 }
-                .frame(height: 200)
+                .frame(height: backdropHeight)
                 .clipped()
 
                 // Title + meta + badge + CTA

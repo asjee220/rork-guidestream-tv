@@ -45,6 +45,33 @@ extension GSWidthClass {
         }
     }
 
+    /// Height of the Home hero carousel.
+    ///
+    /// These were fixed at 250 (hero) and 200 (Today's Pick) for every width.
+    /// On `.expanded` the cards go full-width, so a 13-inch iPad in landscape
+    /// stretched the hero to roughly 1366x250 — a 5.5:1 slot that a 16:9
+    /// backdrop drawn with `contentMode: .fill` can only fill by cropping away
+    /// about two thirds of its height. Scaling the height with the width class
+    /// keeps the crop near 3.4:1 on tablets; compact keeps its original value
+    /// so phones are untouched.
+    var homeHeroHeight: CGFloat {
+        switch self {
+        case .expanded: return 400
+        case .medium: return 320
+        case .compact: return 250
+        }
+    }
+
+    /// Height of the Today's Pick backdrop. Same reasoning as `homeHeroHeight`
+    /// — this one was the worse of the two at 6.8:1 on a 13-inch iPad.
+    var homeTodaysPickBackdropHeight: CGFloat {
+        switch self {
+        case .expanded: return 380
+        case .medium: return 260
+        case .compact: return 200
+        }
+    }
+
     /// Horizontal padding for the home search bar. Full-width on tablets,
     /// 16pt on phones.
     var homeSearchHorizontalPadding: CGFloat {
