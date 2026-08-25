@@ -67,10 +67,13 @@ private struct LivePulseDot: View {
 
 private struct LeagueChip: View {
     let leagueShort: String
+    /// Defaults to the Dynamic Island's size. The lock screen passes a larger
+    /// value — it has the room, the Island does not.
+    var fontSize: CGFloat = 8.5
 
     var body: some View {
         Text(leagueShort.uppercased())
-            .font(.system(size: 8.5, weight: .bold).monospaced())
+            .font(.system(size: fontSize, weight: .bold).monospaced())
             .tracking(0.6)
             .foregroundStyle(Color.white.opacity(0.7))
             .padding(.horizontal, 6)
@@ -94,13 +97,17 @@ private struct SplitAccentBar: View {
 
 private struct WatchButtonLabel: View {
     let broadcast: String
+    /// Defaults to the Dynamic Island's sizing. The lock screen passes larger
+    /// values; the Island's bottom region is too tight for them.
+    var fontSize: CGFloat = 13
+    var height: CGFloat = 36
 
     var body: some View {
         Text(broadcast.isEmpty ? "Watch now" : "Watch on \(broadcast)")
-            .font(.system(size: 13, weight: .bold))
+            .font(.system(size: fontSize, weight: .bold))
             .foregroundStyle(.white)
             .frame(maxWidth: .infinity)
-            .frame(height: 36)
+            .frame(height: height)
             .background(Capsule().fill(brandOrange))
     }
 }
@@ -216,7 +223,7 @@ private struct LockScreenSportsView: View {
     private var isLive: Bool { context.state.state == "live" }
 
     var body: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: 8) {
             SplitAccentBar(
                 awayHex: context.attributes.awayHex,
                 homeHex: context.attributes.homeHex
@@ -232,7 +239,7 @@ private struct LockScreenSportsView: View {
                             .foregroundStyle(.white)
                     }
                 Text("GuideStream · \(context.attributes.leagueShort)")
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(Color.white.opacity(0.6))
                 Spacer()
             }
@@ -256,12 +263,12 @@ private struct LockScreenSportsView: View {
                         LivePulseDot(color: liveOrange, size: 6)
                     }
                     Text(context.state.statusDetail)
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(.system(size: 14, weight: .semibold))
                         .foregroundStyle(isLive ? liveOrange : mutedGrey)
                         .lineLimit(1)
                         .minimumScaleFactor(0.7)
                 }
-                LeagueChip(leagueShort: context.attributes.leagueShort)
+                LeagueChip(leagueShort: context.attributes.leagueShort, fontSize: 10.5)
             }
             .frame(maxWidth: .infinity)
 
@@ -269,9 +276,13 @@ private struct LockScreenSportsView: View {
                 .fill(Color.white.opacity(0.10))
                 .frame(height: 0.5)
 
-            WatchButtonLabel(broadcast: context.attributes.broadcast)
+            WatchButtonLabel(
+                broadcast: context.attributes.broadcast,
+                fontSize: 15,
+                height: 38
+            )
         }
-        .padding(14)
+        .padding(9)
         .frame(maxWidth: .infinity)
         .background(liveNavy)
         .clipShape(.rect(cornerRadius: 14))
@@ -279,14 +290,15 @@ private struct LockScreenSportsView: View {
 
     private func scoreboardRow(abbr: String, hex: String, shortName: String, score: Int) -> some View {
         HStack(spacing: 8) {
-            TeamCrest(abbr: abbr, hex: hex, size: 26)
+            TeamCrest(abbr: abbr, hex: hex, size: 25)
             Text(shortName)
-                .font(.system(size: 13, weight: .semibold))
+                .font(.system(size: 21, weight: .semibold))
                 .foregroundStyle(Color.white.opacity(0.85))
                 .lineLimit(1)
+                .minimumScaleFactor(0.7)
             Spacer()
             Text("\(score)")
-                .font(.system(size: 26, weight: .heavy).monospacedDigit())
+                .font(.system(size: 32, weight: .heavy).monospacedDigit())
                 .foregroundStyle(.white)
         }
     }
