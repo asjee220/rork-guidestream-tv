@@ -115,6 +115,8 @@
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
 
+	<key>GIDClientID</key>
+	<string></string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>

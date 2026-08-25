@@ -9,6 +9,7 @@ import AuthenticationServices
 import CryptoKit
 import Supabase
 import Auth
+import GoogleSignIn
 
 @MainActor
 @Observable
@@ -1094,16 +1095,76 @@ final class AuthViewModel {
         }
     }
 
-    // MARK: - Google Sign-In (Supabase OAuth via ASWebAuthenticationSession)
+    // MARK: - Google Sign-In
 
+    /// Errors specific to the native Google path. Both are recoverable: the
+    /// caller reports them and the user can retry.
+    private enum NativeGoogleError: LocalizedError {
+        case noPresenter
+        case missingIdentityToken
+
+        var errorDescription: String? {
+            switch self {
+            case .noPresenter: return "Couldn't present Google sign-in."
+            case .missingIdentityToken: return "Google didn't return an identity token."
+            }
+        }
+    }
+
+    /// iOS OAuth client id for the native Google sheet, read from Info.plist.
+    /// `nil` means the client hasn't been configured yet, and sign-in falls
+    /// back to the web flow.
+    private static var googleClientID: String? {
+        guard let raw = Bundle.main.object(forInfoDictionaryKey: "GIDClientID") as? String else { return nil }
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    /// Presents Google's native sign-in sheet and exchanges the resulting
+    /// identity token with Supabase — the same shape as the Apple path.
+    private func nativeGoogleSession(clientID: String) async throws -> Session {
+        guard let presenter = UIApplication.shared.topViewController() else {
+            throw NativeGoogleError.noPresenter
+        }
+        GIDSignIn.sharedInstance.configuration = GIDConfiguration(clientID: clientID)
+        let result = try await GIDSignIn.sharedInstance.signIn(withPresenting: presenter)
+        guard let idToken = result.user.idToken?.tokenString else {
+            throw NativeGoogleError.missingIdentityToken
+        }
+        return try await SupabaseManager.shared.client.auth.signInWithIdToken(
+            credentials: .init(
+                provider: .google,
+                idToken: idToken,
+                accessToken: result.user.accessToken.tokenString
+            )
+        )
+    }
+
+    /// Signs in with Google.
+    ///
+    /// Prefers the native Google sheet, which is branded with *this app's*
+    /// name. The web `signInWithOAuth` flow hands off to a browser whose
+    /// consent screen is rendered entirely from the Google Cloud OAuth config
+    /// belonging to the redirect URI — Supabase's — so users saw "Sign in to
+    /// qwxxkubkbanridcqsqjo.supabase.co" (GUI-40). Apple sign-in never had this
+    /// problem because it already exchanges an identity token directly.
+    ///
+    /// Falls back to the old web flow when Info.plist carries no `GIDClientID`,
+    /// so sign-in keeps working until the iOS OAuth client is configured.
     func signInWithGoogle() async {
         isAuthenticating = true
         defer { isAuthenticating = false }
         do {
-            let session = try await SupabaseManager.shared.client.auth.signInWithOAuth(
-                provider: .google,
-                redirectTo: URL(string: "guidestream://auth-callback")
-            )
+            let session: Session
+            if let clientID = Self.googleClientID {
+                session = try await nativeGoogleSession(clientID: clientID)
+            } else {
+                print("[Auth] no GIDClientID in Info.plist — using web OAuth for Google")
+                session = try await SupabaseManager.shared.client.auth.signInWithOAuth(
+                    provider: .google,
+                    redirectTo: URL(string: "guidestream://auth-callback")
+                )
+            }
             self.currentUser = session.user
             self.isGuest = false
             UserDefaults.standard.set(false, forKey: "gs.isGuest")
