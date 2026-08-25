@@ -515,12 +515,20 @@ final class AuthViewModel {
         do {
             let rows: [NotificationCategoryRow] = try await SupabaseManager.shared.client
                 .from("users")
-                .select("notify_new_episodes, notify_watchlist, notify_live, notify_sports, notify_movie_releases")
+                .select("notify_push, notify_new_episodes, notify_watchlist, notify_live, notify_sports, notify_movie_releases")
                 .eq("id", value: uid)
                 .limit(1)
                 .execute()
                 .value
             guard let prefs = rows.first else { return }
+            // `notify_push` is the user's *intent*, not the iOS grant. It has
+            // to be restored from the server because a delete/reinstall wipes
+            // the `gs.notifyPush` UserDefaults cache the toggle reads from,
+            // which silently reset the master toggle to off on reinstall.
+            if let v = prefs.notify_push {
+                notifyPushEnabled = v
+                UserDefaults.standard.set(v, forKey: "gs.notifyPush")
+            }
             isApplyingCategoryPrefs = true
             if let v = prefs.notify_new_episodes { notifyNewEpisodesEnabled = v; UserDefaults.standard.set(v, forKey: "gs.notifyNewEpisodes") }
             if let v = prefs.notify_watchlist { notifyWatchlistEnabled = v; UserDefaults.standard.set(v, forKey: "gs.notifyWatchlist") }
@@ -645,6 +653,29 @@ final class AuthViewModel {
         UserDefaults.standard.set(push, forKey: "gs.notifyPush")
         UserDefaults.standard.set(sms, forKey: "gs.notifySMS")
         DeviceSessionService.shared.upsert(reason: "notifications_changed")
+        syncPushPreference()
+    }
+
+    /// Mirrors the push/SMS intent into `users` for signed-in accounts so it
+    /// survives a delete/reinstall. Previously `notify_push` only reached the
+    /// server at onboarding completion, so any later change lived in
+    /// UserDefaults alone. Guests keep the local cache only.
+    private func syncPushPreference() {
+        guard let userId = currentUser?.id.uuidString else { return }
+        let push = notifyPushEnabled
+        let sms = notifySMSEnabled
+        Task {
+            do {
+                try await SupabaseManager.shared.client
+                    .from("users")
+                    .update(["notify_push": push, "notify_sms": sms])
+                    .eq("id", value: userId)
+                    .execute()
+                print("[Auth] notify_push \(push) saved for user \(userId)")
+            } catch {
+                print("[Auth ERROR] notify_push update failed: \(error.localizedDescription)")
+            }
+        }
     }
 
     func completeOnboarding() {
@@ -1289,6 +1320,7 @@ final class AuthViewModel {
 /// `users`. Every field is optional so older projects missing columns
 /// still decode cleanly.
 nonisolated struct NotificationCategoryRow: Decodable, Sendable {
+    let notify_push: Bool?
     let notify_new_episodes: Bool?
     let notify_watchlist: Bool?
     let notify_live: Bool?
