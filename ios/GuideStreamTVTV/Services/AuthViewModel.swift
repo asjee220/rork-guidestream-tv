@@ -221,13 +221,21 @@ final class AuthViewModel {
         do {
             let rows: [NotificationCategoryRow] = try await SupabaseManager.shared.client
                 .from("users")
-                .select("notify_new_episodes, notify_watchlist, notify_live, notify_sports, notify_movie_releases")
+                .select("notify_push, notify_new_episodes, notify_watchlist, notify_live, notify_sports, notify_movie_releases")
                 .eq("id", value: uid)
                 .limit(1)
                 .execute()
                 .value
             guard let row = rows.first else { return }
 
+            // `notify_push` is the user's *intent*, not the tvOS grant. It has
+            // to be restored from the server because a delete/reinstall wipes
+            // the `gs.notifyPush` UserDefaults cache the toggle reads from,
+            // which silently reset the master toggle to off on reinstall.
+            if let val = row.notify_push {
+                notifyPushEnabled = val
+                UserDefaults.standard.set(val, forKey: "gs.notifyPush")
+            }
             isApplyingCategoryPrefs = true
             if let val = row.notify_new_episodes { notifyNewEpisodesEnabled = val; UserDefaults.standard.set(val, forKey: "gs.notifyNewEpisodes") }
             if let val = row.notify_watchlist { notifyWatchlistEnabled = val; UserDefaults.standard.set(val, forKey: "gs.notifyWatchlist") }
@@ -267,6 +275,29 @@ final class AuthViewModel {
         self.notifySMSEnabled = sms
         UserDefaults.standard.set(push, forKey: "gs.notifyPush")
         UserDefaults.standard.set(sms, forKey: "gs.notifySMS")
+        syncPushPreference()
+    }
+
+    /// Mirrors the push/SMS intent into `users` for signed-in accounts so it
+    /// survives a delete/reinstall. tvOS previously never wrote `notify_push`
+    /// to the server at all — not even at onboarding completion — so the value
+    /// lived only in UserDefaults. Guests keep the local cache only.
+    private func syncPushPreference() {
+        guard let userId = currentUser?.id.uuidString else { return }
+        let push = notifyPushEnabled
+        let sms = notifySMSEnabled
+        Task {
+            do {
+                try await SupabaseManager.shared.client
+                    .from("users")
+                    .update(["notify_push": push, "notify_sms": sms])
+                    .eq("id", value: userId)
+                    .execute()
+                print("[AuthViewModel] synced notify_push=\(push)")
+            } catch {
+                print("[AuthViewModel] sync notify_push failed: \(error.localizedDescription)")
+            }
+        }
     }
 
     /// Read-only brand-aware check for whether the viewer subscribes to a given
@@ -325,6 +356,7 @@ final class AuthViewModel {
 // MARK: - NotificationCategoryRow
 
 private struct NotificationCategoryRow: Decodable {
+    let notify_push: Bool?
     let notify_new_episodes: Bool?
     let notify_watchlist: Bool?
     let notify_live: Bool?
