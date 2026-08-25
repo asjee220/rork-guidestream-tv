@@ -31,4 +31,11 @@ Package.resolved
 # Rork
 .rork/
 .env
-Config.swift
+
+# NOTE: Config.swift used to be ignored here, alongside .env, because RorkMax
+# generated it from environment variables at build time. That made the iOS app
+# uncompilable on a clean checkout — ContentSourcesService references
+# Config.EXPO_PUBLIC_RORK_FUNCTIONS_URL and nothing defined it. It is now a
+# tracked source file holding client-side public config only, the same as
+# SupabaseConfig in SupabaseManager.swift. Do not re-ignore it; put real
+# secrets in .env or the keychain instead.
