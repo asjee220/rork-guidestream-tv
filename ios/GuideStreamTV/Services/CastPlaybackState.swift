@@ -49,13 +49,22 @@ final class CastPlaybackState {
     /// Records a fresh cast handoff. Replaces any previous session — the
     /// banner always reflects the most recent thing the user sent to the
     /// TV.
+    ///
+    /// This is the single "playback actually started on a TV" signal, so it is
+    /// also where the watch-list new-content chip is cleared. Deep-linking out
+    /// to a provider app already cleared it via `StreamingDeepLinker`, but
+    /// casting did not — a title sent to the TV kept its NEW EPISODE chip
+    /// indefinitely. Pass `titleId` so every cast path, present and future,
+    /// clears it; `markWatchlistSeenIfSaved` no-ops when the id isn't a saved
+    /// watch-list row.
     func start(
         title: String,
         platform: String,
         deviceName: String,
         deviceKind: TVDeviceKind,
         host: String?,
-        port: UInt16?
+        port: UInt16?,
+        titleId: String? = nil
     ) {
         let session = ActiveSession(
             id: UUID().uuidString,
@@ -69,6 +78,10 @@ final class CastPlaybackState {
         )
         current = session
         scheduleAutoExpire()
+
+        if let titleId, !titleId.isEmpty {
+            Task { await StreamsViewModel.shared.markWatchlistSeenIfSaved(titleId: titleId) }
+        }
     }
 
     /// Dismisses the active session. The home banner disappears on the
