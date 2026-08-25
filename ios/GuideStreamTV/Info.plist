@@ -116,7 +116,7 @@
 	</array>
 
 	<key>GIDClientID</key>
-	<string></string>
+	<string>740276432473-a0uh2sb9j8jogcirqudiv5c9urj9nv3h.apps.googleusercontent.com</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
@@ -127,6 +127,16 @@
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>guidestream</string>
+			</array>
+		</dict>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>com.googleusercontent.apps.guidestream</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.googleusercontent.apps.740276432473-a0uh2sb9j8jogcirqudiv5c9urj9nv3h</string>
 			</array>
 		</dict>
 	</array>
