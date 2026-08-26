@@ -114,7 +114,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             AppTheme {
                 RootContent(
-                    onDeepLink = { handleDeepLink(it) },
+                    onLaunchIntent = { handleNotificationIntent(it) },
                     initialIntent = intent,
                 )
             }
@@ -210,7 +210,53 @@ class MainActivity : ComponentActivity() {
         if (intent.data?.getQueryParameter("flow") == "recovery") {
             AuthViewModel.get().setShowPasswordRecovery(true)
         }
-        handleDeepLink(intent.data)
+        handleNotificationIntent(intent)
+    }
+
+    /**
+     * Routes a launch/resume intent that may have come from a notification tap.
+     *
+     * Two delivery shapes have to be handled. A tap while the app is in the
+     * FOREGROUND goes through [GuideStreamFirebaseMessagingService], which sets
+     * the deep link as the intent's *data* URI. A tap while the app is
+     * BACKGROUNDED or killed never reaches that service at all — every push
+     * sender includes an FCM `notification` block, so the system tray displays
+     * the notification itself and delivers the `data` payload as intent
+     * *extras*. Reading only [Intent.getData], as this used to, meant the
+     * common case (backgrounded) routed nowhere: GUI-46.
+     *
+     * Extras are preferred over the URI because they are richer. The sports
+     * payload, for instance, carries `deep_link = "guidestream://sports"` with
+     * no id in the path, but a `game_id` extra that identifies the game exactly.
+     */
+    private fun handleNotificationIntent(intent: Intent?) {
+        if (intent == null) return
+        val extras = intent.extras
+        val router = AppRouter.get()
+
+        val gameId = extras?.getString("game_id")?.takeIf { it.isNotBlank() }
+        if (gameId != null) {
+            router.showSportsGame(gameId)
+            return
+        }
+
+        val titleId = extras?.getString("title_id")?.takeIf { it.isNotBlank() }
+        if (titleId != null) {
+            router.showTitle(
+                PendingTitleRoute(
+                    titleId = titleId,
+                    titleName = extras.getString("title_name"),
+                    isTv = extras.getString("is_tv")?.toBooleanStrictOrNull() ?: true,
+                ),
+            )
+            return
+        }
+
+        // Nothing usable in extras — fall back to the URI, which covers the
+        // foreground path and any non-notification deep link.
+        val uri = intent.data
+            ?: extras?.getString("deep_link")?.takeIf { it.isNotBlank() }?.let(Uri::parse)
+        handleDeepLink(uri)
     }
 
     private fun handleDeepLink(uri: Uri?) {
@@ -229,8 +275,12 @@ class MainActivity : ComponentActivity() {
                     ),
                 )
             }
-            uri.host == "sports" -> {
-                val gameId = segments.lastOrNull() ?: return
+            // iOS and every push payload use `guidestream://game/{id}`; the
+            // sports edge function additionally emits a bare
+            // `guidestream://sports` with no id, which is only routable via the
+            // game_id extra handled in handleNotificationIntent.
+            uri.host == "game" || uri.host == "sports" -> {
+                val gameId = segments.lastOrNull()?.takeIf { it.isNotBlank() } ?: return
                 router.showSportsGame(gameId)
             }
         }
@@ -243,7 +293,7 @@ class MainActivity : ComponentActivity() {
  */
 @Composable
 private fun RootContent(
-    onDeepLink: (Uri) -> Unit,
+    onLaunchIntent: (Intent) -> Unit,
     initialIntent: Intent?,
 ) {
     val auth = AuthViewModel.get()
@@ -252,10 +302,11 @@ private fun RootContent(
     val hasCompletedOnboarding by auth.hasCompletedOnboarding.collectAsState()
     val isAuthenticated by auth.isAuthenticated.collectAsState()
 
-    // Handle deep link from initial intent
+    // Handle a deep link or notification tap from the launch intent. Passes
+    // the whole Intent, not just its data URI — a cold launch from a
+    // system-tray notification carries the payload in extras only.
     LaunchedEffect(initialIntent) {
-        val uri = initialIntent?.data
-        if (uri != null) onDeepLink(uri)
+        if (initialIntent != null) onLaunchIntent(initialIntent)
     }
 
     Box(modifier = Modifier.fillMaxSize()) {

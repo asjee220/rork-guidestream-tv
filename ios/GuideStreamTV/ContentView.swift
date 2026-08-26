@@ -269,16 +269,30 @@ struct ContentView: View {
         }
     }
 
-    /// Resolves a sports game id against the live scoreboard and, when found,
-    /// buffers the game-detail route in `AppRouter`. An unresolvable id leaves
-    /// the user on the Sports tab with no crash and no fallback URL open.
-    /// Shared by the `.guideStreamOpenSports` `.onReceive` handler and the
-    /// cold-launch inbox drain so both entry points behave identically.
+    /// Resolves a sports game id and buffers the game-detail route in
+    /// `AppRouter`. Shared by the `.guideStreamOpenSports` `.onReceive`
+    /// handler and the cold-launch inbox drain so both entry points behave
+    /// identically.
+    ///
+    /// Two lookups, in order. `fetchAll()` reads ESPN's live scoreboards, so it
+    /// answers instantly for a game on today's slate — but it holds *only*
+    /// today's slate, and it depends on ESPN answering the device. A "Final"
+    /// push tapped later, or any tap made while that fetch fails, found nothing
+    /// and left the user staring at the Sports tab with no detail open, which
+    /// is the whole of GUI-46 on iOS. `sports_games` in Supabase always holds
+    /// the row the push was generated from, so it is the authoritative
+    /// fallback. Only a genuinely unknown id now opens nothing.
     private func resolveSportsRoute(_ gameId: String) {
         Task { @MainActor in
             let games = await SportsService.shared.fetchAll()
             if let game = games.first(where: { $0.id == gameId }) {
                 router.showGameDetail(game)
+                return
+            }
+            if let game = await SportsService.shared.fetchGame(id: gameId) {
+                router.showGameDetail(game)
+            } else {
+                print("[Route] sports push game_id \(gameId) not found in ESPN or sports_games")
             }
         }
     }

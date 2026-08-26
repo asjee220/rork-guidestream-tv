@@ -1,5 +1,6 @@
 package com.rork.guidestreamtvandroid.ui.navigation
 
+import android.util.Log
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -118,8 +119,8 @@ fun MainScreen(
     }
 
     // Consume pending sports game route from AppRouter (push-notification
-    // buffer). Resolves the game from the live scoreboard; an unresolvable
-    // gameId leaves the user on the Sports tab.
+    // buffer). Resolves the game from the live scoreboard, then from
+    // Supabase; an unresolvable gameId leaves the user on the Sports tab.
     // Refresh the Reels unseen-content badge on launch. Signed-out users never see a badge.
     LaunchedEffect(Unit) { reelsBadge.refresh() }
 
@@ -128,9 +129,18 @@ fun MainScreen(
         val gameId = pendingSportsGameId ?: return@LaunchedEffect
         router.consumePendingSportsRoute()
         selectedTab = AppTab.SPORTS
-        val game = SportsService.get().fetchAll().firstOrNull { it.id == gameId }
+        // Two lookups. ESPN's live scoreboard answers instantly for a game on
+        // today's slate but holds only today's slate and depends on ESPN
+        // answering the device; `sports_games` in Supabase always holds the row
+        // the push was generated from. Without the fallback a "Final" push
+        // tapped later opened nothing at all (GUI-46).
+        val service = SportsService.get()
+        val game = service.fetchAll().firstOrNull { it.id == gameId }
+            ?: service.fetchGame(gameId)
         if (game != null) {
             selectedGame = game
+        } else {
+            Log.w("MainScreen", "sports push game_id $gameId not found in ESPN or sports_games")
         }
     }
 
