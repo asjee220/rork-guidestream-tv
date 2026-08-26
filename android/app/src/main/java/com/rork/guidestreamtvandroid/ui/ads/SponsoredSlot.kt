@@ -8,13 +8,18 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -39,7 +44,7 @@ import com.rork.guidestreamtvandroid.ui.theme.GlassFill
 import com.rork.guidestreamtvandroid.ui.theme.GlassStroke
 import com.rork.guidestreamtvandroid.ui.theme.OutlineVariant
 import com.rork.guidestreamtvandroid.ui.theme.SurfaceContainer
-import com.rork.guidestreamtvandroid.ui.theme.SurfaceDark
+import com.rork.guidestreamtvandroid.ui.theme.SurfaceElevated
 import com.rork.guidestreamtvandroid.ui.theme.TextPrimary
 import com.rork.guidestreamtvandroid.ui.theme.TextSecondary
 import com.rork.guidestreamtvandroid.ui.theme.TextTertiary
@@ -56,7 +61,10 @@ enum class PooledAdSource {
 
 /**
  * Pooled inline sponsored slot inserted between home feed rows — mirrors iOS
- * SponsoredSlotView. Renders a compact glass card with a "Sponsored" label.
+ * SponsoredSlotView. In feed style it renders the 96dp inline chip — 72dp
+ * creative square, up to three lines of headline, an "advertiser · Sponsored"
+ * line, and a top-end close control; otherwise a compact glass card with a
+ * "Sponsored" label.
  * ADMOB_FIRST attempts a native AdMob unit and swaps to the
  * Rakuten affiliate presentation if it fails to fill; RAKUTEN_FIRST renders the
  * Rakuten presentation directly, so a slot is never blank. When
@@ -108,19 +116,76 @@ fun SponsoredSlot(
         }
     }
 
+    val openOffer = {
+        RakutenManager.get().openAffiliateLink(
+            serviceId = serviceId,
+            context = context,
+            metadata = mapOf("section" to sectionKey),
+        )
+    }
+
+    if (feedStyle) {
+        // Feed chip — the surface lives here so the affiliate and banner
+        // presentations sit in an identically sized box and a late banner
+        // fill causes no layout shift.
+        Box(
+            modifier = modifier
+                .fillMaxWidth()
+                .height(96.dp)
+                .clip(RoundedCornerShape(14.dp))
+                .background(SurfaceElevated)
+                .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(14.dp)),
+        ) {
+            if (showRakuten) {
+                RakutenAffiliatePresentation(
+                    service = service,
+                    headline = headline,
+                    subtitle = subtitle,
+                    feedStyle = true,
+                    onClick = openOffer,
+                )
+            } else {
+                NativeAdCard(
+                    feedStyle = true,
+                    onAdLoaded = { adMobLoaded = true },
+                    onAdFailedToLoad = { adMobFailed = true },
+                )
+            }
+
+            // Close — drawn above the card so its tap never opens the offer.
+            Box(
+                modifier = Modifier
+                    // 44dp target for the Material minimum; the glyph still
+                    // reads as a small X because the box is transparent.
+                    .align(Alignment.TopEnd)
+                    .size(44.dp)
+                    .clip(CircleShape)
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                    ) { onDismiss() },
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Close,
+                    contentDescription = "Hide this ad",
+                    tint = Color.White.copy(alpha = 0.55f),
+                    modifier = Modifier.size(15.dp),
+                )
+            }
+        }
+        return
+    }
+
     Column(
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(14.dp))
-            .background(if (feedStyle) SurfaceDark else GlassFill)
-            .border(
-                1.dp,
-                if (feedStyle) Color.White.copy(alpha = 0.10f) else GlassStroke,
-                RoundedCornerShape(14.dp),
-            )
+            .background(GlassFill)
+            .border(1.dp, GlassStroke, RoundedCornerShape(14.dp))
             .padding(12.dp),
     ) {
-        // Header — "Sponsored"/"AD" label
+        // Header — "Sponsored" label
         Box(
             modifier = Modifier
                 .clip(RoundedCornerShape(4.dp))
@@ -128,7 +193,7 @@ fun SponsoredSlot(
                 .padding(horizontal = 6.dp, vertical = 2.dp),
         ) {
             Text(
-                text = if (feedStyle) "AD" else "Sponsored",
+                text = "Sponsored",
                 fontSize = 10.sp,
                 fontWeight = FontWeight.Bold,
                 color = BrandOrange,
@@ -141,18 +206,12 @@ fun SponsoredSlot(
                 service = service,
                 headline = headline,
                 subtitle = subtitle,
-                feedStyle = feedStyle,
-                onClick = {
-                    RakutenManager.get().openAffiliateLink(
-                        serviceId = serviceId,
-                        context = context,
-                        metadata = mapOf("section" to sectionKey),
-                    )
-                },
+                feedStyle = false,
+                onClick = openOffer,
             )
         } else {
             NativeAdCard(
-                feedStyle = feedStyle,
+                feedStyle = false,
                 onAdLoaded = { adMobLoaded = true },
                 onAdFailedToLoad = { adMobFailed = true },
             )
@@ -161,8 +220,10 @@ fun SponsoredSlot(
 }
 
 /**
- * Inline Rakuten affiliate presentation — a branded tile, headline, subtitle,
- * and a "Get offer" call to action. Tapping anywhere opens the tracked link.
+ * Inline Rakuten affiliate presentation. In feed style it is the 96dp chip:
+ * a 72dp brand tile, up to three lines of headline, and an
+ * "advertiser · Sponsored" line. Otherwise the older tile + subtitle +
+ * "Get offer" row. Tapping anywhere opens the tracked link.
  */
 @Composable
 private fun RakutenAffiliatePresentation(
@@ -172,6 +233,77 @@ private fun RakutenAffiliatePresentation(
     feedStyle: Boolean,
     onClick: () -> Unit,
 ) {
+    if (feedStyle) {
+        Row(
+            modifier = Modifier
+                .fillMaxSize()
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                ) { onClick() }
+                // End inset clears the close control so a three-line headline
+                // never runs underneath it.
+                .padding(start = 12.dp, end = 44.dp, top = 12.dp, bottom = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            // Creative square
+            Box(
+                modifier = Modifier
+                    .size(72.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(service?.bg ?: SurfaceContainer),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = (service?.name ?: headline).take(3).uppercase(),
+                    fontSize = 17.sp,
+                    fontWeight = FontWeight.Black,
+                    color = service?.glow ?: Color.White,
+                )
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = headline,
+                    fontSize = 14.sp,
+                    lineHeight = 17.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = TextPrimary,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Spacer(Modifier.height(5.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = service?.name ?: headline,
+                        fontSize = 11.sp,
+                        lineHeight = 14.sp,
+                        color = Color.White.copy(alpha = 0.52f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Spacer(Modifier.width(5.dp))
+                    // Required attribution, right after the advertiser name.
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(3.dp))
+                            .background(Color.White.copy(alpha = 0.12f))
+                            .padding(horizontal = 5.dp, vertical = 1.dp),
+                    ) {
+                        Text(
+                            text = "Sponsored",
+                            fontSize = 10.sp,
+                            lineHeight = 12.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = Color.White.copy(alpha = 0.62f),
+                        )
+                    }
+                }
+            }
+        }
+        return
+    }
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -184,10 +316,10 @@ private fun RakutenAffiliatePresentation(
         // Brand tile
         Box(
             modifier = Modifier
-                .size(if (feedStyle) 60.dp else 56.dp)
-                .clip(RoundedCornerShape(if (feedStyle) 10.dp else 8.dp))
+                .size(56.dp)
+                .clip(RoundedCornerShape(8.dp))
                 .background(service?.bg ?: SurfaceContainer)
-                .border(0.5.dp, OutlineVariant, RoundedCornerShape(if (feedStyle) 10.dp else 8.dp)),
+                .border(0.5.dp, OutlineVariant, RoundedCornerShape(8.dp)),
             contentAlignment = Alignment.Center,
         ) {
             Text(
@@ -226,7 +358,7 @@ private fun RakutenAffiliatePresentation(
         Box(
             modifier = Modifier
                 .heightIn(min = 28.dp)
-                .clip(RoundedCornerShape(if (feedStyle) 12.dp else 8.dp))
+                .clip(RoundedCornerShape(8.dp))
                 .background(BrandOrange)
                 .padding(horizontal = 12.dp, vertical = 6.dp),
             contentAlignment = Alignment.Center,

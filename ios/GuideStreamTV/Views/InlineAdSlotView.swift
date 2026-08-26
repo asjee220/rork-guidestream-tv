@@ -7,8 +7,12 @@
 //  selects an offer by slot index from the services the user hasn't
 //  selected, and renders a SponsoredSlotView with the appropriate adSource,
 //  sectionKey, and preferredSource. When every pool service is owned the
-//  Rakuten card is suppressed and the slot renders native-AdMob-only. The
-//  caller owns dismissal state.
+//  Rakuten card is suppressed and the slot renders native-AdMob-only.
+//
+//  The slot owns its own dismissal state: tapping the chip's close control
+//  hides it for the lifetime of the view and also calls the caller's
+//  `onDismiss`, so surfaces that track dismissal themselves (HomeView) keep
+//  working and surfaces that don't still get a working close control.
 //
 
 import SwiftUI
@@ -37,15 +41,46 @@ internal let inlineAdOfferPool: [(serviceId: String, headline: String, subtitle:
     ("peacock", "Stream free on Peacock", "NBC shows & live sports · Free tier")
 ]
 
-/// Renders a single inline ad slot. The caller controls visibility (e.g.
-/// via a dismissed set) — this view itself does not conditionally hide.
+/// Renders a single inline ad slot. The slot hides itself once its close
+/// control is tapped and forwards the same event to `onDismiss`, so callers
+/// that keep their own dismissed set stay in sync.
 struct InlineAdSlotView: View {
     let slotIndex: Int
     let adSource: String
     let sectionKey: String
     let onDismiss: () -> Void
 
+    /// Slots dismissed this session, keyed by surface and index. Static
+    /// because these slots live inside lazy containers that destroy and
+    /// rebuild rows as the user scrolls — per-row `@State` alone would
+    /// resurrect a dismissed chip on scroll-back. Cleared on relaunch.
+    @MainActor private static var dismissedKeys: Set<String> = []
+
+    /// Redraw trigger for this row; the static set above is what actually
+    /// remembers the dismissal.
+    @State private var isDismissed = false
+
+    private var dismissKey: String { "\(sectionKey)_\(slotIndex)" }
+
+    /// Hides the slot, remembers it for the session, then hands the event to
+    /// the caller so surfaces with their own dismissed set stay in sync.
+    private func dismiss() {
+        InlineAdSlotView.dismissedKeys.insert(dismissKey)
+        isDismissed = true
+        onDismiss()
+    }
+
+    @ViewBuilder
     var body: some View {
+        if isDismissed || InlineAdSlotView.dismissedKeys.contains(dismissKey) {
+            EmptyView()
+        } else {
+            slot
+        }
+    }
+
+    @ViewBuilder
+    private var slot: some View {
         let offer = InlineAdSlotView.selectOffer(for: slotIndex)
         if let offer {
             let service = StreamingCatalog.service(for: offer.serviceId)
@@ -65,7 +100,7 @@ struct InlineAdSlotView: View {
                         metadata: ["section": "\(sectionKey)_\(slotIndex)"]
                     )
                 },
-                onDismiss: onDismiss,
+                onDismiss: dismiss,
                 adSource: adSource,
                 compact: true,
                 preferredSource: slotIndex % 2 == 0 ? .adMobFirst : .rakutenFirst,
@@ -83,7 +118,7 @@ struct InlineAdSlotView: View {
                 headline: "",
                 subtitle: "",
                 onTap: {},
-                onDismiss: onDismiss,
+                onDismiss: dismiss,
                 adSource: adSource,
                 compact: true,
                 preferredSource: slotIndex % 2 == 0 ? .adMobFirst : .rakutenFirst,
