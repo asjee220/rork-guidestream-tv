@@ -14,8 +14,12 @@ struct TVWatchListView: View {
     @State private var social = SocialViewModel.shared
     @State private var pendingDetail: TVTitleDetail?
 
+    /// Six columns that share the row's width rather than each claiming a
+    /// fixed 260pt. Fixed columns totalled 1740pt, more than the row has
+    /// once the rail inset and padding are taken out, so the last one had
+    /// nowhere to go.
     private let columns: [GridItem] = Array(
-        repeating: GridItem(.fixed(260), spacing: 36),
+        repeating: GridItem(.flexible(minimum: 200), spacing: 36),
         count: 6
     )
 
@@ -29,7 +33,8 @@ struct TVWatchListView: View {
                 ScrollView(.vertical, showsIndicators: false) {
                     VStack(alignment: .leading, spacing: 32) {
                         header
-                            .padding(.horizontal, 80)
+                            .padding(.leading, 80)
+                            .padding(.trailing, 40)
                             .padding(.top, 24)
 
                         LazyVGrid(columns: columns, alignment: .leading, spacing: 48) {
@@ -89,7 +94,8 @@ struct TVWatchListView: View {
                                 }
                             }
                         }
-                        .padding(.horizontal, 80)
+                        .padding(.leading, 80)
+                        .padding(.trailing, 40)
                         .padding(.bottom, 60)
                     }
                 }

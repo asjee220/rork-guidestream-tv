@@ -123,7 +123,8 @@ struct ProfileView: View {
                         // Floating tab bar safe area
                         Color.clear.frame(height: 110)
                     }
-                    .padding(.horizontal, 80)
+                    .padding(.leading, 80)
+                    .padding(.trailing, 40)
                     .padding(.top, 8)
                 }
                 .tracksTabBarVisibility()

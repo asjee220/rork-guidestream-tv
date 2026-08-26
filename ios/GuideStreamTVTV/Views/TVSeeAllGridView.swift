@@ -63,7 +63,8 @@ struct TVSeeAllGridView: View {
 
                 Color.clear.frame(height: 40)
             }
-            .padding(.horizontal, 80)
+            .padding(.leading, 80)
+            .padding(.trailing, 40)
             .padding(.top, 56)
         }
         .background(TVTheme.backgroundGradient)

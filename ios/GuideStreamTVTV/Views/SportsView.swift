@@ -152,7 +152,8 @@ struct SportsView: View {
                             }
                         }
                     }
-                    .padding(.horizontal, 80)
+                    .padding(.leading, 80)
+                    .padding(.trailing, 40)
                     .padding(.bottom, 100)
                     .padding(.top, 12)
                 }
