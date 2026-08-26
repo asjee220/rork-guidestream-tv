@@ -139,6 +139,7 @@ struct TVHomeView: View {
                     ) {
                         ForEach(everyonesWatching) { item in
                             everyonesWatchingCard(for: item)
+                                .tvSideMenuLeadingEdge(item.id == everyonesWatching.first?.id)
                         }
                     }
                 }
@@ -149,12 +150,14 @@ struct TVHomeView: View {
                     TVSponsoredChip(data: chip)
                         .id("chip_\(chip.advertiser.key)_home_everyones_watching")
                         .padding(.horizontal, 80)
+                        .tvSideMenuLeadingEdge(true)
                 }
 
                 // 3. Today's Pick — one full-width card, deterministic per
                 // local day.
                 if let pick = todaysPick {
                     todaysPickSection(for: pick)
+                        .tvSideMenuLeadingEdge(true)
                 }
 
                 // 4. Top Picks for You
@@ -174,6 +177,7 @@ struct TVHomeView: View {
                     ) {
                         ForEach(topPicks) { item in
                             topPickCard(for: item)
+                                .tvSideMenuLeadingEdge(item.id == topPicks.first?.id)
                         }
                     }
                 }
@@ -196,6 +200,7 @@ struct TVHomeView: View {
                         ) {
                             ForEach(items) { item in
                                 posterCard(for: item, accent: service.color)
+                                    .tvSideMenuLeadingEdge(item.id == items.first?.id)
                             }
                         }
                     }
@@ -218,6 +223,7 @@ struct TVHomeView: View {
                     ) {
                         ForEach(rail.items) { item in
                             nowNextCard(for: item, accent: rail.service.color)
+                                .tvSideMenuLeadingEdge(item.id == rail.items.first?.id)
                         }
                     }
                 }
@@ -229,6 +235,7 @@ struct TVHomeView: View {
                     TVSponsoredChip(data: chip)
                         .id("chip_\(chip.advertiser.key)_home_now_next")
                         .padding(.horizontal, 80)
+                        .tvSideMenuLeadingEdge(true)
                 }
 
                 // 7. New Episodes
@@ -236,6 +243,7 @@ struct TVHomeView: View {
                     TVRail(title: "New Episodes", accent: TVTheme.blue, count: newEpisodes.count) {
                         ForEach(newEpisodes) { item in
                             posterCard(for: item, accent: TVTheme.blue)
+                                .tvSideMenuLeadingEdge(item.id == newEpisodes.first?.id)
                         }
                     }
                 }
@@ -245,6 +253,7 @@ struct TVHomeView: View {
                     TVRail(title: "Coming to Streaming", accent: TVTheme.orange, count: comingToStreaming.count) {
                         ForEach(comingToStreaming) { item in
                             comingToStreamingCard(for: item)
+                                .tvSideMenuLeadingEdge(item.id == comingToStreaming.first?.id)
                         }
                     }
                 }
@@ -254,6 +263,7 @@ struct TVHomeView: View {
                     TVRail(title: "Creators / Podcasts for You", accent: TVTheme.blue, count: recommendedCreators.count) {
                         ForEach(recommendedCreators) { creator in
                             creatorCard(for: creator)
+                                .tvSideMenuLeadingEdge(creator.id == recommendedCreators.first?.id)
                         }
                     }
                 }
@@ -263,6 +273,7 @@ struct TVHomeView: View {
                     TVRail(title: "Live Sports", accent: TVTheme.blue, count: sports.count) {
                         ForEach(sports) { game in
                             TVSportsTile(game: game) { /* read-only for v1 */ }
+                                .tvSideMenuLeadingEdge(game.id == sports.first?.id)
                         }
                     }
                 }
