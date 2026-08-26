@@ -31,6 +31,15 @@ final class AppRouter {
         pendingSportsRoute = .gameDetail(game)
     }
 
+    /// Buffers a game-detail route from a push, by id. Deliberately does no
+    /// lookup: the destination resolves the game itself, so the tap navigates
+    /// immediately instead of waiting on the network and possibly never
+    /// arriving (GUI-46).
+    func showGameDetail(id gameId: String) {
+        selectedTab = .sports
+        pendingSportsRoute = .gameDetailById(gameId)
+    }
+
     /// Switch to the Home tab and buffer a title route. HomeView consumes
     /// `pendingTitleRoute` via onChange/onAppear, so this works from any tab
     /// and from cold launch (the route waits until HomeView first appears).

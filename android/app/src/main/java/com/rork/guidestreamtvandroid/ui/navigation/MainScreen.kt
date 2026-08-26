@@ -135,18 +135,24 @@ fun MainScreen(
         val gameId = pendingSportsGameId ?: return@LaunchedEffect
         router.consumePendingSportsRoute()
         selectedTab = AppTab.SPORTS
-        // Two lookups. ESPN's live scoreboard answers instantly for a game on
-        // today's slate but holds only today's slate and depends on ESPN
-        // answering the device; `sports_games` in Supabase always holds the row
-        // the push was generated from. Without the fallback a "Final" push
-        // tapped later opened nothing at all (GUI-46).
+        // GUI-46, second pass: Supabase first, ESPN second — the reverse of
+        // the original order. `sports_games` is a single indexed row that by
+        // construction always holds the pushed game (the same edge function
+        // writes the row and sends the notification), so it opens the sheet
+        // almost immediately. `fetchAll()` fans out to nine ESPN scoreboards
+        // with no timeout and waits for all of them, and ESPN blocks callers
+        // by IP, so leading with it meant the tap did nothing for several
+        // seconds — or, if a request hung, for ever. It still runs, but only
+        // to upgrade the sheet with the team logos and colours the table does
+        // not carry.
         val service = SportsService.get()
-        val game = service.fetchAll().firstOrNull { it.id == gameId }
-            ?: service.fetchGame(gameId)
-        if (game != null) {
-            selectedGame = game
-        } else {
-            Log.w("MainScreen", "sports push game_id $gameId not found in ESPN or sports_games")
+        val row = service.fetchGame(gameId)
+        if (row != null) selectedGame = row
+        val rich = service.fetchAll().firstOrNull { it.id == gameId }
+        if (rich != null) {
+            selectedGame = rich
+        } else if (row == null) {
+            Log.w("MainScreen", "sports push game_id $gameId not found in sports_games or ESPN")
         }
     }
 

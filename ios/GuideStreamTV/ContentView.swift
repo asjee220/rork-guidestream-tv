@@ -59,8 +59,11 @@ struct ContentView: View {
         // no fallback URL open).
         .onReceive(NotificationCenter.default.publisher(for: .guideStreamOpenSports)) { notification in
             guard let gameId = notification.userInfo?["gameId"] as? String, !gameId.isEmpty else { return }
-            router.selectedTab = .sports
-            resolveSportsRoute(gameId)
+            // AppDelegate writes the inbox *and* posts, so on the warm path the
+            // inbox is left holding this id. Clear it, or a later drain
+            // re-routes to a game the user already dealt with.
+            _ = PendingRouteInbox.shared.takeGameId()
+            router.showGameDetail(id: gameId)
         }
         .animation(.easeOut(duration: 0.3), value: auth.hasCompletedOnboarding)
         .animation(.easeOut(duration: 0.3), value: auth.isSignedIn)
@@ -264,36 +267,7 @@ struct ContentView: View {
             router.showTitle(route)
         }
         if let gameId = PendingRouteInbox.shared.takeGameId() {
-            router.selectedTab = .sports
-            resolveSportsRoute(gameId)
-        }
-    }
-
-    /// Resolves a sports game id and buffers the game-detail route in
-    /// `AppRouter`. Shared by the `.guideStreamOpenSports` `.onReceive`
-    /// handler and the cold-launch inbox drain so both entry points behave
-    /// identically.
-    ///
-    /// Two lookups, in order. `fetchAll()` reads ESPN's live scoreboards, so it
-    /// answers instantly for a game on today's slate — but it holds *only*
-    /// today's slate, and it depends on ESPN answering the device. A "Final"
-    /// push tapped later, or any tap made while that fetch fails, found nothing
-    /// and left the user staring at the Sports tab with no detail open, which
-    /// is the whole of GUI-46 on iOS. `sports_games` in Supabase always holds
-    /// the row the push was generated from, so it is the authoritative
-    /// fallback. Only a genuinely unknown id now opens nothing.
-    private func resolveSportsRoute(_ gameId: String) {
-        Task { @MainActor in
-            let games = await SportsService.shared.fetchAll()
-            if let game = games.first(where: { $0.id == gameId }) {
-                router.showGameDetail(game)
-                return
-            }
-            if let game = await SportsService.shared.fetchGame(id: gameId) {
-                router.showGameDetail(game)
-            } else {
-                print("[Route] sports push game_id \(gameId) not found in ESPN or sports_games")
-            }
+            router.showGameDetail(id: gameId)
         }
     }
 

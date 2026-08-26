@@ -40,6 +40,15 @@ enum SportsRoute: Hashable {
     case allUpcoming
     case allFinal
     case gameDetail(SportsGame)
+    /// Push-notification destination. Carries only the id, so navigation can
+    /// happen the instant the tap is handled — the game itself is resolved by
+    /// `SportsGameDetailLoader` once the screen is already on screen.
+    ///
+    /// GUI-46: the old path resolved the game *before* navigating, which meant
+    /// a tap did nothing at all until nine ESPN scoreboard requests had come
+    /// back (and nothing ever, if they did not). A tap must always open a
+    /// screen.
+    case gameDetailById(String)
 }
 
 // MARK: - SportsView
@@ -236,6 +245,8 @@ struct SportsView: View {
                     SportsListView(games: finalGames, section: .finalGames, sportFilter: selectedSport)
                 case .gameDetail(let game):
                     SportsGameDetailView(game: game)
+                case .gameDetailById(let gameId):
+                    SportsGameDetailLoader(gameId: gameId)
                 }
             }
             .sheet(item: $selectedGame) { game in
@@ -249,17 +260,18 @@ struct SportsView: View {
             await favorites.load()
             await load()
         }
-        .onChange(of: router.pendingSportsRoute) { _, route in
-            if let route {
-                path.append(route)
-                router.pendingSportsRoute = nil
-            }
+        // GUI-46: `.task(id:)` runs both on first appearance AND on every
+        // change of the value, which closes the race the previous
+        // `.onChange` + `.onAppear` pair left open. A route set *while*
+        // SportsView was mounting — after `.onAppear` read nil but before
+        // `.onChange` was observing — was silently dropped, and the tap
+        // appeared to do nothing.
+        .task(id: router.pendingSportsRoute) {
+            guard let route = router.pendingSportsRoute else { return }
+            path.append(route)
+            router.pendingSportsRoute = nil
         }
         .onAppear {
-            if let route = router.pendingSportsRoute {
-                path.append(route)
-                router.pendingSportsRoute = nil
-            }
             Task { await favorites.load() }
         }
     }
