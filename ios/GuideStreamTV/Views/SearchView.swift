@@ -245,8 +245,23 @@ struct SearchView: View {
     @State private var followedIds: Set<String> = []
     @State private var streams = StreamsViewModel.shared
     @FocusState private var focused: Bool
+    /// Push stack for genre browse. SearchView is a full-screen cover with no
+    /// navigation of its own, so it brings its own.
+    @State private var browsePath: [BrowseRoute] = []
 
     var body: some View {
+        NavigationStack(path: $browsePath) {
+            root
+                .toolbar(.hidden, for: .navigationBar)
+                .navigationDestination(for: BrowseRoute.self) { route in
+                    browseDestination(route)
+                }
+        }
+    }
+
+    /// The search surface itself, one level down so browse results have a
+    /// stack to push onto.
+    private var root: some View {
         ZStack(alignment: .top) {
             BrandBackground()
 
@@ -332,7 +347,7 @@ struct SearchView: View {
                 // Content area
                 ScrollView(showsIndicators: false) {
                     if vm.query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                        popularGrid
+                        browseLanding
                     } else if vm.isSearching {
                         HStack { Spacer(); ProgressView().tint(Color.orange); Spacer() }
                             .padding(.top, 40)
@@ -346,11 +361,9 @@ struct SearchView: View {
         .onAppear {
             syncFollowed()
             Task { await vm.loadPopular() }
-            // Delay focus until the full-screen cover transition finishes;
-            // setting it immediately in onAppear often fails to summon the keyboard.
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
-                focused = true
-            }
+            // Deliberately no autofocus. The empty state is a browse surface
+            // now, and summoning the keyboard on appear covers most of it. The
+            // field takes focus when the user taps it.
         }
 
     }
@@ -475,6 +488,40 @@ struct SearchView: View {
     private func openTMDB(_ result: SearchResult) {
         if let cb = onSelectResult { cb(result); return }
         isPresented = false
+    }
+
+    // MARK: - Browse landing
+
+    /// Shown whenever the query is empty: genre tiles first, then the popular
+    /// grid that used to stand alone here.
+    private var browseLanding: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("BROWSE BY GENRE")
+                .font(.system(size: 11, weight: .bold))
+                .foregroundStyle(Color.white.opacity(0.4))
+                .tracking(0.8)
+                .padding(.horizontal, 16)
+                .padding(.top, 16)
+                .padding(.bottom, 10)
+
+            GenreTileGrid { genre in
+                focused = false
+                browsePath.append(.genre(genre.id))
+            }
+            .padding(.horizontal, 16)
+
+            popularGrid
+        }
+    }
+
+    @ViewBuilder
+    private func browseDestination(_ route: BrowseRoute) -> some View {
+        switch route {
+        case .genre(let genreId):
+            BrowseResultsView(genreId: genreId) { result in
+                openTMDB(SearchResult(browseResult: result))
+            }
+        }
     }
 
     // MARK: - Popular grid

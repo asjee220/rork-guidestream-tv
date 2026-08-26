@@ -241,6 +241,21 @@ private nonisolated struct TMDBTrendingEnvelope: Decodable, Sendable {
     let results: [TMDBResult]
 }
 
+/// Discover envelope. Unlike the trending one this keeps the totals, because
+/// the browse count row ("214 titles") is the whole point of the screen.
+private nonisolated struct TMDBDiscoverEnvelope: Decodable, Sendable {
+    let page: Int?
+    let results: [TMDBResult]
+    let totalPages: Int?
+    let totalResults: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case page, results
+        case totalPages = "total_pages"
+        case totalResults = "total_results"
+    }
+}
+
 // MARK: - Release Dates
 
 nonisolated struct TMDBReleaseDatesEnvelope: Decodable, Sendable {
@@ -943,6 +958,106 @@ nonisolated struct TMDBService {
                     genreIds: r.genreIds
                 )
             }
+    }
+
+    // MARK: - Search & Browse
+
+    /// The single composable discover call behind Search & Browse. Every filter
+    /// maps to a TMDB discover parameter, so nothing here needs a new endpoint,
+    /// a new key, or any backend work.
+    ///
+    /// A `.all` media type runs the tv and movie paths concurrently and
+    /// interleaves them, so one side cannot crowd the other off the first
+    /// screen. If one path fails the other is still returned.
+    func discoverBrowse(_ filters: BrowseFilters, page: Int = 1) async throws -> BrowsePage {
+        let f = filters.resolved()
+
+        if let path = f.resolvedMediaType.discoverPath {
+            return try await discoverBrowsePage(f, path: path, page: page)
+        }
+
+        async let tvPage = try? await discoverBrowsePage(f, path: "tv", page: page)
+        async let moviePage = try? await discoverBrowsePage(f, path: "movie", page: page)
+        let (tv, movie) = await (tvPage, moviePage)
+
+        guard tv != nil || movie != nil else { throw URLError(.badServerResponse) }
+        let t = tv ?? .empty
+        let m = movie ?? .empty
+        return BrowsePage(
+            results: Self.interleaveBrowse(t.results, m.results),
+            page: page,
+            totalPages: max(t.totalPages, m.totalPages),
+            totalResults: t.totalResults + m.totalResults
+        )
+    }
+
+    /// One discover page for one media type.
+    private func discoverBrowsePage(_ f: BrowseFilters, path: String, page: Int) async throws -> BrowsePage {
+        let locale = DeviceLocale.current()
+        var url = "\(base)/discover/\(path)?api_key=\(apiKey)&language=\(locale.tmdbLanguage)&page=\(page)"
+        url += "&sort_by=\(f.sort.tmdbValue(for: path))"
+
+        // Genre ids differ per media type, so resolve each selection against
+        // the path being queried and drop the ones that do not apply.
+        let genreIds = f.selectedGenres.compactMap { $0.genreId(for: path) }
+        if !genreIds.isEmpty {
+            url += "&with_genres=\(genreIds.map(String.init).joined(separator: "%2C"))"
+        }
+
+        // Anime pins a single language; International supplies a pooled list.
+        // Both arrive as `with_original_language`.
+        if let language = f.selectedGenres.compactMap({ $0.originalLanguage ?? $0.languagePool }).first {
+            let encoded = language.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? language
+            url += "&with_original_language=\(encoded)"
+        }
+
+        let providers = f.effectiveProviderIds
+        if !providers.isEmpty {
+            url += "&watch_region=\(locale.region)"
+            url += "&with_watch_providers=\(providers.map(String.init).joined(separator: "%7C"))"
+            url += "&with_watch_monetization_types=\(f.includeFreeWithAds ? "flatrate%7Cads" : "flatrate")"
+        }
+
+        if let years = f.yearRange {
+            let lower = "\(years.lowerBound)-01-01"
+            let upper = "\(years.upperBound)-12-31"
+            if path == "movie" {
+                url += "&primary_release_date.gte=\(lower)&primary_release_date.lte=\(upper)"
+            } else {
+                url += "&first_air_date.gte=\(lower)&first_air_date.lte=\(upper)"
+            }
+        }
+
+        if let rating = f.minRating {
+            url += "&vote_average.gte=\(rating)"
+        }
+        // A vote floor whenever rating is filtered on or sorted by, or a 10.0
+        // from three votes leads the grid.
+        if f.minRating != nil || f.sort.needsVoteFloor {
+            url += "&vote_count.gte=50"
+        }
+
+        let data = try await get(url)
+        let env = try JSONDecoder().decode(TMDBDiscoverEnvelope.self, from: data)
+        return BrowsePage(
+            results: env.results.map { stamp($0, mediaType: path) },
+            page: env.page ?? page,
+            totalPages: env.totalPages ?? 1,
+            totalResults: env.totalResults ?? env.results.count
+        )
+    }
+
+    /// Alternate two result lists, de-duplicating by TMDB id and appending
+    /// whatever remains of the longer one.
+    private static func interleaveBrowse(_ a: [TMDBResult], _ b: [TMDBResult]) -> [TMDBResult] {
+        var out: [TMDBResult] = []
+        out.reserveCapacity(a.count + b.count)
+        var seen = Set<Int>()
+        for i in 0..<max(a.count, b.count) {
+            if i < a.count, seen.insert(a[i].id).inserted { out.append(a[i]) }
+            if i < b.count, seen.insert(b[i].id).inserted { out.append(b[i]) }
+        }
+        return out
     }
 
     private func get(_ urlString: String) async throws -> Data {

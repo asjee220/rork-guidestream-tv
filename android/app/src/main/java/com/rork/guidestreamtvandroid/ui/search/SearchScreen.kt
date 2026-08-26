@@ -37,6 +37,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
@@ -56,6 +58,8 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.rork.guidestreamtvandroid.ui.browse.BrowseResultsScreen
+import com.rork.guidestreamtvandroid.ui.browse.GenreTileGrid
 import com.rork.guidestreamtvandroid.ui.ads.InlineAdSlot
 import com.rork.guidestreamtvandroid.ui.components.RemoteImage
 import com.rork.guidestreamtvandroid.data.models.SourceKind
@@ -116,6 +120,19 @@ fun SearchScreen(
     val followedIds = remember(userStreams) { userStreams.map { it.titleId }.toSet() }
 
     LaunchedEffect(Unit) { vm.loadPopular() }
+
+    // Genre browse is pushed inside Search rather than through the app graph,
+    // because Search itself is a full-screen overlay, not a nav destination.
+    var browseGenreId by remember { mutableStateOf<String?>(null) }
+    browseGenreId?.let { genreId ->
+        BrowseResultsScreen(
+            genreId = genreId,
+            onBack = { browseGenreId = null },
+            onOpenTitle = onOpenTitle,
+            modifier = modifier,
+        )
+        return
+    }
 
     Column(
         modifier = modifier.fillMaxSize().statusBarsPadding(),
@@ -231,33 +248,52 @@ fun SearchScreen(
 
         // Results
         if (query.isBlank()) {
-            // Popular trending
-            SectionHeader(
-                text = "POPULAR ON YOUR SERVICES",
-                topPadding = 16.dp,
-                bottomPadding = 10.dp,
-            )
-            if (popular.isEmpty()) {
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.TopCenter,
-                ) {
-                    CircularProgressIndicator(
-                        color = BrandOrange,
-                        modifier = Modifier.padding(top = 40.dp).size(28.dp),
-                    )
+            // Browse landing: genre tiles first, then the popular grid that
+            // used to stand alone here. Both live inside the one lazy grid so
+            // they scroll together — a fixed tile block above a scrolling grid
+            // leaves almost no room for the grid on a phone.
+            val dismissedPopularAdSlots = remember { mutableStateMapOf<Int, Boolean>() }
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(3),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                    horizontal = 12.dp,
+                    vertical = 4.dp,
+                ),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                item(span = { GridItemSpan(maxLineSpan) }) {
+                    Column {
+                        SectionHeader(
+                            text = "BROWSE BY GENRE",
+                            topPadding = 12.dp,
+                            bottomPadding = 10.dp,
+                        )
+                        GenreTileGrid(
+                            onSelect = { genre -> browseGenreId = genre.id },
+                            modifier = Modifier.padding(horizontal = 4.dp),
+                        )
+                        SectionHeader(
+                            text = "POPULAR ON YOUR SERVICES",
+                            topPadding = 22.dp,
+                            bottomPadding = 10.dp,
+                        )
+                    }
                 }
-            } else {
-                val dismissedPopularAdSlots = remember { mutableStateMapOf<Int, Boolean>() }
-                LazyVerticalGrid(
-                    columns = GridCells.Fixed(3),
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                        horizontal = 12.dp,
-                        vertical = 4.dp,
-                    ),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
+
+                if (popular.isEmpty()) {
+                    item(span = { GridItemSpan(maxLineSpan) }) {
+                        Box(
+                            modifier = Modifier.fillMaxWidth(),
+                            contentAlignment = Alignment.TopCenter,
+                        ) {
+                            CircularProgressIndicator(
+                                color = BrandOrange,
+                                modifier = Modifier.padding(top = 24.dp).size(28.dp),
+                            )
+                        }
+                    }
+                } else {
                     popular.chunked(9).forEachIndexed { chunkIdx, chunk ->
                         items(chunk) { result ->
                             SearchPosterCard(
@@ -285,8 +321,9 @@ fun SearchScreen(
                             }
                         }
                     }
-                    item { BottomSafeSpacer(withTabBar = false) }
                 }
+
+                item(span = { GridItemSpan(maxLineSpan) }) { BottomSafeSpacer(withTabBar = false) }
             }
         } else if (isSearching && tmdbResults.isEmpty() && creatorResults.isEmpty()) {
             Box(
