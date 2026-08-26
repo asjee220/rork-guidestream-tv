@@ -152,7 +152,10 @@ struct SportsView: View {
                             }
                         }
                     }
-                    .padding(.horizontal, 80)
+                    // Sports already looked right, so it keeps its current
+                    // geometry: 160 reproduces exactly where this content sat
+                    // when the safe area was still adding 80pt of its own.
+                    .padding(.horizontal, 160)
                     .padding(.bottom, 100)
                     .padding(.top, 12)
                 }

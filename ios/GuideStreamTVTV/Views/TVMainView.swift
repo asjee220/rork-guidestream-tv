@@ -60,6 +60,18 @@ struct TVMainView: View {
             TVSideMenu(selection: $selection, isOpen: $menuIsOpen)
         }
         .focusScope(rootNamespace)
+        // tvOS insets everything by its safe area — 80pt horizontal, 60pt
+        // vertical — which left a band on all four sides and made every
+        // number below mean something different from what it says. With the
+        // safe area in play the rail sat at 112-184pt and the content at
+        // 152pt, so the rail overlapped the hero art instead of clearing it
+        // by the 48pt the comment on contentLeadingInset describes.
+        //
+        // Ignoring it makes the layout mean what it was written to mean: the
+        // rail at 32pt, the first poster at 152pt, and full-bleed art
+        // reaching the physical edge. Title-safe margins still come from the
+        // 80pt horizontal padding each screen applies to its own text.
+        .ignoresSafeArea()
         .animation(.easeOut(duration: 0.25), value: menuIsOpen)
         .background(TVTheme.backgroundGradient.ignoresSafeArea())
         .onChange(of: selection) { _, _ in
