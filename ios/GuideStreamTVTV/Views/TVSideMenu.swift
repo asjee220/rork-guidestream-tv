@@ -56,18 +56,11 @@ struct TVSideMenu: View {
 
     @FocusState private var focusedItem: TVSideMenuItem?
 
-    /// Focus scope for the expanded menu. tvOS will not reliably honour a
-    /// programmatic @FocusState assignment into a section whose focusable
-    /// views mount in the same update — the assignment is silently ignored
-    /// and no change event follows, so a retry that inspects `focusedItem`
-    /// learns nothing. The selected row therefore also declares itself the
-    /// scope's default focus and the scope is reset when the menu opens,
-    /// the same pattern TVHeroCarousel uses to claim its CTA.
+    /// Focus scope for the rail. The selected row declares itself the
+    /// scope's default focus, so focus arriving from the content lands on
+    /// the row the user is currently on rather than the topmost one.
     @Namespace private var menuNamespace
     @Environment(\.resetFocus) private var resetFocus
-    /// True once focus has actually landed on a row for this opening.
-    @State private var focusLanded: Bool = false
-    @State private var focusRetryTask: Task<Void, Never>?
 
     /// Collapsed rail width — icon-only, narrow, with the brand icon at
     /// the top. Mirrors the closed-state mockup.
@@ -122,49 +115,26 @@ struct TVSideMenu: View {
         .focusSection()
         .focusScope(menuNamespace)
         .animation(.easeOut(duration: 0.25), value: isOpen)
-        .onMoveCommand { direction in
-            // A right move from inside the menu closes it and hands focus
-            // back to the content. (Natural focus moves into the content
-            // also close it via the focusedItem change below.)
-            if direction == .right, isOpen {
-                close()
-            }
-        }
         .onChange(of: isOpen) { _, open in
-            focusRetryTask?.cancel()
-            focusRetryTask = nil
-            focusLanded = false
-            guard open else { return }
-            // Reset makes tvOS re-evaluate default focus inside the scope
-            // now that the buttons exist, which is what actually moves
-            // focus in. The assignment and the retries are belt-and-braces
-            // and stop as soon as focus has landed, so they never yank a
-            // row the user has already moved to.
+            // The hero raises isOpen without focus moving, because it
+            // consumes its own left/right move commands to step the carousel
+            // and the focus engine never sees them there. Pull focus in for
+            // that case only. Unlike before, the rows are mounted in both
+            // states, so this assignment is not racing their creation.
+            guard open, focusedItem == nil else { return }
             resetFocus(in: menuNamespace)
             focusedItem = selection
-            focusRetryTask = Task { @MainActor in
-                for _ in 0..<5 {
-                    try? await Task.sleep(for: .milliseconds(100))
-                    if Task.isCancelled { return }
-                    guard isOpen, !focusLanded else { return }
-                    resetFocus(in: menuNamespace)
-                    focusedItem = selection
-                }
-            }
         }
         .onChange(of: focusedItem) { _, focused in
-            // Closes when a move hands focus back to the content without
-            // a selection. This never OPENS the menu — focus arriving in
-            // the rail is never what expands it. The focusLanded gate stops
-            // a nil seen while focus is still being handed in from
-            // collapsing the menu before it was ever focused.
-            if focused != nil {
-                focusLanded = true
-                return
-            }
-            if isOpen && focusLanded {
-                close()
-            }
+            // The rail is a real focus section, so the focus engine moves
+            // into it from the leading-most item of any row and back out to
+            // the right — exactly the Paramount+ behaviour. Expansion simply
+            // follows focus; nothing intercepts move commands.
+            //
+            // Launch focus cannot land here: TVMainView marks the content as
+            // prefersDefaultFocus in the root scope, so tvOS picks the
+            // content, not the rail, on first appearance.
+            isOpen = (focused != nil)
         }
     }
 
@@ -196,14 +166,8 @@ struct TVSideMenu: View {
     /// While collapsed the rows are plain views — the menu contains no
     /// focusable views, so tvOS can neither assign it initial focus nor
     /// land focus in it by accident. Only the open state mounts buttons.
-    @ViewBuilder
     private func menuRow(for item: TVSideMenuItem) -> some View {
-        if isOpen {
-            menuButton(for: item)
-        } else {
-            rowContent(for: item, isFocused: false)
-                .padding(.vertical, 6)
-        }
+        menuButton(for: item)
     }
 
     private func menuButton(for item: TVSideMenuItem) -> some View {
@@ -266,18 +230,16 @@ struct TVSideMenu: View {
 
     // MARK: - State
 
-    private func close() {
-        isOpen = false
-        focusedItem = nil
-    }
-
     private func select(_ item: TVSideMenuItem) {
         if selection != item {
             selection = item
         }
-        // Collapse immediately and hand focus to the selected screen. The
-        // already-selected screen stays mounted and untouched.
-        close()
+        // TVMainView resets focus to the content on any selection change,
+        // which collapses the rail via the focus change above. Selecting the
+        // already-selected item still needs an explicit collapse, since
+        // `selection` does not change and no reset fires.
+        isOpen = false
+        focusedItem = nil
     }
 }
 

@@ -28,20 +28,20 @@ struct TVMainView: View {
     @State private var selection: TVSideMenuItem = .home
     @State private var menuIsOpen: Bool = false
 
+    /// Root focus scope. The content declares itself the default focus in
+    /// this scope, which is what keeps tvOS's initial focus assignment out
+    /// of the side rail now that the rail is focusable in both states.
+    /// Without it tvOS picks the leading-most focusable view — the rail —
+    /// and the menu would be expanded before the user touches the remote.
+    @Namespace private var rootNamespace
+    @Environment(\.resetFocus) private var resetFocus
+
     var body: some View {
         ZStack(alignment: .leading) {
             screen(for: selection)
                 .padding(.leading, contentLeadingInset)
                 .focusSection()
-                .onMoveCommand { direction in
-                    // The only thing that opens the menu: a deliberate left
-                    // move command issued from the content's leading edge —
-                    // the focus engine found nothing further left, so the
-                    // command falls through to here.
-                    if direction == .left, !menuIsOpen {
-                        menuIsOpen = true
-                    }
-                }
+                .prefersDefaultFocus(true, in: rootNamespace)
 
             // Leading-to-trailing scrim between the open menu and content.
             if menuIsOpen {
@@ -59,16 +59,21 @@ struct TVMainView: View {
 
             TVSideMenu(selection: $selection, isOpen: $menuIsOpen)
         }
+        .focusScope(rootNamespace)
         .animation(.easeOut(duration: 0.25), value: menuIsOpen)
         .background(TVTheme.backgroundGradient.ignoresSafeArea())
         .onChange(of: selection) { _, _ in
             // The menu is closed on every screen entry, including returns
-            // from sheets and full-screen covers.
+            // from sheets and full-screen covers. Resetting the root scope
+            // hands focus back to the content, which is what collapses the
+            // rail now that expansion follows focus.
             menuIsOpen = false
+            resetFocus(in: rootNamespace)
         }
         .onPreferenceChange(TVHeroSideMenuRequestKey.self) { count in
-            // A left move at the hero's first item falls through to the
-            // side menu rather than being swallowed by the hero.
+            // The hero consumes its own move commands to step the carousel,
+            // so the focus engine never sees a left move there. This is the
+            // one place that still has to ask for the menu explicitly.
             if count > 0, !menuIsOpen {
                 menuIsOpen = true
             }
