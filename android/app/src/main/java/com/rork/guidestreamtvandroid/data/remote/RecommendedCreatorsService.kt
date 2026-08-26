@@ -47,10 +47,26 @@ data class RecommendedCreatorsResponse(
  * server-ranked list of creators/podcasts to recommend. Uses the same raw Ktor
  * anon-key POST pattern as `WatchmodeResolveService`. The edge function owns the
  * ranking algorithm; the client preserves the returned order.
+ *
+ * `limit` reached the function in v9; older versions ignore it and always
+ * return 12, so passing it is safe either way.
  */
 object RecommendedCreatorsService {
 
-    suspend fun recommend(followedIds: List<String>): List<RecommendedCreator> {
+    /** The home rail's size, and the edge function's own default. */
+    const val RAIL_LIMIT = 12
+
+    /**
+     * How many the "Creators/Podcasts for You" See-all screen asks for. The
+     * edge function clamps to 50, so this is its ceiling; a See-all that could
+     * only return the rail's 12 would show nothing the rail did not already.
+     */
+    const val DEEP_LIMIT = 50
+
+    suspend fun recommend(
+        followedIds: List<String>,
+        limit: Int = RAIL_LIMIT,
+    ): List<RecommendedCreator> {
         if (followedIds.isEmpty()) return emptyList()
         return try {
             val client = HttpClient {
@@ -59,6 +75,7 @@ object RecommendedCreatorsService {
             val url = "${SupabaseConfig.URL.trim()}/functions/v1/recommend_creators"
             val body = buildJsonObject {
                 put("followedIds", JsonArray(followedIds.map { JsonPrimitive(it) }))
+                put("limit", JsonPrimitive(limit))
             }
             val response: HttpResponse = client.post(url) {
                 contentType(ContentType.Application.Json)

@@ -38,6 +38,8 @@ import com.rork.guidestreamtvandroid.ui.detail.CreatorDetailScreen
 import com.rork.guidestreamtvandroid.ui.detail.EpisodeDetailSheet
 import com.rork.guidestreamtvandroid.ui.detail.ShowDetailScreen
 import com.rork.guidestreamtvandroid.ui.reels.ReelsScreen
+import com.rork.guidestreamtvandroid.data.remote.RecommendedCreator
+import com.rork.guidestreamtvandroid.ui.screens.CreatorsForYouListScreen
 import com.rork.guidestreamtvandroid.ui.screens.HomeListScreen
 import com.rork.guidestreamtvandroid.ui.screens.HomeScreen
 import com.rork.guidestreamtvandroid.ui.screens.AroundTheWorldScreen
@@ -94,6 +96,10 @@ fun MainScreen(
     // Around the World country browser — holds the seed region code.
     var showAroundTheWorld by remember { mutableStateOf<String?>(null) }
     var showHomeList by remember { mutableStateOf<HomeListTarget?>(null) }
+    /** Creators/Podcasts for You See-all overlay: the rail's recommendations
+     *  plus the followed ids, so the screen can seed instantly and then ask
+     *  the recommender for a deeper list. */
+    var showCreatorsForYou by remember { mutableStateOf<Pair<List<RecommendedCreator>, List<String>>?>(null) }
     var showWatchList by remember { mutableStateOf(false) }
     var showWidgetSetup by remember { mutableStateOf(false) }
     val coachMark = CoachMarkManager.get()
@@ -168,6 +174,9 @@ fun MainScreen(
                     },
                     onOpenAroundTheWorld = { regionCode -> showAroundTheWorld = regionCode },
                     onSeeAllList = { target -> showHomeList = target },
+                    onSeeAllCreators = { creators, followedIds ->
+                        showCreatorsForYou = creators to followedIds
+                    },
                     onOpenWatchList = { showWatchList = true },
                     onOpenWidgetSetup = { showWidgetSetup = true },
                 )
@@ -203,7 +212,7 @@ fun MainScreen(
         }
 
         // Full-screen overlay open flag — hides the floating tab bar behind opaque covers
-        val overlayOpen = showDetail != null || showCreatorDetail != null || showSearch || selectedGame != null || showPopularCategories != null || showAroundTheWorld != null || showHomeList != null || showWatchList || showWidgetSetup || showAskSheet
+        val overlayOpen = showDetail != null || showCreatorDetail != null || showSearch || selectedGame != null || showPopularCategories != null || showAroundTheWorld != null || showHomeList != null || showCreatorsForYou != null || showWatchList || showWidgetSetup || showAskSheet
 
         // Show detail (full-screen cover equivalent)
         showDetail?.let { route ->
@@ -352,6 +361,29 @@ fun MainScreen(
                         } else {
                             detailSheetRoute = route
                         }
+                    },
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
+        }
+
+        // Creators/Podcasts for You "See all" grid
+        showCreatorsForYou?.let { (seed, followedIds) ->
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Navy)
+                    .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { },
+            ) {
+                CreatorsForYouListScreen(
+                    initialCreators = seed,
+                    followedIds = followedIds,
+                    onBack = { showCreatorsForYou = null },
+                    onOpenCreator = { creator ->
+                        showCreatorsForYou = null
+                        // Recommendations are always non-TMDB sources, so this
+                        // is always the creator detail screen.
+                        showCreatorDetail = creator.titleId
                     },
                     modifier = Modifier.fillMaxSize(),
                 )
