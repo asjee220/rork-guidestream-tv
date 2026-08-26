@@ -79,6 +79,12 @@ struct TVRail<Content: View>: View {
                 .padding(.horizontal, 80)
                 .padding(.vertical, 30)
             }
+            // Cards are their own section too. With both halves sectioned,
+            // an up move out of the cards resolves section-to-section and
+            // lands in the header above, instead of being decided purely on
+            // frame overlap — which handed it to whatever the hero happened
+            // to have sitting directly above the focused card.
+            .focusSection()
         }
     }
 
