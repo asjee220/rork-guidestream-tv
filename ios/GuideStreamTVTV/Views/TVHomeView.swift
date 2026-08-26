@@ -114,13 +114,20 @@ struct TVHomeView: View {
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
             LazyVStack(alignment: .leading, spacing: 56) {
-                // 1. Hero — fills the safe area; the negative bottom pull
-                // lets the first rail sit over the hero art at the fold so
-                // the embedded video / poster fades off into the rail.
+                // 1. Hero — fills the safe area.
+                //
+                // This used to carry .padding(.bottom, -160) so the first
+                // rail sat over the hero art at the fold. That negative pull
+                // left the hero's focusable frame covering the first rail's
+                // header, so an up move from a poster was resolved against
+                // the hero's Add to Watch List CTA instead of the header, and
+                // See all could not be reached at all. Sectioning the header
+                // and the card row both failed to outrank an overlapping,
+                // vertically-aligned candidate. Removing the overlap removes
+                // the competitor, which is what actually fixes it.
                 heroSection
                     .containerRelativeFrame(.vertical)
                     .padding(.top, 8)
-                    .padding(.bottom, -160)
 
                 // 2. Everyone's Watching
                 if !everyonesWatching.isEmpty {
