@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -221,7 +222,7 @@ fun SponsoredSlot(
 
 /**
  * Inline Rakuten affiliate presentation. In feed style it is the 96dp chip:
- * a 72dp brand tile, up to three lines of headline, and an
+ * a flush 96dp brand square, up to three lines of headline, and an
  * "advertiser · Sponsored" line. Otherwise the older tile + subtitle +
  * "Get offer" row. Tapping anywhere opens the tracked link.
  */
@@ -240,29 +241,34 @@ private fun RakutenAffiliatePresentation(
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
-                ) { onClick() }
-                // End inset clears the close control so a three-line headline
-                // never runs underneath it.
-                .padding(start = 12.dp, end = 44.dp, top = 12.dp, bottom = 12.dp),
+                ) { onClick() },
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            // Creative square
+            // Creative — flush to the start edge and the full height of the
+            // chip. Square-cornered: the caller's clip rounds the two corners
+            // that meet the card's edges.
             Box(
                 modifier = Modifier
-                    .size(72.dp)
-                    .clip(RoundedCornerShape(8.dp))
+                    .fillMaxHeight()
+                    .width(96.dp)
                     .background(service?.bg ?: SurfaceContainer),
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
                     text = (service?.name ?: headline).take(3).uppercase(),
-                    fontSize = 17.sp,
+                    fontSize = 19.sp,
                     fontWeight = FontWeight.Black,
                     color = service?.glow ?: Color.White,
                 )
             }
             Spacer(Modifier.width(12.dp))
-            Column(modifier = Modifier.weight(1f)) {
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    // End inset clears the close control so a three-line
+                    // headline never runs underneath it.
+                    .padding(end = 44.dp, top = 12.dp, bottom = 12.dp),
+            ) {
                 Text(
                     text = headline,
                     fontSize = 14.sp,

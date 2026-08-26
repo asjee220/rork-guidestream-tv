@@ -157,12 +157,13 @@ struct SponsoredAffiliateCard: View {
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, 12)
                 }
-                .padding(.leading, 12)
                 // Trailing inset clears the close control so a three-line
-                // headline never runs underneath it.
+                // headline never runs underneath it. No leading or vertical
+                // inset — the creative runs edge to edge and the card's own
+                // clip shape rounds its outer corners.
                 .padding(.trailing, 44)
-                .padding(.vertical, 12)
                 .frame(height: 96)
                 .frame(maxWidth: .infinity)
                 .background(
@@ -210,25 +211,27 @@ struct SponsoredAffiliateCard: View {
             )
     }
 
-    /// 72pt brand tile — matches the native chip's creative square.
+    /// 96pt brand tile — a flush square filling the leading edge of the chip,
+    /// matching the native chip's creative. Square-cornered on purpose: the
+    /// card's clip shape rounds the two corners that meet its edges.
     private var feedChipBrandTile: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 8)
+            Rectangle()
                 .fill(service?.bg ?? Color.white.opacity(0.10))
-                .frame(width: 72, height: 72)
+                .frame(width: 96, height: 96)
             if let service {
                 ServiceBrandContent(
                     display: service.display,
-                    size: .mini(56)
+                    size: .mini(64)
                 )
-                .frame(width: 56, height: 56)
+                .frame(width: 64, height: 64)
             } else {
                 Text(String(fallbackName.prefix(3)).uppercased())
-                    .scaledFont(size: 17, weight: .black)
+                    .scaledFont(size: 19, weight: .black)
                     .foregroundStyle(fallbackColor)
             }
         }
-        .frame(width: 72, height: 72)
+        .frame(width: 96, height: 96)
     }
 
     // MARK: - AD marker (compact only)

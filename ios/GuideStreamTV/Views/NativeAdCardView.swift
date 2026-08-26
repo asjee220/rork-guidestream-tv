@@ -14,7 +14,8 @@
 //  the Reels carousel.
 //
 //  When `feedStyle` is also true the card renders the 96pt inline-feed chip
-//  row instead: elevated opaque surface, 72pt creative square, a three-line
+//  row instead: elevated opaque surface, a 96pt creative square running flush
+//  to the leading edge, a three-line
 //  headline, an "advertiser · Ad" attribution line, AdChoices in the
 //  bottom-trailing corner, a top-trailing close control, and no CTA pill.
 //  `feedStyle` alone (without `compact`) changes nothing.
@@ -148,10 +149,11 @@ final class NativeAdContainer: UIView {
             mediaView.clipsToBounds = true
             adView.addSubview(mediaView)
         } else if isFeedChip {
-            // Feed chip: 72pt creative square, radius 8, aspect-fill.
+            // Feed chip: 96pt creative square running flush to the leading
+            // edge, aspect-fill. Square-cornered — the container's own corner
+            // radius clips the two corners that meet the card's edges.
             iconView.translatesAutoresizingMaskIntoConstraints = false
             iconView.contentMode = .scaleAspectFill
-            iconView.layer.cornerRadius = 8
             iconView.clipsToBounds = true
             adView.addSubview(iconView)
         } else {
@@ -407,16 +409,26 @@ final class NativeAdContainer: UIView {
                 textStack.leadingAnchor.constraint(equalTo: mediaView.trailingAnchor, constant: 10),
             ])
         } else {
-            // Icon — 56pt square (72pt on the feed chip), leading, vertically
-            // centered.
-            constraints.append(contentsOf: [
-                iconView.leadingAnchor.constraint(equalTo: adView.leadingAnchor, constant: 12),
-                iconView.centerYAnchor.constraint(equalTo: adView.centerYAnchor),
-                iconView.widthAnchor.constraint(equalToConstant: isFeedChip ? 72 : 56),
-                iconView.heightAnchor.constraint(equalToConstant: isFeedChip ? 72 : 56),
-                iconView.topAnchor.constraint(greaterThanOrEqualTo: adView.topAnchor, constant: 8),
-                iconView.bottomAnchor.constraint(lessThanOrEqualTo: adView.bottomAnchor, constant: -8),
-            ])
+            if isFeedChip {
+                // Creative — flush to the leading edge and the full height of
+                // the chip, so it reads as one square of artwork.
+                constraints.append(contentsOf: [
+                    iconView.leadingAnchor.constraint(equalTo: adView.leadingAnchor),
+                    iconView.topAnchor.constraint(equalTo: adView.topAnchor),
+                    iconView.bottomAnchor.constraint(equalTo: adView.bottomAnchor),
+                    iconView.widthAnchor.constraint(equalTo: iconView.heightAnchor),
+                ])
+            } else {
+                // Icon — 56pt square, leading, vertically centered.
+                constraints.append(contentsOf: [
+                    iconView.leadingAnchor.constraint(equalTo: adView.leadingAnchor, constant: 12),
+                    iconView.centerYAnchor.constraint(equalTo: adView.centerYAnchor),
+                    iconView.widthAnchor.constraint(equalToConstant: 56),
+                    iconView.heightAnchor.constraint(equalToConstant: 56),
+                    iconView.topAnchor.constraint(greaterThanOrEqualTo: adView.topAnchor, constant: 8),
+                    iconView.bottomAnchor.constraint(lessThanOrEqualTo: adView.bottomAnchor, constant: -8),
+                ])
+            }
             // Text column leading — anchored to icon trailing by default;
             // swapped to adView leading + 12 in configure() when no icon image.
             textStackLeadingWithIcon = textStack.leadingAnchor.constraint(
