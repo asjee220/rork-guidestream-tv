@@ -33,11 +33,15 @@ struct TVMainView: View {
             screen(for: selection)
                 .padding(.leading, contentLeadingInset)
                 .focusSection()
-                // Only the leading-most item in a row opens the menu, via
-                // .tvSideMenuLeadingEdge. A handler here would fire on every
-                // left press anywhere in the content, which made the menu
-                // open mid-rail and stopped the user scrolling a row back.
-                .environment(\.tvOpenSideMenu, TVOpenSideMenuAction { openMenu() })
+                .onMoveCommand { direction in
+                    // The only thing that opens the menu: a deliberate left
+                    // move command issued from the content's leading edge —
+                    // the focus engine found nothing further left, so the
+                    // command falls through to here.
+                    if direction == .left, !menuIsOpen {
+                        menuIsOpen = true
+                    }
+                }
 
             // Leading-to-trailing scrim between the open menu and content.
             if menuIsOpen {
@@ -71,11 +75,6 @@ struct TVMainView: View {
         }
     }
 
-    private func openMenu() {
-        guard !menuIsOpen else { return }
-        menuIsOpen = true
-    }
-
     @ViewBuilder
     private func screen(for item: TVSideMenuItem) -> some View {
         switch item {
@@ -86,50 +85,5 @@ struct TVMainView: View {
         case .search: TVSearchView()
         case .reels: TVReelsView()
         }
-    }
-}
-
-// MARK: - Opening the side menu from a row's leading edge
-
-/// Injected by TVMainView so the leading-most item in any row can open the
-/// side menu without holding a reference to it.
-struct TVOpenSideMenuAction {
-    let handler: () -> Void
-    func callAsFunction() { handler() }
-}
-
-private struct TVOpenSideMenuKey: EnvironmentKey {
-    static let defaultValue = TVOpenSideMenuAction(handler: {})
-}
-
-extension EnvironmentValues {
-    var tvOpenSideMenu: TVOpenSideMenuAction {
-        get { self[TVOpenSideMenuKey.self] }
-        set { self[TVOpenSideMenuKey.self] = newValue }
-    }
-}
-
-private struct TVSideMenuLeadingEdge: ViewModifier {
-    let isLeading: Bool
-    @Environment(\.tvOpenSideMenu) private var openSideMenu
-
-    func body(content: Content) -> some View {
-        content.onMoveCommand { direction in
-            guard isLeading, direction == .left else { return }
-            openSideMenu()
-        }
-    }
-}
-
-extension View {
-    /// Marks the leading-most focusable item in a row. A left move command
-    /// reaching it has nowhere further left to go, so it opens the side menu.
-    ///
-    /// Apply this to the FIRST item of a row and to nothing else. Attaching
-    /// it to every item — or to the whole content container, which is what
-    /// TVMainView did before — opens the menu on every left press, so a rail
-    /// can never be stepped back through.
-    func tvSideMenuLeadingEdge(_ isLeading: Bool) -> some View {
-        modifier(TVSideMenuLeadingEdge(isLeading: isLeading))
     }
 }
