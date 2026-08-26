@@ -140,12 +140,36 @@ final class SportsLiveActivityController {
     /// Re-attaches push-token observers to still-running activities after a
     /// process relaunch (observers do not survive process death) and restores
     /// `trackedGameId`; clears it when nothing is running.
+    ///
+    /// Also the client-side safety net for a finished game: any running
+    /// activity whose last content state is already final is ended here
+    /// instead of being left on the Lock Screen. The server's end push
+    /// carries a dismissal date and iOS keeps an ended activity visible until
+    /// that date, and an activity started without a push token never reaches
+    /// the server at all — both linger without this pass. Called on launch
+    /// and on every return to the foreground.
     func reconcile() async {
+        // Scans EVERY activity, not just the running ones: the server's end
+        // push moves an activity to `.ended`, where it stays on the Lock
+        // Screen until its dismissal date. `.immediate` clears it now.
+        for activity in Activity<SportsActivityAttributes>.activities
+        where activity.activityState == .ended || Self.isFinal(activity.content.state) {
+            tokenObservers.removeValue(forKey: activity.id)?.cancel()
+            await activity.end(dismissalPolicy: .immediate)
+            await stampEnded(activityId: activity.id)
+        }
+
         let running = runningActivities()
         for activity in running {
             attachTokenObserver(activity)
         }
         trackedGameId = running.first?.attributes.gameId
+    }
+
+    /// The server pushes "final"; the app's own `GameState` raw value is
+    /// "post". Both mean the game is over.
+    private nonisolated static func isFinal(_ state: SportsActivityAttributes.ContentState) -> Bool {
+        state.state == "final" || state.state == "post"
     }
 
     // MARK: - Private

@@ -33,6 +33,10 @@ struct GuideStreamTVApp: App {
                         // `push_tokens`. Idempotent — only fires when the user
                         // already granted permission; never shows the dialog.
                         Task { await PushTokenManager.shared.refreshRegistrationIfAuthorized() }
+                        // Clear any live-score activity whose game finished
+                        // while the app was closed, so a finished game's
+                        // Dynamic Island / Lock Screen card does not linger.
+                        Task { await SportsLiveActivityController.shared.reconcile() }
                     case .background:
                         DeviceSessionService.shared.noteBackgrounded()
                     default:
