@@ -55,7 +55,11 @@ struct SportsView: View {
     @State private var showServicesSheet: Bool = false
     @State private var auth = AuthViewModel.shared
     @State private var favorites = TeamFavoritesService.shared
-    @State private var isEditingTeams: Bool = false
+    @State private var teamPickerMode: TeamPickerSheet.Mode?
+
+    /// One-shot gate for the first-run team picker. Survives sign-out on
+    /// purpose — the prompt is about this install, not this account.
+    @AppStorage("gs.sportsTeamPickerSeen.v1") private var hasSeenTeamPicker: Bool = false
 
     private let sports: [String] = ["All", "NBA", "NBA Summer", "NFL", "Soccer", "MLB", "UFC"]
 
@@ -244,9 +248,26 @@ struct SportsView: View {
             .sheet(isPresented: $showServicesSheet) {
                 ServicesBottomSheet()
             }
+            .sheet(item: $teamPickerMode) { mode in
+                TeamPickerSheet(mode: mode) {
+                    teamPickerMode = nil
+                }
+                .presentationDetents([.fraction(0.88), .large])
+                .presentationDragIndicator(.visible)
+                .presentationBackground(Color(hex: "0B131D"))
+            }
         }
         .task {
             await favorites.load()
+            // First open of the Sports tab: offer the team picker once. Skipped
+            // when the user already has favorites (e.g. from another install of
+            // the same account) so it never interrupts an established user.
+            if !hasSeenTeamPicker {
+                hasSeenTeamPicker = true
+                if favorites.favoriteUids().isEmpty {
+                    teamPickerMode = .onboarding
+                }
+            }
             await load()
         }
         .onChange(of: router.pendingSportsRoute) { _, route in
@@ -354,11 +375,9 @@ struct SportsView: View {
                 Spacer()
                 Button {
                     UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                    withAnimation(.easeOut(duration: 0.2)) {
-                        isEditingTeams.toggle()
-                    }
+                    teamPickerMode = .edit
                 } label: {
-                    Text(isEditingTeams ? "Done" : "Edit")
+                    Text("Edit")
                         .scaledFont(size: 13, weight: .medium)
                         .foregroundStyle(Color(hex: "1A6FE8"))
                 }
@@ -375,52 +394,18 @@ struct SportsView: View {
         }
     }
 
-    /// Renders a single team chip. In edit mode, shows an unfavorite (x)
-    /// affordance; tapping the chip body opens the matched game.
+    /// Renders a single team chip. Tapping it opens the matched game.
+    /// Removal now lives in TeamPickerSheet, reached via "Edit".
     private func teamChipView(_ team: TeamChip) -> some View {
-        ZStack(alignment: .topTrailing) {
-            Button {
-                UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                if let game = findGameForFavorite(teamUid: team.teamUid, teamAbbr: team.abbrev) {
-                    selectedGame = game
-                }
-            } label: {
-                teamChipContent(team)
+        Button {
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            if let game = findGameForFavorite(teamUid: team.teamUid, teamAbbr: team.abbrev) {
+                selectedGame = game
             }
-            .buttonStyle(.plain)
-
-            if isEditingTeams {
-                Button {
-                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                    Task {
-                        let row = favorites.rows[team.teamUid]
-                        let dummyTeam = GameTeam(
-                            id: nil,
-                            uid: team.teamUid,
-                            abbreviation: team.abbrev,
-                            displayName: team.name,
-                            shortName: team.name,
-                            score: "0",
-                            primaryHex: nil,
-                            isWinner: false
-                        )
-                        await favorites.toggle(
-                            team: dummyTeam,
-                            league: row?.league,
-                            sport: row?.sport
-                        )
-                    }
-                } label: {
-                    Image(systemName: "xmark")
-                        .scaledFont(size: 10, weight: .bold)
-                        .foregroundStyle(.white)
-                        .frame(width: 22, height: 22)
-                        .background(Circle().fill(Color(hex: "E50914")))
-                }
-                .buttonStyle(.plain)
-                .offset(x: 6, y: -6)
-            }
+        } label: {
+            teamChipContent(team)
         }
+        .buttonStyle(.plain)
     }
 
     /// Prompt shown when the user has no favorited teams yet.
@@ -429,16 +414,33 @@ struct SportsView: View {
             Text("My Teams")
                 .scaledFont(size: 16, weight: .bold)
                 .foregroundStyle(.white)
-            HStack(spacing: 8) {
-                Image(systemName: "star")
-                    .scaledFont(size: 14)
-                    .foregroundStyle(Color.orange.opacity(0.7))
-                Text("Tap the star on any game to favorite a team and see it here.")
-                    .scaledFont(size: 13, weight: .medium)
-                    .foregroundStyle(Color.white.opacity(0.45))
-                    .lineLimit(2)
+            Button {
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                teamPickerMode = .onboarding
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "star")
+                        .scaledFont(size: 14)
+                        .foregroundStyle(Color(hex: "F5821F"))
+                    Text("Pick your teams to see their games first \u{2014} and get alerts when they play.")
+                        .scaledFont(size: 13, weight: .medium)
+                        .foregroundStyle(Color.white.opacity(0.55))
+                        .multilineTextAlignment(.leading)
+                    Spacer(minLength: 4)
+                    Image(systemName: "chevron.right")
+                        .scaledFont(size: 11, weight: .bold)
+                        .foregroundStyle(Color.white.opacity(0.35))
+                }
+                .padding(12)
+                .background(
+                    RoundedRectangle(cornerRadius: 14).fill(Color.white.opacity(0.04))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 14)
+                        .stroke(Color(hex: "F5821F").opacity(0.25), lineWidth: 1)
+                )
             }
-            .padding(.vertical, 8)
+            .buttonStyle(.plain)
         }
     }
 
