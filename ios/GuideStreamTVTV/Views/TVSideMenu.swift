@@ -56,6 +56,19 @@ struct TVSideMenu: View {
 
     @FocusState private var focusedItem: TVSideMenuItem?
 
+    /// Focus scope for the expanded menu. tvOS will not reliably honour a
+    /// programmatic @FocusState assignment into a section whose focusable
+    /// views mount in the same update — the assignment is silently ignored
+    /// and no change event follows, so a retry that inspects `focusedItem`
+    /// learns nothing. The selected row therefore also declares itself the
+    /// scope's default focus and the scope is reset when the menu opens,
+    /// the same pattern TVHeroCarousel uses to claim its CTA.
+    @Namespace private var menuNamespace
+    @Environment(\.resetFocus) private var resetFocus
+    /// True once focus has actually landed on a row for this opening.
+    @State private var focusLanded: Bool = false
+    @State private var focusRetryTask: Task<Void, Never>?
+
     /// Collapsed rail width — icon-only, narrow, with the brand icon at
     /// the top. Mirrors the closed-state mockup.
     private let closedWidth: CGFloat = 72
@@ -107,6 +120,7 @@ struct TVSideMenu: View {
         .padding(.leading, leadingInset)
         .padding(.vertical, verticalInset)
         .focusSection()
+        .focusScope(menuNamespace)
         .animation(.easeOut(duration: 0.25), value: isOpen)
         .onMoveCommand { direction in
             // A right move from inside the menu closes it and hands focus
@@ -117,15 +131,23 @@ struct TVSideMenu: View {
             }
         }
         .onChange(of: isOpen) { _, open in
+            focusRetryTask?.cancel()
+            focusRetryTask = nil
+            focusLanded = false
             guard open else { return }
-            // Opening hands focus to the item matching the current
-            // selection. The buttons only become focusable in this same
-            // update, so re-assert after a beat if the first attempt
-            // didn't land.
+            // Reset makes tvOS re-evaluate default focus inside the scope
+            // now that the buttons exist, which is what actually moves
+            // focus in. The assignment and the retries are belt-and-braces
+            // and stop as soon as focus has landed, so they never yank a
+            // row the user has already moved to.
+            resetFocus(in: menuNamespace)
             focusedItem = selection
-            Task { @MainActor in
-                try? await Task.sleep(for: .milliseconds(150))
-                if isOpen && focusedItem == nil {
+            focusRetryTask = Task { @MainActor in
+                for _ in 0..<5 {
+                    try? await Task.sleep(for: .milliseconds(100))
+                    if Task.isCancelled { return }
+                    guard isOpen, !focusLanded else { return }
+                    resetFocus(in: menuNamespace)
                     focusedItem = selection
                 }
             }
@@ -133,8 +155,14 @@ struct TVSideMenu: View {
         .onChange(of: focusedItem) { _, focused in
             // Closes when a move hands focus back to the content without
             // a selection. This never OPENS the menu — focus arriving in
-            // the rail is never what expands it.
-            if focused == nil && isOpen {
+            // the rail is never what expands it. The focusLanded gate stops
+            // a nil seen while focus is still being handed in from
+            // collapsing the menu before it was ever focused.
+            if focused != nil {
+                focusLanded = true
+                return
+            }
+            if isOpen && focusLanded {
                 close()
             }
         }
@@ -187,15 +215,23 @@ struct TVSideMenu: View {
         }
         .buttonStyle(TVMenuButtonStyle())
         .focused($focusedItem, equals: item)
+        .prefersDefaultFocus(item == selection, in: menuNamespace)
         .focusEffectDisabled()
     }
 
     /// Shared row layout: the orange selection bar sits flush at the
     /// panel's leading edge, and the icon is centered in the collapsed
-    /// rail. When opened, the label appears to the right. Selected items
-    /// use white icon/text; unselected items use the muted secondary
-    /// color. The design mockups show the orange bar itself as the only
-    /// selection indicator, so no background rectangle is drawn.
+    /// rail. When opened, the label appears to the right.
+    ///
+    /// Four treatments, and the two cues are independent so they never
+    /// read as the same state:
+    ///   selected + focused  — orange bar, white icon/label, focus plate
+    ///   selected, unfocused — orange bar, white icon/label, no plate
+    ///   focused, unselected — no bar, white icon/label, focus plate
+    ///   resting             — no bar, muted icon/label, no plate
+    /// The bar tracks `selection` only. The plate tracks focus only. White
+    /// vs. 65%-white alone is not readable at a 10-foot viewing distance,
+    /// which is why focus also gets the plate.
     private func rowContent(for item: TVSideMenuItem, isFocused: Bool = false) -> some View {
         let isSelected = selection == item
         let isActive = isSelected || isFocused
@@ -203,18 +239,25 @@ struct TVSideMenu: View {
             Capsule()
                 .fill(isSelected ? TVTheme.orange : Color.clear)
                 .frame(width: barWidth, height: barHeight)
-            Image(systemName: item.icon)
-                .font(.system(size: iconSize, weight: .medium))
-                .foregroundStyle(isActive ? TVTheme.textPrimary : TVTheme.textSecondary)
-                .frame(width: iconFrame, height: iconFrame)
-                .padding(.leading, isOpen ? openIconLeading : closedIconLeading)
-            if isOpen {
-                Text(item.label)
-                    .font(.system(size: 24, weight: .semibold))
+            HStack(spacing: 0) {
+                Image(systemName: item.icon)
+                    .font(.system(size: iconSize, weight: .medium))
                     .foregroundStyle(isActive ? TVTheme.textPrimary : TVTheme.textSecondary)
-                    .lineLimit(1)
-                    .padding(.leading, labelLeading)
+                    .frame(width: iconFrame, height: iconFrame)
+                if isOpen {
+                    Text(item.label)
+                        .font(.system(size: 24, weight: .semibold))
+                        .foregroundStyle(isActive ? TVTheme.textPrimary : TVTheme.textSecondary)
+                        .lineLimit(1)
+                        .padding(.leading, labelLeading)
+                }
             }
+            .padding(.leading, isOpen ? openIconLeading : closedIconLeading)
+            .padding(.trailing, isOpen ? 24 : 0)
+            .background(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(isFocused ? Color.white.opacity(0.16) : Color.clear)
+            )
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .scaleEffect(isFocused ? 1.06 : 1.0)

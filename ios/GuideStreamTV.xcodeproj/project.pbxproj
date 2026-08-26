@@ -818,7 +818,7 @@
 				CODE_SIGN_ENTITLEMENTS = GuideStreamTVTV/GuideStreamTVTV.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 3;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = KDH93W2EVA;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleURLTypes = "{\n    CFBundleTypeRole = Editor;\n    CFBundleURLName = \"com.guidestream.tv\";\n    CFBundleURLSchemes =     (\n        guidestream\n    );\n}";
@@ -853,7 +853,7 @@
 				CODE_SIGN_ENTITLEMENTS = GuideStreamTVTV/GuideStreamTVTV.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 3;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = KDH93W2EVA;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleURLTypes = "{\n    CFBundleTypeRole = Editor;\n    CFBundleURLName = \"com.guidestream.tv\";\n    CFBundleURLSchemes =     (\n        guidestream\n    );\n}";
