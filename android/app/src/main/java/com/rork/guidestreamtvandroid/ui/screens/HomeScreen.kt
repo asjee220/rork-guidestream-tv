@@ -93,6 +93,7 @@ import com.rork.guidestreamtvandroid.data.repository.AuthViewModel
 import com.rork.guidestreamtvandroid.data.repository.StreamsViewModel
 import com.rork.guidestreamtvandroid.data.repository.WatchIntentLogger
 import com.rork.guidestreamtvandroid.ui.components.GsTopBar
+import com.rork.guidestreamtvandroid.ui.components.PushReauthBanner
 import com.rork.guidestreamtvandroid.ui.components.PosterCard
 import com.rork.guidestreamtvandroid.ui.components.RemoteImage
 import com.rork.guidestreamtvandroid.ui.components.ServicesBottomSheet
@@ -294,6 +295,18 @@ fun HomeScreen(
     ) {
         // Reserve space for the pinned PageBar (status bar + 56dp bar height).
         Spacer(Modifier.statusBarsPadding().height(56.dp))
+
+        // GUI-41: the "notifications got turned off" message used to live only
+        // on Profile → Notifications, which nobody visits after a reinstall —
+        // they would just stop getting alerts with no way to know why. Renders
+        // nothing unless the account wants push and POST_NOTIFICATIONS has
+        // never been asked for on this install.
+        PushReauthBanner(
+            modifier = Modifier.padding(
+                horizontal = widthClass.homeHorizontalPadding,
+                vertical = 8.dp,
+            ),
+        )
 
         // Search bar
         SearchBar(

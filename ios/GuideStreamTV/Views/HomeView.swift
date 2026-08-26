@@ -434,6 +434,9 @@ struct HomeView: View {
     /// Recommended creators/podcasts based on followed creators' categories.
     /// Populated asynchronously; empty when the user has no followed creators.
     @State private var recommendedCreators: [RecommendedCreator] = []
+    /// Drives the Home re-auth banner (GUI-41). Kept current by
+    /// `pushReauthObserver()` applied to the scroll view below.
+    @State private var pushReauthPrompt = PushReauthPrompt.shared
     /// True when the user has at least one non-TMDB (creator/podcast) saved.
     private var hasFollowedCreators: Bool {
         streams.userStreams.contains { SourceKind.from(titleId: $0.titleId).isNonTMDB }
@@ -496,6 +499,18 @@ struct HomeView: View {
                 ScrollViewReader { scrollProxy in
                 ScrollView(showsIndicators: false) {
                     VStack(spacing: 20) {
+                        // GUI-41: the "notifications got turned off" message
+                        // used to live only on Profile → Notifications, which
+                        // nobody visits after a reinstall — they would just
+                        // stop getting alerts with no way to know why. Shows
+                        // only when the account wants push and iOS has no
+                        // grant; `pushReauthObserver()` on the ScrollView
+                        // keeps that current.
+                        if pushReauthPrompt.isVisible {
+                            PushReauthBanner()
+                                .padding(.horizontal, homeWidthClass.homeSearchHorizontalPadding)
+                        }
+
                         // Search bar tap target — opens SearchView
                         Button {
                             showSearch = true
@@ -1233,6 +1248,9 @@ struct HomeView: View {
                         Task { await streams.refreshIfStale() }
                     }
                 }
+                // GUI-41: keeps PushReauthPrompt.shared current for the
+                // banner at the top of this scroll view.
+                .pushReauthObserver()
                 .onChange(of: coachMark.scrollRequest) { _, req in
                     guard let id = req else { return }
                     withAnimation(.easeInOut(duration: 0.3)) {
