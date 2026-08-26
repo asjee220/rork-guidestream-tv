@@ -128,6 +128,9 @@ struct ProfileView: View {
                 }
                 .tracksTabBarVisibility()
             }
+            // See the note in SportsView: the enclosing NavigationStack
+            // re-applies the safe area inside itself.
+            .ignoresSafeArea()
             .navigationBarHidden(true)
             .navigationDestination(for: ProfileRoute.self) { route in
                 switch route {

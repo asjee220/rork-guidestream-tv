@@ -152,16 +152,18 @@ struct SportsView: View {
                             }
                         }
                     }
-                    // Sports already looked right, so it keeps its current
-                    // geometry: 160 reproduces exactly where this content sat
-                    // when the safe area was still adding 80pt of its own.
-                    .padding(.horizontal, 160)
+                    .padding(.horizontal, 80)
                     .padding(.bottom, 100)
                     .padding(.top, 12)
                 }
                 .refreshable { await load() }
                 .tracksTabBarVisibility()
             }
+            // A NavigationStack applies its own safe-area insets to its
+            // content, which TVMainView's .ignoresSafeArea() cannot reach —
+            // this and ProfileView were the only two screens still boxed in
+            // after that change, and they are the only two with a stack.
+            .ignoresSafeArea()
             .navigationBarHidden(true)
             .navigationDestination(for: SportsRoute.self) { route in
                 switch route {
