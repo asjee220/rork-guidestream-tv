@@ -287,15 +287,3 @@ extension BrowseFilters {
         return copy
     }
 }
-
-// MARK: - Page
-
-/// One page of browse results plus the totals the count row needs.
-struct BrowsePage: Hashable, Sendable {
-    let results: [TMDBResult]
-    let page: Int
-    let totalPages: Int
-    let totalResults: Int
-
-    static let empty = BrowsePage(results: [], page: 1, totalPages: 1, totalResults: 0)
-}
