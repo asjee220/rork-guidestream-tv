@@ -68,6 +68,14 @@ struct TVHeroCarousel: View {
     /// still refuse to play, so the next key gets a turn — bounded, or a
     /// title with five dead keys would hold the hero for its whole dwell.
     @State private var streamRetries: Int = 0
+    /// A player built ahead of time for the item after this one, so its
+    /// asset is loaded and buffered before the carousel reaches it. Reels on
+    /// iPhone and Android deliberately never do this — they only ever hold
+    /// one live player, because the user swipes and the app cannot know what
+    /// is next. The hero auto-advances, so it does know, and the first frame
+    /// is the whole point of the surface.
+    @State private var prerolledPlayer: AVPlayer?
+    @State private var prerolledIndex: Int?
 
     @FocusState private var heroRegionFocused: Bool
     /// Focus scope for the hero region. The Add to Watch List button is
@@ -139,6 +147,7 @@ struct TVHeroCarousel: View {
             endOfItemTask?.cancel()
             playbackStatusTask?.cancel()
             teardownPlayer()
+            discardPreroll()
         }
         .onChange(of: ctaFocused) { wasFocused, isFocused in
             if wasFocused && !isFocused { heroFocusEverLeft = true }
@@ -158,6 +167,7 @@ struct TVHeroCarousel: View {
             // item's dwell starts on the still path. Re-arm once the map
             // lands or item one can never play.
             startDwell()
+            prerollNext()
         }
     }
 
@@ -282,11 +292,17 @@ struct TVHeroCarousel: View {
 
     // MARK: - Dwell & rotation
 
-    /// Seconds a still holds, and the grace period before a video is judged
-    /// to have failed to start.
-    private static let videoStartGrace: Int = 10
-    /// Longest any one item holds the hero, however long its video runs.
-    private static let maxVideoDwell: Int = 30
+    /// How long a title is given to actually start playing before the
+    /// carousel gives up on it and moves on. Extraction, then the asset
+    /// load, then the first frame — ten seconds was not enough on a real
+    /// Apple TV, so the item lost its turn to the next poster while its
+    /// video was still on the way.
+    private static let videoStartGrace: Int = 22
+    /// How long a still holds when the title has no video at all.
+    private static let stillDwell: Int = 10
+    /// Longest any one item holds the hero, measured from the moment its
+    /// video starts playing rather than from when the item appeared.
+    private static let maxVideoDwell: Int = 26
 
     /// Starts the current item's dwell: a hosted featurette plays once and
     /// advances on its end; a still (or a featurette that never starts)
@@ -306,22 +322,36 @@ struct TVHeroCarousel: View {
         if let urlString = featurettes[item.canonicalTitleId], let url = URL(string: urlString) {
             setUpPlayer(for: item, url: url)
             dwellTask = Task { @MainActor in
-                // 10-second fallback while the featurette never starts
-                // (failed load or stall) — the still stays visible.
-                try? await Task.sleep(for: .seconds(10))
+                // Wait for playback to actually begin rather than counting
+                // down regardless. The old fixed timer is what made the
+                // carousel rotate to the next poster while this title's
+                // video was still loading.
+                var waited = 0
+                while !videoReady, waited < Self.videoStartGrace * 1000 {
+                    try? await Task.sleep(for: .milliseconds(200))
+                    guard !Task.isCancelled else { return }
+                    waited += 200
+                }
                 guard !Task.isCancelled else { return }
                 guard videoReady else {
                     advance()
                     return
                 }
-                // Playing. The end-of-item observer advances when a clip
-                // actually finishes, but an extracted YouTube trailer runs
-                // two or three minutes — long enough that the carousel looks
-                // stuck on one title — so cap the turn. A stall still needs
-                // its own out: advance once the player sits idle well past
-                // any plausible rebuffer.
+
+                // Playing, so the next title's video can start loading now
+                // and be ready by the time the carousel reaches it.
+                prerollNext()
+
+                // The end-of-item observer advances when a clip actually
+                // finishes, but an extracted YouTube trailer runs two or
+                // three minutes — long enough that the carousel looks stuck
+                // on one title — so cap the turn. Counted from playback
+                // start, so a slow-loading title still gets its full watch
+                // time rather than the remainder of a shared clock. A stall
+                // needs its own out: advance once the player sits idle well
+                // past any plausible rebuffer.
                 var idleChecks = 0
-                var elapsed = Self.videoStartGrace
+                var elapsed = 0
                 while !Task.isCancelled {
                     try? await Task.sleep(for: .seconds(3))
                     guard !Task.isCancelled else { return }
@@ -343,7 +373,10 @@ struct TVHeroCarousel: View {
             }
         } else {
             dwellTask = Task { @MainActor in
-                try? await Task.sleep(for: .seconds(10))
+                // No video for this title, but the next one may have one —
+                // warm it while the still holds.
+                prerollNext()
+                try? await Task.sleep(for: .seconds(Self.stillDwell))
                 guard !Task.isCancelled else { return }
                 advance()
             }
@@ -368,11 +401,46 @@ struct TVHeroCarousel: View {
 
     private nonisolated(unsafe) static var audioSessionActivated = false
 
+    /// Builds the player for the item after this one and lets it load in the
+    /// background. Nothing is displayed and nothing plays — the point is
+    /// only that the asset and its first frames are already in hand when the
+    /// carousel rotates.
+    private func prerollNext() {
+        let next = index + 1
+        guard items.indices.contains(next) else { return }
+        guard prerolledIndex != next else { return }
+        let nextItem = items[next]
+        guard let urlString = featurettes[nextItem.canonicalTitleId],
+              let url = URL(string: urlString) else { return }
+
+        prerolledPlayer?.pause()
+        let warm = AVPlayer(playerItem: AVPlayerItem(url: url))
+        warm.isMuted = true
+        warm.automaticallyWaitsToMinimizeStalling = true
+        prerolledPlayer = warm
+        prerolledIndex = next
+    }
+
+    private func discardPreroll() {
+        prerolledPlayer?.pause()
+        prerolledPlayer = nil
+        prerolledIndex = nil
+    }
+
     private func setUpPlayer(for item: TVTMDBResult, url: URL) {
         Self.activateAudioSessionIfNeeded()
 
-        let playerItem = AVPlayerItem(url: url)
-        let newPlayer = AVPlayer(playerItem: playerItem)
+        let newPlayer: AVPlayer
+        if let warm = prerolledPlayer, prerolledIndex == index,
+           (warm.currentItem?.asset as? AVURLAsset)?.url == url {
+            newPlayer = warm
+            prerolledPlayer = nil
+            prerolledIndex = nil
+        } else {
+            discardPreroll()
+            newPlayer = AVPlayer(playerItem: AVPlayerItem(url: url))
+        }
+        guard let playerItem = newPlayer.currentItem else { return }
         newPlayer.isMuted = true
         player = newPlayer
         newPlayer.play()
