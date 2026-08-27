@@ -48,6 +48,10 @@ final class TVTrailerStreamService {
     /// Keys that failed to resolve, so a dead video is not retried on every
     /// hero rebuild.
     private var failed: Set<String> = []
+    /// Keys not yet tried per title. A stream can resolve and still refuse to
+    /// play — age-gated and region-locked videos hand back a URL that then
+    /// 403s — so the carousel asks for the next one instead of giving up.
+    private var candidateKeys: [String: [String]] = [:]
 
     private let selectedColumns = "tmdb_id,media_type,keys"
 
@@ -77,11 +81,14 @@ final class TVTrailerStreamService {
         // Match on media type as well as id — a film and a series can share a
         // TMDB id and their trailers are not interchangeable.
         var keyByTmdbId: [Int: String] = [:]
+        var allKeysByTmdbId: [Int: [String]] = [:]
         for row in rows {
             guard let isTV = isTVById[row.tmdbId] else { continue }
             guard row.mediaType == (isTV ? "tv" : "movie") else { continue }
-            guard let first = row.keys.first(where: { !failed.contains($0) }) else { continue }
+            let usable = row.keys.filter { !failed.contains($0) }
+            guard let first = usable.first else { continue }
             keyByTmdbId[row.tmdbId] = first
+            allKeysByTmdbId[row.tmdbId] = usable
         }
 
         // trailer_cache is filled by the Reels ingest, so it covers whatever
@@ -101,7 +108,10 @@ final class TVTrailerStreamService {
                     }
                 }
                 for await (tmdbId, key) in group {
-                    if let key, !failed.contains(key) { keyByTmdbId[tmdbId] = key }
+                    if let key, !failed.contains(key) {
+                        keyByTmdbId[tmdbId] = key
+                        allKeysByTmdbId[tmdbId] = [key]
+                    }
                 }
             }
         }
@@ -110,7 +120,10 @@ final class TVTrailerStreamService {
         for entry in pool {
             guard let key = keyByTmdbId[entry.tmdbId] else { continue }
             let kind = entry.isTV ? "tv" : "movie"
-            wanted.append((key, "tmdb:\(kind):\(entry.tmdbId)"))
+            let titleId = "tmdb:\(kind):\(entry.tmdbId)"
+            wanted.append((key, titleId))
+            // Everything after the one being tried now.
+            candidateKeys[titleId] = Array((allKeysByTmdbId[entry.tmdbId] ?? [key]).dropFirst())
         }
         guard !wanted.isEmpty else { return [:] }
 
@@ -142,6 +155,22 @@ final class TVTrailerStreamService {
         #endif
 
         return out
+    }
+
+    /// Next playable stream for a title whose current one refused to play.
+    /// Returns nil once the alternatives are exhausted, and the hero keeps
+    /// its still.
+    func nextStreamURL(for titleId: String) async -> String? {
+        while var keys = candidateKeys[titleId], !keys.isEmpty {
+            let key = keys.removeFirst()
+            candidateKeys[titleId] = keys
+            if let url = await Self.streamURL(for: key) {
+                resolved[key] = url
+                return url
+            }
+            failed.insert(key)
+        }
+        return nil
     }
 
     #if DEBUG

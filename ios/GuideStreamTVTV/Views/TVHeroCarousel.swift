@@ -59,6 +59,10 @@ struct TVHeroCarousel: View {
     /// focus onto a fully transparent view, so gating the metadata block
     /// purely on hero focus made the CTA unfocusable.
     @State private var heroFocusEverLeft: Bool = false
+    /// Alternative streams tried for the current item. A resolved URL can
+    /// still refuse to play, so the next key gets a turn — bounded, or a
+    /// title with five dead keys would hold the hero for its whole dwell.
+    @State private var streamRetries: Int = 0
 
     @FocusState private var heroRegionFocused: Bool
     /// Focus scope for the hero region. The Add to Watch List button is
@@ -258,6 +262,7 @@ struct TVHeroCarousel: View {
         playbackStatusTask?.cancel()
         teardownPlayer()
         resetVideoReady()
+        streamRetries = 0
 
         guard let item = currentItem, items.count > 1, index < items.count - 1 else {
             return
@@ -363,6 +368,10 @@ struct TVHeroCarousel: View {
                     markVideoReady(for: item)
                     return
                 }
+                if newPlayer.currentItem?.status == .failed {
+                    await retryWithNextStream(for: item)
+                    return
+                }
                 try? await Task.sleep(for: .milliseconds(250))
             }
         }
@@ -441,6 +450,19 @@ struct TVHeroCarousel: View {
                 return
             }
         }
+    }
+
+    /// Swaps in the next candidate stream for this title. Bounded to two
+    /// attempts so a title whose keys are all dead falls back to its still
+    /// rather than churning for the whole dwell.
+    private func retryWithNextStream(for item: TVTMDBResult) async {
+        guard streamRetries < 2 else { return }
+        streamRetries += 1
+        guard let next = await TVTrailerStreamService.shared.nextStreamURL(for: item.canonicalTitleId),
+              let url = URL(string: next) else { return }
+        guard !Task.isCancelled, currentItem?.id == item.id else { return }
+        teardownPlayer()
+        setUpPlayer(for: item, url: url)
     }
 
     private func markVideoReady(for item: TVTMDBResult) {
