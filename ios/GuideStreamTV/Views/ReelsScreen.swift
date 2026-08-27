@@ -2648,7 +2648,8 @@ private struct ReelView: View {
                 )
             },
             onDismiss: { glassAdDismissed = true },
-            feedStyle: true
+            feedStyle: true,
+            feedChipGlass: true
         )
     }
 
@@ -2826,7 +2827,7 @@ private struct ReelNativeAdPage: View {
         Group {
             if let nativeAd = claimedAd {
                 #if canImport(GoogleMobileAds) && !targetEnvironment(simulator)
-                NativeAdCardView(nativeAd: nativeAd as! NativeAd, compact: true, feedStyle: true) {
+                NativeAdCardView(nativeAd: nativeAd as! NativeAd, compact: true, feedStyle: true, feedGlass: true) {
                     onDismiss()
                 }
                 .frame(maxWidth: .infinity)

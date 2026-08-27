@@ -143,7 +143,6 @@ import com.rork.guidestreamtvandroid.ui.theme.sheetTopInset
 import com.rork.guidestreamtvandroid.ui.theme.systemBottomInset
 import com.rork.guidestreamtvandroid.ui.theme.GlassFill
 import com.rork.guidestreamtvandroid.ui.theme.GlassStroke
-import com.rork.guidestreamtvandroid.ui.theme.SurfaceElevated
 import com.rork.guidestreamtvandroid.ui.theme.TextPrimary
 import com.rork.guidestreamtvandroid.ui.theme.TextSecondary
 import com.rork.guidestreamtvandroid.ui.theme.TextTertiary
@@ -2268,8 +2267,11 @@ private fun ReelAdChip(
             .fillMaxWidth()
             .height(96.dp)
             .clip(RoundedCornerShape(14.dp))
-            .background(SurfaceElevated)
-            .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(14.dp)),
+            // Translucent, not the opaque SurfaceElevated the other inline
+            // slots use — this chip sits over a playing trailer and the frame
+            // behind it has to stay visible.
+            .background(Color.Black.copy(alpha = 0.44f))
+            .border(1.dp, GlassStroke, RoundedCornerShape(14.dp)),
     ) {
         content()
 

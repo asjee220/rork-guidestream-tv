@@ -32,6 +32,12 @@ struct SponsoredAffiliateCard: View {
     /// and their fallback must still match the 96pt native chip).
     var feedStyle: Bool = false
 
+    /// Feed chip over live video (Reels): keeps the chip layout but restores
+    /// the translucent glass surface so the trailer behind stays visible.
+    /// Every other inline surface sits on a solid background, where the
+    /// opaque elevated surface reads better.
+    var feedChipGlass: Bool = false
+
     var body: some View {
         if feedStyle {
             feedChipBody
@@ -166,14 +172,7 @@ struct SponsoredAffiliateCard: View {
                 .padding(.trailing, 44)
                 .frame(height: 96)
                 .frame(maxWidth: .infinity)
-                .background(
-                    RoundedRectangle(cornerRadius: 14)
-                        .fill(Theme.surfaceElevated)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 14)
-                                .stroke(Color.white.opacity(0.08), lineWidth: 1)
-                        )
-                )
+                .background(feedChipSurface)
                 .clipShape(RoundedRectangle(cornerRadius: 14))
             }
             .buttonStyle(.plain)
@@ -193,6 +192,32 @@ struct SponsoredAffiliateCard: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+        }
+    }
+
+    /// The chip's surface. Opaque elevated by default; translucent glass over
+    /// live video, matching the card Reels showed before it adopted the chip.
+    @ViewBuilder
+    private var feedChipSurface: some View {
+        if feedChipGlass {
+            RoundedRectangle(cornerRadius: 14)
+                .fill(.ultraThinMaterial.opacity(0.67))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 14)
+                        .fill(Color(red: 8/255, green: 14/255, blue: 24/255).opacity(0.19))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 14)
+                        .stroke(Color.white.opacity(0.11), lineWidth: 0.5)
+                )
+                .shadow(color: Color.black.opacity(0.35), radius: 14, y: 4)
+        } else {
+            RoundedRectangle(cornerRadius: 14)
+                .fill(Theme.surfaceElevated)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 14)
+                        .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                )
         }
     }
 

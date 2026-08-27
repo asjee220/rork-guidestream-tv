@@ -33,10 +33,13 @@ struct NativeAdCardView: UIViewRepresentable {
     let nativeAd: NativeAd
     var compact: Bool = false
     var feedStyle: Bool = false
+    /// Feed chip over live video (Reels): keeps the chip layout but restores
+    /// the translucent glass surface so the trailer behind stays visible.
+    var feedGlass: Bool = false
     let onDismiss: () -> Void
 
     func makeUIView(context: Context) -> NativeAdContainer {
-        let container = NativeAdContainer(compact: compact, feedStyle: feedStyle)
+        let container = NativeAdContainer(compact: compact, feedStyle: feedStyle, feedGlass: feedGlass)
         container.onDismiss = onDismiss
         container.configure(with: nativeAd)
         return container
@@ -56,6 +59,7 @@ final class NativeAdContainer: UIView {
 
     let compact: Bool
     let feedStyle: Bool
+    let feedGlass: Bool
 
     /// True only for the inline-feed chip (compact + feedStyle). Gates every
     /// style and layout difference below so all pre-existing appearances —
@@ -90,9 +94,10 @@ final class NativeAdContainer: UIView {
     private var textStackLeadingWithIcon: NSLayoutConstraint?
     private var textStackLeadingNoIcon: NSLayoutConstraint?
 
-    init(compact: Bool, feedStyle: Bool) {
+    init(compact: Bool, feedStyle: Bool, feedGlass: Bool = false) {
         self.compact = compact
         self.feedStyle = feedStyle
+        self.feedGlass = feedGlass
         super.init(frame: .zero)
         setupViews()
     }
@@ -102,7 +107,7 @@ final class NativeAdContainer: UIView {
     // MARK: - Setup
 
     private func setupViews() {
-        if isFeedChip {
+        if isFeedChip && !feedGlass {
             // Feed chip: opaque Theme.surfaceElevated — no blur, no navy tint.
             backgroundColor = UIColor(red: 0x12/255, green: 0x1B/255, blue: 0x2A/255, alpha: 1)
             layer.cornerRadius = 14
@@ -110,7 +115,8 @@ final class NativeAdContainer: UIView {
             layer.borderColor = UIColor.white.withAlphaComponent(0.08).cgColor
             clipsToBounds = true
         } else {
-            // Glass background
+            // Glass background — every non-chip card, and the Reels chip,
+            // which sits over a playing trailer.
             bgEffect.translatesAutoresizingMaskIntoConstraints = false
             addSubview(bgEffect)
 
@@ -283,7 +289,7 @@ final class NativeAdContainer: UIView {
         // chip-specific ones branched on compact / isFeedChip.
         var constraints: [NSLayoutConstraint] = []
 
-        if !isFeedChip {
+        if !isFeedChip || feedGlass {
             // Background fills container
             constraints.append(contentsOf: [
                 bgEffect.topAnchor.constraint(equalTo: topAnchor),
