@@ -112,23 +112,30 @@ struct TVHomeView: View {
     ]
 
     var body: some View {
-        ScrollView(.vertical, showsIndicators: false) {
-            LazyVStack(alignment: .leading, spacing: 56) {
-                // 1. Hero — fills the safe area; the negative bottom pull
-                // lets the first rail sit over the hero art at the fold so
-                // the embedded video / poster fades off into the rail.
-                heroSection
+        // The screen owns the title-safe margin instead of inheriting it.
+        // Opting the scroll view out and re-applying the measured inset to
+        // the rail stack is the only way the hero can reach the physical
+        // edges: .ignoresSafeArea on a child inside a ScrollView does
+        // nothing, because the scroll content was already laid out inset.
+        GeometryReader { proxy in
+            let safeTop = proxy.safeAreaInsets.top
+            let safeLeading = proxy.safeAreaInsets.leading
+            let safeTrailing = proxy.safeAreaInsets.trailing
+            let railLeading = TVLayout.contentLeadingInset + safeLeading
+
+            ScrollView(.vertical, showsIndicators: false) {
+                LazyVStack(alignment: .leading, spacing: 56) {
+                // 1. Hero — true full bleed. It cancels every inset the rail
+                // stack re-applies, so the art meets the top, leading and
+                // trailing edges and the menu floats over it. The negative
+                // bottom pull lets the first rail sit over the art at the
+                // fold so the video / poster fades off into it.
+                heroSection(metadataInset: railLeading + 80)
                     .containerRelativeFrame(.vertical)
-                    .padding(.top, 8)
                     .padding(.bottom, -160)
-                    // Cancel TVMainView's inset so the art runs to the
-                    // screen edge and the menu floats over it, the way every
-                    // other living-room hero does.
-                    .padding(.leading, -TVLayout.contentLeadingInset)
-                    // The carousel clips to its own frame, so the opt-out
-                    // has to be re-stated out here or the title-safe margin
-                    // reappears down the leading edge.
-                    .ignoresSafeArea(edges: [.leading, .top, .trailing])
+                    .padding(.leading, -railLeading)
+                    .padding(.trailing, -safeTrailing)
+                    .padding(.top, -safeTop)
 
                 // 2. Everyone's Watching
                 if !everyonesWatching.isEmpty {
@@ -276,33 +283,53 @@ struct TVHomeView: View {
                 }
 
                 Color.clear.frame(height: 40)
+                }
+                .padding(.leading, railLeading)
+                .padding(.trailing, safeTrailing)
+                .padding(.top, safeTop)
+            }
+            // Cancel TVMainView's inset AND the horizontal title-safe margin
+            // for the scroll view itself; the rail stack above puts both
+            // back, so only the hero escapes. The margin has to be cancelled
+            // explicitly rather than left to .ignoresSafeArea(), which on
+            // this SDK expands a vertical ScrollView vertically only — that
+            // is why the top went full bleed and the leading edge did not.
+            .padding(.leading, -(TVLayout.contentLeadingInset + safeLeading))
+            .padding(.trailing, -safeTrailing)
+            .ignoresSafeArea()
+            .background(TVTheme.backgroundGradient.ignoresSafeArea())
+            .defaultFocus($heroCTAFocused, true)
+            .task { await loadAll() }
+            .onChange(of: heroItems.isEmpty) { _, isEmpty in
+                guard !isEmpty, !didClaimInitialFocus else { return }
+                didClaimInitialFocus = true
+                Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(120))
+                    heroCTAFocused = true
+                }
+            }
+            .sheet(item: $pendingDetail) { detail in
+                TVTitleSheet(detail: detail) { isSaved in
+                    pendingDetail = nil
+                }
+            }
+            .fullScreenCover(item: $seeAllPayload) { payload in
+                TVSeeAllGridView(payload: payload, pendingDetail: $pendingDetail)
             }
         }
-        .background(TVTheme.backgroundGradient)
-        .defaultFocus($heroCTAFocused, true)
-        .task { await loadAll() }
-        .onChange(of: heroItems.isEmpty) { _, isEmpty in
-            guard !isEmpty, !didClaimInitialFocus else { return }
-            didClaimInitialFocus = true
-            Task { @MainActor in
-                try? await Task.sleep(for: .milliseconds(120))
-                heroCTAFocused = true
-            }
-        }
-        .sheet(item: $pendingDetail) { detail in
-            TVTitleSheet(detail: detail) { isSaved in
-                pendingDetail = nil
-            }
-        }
-        .fullScreenCover(item: $seeAllPayload) { payload in
-            TVSeeAllGridView(payload: payload, pendingDetail: $pendingDetail)
-        }
+        // Deliberately NOT .ignoresSafeArea() here: the GeometryReader has to
+        // sit inside the safe area to be able to report its size. Opting it
+        // out zeroes proxy.safeAreaInsets, the hero cancels nothing, and the
+        // title-safe band comes straight back down the leading edge.
     }
 
     // MARK: - Hero
 
+    /// `metadataInset` is where the hero's copy starts: it has to match the
+    /// rail titles below, which the art itself no longer does now that it
+    /// runs full bleed.
     @ViewBuilder
-    private var heroSection: some View {
+    private func heroSection(metadataInset: CGFloat) -> some View {
         if heroItems.isEmpty {
             // Reserve the full-screen height so the rails below don't
             // jump when the data lands.
@@ -330,7 +357,8 @@ struct TVHomeView: View {
                     }
                 },
                 isSaved: { item in streams.contains(titleId: item.canonicalTitleId) },
-                featurettes: heroFeaturettes
+                featurettes: heroFeaturettes,
+                metadataInset: metadataInset
             )
         }
     }

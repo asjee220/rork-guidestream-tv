@@ -42,6 +42,11 @@ struct TVHeroCarousel: View {
     /// canonicalTitleId -> hosted featurette URL. A missing key means the
     /// item renders as a drifting still.
     let featurettes: [String: String]
+    /// Leading inset for the metadata block only. The art runs full bleed,
+    /// so the copy has to be told where the rail titles below it start —
+    /// TVMainView's inset plus the measured title-safe margin plus the
+    /// rail's own gutter.
+    let metadataInset: CGFloat
 
     @State private var index: Int = 0
     /// +1 = forward (out left, in from right); -1 = mirrored for back-steps.
@@ -115,6 +120,7 @@ struct TVHeroCarousel: View {
             .ignoresSafeArea()
 
             metadataBlock
+            pageIndicator
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .clipped()
@@ -169,7 +175,7 @@ struct TVHeroCarousel: View {
             if let player {
                 TVFeaturetteLayer(player: player)
                     .opacity(videoReady ? 1 : 0)
-                    .animation(.easeOut(duration: 0.6), value: videoReady)
+                    .animation(.easeOut(duration: 0.4), value: videoReady)
             }
         }
         .overlay {
@@ -241,7 +247,7 @@ struct TVHeroCarousel: View {
                 .prefersDefaultFocus(true, in: heroNamespace)
                 .padding(.top, 6)
             }
-            .padding(.leading, 80 + TVLayout.contentLeadingInset)
+            .padding(.leading, metadataInset)
             .padding(.trailing, 80)
             // Clears the first rail, which peeks over the hero at the fold.
             // The hero grew by the title-safe margin when it opted out, so
@@ -253,6 +259,27 @@ struct TVHeroCarousel: View {
         }
     }
 
+    /// Dotted position control for the carousel, centred on the same line
+    /// as the CTA. The current item reads as an orange capsule; the rest
+    /// are dim dots. Purely indicative — stepping is the remote's job.
+    @ViewBuilder
+    private var pageIndicator: some View {
+        if items.count > 1 {
+            HStack(spacing: 12) {
+                ForEach(items.indices, id: \.self) { position in
+                    Capsule()
+                        .fill(position == index ? TVTheme.orange : Color.white.opacity(0.32))
+                        .frame(width: position == index ? 34 : 10, height: 10)
+                }
+            }
+            .animation(.easeInOut(duration: 0.28), value: index)
+            .frame(maxWidth: .infinity, alignment: .center)
+            .padding(.bottom, 212)
+            .opacity(metadataVisible ? 1 : 0)
+            .animation(.easeInOut(duration: 0.3), value: metadataVisible)
+        }
+    }
+
     // MARK: - Dwell & rotation
 
     /// Seconds a still holds, and the grace period before a video is judged
@@ -260,8 +287,6 @@ struct TVHeroCarousel: View {
     private static let videoStartGrace: Int = 10
     /// Longest any one item holds the hero, however long its video runs.
     private static let maxVideoDwell: Int = 30
-    /// How long the poster holds before the video fades over it.
-    private static let stillHoldMilliseconds: Int = 1500
 
     /// Starts the current item's dwell: a hosted featurette plays once and
     /// advances on its end; a still (or a featurette that never starts)
@@ -371,20 +396,13 @@ struct TVHeroCarousel: View {
         // time=playing while this never fired, so the layer stayed at
         // opacity 0 and the video was invisible even when it was running.
         playbackStatusTask = Task { @MainActor [weak newPlayer] in
-            var ticks = 0
-            for _ in 0..<80 {
-                defer { ticks += 1 }
+            // 100ms ticks over the same 20s budget: the poster gives way the
+            // moment the stream is genuinely playing, with no hold in front
+            // of it, so the only thing between still and video is the fade.
+            for _ in 0..<200 {
                 guard !Task.isCancelled else { return }
                 guard let newPlayer else { return }
                 if newPlayer.timeControlStatus == .playing {
-                    // Hold the poster first. Cutting to video the instant it
-                    // is ready reads as a glitch; a beat of stillness reads
-                    // as intent.
-                    let held = ticks * 250
-                    if held < Self.stillHoldMilliseconds {
-                        try? await Task.sleep(for: .milliseconds(Self.stillHoldMilliseconds - held))
-                        guard !Task.isCancelled else { return }
-                    }
                     markVideoReady(for: item)
                     return
                 }
@@ -392,7 +410,7 @@ struct TVHeroCarousel: View {
                     await retryWithNextStream(for: item)
                     return
                 }
-                try? await Task.sleep(for: .milliseconds(250))
+                try? await Task.sleep(for: .milliseconds(100))
             }
         }
 
@@ -491,7 +509,7 @@ struct TVHeroCarousel: View {
     }
 
     private func markVideoReady(for item: TVTMDBResult) {
-        withAnimation(.easeOut(duration: 0.6)) {
+        withAnimation(.easeOut(duration: 0.4)) {
             videoReady = true
         }
         WatchIntentLogger.shared.log(
