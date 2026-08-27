@@ -36,7 +36,13 @@ android {
         applicationId = "com.rork.guidestreamtvandroid"
         minSdk = 24
         targetSdk = 36
-        versionCode = 22
+        // Play requires a strictly increasing versionCode, and every bundle
+        // RorkMax has published used the build's Unix epoch seconds — the live
+        // 1.0.20 bundle is 1787520409 (Aug 23 2026 21:26 UTC). A small ordinal
+        // like 21 or 22 is therefore far BELOW what Play already has and is
+        // rejected on upload. Keep the epoch convention: when bumping, use
+        // `date +%s` at the time of the build.
+        versionCode = 1787800800
         versionName = "1.0.21"
 
         // Production AdMob app id — supplied via the ANDROID_ADMOB_APP_ID env
