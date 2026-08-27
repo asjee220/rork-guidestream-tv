@@ -150,6 +150,29 @@ final class SportsService {
         }
     }
 
+    /// Single-game refresh used by the game detail screen. Re-fetches only the
+    /// endpoints whose sport matches `game.sport` (1 call for MLB/NBA/NFL/
+    /// Soccer/UFC, 3 for "NBA Summer") and returns the game with the same id,
+    /// or nil when it is no longer on the scoreboard / every call failed.
+    /// Reuses `fetch(endpoint:)` and its mapping — no second ESPN parser.
+    func refresh(game: SportsGame) async -> SportsGame? {
+        let matching = endpoints.filter { $0.sport == game.sport }
+        guard !matching.isEmpty else { return nil }
+        return await withTaskGroup(of: [SportsGame].self) { group -> SportsGame? in
+            for ep in matching {
+                group.addTask { [weak self] in
+                    guard let self else { return [] }
+                    return await self.fetch(endpoint: ep)
+                }
+            }
+            var match: SportsGame?
+            for await games in group where match == nil {
+                match = games.first { $0.id == game.id }
+            }
+            return match
+        }
+    }
+
     private func fetch(endpoint ep: Endpoint) async -> [SportsGame] {
         let urlString = "https://site.api.espn.com/apis/site/v2/sports/\(ep.path)"
         guard let url = URL(string: urlString) else { return [] }

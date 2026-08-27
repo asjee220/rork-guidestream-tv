@@ -130,6 +130,24 @@ class SportsService {
         }
     }
 
+    /**
+     * Single-game refresh used by the game detail screen. Re-fetches only the
+     * endpoints whose sport matches [game]'s sport (1 call for MLB/NBA/NFL/
+     * Soccer/UFC, 3 for "NBA Summer") and returns the game with the same id, or
+     * null when it is no longer on the scoreboard / every call failed. Reuses
+     * [fetch] and its mapping — no second ESPN parser.
+     */
+    suspend fun refresh(game: SportsGame): SportsGame? = withContext(Dispatchers.IO) {
+        val matching = endpoints.filter { it.sport == game.sport }
+        if (matching.isEmpty()) return@withContext null
+        coroutineScope {
+            matching.map { ep -> async { fetch(ep) } }
+                .awaitAll()
+                .flatten()
+                .firstOrNull { it.id == game.id }
+        }
+    }
+
     private suspend fun fetch(endpoint: Endpoint): List<SportsGame> {
         return try {
             val url = "https://site.api.espn.com/apis/site/v2/sports/${endpoint.path}"
