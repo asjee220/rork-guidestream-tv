@@ -843,10 +843,16 @@ struct TVHomeView: View {
         }
         heroLoading = false
 
-        // One batched featurette lookup for the final hero pool — exactly
-        // one Supabase query per Home load, keyed by canonicalTitleId.
+        // Video for the hero, in priority order. A hosted featurette is
+        // authoritative when one exists; otherwise fall back to the YouTube
+        // trailer already cached for that title, resolved to a direct stream
+        // because tvOS has no web view to embed a player in. Items that
+        // resolve to neither render as drifting stills.
         let featurettePool = heroItems.map { (tmdbId: $0.id, isTV: $0.isTV) }
-        heroFeaturettes = await TVFeaturetteService.shared.fetchFeaturettes(for: featurettePool)
+        async let hostedTask = TVFeaturetteService.shared.fetchFeaturettes(for: featurettePool)
+        async let trailerTask = TVTrailerStreamService.shared.fetchTrailerStreams(for: featurettePool)
+        let (hosted, trailers) = await (hostedTask, trailerTask)
+        heroFeaturettes = trailers.merging(hosted) { _, hostedURL in hostedURL }
     }
 
     // MARK: - Everyone's Watching
