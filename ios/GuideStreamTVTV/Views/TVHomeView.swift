@@ -57,6 +57,12 @@ private struct TopPickItem: Identifiable {
 }
 
 struct TVHomeView: View {
+    /// Distance from the physical left edge of the display to this screen's
+    /// leading edge — TVMainView's inset plus the title-safe margin tvOS
+    /// applied above it. Measured by TVMainView, because a ScrollView's own
+    /// content cannot see it.
+    var leadingBleed: CGFloat = TVLayout.contentLeadingInset
+
     @State private var trending: [TVTMDBResult] = []
     @State private var newEpisodes: [TVTMDBResult] = []
     @State private var sports: [TVSportsGame] = []
@@ -112,18 +118,13 @@ struct TVHomeView: View {
     ]
 
     var body: some View {
-        // The screen owns the title-safe margin instead of inheriting it.
-        // Opting the scroll view out and re-applying the measured inset to
-        // the rail stack is the only way the hero can reach the physical
-        // edges: .ignoresSafeArea on a child inside a ScrollView does
-        // nothing, because the scroll content was already laid out inset.
-        GeometryReader { proxy in
-            let safeTop = proxy.safeAreaInsets.top
-            let safeLeading = proxy.safeAreaInsets.leading
-            let safeTrailing = proxy.safeAreaInsets.trailing
-            let railLeading = TVLayout.contentLeadingInset + safeLeading
+        // Distance from the physical left edge of the display to where this
+        // screen starts, measured by TVMainView. Title-safe margins are
+        // symmetric, so the trailing gap is the same minus the shell inset.
+        let trailingBleed = max(0, leadingBleed - TVLayout.contentLeadingInset)
+        let railLeading = leadingBleed
 
-            ScrollView(.vertical, showsIndicators: false) {
+        return ScrollView(.vertical, showsIndicators: false) {
                 LazyVStack(alignment: .leading, spacing: 56) {
                 // 1. Hero — true full bleed. It cancels every inset the rail
                 // stack re-applies, so the art meets the top, leading and
@@ -134,8 +135,7 @@ struct TVHomeView: View {
                     .containerRelativeFrame(.vertical)
                     .padding(.bottom, -160)
                     .padding(.leading, -railLeading)
-                    .padding(.trailing, -safeTrailing)
-                    .padding(.top, -safeTop)
+                    .padding(.trailing, -trailingBleed)
 
                 // 2. Everyone's Watching
                 if !everyonesWatching.isEmpty {
@@ -285,17 +285,15 @@ struct TVHomeView: View {
                 Color.clear.frame(height: 40)
                 }
                 .padding(.leading, railLeading)
-                .padding(.trailing, safeTrailing)
-                .padding(.top, safeTop)
+                .padding(.trailing, trailingBleed)
             }
-            // Cancel TVMainView's inset AND the horizontal title-safe margin
-            // for the scroll view itself; the rail stack above puts both
-            // back, so only the hero escapes. The margin has to be cancelled
-            // explicitly rather than left to .ignoresSafeArea(), which on
-            // this SDK expands a vertical ScrollView vertically only — that
-            // is why the top went full bleed and the leading edge did not.
-            .padding(.leading, -(TVLayout.contentLeadingInset + safeLeading))
-            .padding(.trailing, -safeTrailing)
+            // Pull the scroll view out to the physical edges; the rail stack
+            // above puts both insets back, so only the hero escapes.
+            // .ignoresSafeArea() alone does not do this — on this SDK it
+            // expands a vertical ScrollView vertically only, which is why the
+            // top went full bleed and the leading edge did not.
+            .padding(.leading, -leadingBleed)
+            .padding(.trailing, -trailingBleed)
             .ignoresSafeArea()
             .background(TVTheme.backgroundGradient.ignoresSafeArea())
             .defaultFocus($heroCTAFocused, true)
@@ -316,11 +314,6 @@ struct TVHomeView: View {
             .fullScreenCover(item: $seeAllPayload) { payload in
                 TVSeeAllGridView(payload: payload, pendingDetail: $pendingDetail)
             }
-        }
-        // Deliberately NOT .ignoresSafeArea() here: the GeometryReader has to
-        // sit inside the safe area to be able to report its size. Opting it
-        // out zeroes proxy.safeAreaInsets, the hero cancels nothing, and the
-        // title-safe band comes straight back down the leading edge.
     }
 
     // MARK: - Hero

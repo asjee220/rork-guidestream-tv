@@ -188,6 +188,35 @@ nonisolated struct TVTMDBService {
         return youtube.first?.key
     }
 
+    /// Every YouTube key TMDB carries for a title, ranked: official
+    /// trailers, then any trailer, then teasers, then whatever is left.
+    /// The hero walks this list when a stream refuses to play, so a title
+    /// with one dead trailer still gets a video.
+    func getTrailerKeys(tmdbId: Int, isTV: Bool) async -> [String] {
+        let locale = DeviceLocale.current()
+        let kind = isTV ? "tv" : "movie"
+        let urlString = "\(base)/\(kind)/\(tmdbId)/videos?api_key=\(apiKey)&language=\(locale.tmdbLanguage)"
+        guard let data = try? await get(urlString),
+              let env = try? JSONDecoder().decode(TVTMDBVideosEnvelope.self, from: data) else {
+            return []
+        }
+        let youtube = env.results.filter {
+            ($0.site ?? "").lowercased() == "youtube" && !($0.key ?? "").isEmpty
+        }
+        func rank(_ video: TVTMDBVideo) -> Int {
+            let type = video.type ?? ""
+            if type == "Trailer" && (video.official ?? false) { return 0 }
+            if type == "Trailer" { return 1 }
+            if type == "Teaser" { return 2 }
+            return 3
+        }
+        var seen = Set<String>()
+        return youtube
+            .sorted { rank($0) < rank($1) }
+            .compactMap { $0.key }
+            .filter { seen.insert($0).inserted }
+    }
+
     /// Returns the top US streaming provider for a title, or nil if no
     /// real streaming service is associated with it.
     func getTopWatchProvider(tmdbId: Int, isTV: Bool) async throws -> TVTMDBWatchProvider? {

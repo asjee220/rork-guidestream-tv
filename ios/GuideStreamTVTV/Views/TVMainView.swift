@@ -30,7 +30,16 @@ struct TVMainView: View {
 
     var body: some View {
         ZStack(alignment: .leading) {
-            screen(for: selection)
+            // The screen is handed its own distance from the physical left
+            // edge of the display — this inset plus whatever title-safe
+            // margin tvOS applied above us. Home uses it to let the hero run
+            // full bleed while its rails stay put. Measured here, outside the
+            // scroll view, because nothing inside one can measure it: scroll
+            // content is laid out already inset, and .ignoresSafeArea() on a
+            // child of a ScrollView is a no-op.
+            GeometryReader { proxy in
+                screen(for: selection, leadingBleed: proxy.frame(in: .global).minX)
+            }
                 .padding(.leading, contentLeadingInset)
                 .focusSection()
                 .onMoveCommand { direction in
@@ -76,9 +85,9 @@ struct TVMainView: View {
     }
 
     @ViewBuilder
-    private func screen(for item: TVSideMenuItem) -> some View {
+    private func screen(for item: TVSideMenuItem, leadingBleed: CGFloat) -> some View {
         switch item {
-        case .home: TVHomeView()
+        case .home: TVHomeView(leadingBleed: leadingBleed)
         case .watchList: TVWatchListView()
         case .sports: SportsView()
         case .profile: ProfileView()

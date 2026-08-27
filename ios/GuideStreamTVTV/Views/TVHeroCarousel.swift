@@ -495,11 +495,12 @@ struct TVHeroCarousel: View {
         }
     }
 
-    /// Swaps in the next candidate stream for this title. Bounded to two
-    /// attempts so a title whose keys are all dead falls back to its still
-    /// rather than churning for the whole dwell.
+    /// Swaps in the next candidate stream for this title — another rendition
+    /// of the same trailer first, then another key. Bounded so a title whose
+    /// candidates are all dead falls back to its still rather than churning
+    /// for the whole dwell.
     private func retryWithNextStream(for item: TVTMDBResult) async {
-        guard streamRetries < 2 else { return }
+        guard streamRetries < 4 else { return }
         streamRetries += 1
         guard let next = await TVTrailerStreamService.shared.nextStreamURL(for: item.canonicalTitleId),
               let url = URL(string: next) else { return }

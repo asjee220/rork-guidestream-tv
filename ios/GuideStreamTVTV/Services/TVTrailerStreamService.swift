@@ -52,8 +52,15 @@ final class TVTrailerStreamService {
     /// play — age-gated and region-locked videos hand back a URL that then
     /// 403s — so the carousel asks for the next one instead of giving up.
     private var candidateKeys: [String: [String]] = [:]
+    /// Alternative stream URLs already resolved for the title's current key,
+    /// best first. Tried before moving on to another key — a 1080p rendition
+    /// that 403s is no reason to give up on the trailer itself.
+    private var pendingURLs: [String: [String]] = [:]
 
     private let selectedColumns = "tmdb_id,media_type,keys"
+
+    /// Stream extractions allowed to run at once. See fetchTrailerStreams.
+    private static let maxConcurrentExtractions = 2
 
     /// Looks up cached YouTube keys for a hero pool and resolves the first
     /// playable stream for each. Returns a map keyed by canonicalTitleId
@@ -97,21 +104,23 @@ final class TVTrailerStreamService {
         // which is the same /videos lookup the title sheet already makes.
         let uncached = pool.filter { keyByTmdbId[$0.tmdbId] == nil }
         if !uncached.isEmpty {
-            await withTaskGroup(of: (Int, String?).self) { group in
+            await withTaskGroup(of: (Int, [String]).self) { group in
                 for entry in uncached {
                     group.addTask {
-                        let key = try? await TVTMDBService.shared.getTrailerKey(
+                        let keys = await TVTMDBService.shared.getTrailerKeys(
                             tmdbId: entry.tmdbId,
                             isTV: entry.isTV
                         )
-                        return (entry.tmdbId, key ?? nil)
+                        return (entry.tmdbId, keys)
                     }
                 }
-                for await (tmdbId, key) in group {
-                    if let key, !failed.contains(key) {
-                        keyByTmdbId[tmdbId] = key
-                        allKeysByTmdbId[tmdbId] = [key]
-                    }
+                for await (tmdbId, keys) in group {
+                    // Every ranked key, not just the best one. A single dead
+                    // key used to mean that title showed no video at all.
+                    let usable = keys.filter { !failed.contains($0) }
+                    guard let first = usable.first else { continue }
+                    keyByTmdbId[tmdbId] = first
+                    allKeysByTmdbId[tmdbId] = usable
                 }
             }
         }
@@ -127,17 +136,28 @@ final class TVTrailerStreamService {
         }
         guard !wanted.isEmpty else { return [:] }
 
+        // Resolve two at a time, never the whole pool at once. Extraction
+        // runs YouTube's descrambler through JavaScriptCore, and six of those
+        // in flight together blew the 2GB per-app limit on a real Apple TV —
+        // the app was killed in JSC::BlockDirectory::tryAllocateBlock, which
+        // is also why some titles came up with no video at all.
         var out: [String: String] = [:]
-        await withTaskGroup(of: (String, String?).self) { group in
-            for item in wanted {
-                let cached = resolved[item.key]
-                group.addTask {
-                    if let cached { return (item.titleId, cached) }
-                    return (item.titleId, await Self.streamURL(for: item.key))
+        for chunk in stride(from: 0, to: wanted.count, by: Self.maxConcurrentExtractions).map({
+            Array(wanted[$0..<min($0 + Self.maxConcurrentExtractions, wanted.count)])
+        }) {
+            await withTaskGroup(of: (String, [String]).self) { group in
+                for item in chunk {
+                    let cached = resolved[item.key]
+                    group.addTask {
+                        if let cached { return (item.titleId, [cached]) }
+                        return (item.titleId, await Self.streamCandidates(for: item.key))
+                    }
                 }
-            }
-            for await (titleId, url) in group {
-                if let url { out[titleId] = url }
+                for await (titleId, urls) in group {
+                    guard let best = urls.first else { continue }
+                    out[titleId] = best
+                    pendingURLs[titleId] = Array(urls.dropFirst())
+                }
             }
         }
 
@@ -161,12 +181,21 @@ final class TVTrailerStreamService {
     /// Returns nil once the alternatives are exhausted, and the hero keeps
     /// its still.
     func nextStreamURL(for titleId: String) async -> String? {
+        // Another rendition of the same trailer first — cheapest and most
+        // likely to work, since the key itself already resolved.
+        if var urls = pendingURLs[titleId], !urls.isEmpty {
+            let url = urls.removeFirst()
+            pendingURLs[titleId] = urls
+            return url
+        }
         while var keys = candidateKeys[titleId], !keys.isEmpty {
             let key = keys.removeFirst()
             candidateKeys[titleId] = keys
-            if let url = await Self.streamURL(for: key) {
-                resolved[key] = url
-                return url
+            let urls = await Self.streamCandidates(for: key)
+            if let best = urls.first {
+                resolved[key] = best
+                pendingURLs[titleId] = Array(urls.dropFirst())
+                return best
             }
             failed.insert(key)
         }
@@ -201,24 +230,39 @@ final class TVTrailerStreamService {
     }
     #endif
 
-    /// Highest-resolution progressive stream — one file carrying both video
-    /// and audio, which AVPlayer can open directly. Adaptive DASH streams
-    /// split the tracks and would need a manifest we cannot build here.
-    private nonisolated static func streamURL(for videoID: String) async -> String? {
+    /// Playable streams for one video, best first.
+    ///
+    /// The hero plays muted, so an audio track is dead weight — and that is
+    /// what was capping quality. `includesVideoAndAudioTrack` is an alias for
+    /// "progressive", and progressive YouTube tops out at 720p; the 1080p and
+    /// better renditions are all adaptive, video-only. Dropping the audio
+    /// requirement puts them back on the table, and AVPlayer opens a
+    /// video-only MP4 the same as any other.
+    ///
+    /// `isNativelyPlayable` is codec-aware where an `.mp4` extension is not:
+    /// three of five heroes were once handed mp4 containers Apple TV could
+    /// not decode, and went straight to `.failed`.
+    ///
+    /// Ranked highest resolution first, capped at 1080 — a muted hero behind
+    /// a scrim gains nothing above that and 4K costs bandwidth for nothing.
+    /// At equal resolution a progressive stream wins, being the better-trodden
+    /// path. Returns several so a URL that resolves but then refuses to play
+    /// can be stepped past without abandoning the title.
+    private nonisolated static func streamCandidates(for videoID: String) async -> [String] {
         do {
             let streams = try await YouTube(videoID: videoID).streams
-            // isNativelyPlayable is codec-aware, where an .mp4 extension is
-            // not: three of five heroes were handed mp4 containers Apple TV
-            // could not decode and the item went straight to .failed.
-            let playable = streams.filter { $0.isNativelyPlayable && $0.includesVideoAndAudioTrack }
-            // Cap at 720p. Progressive YouTube tops out there anyway, and a
-            // muted hero sitting behind a scrim gains nothing from more.
-            let capped = playable.filter { ($0.videoResolution ?? 0) <= 720 }
-            let chosen = (capped.isEmpty ? playable : capped)
-                .max { ($0.videoResolution ?? 0) < ($1.videoResolution ?? 0) }
-            return chosen?.url.absoluteString
+            let playable = streams.filter { $0.isNativelyPlayable && $0.includesVideoTrack }
+            let capped = playable.filter { ($0.videoResolution ?? 0) <= 1080 }
+            let pool = capped.isEmpty ? playable : capped
+            let ranked = pool.sorted { lhs, rhs in
+                let lr = lhs.videoResolution ?? 0
+                let rr = rhs.videoResolution ?? 0
+                if lr != rr { return lr > rr }
+                return lhs.includesVideoAndAudioTrack && !rhs.includesVideoAndAudioTrack
+            }
+            return ranked.prefix(4).map { $0.url.absoluteString }
         } catch {
-            return nil
+            return []
         }
     }
 }
