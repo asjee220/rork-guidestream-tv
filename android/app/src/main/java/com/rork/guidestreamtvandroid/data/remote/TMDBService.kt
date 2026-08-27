@@ -2,6 +2,9 @@ package com.rork.guidestreamtvandroid.data.remote
 
 import com.rork.guidestreamtvandroid.AppConfig
 import com.rork.guidestreamtvandroid.data.DeviceLocale
+import com.rork.guidestreamtvandroid.data.models.BrowseFilters
+import com.rork.guidestreamtvandroid.data.models.BrowseMediaType
+import com.rork.guidestreamtvandroid.data.models.BrowsePage
 import com.rork.guidestreamtvandroid.data.models.TMDBResult
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
@@ -11,6 +14,8 @@ import io.ktor.client.request.get
 import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsText
 import io.ktor.serialization.kotlinx.json.json
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -486,6 +491,127 @@ class TMDBService {
     }
 
     // ── Genres ───────────────────────────────────────────────────────
+
+    // ---------------------------------------------------------------------
+    // Search & Browse
+    // ---------------------------------------------------------------------
+
+    /**
+     * Discover envelope. Unlike [TMDBResultEnvelope] this keeps the totals,
+     * because the browse count row ("214 titles") is the whole point of the
+     * screen.
+     */
+    @Serializable
+    private data class TMDBDiscoverEnvelope(
+        val page: Int = 1,
+        val results: List<TMDBResult> = emptyList(),
+        @SerialName("total_pages") val totalPages: Int = 1,
+        @SerialName("total_results") val totalResults: Int = 0,
+    )
+
+    /**
+     * The single composable discover call behind Search & Browse. Every filter
+     * maps to a TMDB discover parameter, so nothing here needs a new endpoint,
+     * a new key, or any backend work.
+     *
+     * An [BrowseMediaType.ALL] media type runs the tv and movie paths
+     * concurrently and interleaves them, so one side cannot crowd the other off
+     * the first screen. If one path fails the other is still returned.
+     */
+    suspend fun discoverBrowse(filters: BrowseFilters, page: Int = 1): BrowsePage {
+        val f = filters.resolved()
+
+        f.resolvedMediaType.discoverPath?.let { path ->
+            return discoverBrowsePage(f, path, page)
+        }
+
+        return coroutineScope {
+            val tv = async { discoverBrowsePage(f, "tv", page) }
+            val movie = async { discoverBrowsePage(f, "movie", page) }
+            val t = tv.await()
+            val m = movie.await()
+            BrowsePage(
+                results = interleaveBrowse(t.results, m.results),
+                page = page,
+                totalPages = maxOf(t.totalPages, m.totalPages),
+                totalResults = t.totalResults + m.totalResults,
+            )
+        }
+    }
+
+    /** One discover page for one media type. */
+    private suspend fun discoverBrowsePage(f: BrowseFilters, path: String, page: Int): BrowsePage {
+        val url = StringBuilder(
+            "$base/discover/$path?api_key=$apiKey&language=${DeviceLocale.tmdbLanguage}&page=$page"
+        )
+        url.append("&sort_by=${f.sort.tmdbValue(path)}")
+
+        // Genre ids differ per media type, so resolve each selection against
+        // the path being queried and drop the ones that do not apply.
+        val genreIds = f.selectedGenres.mapNotNull { it.genreId(path) }
+        if (genreIds.isNotEmpty()) {
+            url.append("&with_genres=${genreIds.joinToString("%2C")}")
+        }
+
+        // Anime pins a single language; International supplies a pooled list.
+        // Both arrive as `with_original_language`.
+        f.selectedGenres.firstNotNullOfOrNull { it.originalLanguage ?: it.languagePool }?.let {
+            url.append("&with_original_language=${it.replace("|", "%7C")}")
+        }
+
+        val providers = f.effectiveProviderIds
+        if (providers.isNotEmpty()) {
+            url.append("&watch_region=${DeviceLocale.region}")
+            url.append("&with_watch_providers=${providers.joinToString("%7C")}")
+            url.append(
+                "&with_watch_monetization_types=" +
+                    if (f.includeFreeWithAds) "flatrate%7Cads" else "flatrate"
+            )
+        }
+
+        f.yearRange?.let { years ->
+            val lower = "${years.first}-01-01"
+            val upper = "${years.last}-12-31"
+            if (path == "movie") {
+                url.append("&primary_release_date.gte=$lower&primary_release_date.lte=$upper")
+            } else {
+                url.append("&first_air_date.gte=$lower&first_air_date.lte=$upper")
+            }
+        }
+
+        f.minRating?.let { url.append("&vote_average.gte=$it") }
+        // A vote floor whenever rating is filtered on or sorted by, or a 10.0
+        // from three votes leads the grid.
+        if (f.minRating != null || f.sort.needsVoteFloor) {
+            url.append("&vote_count.gte=50")
+        }
+
+        return try {
+            val env: TMDBDiscoverEnvelope = client.get(url.toString()).body()
+            BrowsePage(
+                results = env.results.map { it.copy(mediaType = path) },
+                page = env.page,
+                totalPages = env.totalPages,
+                totalResults = env.totalResults,
+            )
+        } catch (_: Exception) {
+            BrowsePage.EMPTY
+        }
+    }
+
+    /**
+     * Alternate two result lists, de-duplicating by TMDB id and appending
+     * whatever remains of the longer one.
+     */
+    private fun interleaveBrowse(a: List<TMDBResult>, b: List<TMDBResult>): List<TMDBResult> {
+        val out = ArrayList<TMDBResult>(a.size + b.size)
+        val seen = HashSet<Int>()
+        for (i in 0 until maxOf(a.size, b.size)) {
+            if (i < a.size && seen.add(a[i].id)) out.add(a[i])
+            if (i < b.size && seen.add(b[i].id)) out.add(b[i])
+        }
+        return out
+    }
 
     @Serializable
     private data class TMDBGenreListEnvelope(

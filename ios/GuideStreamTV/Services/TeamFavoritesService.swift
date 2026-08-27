@@ -159,6 +159,66 @@ final class TeamFavoritesService {
         }
     }
 
+    // MARK: - Batch add
+
+    /// Adds several favorites in one pass — used by TeamPickerSheet, which can
+    /// commit an arbitrary number of teams at once. Already-favorited uids are
+    /// skipped, so this is safe to call with the full selection.
+    ///
+    /// Local state is updated optimistically for the whole batch first, then a
+    /// single multi-row insert is issued. `resaveCachedToken` runs once for the
+    /// batch rather than once per team.
+    func addMany(_ entries: [(team: GameTeam, league: String?, sport: String?)]) async {
+        var payloads: [[String: AnyJSON]] = []
+        var addedUids: [String] = []
+
+        for entry in entries {
+            guard let uid = entry.team.uid, !favoritedUids.contains(uid) else { continue }
+
+            var payload: [String: AnyJSON] = [
+                "device_id": .string(deviceId),
+                "team_uid": .string(uid)
+            ]
+            if let userId = currentUserId?.uuidString {
+                payload["user_id"] = .string(userId)
+            }
+            if let teamId = entry.team.id { payload["team_id"] = .string(teamId) }
+            if !entry.team.abbreviation.isEmpty, entry.team.abbreviation != "\u{2014}" {
+                payload["team_abbr"] = .string(entry.team.abbreviation)
+            }
+            payload["team_name"] = .string(entry.team.shortName)
+            if let league = entry.league { payload["league"] = .string(league) }
+            if let sport = entry.sport { payload["sport"] = .string(sport) }
+
+            payloads.append(payload)
+            addedUids.append(uid)
+        }
+
+        guard !payloads.isEmpty else { return }
+
+        // Optimistic local update for the whole batch.
+        for uid in addedUids { favoritedUids.insert(uid) }
+        saveLocalCache(favoritedUids)
+
+        do {
+            try await SupabaseManager.shared.client
+                .from("team_favorites")
+                .insert(payloads)
+                .execute()
+            // Refresh rows so chips render real team_abbr/team_name immediately.
+            await load()
+            await PushTokenManager.shared.resaveCachedToken()
+        } catch {
+            let message = error.localizedDescription.lowercased()
+            if message.contains("duplicate") || message.contains("23505") {
+                await load()
+            } else {
+                print("[TeamFavorites] addMany persist failed: \(error.localizedDescription)")
+                // Keep the optimistic local state, matching `toggle`.
+            }
+        }
+    }
+
     // MARK: - Local cache
 
     private func loadLocalCache() -> Set<String> {

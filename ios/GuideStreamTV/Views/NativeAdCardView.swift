@@ -13,10 +13,12 @@
 //  to the icon — matching the row-card layout used by inline ad slots and
 //  the Reels carousel.
 //
-//  When `feedStyle` is also true the card renders the 88pt inline-feed chip
-//  row instead: opaque Theme.surface, 60pt icon, orange AD badge above the
-//  headline, orange pill CTA, no dismiss X. `feedStyle` alone (without
-//  `compact`) changes nothing.
+//  When `feedStyle` is also true the card renders the 96pt inline-feed chip
+//  row instead: elevated opaque surface, a 96pt creative square running flush
+//  to the leading edge, a three-line
+//  headline, an "advertiser · Ad" attribution line, AdChoices in the
+//  bottom-trailing corner, a top-trailing close control, and no CTA pill.
+//  `feedStyle` alone (without `compact`) changes nothing.
 //
 
 #if canImport(GoogleMobileAds) && !targetEnvironment(simulator)
@@ -73,6 +75,16 @@ final class NativeAdContainer: UIView {
     private let adBadge = UILabel()
     private let adChoicesContainer = AdChoicesView()
 
+    /// Feed chip only — the "advertiser · Ad" row that sits under the
+    /// headline. Keeps the badge hard against the advertiser name instead of
+    /// letting it stretch across the text column.
+    private let metaRow = UIStackView()
+
+    /// Feed chip only — top-trailing close control. Decorative (not a
+    /// registered asset) and hosted on the container above the ad view, so a
+    /// tap on it is never treated as an ad click.
+    private let closeButton = UIButton(type: .system)
+
     /// Text-stack leading constraint anchored to the icon — swappeable in
     /// configure() when the ad has no icon image.
     private var textStackLeadingWithIcon: NSLayoutConstraint?
@@ -91,11 +103,11 @@ final class NativeAdContainer: UIView {
 
     private func setupViews() {
         if isFeedChip {
-            // Feed chip: opaque Theme.surface — no blur, no navy tint.
-            backgroundColor = UIColor(red: 0x0B/255, green: 0x12/255, blue: 0x1C/255, alpha: 1)
+            // Feed chip: opaque Theme.surfaceElevated — no blur, no navy tint.
+            backgroundColor = UIColor(red: 0x12/255, green: 0x1B/255, blue: 0x2A/255, alpha: 1)
             layer.cornerRadius = 14
             layer.borderWidth = 1
-            layer.borderColor = UIColor.white.withAlphaComponent(0.10).cgColor
+            layer.borderColor = UIColor.white.withAlphaComponent(0.08).cgColor
             clipsToBounds = true
         } else {
             // Glass background
@@ -137,10 +149,11 @@ final class NativeAdContainer: UIView {
             mediaView.clipsToBounds = true
             adView.addSubview(mediaView)
         } else if isFeedChip {
-            // Feed chip: 60pt icon square, radius 10, aspect-fill.
+            // Feed chip: 96pt creative square running flush to the leading
+            // edge, aspect-fill. Square-cornered — the container's own corner
+            // radius clips the two corners that meet the card's edges.
             iconView.translatesAutoresizingMaskIntoConstraints = false
             iconView.contentMode = .scaleAspectFill
-            iconView.layer.cornerRadius = 10
             iconView.clipsToBounds = true
             adView.addSubview(iconView)
         } else {
@@ -155,10 +168,12 @@ final class NativeAdContainer: UIView {
             adView.addSubview(iconView)
         }
 
-        // Headline (12pt heavy, white, 2 lines — 13pt on the feed chip)
-        headlineLabel.font = .systemFont(ofSize: isFeedChip ? 13 : 12, weight: .heavy)
+        // Headline (12pt heavy, white, 2 lines — 14pt semibold, 3 lines on
+        // the feed chip, matching the reference card's text block)
+        headlineLabel.font = .systemFont(ofSize: isFeedChip ? 14 : 12,
+                                         weight: isFeedChip ? .semibold : .heavy)
         headlineLabel.textColor = .white
-        headlineLabel.numberOfLines = 2
+        headlineLabel.numberOfLines = isFeedChip ? 3 : 2
         headlineLabel.lineBreakMode = .byTruncatingTail
         headlineLabel.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
 
@@ -169,66 +184,100 @@ final class NativeAdContainer: UIView {
         bodyLabel.lineBreakMode = .byTruncatingTail
         bodyLabel.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
 
-        // Advertiser (9pt, 45% white — 9.5pt on the feed chip)
-        advertiserLabel.font = .systemFont(ofSize: isFeedChip ? 9.5 : 9, weight: .regular)
-        advertiserLabel.textColor = UIColor.white.withAlphaComponent(0.45)
+        // Advertiser (9pt, 45% white — 11pt at 52% on the feed chip)
+        advertiserLabel.font = .systemFont(ofSize: isFeedChip ? 11 : 9, weight: .regular)
+        advertiserLabel.textColor = UIColor.white.withAlphaComponent(isFeedChip ? 0.52 : 0.45)
         advertiserLabel.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
 
         // Text column — vertically centered between media/icon and CTA
         textStack.axis = .vertical
-        textStack.spacing = 2
+        textStack.spacing = isFeedChip ? 5 : 2
         textStack.alignment = .fill
         textStack.translatesAutoresizingMaskIntoConstraints = false
         textStack.addArrangedSubview(headlineLabel)
-        textStack.addArrangedSubview(bodyLabel)
-        textStack.addArrangedSubview(advertiserLabel)
+        if isFeedChip {
+            // Feed chip: advertiser and the "Ad" attribution share one row
+            // under the headline. The trailing spacer keeps both hard left.
+            metaRow.axis = .horizontal
+            metaRow.spacing = 5
+            metaRow.alignment = .center
+            metaRow.translatesAutoresizingMaskIntoConstraints = false
+            // Keeps the name tight so the badge sits against it rather than
+            // being pushed to the far edge of the column.
+            advertiserLabel.setContentHuggingPriority(.required, for: .horizontal)
+            metaRow.addArrangedSubview(advertiserLabel)
+            metaRow.addArrangedSubview(adBadge)
+            let spacer = UIView()
+            spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+            metaRow.addArrangedSubview(spacer)
+            textStack.addArrangedSubview(metaRow)
+        } else {
+            textStack.addArrangedSubview(bodyLabel)
+            textStack.addArrangedSubview(advertiserLabel)
+        }
         adView.addSubview(textStack)
 
         // CTA button (orange pill) — trailing edge, vertically centered.
-        // Feed chip: radius 12, 11pt bold text, 12×6 content insets, sized by
-        // content instead of a fixed height.
+        // Never shown on the feed chip.
         ctaButton.translatesAutoresizingMaskIntoConstraints = false
-        ctaButton.titleLabel?.font = .systemFont(ofSize: isFeedChip ? 11 : 10, weight: .bold)
+        ctaButton.titleLabel?.font = .systemFont(ofSize: 10, weight: .bold)
         ctaButton.setTitleColor(.white, for: .normal)
         ctaButton.backgroundColor = UIColor(red: 0xF5/255, green: 0x82/255, blue: 0x1F/255, alpha: 1)
-        ctaButton.layer.cornerRadius = isFeedChip ? 12 : 4
+        ctaButton.layer.cornerRadius = 4
         ctaButton.clipsToBounds = true
         ctaButton.isUserInteractionEnabled = false
-        if isFeedChip {
-            ctaButton.contentEdgeInsets = UIEdgeInsets(top: 6, left: 12, bottom: 6, right: 12)
-        } else {
-            ctaButton.contentEdgeInsets = UIEdgeInsets(top: 4, left: 8, bottom: 4, right: 8)
-        }
+        ctaButton.contentEdgeInsets = UIEdgeInsets(top: 4, left: 8, bottom: 4, right: 8)
         ctaButton.setContentCompressionResistancePriority(.required, for: .horizontal)
         ctaButton.setContentHuggingPriority(.required, for: .horizontal)
-        adView.addSubview(ctaButton)
+        // The feed chip has no CTA pill — the whole card is the click target,
+        // so the button is neither mounted nor registered as an asset.
+        if !isFeedChip {
+            adView.addSubview(ctaButton)
+        }
 
         // AdChoices container — top-trailing corner of the ad view, clear of
         // every other registered asset and unobscured so it stays tappable.
         adChoicesContainer.translatesAutoresizingMaskIntoConstraints = false
         adView.addSubview(adChoicesContainer)
 
-        // "Ad" attribution badge — a subview of adView (so the validator sees
-        // it inside the native ad view) positioned at the top of the text
-        // column, above the headline, clear of media/text/CTA/AdChoices.
+        // "Ad" attribution badge — inside the native ad view either way: a
+        // direct subview positioned above the headline on the full cards, or
+        // an arranged subview of metaRow on the feed chip.
         if isFeedChip {
-            // Feed chip: orange "AD" badge pill, pinned directly above the
-            // headline at the head of the text column.
-            adBadge.text = "AD"
-            adBadge.font = .systemFont(ofSize: 9, weight: .bold)
-            adBadge.textColor = UIColor(red: 0xF5/255, green: 0x82/255, blue: 0x1F/255, alpha: 1)
-            adBadge.backgroundColor = UIColor(red: 0xF5/255, green: 0x82/255, blue: 0x1F/255, alpha: 0.18)
+            // Feed chip: muted "Ad" chip sitting immediately after the
+            // advertiser name, as the reference card renders attribution.
+            adBadge.text = "Ad"
+            adBadge.font = .systemFont(ofSize: 10, weight: .medium)
+            adBadge.textColor = UIColor.white.withAlphaComponent(0.62)
+            adBadge.backgroundColor = UIColor.white.withAlphaComponent(0.12)
         } else {
             adBadge.text = "Ad"
             adBadge.font = .systemFont(ofSize: 9, weight: .bold)
             adBadge.textColor = UIColor.white.withAlphaComponent(0.85)
             adBadge.backgroundColor = UIColor.black.withAlphaComponent(0.35)
         }
-        adBadge.layer.cornerRadius = 4
+        adBadge.layer.cornerRadius = isFeedChip ? 3 : 4
         adBadge.clipsToBounds = true
         adBadge.textAlignment = .center
         adBadge.translatesAutoresizingMaskIntoConstraints = false
-        adView.addSubview(adBadge)
+        if !isFeedChip {
+            adView.addSubview(adBadge)
+        }
+
+        // Close control — feed chip only. Sits on the container above the ad
+        // view so its tap is never routed to the ad, and clears the AdChoices
+        // control, which moves to the bottom-trailing corner on this layout.
+        if isFeedChip {
+            closeButton.setImage(UIImage(systemName: "xmark"), for: .normal)
+            closeButton.tintColor = UIColor.white.withAlphaComponent(0.55)
+            closeButton.setPreferredSymbolConfiguration(
+                UIImage.SymbolConfiguration(pointSize: 13, weight: .semibold),
+                forImageIn: .normal
+            )
+            closeButton.translatesAutoresizingMaskIntoConstraints = false
+            closeButton.addTarget(self, action: #selector(dismissTapped), for: .touchUpInside)
+            addSubview(closeButton)
+        }
 
         // Build constraints — common ones always active, media/icon and
         // chip-specific ones branched on compact / isFeedChip.
@@ -257,51 +306,81 @@ final class NativeAdContainer: UIView {
         // other assets and unobscured so it stays tappable. Always rendered —
         // the SDK draws its own marker when no adChoicesView is registered.
         // Containment clamps keep the asset fully inside adView (validator).
+        // On the feed chip the top-trailing corner belongs to the close
+        // control, so AdChoices takes the bottom-trailing corner instead —
+        // still fully inside the ad view, unobscured, and tappable.
         constraints.append(contentsOf: [
-            adChoicesContainer.trailingAnchor.constraint(equalTo: adView.trailingAnchor, constant: -8),
-            adChoicesContainer.topAnchor.constraint(equalTo: adView.topAnchor, constant: 8),
+            adChoicesContainer.trailingAnchor.constraint(equalTo: adView.trailingAnchor, constant: isFeedChip ? -11 : -8),
             adChoicesContainer.widthAnchor.constraint(equalToConstant: isFeedChip ? 14 : 16),
             adChoicesContainer.heightAnchor.constraint(equalToConstant: isFeedChip ? 14 : 16),
             adChoicesContainer.leadingAnchor.constraint(greaterThanOrEqualTo: adView.leadingAnchor, constant: 8),
-            adChoicesContainer.bottomAnchor.constraint(lessThanOrEqualTo: adView.bottomAnchor, constant: -8),
         ])
-
-        // CTA — trailing edge, vertically centered. Containment clamps keep
-        // the asset fully inside adView (validator). The feed chip sizes the
-        // pill from its content insets instead of a fixed height.
-        constraints.append(contentsOf: [
-            ctaButton.trailingAnchor.constraint(equalTo: adView.trailingAnchor, constant: -12),
-            ctaButton.centerYAnchor.constraint(equalTo: adView.centerYAnchor),
-            ctaButton.topAnchor.constraint(greaterThanOrEqualTo: adView.topAnchor, constant: 8),
-            ctaButton.bottomAnchor.constraint(lessThanOrEqualTo: adView.bottomAnchor, constant: -8),
-            ctaButton.leadingAnchor.constraint(greaterThanOrEqualTo: adView.leadingAnchor, constant: 8),
-        ])
-        if !isFeedChip {
-            constraints.append(ctaButton.heightAnchor.constraint(equalToConstant: 24))
+        if isFeedChip {
+            constraints.append(contentsOf: [
+                adChoicesContainer.bottomAnchor.constraint(equalTo: adView.bottomAnchor, constant: -10),
+                adChoicesContainer.topAnchor.constraint(greaterThanOrEqualTo: adView.topAnchor, constant: 8),
+            ])
+        } else {
+            constraints.append(contentsOf: [
+                adChoicesContainer.topAnchor.constraint(equalTo: adView.topAnchor, constant: 8),
+                adChoicesContainer.bottomAnchor.constraint(lessThanOrEqualTo: adView.bottomAnchor, constant: -8),
+            ])
         }
 
-        // Text column — vertically centered; on the feed chip it shifts down
-        // 8.5pt so the badge + column block centers as a unit. Trailing
-        // containment clamp keeps the stack inside adView (validator).
+        // Close control — top-trailing on the container, feed chip only.
+        if isFeedChip {
+            constraints.append(contentsOf: [
+                // 44pt target for the HIG minimum; the glyph still reads as a
+                // small X in the corner because the button is transparent.
+                closeButton.topAnchor.constraint(equalTo: topAnchor),
+                closeButton.trailingAnchor.constraint(equalTo: trailingAnchor),
+                closeButton.widthAnchor.constraint(equalToConstant: 44),
+                closeButton.heightAnchor.constraint(equalToConstant: 44),
+            ])
+        }
+
+        // CTA — trailing edge, vertically centered. Containment clamps keep
+        // the asset fully inside adView (validator).
+        if !isFeedChip {
+            constraints.append(contentsOf: [
+                ctaButton.trailingAnchor.constraint(equalTo: adView.trailingAnchor, constant: -12),
+                ctaButton.centerYAnchor.constraint(equalTo: adView.centerYAnchor),
+                ctaButton.topAnchor.constraint(greaterThanOrEqualTo: adView.topAnchor, constant: 8),
+                ctaButton.bottomAnchor.constraint(lessThanOrEqualTo: adView.bottomAnchor, constant: -8),
+                ctaButton.leadingAnchor.constraint(greaterThanOrEqualTo: adView.leadingAnchor, constant: 8),
+                ctaButton.heightAnchor.constraint(equalToConstant: 24),
+            ])
+        }
+
+        // Text column — vertically centered. The feed chip stops 44pt short
+        // of the trailing edge so a three-line headline never runs under the
+        // close control.
         constraints.append(contentsOf: [
-            textStack.trailingAnchor.constraint(equalTo: ctaButton.leadingAnchor, constant: -8),
-            textStack.centerYAnchor.constraint(equalTo: adView.centerYAnchor, constant: isFeedChip ? 8.5 : 0),
+            textStack.centerYAnchor.constraint(equalTo: adView.centerYAnchor),
             textStack.topAnchor.constraint(greaterThanOrEqualTo: adView.topAnchor, constant: 8),
             textStack.bottomAnchor.constraint(lessThanOrEqualTo: adView.bottomAnchor, constant: -8),
-            textStack.trailingAnchor.constraint(lessThanOrEqualTo: adView.trailingAnchor, constant: -8),
         ])
+        if isFeedChip {
+            constraints.append(
+                textStack.trailingAnchor.constraint(equalTo: adView.trailingAnchor, constant: -44)
+            )
+        } else {
+            constraints.append(contentsOf: [
+                textStack.trailingAnchor.constraint(equalTo: ctaButton.leadingAnchor, constant: -8),
+                textStack.trailingAnchor.constraint(lessThanOrEqualTo: adView.trailingAnchor, constant: -8),
+            ])
+        }
 
         // Ad attribution badge — required attribution. Containment clamps
         // keep the badge fully inside adView (validator). Feed chip: a fixed
-        // 28×15 pill sitting directly above the headline at the head of the
-        // text column. Otherwise: top of the text-column region, as before.
+        // 24×16 chip laid out by metaRow, right after the advertiser name.
+        // Otherwise: top of the text-column region, as before.
         if isFeedChip {
+            // Sized only — the badge is laid out by metaRow, right after the
+            // advertiser name.
             constraints.append(contentsOf: [
-                adBadge.leadingAnchor.constraint(equalTo: textStack.leadingAnchor),
-                adBadge.bottomAnchor.constraint(equalTo: textStack.topAnchor, constant: -2),
-                adBadge.heightAnchor.constraint(equalToConstant: 15),
-                adBadge.widthAnchor.constraint(equalToConstant: 28),
-                adBadge.topAnchor.constraint(greaterThanOrEqualTo: adView.topAnchor, constant: 8),
+                adBadge.heightAnchor.constraint(equalToConstant: 16),
+                adBadge.widthAnchor.constraint(equalToConstant: 24),
             ])
         } else {
             constraints.append(contentsOf: [
@@ -330,20 +409,30 @@ final class NativeAdContainer: UIView {
                 textStack.leadingAnchor.constraint(equalTo: mediaView.trailingAnchor, constant: 10),
             ])
         } else {
-            // Icon — 56pt square (60pt on the feed chip), leading, vertically
-            // centered.
-            constraints.append(contentsOf: [
-                iconView.leadingAnchor.constraint(equalTo: adView.leadingAnchor, constant: 12),
-                iconView.centerYAnchor.constraint(equalTo: adView.centerYAnchor),
-                iconView.widthAnchor.constraint(equalToConstant: isFeedChip ? 60 : 56),
-                iconView.heightAnchor.constraint(equalToConstant: isFeedChip ? 60 : 56),
-                iconView.topAnchor.constraint(greaterThanOrEqualTo: adView.topAnchor, constant: 8),
-                iconView.bottomAnchor.constraint(lessThanOrEqualTo: adView.bottomAnchor, constant: -8),
-            ])
+            if isFeedChip {
+                // Creative — flush to the leading edge and the full height of
+                // the chip, so it reads as one square of artwork.
+                constraints.append(contentsOf: [
+                    iconView.leadingAnchor.constraint(equalTo: adView.leadingAnchor),
+                    iconView.topAnchor.constraint(equalTo: adView.topAnchor),
+                    iconView.bottomAnchor.constraint(equalTo: adView.bottomAnchor),
+                    iconView.widthAnchor.constraint(equalTo: iconView.heightAnchor),
+                ])
+            } else {
+                // Icon — 56pt square, leading, vertically centered.
+                constraints.append(contentsOf: [
+                    iconView.leadingAnchor.constraint(equalTo: adView.leadingAnchor, constant: 12),
+                    iconView.centerYAnchor.constraint(equalTo: adView.centerYAnchor),
+                    iconView.widthAnchor.constraint(equalToConstant: 56),
+                    iconView.heightAnchor.constraint(equalToConstant: 56),
+                    iconView.topAnchor.constraint(greaterThanOrEqualTo: adView.topAnchor, constant: 8),
+                    iconView.bottomAnchor.constraint(lessThanOrEqualTo: adView.bottomAnchor, constant: -8),
+                ])
+            }
             // Text column leading — anchored to icon trailing by default;
             // swapped to adView leading + 12 in configure() when no icon image.
             textStackLeadingWithIcon = textStack.leadingAnchor.constraint(
-                equalTo: iconView.trailingAnchor, constant: 10
+                equalTo: iconView.trailingAnchor, constant: isFeedChip ? 12 : 10
             )
             textStackLeadingNoIcon = textStack.leadingAnchor.constraint(
                 equalTo: adView.leadingAnchor, constant: 12
@@ -360,8 +449,16 @@ final class NativeAdContainer: UIView {
         // Register asset views on the GADNativeAdView so the SDK can
         // track impressions and handle clicks.
         adView.headlineView = headlineLabel
-        adView.bodyView = bodyLabel
-        adView.callToActionView = ctaButton
+        // The feed chip has no body line, so its label is never mounted —
+        // registering a detached view would put an asset outside the ad view.
+        if !isFeedChip {
+            adView.bodyView = bodyLabel
+        }
+        // The feed chip draws no CTA pill, so the button is not registered —
+        // registering an asset view that is never shown is a policy risk.
+        if !isFeedChip {
+            adView.callToActionView = ctaButton
+        }
         adView.advertiserView = advertiserLabel
         adView.adChoicesView = adChoicesContainer
 
@@ -395,10 +492,16 @@ final class NativeAdContainer: UIView {
         } else {
             bodyLabel.isHidden = (ad.body == nil)
         }
-        advertiserLabel.text = ad.advertiser
-        advertiserLabel.isHidden = (ad.advertiser == nil)
-        ctaButton.setTitle(ad.callToAction, for: .normal)
-        ctaButton.isHidden = (ad.callToAction == nil)
+        // Native ads often omit the advertiser; the store name is the usual
+        // stand-in, and the chip degrades to the bare "Ad" attribution only
+        // when neither is present.
+        let advertiserText = ad.advertiser ?? ad.store
+        advertiserLabel.text = advertiserText
+        advertiserLabel.isHidden = (advertiserText == nil)
+        if !isFeedChip {
+            ctaButton.setTitle(ad.callToAction, for: .normal)
+            ctaButton.isHidden = (ad.callToAction == nil)
+        }
 
         // Associate the ad — must be the last step, after all asset
         // views are populated and registered.
@@ -424,7 +527,11 @@ final class NativeAdContainer: UIView {
 
         // Snap every registered asset view to an integral rect strictly inside
         // adView. Frames in adView's coordinate space:
-        if compact {
+        if isFeedChip {
+            for view in [iconView, adChoicesContainer, textStack] {
+                view.frame = integralRect(view.frame)
+            }
+        } else if compact {
             for view in [iconView, ctaButton, adChoicesContainer, adBadge, textStack] {
                 view.frame = integralRect(view.frame)
             }
@@ -434,8 +541,18 @@ final class NativeAdContainer: UIView {
             }
         }
         // Frames in textStack's coordinate space:
-        for view in [headlineLabel, bodyLabel, advertiserLabel] {
-            view.frame = integralRect(view.frame)
+        if isFeedChip {
+            for view in [headlineLabel, metaRow] {
+                view.frame = integralRect(view.frame)
+            }
+            // Frames in metaRow's coordinate space:
+            for view in [advertiserLabel, adBadge] {
+                view.frame = integralRect(view.frame)
+            }
+        } else {
+            for view in [headlineLabel, bodyLabel, advertiserLabel] {
+                view.frame = integralRect(view.frame)
+            }
         }
     }
 
@@ -446,6 +563,12 @@ final class NativeAdContainer: UIView {
                y: rect.origin.y.rounded(),
                width: rect.width.rounded(.down),
                height: rect.height.rounded(.down))
+    }
+
+    // MARK: - Actions
+
+    @objc private func dismissTapped() {
+        onDismiss?()
     }
 
 }
