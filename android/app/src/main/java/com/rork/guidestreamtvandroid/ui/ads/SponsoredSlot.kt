@@ -227,7 +227,7 @@ fun SponsoredSlot(
  * "Get offer" row. Tapping anywhere opens the tracked link.
  */
 @Composable
-private fun RakutenAffiliatePresentation(
+internal fun RakutenAffiliatePresentation(
     service: StreamingService?,
     headline: String,
     subtitle: String,
