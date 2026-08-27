@@ -109,6 +109,10 @@ struct TVHeroCarousel: View {
                 }
             }
             .animation(.easeInOut(duration: 0.65), value: index)
+            // tvOS keeps everything inside a title-safe margin by default,
+            // which left a band of background down the leading edge and
+            // across the top. The art opts out; the metadata below does not.
+            .ignoresSafeArea()
 
             metadataBlock
         }
@@ -237,8 +241,12 @@ struct TVHeroCarousel: View {
                 .prefersDefaultFocus(true, in: heroNamespace)
                 .padding(.top, 6)
             }
-            .padding(.horizontal, 80)
-            .padding(.bottom, 120)
+            .padding(.leading, 80 + TVLayout.contentLeadingInset)
+            .padding(.trailing, 80)
+            // Clears the first rail, which peeks over the hero at the fold.
+            // The hero grew by the title-safe margin when it opted out, so
+            // this has to clear more than it used to.
+            .padding(.bottom, 200)
             .opacity(metadataVisible ? 1 : 0)
             .animation(.easeInOut(duration: 0.3), value: metadataVisible)
             .animation(.easeOut(duration: 0.35), value: index)
@@ -252,6 +260,8 @@ struct TVHeroCarousel: View {
     private static let videoStartGrace: Int = 10
     /// Longest any one item holds the hero, however long its video runs.
     private static let maxVideoDwell: Int = 30
+    /// How long the poster holds before the video fades over it.
+    private static let stillHoldMilliseconds: Int = 1500
 
     /// Starts the current item's dwell: a hosted featurette plays once and
     /// advances on its end; a still (or a featurette that never starts)
@@ -361,10 +371,20 @@ struct TVHeroCarousel: View {
         // time=playing while this never fired, so the layer stayed at
         // opacity 0 and the video was invisible even when it was running.
         playbackStatusTask = Task { @MainActor [weak newPlayer] in
+            var ticks = 0
             for _ in 0..<80 {
+                defer { ticks += 1 }
                 guard !Task.isCancelled else { return }
                 guard let newPlayer else { return }
                 if newPlayer.timeControlStatus == .playing {
+                    // Hold the poster first. Cutting to video the instant it
+                    // is ready reads as a glitch; a beat of stillness reads
+                    // as intent.
+                    let held = ticks * 250
+                    if held < Self.stillHoldMilliseconds {
+                        try? await Task.sleep(for: .milliseconds(Self.stillHoldMilliseconds - held))
+                        guard !Task.isCancelled else { return }
+                    }
                     markVideoReady(for: item)
                     return
                 }
@@ -445,6 +465,11 @@ struct TVHeroCarousel: View {
                 named: .AVPlayerItemDidPlayToEndTime,
                 object: newPlayer.currentItem
             ) {
+                guard !Task.isCancelled else { return }
+                // Fade back to the poster before rotating, so the item ends
+                // on the same image it began with.
+                withAnimation(.easeOut(duration: 0.6)) { videoReady = false }
+                try? await Task.sleep(for: .milliseconds(900))
                 guard !Task.isCancelled else { return }
                 advance()
                 return

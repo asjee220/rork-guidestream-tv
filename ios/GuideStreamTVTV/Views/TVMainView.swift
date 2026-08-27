@@ -23,7 +23,7 @@ struct TVMainView: View {
     /// including its focus ring and scale expansion — never slides behind
     /// the panel. The menu still overlays the same content when it opens,
     /// and the content never shifts or resizes.
-    private let contentLeadingInset: CGFloat = 72
+    private let contentLeadingInset: CGFloat = TVLayout.contentLeadingInset
 
     @State private var selection: TVSideMenuItem = .home
     @State private var menuIsOpen: Bool = false

@@ -126,3 +126,14 @@ enum TVTheme {
         .ignoresSafeArea()
     }
 }
+
+
+// MARK: - Layout
+
+enum TVLayout {
+    /// Leading inset TVMainView applies to every screen so the collapsed
+    /// side menu never covers content. The hero cancels it to run full
+    /// bleed, and re-adds it to its own text block so the copy still lines
+    /// up with the rails below.
+    static let contentLeadingInset: CGFloat = 72
+}

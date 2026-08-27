@@ -102,7 +102,8 @@ struct TVSideMenu: View {
         }
         .frame(width: isOpen ? openWidth : closedWidth)
         .frame(maxHeight: .infinity)
-        .background(TVTheme.surface.opacity(0.92))
+        .background(TVTheme.surface.opacity(0.30))
+        .background(.ultraThinMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 36, style: .continuous))
         .padding(.leading, leadingInset)
         .padding(.vertical, verticalInset)

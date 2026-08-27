@@ -121,6 +121,14 @@ struct TVHomeView: View {
                     .containerRelativeFrame(.vertical)
                     .padding(.top, 8)
                     .padding(.bottom, -160)
+                    // Cancel TVMainView's inset so the art runs to the
+                    // screen edge and the menu floats over it, the way every
+                    // other living-room hero does.
+                    .padding(.leading, -TVLayout.contentLeadingInset)
+                    // The carousel clips to its own frame, so the opt-out
+                    // has to be re-stated out here or the title-safe margin
+                    // reappears down the leading edge.
+                    .ignoresSafeArea(edges: [.leading, .top, .trailing])
 
                 // 2. Everyone's Watching
                 if !everyonesWatching.isEmpty {
