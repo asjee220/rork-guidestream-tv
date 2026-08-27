@@ -177,10 +177,17 @@ final class TVTrailerStreamService {
     /// split the tracks and would need a manifest we cannot build here.
     private nonisolated static func streamURL(for videoID: String) async -> String? {
         do {
-            let stream = try await YouTube(videoID: videoID).streams
-                .filter { $0.includesVideoAndAudioTrack && $0.fileExtension == .mp4 }
-                .highestResolutionStream()
-            return stream?.url.absoluteString
+            let streams = try await YouTube(videoID: videoID).streams
+            // isNativelyPlayable is codec-aware, where an .mp4 extension is
+            // not: three of five heroes were handed mp4 containers Apple TV
+            // could not decode and the item went straight to .failed.
+            let playable = streams.filter { $0.isNativelyPlayable && $0.includesVideoAndAudioTrack }
+            // Cap at 720p. Progressive YouTube tops out there anyway, and a
+            // muted hero sitting behind a scrim gains nothing from more.
+            let capped = playable.filter { ($0.videoResolution ?? 0) <= 720 }
+            let chosen = (capped.isEmpty ? playable : capped)
+                .max { ($0.videoResolution ?? 0) < ($1.videoResolution ?? 0) }
+            return chosen?.url.absoluteString
         } catch {
             return nil
         }

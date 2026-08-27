@@ -139,6 +139,12 @@ struct TVHeroCarousel: View {
             index = 0
             startDwell()
         }
+        .onChange(of: featurettes.count) { _, _ in
+            // The pool is built before its video URLs resolve, so the first
+            // item's dwell starts on the still path. Re-arm once the map
+            // lands or item one can never play.
+            startDwell()
+        }
     }
 
     // MARK: - Layers
@@ -251,6 +257,7 @@ struct TVHeroCarousel: View {
         endOfItemTask?.cancel()
         playbackStatusTask?.cancel()
         teardownPlayer()
+        resetVideoReady()
 
         guard let item = currentItem, items.count > 1, index < items.count - 1 else {
             return
@@ -344,17 +351,19 @@ struct TVHeroCarousel: View {
 
         // Fade the layer in and log the view the moment playback actually
         // starts; until then the drifting still stays visible underneath.
+        // Polled rather than observed. The KVO publisher for
+        // timeControlStatus did not deliver on device — players reported
+        // time=playing while this never fired, so the layer stayed at
+        // opacity 0 and the video was invisible even when it was running.
         playbackStatusTask = Task { @MainActor [weak newPlayer] in
-            guard let newPlayer else { return }
-            if newPlayer.timeControlStatus == .playing {
-                markVideoReady(for: item)
-                return
-            }
-            for await status in newPlayer.publisher(for: \.timeControlStatus).values {
+            for _ in 0..<80 {
                 guard !Task.isCancelled else { return }
-                guard status == .playing else { continue }
-                markVideoReady(for: item)
-                return
+                guard let newPlayer else { return }
+                if newPlayer.timeControlStatus == .playing {
+                    markVideoReady(for: item)
+                    return
+                }
+                try? await Task.sleep(for: .milliseconds(250))
             }
         }
 
@@ -445,6 +454,10 @@ struct TVHeroCarousel: View {
         )
     }
 
+    private func resetVideoReady() {
+        videoReady = false
+    }
+
     private func teardownPlayer() {
         player?.pause()
         player = nil
@@ -459,14 +472,11 @@ struct TVHeroCarousel: View {
         endOfItemTask?.cancel()
         guard !autoAdvanceDisabled else { return }
         guard items.count > 1, index < items.count - 1 else { return }
-        if ctaFocused || heroRegionFocused {
-            dwellTask = Task { @MainActor in
-                try? await Task.sleep(for: .seconds(10))
-                guard !Task.isCancelled else { return }
-                advance()
-            }
-            return
-        }
+        // Deliberately does NOT pause because the hero holds focus. It used
+        // to, back when the CTA was only focused if the viewer moved to it —
+        // now the CTA is the screen's default focus, so that rule re-armed
+        // the timer forever and the carousel never left the first item.
+        // autoAdvanceDisabled, set by any manual left/right, is the pause.
         direction = 1
         index += 1
     }
