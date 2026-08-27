@@ -58,7 +58,7 @@ final class TVTrailerStreamService {
         let ids = Array(Set(pool.map { $0.tmdbId }))
         guard !ids.isEmpty else { return [:] }
 
-        let rows: [TVTrailerCacheRow]
+        var rows: [TVTrailerCacheRow] = []
         do {
             rows = try await SupabaseManager.shared.client
                 .from("trailer_cache")
@@ -67,7 +67,8 @@ final class TVTrailerStreamService {
                 .execute()
                 .value
         } catch {
-            return [:]
+            // A cache miss is not fatal — TMDB is asked directly below.
+            rows = []
         }
 
         var isTVById: [Int: Bool] = [:]
@@ -75,12 +76,41 @@ final class TVTrailerStreamService {
 
         // Match on media type as well as id — a film and a series can share a
         // TMDB id and their trailers are not interchangeable.
-        var wanted: [(key: String, titleId: String)] = []
+        var keyByTmdbId: [Int: String] = [:]
         for row in rows {
             guard let isTV = isTVById[row.tmdbId] else { continue }
             guard row.mediaType == (isTV ? "tv" : "movie") else { continue }
             guard let first = row.keys.first(where: { !failed.contains($0) }) else { continue }
-            wanted.append((first, "tmdb:\(row.mediaType):\(row.tmdbId)"))
+            keyByTmdbId[row.tmdbId] = first
+        }
+
+        // trailer_cache is filled by the Reels ingest, so it covers whatever
+        // Reels has surfaced — not the trending-and-on-the-air pool this hero
+        // draws from. Ask TMDB directly for anything the cache does not carry,
+        // which is the same /videos lookup the title sheet already makes.
+        let uncached = pool.filter { keyByTmdbId[$0.tmdbId] == nil }
+        if !uncached.isEmpty {
+            await withTaskGroup(of: (Int, String?).self) { group in
+                for entry in uncached {
+                    group.addTask {
+                        let key = try? await TVTMDBService.shared.getTrailerKey(
+                            tmdbId: entry.tmdbId,
+                            isTV: entry.isTV
+                        )
+                        return (entry.tmdbId, key ?? nil)
+                    }
+                }
+                for await (tmdbId, key) in group {
+                    if let key, !failed.contains(key) { keyByTmdbId[tmdbId] = key }
+                }
+            }
+        }
+
+        var wanted: [(key: String, titleId: String)] = []
+        for entry in pool {
+            guard let key = keyByTmdbId[entry.tmdbId] else { continue }
+            let kind = entry.isTV ? "tv" : "movie"
+            wanted.append((key, "tmdb:\(kind):\(entry.tmdbId)"))
         }
         guard !wanted.isEmpty else { return [:] }
 
