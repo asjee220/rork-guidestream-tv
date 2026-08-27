@@ -118,4 +118,26 @@ final class TVAffiliateService {
             .map { Platform.normalizeCatalogId($0) }
         return !owned.contains(Platform.normalizeCatalogId(catalogId))
     }
+
+    /// Every enabled advertiser the viewer does **not** already subscribe to,
+    /// in `sort_order`. This is the pool the Reels ad carousel and the
+    /// sponsored full-page reels draw from — the same gap-service rule the
+    /// inline chip applies to a single title, applied to the whole list.
+    /// Optionally excludes one more service, which the carousel uses to keep
+    /// a reel from advertising the platform its own title streams on.
+    func gapAdvertisers(excluding providerName: String? = nil) -> [Advertiser] {
+        let owned = AuthViewModel.shared.selectedServices
+            .map { Platform.normalizeCatalogId($0) }
+        let excludedId = providerName
+            .flatMap { Platform.from(providerName: $0)?.catalogId }
+            .map { Platform.normalizeCatalogId($0) }
+
+        return advertisers.filter { advertiser in
+            let ids = advertiser.aliases.map { Platform.normalizeCatalogId($0) }
+                + [Platform.normalizeCatalogId(advertiser.key)]
+            if ids.contains(where: { owned.contains($0) }) { return false }
+            if let excludedId, ids.contains(excludedId) { return false }
+            return true
+        }
+    }
 }
