@@ -118,11 +118,13 @@ struct TVHomeView: View {
     ]
 
     var body: some View {
-        // Distance from the physical left edge of the display to where this
-        // screen starts, measured by TVMainView. Title-safe margins are
-        // symmetric, so the trailing gap is the same minus the shell inset.
+        // Title-safe margins are symmetric, so the trailing gap is the
+        // leading one minus the shell inset.
         let trailingBleed = max(0, leadingBleed - TVLayout.contentLeadingInset)
-        let railLeading = leadingBleed
+        // Positioned from the physical edge rather than accumulated from the
+        // safe margin: TVRail's gutter sits inside contentLeading instead of
+        // being added on top of it.
+        let railLeading = max(0, TVLayout.contentLeading - TVLayout.railGutter)
 
         return ScrollView(.vertical, showsIndicators: false) {
                 LazyVStack(alignment: .leading, spacing: 56) {
@@ -131,7 +133,7 @@ struct TVHomeView: View {
                 // trailing edges and the menu floats over it. The negative
                 // bottom pull lets the first rail sit over the art at the
                 // fold so the video / poster fades off into it.
-                heroSection(metadataInset: railLeading + 80)
+                heroSection(metadataInset: TVLayout.contentLeading)
                     .containerRelativeFrame(.vertical)
                     .padding(.bottom, -194)
                     .padding(.leading, -railLeading)

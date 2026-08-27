@@ -136,4 +136,18 @@ enum TVLayout {
     /// bleed, and re-adds it to its own text block so the copy still lines
     /// up with the rails below.
     static let contentLeadingInset: CGFloat = 72
+
+    /// Distance from the **physical** left edge of the display to the rail
+    /// titles, poster cards and hero copy on Home.
+    ///
+    /// Stated as one number on purpose. It used to be three stacked
+    /// contributions — the title-safe margin, TVMainView's inset and
+    /// TVRail's gutter — which summed to 232pt against a menu ending at
+    /// 72pt, leaving a 160pt channel of nothing running the full height of
+    /// the screen. Home now positions from the edge instead of accumulating.
+    static let contentLeading: CGFloat = 150
+
+    /// TVRail's own horizontal gutter, which sits *inside* contentLeading
+    /// rather than adding to it.
+    static let railGutter: CGFloat = 80
 }

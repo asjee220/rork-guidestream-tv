@@ -29,17 +29,16 @@ struct TVMainView: View {
     @State private var menuIsOpen: Bool = false
 
     var body: some View {
-        ZStack(alignment: .leading) {
-            // The screen is handed its own distance from the physical left
-            // edge of the display — this inset plus whatever title-safe
-            // margin tvOS applied above us. Home uses it to let the hero run
-            // full bleed while its rails stay put. Measured here, outside the
-            // scroll view, because nothing inside one can measure it: scroll
-            // content is laid out already inset, and .ignoresSafeArea() on a
-            // child of a ScrollView is a no-op.
-            GeometryReader { proxy in
-                screen(for: selection, leadingBleed: proxy.frame(in: .global).minX)
-            }
+        // One measurement of the title-safe margin tvOS applied above us,
+        // taken here because nothing inside a ScrollView can see it: scroll
+        // content is laid out already inset, and .ignoresSafeArea() on a
+        // child of a ScrollView is a no-op. Home uses it to run the hero
+        // full bleed, and the menu uses it to sit flush to the edge.
+        GeometryReader { proxy in
+            let safeLeading = proxy.frame(in: .global).minX
+
+            ZStack(alignment: .leading) {
+            screen(for: selection, leadingBleed: safeLeading + contentLeadingInset)
                 .padding(.leading, contentLeadingInset)
                 .focusSection()
                 .onMoveCommand { direction in
@@ -66,7 +65,13 @@ struct TVMainView: View {
                 .transition(.opacity)
             }
 
+            // Flush to the physical edge. The panel is chrome floating over
+            // the art, not text, so the title-safe margin buys it nothing —
+            // it only pushed the panel inward and widened the channel
+            // between it and the content.
             TVSideMenu(selection: $selection, isOpen: $menuIsOpen)
+                .padding(.leading, -safeLeading)
+            }
         }
         .animation(.easeOut(duration: 0.25), value: menuIsOpen)
         .background(TVTheme.backgroundGradient.ignoresSafeArea())
