@@ -137,8 +137,40 @@ final class TVTrailerStreamService {
             }
         }
 
+        #if DEBUG
+        await logDiagnostics(pool: pool, keys: keyByTmdbId, resolvedURLs: out)
+        #endif
+
         return out
     }
+
+    #if DEBUG
+    /// Writes one row per hero item to debug_logs so the resolution path can
+    /// be inspected without a console. Debug builds only.
+    private func logDiagnostics(
+        pool: [(tmdbId: Int, isTV: Bool)],
+        keys: [Int: String],
+        resolvedURLs: [String: String]
+    ) async {
+        for entry in pool {
+            let kind = entry.isTV ? "tv" : "movie"
+            let titleId = "tmdb:\(kind):\(entry.tmdbId)"
+            let key = keys[entry.tmdbId]
+            let url = resolvedURLs[titleId]
+            try? await SupabaseManager.shared.client
+                .from("debug_logs")
+                .insert([
+                    "event": .string("tv_hero_video"),
+                    "platform": .string("tvos"),
+                    "title": .string(titleId),
+                    "target_name": .string(key ?? "NO_KEY"),
+                    "content_url": .string(url.map { String($0.prefix(120)) } ?? "NO_STREAM"),
+                    "matched": .bool(url != nil)
+                ] as [String: AnyJSON])
+                .execute()
+        }
+    }
+    #endif
 
     /// Highest-resolution progressive stream — one file carrying both video
     /// and audio, which AVPlayer can open directly. Adaptive DASH streams

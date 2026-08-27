@@ -18,6 +18,7 @@
 
 import SwiftUI
 import AVFoundation
+import Supabase
 import UIKit
 
 /// Preference the hero raises when a left move at the first item should
@@ -302,12 +303,44 @@ struct TVHeroCarousel: View {
         }
     }
 
+    /// tvOS will not start playback while the process has no active audio
+    /// session, even for a muted player: the item reaches .readyToPlay and
+    /// then sits at .paused with no error, which is exactly how this looked
+    /// on device. .mixWithOthers so a silent hero never interrupts whatever
+    /// the viewer already has playing.
+    private static func activateAudioSessionIfNeeded() {
+        guard !audioSessionActivated else { return }
+        audioSessionActivated = true
+        do {
+            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback, options: [.mixWithOthers])
+            try AVAudioSession.sharedInstance().setActive(true)
+        } catch {
+            audioSessionActivated = false
+        }
+    }
+
+    private nonisolated(unsafe) static var audioSessionActivated = false
+
     private func setUpPlayer(for item: TVTMDBResult, url: URL) {
+        Self.activateAudioSessionIfNeeded()
+
         let playerItem = AVPlayerItem(url: url)
         let newPlayer = AVPlayer(playerItem: playerItem)
         newPlayer.isMuted = true
         player = newPlayer
         newPlayer.play()
+
+        // play() before the item is ready can be dropped, so ask again the
+        // moment it becomes playable.
+        Task { @MainActor [weak newPlayer, weak playerItem] in
+            guard let newPlayer, let playerItem else { return }
+            for await status in playerItem.publisher(for: \.status).values {
+                guard !Task.isCancelled else { return }
+                guard status == .readyToPlay else { continue }
+                if newPlayer.timeControlStatus != .playing { newPlayer.play() }
+                return
+            }
+        }
 
         // Fade the layer in and log the view the moment playback actually
         // starts; until then the drifting still stays visible underneath.
@@ -324,6 +357,69 @@ struct TVHeroCarousel: View {
                 return
             }
         }
+
+        #if DEBUG
+        // Unconditional snapshot a few seconds in. A player stuck at
+        // .unknown never reaches .failed either, so only reporting failures
+        // leaves the common case invisible.
+        Task { @MainActor [weak newPlayer, weak playerItem] in
+            try? await Task.sleep(for: .seconds(8))
+            guard let newPlayer, let playerItem else { return }
+            let itemStatus: String
+            switch playerItem.status {
+            case .readyToPlay: itemStatus = "readyToPlay"
+            case .failed: itemStatus = "failed"
+            default: itemStatus = "unknown"
+            }
+            let timeStatus: String
+            switch newPlayer.timeControlStatus {
+            case .playing: timeStatus = "playing"
+            case .paused: timeStatus = "paused"
+            case .waitingToPlayAtSpecifiedRate: timeStatus = "waiting"
+            @unknown default: timeStatus = "?"
+            }
+            let last = playerItem.errorLog()?.events.last
+            let detail = "item=\(itemStatus) time=\(timeStatus) ready=\(videoReady)"
+                + " likelyKeepUp=\(playerItem.isPlaybackLikelyToKeepUp)"
+                + " err=\(playerItem.error?.localizedDescription ?? "none")"
+                + " httpStatus=\(last?.errorStatusCode ?? 0)"
+                + " comment=\(last?.errorComment ?? "none")"
+            try? await SupabaseManager.shared.client
+                .from("debug_logs")
+                .insert([
+                    "event": .string("tv_hero_player_status"),
+                    "platform": .string("tvos"),
+                    "title": .string(item.canonicalTitleId),
+                    "target_name": .string(String(detail.prefix(300))),
+                    "matched": .bool(newPlayer.timeControlStatus == .playing)
+                ] as [String: AnyJSON])
+                .execute()
+        }
+
+        // A failed load never reaches .playing, so without this the video
+        // simply never appears and nothing says why.
+        Task { @MainActor [weak playerItem] in
+            guard let playerItem else { return }
+            for await status in playerItem.publisher(for: \.status).values {
+                guard !Task.isCancelled else { return }
+                guard status == .failed else { continue }
+                let message = (playerItem.error?.localizedDescription ?? "unknown")
+                    + " | log=" + (playerItem.errorLog()?.events.last?.errorComment ?? "none")
+                    + " | status=" + String(playerItem.errorLog()?.events.last?.errorStatusCode ?? 0)
+                try? await SupabaseManager.shared.client
+                    .from("debug_logs")
+                    .insert([
+                        "event": .string("tv_hero_player_failed"),
+                        "platform": .string("tvos"),
+                        "title": .string(item.canonicalTitleId),
+                        "target_name": .string(String(message.prefix(300))),
+                        "matched": .bool(false)
+                    ] as [String: AnyJSON])
+                    .execute()
+                return
+            }
+        }
+        #endif
 
         endOfItemTask = Task { @MainActor [weak newPlayer] in
             guard let newPlayer else { return }
