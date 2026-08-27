@@ -40,6 +40,7 @@ import androidx.compose.ui.unit.sp
 import com.rork.guidestreamtvandroid.data.models.StreamingService
 import com.rork.guidestreamtvandroid.data.repository.RakutenManager
 import com.rork.guidestreamtvandroid.data.repository.WatchIntentLogger
+import com.rork.guidestreamtvandroid.ui.components.ServiceBrandContent
 import com.rork.guidestreamtvandroid.ui.theme.BrandOrange
 import com.rork.guidestreamtvandroid.ui.theme.GlassFill
 import com.rork.guidestreamtvandroid.ui.theme.GlassStroke
@@ -254,12 +255,24 @@ internal fun RakutenAffiliatePresentation(
                     .background(service?.bg ?: SurfaceContainer),
                 contentAlignment = Alignment.Center,
             ) {
-                Text(
-                    text = (service?.name ?: headline).take(3).uppercase(),
-                    fontSize = 19.sp,
-                    fontWeight = FontWeight.Black,
-                    color = service?.glow ?: Color.White,
-                )
+                if (service != null) {
+                    // Draw the brand's own wordmark, as iOS does. Several
+                    // brands set `glow` equal to `bg` (hulu, paramount,
+                    // disney, hbo), so initials tinted with `glow` render as
+                    // an empty colour block.
+                    ServiceBrandContent(
+                        display = service.display,
+                        diameter = 96.dp,
+                        modifier = Modifier.padding(horizontal = 10.dp),
+                    )
+                } else {
+                    Text(
+                        text = headline.take(3).uppercase(),
+                        fontSize = 19.sp,
+                        fontWeight = FontWeight.Black,
+                        color = Color.White,
+                    )
+                }
             }
             Spacer(Modifier.width(12.dp))
             Column(
@@ -328,12 +341,20 @@ internal fun RakutenAffiliatePresentation(
                 .border(0.5.dp, OutlineVariant, RoundedCornerShape(8.dp)),
             contentAlignment = Alignment.Center,
         ) {
-            Text(
-                text = (service?.name ?: headline).take(3).uppercase(),
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Black,
-                color = service?.glow ?: Color.White,
-            )
+            if (service != null) {
+                ServiceBrandContent(
+                    display = service.display,
+                    diameter = 56.dp,
+                    modifier = Modifier.padding(horizontal = 6.dp),
+                )
+            } else {
+                Text(
+                    text = headline.take(3).uppercase(),
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Black,
+                    color = Color.White,
+                )
+            }
         }
         Spacer(Modifier.width(10.dp))
         Column(modifier = Modifier.weight(1f)) {
