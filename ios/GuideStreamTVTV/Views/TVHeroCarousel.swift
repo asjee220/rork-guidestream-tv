@@ -219,6 +219,10 @@ struct TVHeroCarousel: View {
                 }
                 .buttonStyle(.card)
                 .focused($ctaFocused)
+                // The CTA holds focus on arrival, so left/right land here
+                // rather than on the hero region behind it. Without this the
+                // carousel cannot be stepped through at all.
+                .onMoveCommand(perform: handleMoveCommand)
                 .prefersDefaultFocus(true, in: heroNamespace)
                 .padding(.top, 6)
             }
@@ -231,6 +235,12 @@ struct TVHeroCarousel: View {
     }
 
     // MARK: - Dwell & rotation
+
+    /// Seconds a still holds, and the grace period before a video is judged
+    /// to have failed to start.
+    private static let videoStartGrace: Int = 10
+    /// Longest any one item holds the hero, however long its video runs.
+    private static let maxVideoDwell: Int = 30
 
     /// Starts the current item's dwell: a hosted featurette plays once and
     /// advances on its end; a still (or a featurette that never starts)
@@ -256,13 +266,22 @@ struct TVHeroCarousel: View {
                     advance()
                     return
                 }
-                // Playing — the end-of-item observer owns advancing, but a
-                // mid-playback stall still needs an out: advance after the
-                // player sits idle well past any plausible rebuffer.
+                // Playing. The end-of-item observer advances when a clip
+                // actually finishes, but an extracted YouTube trailer runs
+                // two or three minutes — long enough that the carousel looks
+                // stuck on one title — so cap the turn. A stall still needs
+                // its own out: advance once the player sits idle well past
+                // any plausible rebuffer.
                 var idleChecks = 0
+                var elapsed = Self.videoStartGrace
                 while !Task.isCancelled {
                     try? await Task.sleep(for: .seconds(3))
                     guard !Task.isCancelled else { return }
+                    elapsed += 3
+                    if elapsed >= Self.maxVideoDwell {
+                        advance()
+                        return
+                    }
                     if player?.timeControlStatus == .playing {
                         idleChecks = 0
                     } else {

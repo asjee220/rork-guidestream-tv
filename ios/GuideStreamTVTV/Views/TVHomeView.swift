@@ -849,10 +849,16 @@ struct TVHomeView: View {
         // because tvOS has no web view to embed a player in. Items that
         // resolve to neither render as drifting stills.
         let featurettePool = heroItems.map { (tmdbId: $0.id, isTV: $0.isTV) }
+        #if DEBUG
+        print("[hero] pool=\(heroItems.count) titles: \(heroItems.map(\.displayName).joined(separator: ", "))")
+        #endif
         async let hostedTask = TVFeaturetteService.shared.fetchFeaturettes(for: featurettePool)
         async let trailerTask = TVTrailerStreamService.shared.fetchTrailerStreams(for: featurettePool)
         let (hosted, trailers) = await (hostedTask, trailerTask)
         heroFeaturettes = trailers.merging(hosted) { _, hostedURL in hostedURL }
+        #if DEBUG
+        print("[hero] video resolved for \(heroFeaturettes.count)/\(heroItems.count) — hosted=\(hosted.count) trailers=\(trailers.count)")
+        #endif
     }
 
     // MARK: - Everyone's Watching
