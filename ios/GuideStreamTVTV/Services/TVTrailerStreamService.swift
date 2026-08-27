@@ -56,6 +56,8 @@ final class TVTrailerStreamService {
     /// best first. Tried before moving on to another key — a 1080p rendition
     /// that 403s is no reason to give up on the trailer itself.
     private var pendingURLs: [String: [String]] = [:]
+    /// Resolution of the stream picked for each key, for the diagnostics.
+    private var resolvedResolution: [String: Int] = [:]
 
     private let selectedColumns = "tmdb_id,media_type,keys"
 
@@ -142,21 +144,25 @@ final class TVTrailerStreamService {
         // the app was killed in JSC::BlockDirectory::tryAllocateBlock, which
         // is also why some titles came up with no video at all.
         var out: [String: String] = [:]
+        var chosenResolution: [String: Int] = [:]
         for chunk in stride(from: 0, to: wanted.count, by: Self.maxConcurrentExtractions).map({
             Array(wanted[$0..<min($0 + Self.maxConcurrentExtractions, wanted.count)])
         }) {
-            await withTaskGroup(of: (String, [String]).self) { group in
+            await withTaskGroup(of: (String, [String], Int).self) { group in
                 for item in chunk {
                     let cached = resolved[item.key]
+                    let cachedRes = resolvedResolution[item.key]
                     group.addTask {
-                        if let cached { return (item.titleId, [cached]) }
-                        return (item.titleId, await Self.streamCandidates(for: item.key))
+                        if let cached { return (item.titleId, [cached], cachedRes ?? 0) }
+                        let result = await Self.streamCandidatesWithResolution(for: item.key)
+                        return (item.titleId, result.urls, result.resolution)
                     }
                 }
-                for await (titleId, urls) in group {
+                for await (titleId, urls, resolution) in group {
                     guard let best = urls.first else { continue }
                     out[titleId] = best
                     pendingURLs[titleId] = Array(urls.dropFirst())
+                    chosenResolution[titleId] = resolution
                 }
             }
         }
@@ -165,13 +171,19 @@ final class TVTrailerStreamService {
         for item in wanted {
             if let url = out[item.titleId] {
                 resolved[item.key] = url
+                resolvedResolution[item.key] = chosenResolution[item.titleId] ?? 0
             } else {
                 failed.insert(item.key)
             }
         }
 
         #if DEBUG
-        await logDiagnostics(pool: pool, keys: keyByTmdbId, resolvedURLs: out)
+        await logDiagnostics(
+            pool: pool,
+            keys: keyByTmdbId,
+            resolvedURLs: out,
+            resolutions: chosenResolution
+        )
         #endif
 
         return out
@@ -208,7 +220,8 @@ final class TVTrailerStreamService {
     private func logDiagnostics(
         pool: [(tmdbId: Int, isTV: Bool)],
         keys: [Int: String],
-        resolvedURLs: [String: String]
+        resolvedURLs: [String: String],
+        resolutions: [String: Int]
     ) async {
         for entry in pool {
             let kind = entry.isTV ? "tv" : "movie"
@@ -223,7 +236,11 @@ final class TVTrailerStreamService {
                     "title": .string(titleId),
                     "target_name": .string(key ?? "NO_KEY"),
                     "content_url": .string(url.map { String($0.prefix(120)) } ?? "NO_STREAM"),
-                    "matched": .bool(url != nil)
+                    "device_kind": .string({
+                        let res = resolutions[titleId] ?? 0
+                        return res == 0 ? "none" : "\(res)p"
+                    }()),
+                    "matched": .bool((resolutions[titleId] ?? 0) >= 1080)
                 ] as [String: AnyJSON])
                 .execute()
         }
@@ -249,6 +266,16 @@ final class TVTrailerStreamService {
     /// path. Returns several so a URL that resolves but then refuses to play
     /// can be stepped past without abandoning the title.
     private nonisolated static func streamCandidates(for videoID: String) async -> [String] {
+        await streamCandidatesWithResolution(for: videoID).urls
+    }
+
+    /// As above, plus the resolution actually chosen — 0 when nothing
+    /// resolved. Recorded so the titles that cannot reach 1080 from YouTube
+    /// are a list rather than a guess: those are the ones worth a hosted
+    /// featurette in `title_featurettes`.
+    private nonisolated static func streamCandidatesWithResolution(
+        for videoID: String
+    ) async -> (urls: [String], resolution: Int) {
         do {
             let streams = try await YouTube(videoID: videoID).streams
             let playable = streams.filter { $0.isNativelyPlayable && $0.includesVideoTrack }
@@ -260,9 +287,10 @@ final class TVTrailerStreamService {
                 if lr != rr { return lr > rr }
                 return lhs.includesVideoAndAudioTrack && !rhs.includesVideoAndAudioTrack
             }
-            return ranked.prefix(4).map { $0.url.absoluteString }
+            return (ranked.prefix(4).map { $0.url.absoluteString },
+                    ranked.first?.videoResolution ?? 0)
         } catch {
-            return []
+            return ([], 0)
         }
     }
 }

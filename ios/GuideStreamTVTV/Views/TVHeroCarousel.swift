@@ -208,21 +208,21 @@ struct TVHeroCarousel: View {
     @ViewBuilder
     private var metadataBlock: some View {
         if let item = currentItem {
-            VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 14) {
                 Text(item.isTV ? "TRENDING SHOW" : "TRENDING MOVIE")
                     .font(.system(size: 16, weight: .heavy))
                     .foregroundStyle(TVTheme.orange)
                     .tracking(2)
                 Text(item.displayName)
-                    .font(.system(size: 54, weight: .black))
+                    .font(.system(size: 44, weight: .black))
                     .foregroundStyle(.white)
                     .lineLimit(2)
                 if let overview = item.overview, !overview.isEmpty {
                     Text(overview)
-                        .font(.system(size: 22, weight: .regular))
+                        .font(.system(size: 20, weight: .regular))
                         .foregroundStyle(TVTheme.textSecondary)
-                        .lineLimit(3)
-                        .frame(maxWidth: 820, alignment: .leading)
+                        .lineLimit(2)
+                        .frame(maxWidth: 700, alignment: .leading)
                 }
 
                 Button {
@@ -252,7 +252,7 @@ struct TVHeroCarousel: View {
             // Clears the first rail, which peeks over the hero at the fold.
             // The hero grew by the title-safe margin when it opted out, so
             // this has to clear more than it used to.
-            .padding(.bottom, 200)
+            .padding(.bottom, 290)
             .opacity(metadataVisible ? 1 : 0)
             .animation(.easeInOut(duration: 0.3), value: metadataVisible)
             .animation(.easeOut(duration: 0.35), value: index)
@@ -274,7 +274,7 @@ struct TVHeroCarousel: View {
             }
             .animation(.easeInOut(duration: 0.28), value: index)
             .frame(maxWidth: .infinity, alignment: .center)
-            .padding(.bottom, 212)
+            .padding(.bottom, 300)
             .opacity(metadataVisible ? 1 : 0)
             .animation(.easeInOut(duration: 0.3), value: metadataVisible)
         }

@@ -133,7 +133,7 @@ struct TVHomeView: View {
                 // fold so the video / poster fades off into it.
                 heroSection(metadataInset: railLeading + 80)
                     .containerRelativeFrame(.vertical)
-                    .padding(.bottom, -160)
+                    .padding(.bottom, -194)
                     .padding(.leading, -railLeading)
                     .padding(.trailing, -trailingBleed)
 
