@@ -2,8 +2,13 @@
 //  TVTrailerStreamService.swift
 //  GuideStreamTVTV
 //
-//  Turns the YouTube keys already sitting in `trailer_cache` into something
-//  AVPlayer can actually open on Apple TV.
+//  Turns YouTube keys into something AVPlayer can actually open on Apple TV.
+//
+//  Keys come from three sources, in order: the `trailer_resolve` edge
+//  function (server-verified playable, the same one the iPhone and Android
+//  Reels feeds use), then `trailer_cache`, then TMDB /videos. Only the first
+//  is verified; the other two are fallbacks for when the resolver call
+//  itself fails.
 //
 //  tvOS ships no WebKit — no WKWebView, no SFSafariViewController — so the
 //  IFrame embed the phone app uses for Reels has no counterpart here.
@@ -71,40 +76,76 @@ final class TVTrailerStreamService {
         let ids = Array(Set(pool.map { $0.tmdbId }))
         guard !ids.isEmpty else { return [:] }
 
-        var rows: [TVTrailerCacheRow] = []
-        do {
-            rows = try await SupabaseManager.shared.client
-                .from("trailer_cache")
-                .select(selectedColumns)
-                .in("tmdb_id", values: ids.map(String.init))
-                .execute()
-                .value
-        } catch {
-            // A cache miss is not fatal — TMDB is asked directly below.
-            rows = []
-        }
-
         var isTVById: [Int: Bool] = [:]
         for entry in pool { isTVById[entry.tmdbId] = entry.isTV }
 
-        // Match on media type as well as id — a film and a series can share a
-        // TMDB id and their trailers are not interchangeable.
         var keyByTmdbId: [Int: String] = [:]
         var allKeysByTmdbId: [Int: [String]] = [:]
-        for row in rows {
-            guard let isTV = isTVById[row.tmdbId] else { continue }
-            guard row.mediaType == (isTV ? "tv" : "movie") else { continue }
-            let usable = row.keys.filter { !failed.contains($0) }
-            guard let first = usable.first else { continue }
-            keyByTmdbId[row.tmdbId] = first
-            allKeysByTmdbId[row.tmdbId] = usable
+
+        // 1. The server-side resolver, same as the iPhone and Android Reels
+        //    feeds. It verifies each candidate against the YouTube Data API
+        //    and returns only keys that are public, processed and not
+        //    US-blocked, in rank order. Extraction is expensive on Apple TV,
+        //    so not spending it on a key the server already knows is dead is
+        //    worth the round trip.
+        //
+        //    A title the resolver answers for is settled either way: an empty
+        //    list means it checked and there is no playable trailer, so the
+        //    unverified sources below have nothing to add. Only a failed call
+        //    (nil) falls through to them.
+        var unresolved: [(tmdbId: Int, isTV: Bool)] = []
+        await withTaskGroup(of: (Int, [String]?).self) { group in
+            for entry in pool {
+                group.addTask {
+                    (entry.tmdbId, await TVTrailerResolveService.resolve(
+                        tmdbId: entry.tmdbId,
+                        isTV: entry.isTV
+                    ))
+                }
+            }
+            for await (tmdbId, keys) in group {
+                guard let keys else {
+                    if let isTV = isTVById[tmdbId] { unresolved.append((tmdbId, isTV)) }
+                    continue
+                }
+                let usable = keys.filter { !failed.contains($0) }
+                guard let first = usable.first else { continue }
+                keyByTmdbId[tmdbId] = first
+                allKeysByTmdbId[tmdbId] = usable
+            }
         }
 
-        // trailer_cache is filled by the Reels ingest, so it covers whatever
-        // Reels has surfaced — not the trending-and-on-the-air pool this hero
-        // draws from. Ask TMDB directly for anything the cache does not carry,
-        // which is the same /videos lookup the title sheet already makes.
-        let uncached = pool.filter { keyByTmdbId[$0.tmdbId] == nil }
+        // 2. trailer_cache, for anything the resolver could not answer.
+        if !unresolved.isEmpty {
+            var rows: [TVTrailerCacheRow] = []
+            do {
+                rows = try await SupabaseManager.shared.client
+                    .from("trailer_cache")
+                    .select(selectedColumns)
+                    .in("tmdb_id", values: unresolved.map { String($0.tmdbId) })
+                    .execute()
+                    .value
+            } catch {
+                // A cache miss is not fatal — TMDB is asked directly below.
+                rows = []
+            }
+
+            // Match on media type as well as id — a film and a series can
+            // share a TMDB id and their trailers are not interchangeable.
+            for row in rows {
+                guard let isTV = isTVById[row.tmdbId] else { continue }
+                guard row.mediaType == (isTV ? "tv" : "movie") else { continue }
+                let usable = row.keys.filter { !failed.contains($0) }
+                guard let first = usable.first else { continue }
+                keyByTmdbId[row.tmdbId] = first
+                allKeysByTmdbId[row.tmdbId] = usable
+            }
+        }
+
+        // 3. TMDB /videos, last. Unverified — these are the keys that can be
+        //    private or region-blocked, which is exactly what the resolver
+        //    exists to filter out.
+        let uncached = unresolved.filter { keyByTmdbId[$0.tmdbId] == nil }
         if !uncached.isEmpty {
             await withTaskGroup(of: (Int, [String]).self) { group in
                 for entry in uncached {
