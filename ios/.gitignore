@@ -31,4 +31,6 @@ Package.resolved
 # Rork
 .rork/
 .env
-Config.swift
+# Config.swift is tracked: it holds only client-safe constants (an empty
+# default Worker URL plus an Info.plist override), the same rule
+# SupabaseConfig already follows. Ignoring it broke clean checkouts.
