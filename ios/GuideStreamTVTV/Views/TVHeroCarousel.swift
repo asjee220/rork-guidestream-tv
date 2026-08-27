@@ -32,6 +32,10 @@ struct TVHeroSideMenuRequestKey: PreferenceKey {
 
 struct TVHeroCarousel: View {
     let items: [TVTMDBResult]
+    /// Bound from TVHomeView so the scroll content can declare the CTA the
+    /// default focus for the scene, preventing launch focus from landing on
+    /// a rail card and scrolling the hero off screen.
+    @FocusState.Binding var ctaFocused: Bool
     let onToggleSave: (TVTMDBResult) -> Void
     let isSaved: (TVTMDBResult) -> Bool
     /// canonicalTitleId -> hosted featurette URL. A missing key means the
@@ -50,11 +54,11 @@ struct TVHeroCarousel: View {
     /// appearance of the screen; reset in onAppear.
     @State private var autoAdvanceDisabled: Bool = false
     @State private var menuRequestCount: Int = 0
+    /// False until focus has actually left the hero once. tvOS will not move
+    /// focus onto a fully transparent view, so gating the metadata block
+    /// purely on hero focus made the CTA unfocusable.
+    @State private var heroFocusEverLeft: Bool = false
 
-    /// Bound from TVHomeView so the scroll content can declare the CTA the
-    /// default focus for the scene, preventing launch focus from landing on
-    /// a rail card and scrolling the hero off screen.
-    @FocusState.Binding var ctaFocused: Bool
     @FocusState private var heroRegionFocused: Bool
     /// Focus scope for the hero region. The Add to Watch List button is
     /// the default focus inside this scope so Home appears with the hero
@@ -68,7 +72,7 @@ struct TVHeroCarousel: View {
     /// The metadata block is visible while the hero region (or the CTA
     /// inside it) holds focus, and fades out when focus enters the rails.
     private var metadataVisible: Bool {
-        ctaFocused || heroRegionFocused
+        ctaFocused || heroRegionFocused || !heroFocusEverLeft
     }
 
     var body: some View {
@@ -120,6 +124,12 @@ struct TVHeroCarousel: View {
             endOfItemTask?.cancel()
             playbackStatusTask?.cancel()
             teardownPlayer()
+        }
+        .onChange(of: ctaFocused) { wasFocused, isFocused in
+            if wasFocused && !isFocused { heroFocusEverLeft = true }
+        }
+        .onChange(of: heroRegionFocused) { wasFocused, isFocused in
+            if wasFocused && !isFocused { heroFocusEverLeft = true }
         }
         .onChange(of: index) { _, _ in
             startDwell()

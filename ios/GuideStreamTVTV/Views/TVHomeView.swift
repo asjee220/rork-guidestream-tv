@@ -73,6 +73,9 @@ struct TVHomeView: View {
     /// Drives the hero's Add to Watch List button as the default focus for
     /// the Home scene, so the app opens with the hero fully visible.
     @FocusState private var heroCTAFocused: Bool
+    /// One-shot guard so the hero CTA is claimed as focus exactly once,
+    /// on the first load of this screen, and never steals focus afterwards.
+    @State private var didClaimInitialFocus: Bool = false
 
     @State private var streams = TVStreamsViewModel.shared
 
@@ -268,8 +271,16 @@ struct TVHomeView: View {
             }
         }
         .background(TVTheme.backgroundGradient)
-        .defaultFocus($heroCTAFocused, value: true)
+        .defaultFocus($heroCTAFocused, true)
         .task { await loadAll() }
+        .onChange(of: heroItems.isEmpty) { _, isEmpty in
+            guard !isEmpty, !didClaimInitialFocus else { return }
+            didClaimInitialFocus = true
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(120))
+                heroCTAFocused = true
+            }
+        }
         .sheet(item: $pendingDetail) { detail in
             TVTitleSheet(detail: detail) { isSaved in
                 pendingDetail = nil
