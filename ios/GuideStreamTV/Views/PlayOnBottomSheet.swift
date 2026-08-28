@@ -152,6 +152,12 @@ struct PlayOnBottomSheet: View {
         return isResolvingSource ? "Finding service…" : ""
     }
 
+    /// `true` while the CTA is still waiting on a source or an episode-level
+    /// deep link. Drives the capsule sheen that replaced the spinner.
+    private var ctaIsResolving: Bool {
+        (isResolvingSource && resolvedSource == nil) || isResolvingEpisodeSources
+    }
+
     private var platformColor: Color { brandColor(for: resolvedPlatformName) }
 
     private var aboutText: String { resolvedOverview ?? fallbackAboutText }
@@ -637,15 +643,7 @@ struct PlayOnBottomSheet: View {
 
                 HStack(spacing: 10) {
                     if isResolvingSource && !hasResolvedPlatform {
-                        HStack(spacing: 8) {
-                            ProgressView().controlSize(.mini).tint(.white)
-                            Text("Finding service…")
-                                .scaledFont(size: 13, weight: .heavy)
-                                .foregroundStyle(.white)
-                        }
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 8)
-                        .background(Capsule().fill(Color.white.opacity(0.10)))
+                        ShufflingPlatformPill(fontSize: 13)
                     } else {
                         Text(whereToWatchLabel)
                             .scaledFont(size: 13, weight: .heavy)
@@ -794,19 +792,14 @@ struct PlayOnBottomSheet: View {
             }
         } label: {
             HStack(spacing: 8) {
-                if (isResolvingSource && resolvedSource == nil) || isResolvingEpisodeSources {
-                    ProgressView()
-                        .controlSize(.small)
-                        .tint(.white)
-                }
                 if let s = watchSeasonNum, let e = watchEpisodeNum, !episodeSourceUnavailable {
                     Text("\(ctaVerb) \(DisplayFormatting.seasonEpisodeColon(season: s, episode: e))")
                         .scaledFont(size: 15, weight: .semibold)
                         .lineLimit(1)
+                } else if ctaIsResolving {
+                    ResolvingCTALabel(size: 17)
                 } else {
-                    Text(resolvedSource == nil && isResolvingSource
-                         ? "Finding service…"
-                         : "\(ctaVerb) on")
+                    Text("\(ctaVerb) on")
                         .scaledFont(size: 17, weight: .semibold)
                         .lineLimit(1)
                 }
@@ -817,14 +810,20 @@ struct PlayOnBottomSheet: View {
                         .padding(.horizontal, 8)
                         .padding(.vertical, 3)
                         .background(RoundedRectangle(cornerRadius: 6).fill(platformColor))
+                        .transition(.scale(scale: 0.8).combined(with: .opacity))
                 }
             }
+            .animation(SheetMotion.settle, value: hasResolvedPlatform)
             .foregroundStyle(.white)
             .frame(maxWidth: .infinity)
             .frame(height: 56)
             .background(
-                Capsule().fill(watchCTAColor)
+                Capsule()
+                    .fill(watchCTAColor)
+                    .overlay { if ctaIsResolving { CTASheen() } }
+                    .clipShape(Capsule())
             )
+            .lockOn(isResolved: !ctaIsResolving, cornerRadius: 28, haptic: true)
             .shadow(color: watchCTAColor.opacity(0.55), radius: 22, y: 0)
         }
         .buttonStyle(.plain)
