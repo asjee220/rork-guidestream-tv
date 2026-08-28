@@ -34,7 +34,6 @@ import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Tv
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.outlined.NotificationsNone
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ModalBottomSheet
@@ -52,6 +51,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import com.rork.guidestreamtvandroid.ui.components.rememberLockOn
+import com.rork.guidestreamtvandroid.ui.components.ResolvingCtaLabel
+import com.rork.guidestreamtvandroid.ui.components.CtaSheen
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.boundsInRoot
@@ -527,6 +530,7 @@ fun EpisodeDetailSheet(
                         isSourceSubscribed = isSourceSubscribed,
                         onSelect = { selectedSource = it },
                         grouped = true,
+                        pending = isResolvingSources,
                     )
                 }
 
@@ -548,10 +552,12 @@ fun EpisodeDetailSheet(
                             srcType == "sub" && srcName != null && !isSourceSubscribed(srcName) -> "Get on"
                             else -> "Watch on"
                         }
-                        val label = if (srcName == null) "Finding service…" else "$verb $srcName"
+                        val resolving = isResolvingSources && srcName == null
+                        val lock = rememberLockOn(resolved = !resolving, haptic = true)
                         Box(
                             modifier = Modifier
                                 .weight(1f)
+                                .scale(lock.scale)
                                 .height(54.dp)
                                 .clip(RoundedCornerShape(27.dp))
                                 .background(BrandOrange)
@@ -581,15 +587,12 @@ fun EpisodeDetailSheet(
                                 },
                             contentAlignment = Alignment.Center,
                         ) {
+                            // No spinner: the capsule runs its own sheen, so the
+                            // "working" signal belongs to the button rather than
+                            // sitting on top of it.
+                            if (resolving) CtaSheen()
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                if (isResolvingSources && srcName == null) {
-                                    CircularProgressIndicator(
-                                        color = Color.White,
-                                        strokeWidth = 2.dp,
-                                        modifier = Modifier.size(16.dp),
-                                    )
-                                    Spacer(Modifier.width(8.dp))
-                                } else {
+                                if (!resolving) {
                                     Icon(
                                         imageVector = Icons.Filled.PlayArrow,
                                         contentDescription = null,
@@ -598,14 +601,18 @@ fun EpisodeDetailSheet(
                                     )
                                     Spacer(Modifier.width(6.dp))
                                 }
-                                Text(
-                                    text = label,
-                                    fontSize = 15.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color.White,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
+                                if (resolving) {
+                                    ResolvingCtaLabel(fontSize = 15)
+                                } else {
+                                    Text(
+                                        text = "$verb $srcName",
+                                        fontSize = 15.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.White,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
                             }
                         }
                     }

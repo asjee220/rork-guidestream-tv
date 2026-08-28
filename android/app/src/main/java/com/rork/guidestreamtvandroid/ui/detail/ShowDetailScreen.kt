@@ -47,6 +47,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.boundsInRoot
@@ -61,6 +62,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.rork.guidestreamtvandroid.data.ShareLinks
 import com.rork.guidestreamtvandroid.data.models.DeepDiveCreator
 import com.rork.guidestreamtvandroid.data.models.Platform
+import com.rork.guidestreamtvandroid.ui.components.rememberLockOn
+import com.rork.guidestreamtvandroid.ui.components.SheetMotion
+import com.rork.guidestreamtvandroid.ui.components.PendingWhereToWatchStrip
 import com.rork.guidestreamtvandroid.data.models.StreamingCatalog
 import com.rork.guidestreamtvandroid.data.models.TitleId
 import com.rork.guidestreamtvandroid.data.remote.TMDBService
@@ -144,6 +148,10 @@ fun ShowDetailScreen(
     val authVm = AuthViewModel.get()
     val selectedServices by authVm.selectedServices.collectAsStateWithLifecycle()
     var usSources by remember { mutableStateOf<List<WatchmodeSrc>>(emptyList()) }
+    // True from the very first frame when a lookup is going to happen, so the
+    // Where to Watch row is already mounted at its final height rather than
+    // appearing a frame later and pushing the page down.
+    var isResolvingSources by remember { mutableStateOf(TitleId.tmdbId(titleId) != null) }
     var availabilityRegions by remember { mutableStateOf<List<String>>(emptyList()) }
     var selectedSource by remember { mutableStateOf<WatchmodeSrc?>(null) }
     var episodeSource by remember { mutableStateOf<WatchmodeSrc?>(null) }
@@ -158,6 +166,7 @@ fun ShowDetailScreen(
         val tid = TitleId.tmdbId(titleId)
         if (tid != null) {
             if (effectiveIsTV && detail == null) return@LaunchedEffect
+            isResolvingSources = true
             val seasonNum = if (effectiveIsTV) detail?.lastEpisodeToAir?.seasonNumber else null
             val episodeNum = if (effectiveIsTV) detail?.lastEpisodeToAir?.episodeNumber else null
             val subscribedNames = StreamingCatalog.ordered(selectedServices).map { it.name }
@@ -181,6 +190,9 @@ fun ShowDetailScreen(
                     isSourceSubscribed(it.name) && it.type.lowercase() in setOf("sub", "free", "tve")
                 }
                 ?: response.usSources.firstOrNull()
+            isResolvingSources = false
+        } else {
+            isResolvingSources = false
         }
     }
 
@@ -360,6 +372,7 @@ fun ShowDetailScreen(
                         isSourceSubscribed = isSourceSubscribed,
                         availabilityRegions = availabilityRegions,
                         grouped = true,
+                        pending = isResolvingSources,
                         onSelect = { source ->
                             selectedSource = source
                             episodeSource = null
@@ -860,8 +873,9 @@ internal fun WhereToWatchRow(
     onSelect: (WatchmodeSrc) -> Unit,
     availabilityRegions: List<String> = emptyList(),
     grouped: Boolean = false,
+    pending: Boolean = false,
 ) {
-    if (sources.isEmpty() && availabilityRegions.isEmpty()) return
+    if (sources.isEmpty() && availabilityRegions.isEmpty() && !pending) return
     Spacer(Modifier.height(8.dp))
     Text(
         text = "Where to Watch",
@@ -870,6 +884,14 @@ internal fun WhereToWatchRow(
         color = TextPrimary,
         modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
     )
+    if (sources.isEmpty() && pending) {
+        // Reserved Frame: the row holds its final height for the whole lookup,
+        // so the CTA and everything below it never move when the sources land.
+        // A finished lookup with no sources still collapses — that is a final
+        // answer, and the one honest height change on this surface.
+        PendingWhereToWatchStrip(Modifier.padding(horizontal = 16.dp))
+        return
+    }
     if (sources.isEmpty()) {
         // No US sources, but the title streams elsewhere — read as
         // unavailable instead of an empty row.
@@ -900,12 +922,14 @@ internal fun WhereToWatchRow(
             contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            items(sources) { source ->
+            items(sources.size) { index ->
+                val source = sources[index]
                 WhereToWatchChip(
                     source = source,
                     selected = selectedSource?.sourceId == source.sourceId,
                     subscribed = isSourceSubscribed(source.name),
                     onSelect = onSelect,
+                    entryIndex = index,
                 )
             }
         }
@@ -951,12 +975,14 @@ private fun GroupedWhereToWatch(
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                items(groupSources) { source ->
+                items(groupSources.size) { index ->
+                    val source = groupSources[index]
                     WhereToWatchChip(
                         source = source,
                         selected = selectedSource?.sourceId == source.sourceId,
                         subscribed = isSourceSubscribed(source.name),
                         onSelect = onSelect,
+                        entryIndex = index,
                     )
                 }
             }
@@ -1034,16 +1060,35 @@ private fun WhereToWatchChip(
     selected: Boolean,
     subscribed: Boolean,
     onSelect: (WatchmodeSrc) -> Unit,
+    entryIndex: Int = 0,
 ) {
     val dotColor = Platform.from(source.name)?.color ?: BrandOrange
+    // Lock-On: the chip is created at the moment the lookup resolves, so the
+    // snap fires on entry rather than on a state change.
+    val lock = rememberLockOn(
+        resolved = true,
+        delayMs = entryIndex * SheetMotion.LOCK_STAGGER_MS,
+    )
     Box(
         modifier = Modifier
+            .scale(lock.scale)
             .clip(RoundedCornerShape(12.dp))
             .background(dotColor.copy(alpha = if (subscribed) 0.28f else 0.18f))
             .border(
                 width = if (selected) 2.dp else 1.dp,
                 color = if (selected) dotColor else dotColor.copy(alpha = if (subscribed) 0.70f else 0.45f),
                 shape = RoundedCornerShape(12.dp),
+            )
+            .then(
+                if (lock.rimAlpha > 0f) {
+                    Modifier.border(
+                        1.5.dp,
+                        Color.White.copy(alpha = lock.rimAlpha),
+                        RoundedCornerShape(12.dp),
+                    )
+                } else {
+                    Modifier
+                }
             )
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
