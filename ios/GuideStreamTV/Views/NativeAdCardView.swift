@@ -93,6 +93,9 @@ final class NativeAdContainer: UIView {
     /// configure() when the ad has no icon image.
     private var textStackLeadingWithIcon: NSLayoutConstraint?
     private var textStackLeadingNoIcon: NSLayoutConstraint?
+    /// Feed chip only — text-stack leading anchored to the media square, used
+    /// when the fill has no icon asset but does carry main media (GUI-67).
+    private var textStackLeadingWithMedia: NSLayoutConstraint?
 
     init(compact: Bool, feedStyle: Bool, feedGlass: Bool = false) {
         self.compact = compact
@@ -162,6 +165,17 @@ final class NativeAdContainer: UIView {
             iconView.contentMode = .scaleAspectFill
             iconView.clipsToBounds = true
             adView.addSubview(iconView)
+
+            // GUI-67: native fills frequently omit the icon asset. The chip
+            // used to render an empty square in that case, so the main media
+            // asset backs it up in the same 96pt square. Aspect-fill crops the
+            // sides of a 1.91:1 creative by design — a cropped creative reads
+            // as an ad, a blank one reads as a broken app.
+            mediaView.translatesAutoresizingMaskIntoConstraints = false
+            mediaView.contentMode = .scaleAspectFill
+            mediaView.clipsToBounds = true
+            mediaView.isHidden = true
+            adView.addSubview(mediaView)
         } else {
             // Compact: 56pt icon square instead of the 120pt media square.
             iconView.translatesAutoresizingMaskIntoConstraints = false
@@ -424,6 +438,15 @@ final class NativeAdContainer: UIView {
                     iconView.bottomAnchor.constraint(equalTo: adView.bottomAnchor),
                     iconView.widthAnchor.constraint(equalTo: iconView.heightAnchor),
                 ])
+
+                // Media square occupies the identical frame; only one of the
+                // two is ever visible.
+                constraints.append(contentsOf: [
+                    mediaView.leadingAnchor.constraint(equalTo: adView.leadingAnchor),
+                    mediaView.topAnchor.constraint(equalTo: adView.topAnchor),
+                    mediaView.bottomAnchor.constraint(equalTo: adView.bottomAnchor),
+                    mediaView.widthAnchor.constraint(equalTo: mediaView.heightAnchor),
+                ])
             } else {
                 // Icon — 56pt square, leading, vertically centered.
                 constraints.append(contentsOf: [
@@ -443,6 +466,11 @@ final class NativeAdContainer: UIView {
             textStackLeadingNoIcon = textStack.leadingAnchor.constraint(
                 equalTo: adView.leadingAnchor, constant: 12
             )
+            if isFeedChip {
+                textStackLeadingWithMedia = textStack.leadingAnchor.constraint(
+                    equalTo: mediaView.trailingAnchor, constant: 12
+                )
+            }
             constraints.append(textStackLeadingWithIcon!)
         }
 
@@ -474,18 +502,37 @@ final class NativeAdContainer: UIView {
             // Main media asset — shown through the MediaView (validator requirement).
             mediaView.mediaContent = ad.mediaContent
         } else {
-            adView.iconView = iconView
+            // Creative, in preference order: the icon asset, then the main
+            // media asset, then nothing. Only the asset actually drawn is
+            // registered on the ad view — registering a hidden asset view is
+            // a policy risk. GUI-67: this used to be icon-or-nothing, so any
+            // fill without an icon rendered a blank square.
+            let mediaContent = ad.mediaContent
+            let hasMedia = mediaContent.hasVideoContent || mediaContent.mainImage != nil
 
-            // Populate icon from the ad's icon image. If the ad has no icon,
-            // hide the icon view and re-anchor textStack to adView leading.
+            textStackLeadingWithIcon?.isActive = false
+            textStackLeadingWithMedia?.isActive = false
+            textStackLeadingNoIcon?.isActive = false
+
             if let iconImage = ad.icon?.image {
+                adView.iconView = iconView
+                adView.mediaView = nil
                 iconView.image = iconImage
                 iconView.isHidden = false
+                mediaView.isHidden = true
                 textStackLeadingWithIcon?.isActive = true
-                textStackLeadingNoIcon?.isActive = false
-            } else {
+            } else if isFeedChip, hasMedia {
+                adView.iconView = nil
+                adView.mediaView = mediaView
+                mediaView.mediaContent = mediaContent
+                mediaView.isHidden = false
                 iconView.isHidden = true
-                textStackLeadingWithIcon?.isActive = false
+                textStackLeadingWithMedia?.isActive = true
+            } else {
+                adView.iconView = nil
+                adView.mediaView = nil
+                iconView.isHidden = true
+                mediaView.isHidden = true
                 textStackLeadingNoIcon?.isActive = true
             }
         }
@@ -534,7 +581,7 @@ final class NativeAdContainer: UIView {
         // Snap every registered asset view to an integral rect strictly inside
         // adView. Frames in adView's coordinate space:
         if isFeedChip {
-            for view in [iconView, adChoicesContainer, textStack] {
+            for view in [iconView, mediaView, adChoicesContainer, textStack] {
                 view.frame = integralRect(view.frame)
             }
         } else if compact {
