@@ -1407,7 +1407,7 @@ struct HomeView: View {
         }
         .task {
             // Fire-and-forget: clear badge without blocking the home load.
-            Task { await clearBadgeAndMarkSeen() }
+            Task { await clearBadge() }
 
             // Stage 1: Refresh streams and load trending content concurrently.
             await withTaskGroup(of: Void.self) { group in
@@ -1510,10 +1510,10 @@ struct HomeView: View {
         }
     }
 
-    /// Clear the app icon badge and flag day-old new episodes as seen so the next launch doesn't re-pulse them.
-    private func clearBadgeAndMarkSeen() async {
+    /// Clear the app icon badge. Episode staleness (`is_new`) is aged out
+    /// server-side by the `cleanup-new-episodes-daily` job.
+    private func clearBadge() async {
         try? await UNUserNotificationCenter.current().setBadgeCount(0)
-        await streams.markStaleEpisodesSeen()
     }
 
     /// Subscribe to live_status changes via Supabase Realtime so the watchlist

@@ -103,9 +103,8 @@ nonisolated struct TMDBNetwork: Decodable, Hashable, Sendable {
 }
 
 /// Compact episode summary returned inline on `/tv/{id}` via the
-/// `last_episode_to_air` / `next_episode_to_air` fields. Lets the
-/// `EpisodeTrackerService` figure out the latest aired episode without a
-/// second round-trip to `/tv/{id}/season/{n}`.
+/// `last_episode_to_air` / `next_episode_to_air` fields. Gives the latest
+/// aired episode without a second round-trip to `/tv/{id}/season/{n}`.
 nonisolated struct TMDBEpisodeSummary: Decodable, Sendable, Hashable {
     let id: Int
     let name: String?

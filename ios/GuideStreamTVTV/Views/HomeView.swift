@@ -498,7 +498,7 @@ struct HomeView: View {
         }
         .tint(Color.orange)
         .task {
-            await clearBadgeAndMarkSeen()
+            await clearBadge()
             await streams.refreshAll()
             await loadTrendingIfNeeded()
         }
@@ -508,10 +508,10 @@ struct HomeView: View {
         }
     }
 
-    /// Clear the app icon badge and flag day-old new episodes as seen so the next launch doesn't re-pulse them.
-    private func clearBadgeAndMarkSeen() async {
+    /// Clear the app icon badge. Episode staleness (`is_new`) is aged out
+    /// server-side by the `cleanup-new-episodes-daily` job.
+    private func clearBadge() async {
         try? await UNUserNotificationCenter.current().setBadgeCount(0)
-        await streams.markStaleEpisodesSeen()
     }
 
     /// Selected service ids in catalogue order — keeps the pill's stacked icons

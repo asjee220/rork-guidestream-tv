@@ -24,7 +24,7 @@ typealias WatchListView = TVWatchListView
 
 // MARK: - NewEpisodeRow
 
-/// Stub row shape mirrored from the iOS `EpisodeTrackerService`. The tvOS
+/// Stub row shape mirrored from the iOS `NewEpisodeRow`. The tvOS
 /// target never populates `StreamsViewModel.newEpisodes`, so this only
 /// needs the field surface area used by shared views.
 struct NewEpisodeRow: Identifiable, Hashable {

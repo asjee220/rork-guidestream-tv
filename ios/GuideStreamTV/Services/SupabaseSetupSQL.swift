@@ -182,11 +182,13 @@ enum SupabaseSetupSQL {
 
     -- NEW EPISODES
     --
-    -- Populated client-side by EpisodeTrackerService (iOS) which scans
-    -- the user's watch list, pulls last_episode_to_air from TMDB, and
-    -- writes a row when an episode aired in the last 14 days. The unique
-    -- index on (title_id, season, episode) keeps re-scans idempotent so
-    -- the same episode never appears twice in the rail.
+    -- Server-owned. Written only by service-role jobs:
+    -- youtube_websub_callback (creator uploads), rss_poll_podcasts
+    -- (podcast episodes) and the TMDB refresh jobs. Clients read only —
+    -- RLS exposes SELECT and nothing else. The unique index on
+    -- (title_id, season, episode) keeps re-writes idempotent so the same
+    -- episode never appears twice in the rail. is_new is aged out by the
+    -- cleanup-new-episodes-daily pg_cron job (48h).
     create table if not exists public.new_episodes (
       id uuid primary key default gen_random_uuid(),
       title_id text not null,

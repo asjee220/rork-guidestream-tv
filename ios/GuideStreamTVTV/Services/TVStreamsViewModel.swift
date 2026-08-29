@@ -340,10 +340,6 @@ final class TVStreamsViewModel {
     /// shared with the iOS target compile cleanly.
     func fetchNewEpisodes() async {}
 
-    /// No-op stub matching the iOS API. The episode rail is empty on tvOS
-    /// so there is nothing to mark.
-    func markStaleEpisodesSeen() async {}
-
     /// iOS-style alias for `add(...)`. Keeps shared sheets compiling.
     func addToMyStreams(
         titleId: String,
