@@ -65,8 +65,8 @@ struct TVSideMenu: View {
     /// Insets that make the panel read as a floating card rather than a
     /// full-height flush rail — kept identical in both states so the
     /// expansion is a pure width change.
-    private let leadingInset: CGFloat = 32
-    private let verticalInset: CGFloat = 48
+    private let leadingInset: CGFloat = 0
+    private let verticalInset: CGFloat = 96
     /// Width of the orange selection indicator.
     private let barWidth: CGFloat = 6
     /// Height of the orange selection indicator.
@@ -102,7 +102,8 @@ struct TVSideMenu: View {
         }
         .frame(width: isOpen ? openWidth : closedWidth)
         .frame(maxHeight: .infinity)
-        .background(TVTheme.surface.opacity(0.92))
+        .background(TVTheme.surface.opacity(0.30))
+        .background(.ultraThinMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 36, style: .continuous))
         .padding(.leading, leadingInset)
         .padding(.vertical, verticalInset)

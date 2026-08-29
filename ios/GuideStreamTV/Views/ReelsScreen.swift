@@ -2623,8 +2623,8 @@ private struct ReelView: View {
 
     @ViewBuilder
     private func reelRakutenCard(_ ad: (serviceId: String, name: String, color: Color, headline: String, subtitle: String)) -> some View {
-        ReelAffiliateRowCard(
-            serviceId: ad.serviceId,
+        SponsoredAffiliateCard(
+            service: StreamingCatalog.service(for: ad.serviceId),
             fallbackName: ad.name,
             fallbackColor: ad.color,
             headline: ad.headline,
@@ -2647,7 +2647,9 @@ private struct ReelView: View {
                     ]
                 )
             },
-            onDismiss: { glassAdDismissed = true }
+            onDismiss: { glassAdDismissed = true },
+            feedStyle: true,
+            feedChipGlass: true
         )
     }
 
@@ -2825,7 +2827,7 @@ private struct ReelNativeAdPage: View {
         Group {
             if let nativeAd = claimedAd {
                 #if canImport(GoogleMobileAds) && !targetEnvironment(simulator)
-                NativeAdCardView(nativeAd: nativeAd as! NativeAd, compact: true) {
+                NativeAdCardView(nativeAd: nativeAd as! NativeAd, compact: true, feedStyle: true, feedGlass: true) {
                     onDismiss()
                 }
                 .frame(maxWidth: .infinity)
@@ -2873,87 +2875,6 @@ private struct ReelNativeAdPage: View {
             resolved = true
         }
         onFilled(claimedAd != nil)
-    }
-}
-
-/// Compact 68pt-tall affiliate row card for the Reels ad carousel. Renders a
-/// horizontal row with a 44pt brand tile, headline/subtitle/Sponsored footer,
-/// and a Get offer pill. Tapping the card opens the Rakuten affiliate link.
-private struct ReelAffiliateRowCard: View {
-    let serviceId: String
-    let fallbackName: String
-    let fallbackColor: Color
-    let headline: String
-    let subtitle: String
-    let onTap: () -> Void
-    let onDismiss: () -> Void
-
-    var body: some View {
-        Button(action: onTap) {
-            HStack(spacing: 10) {
-                brandTile
-                VStack(alignment: .leading, spacing: 0) {
-                    Text(headline)
-                        .scaledFont(size: 13, weight: .bold)
-                        .foregroundStyle(.white)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                    Spacer().frame(height: 2)
-                    Text(subtitle)
-                        .scaledFont(size: 10)
-                        .foregroundStyle(Color.white.opacity(0.62))
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                    Spacer().frame(height: 3)
-                    Text("Sponsored · Rakuten")
-                        .scaledFont(size: 9)
-                        .foregroundStyle(Color.white.opacity(0.45))
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                Spacer().frame(width: 8)
-                Text("Get offer")
-                    .scaledFont(size: 12, weight: .bold)
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 7)
-                    .background(RoundedRectangle(cornerRadius: 14).fill(Color(hex: "F5821F")))
-            }
-            .padding(12)
-            .frame(maxWidth: .infinity)
-            .frame(height: 68)
-            .background(
-                RoundedRectangle(cornerRadius: 14)
-                    .fill(Color.black.opacity(0.44))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 14)
-                    .stroke(Color.white.opacity(0.12), lineWidth: 0.5)
-            )
-        }
-        .buttonStyle(.plain)
-    }
-
-    private var brandTile: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 8)
-                .fill(service?.bg ?? fallbackColor)
-            if let service {
-                ServiceBrandContent(
-                    display: service.display,
-                    size: .mini(34)
-                )
-                .frame(width: 34, height: 34)
-            } else {
-                Text(String(fallbackName.prefix(3)).uppercased())
-                    .scaledFont(size: 13, weight: .black)
-                    .foregroundStyle(.white)
-            }
-        }
-        .frame(width: 44, height: 44)
-    }
-
-    private var service: StreamingService? {
-        StreamingCatalog.service(for: serviceId)
     }
 }
 

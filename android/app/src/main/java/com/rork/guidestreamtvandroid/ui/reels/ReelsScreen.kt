@@ -59,6 +59,7 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VolumeOff
 import androidx.compose.material.icons.filled.VolumeUp
@@ -120,6 +121,7 @@ import com.rork.guidestreamtvandroid.data.repository.SocialViewModel
 import com.rork.guidestreamtvandroid.data.repository.StreamsViewModel
 import com.rork.guidestreamtvandroid.data.repository.WatchIntentLogger
 import com.rork.guidestreamtvandroid.ui.ads.NativeAdCard
+import com.rork.guidestreamtvandroid.ui.ads.RakutenAffiliatePresentation
 import com.rork.guidestreamtvandroid.ui.comments.TitleCommentsSheet
 import com.rork.guidestreamtvandroid.ui.components.RemoteImage
 import com.rork.guidestreamtvandroid.ui.navigation.PendingTitleRoute
@@ -2134,10 +2136,12 @@ private fun ReelAdCarousel(
                 if (nativeAdFailed[page] == true) {
                     Spacer(Modifier.height(96.dp))
                 } else {
-                    NativeAdCard(
-                        compact = true,
-                        onAdFailedToLoad = { nativeAdFailed[page] = true },
-                    )
+                    ReelAdChip(onDismiss = { dismissed = true }) {
+                        NativeAdCard(
+                            feedStyle = true,
+                            onAdFailedToLoad = { nativeAdFailed[page] = true },
+                        )
+                    }
                     // Log native impression once when the page first shows.
                     LaunchedEffect(nativePagerState.currentPage, page) {
                         if (nativePagerState.currentPage == page && nativeImpressionLogged[page] != true) {
@@ -2199,10 +2203,12 @@ private fun ReelAdCarousel(
             modifier = Modifier.fillMaxWidth(),
         ) { page ->
             if (page in setOf(1, 2, 4, 5, 7) && nativeAdFailed[page] != true) {
-                NativeAdCard(
-                    compact = true,
-                    onAdFailedToLoad = { nativeAdFailed[page] = true },
-                )
+                ReelAdChip(onDismiss = { dismissed = true }) {
+                    NativeAdCard(
+                        feedStyle = true,
+                        onAdFailedToLoad = { nativeAdFailed[page] = true },
+                    )
+                }
                 // Log native impression once when the page first shows.
                 LaunchedEffect(pagerState.currentPage, page) {
                     if (pagerState.currentPage == page && nativeImpressionLogged[page] != true) {
@@ -2245,10 +2251,59 @@ private fun ReelAdCarousel(
 }
 
 /**
- * Compact glass affiliate card for the reel carousel — a rounded 14dp
- * container with a dark backing and a hairline border so text stays legible
- * over bright trailer frames. Tapping the card opens the Rakuten affiliate
- * link and logs AFFILIATE_LINK_TAPPED.
+ * The 96dp inline ad chip that hosts one Reels carousel page. Surface, border
+ * and close control live here so the affiliate and banner presentations sit in
+ * an identically sized box — the same chip the inline slots draw, so Reels no
+ * longer has an ad format of its own.
+ */
+@Composable
+private fun ReelAdChip(
+    onDismiss: () -> Unit,
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit,
+) {
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(96.dp)
+            .clip(RoundedCornerShape(14.dp))
+            // Translucent, not the opaque SurfaceElevated the other inline
+            // slots use — this chip sits over a playing trailer and the frame
+            // behind it has to stay visible.
+            .background(Color.Black.copy(alpha = 0.44f))
+            .border(1.dp, GlassStroke, RoundedCornerShape(14.dp)),
+    ) {
+        content()
+
+        // Close — drawn above the card so its tap never opens the offer.
+        Box(
+            modifier = Modifier
+                // 44dp target for the Material minimum; the glyph still reads
+                // as a small X because the box is transparent.
+                .align(Alignment.TopEnd)
+                .size(44.dp)
+                .clip(CircleShape)
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                ) { onDismiss() },
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.Close,
+                contentDescription = "Hide this ad",
+                tint = Color.White.copy(alpha = 0.55f),
+                modifier = Modifier.size(15.dp),
+            )
+        }
+    }
+}
+
+/**
+ * Affiliate page of the reel carousel, drawn as the shared 96dp chip: a flush
+ * 96dp creative, up to three lines of headline and an "advertiser · Sponsored"
+ * line. Tapping opens the Rakuten affiliate link and logs
+ * AFFILIATE_LINK_TAPPED — same destination and same event as before.
  */
 @Composable
 private fun ReelAffiliateCard(
@@ -2259,16 +2314,13 @@ private fun ReelAffiliateCard(
     val context = LocalContext.current
     val service = StreamingCatalog.service(offer.first)
 
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
-            .background(Color.Black.copy(alpha = 0.44f))
-            .border(1.dp, GlassStroke, RoundedCornerShape(14.dp))
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-            ) {
+    ReelAdChip(onDismiss = onDismiss) {
+        RakutenAffiliatePresentation(
+            service = service,
+            headline = offer.second,
+            subtitle = offer.third,
+            feedStyle = true,
+            onClick = {
                 RakutenManager.get().openAffiliateLink(
                     serviceId = offer.first,
                     context = context,
@@ -2286,64 +2338,6 @@ private fun ReelAffiliateCard(
                     ),
                 )
             },
-    ) {
-        Row(
-            modifier = Modifier.padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(44.dp)
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(service?.bg ?: Color.Black),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    text = (service?.name ?: offer.second).take(3).uppercase(),
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Black,
-                    color = Color.White,
-                )
-            }
-            Spacer(Modifier.width(10.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = offer.second,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = TextPrimary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Spacer(Modifier.height(2.dp))
-                Text(
-                    text = offer.third,
-                    fontSize = 10.sp,
-                    color = TextSecondary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Spacer(Modifier.height(3.dp))
-                Text(
-                    text = "Sponsored · Rakuten",
-                    fontSize = 9.sp,
-                    color = TextTertiary,
-                )
-            }
-            Spacer(Modifier.width(8.dp))
-            Box(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(BrandOrange)
-                    .padding(horizontal = 12.dp, vertical = 7.dp),
-            ) {
-                Text(
-                    text = "Get offer",
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White,
-                )
-            }
-        }
+        )
     }
 }

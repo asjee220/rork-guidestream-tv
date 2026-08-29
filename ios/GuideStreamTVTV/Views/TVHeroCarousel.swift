@@ -18,6 +18,7 @@
 
 import SwiftUI
 import AVFoundation
+import Supabase
 import UIKit
 
 /// Preference the hero raises when a left move at the first item should
@@ -32,11 +33,20 @@ struct TVHeroSideMenuRequestKey: PreferenceKey {
 
 struct TVHeroCarousel: View {
     let items: [TVTMDBResult]
+    /// Bound from TVHomeView so the scroll content can declare the CTA the
+    /// default focus for the scene, preventing launch focus from landing on
+    /// a rail card and scrolling the hero off screen.
+    @FocusState.Binding var ctaFocused: Bool
     let onToggleSave: (TVTMDBResult) -> Void
     let isSaved: (TVTMDBResult) -> Bool
     /// canonicalTitleId -> hosted featurette URL. A missing key means the
     /// item renders as a drifting still.
     let featurettes: [String: String]
+    /// Leading inset for the metadata block only. The art runs full bleed,
+    /// so the copy has to be told where the rail titles below it start —
+    /// TVMainView's inset plus the measured title-safe margin plus the
+    /// rail's own gutter.
+    let metadataInset: CGFloat
 
     @State private var index: Int = 0
     /// +1 = forward (out left, in from right); -1 = mirrored for back-steps.
@@ -50,11 +60,23 @@ struct TVHeroCarousel: View {
     /// appearance of the screen; reset in onAppear.
     @State private var autoAdvanceDisabled: Bool = false
     @State private var menuRequestCount: Int = 0
+    /// False until focus has actually left the hero once. tvOS will not move
+    /// focus onto a fully transparent view, so gating the metadata block
+    /// purely on hero focus made the CTA unfocusable.
+    @State private var heroFocusEverLeft: Bool = false
+    /// Alternative streams tried for the current item. A resolved URL can
+    /// still refuse to play, so the next key gets a turn — bounded, or a
+    /// title with five dead keys would hold the hero for its whole dwell.
+    @State private var streamRetries: Int = 0
+    /// A player built ahead of time for the item after this one, so its
+    /// asset is loaded and buffered before the carousel reaches it. Reels on
+    /// iPhone and Android deliberately never do this — they only ever hold
+    /// one live player, because the user swipes and the app cannot know what
+    /// is next. The hero auto-advances, so it does know, and the first frame
+    /// is the whole point of the surface.
+    @State private var prerolledPlayer: AVPlayer?
+    @State private var prerolledIndex: Int?
 
-    /// Bound from TVHomeView so the scroll content can declare the CTA the
-    /// default focus for the scene, preventing launch focus from landing on
-    /// a rail card and scrolling the hero off screen.
-    @FocusState.Binding var ctaFocused: Bool
     @FocusState private var heroRegionFocused: Bool
     /// Focus scope for the hero region. The Add to Watch List button is
     /// the default focus inside this scope so Home appears with the hero
@@ -68,7 +90,7 @@ struct TVHeroCarousel: View {
     /// The metadata block is visible while the hero region (or the CTA
     /// inside it) holds focus, and fades out when focus enters the rails.
     private var metadataVisible: Bool {
-        ctaFocused || heroRegionFocused
+        ctaFocused || heroRegionFocused || !heroFocusEverLeft
     }
 
     var body: some View {
@@ -100,8 +122,13 @@ struct TVHeroCarousel: View {
                 }
             }
             .animation(.easeInOut(duration: 0.65), value: index)
+            // tvOS keeps everything inside a title-safe margin by default,
+            // which left a band of background down the leading edge and
+            // across the top. The art opts out; the metadata below does not.
+            .ignoresSafeArea()
 
             metadataBlock
+            pageIndicator
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .clipped()
@@ -120,6 +147,13 @@ struct TVHeroCarousel: View {
             endOfItemTask?.cancel()
             playbackStatusTask?.cancel()
             teardownPlayer()
+            discardPreroll()
+        }
+        .onChange(of: ctaFocused) { wasFocused, isFocused in
+            if wasFocused && !isFocused { heroFocusEverLeft = true }
+        }
+        .onChange(of: heroRegionFocused) { wasFocused, isFocused in
+            if wasFocused && !isFocused { heroFocusEverLeft = true }
         }
         .onChange(of: index) { _, _ in
             startDwell()
@@ -127,6 +161,13 @@ struct TVHeroCarousel: View {
         .onChange(of: items.count) { _, _ in
             index = 0
             startDwell()
+        }
+        .onChange(of: featurettes.count) { _, _ in
+            // The pool is built before its video URLs resolve, so the first
+            // item's dwell starts on the still path. Re-arm once the map
+            // lands or item one can never play.
+            startDwell()
+            prerollNext()
         }
     }
 
@@ -144,7 +185,7 @@ struct TVHeroCarousel: View {
             if let player {
                 TVFeaturetteLayer(player: player)
                     .opacity(videoReady ? 1 : 0)
-                    .animation(.easeOut(duration: 0.6), value: videoReady)
+                    .animation(.easeOut(duration: 0.4), value: videoReady)
             }
         }
         .overlay {
@@ -177,21 +218,21 @@ struct TVHeroCarousel: View {
     @ViewBuilder
     private var metadataBlock: some View {
         if let item = currentItem {
-            VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 14) {
                 Text(item.isTV ? "TRENDING SHOW" : "TRENDING MOVIE")
                     .font(.system(size: 16, weight: .heavy))
                     .foregroundStyle(TVTheme.orange)
                     .tracking(2)
                 Text(item.displayName)
-                    .font(.system(size: 54, weight: .black))
+                    .font(.system(size: 44, weight: .black))
                     .foregroundStyle(.white)
                     .lineLimit(2)
                 if let overview = item.overview, !overview.isEmpty {
                     Text(overview)
-                        .font(.system(size: 22, weight: .regular))
+                        .font(.system(size: 20, weight: .regular))
                         .foregroundStyle(TVTheme.textSecondary)
-                        .lineLimit(3)
-                        .frame(maxWidth: 820, alignment: .leading)
+                        .lineLimit(2)
+                        .frame(maxWidth: 700, alignment: .leading)
                 }
 
                 Button {
@@ -209,18 +250,59 @@ struct TVHeroCarousel: View {
                 }
                 .buttonStyle(.card)
                 .focused($ctaFocused)
+                // The CTA holds focus on arrival, so left/right land here
+                // rather than on the hero region behind it. Without this the
+                // carousel cannot be stepped through at all.
+                .onMoveCommand(perform: handleMoveCommand)
                 .prefersDefaultFocus(true, in: heroNamespace)
                 .padding(.top, 6)
             }
-            .padding(.horizontal, 80)
-            .padding(.bottom, 120)
+            .padding(.leading, metadataInset)
+            .padding(.trailing, 80)
+            // Clears the first rail, which peeks over the hero at the fold.
+            // The hero grew by the title-safe margin when it opted out, so
+            // this has to clear more than it used to.
+            .padding(.bottom, 290)
             .opacity(metadataVisible ? 1 : 0)
             .animation(.easeInOut(duration: 0.3), value: metadataVisible)
             .animation(.easeOut(duration: 0.35), value: index)
         }
     }
 
+    /// Dotted position control for the carousel, centred on the same line
+    /// as the CTA. The current item reads as an orange capsule; the rest
+    /// are dim dots. Purely indicative — stepping is the remote's job.
+    @ViewBuilder
+    private var pageIndicator: some View {
+        if items.count > 1 {
+            HStack(spacing: 12) {
+                ForEach(items.indices, id: \.self) { position in
+                    Capsule()
+                        .fill(position == index ? TVTheme.orange : Color.white.opacity(0.32))
+                        .frame(width: position == index ? 34 : 10, height: 10)
+                }
+            }
+            .animation(.easeInOut(duration: 0.28), value: index)
+            .frame(maxWidth: .infinity, alignment: .center)
+            .padding(.bottom, 300)
+            .opacity(metadataVisible ? 1 : 0)
+            .animation(.easeInOut(duration: 0.3), value: metadataVisible)
+        }
+    }
+
     // MARK: - Dwell & rotation
+
+    /// How long a title is given to actually start playing before the
+    /// carousel gives up on it and moves on. Extraction, then the asset
+    /// load, then the first frame — ten seconds was not enough on a real
+    /// Apple TV, so the item lost its turn to the next poster while its
+    /// video was still on the way.
+    private static let videoStartGrace: Int = 22
+    /// How long a still holds when the title has no video at all.
+    private static let stillDwell: Int = 10
+    /// Longest any one item holds the hero, measured from the moment its
+    /// video starts playing rather than from when the item appeared.
+    private static let maxVideoDwell: Int = 26
 
     /// Starts the current item's dwell: a hosted featurette plays once and
     /// advances on its end; a still (or a featurette that never starts)
@@ -230,6 +312,8 @@ struct TVHeroCarousel: View {
         endOfItemTask?.cancel()
         playbackStatusTask?.cancel()
         teardownPlayer()
+        resetVideoReady()
+        streamRetries = 0
 
         guard let item = currentItem, items.count > 1, index < items.count - 1 else {
             return
@@ -238,21 +322,44 @@ struct TVHeroCarousel: View {
         if let urlString = featurettes[item.canonicalTitleId], let url = URL(string: urlString) {
             setUpPlayer(for: item, url: url)
             dwellTask = Task { @MainActor in
-                // 10-second fallback while the featurette never starts
-                // (failed load or stall) — the still stays visible.
-                try? await Task.sleep(for: .seconds(10))
+                // Wait for playback to actually begin rather than counting
+                // down regardless. The old fixed timer is what made the
+                // carousel rotate to the next poster while this title's
+                // video was still loading.
+                var waited = 0
+                while !videoReady, waited < Self.videoStartGrace * 1000 {
+                    try? await Task.sleep(for: .milliseconds(200))
+                    guard !Task.isCancelled else { return }
+                    waited += 200
+                }
                 guard !Task.isCancelled else { return }
                 guard videoReady else {
                     advance()
                     return
                 }
-                // Playing — the end-of-item observer owns advancing, but a
-                // mid-playback stall still needs an out: advance after the
-                // player sits idle well past any plausible rebuffer.
+
+                // Playing, so the next title's video can start loading now
+                // and be ready by the time the carousel reaches it.
+                prerollNext()
+
+                // The end-of-item observer advances when a clip actually
+                // finishes, but an extracted YouTube trailer runs two or
+                // three minutes — long enough that the carousel looks stuck
+                // on one title — so cap the turn. Counted from playback
+                // start, so a slow-loading title still gets its full watch
+                // time rather than the remainder of a shared clock. A stall
+                // needs its own out: advance once the player sits idle well
+                // past any plausible rebuffer.
                 var idleChecks = 0
+                var elapsed = 0
                 while !Task.isCancelled {
                     try? await Task.sleep(for: .seconds(3))
                     guard !Task.isCancelled else { return }
+                    elapsed += 3
+                    if elapsed >= Self.maxVideoDwell {
+                        advance()
+                        return
+                    }
                     if player?.timeControlStatus == .playing {
                         idleChecks = 0
                     } else {
@@ -266,35 +373,177 @@ struct TVHeroCarousel: View {
             }
         } else {
             dwellTask = Task { @MainActor in
-                try? await Task.sleep(for: .seconds(10))
+                // No video for this title, but the next one may have one —
+                // warm it while the still holds.
+                prerollNext()
+                try? await Task.sleep(for: .seconds(Self.stillDwell))
                 guard !Task.isCancelled else { return }
                 advance()
             }
         }
     }
 
+    /// tvOS will not start playback while the process has no active audio
+    /// session, even for a muted player: the item reaches .readyToPlay and
+    /// then sits at .paused with no error, which is exactly how this looked
+    /// on device. .mixWithOthers so a silent hero never interrupts whatever
+    /// the viewer already has playing.
+    private static func activateAudioSessionIfNeeded() {
+        guard !audioSessionActivated else { return }
+        audioSessionActivated = true
+        do {
+            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback, options: [.mixWithOthers])
+            try AVAudioSession.sharedInstance().setActive(true)
+        } catch {
+            audioSessionActivated = false
+        }
+    }
+
+    private nonisolated(unsafe) static var audioSessionActivated = false
+
+    /// Builds the player for the item after this one and lets it load in the
+    /// background. Nothing is displayed and nothing plays — the point is
+    /// only that the asset and its first frames are already in hand when the
+    /// carousel rotates.
+    private func prerollNext() {
+        let next = index + 1
+        guard items.indices.contains(next) else { return }
+        guard prerolledIndex != next else { return }
+        let nextItem = items[next]
+        guard let urlString = featurettes[nextItem.canonicalTitleId],
+              let url = URL(string: urlString) else { return }
+
+        prerolledPlayer?.pause()
+        let warm = AVPlayer(playerItem: AVPlayerItem(url: url))
+        warm.isMuted = true
+        warm.automaticallyWaitsToMinimizeStalling = true
+        prerolledPlayer = warm
+        prerolledIndex = next
+    }
+
+    private func discardPreroll() {
+        prerolledPlayer?.pause()
+        prerolledPlayer = nil
+        prerolledIndex = nil
+    }
+
     private func setUpPlayer(for item: TVTMDBResult, url: URL) {
-        let playerItem = AVPlayerItem(url: url)
-        let newPlayer = AVPlayer(playerItem: playerItem)
+        Self.activateAudioSessionIfNeeded()
+
+        let newPlayer: AVPlayer
+        if let warm = prerolledPlayer, prerolledIndex == index,
+           (warm.currentItem?.asset as? AVURLAsset)?.url == url {
+            newPlayer = warm
+            prerolledPlayer = nil
+            prerolledIndex = nil
+        } else {
+            discardPreroll()
+            newPlayer = AVPlayer(playerItem: AVPlayerItem(url: url))
+        }
+        guard let playerItem = newPlayer.currentItem else { return }
         newPlayer.isMuted = true
         player = newPlayer
         newPlayer.play()
 
-        // Fade the layer in and log the view the moment playback actually
-        // starts; until then the drifting still stays visible underneath.
-        playbackStatusTask = Task { @MainActor [weak newPlayer] in
-            guard let newPlayer else { return }
-            if newPlayer.timeControlStatus == .playing {
-                markVideoReady(for: item)
-                return
-            }
-            for await status in newPlayer.publisher(for: \.timeControlStatus).values {
+        // play() before the item is ready can be dropped, so ask again the
+        // moment it becomes playable.
+        Task { @MainActor [weak newPlayer, weak playerItem] in
+            guard let newPlayer, let playerItem else { return }
+            for await status in playerItem.publisher(for: \.status).values {
                 guard !Task.isCancelled else { return }
-                guard status == .playing else { continue }
-                markVideoReady(for: item)
+                guard status == .readyToPlay else { continue }
+                if newPlayer.timeControlStatus != .playing { newPlayer.play() }
                 return
             }
         }
+
+        // Fade the layer in and log the view the moment playback actually
+        // starts; until then the drifting still stays visible underneath.
+        // Polled rather than observed. The KVO publisher for
+        // timeControlStatus did not deliver on device — players reported
+        // time=playing while this never fired, so the layer stayed at
+        // opacity 0 and the video was invisible even when it was running.
+        playbackStatusTask = Task { @MainActor [weak newPlayer] in
+            // 100ms ticks over the same 20s budget: the poster gives way the
+            // moment the stream is genuinely playing, with no hold in front
+            // of it, so the only thing between still and video is the fade.
+            for _ in 0..<200 {
+                guard !Task.isCancelled else { return }
+                guard let newPlayer else { return }
+                if newPlayer.timeControlStatus == .playing {
+                    markVideoReady(for: item)
+                    return
+                }
+                if newPlayer.currentItem?.status == .failed {
+                    await retryWithNextStream(for: item)
+                    return
+                }
+                try? await Task.sleep(for: .milliseconds(100))
+            }
+        }
+
+        #if DEBUG
+        // Unconditional snapshot a few seconds in. A player stuck at
+        // .unknown never reaches .failed either, so only reporting failures
+        // leaves the common case invisible.
+        Task { @MainActor [weak newPlayer, weak playerItem] in
+            try? await Task.sleep(for: .seconds(8))
+            guard let newPlayer, let playerItem else { return }
+            let itemStatus: String
+            switch playerItem.status {
+            case .readyToPlay: itemStatus = "readyToPlay"
+            case .failed: itemStatus = "failed"
+            default: itemStatus = "unknown"
+            }
+            let timeStatus: String
+            switch newPlayer.timeControlStatus {
+            case .playing: timeStatus = "playing"
+            case .paused: timeStatus = "paused"
+            case .waitingToPlayAtSpecifiedRate: timeStatus = "waiting"
+            @unknown default: timeStatus = "?"
+            }
+            let last = playerItem.errorLog()?.events.last
+            let detail = "item=\(itemStatus) time=\(timeStatus) ready=\(videoReady)"
+                + " likelyKeepUp=\(playerItem.isPlaybackLikelyToKeepUp)"
+                + " err=\(playerItem.error?.localizedDescription ?? "none")"
+                + " httpStatus=\(last?.errorStatusCode ?? 0)"
+                + " comment=\(last?.errorComment ?? "none")"
+            try? await SupabaseManager.shared.client
+                .from("debug_logs")
+                .insert([
+                    "event": .string("tv_hero_player_status"),
+                    "platform": .string("tvos"),
+                    "title": .string(item.canonicalTitleId),
+                    "target_name": .string(String(detail.prefix(300))),
+                    "matched": .bool(newPlayer.timeControlStatus == .playing)
+                ] as [String: AnyJSON])
+                .execute()
+        }
+
+        // A failed load never reaches .playing, so without this the video
+        // simply never appears and nothing says why.
+        Task { @MainActor [weak playerItem] in
+            guard let playerItem else { return }
+            for await status in playerItem.publisher(for: \.status).values {
+                guard !Task.isCancelled else { return }
+                guard status == .failed else { continue }
+                let message = (playerItem.error?.localizedDescription ?? "unknown")
+                    + " | log=" + (playerItem.errorLog()?.events.last?.errorComment ?? "none")
+                    + " | status=" + String(playerItem.errorLog()?.events.last?.errorStatusCode ?? 0)
+                try? await SupabaseManager.shared.client
+                    .from("debug_logs")
+                    .insert([
+                        "event": .string("tv_hero_player_failed"),
+                        "platform": .string("tvos"),
+                        "title": .string(item.canonicalTitleId),
+                        "target_name": .string(String(message.prefix(300))),
+                        "matched": .bool(false)
+                    ] as [String: AnyJSON])
+                    .execute()
+                return
+            }
+        }
+        #endif
 
         endOfItemTask = Task { @MainActor [weak newPlayer] in
             guard let newPlayer else { return }
@@ -303,14 +552,33 @@ struct TVHeroCarousel: View {
                 object: newPlayer.currentItem
             ) {
                 guard !Task.isCancelled else { return }
+                // Fade back to the poster before rotating, so the item ends
+                // on the same image it began with.
+                withAnimation(.easeOut(duration: 0.6)) { videoReady = false }
+                try? await Task.sleep(for: .milliseconds(900))
+                guard !Task.isCancelled else { return }
                 advance()
                 return
             }
         }
     }
 
+    /// Swaps in the next candidate stream for this title — another rendition
+    /// of the same trailer first, then another key. Bounded so a title whose
+    /// candidates are all dead falls back to its still rather than churning
+    /// for the whole dwell.
+    private func retryWithNextStream(for item: TVTMDBResult) async {
+        guard streamRetries < 4 else { return }
+        streamRetries += 1
+        guard let next = await TVTrailerStreamService.shared.nextStreamURL(for: item.canonicalTitleId),
+              let url = URL(string: next) else { return }
+        guard !Task.isCancelled, currentItem?.id == item.id else { return }
+        teardownPlayer()
+        setUpPlayer(for: item, url: url)
+    }
+
     private func markVideoReady(for item: TVTMDBResult) {
-        withAnimation(.easeOut(duration: 0.6)) {
+        withAnimation(.easeOut(duration: 0.4)) {
             videoReady = true
         }
         WatchIntentLogger.shared.log(
@@ -318,6 +586,10 @@ struct TVHeroCarousel: View {
             titleId: item.canonicalTitleId,
             metadata: ["surface": "tv_home_hero"]
         )
+    }
+
+    private func resetVideoReady() {
+        videoReady = false
     }
 
     private func teardownPlayer() {
@@ -334,14 +606,11 @@ struct TVHeroCarousel: View {
         endOfItemTask?.cancel()
         guard !autoAdvanceDisabled else { return }
         guard items.count > 1, index < items.count - 1 else { return }
-        if ctaFocused || heroRegionFocused {
-            dwellTask = Task { @MainActor in
-                try? await Task.sleep(for: .seconds(10))
-                guard !Task.isCancelled else { return }
-                advance()
-            }
-            return
-        }
+        // Deliberately does NOT pause because the hero holds focus. It used
+        // to, back when the CTA was only focused if the viewer moved to it —
+        // now the CTA is the screen's default focus, so that rule re-armed
+        // the timer forever and the carousel never left the first item.
+        // autoAdvanceDisabled, set by any manual left/right, is the pause.
         direction = 1
         index += 1
     }

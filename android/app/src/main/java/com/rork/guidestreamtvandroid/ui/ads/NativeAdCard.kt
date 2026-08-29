@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -39,7 +40,6 @@ import com.google.android.gms.ads.LoadAdError
 import com.rork.guidestreamtvandroid.ui.theme.BrandOrange
 import com.rork.guidestreamtvandroid.ui.theme.GlassFill
 import com.rork.guidestreamtvandroid.ui.theme.GlassStroke
-import com.rork.guidestreamtvandroid.ui.theme.SurfaceDark
 import com.rork.guidestreamtvandroid.ui.theme.TextPrimary
 import com.rork.guidestreamtvandroid.ui.theme.TextSecondary
 import com.rork.guidestreamtvandroid.ui.theme.TextTertiary
@@ -47,10 +47,10 @@ import com.rork.guidestreamtvandroid.ui.theme.TextTertiary
 /**
  * Native ad card — mirrors iOS NativeAdCardView.
  * Renders an AdMob banner ad inside a glass card with an "Ad" badge.
- * When [feedStyle] is true the card renders the compact 88dp inline-feed
- * chip instead: opaque SurfaceDark, orange AD badge, banner filling the
- * remaining height. The default (false) path is unchanged so the Reels
- * carousel keeps its existing card.
+ * When [feedStyle] is true the card fills the inline chip its caller draws:
+ * no surface of its own, a muted "Ad" attribution chip, and the banner
+ * filling the remaining height. The default (false) path is unchanged so the
+ * Reels carousel keeps its existing card.
  */
 @Composable
 fun NativeAdCard(
@@ -63,28 +63,28 @@ fun NativeAdCard(
     if (feedStyle) {
         Column(
             modifier = modifier
-                .fillMaxWidth()
-                .height(88.dp)
-                .clip(RoundedCornerShape(14.dp))
-                .background(SurfaceDark)
-                .border(1.dp, Color.White.copy(alpha = 0.10f), RoundedCornerShape(14.dp))
-                .padding(12.dp),
+                .fillMaxSize()
+                // End inset clears the caller's close control.
+                .padding(start = 12.dp, end = 44.dp, top = 10.dp, bottom = 10.dp),
         ) {
-            // Inline AD badge
+            // Attribution — the same muted chip the affiliate presentation uses.
             Box(
                 modifier = Modifier
-                    .clip(RoundedCornerShape(4.dp))
-                    .background(BrandOrange.copy(alpha = 0.18f))
-                    .padding(horizontal = 6.dp, vertical = 2.dp),
+                    .clip(RoundedCornerShape(3.dp))
+                    .background(Color.White.copy(alpha = 0.12f))
+                    .padding(horizontal = 5.dp, vertical = 1.dp),
             ) {
                 Text(
-                    text = "AD",
-                    fontSize = 9.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = BrandOrange,
+                    text = "Ad",
+                    fontSize = 10.sp,
+                    // Pinned so the app's 24.sp body line height does not eat
+                    // the 50dp the banner needs below it.
+                    lineHeight = 12.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = Color.White.copy(alpha = 0.62f),
                 )
             }
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(6.dp))
             // Banner ad — same ad unit resolution as the standard card.
             BannerAd(
                 adUnitId = AdUnitResolver.native(LocalContext.current),

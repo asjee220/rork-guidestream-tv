@@ -57,6 +57,12 @@ private struct TopPickItem: Identifiable {
 }
 
 struct TVHomeView: View {
+    /// Distance from the physical left edge of the display to this screen's
+    /// leading edge — TVMainView's inset plus the title-safe margin tvOS
+    /// applied above it. Measured by TVMainView, because a ScrollView's own
+    /// content cannot see it.
+    var leadingBleed: CGFloat = TVLayout.contentLeadingInset
+
     @State private var trending: [TVTMDBResult] = []
     @State private var newEpisodes: [TVTMDBResult] = []
     @State private var sports: [TVSportsGame] = []
@@ -73,6 +79,9 @@ struct TVHomeView: View {
     /// Drives the hero's Add to Watch List button as the default focus for
     /// the Home scene, so the app opens with the hero fully visible.
     @FocusState private var heroCTAFocused: Bool
+    /// One-shot guard so the hero CTA is claimed as focus exactly once,
+    /// on the first load of this screen, and never steals focus afterwards.
+    @State private var didClaimInitialFocus: Bool = false
 
     @State private var streams = TVStreamsViewModel.shared
 
@@ -109,15 +118,26 @@ struct TVHomeView: View {
     ]
 
     var body: some View {
-        ScrollView(.vertical, showsIndicators: false) {
-            LazyVStack(alignment: .leading, spacing: 56) {
-                // 1. Hero — fills the safe area; the negative bottom pull
-                // lets the first rail sit over the hero art at the fold so
-                // the embedded video / poster fades off into the rail.
-                heroSection
+        // Title-safe margins are symmetric, so the trailing gap is the
+        // leading one minus the shell inset.
+        let trailingBleed = max(0, leadingBleed - TVLayout.contentLeadingInset)
+        // Positioned from the physical edge rather than accumulated from the
+        // safe margin: TVRail's gutter sits inside contentLeading instead of
+        // being added on top of it.
+        let railLeading = max(0, TVLayout.contentLeading - TVLayout.railGutter)
+
+        return ScrollView(.vertical, showsIndicators: false) {
+                LazyVStack(alignment: .leading, spacing: 56) {
+                // 1. Hero — true full bleed. It cancels every inset the rail
+                // stack re-applies, so the art meets the top, leading and
+                // trailing edges and the menu floats over it. The negative
+                // bottom pull lets the first rail sit over the art at the
+                // fold so the video / poster fades off into it.
+                heroSection(metadataInset: TVLayout.contentLeading)
                     .containerRelativeFrame(.vertical)
-                    .padding(.top, 8)
-                    .padding(.bottom, -160)
+                    .padding(.bottom, -194)
+                    .padding(.leading, -railLeading)
+                    .padding(.trailing, -trailingBleed)
 
                 // 2. Everyone's Watching
                 if !everyonesWatching.isEmpty {
@@ -265,25 +285,46 @@ struct TVHomeView: View {
                 }
 
                 Color.clear.frame(height: 40)
+                }
+                .padding(.leading, railLeading)
+                .padding(.trailing, trailingBleed)
             }
-        }
-        .background(TVTheme.backgroundGradient)
-        .defaultFocus($heroCTAFocused, value: true)
-        .task { await loadAll() }
-        .sheet(item: $pendingDetail) { detail in
-            TVTitleSheet(detail: detail) { isSaved in
-                pendingDetail = nil
+            // Pull the scroll view out to the physical edges; the rail stack
+            // above puts both insets back, so only the hero escapes.
+            // .ignoresSafeArea() alone does not do this — on this SDK it
+            // expands a vertical ScrollView vertically only, which is why the
+            // top went full bleed and the leading edge did not.
+            .padding(.leading, -leadingBleed)
+            .padding(.trailing, -trailingBleed)
+            .ignoresSafeArea()
+            .background(TVTheme.backgroundGradient.ignoresSafeArea())
+            .defaultFocus($heroCTAFocused, true)
+            .task { await loadAll() }
+            .onChange(of: heroItems.isEmpty) { _, isEmpty in
+                guard !isEmpty, !didClaimInitialFocus else { return }
+                didClaimInitialFocus = true
+                Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(120))
+                    heroCTAFocused = true
+                }
             }
-        }
-        .fullScreenCover(item: $seeAllPayload) { payload in
-            TVSeeAllGridView(payload: payload, pendingDetail: $pendingDetail)
-        }
+            .sheet(item: $pendingDetail) { detail in
+                TVTitleSheet(detail: detail) { isSaved in
+                    pendingDetail = nil
+                }
+            }
+            .fullScreenCover(item: $seeAllPayload) { payload in
+                TVSeeAllGridView(payload: payload, pendingDetail: $pendingDetail)
+            }
     }
 
     // MARK: - Hero
 
+    /// `metadataInset` is where the hero's copy starts: it has to match the
+    /// rail titles below, which the art itself no longer does now that it
+    /// runs full bleed.
     @ViewBuilder
-    private var heroSection: some View {
+    private func heroSection(metadataInset: CGFloat) -> some View {
         if heroItems.isEmpty {
             // Reserve the full-screen height so the rails below don't
             // jump when the data lands.
@@ -311,7 +352,8 @@ struct TVHomeView: View {
                     }
                 },
                 isSaved: { item in streams.contains(titleId: item.canonicalTitleId) },
-                featurettes: heroFeaturettes
+                featurettes: heroFeaturettes,
+                metadataInset: metadataInset
             )
         }
     }
@@ -832,10 +874,22 @@ struct TVHomeView: View {
         }
         heroLoading = false
 
-        // One batched featurette lookup for the final hero pool — exactly
-        // one Supabase query per Home load, keyed by canonicalTitleId.
+        // Video for the hero, in priority order. A hosted featurette is
+        // authoritative when one exists; otherwise fall back to the YouTube
+        // trailer already cached for that title, resolved to a direct stream
+        // because tvOS has no web view to embed a player in. Items that
+        // resolve to neither render as drifting stills.
         let featurettePool = heroItems.map { (tmdbId: $0.id, isTV: $0.isTV) }
-        heroFeaturettes = await TVFeaturetteService.shared.fetchFeaturettes(for: featurettePool)
+        #if DEBUG
+        print("[hero] pool=\(heroItems.count) titles: \(heroItems.map(\.displayName).joined(separator: ", "))")
+        #endif
+        async let hostedTask = TVFeaturetteService.shared.fetchFeaturettes(for: featurettePool)
+        async let trailerTask = TVTrailerStreamService.shared.fetchTrailerStreams(for: featurettePool)
+        let (hosted, trailers) = await (hostedTask, trailerTask)
+        heroFeaturettes = trailers.merging(hosted) { _, hostedURL in hostedURL }
+        #if DEBUG
+        print("[hero] video resolved for \(heroFeaturettes.count)/\(heroItems.count) — hosted=\(hosted.count) trailers=\(trailers.count)")
+        #endif
     }
 
     // MARK: - Everyone's Watching

@@ -3,14 +3,16 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 77;
+	objectVersion = 70;
 	objects = {
 
 /* Begin PBXBuildFile section */
+		99D424DC303FA1E90014C218 /* YouTubeiOSPlayerHelper in Frameworks */ = {isa = PBXBuildFile; productRef = YY20A1B2C3D4E5F6A7B8C9D0YY /* YouTubeiOSPlayerHelper */; };
 		AB50D61ED0BAE05FA2F8EA /* Supabase in Frameworks */ = {isa = PBXBuildFile; productRef = AB1C9FF110ABBCE8BF456A /* Supabase */; };
 		XX50D61ED0BAE05FA2F8E9XX /* Supabase in Frameworks */ = {isa = PBXBuildFile; productRef = XX1C9FF110ABBCE8BF456CXX /* Supabase */; };
 		XXAC3EF89597191F3A09AEXX /* YouTubeKit in Frameworks */ = {isa = PBXBuildFile; productRef = XX45D5A1BA7EF4022DE2E3XX /* YouTubeKit */; };
 		XXCC7674DCAED9654ED19DXX /* GuideStreamWidget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = XX878FD47A39EC99354D39XX /* GuideStreamWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		YTK22A2B3C4D5E6F7009BBYY /* YouTubeKit in Frameworks */ = {isa = PBXBuildFile; productRef = YTK11A2B3C4D5E6F7008AAYY /* YouTubeKit */; };
 		ZZ30A1B2C3D4E5F6A7B8C9D0ZZ /* GoogleMobileAds in Frameworks */ = {isa = PBXBuildFile; productRef = ZZ20A1B2C3D4E5F6A7B8C9D0ZZ /* GoogleMobileAds */; };
 /* End PBXBuildFile section */
 
@@ -53,10 +55,10 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
-		PR1VACY0001FILEREF0000A /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = GuideStreamTV/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		105FC57A2E9EAD3100EA8BCF /* GuideStreamTV.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = GuideStreamTV.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		105FC5892E9EAD3200EA8BCF /* GuideStreamTVTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = GuideStreamTVTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		105FC5932E9EAD3200EA8BCF /* GuideStreamTVUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = GuideStreamTVUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		PR1VACY0001FILEREF0000A /* GuideStreamTV/PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = GuideStreamTV/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		XX80E2B28F6EB68EEE2794XX /* GuideStreamTVTV.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = GuideStreamTVTV.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		XX878FD47A39EC99354D39XX /* GuideStreamWidget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = GuideStreamWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -86,14 +88,12 @@
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		XXFE3FBA6264EA26BA6BC1XX /* GuideStreamWidget */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = GuideStreamWidget;
-			sourceTree = "<group>";
-			exceptions = (
-				XX3A109F19F7FEB1EFA9C8XX /* PBXFileSystemSynchronizedBuildFileExceptionSet */,
-			);
-		};
+		105FC57C2E9EAD3100EA8BCF /* GuideStreamTV */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (XX9F4A1B2C3D4E5F6A7B8C9XX /* PBXFileSystemSynchronizedBuildFileExceptionSet */, XXBEA0D9E3F1C5A7B8D02EXX /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = GuideStreamTV; sourceTree = "<group>"; };
+		105FC58C2E9EAD3200EA8BCF /* GuideStreamTVTests */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = GuideStreamTVTests; sourceTree = "<group>"; };
+		105FC5962E9EAD3200EA8BCF /* GuideStreamTVUITests */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = GuideStreamTVUITests; sourceTree = "<group>"; };
+		XX0A484E14E2DE04089045XX /* GuideStreamTVTV */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = GuideStreamTVTV; sourceTree = "<group>"; };
+		XXAA11BB22CC33DD44EE55XX /* Shared */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = Shared; sourceTree = "<group>"; };
+		XXFE3FBA6264EA26BA6BC1XX /* GuideStreamWidget */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (XX3A109F19F7FEB1EFA9C8XX /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = GuideStreamWidget; sourceTree = "<group>"; };
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -101,9 +101,9 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				99D424DC303FA1E90014C218 /* YouTubeiOSPlayerHelper in Frameworks */,
 				XX50D61ED0BAE05FA2F8E9XX /* Supabase in Frameworks */,
 				XXAC3EF89597191F3A09AEXX /* YouTubeKit in Frameworks */,
-				YY10A1B2C3D4E5F6A7B8C9D0YY,
 				ZZ30A1B2C3D4E5F6A7B8C9D0ZZ /* GoogleMobileAds in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -134,42 +134,11 @@
 			buildActionMask = 2147483647;
 			files = (
 				AB50D61ED0BAE05FA2F8EA /* Supabase in Frameworks */,
+				YTK22A2B3C4D5E6F7009BBYY /* YouTubeKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXFrameworksBuildPhase section */
-
-/* Begin PBXFileSystemSynchronizedRootGroup section */
-		105FC57C2E9EAD3100EA8BCF /* GuideStreamTV */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = GuideStreamTV;
-			sourceTree = "<group>";
-			exceptions = (
-				XX9F4A1B2C3D4E5F6A7B8C9XX /* PBXFileSystemSynchronizedBuildFileExceptionSet */,
-				XXBEA0D9E3F1C5A7B8D02EXX /* PBXFileSystemSynchronizedBuildFileExceptionSet */,
-			);
-		};
-		105FC58C2E9EAD3200EA8BCF /* GuideStreamTVTests */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = GuideStreamTVTests;
-			sourceTree = "<group>";
-		};
-		105FC5962E9EAD3200EA8BCF /* GuideStreamTVUITests */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = GuideStreamTVUITests;
-			sourceTree = "<group>";
-		};
-		XX0A484E14E2DE04089045XX /* GuideStreamTVTV */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = GuideStreamTVTV;
-			sourceTree = "<group>";
-		};
-		XXAA11BB22CC33DD44EE55XX /* Shared */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = Shared;
-			sourceTree = "<group>";
-		};
-/* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXGroup section */
 		105FC5712E9EAD3100EA8BCF = {
@@ -182,7 +151,7 @@
 				XX0A484E14E2DE04089045XX /* GuideStreamTVTV */,
 				XXAA11BB22CC33DD44EE55XX /* Shared */,
 				XXFE3FBA6264EA26BA6BC1XX /* GuideStreamWidget */,
-				PR1VACY0001FILEREF0000A /* PrivacyInfo.xcprivacy */,
+				PR1VACY0001FILEREF0000A /* GuideStreamTV/PrivacyInfo.xcprivacy */,
 			);
 			sourceTree = "<group>";
 		};
@@ -288,13 +257,13 @@
 			);
 			dependencies = (
 			);
+			fileSystemSynchronizedGroups = (
+				XXFE3FBA6264EA26BA6BC1XX /* GuideStreamWidget */,
+			);
 			name = GuideStreamWidget;
 			productName = GuideStreamWidget;
 			productReference = XX878FD47A39EC99354D39XX /* GuideStreamWidget.appex */;
 			productType = "com.apple.product-type.app-extension";
-			fileSystemSynchronizedGroups = (
-				XXFE3FBA6264EA26BA6BC1XX /* GuideStreamWidget */,
-			);
 		};
 		XX71A30A2228E328830383XX /* GuideStreamTVTV */ = {
 			isa = PBXNativeTarget;
@@ -315,6 +284,7 @@
 			name = GuideStreamTVTV;
 			packageProductDependencies = (
 				AB1C9FF110ABBCE8BF456A /* Supabase */,
+				YTK11A2B3C4D5E6F7008AAYY /* YouTubeKit */,
 			);
 			productName = GuideStreamTVTV;
 			productReference = XX80E2B28F6EB68EEE2794XX /* GuideStreamTVTV.app */;
@@ -378,7 +348,6 @@
 				YY30A1B2C3D4E5F6A7B8C9D0YY /* XCRemoteSwiftPackageReference "youtube-ios-player-helper" */,
 				ZZ10A1B2C3D4E5F6A7B8C9D0ZZ /* XCRemoteSwiftPackageReference "swift-package-manager-google-mobile-ads" */,
 			);
-			preferredProjectObjectVersion = 77;
 			productRefGroup = 105FC57B2E9EAD3100EA8BCF /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
@@ -522,7 +491,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = dwarf;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = KDH93W2EVA;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
@@ -586,7 +555,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = KDH93W2EVA;
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
@@ -615,67 +584,16 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = GuideStreamTV/GuideStreamTV.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = "";
+				CURRENT_PROJECT_VERSION = 7;
+				DEVELOPMENT_TEAM = KDH93W2EVA;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = GuideStreamTV/Info.plist;
-				OTHER_LDFLAGS = (
-					"$(inherited)",
-					"-ObjC",
-				);
-				INFOPLIST_KEY_CFBundleURLTypes = (
-					{
-						CFBundleTypeRole = Editor;
-						CFBundleURLName = com.guidestream.tv;
-						CFBundleURLSchemes = (
-							guidestream,
-						);
-					},
-				);
+				INFOPLIST_KEY_CFBundleURLTypes = "{\n    CFBundleTypeRole = Editor;\n    CFBundleURLName = \"com.guidestream.tv\";\n    CFBundleURLSchemes =     (\n        guidestream\n    );\n}";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
-				INFOPLIST_KEY_LSApplicationQueriesSchemes = (
-					roku,
-					nflx,
-					hbomax,
-					max,
-					hulu,
-					disneyplus,
-					videos,
-					aiv,
-					primevideo,
-					paramountplus,
-					peacock,
-					youtube,
-					youtubetv,
-					showtimeanytime,
-					starz,
-					crunchyroll,
-					sportscenter,
-					bleacherreport,
-					foxsports,
-					nbcsports,
-					cbssportsapp,
-					nflmobile,
-					nbaapp,
-					mlbatbat,
-					nhl,
-					ufc,
-					fubotv,
-					sling,
-					dazn,
-					com.apple.tvremote,
-				);
-				INFOPLIST_KEY_NSBonjourServices = (
-					_airplay._tcp,
-					_raop._tcp,
-					"_companion-link._tcp",
-					_rsp._tcp,
-					"_roku-ecp._tcp",
-					_googlecast._tcp,
-					"_amzn-wplay._tcp",
-				);
+				INFOPLIST_KEY_LSApplicationQueriesSchemes = "roku nflx hbomax max hulu disneyplus videos aiv primevideo paramountplus peacock youtube youtubetv showtimeanytime starz crunchyroll sportscenter bleacherreport foxsports nbcsports cbssportsapp nflmobile nbaapp mlbatbat nhl ufc fubotv sling dazn com.apple.tvremote";
 				INFOPLIST_KEY_NSAppTransportSecurity_NSAllowsLocalNetworking = YES;
+				INFOPLIST_KEY_NSBonjourServices = "_airplay._tcp _raop._tcp _companion-link._tcp _rsp._tcp _roku-ecp._tcp _googlecast._tcp _amzn-wplay._tcp";
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "GuideStream uses your local network to find your Roku device so you can send shows to it.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -686,9 +604,13 @@
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
-					"/usr/lib/swift",
+					/usr/lib/swift,
 				);
-				MARKETING_VERSION = 1.0.9;
+				MARKETING_VERSION = 1.0.10;
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-ObjC",
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = "app.rork.guidestream-tv";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -708,67 +630,16 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = GuideStreamTV/GuideStreamTV.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = "";
+				CURRENT_PROJECT_VERSION = 7;
+				DEVELOPMENT_TEAM = KDH93W2EVA;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = GuideStreamTV/Info.plist;
-				OTHER_LDFLAGS = (
-					"$(inherited)",
-					"-ObjC",
-				);
-				INFOPLIST_KEY_CFBundleURLTypes = (
-					{
-						CFBundleTypeRole = Editor;
-						CFBundleURLName = com.guidestream.tv;
-						CFBundleURLSchemes = (
-							guidestream,
-						);
-					},
-				);
+				INFOPLIST_KEY_CFBundleURLTypes = "{\n    CFBundleTypeRole = Editor;\n    CFBundleURLName = \"com.guidestream.tv\";\n    CFBundleURLSchemes =     (\n        guidestream\n    );\n}";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
-				INFOPLIST_KEY_LSApplicationQueriesSchemes = (
-					roku,
-					nflx,
-					hbomax,
-					max,
-					hulu,
-					disneyplus,
-					videos,
-					aiv,
-					primevideo,
-					paramountplus,
-					peacock,
-					youtube,
-					youtubetv,
-					showtimeanytime,
-					starz,
-					crunchyroll,
-					sportscenter,
-					bleacherreport,
-					foxsports,
-					nbcsports,
-					cbssportsapp,
-					nflmobile,
-					nbaapp,
-					mlbatbat,
-					nhl,
-					ufc,
-					fubotv,
-					sling,
-					dazn,
-					com.apple.tvremote,
-				);
-				INFOPLIST_KEY_NSBonjourServices = (
-					_airplay._tcp,
-					_raop._tcp,
-					"_companion-link._tcp",
-					_rsp._tcp,
-					"_roku-ecp._tcp",
-					_googlecast._tcp,
-					"_amzn-wplay._tcp",
-				);
+				INFOPLIST_KEY_LSApplicationQueriesSchemes = "roku nflx hbomax max hulu disneyplus videos aiv primevideo paramountplus peacock youtube youtubetv showtimeanytime starz crunchyroll sportscenter bleacherreport foxsports nbcsports cbssportsapp nflmobile nbaapp mlbatbat nhl ufc fubotv sling dazn com.apple.tvremote";
 				INFOPLIST_KEY_NSAppTransportSecurity_NSAllowsLocalNetworking = YES;
+				INFOPLIST_KEY_NSBonjourServices = "_airplay._tcp _raop._tcp _companion-link._tcp _rsp._tcp _roku-ecp._tcp _googlecast._tcp _amzn-wplay._tcp";
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "GuideStream uses your local network to find your Roku device so you can send shows to it.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -779,9 +650,13 @@
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
-					"/usr/lib/swift",
+					/usr/lib/swift,
 				);
-				MARKETING_VERSION = 1.0.9;
+				MARKETING_VERSION = 1.0.10;
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-ObjC",
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = "app.rork.guidestream-tv";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -799,11 +674,11 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = "";
+				CURRENT_PROJECT_VERSION = 7;
+				DEVELOPMENT_TEAM = KDH93W2EVA;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
-				MARKETING_VERSION = 1.0.9;
+				MARKETING_VERSION = 1.0.10;
 				PRODUCT_BUNDLE_IDENTIFIER = "app.rork.guidestream-tv.tests";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
@@ -821,11 +696,11 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = "";
+				CURRENT_PROJECT_VERSION = 7;
+				DEVELOPMENT_TEAM = KDH93W2EVA;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
-				MARKETING_VERSION = 1.0.9;
+				MARKETING_VERSION = 1.0.10;
 				PRODUCT_BUNDLE_IDENTIFIER = "app.rork.guidestream-tv.tests";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
@@ -842,10 +717,10 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = "";
+				CURRENT_PROJECT_VERSION = 7;
+				DEVELOPMENT_TEAM = KDH93W2EVA;
 				GENERATE_INFOPLIST_FILE = YES;
-				MARKETING_VERSION = 1.0.9;
+				MARKETING_VERSION = 1.0.10;
 				PRODUCT_BUNDLE_IDENTIFIER = "app.rork.guidestream-tv.uitests";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
@@ -862,10 +737,10 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = "";
+				CURRENT_PROJECT_VERSION = 7;
+				DEVELOPMENT_TEAM = KDH93W2EVA;
 				GENERATE_INFOPLIST_FILE = YES;
-				MARKETING_VERSION = 1.0.9;
+				MARKETING_VERSION = 1.0.10;
 				PRODUCT_BUNDLE_IDENTIFIER = "app.rork.guidestream-tv.uitests";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
@@ -881,46 +756,54 @@
 		XX1B97DDB9C95A1CDAA3BBXX /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				PRODUCT_BUNDLE_IDENTIFIER = "app.rork.guidestream-tv.guidestreamwidget";
-				PRODUCT_NAME = GuideStreamWidget;
-				SWIFT_VERSION = 5.0;
-				SDKROOT = iphoneos;
-				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				CODE_SIGN_ENTITLEMENTS = GuideStreamWidget/GuideStreamWidget.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 7;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = GuideStreamWidget/Info.plist;
-				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
-				SKIP_INSTALL = YES;
-				SWIFT_EMIT_LOC_STRINGS = YES;
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				MARKETING_VERSION = 1.0.9;
-				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks";
 				INFOPLIST_KEY_CFBundleDisplayName = "$(PRODUCT_NAME)";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0.10;
+				PRODUCT_BUNDLE_IDENTIFIER = "app.rork.guidestream-tv.guidestreamwidget";
+				PRODUCT_NAME = GuideStreamWidget;
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
 			};
 			name = Debug;
 		};
 		XXBB1E26D56845F1900B28XX /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				PRODUCT_BUNDLE_IDENTIFIER = "app.rork.guidestream-tv.guidestreamwidget";
-				PRODUCT_NAME = GuideStreamWidget;
-				SWIFT_VERSION = 5.0;
-				SDKROOT = iphoneos;
-				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				CODE_SIGN_ENTITLEMENTS = GuideStreamWidget/GuideStreamWidget.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 7;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = GuideStreamWidget/Info.plist;
-				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
-				SKIP_INSTALL = YES;
-				SWIFT_EMIT_LOC_STRINGS = YES;
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				MARKETING_VERSION = 1.0.9;
-				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks";
 				INFOPLIST_KEY_CFBundleDisplayName = "$(PRODUCT_NAME)";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0.10;
+				PRODUCT_BUNDLE_IDENTIFIER = "app.rork.guidestream-tv.guidestreamwidget";
+				PRODUCT_NAME = GuideStreamWidget;
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
 			};
 			name = Release;
 		};
@@ -931,36 +814,21 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = GuideStreamTVTV/GuideStreamTVTV.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = "";
+				CURRENT_PROJECT_VERSION = 7;
+				DEVELOPMENT_TEAM = KDH93W2EVA;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleURLTypes = (
-					{
-						CFBundleTypeRole = Editor;
-						CFBundleURLName = com.guidestream.tv;
-						CFBundleURLSchemes = (
-							guidestream,
-						);
-					},
-				);
+				INFOPLIST_KEY_CFBundleURLTypes = "{\n    CFBundleTypeRole = Editor;\n    CFBundleURLName = \"com.guidestream.tv\";\n    CFBundleURLSchemes =     (\n        guidestream\n    );\n}";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
-				INFOPLIST_KEY_LSApplicationQueriesSchemes = (
-					nflx,
-					hulu,
-					disneyplus,
-					hbomax,
-					aiv,
-					videos,
-					paramountplus,
-					peacock,
-					youtube,
-					crunchyroll,
-				);
+				INFOPLIST_KEY_LSApplicationQueriesSchemes = "nflx hulu disneyplus hbomax aiv videos paramountplus peacock youtube crunchyroll";
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UIUserInterfaceStyle = Automatic;
-				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks";
-				MARKETING_VERSION = 1.0.9;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0.10;
 				PRODUCT_BUNDLE_IDENTIFIER = "app.rork.guidestream-tv";
 				PRODUCT_NAME = GuideStreamTVTV;
 				SDKROOT = appletvos;
@@ -981,36 +849,21 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = GuideStreamTVTV/GuideStreamTVTV.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = "";
+				CURRENT_PROJECT_VERSION = 7;
+				DEVELOPMENT_TEAM = KDH93W2EVA;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleURLTypes = (
-					{
-						CFBundleTypeRole = Editor;
-						CFBundleURLName = com.guidestream.tv;
-						CFBundleURLSchemes = (
-							guidestream,
-						);
-					},
-				);
+				INFOPLIST_KEY_CFBundleURLTypes = "{\n    CFBundleTypeRole = Editor;\n    CFBundleURLName = \"com.guidestream.tv\";\n    CFBundleURLSchemes =     (\n        guidestream\n    );\n}";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
-				INFOPLIST_KEY_LSApplicationQueriesSchemes = (
-					nflx,
-					hulu,
-					disneyplus,
-					hbomax,
-					aiv,
-					videos,
-					paramountplus,
-					peacock,
-					youtube,
-					crunchyroll,
-				);
+				INFOPLIST_KEY_LSApplicationQueriesSchemes = "nflx hulu disneyplus hbomax aiv videos paramountplus peacock youtube crunchyroll";
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UIUserInterfaceStyle = Automatic;
-				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks";
-				MARKETING_VERSION = 1.0.9;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0.10;
 				PRODUCT_BUNDLE_IDENTIFIER = "app.rork.guidestream-tv";
 				PRODUCT_NAME = GuideStreamTVTV;
 				SDKROOT = appletvos;
@@ -1094,7 +947,7 @@
 		};
 		XXC440DD1AA4A7A1F8B8ADXX /* XCRemoteSwiftPackageReference "YouTubeKit" */ = {
 			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = https://github.com/alexeichhorn/YouTubeKit.git;
+			repositoryURL = "https://github.com/alexeichhorn/YouTubeKit.git";
 			requirement = {
 				kind = upToNextMajorVersion;
 				minimumVersion = 0.4.8;
@@ -1130,6 +983,11 @@
 			productName = Supabase;
 		};
 		XX45D5A1BA7EF4022DE2E3XX /* YouTubeKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = XXC440DD1AA4A7A1F8B8ADXX /* XCRemoteSwiftPackageReference "YouTubeKit" */;
+			productName = YouTubeKit;
+		};
+		YTK11A2B3C4D5E6F7008AAYY /* YouTubeKit */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = XXC440DD1AA4A7A1F8B8ADXX /* XCRemoteSwiftPackageReference "YouTubeKit" */;
 			productName = YouTubeKit;

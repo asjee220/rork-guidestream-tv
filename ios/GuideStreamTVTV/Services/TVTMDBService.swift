@@ -97,6 +97,31 @@ private nonisolated struct TVTMDBReleaseDatesEnvelope: Decodable, Sendable {
     let results: [TVTMDBReleaseDateCountry]
 }
 
+private nonisolated struct TVTMDBDiscoverEnvelope: Decodable, Sendable {
+    let page: Int?
+    let results: [TVTMDBResult]
+    let totalPages: Int?
+    let totalResults: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case page, results
+        case totalPages = "total_pages"
+        case totalResults = "total_results"
+    }
+}
+
+/// tvOS counterpart of the phone app's BrowsePage. The filter model itself
+/// lives in Shared/BrowseFilters.swift and is identical across targets; only
+/// the result element type differs.
+nonisolated struct TVBrowsePage: Hashable, Sendable {
+    let results: [TVTMDBResult]
+    let page: Int
+    let totalPages: Int
+    let totalResults: Int
+
+    static let empty = TVBrowsePage(results: [], page: 1, totalPages: 1, totalResults: 0)
+}
+
 nonisolated struct TVTMDBService {
     static let shared = TVTMDBService()
 
@@ -161,6 +186,35 @@ nonisolated struct TVTMDBService {
             return teaser.key
         }
         return youtube.first?.key
+    }
+
+    /// Every YouTube key TMDB carries for a title, ranked: official
+    /// trailers, then any trailer, then teasers, then whatever is left.
+    /// The hero walks this list when a stream refuses to play, so a title
+    /// with one dead trailer still gets a video.
+    func getTrailerKeys(tmdbId: Int, isTV: Bool) async -> [String] {
+        let locale = DeviceLocale.current()
+        let kind = isTV ? "tv" : "movie"
+        let urlString = "\(base)/\(kind)/\(tmdbId)/videos?api_key=\(apiKey)&language=\(locale.tmdbLanguage)"
+        guard let data = try? await get(urlString),
+              let env = try? JSONDecoder().decode(TVTMDBVideosEnvelope.self, from: data) else {
+            return []
+        }
+        let youtube = env.results.filter {
+            ($0.site ?? "").lowercased() == "youtube" && !($0.key ?? "").isEmpty
+        }
+        func rank(_ video: TVTMDBVideo) -> Int {
+            let type = video.type ?? ""
+            if type == "Trailer" && (video.official ?? false) { return 0 }
+            if type == "Trailer" { return 1 }
+            if type == "Teaser" { return 2 }
+            return 3
+        }
+        var seen = Set<String>()
+        return youtube
+            .sorted { rank($0) < rank($1) }
+            .compactMap { $0.key }
+            .filter { seen.insert($0).inserted }
     }
 
     /// Returns the top US streaming provider for a title, or nil if no
@@ -270,6 +324,114 @@ nonisolated struct TVTMDBService {
             firstAirDate: r.firstAirDate,
             releaseDate: r.releaseDate
         )
+    }
+
+    // MARK: - Search
+
+    /// Multi-search across shows and movies. Person results and anything
+    /// without a poster are dropped — a grid cell with no artwork reads as a
+    /// loading failure on a ten-foot screen.
+    func searchContent(query: String) async throws -> [TVTMDBResult] {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty,
+              let encoded = trimmed.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed)
+        else { return [] }
+
+        let locale = DeviceLocale.current()
+        let urlString = "\(base)/search/multi?api_key=\(apiKey)&language=\(locale.tmdbLanguage)&include_adult=false&query=\(encoded)"
+        let data = try await get(urlString)
+        let env = try JSONDecoder().decode(TVTMDBSearchEnvelope.self, from: data)
+        return env.results.filter { result in
+            let kind = result.mediaType ?? ""
+            return (kind == "tv" || kind == "movie") && result.posterPath != nil
+        }
+    }
+
+    // MARK: - Browse
+
+    /// One page of browse results for the current filter set. `.all` runs the
+    /// tv and movie paths concurrently and interleaves them; if one path fails
+    /// the other still returns. Mirrors the phone app's discoverBrowse.
+    func discoverBrowse(_ filters: BrowseFilters, page: Int = 1) async throws -> TVBrowsePage {
+        let f = filters.resolved()
+
+        if let path = f.resolvedMediaType.discoverPath {
+            return try await discoverBrowsePage(f, path: path, page: page)
+        }
+
+        async let tvPage = try? await discoverBrowsePage(f, path: "tv", page: page)
+        async let moviePage = try? await discoverBrowsePage(f, path: "movie", page: page)
+        let (tv, movie) = await (tvPage, moviePage)
+
+        guard tv != nil || movie != nil else { throw URLError(.badServerResponse) }
+        let t = tv ?? .empty
+        let m = movie ?? .empty
+        return TVBrowsePage(
+            results: Self.interleaveBrowse(t.results, m.results),
+            page: page,
+            totalPages: max(t.totalPages, m.totalPages),
+            totalResults: t.totalResults + m.totalResults
+        )
+    }
+
+    private func discoverBrowsePage(_ f: BrowseFilters, path: String, page: Int) async throws -> TVBrowsePage {
+        let locale = DeviceLocale.current()
+        var url = "\(base)/discover/\(path)?api_key=\(apiKey)&language=\(locale.tmdbLanguage)&page=\(page)"
+        url += "&sort_by=\(f.sort.tmdbValue(for: path))"
+
+        let genreIds = f.selectedGenres.compactMap { $0.genreId(for: path) }
+        if !genreIds.isEmpty {
+            url += "&with_genres=\(genreIds.map(String.init).joined(separator: "%2C"))"
+        }
+
+        if let language = f.selectedGenres.compactMap({ $0.originalLanguage ?? $0.languagePool }).first {
+            let encoded = language.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? language
+            url += "&with_original_language=\(encoded)"
+        }
+
+        let providers = f.effectiveProviderIds
+        if !providers.isEmpty {
+            url += "&watch_region=\(locale.region)"
+            url += "&with_watch_providers=\(providers.map(String.init).joined(separator: "%7C"))"
+            url += "&with_watch_monetization_types=\(f.includeFreeWithAds ? "flatrate%7Cads" : "flatrate")"
+        }
+
+        if let years = f.yearRange {
+            let lower = "\(years.lowerBound)-01-01"
+            let upper = "\(years.upperBound)-12-31"
+            if path == "movie" {
+                url += "&primary_release_date.gte=\(lower)&primary_release_date.lte=\(upper)"
+            } else {
+                url += "&first_air_date.gte=\(lower)&first_air_date.lte=\(upper)"
+            }
+        }
+
+        if let rating = f.minRating {
+            url += "&vote_average.gte=\(rating)"
+        }
+        if f.minRating != nil || f.sort.needsVoteFloor {
+            url += "&vote_count.gte=50"
+        }
+
+        let data = try await get(url)
+        let env = try JSONDecoder().decode(TVTMDBDiscoverEnvelope.self, from: data)
+        return TVBrowsePage(
+            results: env.results.map { stamp($0, mediaType: path) },
+            page: env.page ?? page,
+            totalPages: env.totalPages ?? 1,
+            totalResults: env.totalResults ?? env.results.count
+        )
+    }
+
+    private static func interleaveBrowse(_ a: [TVTMDBResult], _ b: [TVTMDBResult]) -> [TVTMDBResult] {
+        var out: [TVTMDBResult] = []
+        out.reserveCapacity(a.count + b.count)
+        var seen = Set<Int>()
+        for i in 0..<max(a.count, b.count) {
+            if i < a.count, seen.insert(a[i].id).inserted { out.append(a[i]) }
+            if i < b.count, seen.insert(b[i].id).inserted { out.append(b[i]) }
+        }
+        return out
     }
 
     private func get(_ urlString: String) async throws -> Data {

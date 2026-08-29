@@ -2,7 +2,9 @@
 //  SponsoredAffiliateCard.swift
 //  GuideStreamTV
 //
-//  Shared frosted-glass affiliate banner with thinned frost layer. Renders a Rakuten "Stream more on…"
+//  Shared affiliate banner. In feed style it renders the 96pt inline chip —
+//  72pt creative square, up to three lines of headline, an "advertiser ·
+//  Sponsored" line, and a trailing close control. Renders a Rakuten "Stream more on…"
 //  card with a branded service tile, headline, subtitle, "Sponsored · Rakuten"
 //  footer — all on a see-through ultraThinMaterial + navy-tinted background
 //  so the playing video/content behind remains visible. Used by the Reels
@@ -22,13 +24,19 @@ struct SponsoredAffiliateCard: View {
     let onDismiss: () -> Void
     var compact: Bool = false
 
-    /// When true the card renders the compact 88pt inline-feed chip that
+    /// When true the card renders the compact 96pt inline-feed chip that
     /// matches NativeAdCardView's chip exactly — same height, surface, tile
     /// size, and CTA pill — so a late native fill upgrading this fallback
     /// causes no layout shift. Takes precedence over both existing bodies
     /// (the pooled detail-sheet slots pass compact=false but feedStyle=true,
-    /// and their fallback must still match the 88pt native chip).
+    /// and their fallback must still match the 96pt native chip).
     var feedStyle: Bool = false
+
+    /// Feed chip over live video (Reels): keeps the chip layout but restores
+    /// the translucent glass surface so the trailer behind stays visible.
+    /// Every other inline surface sits on a solid background, where the
+    /// opaque elevated surface reads better.
+    var feedChipGlass: Bool = false
 
     var body: some View {
         if feedStyle {
@@ -129,74 +137,126 @@ struct SponsoredAffiliateCard: View {
         .buttonStyle(.plain)
     }
 
-    // MARK: - Feed chip (88pt inline row — mirrors NativeAdCardView's chip)
+    // MARK: - Feed chip (96pt inline row — mirrors NativeAdCardView's chip)
 
-    /// Compact inline-feed chip. Height, surface, tile size, and CTA pill all
-    /// mirror the native ad chip so the fallback→native upgrade is seamless.
+    /// Compact inline-feed chip. Height, surface, creative square, attribution
+    /// line, and the trailing close control all mirror the native ad chip so a
+    /// late native fill upgrading this fallback causes no layout shift.
     private var feedChipBody: some View {
-        Button(action: onTap) {
-            HStack(spacing: 10) {
-                feedChipBrandTile
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(headline)
-                        .scaledFont(size: 13, weight: .heavy)
-                        .foregroundStyle(.white)
-                        .lineLimit(2)
-                        .truncationMode(.tail)
-                    Text("Sponsored · Rakuten")
-                        .scaledFont(size: 9.5)
-                        .foregroundStyle(Color.white.opacity(0.45))
+        ZStack(alignment: .topTrailing) {
+            Button(action: onTap) {
+                HStack(spacing: 12) {
+                    feedChipBrandTile
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text(headline)
+                            .scaledFont(size: 14, weight: .semibold)
+                            .foregroundStyle(.white)
+                            .lineLimit(3)
+                            .truncationMode(.tail)
+                            .multilineTextAlignment(.leading)
+                        HStack(spacing: 5) {
+                            Text(service?.name ?? fallbackName)
+                                .scaledFont(size: 11)
+                                .foregroundStyle(Color.white.opacity(0.52))
+                                .lineLimit(1)
+                            feedChipAttribution
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, 12)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                feedChipPill
+                // Trailing inset clears the close control so a three-line
+                // headline never runs underneath it. No leading or vertical
+                // inset — the creative runs edge to edge and the card's own
+                // clip shape rounds its outer corners.
+                .padding(.trailing, 44)
+                .frame(height: 96)
+                .frame(maxWidth: .infinity)
+                .background(feedChipSurface)
+                .clipShape(RoundedRectangle(cornerRadius: 14))
             }
-            .padding(12)
-            .frame(height: 88)
-            .frame(maxWidth: .infinity)
-            .background(
-                RoundedRectangle(cornerRadius: 14)
-                    .fill(Theme.surface)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 14)
-                            .stroke(Color.white.opacity(0.10), lineWidth: 1)
-                    )
-            )
+            .buttonStyle(.plain)
+
+            // Close — layered above the card so its tap never opens the offer.
+            Button {
+                withAnimation(.easeOut(duration: 0.2)) {
+                    onDismiss()
+                }
+            } label: {
+                Image(systemName: "xmark")
+                    .scaledFont(size: 13, weight: .semibold)
+                    .foregroundStyle(Color.white.opacity(0.55))
+                    // 44pt target for the HIG minimum — the glyph still reads
+                    // as a small X because the frame is transparent.
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
         }
-        .buttonStyle(.plain)
     }
 
-    /// 60pt brand tile — matches the native chip's icon square.
+    /// The chip's surface. Opaque elevated by default; translucent glass over
+    /// live video, matching the card Reels showed before it adopted the chip.
+    @ViewBuilder
+    private var feedChipSurface: some View {
+        if feedChipGlass {
+            RoundedRectangle(cornerRadius: 14)
+                .fill(.ultraThinMaterial.opacity(0.67))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 14)
+                        .fill(Color(red: 8/255, green: 14/255, blue: 24/255).opacity(0.19))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 14)
+                        .stroke(Color.white.opacity(0.11), lineWidth: 0.5)
+                )
+                .shadow(color: Color.black.opacity(0.35), radius: 14, y: 4)
+        } else {
+            RoundedRectangle(cornerRadius: 14)
+                .fill(Theme.surfaceElevated)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 14)
+                        .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                )
+        }
+    }
+
+    /// Required attribution, sitting immediately after the advertiser name —
+    /// the affiliate card is Rakuten inventory, so it reads "Sponsored" where
+    /// the native chip reads "Ad".
+    private var feedChipAttribution: some View {
+        Text("Sponsored")
+            .scaledFont(size: 10, weight: .medium)
+            .foregroundStyle(Color.white.opacity(0.62))
+            .padding(.horizontal, 5)
+            .padding(.vertical, 1)
+            .background(
+                RoundedRectangle(cornerRadius: 3)
+                    .fill(Color.white.opacity(0.12))
+            )
+    }
+
+    /// 96pt brand tile — a flush square filling the leading edge of the chip,
+    /// matching the native chip's creative. Square-cornered on purpose: the
+    /// card's clip shape rounds the two corners that meet its edges.
     private var feedChipBrandTile: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 10)
+            Rectangle()
                 .fill(service?.bg ?? Color.white.opacity(0.10))
-                .frame(width: 60, height: 60)
+                .frame(width: 96, height: 96)
             if let service {
                 ServiceBrandContent(
                     display: service.display,
-                    size: .mini(48)
+                    size: .mini(64)
                 )
-                .frame(width: 48, height: 48)
+                .frame(width: 64, height: 64)
             } else {
                 Text(String(fallbackName.prefix(3)).uppercased())
-                    .scaledFont(size: 15, weight: .black)
+                    .scaledFont(size: 19, weight: .black)
                     .foregroundStyle(fallbackColor)
             }
         }
-        .frame(width: 60, height: 60)
-    }
-
-    /// Trailing "Get offer" pill — matches the native chip's CTA.
-    private var feedChipPill: some View {
-        Text("Get offer")
-            .scaledFont(size: 11, weight: .bold)
-            .foregroundStyle(.white)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-            .background(
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(Color.orange)
-            )
+        .frame(width: 96, height: 96)
     }
 
     // MARK: - AD marker (compact only)

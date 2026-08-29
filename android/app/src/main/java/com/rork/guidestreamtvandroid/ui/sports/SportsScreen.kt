@@ -1,5 +1,6 @@
 package com.rork.guidestreamtvandroid.ui.sports
 
+import android.content.Context
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -37,7 +38,6 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.SportsBasketball
 import androidx.compose.material.icons.filled.Star
@@ -61,6 +61,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.TextStyle
@@ -99,6 +100,10 @@ import kotlinx.coroutines.launch
 private val sportOptions = listOf("All", "NBA", "NBA Summer", "NFL", "Soccer", "MLB", "UFC")
 private val LiveRed = Color(0xFFE50914)
 
+/** One-shot gate for the first-run team picker. Survives sign-out on purpose
+ * — the prompt is about this install, not this account. */
+private const val TEAM_PICKER_SEEN_KEY = "gs.sportsTeamPickerSeen.v1"
+
 /**
  * Sports screen — mirrors iOS SportsView.swift.
  * Pinned header (wordmark + services pill), sport pills, My Teams from real
@@ -122,12 +127,25 @@ fun SportsScreen(
     val favorites = TeamFavoritesService.get()
     val favRows by favorites.rows.collectAsStateWithLifecycle()
 
-    var isEditingTeams by remember { mutableStateOf(false) }
+    var teamPickerMode by remember { mutableStateOf<TeamPickerMode?>(null) }
     var watchGame by remember { mutableStateOf<SportsGame?>(null) }
     var seeAll by remember { mutableStateOf<SportsSection?>(null) }
     var showServices by remember { mutableStateOf(false) }
 
-    LaunchedEffect(Unit) { vm.fetchGames() }
+    val context = LocalContext.current
+
+    LaunchedEffect(Unit) {
+        favorites.load()
+        // First open of the Sports tab: offer the team picker once. Skipped
+        // when the user already has favorites (e.g. from another install of
+        // the same account) so it never interrupts an established user.
+        val prefs = context.getSharedPreferences("gs.sports", Context.MODE_PRIVATE)
+        if (!prefs.getBoolean(TEAM_PICKER_SEEN_KEY, false)) {
+            prefs.edit().putBoolean(TEAM_PICKER_SEEN_KEY, true).apply()
+            if (favorites.favoriteUids().isEmpty()) teamPickerMode = TeamPickerMode.ONBOARDING
+        }
+        vm.fetchGames()
+    }
 
     val activeSport = selectedSport ?: "All"
     val filtered = remember(games, activeSport) {
@@ -228,23 +246,9 @@ fun SportsScreen(
                 item {
                     MyTeamsSection(
                         chips = teamChips,
-                        isEditing = isEditingTeams,
-                        onToggleEdit = { isEditingTeams = !isEditingTeams },
+                        onEdit = { teamPickerMode = TeamPickerMode.EDIT },
                         onChipTap = { chip ->
                             findGameForFavorite(games, chip.uid, chip.abbrev)?.let { watchGame = it }
-                        },
-                        onRemove = { chip ->
-                            favorites.toggle(
-                                SportsGame.TeamSummary(
-                                    name = chip.name,
-                                    abbreviation = chip.abbrev,
-                                    uid = chip.uid,
-                                    displayName = chip.name,
-                                    shortName = chip.name,
-                                ),
-                                league = favRows[chip.uid]?.league,
-                                sport = favRows[chip.uid]?.sport,
-                            )
                         },
                     )
                 }
@@ -252,7 +256,7 @@ fun SportsScreen(
                     Box(Modifier.fillMaxWidth().height(1.dp).background(Hairline))
                 }
             } else {
-                item { NoFavoritesPrompt() }
+                item { NoFavoritesPrompt(onTap = { teamPickerMode = TeamPickerMode.ONBOARDING }) }
             }
 
             // Content
@@ -318,6 +322,11 @@ fun SportsScreen(
                 seeAll = SportsSection.UPCOMING
             },
         )
+    }
+
+    // Favorite-team picker (first run + My Teams -> Edit)
+    teamPickerMode?.let { mode ->
+        TeamPickerSheet(mode = mode, onDismiss = { teamPickerMode = null })
     }
 
     // Services editor sheet
@@ -399,17 +408,15 @@ data class TeamChip(
 @Composable
 private fun MyTeamsSection(
     chips: List<TeamChip>,
-    isEditing: Boolean,
-    onToggleEdit: () -> Unit,
+    onEdit: () -> Unit,
     onChipTap: (TeamChip) -> Unit,
-    onRemove: (TeamChip) -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("My Teams", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
             Spacer(Modifier.weight(1f))
             Text(
-                text = if (isEditing) "Done" else "Edit",
+                text = "Edit",
                 fontSize = 13.sp,
                 fontWeight = FontWeight.Medium,
                 color = BrandBlue,
@@ -418,71 +425,53 @@ private fun MyTeamsSection(
                     .clickable(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null,
-                    ) { onToggleEdit() }
+                    ) { onEdit() }
                     .padding(horizontal = 8.dp, vertical = 4.dp),
             )
         }
         LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             items(chips, key = { it.uid }) { chip ->
-                Box {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(3.dp),
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(SurfaceContainer)
-                            .border(
-                                1.dp,
-                                if (chip.isLive) LiveRed.copy(alpha = 0.35f) else OutlineVariant,
-                                RoundedCornerShape(12.dp),
-                            )
-                            .clickable(
-                                interactionSource = remember { MutableInteractionSource() },
-                                indication = null,
-                            ) { onChipTap(chip) }
-                            .padding(8.dp)
-                            .width(64.dp),
-                    ) {
-                        TeamLogo(
-                            team = SportsGame.TeamSummary(
-                                name = chip.name,
-                                abbreviation = chip.abbrev,
-                                uid = chip.uid,
-                                displayName = chip.name,
-                                shortName = chip.name,
-                                primaryHex = chip.colorHex,
-                                logoUrl = chip.logoUrl,
-                            ),
-                            size = 26.dp,
-                            cornerRadius = 7.dp,
-                            inset = 3.dp,
-                            abbreviationFontSize = 8.sp,
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(3.dp),
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(SurfaceContainer)
+                        .border(
+                            1.dp,
+                            if (chip.isLive) LiveRed.copy(alpha = 0.35f) else OutlineVariant,
+                            RoundedCornerShape(12.dp),
                         )
-                        Text(chip.name, fontSize = 9.sp, fontWeight = FontWeight.SemiBold, color = Color.White.copy(alpha = 0.6f), maxLines = 1)
-                        Text(
-                            chip.statusLabel,
-                            fontSize = 8.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = if (chip.isLive) LiveRed else BrandOrange,
-                            maxLines = 1,
-                        )
-                    }
-                    if (isEditing) {
-                        Box(
-                            modifier = Modifier
-                                .align(Alignment.TopEnd)
-                                .size(22.dp)
-                                .clip(CircleShape)
-                                .background(LiveRed)
-                                .clickable(
-                                    interactionSource = remember { MutableInteractionSource() },
-                                    indication = null,
-                                ) { onRemove(chip) },
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Icon(Icons.Filled.Close, contentDescription = "Remove", tint = Color.White, modifier = Modifier.size(12.dp))
-                        }
-                    }
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                        ) { onChipTap(chip) }
+                        .padding(8.dp)
+                        .width(64.dp),
+                ) {
+                    TeamLogo(
+                        team = SportsGame.TeamSummary(
+                            name = chip.name,
+                            abbreviation = chip.abbrev,
+                            uid = chip.uid,
+                            displayName = chip.name,
+                            shortName = chip.name,
+                            primaryHex = chip.colorHex,
+                            logoUrl = chip.logoUrl,
+                        ),
+                        size = 26.dp,
+                        cornerRadius = 7.dp,
+                        inset = 3.dp,
+                        abbreviationFontSize = 8.sp,
+                    )
+                    Text(chip.name, fontSize = 9.sp, fontWeight = FontWeight.SemiBold, color = Color.White.copy(alpha = 0.6f), maxLines = 1)
+                    Text(
+                        chip.statusLabel,
+                        fontSize = 8.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (chip.isLive) LiveRed else BrandOrange,
+                        maxLines = 1,
+                    )
                 }
             }
         }
@@ -490,22 +479,33 @@ private fun MyTeamsSection(
 }
 
 @Composable
-private fun NoFavoritesPrompt() {
+private fun NoFavoritesPrompt(onTap: () -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("My Teams", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier.padding(vertical = 8.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(14.dp))
+                .background(Color.White.copy(alpha = 0.04f))
+                .border(1.dp, BrandOrange.copy(alpha = 0.25f), RoundedCornerShape(14.dp))
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                ) { onTap() }
+                .padding(12.dp),
         ) {
-            Icon(Icons.Outlined.ChevronRight, contentDescription = null, tint = BrandOrange.copy(alpha = 0.7f), modifier = Modifier.size(14.dp))
+            Icon(Icons.Filled.Star, contentDescription = null, tint = BrandOrange, modifier = Modifier.size(14.dp))
             Text(
-                "Tap the star on any game to favorite a team and see it here.",
+                "Pick your teams to see their games first \u2014 and get alerts when they play.",
                 fontSize = 13.sp,
                 fontWeight = FontWeight.Medium,
-                color = Color.White.copy(alpha = 0.45f),
+                color = Color.White.copy(alpha = 0.55f),
                 maxLines = 2,
+                modifier = Modifier.weight(1f),
             )
+            Icon(Icons.Outlined.ChevronRight, contentDescription = null, tint = Color.White.copy(alpha = 0.35f), modifier = Modifier.size(14.dp))
         }
     }
 }

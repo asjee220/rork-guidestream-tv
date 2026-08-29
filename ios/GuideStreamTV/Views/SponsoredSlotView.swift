@@ -57,7 +57,7 @@ struct SponsoredSlotView: View {
     /// CTA, Ad attribution badge, AdChoices, and dismiss control without
     /// clipping, while staying close to the full SponsoredAffiliateCard height
     /// so the fallback→native upgrade is seamless. Inline feed slots
-    /// (compactNative + feedStyle) pin 88 instead — see
+    /// (compactNative + feedStyle) pin 96 instead — see
     /// `effectiveNativeCardHeight`.
     var nativeCardHeight: CGFloat = 136
 
@@ -69,8 +69,9 @@ struct SponsoredSlotView: View {
     var compactNative: Bool = true
 
     /// When true (with `compactNative`) both the native card and the Rakuten
-    /// fallback render the compact 88pt inline-feed chip row: opaque surface,
-    /// 60pt icon/tile, orange AD badge, orange pill CTA, no dismiss X.
+    /// fallback render the 96pt inline-feed chip row: elevated surface, 72pt
+    /// creative square, "advertiser · Ad" attribution line, no CTA pill, and a
+    /// trailing close control wired to `onDismiss`.
     /// Defaults to true so the three detail-sheet callers pick up the chip
     /// with no edits; pass false to keep the taller cards.
     var feedStyle: Bool = true
@@ -83,10 +84,10 @@ struct SponsoredSlotView: View {
     /// Rakuten fallback to a native card.
     @ObservedObject private var adManager = AdManager.shared
 
-    /// Inline feed slots (compactNative + feedStyle) pin the 88pt chip row;
+    /// Inline feed slots (compactNative + feedStyle) pin the 96pt chip row;
     /// every other combination keeps the full-height card.
     private var effectiveNativeCardHeight: CGFloat {
-        compactNative && feedStyle ? 88 : nativeCardHeight
+        compactNative && feedStyle ? 96 : nativeCardHeight
     }
 
     var body: some View {

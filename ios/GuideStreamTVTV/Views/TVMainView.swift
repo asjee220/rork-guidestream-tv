@@ -23,14 +23,22 @@ struct TVMainView: View {
     /// including its focus ring and scale expansion — never slides behind
     /// the panel. The menu still overlays the same content when it opens,
     /// and the content never shifts or resizes.
-    private let contentLeadingInset: CGFloat = 72
+    private let contentLeadingInset: CGFloat = TVLayout.contentLeadingInset
 
     @State private var selection: TVSideMenuItem = .home
     @State private var menuIsOpen: Bool = false
 
     var body: some View {
-        ZStack(alignment: .leading) {
-            screen(for: selection)
+        // One measurement of the title-safe margin tvOS applied above us,
+        // taken here because nothing inside a ScrollView can see it: scroll
+        // content is laid out already inset, and .ignoresSafeArea() on a
+        // child of a ScrollView is a no-op. Home uses it to run the hero
+        // full bleed, and the menu uses it to sit flush to the edge.
+        GeometryReader { proxy in
+            let safeLeading = proxy.frame(in: .global).minX
+
+            ZStack(alignment: .leading) {
+            screen(for: selection, leadingBleed: safeLeading + contentLeadingInset)
                 .padding(.leading, contentLeadingInset)
                 .focusSection()
                 .onMoveCommand { direction in
@@ -57,7 +65,13 @@ struct TVMainView: View {
                 .transition(.opacity)
             }
 
+            // Flush to the physical edge. The panel is chrome floating over
+            // the art, not text, so the title-safe margin buys it nothing —
+            // it only pushed the panel inward and widened the channel
+            // between it and the content.
             TVSideMenu(selection: $selection, isOpen: $menuIsOpen)
+                .padding(.leading, -safeLeading)
+            }
         }
         .animation(.easeOut(duration: 0.25), value: menuIsOpen)
         .background(TVTheme.backgroundGradient.ignoresSafeArea())
@@ -76,9 +90,9 @@ struct TVMainView: View {
     }
 
     @ViewBuilder
-    private func screen(for item: TVSideMenuItem) -> some View {
+    private func screen(for item: TVSideMenuItem, leadingBleed: CGFloat) -> some View {
         switch item {
-        case .home: TVHomeView()
+        case .home: TVHomeView(leadingBleed: leadingBleed)
         case .watchList: TVWatchListView()
         case .sports: SportsView()
         case .profile: ProfileView()

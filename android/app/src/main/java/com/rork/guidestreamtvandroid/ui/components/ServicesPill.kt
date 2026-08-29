@@ -132,12 +132,15 @@ private fun ServiceMiniIcon(
 }
 
 /**
- * Renders the brand-specific content for a streaming service inside the
- * circular mini-icon. Mirrors iOS `ServiceBrandContent` in
- * `StreamingServiceViews.swift`.
+ * Renders the brand-specific content for a streaming service — the wordmark,
+ * symbol or star it is actually known by. Mirrors iOS `ServiceBrandContent`
+ * in `StreamingServiceViews.swift`. Shared beyond the circular mini-icon:
+ * the inline ad chip draws it too, because several brands (hulu, paramount,
+ * disney, hbo) carry a `glow` that equals their `bg`, so a tile drawn in
+ * `glow` on `bg` renders as a solid colour block with nothing legible on it.
  */
 @Composable
-private fun ServiceBrandContent(
+internal fun ServiceBrandContent(
     display: StreamingService.Display,
     diameter: androidx.compose.ui.unit.Dp,
     modifier: Modifier = Modifier,

@@ -93,6 +93,11 @@ fun SportsWatchSheet(
     onDismiss: () -> Unit,
     onOpenGameDetail: (SportsGame) -> Unit,
     onOpenSchedule: () -> Unit,
+    /**
+     * Hidden when the sheet is presented *from* the game detail screen so the
+     * pill can't push a second copy of the screen the user is already on.
+     */
+    showGameDetailsPill: Boolean = true,
 ) {
     val context = LocalContext.current
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -342,13 +347,15 @@ fun SportsWatchSheet(
                     onDismiss()
                     onOpenSchedule()
                 }
-                SecondaryPill(
-                    icon = Icons.Filled.Info,
-                    label = "Game details",
-                    modifier = Modifier.weight(1f),
-                ) {
-                    onDismiss()
-                    onOpenGameDetail(game)
+                if (showGameDetailsPill) {
+                    SecondaryPill(
+                        icon = Icons.Filled.Info,
+                        label = "Game details",
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        onDismiss()
+                        onOpenGameDetail(game)
+                    }
                 }
             }
 
