@@ -3248,7 +3248,7 @@ private struct SectionGlassCard<Content: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text(title)
+                Text(LocalizedStringKey(title))
                     .scaledFont(size: 15, weight: .semibold)
                     .foregroundStyle(Color.textPrimary)
                 Spacer()

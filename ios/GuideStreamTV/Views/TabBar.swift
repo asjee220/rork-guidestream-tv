@@ -120,7 +120,7 @@ struct FloatingTabBar: View {
                             )
                     }
                 }
-                Text(tab.title)
+                Text(LocalizedStringKey(tab.title))
                     .font(.guideBody(size: 10, weight: .semibold))
                     .foregroundStyle(selected ? Color.white.opacity(0.92) : Theme.textTertiary)
                     .lineLimit(1)
