@@ -759,7 +759,7 @@ struct HomeView: View {
                 season: "S\(season) E\(episode)",
                 duration: duration,
                 platform: platform,
-                isNew: row.isNew ?? true,
+                isNew: streams.isNewForViewer(row),
                 posterColors: [Color(red: 0.20, green: 0.15, blue: 0.45), Color(red: 0.04, green: 0.02, blue: 0.10)],
                 symbol: "sparkles",
                 posterUrl: imageUrl,

@@ -1622,7 +1622,8 @@ struct ShowDetailScreen: View {
                                     epURL,
                                     platform: gsDisplayName(for: svc.name),
                                     title: displayTitle,
-                                    tmdbId: resolvedTmdbId
+                                    tmdbId: resolvedTmdbId,
+                                    titleSlug: titleId
                                 )
                             } else if let ep = latestEpisode,
                                let url = preResolvedURL(forService: svc.name) {
@@ -1631,7 +1632,8 @@ struct ShowDetailScreen: View {
                                     finalURL,
                                     platform: gsDisplayName(for: svc.name),
                                     title: displayTitle,
-                                    tmdbId: resolvedTmdbId
+                                    tmdbId: resolvedTmdbId,
+                                    titleSlug: titleId
                                 )
                             } else {
                                 openDeeplink(serviceName: svc.name)
