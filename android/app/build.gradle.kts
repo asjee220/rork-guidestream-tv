@@ -42,7 +42,7 @@ android {
         // like 21 or 22 is therefore far BELOW what Play already has and is
         // rejected on upload. Keep the epoch convention: when bumping, use
         // `date +%s` at the time of the build.
-        versionCode = 1787800800
+        versionCode = 1788091066
         versionName = "1.0.21"
 
         // Production AdMob app id — supplied via the ANDROID_ADMOB_APP_ID env
