@@ -502,6 +502,12 @@ struct EpisodeDetailSheet: View {
     /// returns no usable source. Drives the platform label and badge.
     @State private var resolvedProviderName: String? = nil
     @State private var resolvedOverview: String?
+    /// Synopsis for the exact episode this sheet is showing (TMDB
+    /// `/tv/{id}/season/{s}/episode/{e}`). Preferred over the series
+    /// overview so the ABOUT block describes the episode the watch button
+    /// will actually open. Nil for movies, for shows with no episode
+    /// context, or when TMDB has no per-episode synopsis.
+    @State private var episodeOverview: String?
     @State private var isResolvingSource: Bool = false
     @State private var adDismissed: Bool = false
     @State private var showFullDetail: Bool = false
@@ -624,7 +630,19 @@ struct EpisodeDetailSheet: View {
         }
     }
 
+    /// True when we have a real per-episode synopsis to show.
+    private var hasEpisodeOverview: Bool {
+        (episodeOverview?.isEmpty == false)
+    }
+
+    /// "ABOUT THIS EPISODE" when the body is the episode's own synopsis,
+    /// plain "ABOUT" when it falls back to the series overview.
+    private var aboutCaption: String {
+        hasEpisodeOverview ? "ABOUT THIS EPISODE" : "ABOUT"
+    }
+
     private var aboutText: String {
+        if let episode = episodeOverview, !episode.isEmpty { return episode }
         if let overview = resolvedOverview, !overview.isEmpty { return overview }
         return "Tap Watch on \(whereToWatchLabel) to open this title in the streaming app."
     }
@@ -862,6 +880,7 @@ struct EpisodeDetailSheet: View {
             adDismissed = false
             episodeSourceUnavailable = false
             isResolvingEpisodeSources = false
+            episodeOverview = nil
             if isComingToStreaming, tmdbId != nil {
                 await reminders.refreshReminded(titleId: reminderKey)
             }
@@ -896,6 +915,17 @@ struct EpisodeDetailSheet: View {
                 await MainActor.run { self.isResolvingEpisodeSources = true }
                 defer { Task { @MainActor in self.isResolvingEpisodeSources = false } }
 
+                // The ABOUT block should describe the episode the watch
+                // button opens, not the series. Runs alongside the source
+                // lookup; a failure just leaves the series overview in place.
+                async let _episodeOverview: Void = {
+                    if let ep = try? await TMDBService.shared.getEpisode(
+                        tmdbId: tid, season: ctx.seasonNum, episode: ctx.episodeNum
+                    ), let text = ep.overview, !text.isEmpty {
+                        await MainActor.run { self.episodeOverview = text }
+                    }
+                }()
+
                 // Single edge-function call replaces the old episodeSources
                 // fetch. No hint on initial load → server resolves against the
                 // primary. episodeSource is a single source narrowed to the
@@ -918,6 +948,7 @@ struct EpisodeDetailSheet: View {
                     self.episodeSourceUnavailable = (best == nil)
                     self.isResolvingEpisodeSources = false
                 }
+                await _episodeOverview
             }
 
             // Start the sheet coach-mark tour once sources have resolved and
@@ -1490,7 +1521,7 @@ struct EpisodeDetailSheet: View {
 
     private var aboutSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("ABOUT")
+            Text(aboutCaption)
                 .scaledFont(size: 12, weight: .heavy)
                 .tracking(1.4)
                 .foregroundStyle(Color.white.opacity(0.45))

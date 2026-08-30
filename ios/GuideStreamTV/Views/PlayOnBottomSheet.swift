@@ -119,6 +119,10 @@ struct PlayOnBottomSheet: View {
     /// platform label, brand color, and the watch CTA deeplink.
     @State private var resolvedSource: WatchmodeSource?
     @State private var resolvedOverview: String?
+    /// Synopsis for the exact episode named by `watchSeasonNum` /
+    /// `watchEpisodeNum`. Preferred over the series overview so the ABOUT
+    /// block describes the episode the watch button will open.
+    @State private var episodeOverview: String?
     @State private var isResolvingSource: Bool = false
     /// Per-episode deep link URL resolved from Watchmode's episode-level
     /// sources endpoint. When non-nil, the watch button opens this URL
@@ -160,7 +164,17 @@ struct PlayOnBottomSheet: View {
 
     private var platformColor: Color { brandColor(for: resolvedPlatformName) }
 
-    private var aboutText: String { resolvedOverview ?? fallbackAboutText }
+    /// True when we have a real per-episode synopsis to show.
+    private var hasEpisodeOverview: Bool { episodeOverview?.isEmpty == false }
+
+    /// "ABOUT THIS EPISODE" when the body is the episode's own synopsis,
+    /// plain "ABOUT" when it falls back to the series overview.
+    private var aboutCaption: String { hasEpisodeOverview ? "ABOUT THIS EPISODE" : "ABOUT" }
+
+    private var aboutText: String {
+        if let episode = episodeOverview, !episode.isEmpty { return episode }
+        return resolvedOverview ?? fallbackAboutText
+    }
 
     private func brandColor(for name: String) -> Color {
         let key = name.lowercased()
@@ -299,6 +313,7 @@ struct PlayOnBottomSheet: View {
         .task(id: isOpen ? (tmdbId ?? -1) : nil) {
             episodeSourceUnavailable = false
             isResolvingEpisodeSources = false
+            episodeOverview = nil
             await resolveStreamingSource()
         }
     }
@@ -358,6 +373,16 @@ struct PlayOnBottomSheet: View {
                 self.episodeDeepLinkURL = url
                 self.episodeSourceUnavailable = (best == nil)
                 self.isResolvingEpisodeSources = false
+            }
+
+            // The ABOUT block should describe the episode the watch button
+            // opens, not the series. A failure here just leaves the series
+            // overview in place.
+            let epDetail = try? await TMDBService.shared.getEpisode(
+                tmdbId: tmdbId, season: s, episode: e
+            )
+            if let text = epDetail?.overview, !text.isEmpty {
+                await MainActor.run { self.episodeOverview = text }
             }
         }
     }
@@ -618,7 +643,7 @@ struct PlayOnBottomSheet: View {
 
     private var aboutSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("ABOUT")
+            Text(aboutCaption)
                 .scaledFont(size: 12, weight: .heavy)
                 .tracking(1.4)
                 .foregroundStyle(Color.white.opacity(0.45))

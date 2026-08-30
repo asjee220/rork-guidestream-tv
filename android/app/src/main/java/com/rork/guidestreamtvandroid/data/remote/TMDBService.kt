@@ -376,6 +376,18 @@ class TMDBService {
     }
 
     /**
+     * A single episode, including its own synopsis. Used by the detail sheet
+     * so the ABOUT block describes the episode the watch button opens rather
+     * than the series. Returns null on any failure — callers fall back to the
+     * series overview.
+     */
+    suspend fun getEpisode(tmdbId: Int, season: Int, episode: Int): TMDBEpisode? {
+        return try {
+            client.get("$base/tv/$tmdbId/season/$season/episode/$episode?api_key=$apiKey&language=${DeviceLocale.tmdbLanguage}").body()
+        } catch (_: Exception) { null }
+    }
+
+    /**
      * Ordered list of YouTube trailer/teaser candidate keys for a title,
      * best match first, capped at four. The Reels player advances through
      * this list on embed error before collapsing to the backdrop. For TV

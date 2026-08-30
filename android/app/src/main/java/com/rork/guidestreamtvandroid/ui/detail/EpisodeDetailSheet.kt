@@ -159,6 +159,13 @@ fun EpisodeDetailSheet(
     var usSources by remember { mutableStateOf<List<WatchmodeSrc>>(emptyList()) }
     var selectedSource by remember { mutableStateOf<WatchmodeSrc?>(null) }
     var episodeSource by remember { mutableStateOf<WatchmodeSrc?>(null) }
+    /**
+     * Synopsis for the exact episode this sheet resolves sources for
+     * (`last_episode_to_air`). Preferred over the series overview so the
+     * ABOUT block describes the episode the watch button opens. Null for
+     * movies, and when TMDB has no per-episode synopsis.
+     */
+    var episodeOverview by remember(route.titleId) { mutableStateOf<String?>(null) }
     var isResolvingSources by remember { mutableStateOf(false) }
     var showComments by remember { mutableStateOf(false) }
     var showCast by remember { mutableStateOf(false) }
@@ -199,6 +206,19 @@ fun EpisodeDetailSheet(
             }
         } catch (_: Exception) {
             null
+        }
+    }
+
+    // Per-episode synopsis for the episode the watch button targets. Keyed on
+    // the same season/episode the Watchmode lookup uses, so the two always
+    // describe the same episode. Failure leaves the series overview in place.
+    LaunchedEffect(tmdbId, isTV, detail?.lastEpisodeToAir?.seasonNumber, detail?.lastEpisodeToAir?.episodeNumber) {
+        val tid = tmdbId ?: return@LaunchedEffect
+        if (!isTV) return@LaunchedEffect
+        val season = detail?.lastEpisodeToAir?.seasonNumber ?: return@LaunchedEffect
+        val ep = detail?.lastEpisodeToAir?.episodeNumber ?: return@LaunchedEffect
+        episodeOverview = withContext(Dispatchers.IO) {
+            TMDBService.get().getEpisode(tid, season, ep)?.overview?.takeIf { it.isNotBlank() }
         }
     }
 
@@ -737,6 +757,7 @@ fun EpisodeDetailSheet(
                     fallback = serviceLabel?.let {
                         "Tap Watch on $it to open this title in the streaming app."
                     } ?: "Pick a service above to start watching.",
+                    episodeOverview = episodeOverview,
                 )
             }
         }
@@ -784,9 +805,16 @@ private fun Hairline() {
     )
 }
 
-/** "ABOUT" caption plus the synopsis, or a service-aware fallback line. */
+/**
+ * Caption plus the synopsis, or a service-aware fallback line. The caption
+ * reads "ABOUT THIS EPISODE" when [episodeOverview] carries the episode's own
+ * synopsis, and plain "ABOUT" when it falls back to the series overview.
+ */
 @Composable
-private fun AboutSection(overview: String?, fallback: String) {
+private fun AboutSection(overview: String?, fallback: String, episodeOverview: String? = null) {
+    val body = episodeOverview?.takeIf { it.isNotBlank() }
+        ?: overview?.takeIf { it.isNotBlank() }
+    val caption = if (episodeOverview?.isNotBlank() == true) "ABOUT THIS EPISODE" else "ABOUT"
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -794,14 +822,14 @@ private fun AboutSection(overview: String?, fallback: String) {
             .padding(top = 24.dp),
     ) {
         Text(
-            text = "ABOUT",
+            text = caption,
             fontSize = 12.sp,
             fontWeight = FontWeight.Black,
             color = TextPrimary.copy(alpha = 0.45f),
         )
         Spacer(Modifier.height(8.dp))
         Text(
-            text = overview?.takeIf { it.isNotBlank() } ?: fallback,
+            text = body ?: fallback,
             fontSize = 15.sp,
             color = TextPrimary.copy(alpha = 0.85f),
             lineHeight = 21.sp,
