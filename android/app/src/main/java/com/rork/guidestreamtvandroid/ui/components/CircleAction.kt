@@ -21,6 +21,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.rork.guidestreamtvandroid.ui.theme.SheetSurfaceBase
@@ -40,6 +41,7 @@ fun CircleAction(
     showDot: Boolean,
     isLoading: Boolean = false,
     enabled: Boolean = true,
+    labelSpacing: Dp = 8.dp,
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
@@ -84,7 +86,7 @@ fun CircleAction(
                 }
             }
         }
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(labelSpacing))
         Text(
             text = label,
             fontSize = 13.sp,

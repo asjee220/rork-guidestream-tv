@@ -408,7 +408,7 @@ fun ShowDetailScreen(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
                     Row(
@@ -422,6 +422,7 @@ fun ShowDetailScreen(
                         label = if (isWatched) "Watched" else "Watched?",
                         tint = if (isWatched) BrandBlue else TextPrimary,
                         showDot = false,
+                        labelSpacing = 4.dp,
                     ) {
                         streamsVm.toggleWatched(
                             titleId = titleId,
@@ -436,6 +437,7 @@ fun ShowDetailScreen(
                         label = "Share",
                         tint = TextPrimary,
                         showDot = false,
+                        labelSpacing = 4.dp,
                     ) {
                         val tid = tmdbId
                         if (tid != null && tid > 0) {
@@ -458,6 +460,7 @@ fun ShowDetailScreen(
                         label = "Send to TV",
                         tint = TextPrimary,
                         showDot = false,
+                        labelSpacing = 4.dp,
                         modifier = Modifier,
                     ) { showCast = true }
                     }

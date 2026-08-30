@@ -366,12 +366,12 @@ struct ShowDetailScreen: View {
 
     @State private var scrollOffset: CGFloat = 0
     @State private var synopsisExpanded: Bool = false
-    @State private var notifyOn: Bool = true
     @State private var showComments: Bool = false
     @State private var showShare: Bool = false
     @State private var streams = StreamsViewModel.shared
     @State private var social = SocialViewModel.shared
     @State private var isTogglingLike: Bool = false
+    @State private var isTogglingWatched: Bool = false
     @State private var selectedSeason: String = "Season 4"
     @State private var playOnOpen: Bool = false
     @State private var showMoreEpisodes: Bool = false
@@ -1506,15 +1506,102 @@ struct ShowDetailScreen: View {
     // MARK: Fan activity
 
     private var fanActivitySection: some View {
-        FanActivityCard(
-            isSaved: isSaved,
-            saveLabel: isSaved ? "Saved" : "Save",
-            onSave: { toggleWatchList() },
-            notifyOn: notifyOn,
-            onNotify: { withAnimation { notifyOn.toggle() } }
-        )
+        HStack(spacing: 0) {
+            circleAction(
+                icon: social.isWatched(titleId) ? "eye.fill" : "eye",
+                label: social.isWatched(titleId) ? "Watched" : "Watched?",
+                tint: social.isWatched(titleId) ? Color.blue : .white,
+                showDot: false,
+                isLoading: isTogglingWatched
+            ) {
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                guard !isTogglingWatched else { return }
+                isTogglingWatched = true
+                let mediaType = isTV ? "tv" : "movie"
+                let watchedTmdbId = resolvedTmdbId
+                Task {
+                    await social.toggleWatched(
+                        titleId: titleId,
+                        titleName: displayTitle,
+                        mediaType: mediaType,
+                        tmdbId: watchedTmdbId
+                    )
+                    await MainActor.run { isTogglingWatched = false }
+                }
+            }
+            .frame(maxWidth: .infinity)
+
+            circleAction(
+                icon: "square.and.arrow.up",
+                label: "Share",
+                tint: .white,
+                showDot: false
+            ) {
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                WatchIntentLogger.shared.log(
+                    eventType: .shareTapped,
+                    titleId: resolvedTmdbId.map(String.init) ?? titleId,
+                    metadata: ["surface": "show_detail", "kind": isTV ? "tv" : "movie"]
+                )
+                showShare = true
+            }
+            .frame(maxWidth: .infinity)
+
+            circleAction(
+                icon: "tv",
+                label: "Send to TV",
+                tint: .white,
+                showDot: false
+            ) {
+                openPlayOn()
+            }
+            .frame(maxWidth: .infinity)
+        }
+        .padding(.vertical, 8)
         .padding(.horizontal, 20)
         .padding(.top, 24)
+    }
+
+    /// 56pt translucent circle + caption — matches `circleAction` in
+    /// `HomeDestinations.swift`, with the tighter 4pt icon-to-label gap the
+    /// bare detail row uses.
+    private func circleAction(
+        icon: String,
+        label: String,
+        tint: Color,
+        showDot: Bool,
+        isLoading: Bool = false,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            VStack(spacing: 4) {
+                ZStack {
+                    Circle()
+                        .fill(Color.white.opacity(0.08))
+                        .frame(width: 56, height: 56)
+                    if isLoading {
+                        ProgressView()
+                            .controlSize(.small)
+                            .tint(.white)
+                    } else {
+                        Image(systemName: icon)
+                            .scaledFont(size: 22, weight: .regular)
+                            .foregroundStyle(tint)
+                    }
+                    if showDot && !isLoading {
+                        Circle()
+                            .fill(Color(red: 0x3D/255, green: 0xE0/255, blue: 0x6A/255))
+                            .frame(width: 10, height: 10)
+                            .overlay(Circle().stroke(Color(red: 0x13/255, green: 0x18/255, blue: 0x1D/255), lineWidth: 2))
+                            .offset(x: 16, y: -16)
+                    }
+                }
+                Text(label)
+                    .scaledFont(size: 13)
+                    .foregroundStyle(Color.white.opacity(0.7))
+            }
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: Bottom action bar
