@@ -99,7 +99,6 @@ private struct WatchListContent: View {
     @State private var social = SocialViewModel.shared
     @State private var auth = AuthViewModel.shared
     @State private var detailSubject: DetailSubject?
-    @State private var showFollowCreators: Bool = false
     /// Full-screen detail for non-TMDB creator/ podcast entities.
     @State private var creatorDetailTarget: CreatorDetailTarget?
     /// Maps prefixed title_ids to their live status for in-list LIVE/OFFLINE pills.
@@ -141,9 +140,6 @@ private struct WatchListContent: View {
         .sheet(item: $detailSubject) { subject in
             EpisodeDetailSheet(subject: subject, level: .raised)
         }
-        .fullScreenCover(isPresented: $showFollowCreators) {
-            FollowCreatorsView()
-        }
         .sheet(item: $creatorDetailTarget) { target in
             CreatorDetailView(
                 titleId: target.titleId,
@@ -181,12 +177,7 @@ private struct WatchListContent: View {
     @ViewBuilder
     private var content: some View {
         if streams.userStreams.isEmpty {
-            VStack(spacing: 16) {
-                followCreatorsEntryCard
-                    .padding(.horizontal, 16)
-                    .padding(.top, 8)
-                emptyState
-            }
+            emptyState
         } else {
             VStack(spacing: 0) {
                 if !auth.isAuthenticated {
@@ -194,13 +185,9 @@ private struct WatchListContent: View {
                         .padding(.horizontal, 16)
                         .padding(.top, 8)
                 }
-                // Follow creators entry card — pinned above the saved list
-                followCreatorsEntryCard
-                    .padding(.horizontal, 16)
-                    .padding(.top, 8)
-                    .padding(.bottom, 8)
                 tabBar
                     .padding(.horizontal, 16)
+                    .padding(.top, 8)
                     .padding(.bottom, 8)
                 filterBar
                     .padding(.horizontal, 16)
@@ -301,53 +288,6 @@ private struct WatchListContent: View {
         if let first = WatchListTab.allCases.first(where: { (counts[$0] ?? 0) > 0 }) {
             selectedTab = first
         }
-    }
-
-    /// Entry card styled with orange-tinted glass that opens the Follow Creators
-    /// discovery screen on tap.
-    private var followCreatorsEntryCard: some View {
-        Button {
-            UIImpactFeedbackGenerator(style: .light).impactOccurred()
-            WatchIntentLogger.shared.log(
-                eventType: .cardTapped,
-                metadata: ["section": "follow_creators_entry", "source": "watch_list"]
-            )
-            showFollowCreators = true
-        } label: {
-            HStack(spacing: 12) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(Color.orange.opacity(0.14))
-                        .frame(width: 44, height: 44)
-                    Image(systemName: "person.2.badge.plus")
-                        .scaledFont(size: 18, weight: .semibold)
-                        .foregroundStyle(Color.orange)
-                }
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Follow creators & podcasts")
-                        .scaledFont(size: 14, weight: .semibold)
-                        .foregroundStyle(Color.textPrimary)
-                    Text("YouTube, Twitch, Kick, and more")
-                        .scaledFont(size: 12)
-                        .foregroundStyle(Color.textSecondary)
-                }
-                Spacer(minLength: 0)
-                Image(systemName: "chevron.right")
-                    .scaledFont(size: 13, weight: .semibold)
-                    .foregroundStyle(Color.textTertiary)
-            }
-            .padding(12)
-            .background(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(Color.orange.opacity(0.08))
-                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .stroke(Color.orange.opacity(0.18), lineWidth: 1)
-            )
-        }
-        .buttonStyle(.plain)
     }
 
     private var emptyState: some View {
