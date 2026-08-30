@@ -83,6 +83,7 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Models/SportsActivityAttributes.swift,
+				Models/StopTrackingGameIntent.swift,
 			);
 			target = XX6E895901CF0DAEECE76CXX /* GuideStreamWidget */;
 		};

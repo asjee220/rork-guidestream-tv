@@ -9,6 +9,7 @@
 //
 
 import ActivityKit
+import AppIntents
 import Foundation
 import SwiftUI
 import WidgetKit
@@ -106,9 +107,74 @@ private struct WatchButtonLabel: View {
         Text(broadcast.isEmpty ? "Watch now" : "Watch on \(broadcast)")
             .font(.system(size: fontSize, weight: .bold))
             .foregroundStyle(.white)
+            // Since the lock screen shares this row with "Stop tracking" the
+            // label no longer has the full card width. The longest broadcast
+            // the FBS slate produces ("Watch on SEC Network") fits, but only
+            // just — without these two it wraps to a second line and breaks
+            // the fixed height.
+            .lineLimit(1)
+            .minimumScaleFactor(0.75)
             .frame(maxWidth: .infinity)
             .frame(height: height)
             .background(Capsule().fill(brandOrange))
+    }
+}
+
+private struct StopTrackingButtonLabel: View {
+    var height: CGFloat = 38
+
+    var body: some View {
+        HStack(spacing: 6) {
+            // A stop glyph, drawn rather than an SF Symbol so it keeps its
+            // weight against the label at every Dynamic Type size.
+            RoundedRectangle(cornerRadius: 2.5, style: .continuous)
+                .fill(Color.white.opacity(0.8))
+                .frame(width: 9, height: 9)
+            Text("Stop tracking")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(Color.white.opacity(0.8))
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: height)
+        .background(Capsule().stroke(Color.white.opacity(0.18), lineWidth: 1))
+    }
+}
+
+/// The lock screen's bottom row: outlined "Stop tracking" on the left,
+/// the orange "Watch on …" primary on the right, split 150/226 of the card's
+/// 384pt content width — expressed as a ratio so it holds on narrower phones.
+///
+/// Only the stop button is interactive. The watch label is deliberately NOT a
+/// Link: the activity already carries `.widgetURL(guidestream://game/<id>)`,
+/// which still catches every tap outside the button, so tapping the orange
+/// side opens the game exactly as it did before this row existed.
+private struct LockScreenActionRow: View {
+    let gameId: String
+    let broadcast: String
+
+    private let gap: CGFloat = 8
+    private let stopShare: CGFloat = 150.0 / 376.0
+    private let height: CGFloat = 38
+
+    var body: some View {
+        GeometryReader { geo in
+            HStack(spacing: gap) {
+                Button(intent: StopTrackingGameIntent(gameId: gameId)) {
+                    StopTrackingButtonLabel(height: height)
+                }
+                .buttonStyle(.plain)
+                .frame(width: max(0, (geo.size.width - gap) * stopShare))
+
+                WatchButtonLabel(
+                    broadcast: broadcast,
+                    fontSize: 15,
+                    height: height
+                )
+            }
+        }
+        .frame(height: height)
     }
 }
 
@@ -276,10 +342,9 @@ private struct LockScreenSportsView: View {
                 .fill(Color.white.opacity(0.10))
                 .frame(height: 0.5)
 
-            WatchButtonLabel(
-                broadcast: context.attributes.broadcast,
-                fontSize: 15,
-                height: 38
+            LockScreenActionRow(
+                gameId: context.attributes.gameId,
+                broadcast: context.attributes.broadcast
             )
         }
         .padding(9)
