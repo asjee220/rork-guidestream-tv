@@ -32,12 +32,14 @@ import com.rork.guidestreamtvandroid.data.remote.RemoteConfigService
 import com.rork.guidestreamtvandroid.data.remote.SupabaseManager
 import com.rork.guidestreamtvandroid.data.repository.AuthViewModel
 import com.rork.guidestreamtvandroid.data.repository.PushTokenManager
+import com.rork.guidestreamtvandroid.data.repository.SportsLiveScoreController
 import com.rork.guidestreamtvandroid.data.repository.StreamsViewModel
 import io.github.jan.supabase.auth.handleDeeplinks
 import com.rork.guidestreamtvandroid.ui.ads.AdManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
@@ -193,6 +195,16 @@ class MainActivity : ComponentActivity() {
             PushTokenManager.get().registerIfPermitted()
         } catch (t: Throwable) {
             Log.w("GSPush", "onResume push registration failed: ${t.message}")
+        }
+        // Clears a tracked-game notification left pinned by a game that
+        // finished while the app was dead, and repaints it otherwise. The
+        // counterpart of iOS SportsLiveActivityController.reconcile().
+        lifecycleScope.launch {
+            try {
+                SportsLiveScoreController.init(this@MainActivity).reconcile()
+            } catch (t: Throwable) {
+                Log.w("GSLiveScore", "onResume reconcile failed: ${t.message}")
+            }
         }
     }
 

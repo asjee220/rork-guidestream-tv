@@ -238,6 +238,16 @@ fun SportsWatchSheet(
                 }
             }
 
+            // Live-score tracking, in the same place iOS puts it: directly
+            // under the score card, above Where to Watch.
+            SportsTrackCapsule(
+                game = game,
+                broadcast = activeBroadcast ?: sortedBroadcasts.firstOrNull() ?: "",
+                modifier = Modifier
+                    .padding(horizontal = 20.dp)
+                    .padding(top = 14.dp),
+            )
+
             // Where to Watch chips
             SportsWhereToWatchRow(
                 broadcasts = sortedBroadcasts,

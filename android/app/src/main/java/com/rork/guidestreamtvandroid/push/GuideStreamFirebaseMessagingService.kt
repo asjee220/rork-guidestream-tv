@@ -6,11 +6,13 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.media.RingtoneManager
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
 import com.rork.guidestreamtvandroid.MainActivity
 import com.rork.guidestreamtvandroid.data.repository.PushTokenManager
+import com.rork.guidestreamtvandroid.data.repository.SportsLiveScoreController
 import com.rork.guidestreamtvandroid.data.repository.WatchIntentLogger
 
 /**
@@ -23,6 +25,10 @@ class GuideStreamFirebaseMessagingService : FirebaseMessagingService() {
     companion object {
         private const val CHANNEL_ID = "gs_episodes"
         private const val CHANNEL_NAME = "Episode Alerts"
+        private const val TAG = "GSLiveScore"
+
+        /** notification_type on a score update for the tracked game. */
+        const val LIVE_SCORE_UPDATE = "sports_live_update"
 
         fun ensureChannel(context: Context) {
             val manager = context.getSystemService(NotificationManager::class.java)
@@ -48,6 +54,21 @@ class GuideStreamFirebaseMessagingService : FirebaseMessagingService() {
 
     override fun onMessageReceived(message: RemoteMessage) {
         super.onMessageReceived(message)
+
+        // Live-score updates for a tracked game are not alerts. They repaint
+        // the ongoing notification in place and must never post a second one —
+        // this is the FCM analogue of the APNs liveactivity push the iOS Live
+        // Activity gets, and the reason sports_poll_and_notify branches on
+        // live_activities.platform.
+        if (message.data["notification_type"] == LIVE_SCORE_UPDATE) {
+            try {
+                SportsLiveScoreController.init(applicationContext).applyPush(message.data)
+            } catch (e: Throwable) {
+                Log.e(TAG, "live score update failed: ${e.message}")
+            }
+            return
+        }
+
         val title = message.notification?.title
             ?: message.data["title"]
             ?: "GuideStream TV"

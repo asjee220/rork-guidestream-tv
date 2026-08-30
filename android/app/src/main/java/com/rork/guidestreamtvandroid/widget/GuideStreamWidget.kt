@@ -35,6 +35,8 @@ import androidx.glance.text.Text
 import androidx.glance.text.TextStyle
 import androidx.glance.unit.ColorProvider
 import com.rork.guidestreamtvandroid.MainActivity
+import com.rork.guidestreamtvandroid.sports.live.LiveScoreSnapshot
+import kotlinx.serialization.json.Json
 
 /**
  * Guide Stream TV home-screen widget — mirrors iOS GuideStreamWidget.swift.
@@ -51,19 +53,55 @@ class GuideStreamWidget : GlanceAppWidget() {
         val prefs = context.getSharedPreferences("gs_widget_payload", Context.MODE_PRIVATE)
         val service = WidgetDataService.get()
         val payload = service.loadPayload()
+        // Read straight from the controller's own prefs rather than through the
+        // singleton: provideGlance can run in the widget host's process, where
+        // GuideStreamTVApp.onCreate has not necessarily run.
+        val live = readTrackedGame(context)
 
         provideContent {
             GlanceTheme {
-                WidgetContent(payload, context)
+                WidgetContent(payload, context, live)
             }
         }
     }
 
+    /** The game the user is tracking, or null. Mirrors the notification. */
+    private fun readTrackedGame(context: Context): LiveScoreSnapshot? {
+        val raw = context
+            .getSharedPreferences("gs_live_score", Context.MODE_PRIVATE)
+            .getString("gs.liveScore.snapshot.v1", null) ?: return null
+        return try {
+            Json { ignoreUnknownKeys = true }.decodeFromString<LiveScoreSnapshot>(raw)
+        } catch (_: Exception) {
+            null
+        }
+    }
+
     @Composable
-    private fun WidgetContent(payload: WidgetPayload, context: Context) {
+    private fun WidgetContent(
+        payload: WidgetPayload,
+        context: Context,
+        live: LiveScoreSnapshot?,
+    ) {
         val size = LocalSize.current
         val isSmall = size.width < 200.dp
         val isMedium = size.width >= 200.dp && size.width < 300.dp
+
+        // A tracked game outranks the feed: it is the thing the user explicitly
+        // asked to watch, and it is the only part of the widget that changes
+        // minute to minute. On the small size it takes the whole widget — there
+        // is no room to show both and the score is what was asked for.
+        if (live != null && isSmall) {
+            Box(
+                modifier = GlanceModifier
+                    .fillMaxSize()
+                    .background(Color(red = 0x04, green = 0x09, blue = 0x0F))
+                    .clickable(actionStartActivity<MainActivity>()),
+            ) {
+                LiveScoreCard(live, compact = true)
+            }
+            return
+        }
 
         Box(
             modifier = GlanceModifier
@@ -71,6 +109,19 @@ class GuideStreamWidget : GlanceAppWidget() {
                 .background(Color(red = 0x04, green = 0x09, blue = 0x0F))
                 .clickable(actionStartActivity<MainActivity>()),
         ) {
+            if (live != null) {
+                Column(modifier = GlanceModifier.fillMaxSize()) {
+                    LiveScoreCard(live, compact = false)
+                    Box(modifier = GlanceModifier.fillMaxSize()) {
+                        if (isMedium) {
+                            MediumWidget(payload, context)
+                        } else {
+                            LargeWidget(payload, context)
+                        }
+                    }
+                }
+                return@Box
+            }
             if (isSmall) {
                 SmallWidget(payload)
             } else if (isMedium) {
@@ -87,6 +138,77 @@ class GuideStreamWidget : GlanceAppWidget() {
         "soon" -> Color(red = 0x1A, green = 0x6F, blue = 0xE8)
         "out" -> Color(red = 0xF5, green = 0x82, blue = 0x1F)
         else -> Color(red = 0xF5, green = 0x82, blue = 0x1F)
+    }
+
+    /**
+     * The tracked game, drawn to echo the notification and the iOS lock-screen
+     * card: league chip, away over home with scores, status line. Deliberately
+     * no controls — Glance actions on a home-screen widget cannot end a
+     * notification cleanly, and the notification's own Stop action is always
+     * one glance away.
+     */
+    @Composable
+    private fun LiveScoreCard(live: LiveScoreSnapshot, compact: Boolean) {
+        val orange = Color(red = 0xF5, green = 0x82, blue = 0x1F)
+        val liveOrange = Color(red = 0xFF, green = 0x9F, blue = 0x0A)
+        val muted = Color(red = 0xFF, green = 0xFF, blue = 0xFF)
+        val isLive = live.state == "live"
+
+        Column(
+            modifier = GlanceModifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = if (compact) 12.dp else 10.dp),
+        ) {
+            Text(
+                text = live.leagueShort.uppercase(),
+                style = TextStyle(
+                    color = ColorProvider(orange),
+                    fontSize = 9.sp,
+                    fontWeight = FontWeight.Bold,
+                ),
+            )
+            Spacer(GlanceModifier.height(if (compact) 8.dp else 6.dp))
+            ScoreLine(live.awayShortName.ifBlank { live.awayAbbr }, live.awayScore, compact)
+            Spacer(GlanceModifier.height(3.dp))
+            ScoreLine(live.homeShortName.ifBlank { live.homeAbbr }, live.homeScore, compact)
+            Spacer(GlanceModifier.height(if (compact) 8.dp else 6.dp))
+            Text(
+                text = live.statusDetail,
+                style = TextStyle(
+                    color = ColorProvider(if (isLive) liveOrange else muted),
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Medium,
+                ),
+                maxLines = 1,
+            )
+        }
+    }
+
+    @Composable
+    private fun ScoreLine(name: String, score: Int, compact: Boolean) {
+        Row(
+            modifier = GlanceModifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = name,
+                style = TextStyle(
+                    color = ColorProvider(Color.White),
+                    fontSize = if (compact) 15.sp else 14.sp,
+                    fontWeight = FontWeight.Medium,
+                ),
+                maxLines = 1,
+                modifier = GlanceModifier.defaultWeight(),
+            )
+            Text(
+                text = "$score",
+                style = TextStyle(
+                    color = ColorProvider(Color.White),
+                    fontSize = if (compact) 22.sp else 20.sp,
+                    fontWeight = FontWeight.Bold,
+                ),
+            )
+        }
     }
 
     private fun kindLabel(kind: String): String = when (kind) {

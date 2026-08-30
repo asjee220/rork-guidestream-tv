@@ -4,6 +4,10 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Android 16 Live Updates: without this the tracked-game notification
+         posts as an ordinary ongoing one and is never promoted to the status
+         bar chip or the always-on display. Harmless on older releases. -->
+    <uses-permission android:name="android.permission.POST_PROMOTED_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
@@ -70,6 +74,17 @@
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_channel_id"
             android:value="gs_episodes" />
+
+        <!-- "Stop tracking" on the live-score notification. The Android
+             counterpart of iOS's StopTrackingGameIntent: runs in the app's
+             process without bringing the app forward. -->
+        <receiver
+            android:name=".sports.live.LiveScoreActionReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.rork.guidestreamtvandroid.LIVE_SCORE_STOP" />
+            </intent-filter>
+        </receiver>
 
         <!-- Glance Widget -->
         <receiver

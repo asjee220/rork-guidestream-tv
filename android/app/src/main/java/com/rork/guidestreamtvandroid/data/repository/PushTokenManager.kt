@@ -176,6 +176,13 @@ class PushTokenManager private constructor(context: Context) {
         pendingToken = null
     }
 
+    /** The cached FCM registration token, or null before the first onNewToken.
+     *  Read by SportsLiveScoreController, which needs a token to put in the
+     *  `live_activities` row — Android has no per-activity token the way
+     *  ActivityKit does, so the app's own registration token is what the
+     *  backend pushes score updates to. */
+    fun currentToken(): String? = prefs.getString("gs.fcmToken", null)
+
     /** Caches the token locally so it can be re-saved after sign-in. */
     fun cacheToken(token: String) {
         prefs.edit().putString("gs.fcmToken", token).apply()

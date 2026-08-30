@@ -13,10 +13,12 @@ import com.rork.guidestreamtvandroid.data.repository.PushTokenManager
 import com.rork.guidestreamtvandroid.data.repository.ReelsBadgeService
 import com.rork.guidestreamtvandroid.data.repository.ReleaseReminderService
 import com.rork.guidestreamtvandroid.data.repository.SocialViewModel
+import com.rork.guidestreamtvandroid.data.repository.SportsLiveScoreController
 import com.rork.guidestreamtvandroid.data.repository.StreamsViewModel
 import com.rork.guidestreamtvandroid.data.repository.TeamFavoritesService
 import com.rork.guidestreamtvandroid.data.repository.WatchIntentLogger
 import com.rork.guidestreamtvandroid.push.GuideStreamFirebaseMessagingService
+import com.rork.guidestreamtvandroid.sports.live.LiveScoreNotification
 import com.rork.guidestreamtvandroid.widget.WidgetDataService
 
 /**
@@ -49,6 +51,11 @@ class GuideStreamTVApp : Application() {
         // creating a channel never triggers a permission dialog.
         safe("NotificationChannel") { GuideStreamFirebaseMessagingService.ensureChannel(this) }
         safe("WidgetDataService") { WidgetDataService.init(this) }
+        // The live-score channel must exist before any tracked-game push can
+        // arrive, for the same reason gs_episodes does: on Android 8+ a
+        // notification posted to a nonexistent channel is dropped silently.
+        safe("LiveScoreChannel") { LiveScoreNotification.ensureChannel(this) }
+        safe("SportsLiveScoreController") { SportsLiveScoreController.init(this) }
         safe("ReelsBadgeService") { ReelsBadgeService.init(this) }
 
         // Restore session on cold launch

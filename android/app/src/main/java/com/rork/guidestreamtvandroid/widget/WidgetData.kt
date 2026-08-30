@@ -2,6 +2,10 @@ package com.rork.guidestreamtvandroid.widget
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import androidx.glance.appwidget.updateAll
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 
 /**
@@ -112,6 +116,21 @@ class WidgetDataService private constructor(
                 lastUpdated = now,
             )
         )
+    }
+
+    /**
+     * Asks Glance to re-render every placed widget. Callers that change what
+     * the widget should show — including SportsLiveScoreController, whose
+     * tracked game is read straight out of its own prefs rather than the
+     * payload — call this afterwards. Safe to call from any process; a failure
+     * only means the widget redraws on its next scheduled update.
+     */
+    fun refreshWidget(context: android.content.Context) {
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                GuideStreamWidget().updateAll(context.applicationContext)
+            } catch (_: Throwable) {}
+        }
     }
 
     /** Write test data for the widget setup screen. */
