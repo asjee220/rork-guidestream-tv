@@ -5,6 +5,8 @@ import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -151,13 +153,21 @@ fun SportsWatchSheet(
         dragHandle = { GsSheetDragHandle(level = SheetLevel.Base) },
         contentWindowInsets = { sheetTopInset() },
     ) {
-        // iOS .presentationDetents([.fraction(0.85), .large]) → cap Android sheet at 85%
+        // iOS .presentationDetents([.fraction(0.85), .large]) → cap Android sheet at 85%.
+        // The cap was ported but the scrolling was not: iOS wraps the whole sheet in a
+        // ScrollView (SportsWatchSheet.swift:166), so its content is always reachable and
+        // the sheet can also be dragged to .large. Without verticalScroll here, anything
+        // past 85% of the screen was clipped and unreachable — which hid the Watch CTA,
+        // the watch-list circle, the schedule / game-details pills and About on shorter
+        // devices (GUI-75). Padding sits after the scroll modifier so the trailing gap
+        // scrolls with the content instead of shrinking the viewport.
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .navigationBarsPadding()
-                .padding(bottom = 28.dp)
-                .fillMaxHeight(0.85f),
+                .fillMaxHeight(0.85f)
+                .verticalScroll(rememberScrollState())
+                .padding(bottom = 28.dp),
         ) {
             // Header
             GsSheetHeader(
