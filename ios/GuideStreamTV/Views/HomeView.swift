@@ -2341,7 +2341,7 @@ struct HomeView: View {
             region: country.regionCode,
             originalLanguage: country.effectiveOriginalLanguage(for: provider),
             voteCountGte: country.voteFloor(for: provider),
-            withoutKeywords: "198385"
+            withoutKeywords: BrowseCatalog.adultKeywordIds
         )) ?? []
         guard !results.isEmpty else { return }
         aroundTheWorldEntry = country

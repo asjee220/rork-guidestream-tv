@@ -409,8 +409,16 @@ nonisolated struct TVTMDBService {
         if let rating = f.minRating {
             url += "&vote_average.gte=\(rating)"
         }
-        if f.minRating != nil || f.sort.needsVoteFloor {
-            url += "&vote_count.gte=50"
+        // Mirrors the phone app: the higher of the sort-driven floor and the
+        // genre's own, so neither can weaken the other. Anime's floor is a
+        // content filter, not a quality preference — see BrowseCatalog.
+        let sortFloor = (f.minRating != nil || f.sort.needsVoteFloor) ? 50 : nil
+        let genreFloor = f.selectedGenres.compactMap { $0.voteFloor }.max()
+        if let floor = [sortFloor, genreFloor].compactMap({ $0 }).max() {
+            url += "&vote_count.gte=\(floor)"
+        }
+        if let keywords = f.selectedGenres.compactMap({ $0.excludedKeywordIds }).first {
+            url += "&without_keywords=\(keywords)"
         }
 
         let data = try await get(url)

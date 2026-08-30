@@ -104,11 +104,45 @@ struct BrowseGenre: Identifiable, Hashable, Sendable {
     func genreId(for path: String) -> Int? {
         path == "movie" ? movieGenreId : tvGenreId
     }
+
+    /// Minimum TMDB vote count for this genre's results, or nil for no floor.
+    ///
+    /// Only Japanese animation sets one, and it is not a quality preference —
+    /// it is the content filter. See `BrowseCatalog.animeVoteFloor`.
+    nonisolated var voteFloor: Int? {
+        originalLanguage == "ja" ? BrowseCatalog.animeVoteFloor : nil
+    }
+
+    /// TMDB keyword ids withheld from this genre, for `without_keywords`.
+    nonisolated var excludedKeywordIds: String? {
+        originalLanguage == "ja" ? BrowseCatalog.adultKeywordIds : nil
+    }
 }
 
 enum BrowseCatalog {
     /// Non-English markets used by the International tile.
     static let internationalLanguages = "ko|ja|fr|de|es|it|pt|hi|ar|tr|sv|no|da|fi|nl|pl|th|zh"
+
+    /// TMDB keyword ids kept out of results, for `without_keywords`.
+    ///
+    /// 198385 is `hentai`. Checked against TMDB on 2026-08-30: it tags 22
+    /// titles, all of them films, so on a TV-only genre like Anime it catches
+    /// almost nothing. It is the cheap second net, not the one doing the work.
+    /// If more ids are added, join them with `%7C` — an unencoded pipe breaks
+    /// the query.
+    nonisolated static let adultKeywordIds = "198385"
+
+    /// Vote-count floor for Japanese animation, and the filter actually doing
+    /// the work.
+    ///
+    /// Same value and same reason as `CountryCatalogEntry.voteFloor(for:)`,
+    /// which learned it the hard way: TMDB reports the adult animation it
+    /// ought to be excluding as `adult:false` under genre 16, so neither
+    /// `include_adult` nor a keyword list catches it — and `include_adult` is
+    /// a movie-only parameter, while Anime here is TV-only, so it would do
+    /// nothing at all. What separates those titles from real anime is that
+    /// almost nobody rates them. **Do not lower this.**
+    nonisolated static let animeVoteFloor = 100
 
     /// The ten browsable genres, in display order.
     ///

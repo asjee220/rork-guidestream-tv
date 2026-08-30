@@ -56,6 +56,10 @@ enum BrowseTint {
 final class BrowseArtworkStore {
     static let shared = BrowseArtworkStore()
 
+    /// How many backdrops each genre offers up for the assignment pass. One
+    /// was not enough: a title that tops two genres claimed both tiles.
+    private static let candidateDepth = 8
+
     private(set) var backdrops: [String: String] = [:]
     private var isLoading = false
 
@@ -67,25 +71,43 @@ final class BrowseArtworkStore {
         defer { isLoading = false }
 
         let pending = BrowseCatalog.genres.filter { backdrops[$0.id] == nil }
-        let fetched = await withTaskGroup(of: (String, String?).self) { group in
+        let candidates = await withTaskGroup(of: (String, [String]).self) { group in
             for genre in pending {
                 group.addTask {
                     // No provider filter here: the tile should show the genre's
                     // best-known title, not whatever the user happens to have.
                     let filters = BrowseFilters(genreIds: [genre.id], onlyMyServices: false)
                     let page = try? await TMDBService.shared.discoverBrowse(filters)
-                    let hero = page?.results.first { $0.backdropPath != nil }
-                    return (genre.id, hero?.backdropUrl)
+                    let urls = (page?.results ?? [])
+                        .compactMap(\.backdropUrl)
+                        .prefix(Self.candidateDepth)
+                    return (genre.id, Array(urls))
                 }
             }
-            var out: [String: String] = [:]
-            for await (id, url) in group {
-                if let url { out[id] = url }
-            }
+            var out: [String: [String]] = [:]
+            for await (id, urls) in group { out[id] = urls }
             return out
         }
 
-        backdrops.merge(fetched) { _, new in new }
+        // Assign in catalogue order rather than in completion order, so which
+        // tile gets first claim on a shared title does not depend on which
+        // network call happened to return first.
+        //
+        // Each tile takes its most popular backdrop that no earlier tile has
+        // taken. Reacher tops both Crime & Thriller and Action, and the two
+        // tiles used to show the identical image.
+        var used = Set(backdrops.values)
+        var resolved: [String: String] = [:]
+        for genre in BrowseCatalog.genres {
+            guard let options = candidates[genre.id], !options.isEmpty else { continue }
+            // If every candidate is already spoken for, take the first anyway:
+            // a repeated tile still reads better than an empty one.
+            let pick = options.first { !used.contains($0) } ?? options[0]
+            used.insert(pick)
+            resolved[genre.id] = pick
+        }
+
+        backdrops.merge(resolved) { _, new in new }
     }
 }
 

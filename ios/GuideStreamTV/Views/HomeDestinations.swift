@@ -457,7 +457,7 @@ struct AroundTheWorldView: View {
             region: entry.regionCode,
             originalLanguage: entry.effectiveOriginalLanguage(for: provider),
             voteCountGte: entry.voteFloor(for: provider),
-            withoutKeywords: "198385"
+            withoutKeywords: BrowseCatalog.adultKeywordIds
         )) ?? []
         resultsByKey[key] = results.map { poster(from: $0) }
         loadingKeys.remove(key)

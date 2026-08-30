@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rork.guidestreamtvandroid.data.CountryCatalog
 import com.rork.guidestreamtvandroid.data.CountryCatalogEntry
+import com.rork.guidestreamtvandroid.data.models.BrowseCatalog
 import com.rork.guidestreamtvandroid.data.models.Platform
 import com.rork.guidestreamtvandroid.data.models.SourceKind
 import com.rork.guidestreamtvandroid.data.models.StreamingCatalog
@@ -404,7 +405,7 @@ class HomeViewModel : ViewModel() {
                 region = country.regionCode,
                 originalLanguage = country.effectiveOriginalLanguage(provider),
                 voteCountGte = country.voteFloor(provider),
-                withoutKeywords = "198385",
+                withoutKeywords = BrowseCatalog.ADULT_KEYWORD_IDS,
             )
         } catch (cancelled: CancellationException) {
             throw cancelled

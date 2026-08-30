@@ -46,6 +46,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.rork.guidestreamtvandroid.data.CountryCatalog
+import com.rork.guidestreamtvandroid.data.models.BrowseCatalog
 import com.rork.guidestreamtvandroid.data.models.TMDBResult
 import com.rork.guidestreamtvandroid.data.remote.TMDBService
 import com.rork.guidestreamtvandroid.data.repository.WatchIntentLogger
@@ -104,7 +105,7 @@ fun AroundTheWorldScreen(
                 region = country.regionCode,
                 originalLanguage = country.effectiveOriginalLanguage(provider),
                 voteCountGte = country.voteFloor(provider),
-                withoutKeywords = "198385",
+                withoutKeywords = BrowseCatalog.ADULT_KEYWORD_IDS,
             )
         } catch (cancelled: CancellationException) {
             throw cancelled

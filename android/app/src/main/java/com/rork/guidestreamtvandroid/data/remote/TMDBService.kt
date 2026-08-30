@@ -2,6 +2,7 @@ package com.rork.guidestreamtvandroid.data.remote
 
 import com.rork.guidestreamtvandroid.AppConfig
 import com.rork.guidestreamtvandroid.data.DeviceLocale
+import com.rork.guidestreamtvandroid.data.models.BrowseCatalog
 import com.rork.guidestreamtvandroid.data.models.BrowseFilters
 import com.rork.guidestreamtvandroid.data.models.BrowseMediaType
 import com.rork.guidestreamtvandroid.data.models.BrowsePage
@@ -120,7 +121,11 @@ class TMDBService {
      *  so anime is discovered as popular TV with genre 16 restricted to
      *  Japanese original-language titles. */
     suspend fun getDiscoverAnime(): List<TMDBResult> {
-        return fetchList("$base/discover/tv?api_key=$apiKey&language=${DeviceLocale.tmdbLanguage}&sort_by=popularity.desc&with_genres=16&with_original_language=ja&page=1", "tv")
+        // The same content-safety pair the Anime browse genre applies, so the
+        // home rail and the browse grid cannot disagree about what anime is.
+        val safety = "&vote_count.gte=${BrowseCatalog.ANIME_VOTE_FLOOR}" +
+            "&without_keywords=${BrowseCatalog.ADULT_KEYWORD_IDS}"
+        return fetchList("$base/discover/tv?api_key=$apiKey&language=${DeviceLocale.tmdbLanguage}&sort_by=popularity.desc&with_genres=16&with_original_language=ja&page=1$safety", "tv")
     }
 
     /** Onboarding show-picker: popular TV series on a specific streaming
@@ -592,10 +597,17 @@ class TMDBService {
         }
 
         f.minRating?.let { url.append("&vote_average.gte=$it") }
-        // A vote floor whenever rating is filtered on or sorted by, or a 10.0
-        // from three votes leads the grid.
-        if (f.minRating != null || f.sort.needsVoteFloor) {
-            url.append("&vote_count.gte=50")
+        // Two reasons for a vote floor, and the higher wins so neither can
+        // weaken the other: 50 whenever rating is filtered on or sorted by, or
+        // a 10.0 from three votes leads the grid; and whatever the selected
+        // genre demands, which for Anime is content safety rather than taste.
+        val sortFloor = if (f.minRating != null || f.sort.needsVoteFloor) 50 else null
+        val genreFloor = f.selectedGenres.mapNotNull { it.voteFloor }.maxOrNull()
+        listOfNotNull(sortFloor, genreFloor).maxOrNull()?.let {
+            url.append("&vote_count.gte=$it")
+        }
+        f.selectedGenres.firstNotNullOfOrNull { it.excludedKeywordIds }?.let {
+            url.append("&without_keywords=$it")
         }
 
         return try {

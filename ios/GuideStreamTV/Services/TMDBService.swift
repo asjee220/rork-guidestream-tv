@@ -525,7 +525,11 @@ nonisolated struct TMDBService {
     /// Japanese animation and not western animation.
     func getDiscoverAnime() async throws -> [TMDBResult] {
         let locale = DeviceLocale.current()
-        let urlString = "\(base)/discover/tv?api_key=\(apiKey)&language=\(locale.tmdbLanguage)&sort_by=popularity.desc&with_genres=16&with_original_language=ja&page=1"
+        var urlString = "\(base)/discover/tv?api_key=\(apiKey)&language=\(locale.tmdbLanguage)&sort_by=popularity.desc&with_genres=16&with_original_language=ja&page=1"
+        // The same content-safety pair the Anime browse genre applies, so the
+        // home rail and the browse grid cannot disagree about what anime is.
+        urlString += "&vote_count.gte=\(BrowseCatalog.animeVoteFloor)"
+        urlString += "&without_keywords=\(BrowseCatalog.adultKeywordIds)"
         let data = try await get(urlString)
         let env = try JSONDecoder().decode(TMDBTrendingEnvelope.self, from: data)
         return env.results.map { stamp($0, mediaType: "tv") }
@@ -1030,10 +1034,17 @@ nonisolated struct TMDBService {
         if let rating = f.minRating {
             url += "&vote_average.gte=\(rating)"
         }
-        // A vote floor whenever rating is filtered on or sorted by, or a 10.0
-        // from three votes leads the grid.
-        if f.minRating != nil || f.sort.needsVoteFloor {
-            url += "&vote_count.gte=50"
+        // Two reasons for a vote floor, and the higher wins so neither can
+        // weaken the other: 50 whenever rating is filtered on or sorted by, or
+        // a 10.0 from three votes leads the grid; and whatever the selected
+        // genre demands, which for Anime is content safety rather than taste.
+        let sortFloor = (f.minRating != nil || f.sort.needsVoteFloor) ? 50 : nil
+        let genreFloor = f.selectedGenres.compactMap { $0.voteFloor }.max()
+        if let floor = [sortFloor, genreFloor].compactMap({ $0 }).max() {
+            url += "&vote_count.gte=\(floor)"
+        }
+        if let keywords = f.selectedGenres.compactMap({ $0.excludedKeywordIds }).first {
+            url += "&without_keywords=\(keywords)"
         }
 
         let data = try await get(url)

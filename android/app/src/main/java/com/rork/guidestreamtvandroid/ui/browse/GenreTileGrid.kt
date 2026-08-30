@@ -95,6 +95,12 @@ object BrowseArtworkStore {
 
     private val lock = Mutex()
 
+    /**
+     * How many backdrops each genre offers up for the assignment pass. One was
+     * not enough: a title that tops two genres claimed both tiles.
+     */
+    private const val CANDIDATE_DEPTH = 8
+
     suspend fun loadIfNeeded() {
         if (_backdrops.value.size >= BrowseCatalog.genres.size) return
         lock.withLock {
@@ -102,7 +108,7 @@ object BrowseArtworkStore {
             val pending = BrowseCatalog.genres.filter { current[it.id] == null }
             if (pending.isEmpty()) return
             val tmdb = TMDBService.get()
-            val fetched = coroutineScope {
+            val candidates: Map<String, List<String>> = coroutineScope {
                 pending.map { genre ->
                     async {
                         // No provider filter here: the tile should show the
@@ -110,13 +116,33 @@ object BrowseArtworkStore {
                         val page = tmdb.discoverBrowse(
                             BrowseFilters(genreIds = setOf(genre.id), onlyMyServices = false)
                         )
-                        genre.id to page.results.firstOrNull { it.backdropPath != null }?.backdropUrl
+                        genre.id to page.results
+                            .mapNotNull { it.backdropUrl }
+                            .take(CANDIDATE_DEPTH)
                     }
-                }
-                    .map { it.await() }
-                    .mapNotNull { (id, url) -> url?.let { id to it } }
+                }.map { it.await() }.toMap()
             }
-            _backdrops.value = current + fetched
+
+            // Assign in catalogue order rather than in completion order, so
+            // which tile gets first claim on a shared title does not depend on
+            // which network call happened to return first.
+            //
+            // Each tile takes its most popular backdrop that no earlier tile
+            // has taken. Reacher tops both Crime & Thriller and Action, and the
+            // two tiles used to show the identical image.
+            val used = current.values.toMutableSet()
+            val resolved = mutableMapOf<String, String>()
+            for (genre in BrowseCatalog.genres) {
+                val options = candidates[genre.id].orEmpty()
+                if (options.isEmpty()) continue
+                // If every candidate is already spoken for, take the first
+                // anyway: a repeated tile still reads better than an empty one.
+                val pick = options.firstOrNull { it !in used } ?: options[0]
+                used += pick
+                resolved[genre.id] = pick
+            }
+
+            _backdrops.value = current + resolved
         }
     }
 }
