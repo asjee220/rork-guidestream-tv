@@ -195,7 +195,26 @@ struct SponsoredSlotView: View {
         AdManager.shared.start()
         AdManager.shared.loadNativePool()
         if let ad = AdManager.shared.nextNativeAd() {
+            // GUI-67: decline a fill that carries no drawable creative rather
+            // than render a hollow chip. Dropping it leaves the slot on its
+            // Rakuten backfill (or collapsed) and lets a later pool tick claim
+            // a different ad.
+            guard Self.hasRenderableCreative(ad) else { return }
             currentNativeAd = ad
         }
+    }
+
+    /// True when the ad carries an icon or main media asset — the two things
+    /// the card can actually draw. Unknown object types are allowed through so
+    /// this can never suppress a slot on a platform where the cast fails.
+    private static func hasRenderableCreative(_ ad: AnyObject) -> Bool {
+        #if canImport(GoogleMobileAds) && !targetEnvironment(simulator)
+        guard let native = ad as? NativeAd else { return true }
+        if native.icon?.image != nil { return true }
+        let media = native.mediaContent
+        return media.hasVideoContent || media.mainImage != nil
+        #else
+        return true
+        #endif
     }
 }
