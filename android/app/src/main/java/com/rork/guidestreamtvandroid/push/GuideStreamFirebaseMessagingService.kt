@@ -56,18 +56,41 @@ class GuideStreamFirebaseMessagingService : FirebaseMessagingService() {
             ?: message.data["message"]
             ?: ""
         val deepLink = message.data["deep_link"] ?: message.data["url"]
-        showNotification(title, body, deepLink)
+        showNotification(title, body, deepLink, message.data)
     }
 
-    private fun showNotification(title: String, body: String, deepLink: String?) {
+    /**
+     * Builds the tray notification for a foreground push.
+     *
+     * The whole FCM `data` map is copied onto the intent as extras, matching
+     * exactly what the system tray delivers when the app is backgrounded. That
+     * way `MainActivity.handleNotificationIntent` sees the same shape on both
+     * paths and can prefer the richer fields — `game_id` in particular, which
+     * the sports payload carries even though its `deep_link` is a bare
+     * `guidestream://sports` with no id.
+     */
+    private fun showNotification(
+        title: String,
+        body: String,
+        deepLink: String?,
+        payload: Map<String, String>,
+    ) {
         ensureChannel(this)
+        // `payload`, not `data` — inside Intent.apply the name `data` resolves
+        // to Intent's own Uri property, not the parameter.
         val intent = Intent(this, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
-            if (deepLink != null) data = android.net.Uri.parse(deepLink)
+            if (deepLink != null) setData(android.net.Uri.parse(deepLink))
+            for ((k, v) in payload) putExtra(k, v)
         }
+        // Unique request code + FLAG_UPDATE_CURRENT. Intent equality ignores
+        // extras, so a fixed request code of 0 made every notification collide:
+        // the second push handed back the first one's cached PendingIntent, and
+        // tapping it opened whatever the *earlier* notification pointed at.
+        val requestCode = System.currentTimeMillis().toInt()
         val pendingIntent = PendingIntent.getActivity(
-            this, 0, intent,
-            PendingIntent.FLAG_ONE_SHOT or PendingIntent.FLAG_IMMUTABLE,
+            this, requestCode, intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle(title)
@@ -79,7 +102,7 @@ class GuideStreamFirebaseMessagingService : FirebaseMessagingService() {
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .build()
         val manager = getSystemService(NotificationManager::class.java)
-        manager?.notify(System.currentTimeMillis().toInt(), notification)
+        manager?.notify(requestCode, notification)
 
         if (deepLink != null) {
             WatchIntentLogger.get().log(

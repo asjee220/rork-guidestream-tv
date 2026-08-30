@@ -9,6 +9,7 @@ import AuthenticationServices
 import CryptoKit
 import Supabase
 import Auth
+import GoogleSignIn
 
 @MainActor
 @Observable
@@ -515,12 +516,20 @@ final class AuthViewModel {
         do {
             let rows: [NotificationCategoryRow] = try await SupabaseManager.shared.client
                 .from("users")
-                .select("notify_new_episodes, notify_watchlist, notify_live, notify_sports, notify_movie_releases")
+                .select("notify_push, notify_new_episodes, notify_watchlist, notify_live, notify_sports, notify_movie_releases")
                 .eq("id", value: uid)
                 .limit(1)
                 .execute()
                 .value
             guard let prefs = rows.first else { return }
+            // `notify_push` is the user's *intent*, not the iOS grant. It has
+            // to be restored from the server because a delete/reinstall wipes
+            // the `gs.notifyPush` UserDefaults cache the toggle reads from,
+            // which silently reset the master toggle to off on reinstall.
+            if let v = prefs.notify_push {
+                notifyPushEnabled = v
+                UserDefaults.standard.set(v, forKey: "gs.notifyPush")
+            }
             isApplyingCategoryPrefs = true
             if let v = prefs.notify_new_episodes { notifyNewEpisodesEnabled = v; UserDefaults.standard.set(v, forKey: "gs.notifyNewEpisodes") }
             if let v = prefs.notify_watchlist { notifyWatchlistEnabled = v; UserDefaults.standard.set(v, forKey: "gs.notifyWatchlist") }
@@ -645,6 +654,29 @@ final class AuthViewModel {
         UserDefaults.standard.set(push, forKey: "gs.notifyPush")
         UserDefaults.standard.set(sms, forKey: "gs.notifySMS")
         DeviceSessionService.shared.upsert(reason: "notifications_changed")
+        syncPushPreference()
+    }
+
+    /// Mirrors the push/SMS intent into `users` for signed-in accounts so it
+    /// survives a delete/reinstall. Previously `notify_push` only reached the
+    /// server at onboarding completion, so any later change lived in
+    /// UserDefaults alone. Guests keep the local cache only.
+    private func syncPushPreference() {
+        guard let userId = currentUser?.id.uuidString else { return }
+        let push = notifyPushEnabled
+        let sms = notifySMSEnabled
+        Task {
+            do {
+                try await SupabaseManager.shared.client
+                    .from("users")
+                    .update(["notify_push": push, "notify_sms": sms])
+                    .eq("id", value: userId)
+                    .execute()
+                print("[Auth] notify_push \(push) saved for user \(userId)")
+            } catch {
+                print("[Auth ERROR] notify_push update failed: \(error.localizedDescription)")
+            }
+        }
     }
 
     func completeOnboarding() {
@@ -1063,16 +1095,76 @@ final class AuthViewModel {
         }
     }
 
-    // MARK: - Google Sign-In (Supabase OAuth via ASWebAuthenticationSession)
+    // MARK: - Google Sign-In
 
+    /// Errors specific to the native Google path. Both are recoverable: the
+    /// caller reports them and the user can retry.
+    private enum NativeGoogleError: LocalizedError {
+        case noPresenter
+        case missingIdentityToken
+
+        var errorDescription: String? {
+            switch self {
+            case .noPresenter: return "Couldn't present Google sign-in."
+            case .missingIdentityToken: return "Google didn't return an identity token."
+            }
+        }
+    }
+
+    /// iOS OAuth client id for the native Google sheet, read from Info.plist.
+    /// `nil` means the client hasn't been configured yet, and sign-in falls
+    /// back to the web flow.
+    private static var googleClientID: String? {
+        guard let raw = Bundle.main.object(forInfoDictionaryKey: "GIDClientID") as? String else { return nil }
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    /// Presents Google's native sign-in sheet and exchanges the resulting
+    /// identity token with Supabase — the same shape as the Apple path.
+    private func nativeGoogleSession(clientID: String) async throws -> Session {
+        guard let presenter = UIApplication.shared.topViewController() else {
+            throw NativeGoogleError.noPresenter
+        }
+        GIDSignIn.sharedInstance.configuration = GIDConfiguration(clientID: clientID)
+        let result = try await GIDSignIn.sharedInstance.signIn(withPresenting: presenter)
+        guard let idToken = result.user.idToken?.tokenString else {
+            throw NativeGoogleError.missingIdentityToken
+        }
+        return try await SupabaseManager.shared.client.auth.signInWithIdToken(
+            credentials: .init(
+                provider: .google,
+                idToken: idToken,
+                accessToken: result.user.accessToken.tokenString
+            )
+        )
+    }
+
+    /// Signs in with Google.
+    ///
+    /// Prefers the native Google sheet, which is branded with *this app's*
+    /// name. The web `signInWithOAuth` flow hands off to a browser whose
+    /// consent screen is rendered entirely from the Google Cloud OAuth config
+    /// belonging to the redirect URI — Supabase's — so users saw "Sign in to
+    /// qwxxkubkbanridcqsqjo.supabase.co" (GUI-40). Apple sign-in never had this
+    /// problem because it already exchanges an identity token directly.
+    ///
+    /// Falls back to the old web flow when Info.plist carries no `GIDClientID`,
+    /// so sign-in keeps working until the iOS OAuth client is configured.
     func signInWithGoogle() async {
         isAuthenticating = true
         defer { isAuthenticating = false }
         do {
-            let session = try await SupabaseManager.shared.client.auth.signInWithOAuth(
-                provider: .google,
-                redirectTo: URL(string: "guidestream://auth-callback")
-            )
+            let session: Session
+            if let clientID = Self.googleClientID {
+                session = try await nativeGoogleSession(clientID: clientID)
+            } else {
+                print("[Auth] no GIDClientID in Info.plist — using web OAuth for Google")
+                session = try await SupabaseManager.shared.client.auth.signInWithOAuth(
+                    provider: .google,
+                    redirectTo: URL(string: "guidestream://auth-callback")
+                )
+            }
             self.currentUser = session.user
             self.isGuest = false
             UserDefaults.standard.set(false, forKey: "gs.isGuest")
@@ -1289,6 +1381,7 @@ final class AuthViewModel {
 /// `users`. Every field is optional so older projects missing columns
 /// still decode cleanly.
 nonisolated struct NotificationCategoryRow: Decodable, Sendable {
+    let notify_push: Bool?
     let notify_new_episodes: Bool?
     let notify_watchlist: Bool?
     let notify_live: Bool?

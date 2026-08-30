@@ -56,6 +56,12 @@ struct TVSideMenu: View {
 
     @FocusState private var focusedItem: TVSideMenuItem?
 
+    /// Focus scope for the rail. The selected row declares itself the
+    /// scope's default focus, so focus arriving from the content lands on
+    /// the row the user is currently on rather than the topmost one.
+    @Namespace private var menuNamespace
+    @Environment(\.resetFocus) private var resetFocus
+
     /// Collapsed rail width — icon-only, narrow, with the brand icon at
     /// the top. Mirrors the closed-state mockup.
     private let closedWidth: CGFloat = 72
@@ -108,36 +114,28 @@ struct TVSideMenu: View {
         .padding(.leading, leadingInset)
         .padding(.vertical, verticalInset)
         .focusSection()
+        .focusScope(menuNamespace)
         .animation(.easeOut(duration: 0.25), value: isOpen)
-        .onMoveCommand { direction in
-            // A right move from inside the menu closes it and hands focus
-            // back to the content. (Natural focus moves into the content
-            // also close it via the focusedItem change below.)
-            if direction == .right, isOpen {
-                close()
-            }
-        }
         .onChange(of: isOpen) { _, open in
-            guard open else { return }
-            // Opening hands focus to the item matching the current
-            // selection. The buttons only become focusable in this same
-            // update, so re-assert after a beat if the first attempt
-            // didn't land.
+            // The hero raises isOpen without focus moving, because it
+            // consumes its own left/right move commands to step the carousel
+            // and the focus engine never sees them there. Pull focus in for
+            // that case only. Unlike before, the rows are mounted in both
+            // states, so this assignment is not racing their creation.
+            guard open, focusedItem == nil else { return }
+            resetFocus(in: menuNamespace)
             focusedItem = selection
-            Task { @MainActor in
-                try? await Task.sleep(for: .milliseconds(150))
-                if isOpen && focusedItem == nil {
-                    focusedItem = selection
-                }
-            }
         }
         .onChange(of: focusedItem) { _, focused in
-            // Closes when a move hands focus back to the content without
-            // a selection. This never OPENS the menu — focus arriving in
-            // the rail is never what expands it.
-            if focused == nil && isOpen {
-                close()
-            }
+            // The rail is a real focus section, so the focus engine moves
+            // into it from the leading-most item of any row and back out to
+            // the right — exactly the Paramount+ behaviour. Expansion simply
+            // follows focus; nothing intercepts move commands.
+            //
+            // Launch focus cannot land here: TVMainView marks the content as
+            // prefersDefaultFocus in the root scope, so tvOS picks the
+            // content, not the rail, on first appearance.
+            isOpen = (focused != nil)
         }
     }
 
@@ -169,14 +167,8 @@ struct TVSideMenu: View {
     /// While collapsed the rows are plain views — the menu contains no
     /// focusable views, so tvOS can neither assign it initial focus nor
     /// land focus in it by accident. Only the open state mounts buttons.
-    @ViewBuilder
     private func menuRow(for item: TVSideMenuItem) -> some View {
-        if isOpen {
-            menuButton(for: item)
-        } else {
-            rowContent(for: item, isFocused: false)
-                .padding(.vertical, 6)
-        }
+        menuButton(for: item)
     }
 
     private func menuButton(for item: TVSideMenuItem) -> some View {
@@ -188,15 +180,23 @@ struct TVSideMenu: View {
         }
         .buttonStyle(TVMenuButtonStyle())
         .focused($focusedItem, equals: item)
+        .prefersDefaultFocus(item == selection, in: menuNamespace)
         .focusEffectDisabled()
     }
 
     /// Shared row layout: the orange selection bar sits flush at the
     /// panel's leading edge, and the icon is centered in the collapsed
-    /// rail. When opened, the label appears to the right. Selected items
-    /// use white icon/text; unselected items use the muted secondary
-    /// color. The design mockups show the orange bar itself as the only
-    /// selection indicator, so no background rectangle is drawn.
+    /// rail. When opened, the label appears to the right.
+    ///
+    /// Four treatments, and the two cues are independent so they never
+    /// read as the same state:
+    ///   selected + focused  — orange bar, white icon/label, focus plate
+    ///   selected, unfocused — orange bar, white icon/label, no plate
+    ///   focused, unselected — no bar, white icon/label, focus plate
+    ///   resting             — no bar, muted icon/label, no plate
+    /// The bar tracks `selection` only. The plate tracks focus only. White
+    /// vs. 65%-white alone is not readable at a 10-foot viewing distance,
+    /// which is why focus also gets the plate.
     private func rowContent(for item: TVSideMenuItem, isFocused: Bool = false) -> some View {
         let isSelected = selection == item
         let isActive = isSelected || isFocused
@@ -204,18 +204,25 @@ struct TVSideMenu: View {
             Capsule()
                 .fill(isSelected ? TVTheme.orange : Color.clear)
                 .frame(width: barWidth, height: barHeight)
-            Image(systemName: item.icon)
-                .font(.system(size: iconSize, weight: .medium))
-                .foregroundStyle(isActive ? TVTheme.textPrimary : TVTheme.textSecondary)
-                .frame(width: iconFrame, height: iconFrame)
-                .padding(.leading, isOpen ? openIconLeading : closedIconLeading)
-            if isOpen {
-                Text(item.label)
-                    .font(.system(size: 24, weight: .semibold))
+            HStack(spacing: 0) {
+                Image(systemName: item.icon)
+                    .font(.system(size: iconSize, weight: .medium))
                     .foregroundStyle(isActive ? TVTheme.textPrimary : TVTheme.textSecondary)
-                    .lineLimit(1)
-                    .padding(.leading, labelLeading)
+                    .frame(width: iconFrame, height: iconFrame)
+                if isOpen {
+                    Text(item.label)
+                        .font(.system(size: 24, weight: .semibold))
+                        .foregroundStyle(isActive ? TVTheme.textPrimary : TVTheme.textSecondary)
+                        .lineLimit(1)
+                        .padding(.leading, labelLeading)
+                }
             }
+            .padding(.leading, isOpen ? openIconLeading : closedIconLeading)
+            .padding(.trailing, isOpen ? 24 : 0)
+            .background(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(isFocused ? Color.white.opacity(0.16) : Color.clear)
+            )
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .scaleEffect(isFocused ? 1.06 : 1.0)
@@ -224,18 +231,16 @@ struct TVSideMenu: View {
 
     // MARK: - State
 
-    private func close() {
-        isOpen = false
-        focusedItem = nil
-    }
-
     private func select(_ item: TVSideMenuItem) {
         if selection != item {
             selection = item
         }
-        // Collapse immediately and hand focus to the selected screen. The
-        // already-selected screen stays mounted and untouched.
-        close()
+        // TVMainView resets focus to the content on any selection change,
+        // which collapses the rail via the focus change above. Selecting the
+        // already-selected item still needs an explicit collapse, since
+        // `selection` does not change and no reset fires.
+        isOpen = false
+        focusedItem = nil
     }
 }
 

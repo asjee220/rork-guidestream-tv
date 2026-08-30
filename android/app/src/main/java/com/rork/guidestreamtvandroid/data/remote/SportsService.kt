@@ -2,6 +2,7 @@ package com.rork.guidestreamtvandroid.data.remote
 
 import android.util.Log
 import com.rork.guidestreamtvandroid.data.models.SportsGame
+import io.github.jan.supabase.postgrest.postgrest
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.plugins.DefaultRequest
@@ -119,6 +120,32 @@ class SportsService {
         val slug: String? = null,
     )
 
+    /**
+     * Row decoder for `public.sports_games`, written by the
+     * `sports_poll_and_notify` edge function. Every column but `game_id` is
+     * optional so a partially-populated row still decodes.
+     */
+    @Serializable
+    private data class SportsGameRow(
+        @SerialName("game_id") val gameId: String,
+        val league: String? = null,
+        val sport: String? = null,
+        @SerialName("home_uid") val homeUid: String? = null,
+        @SerialName("home_id") val homeId: String? = null,
+        @SerialName("home_abbr") val homeAbbr: String? = null,
+        @SerialName("home_name") val homeName: String? = null,
+        @SerialName("away_uid") val awayUid: String? = null,
+        @SerialName("away_id") val awayId: String? = null,
+        @SerialName("away_abbr") val awayAbbr: String? = null,
+        @SerialName("away_name") val awayName: String? = null,
+        val state: String? = null,
+        @SerialName("status_detail") val statusDetail: String? = null,
+        @SerialName("home_score") val homeScore: Int? = null,
+        @SerialName("away_score") val awayScore: Int? = null,
+        @SerialName("start_at") val startAt: String? = null,
+        val broadcast: String? = null,
+    )
+
     /** Fetch all games across all sports, sorted live-first then by start time. */
     suspend fun fetchAll(): List<SportsGame> = withContext(Dispatchers.IO) {
         coroutineScope {
@@ -146,6 +173,90 @@ class SportsService {
                 .flatten()
                 .firstOrNull { it.id == game.id }
         }
+    }
+
+    /**
+     * Resolves a single game by its ESPN id from Supabase's `sports_games`
+     * table, which the `sports_poll_and_notify` edge function keeps current.
+     *
+     * [fetchAll] reads ESPN's live scoreboards directly, so it only ever holds
+     * today's slate — a "Final" push tapped later, or any tap made while ESPN
+     * is refusing the request, finds nothing there and the notification opens
+     * no detail sheet (GUI-46). `sports_games` always holds the row the push
+     * was generated from, so it is the authoritative lookup for a tap. Returns
+     * null when the id is genuinely unknown.
+     */
+    suspend fun fetchGame(gameId: String): SportsGame? = withContext(Dispatchers.IO) {
+        val trimmed = gameId.trim()
+        if (trimmed.isEmpty()) return@withContext null
+        try {
+            SupabaseManager.client.postgrest
+                .from("sports_games")
+                .select { filter { eq("game_id", trimmed) }; limit(1) }
+                .decodeList<SportsGameRow>()
+                .firstOrNull()
+                ?.let(::mapRow)
+        } catch (e: Exception) {
+            Log.w("SportsService", "fetchGame($trimmed) failed", e)
+            null
+        }
+    }
+
+    /**
+     * Builds a [SportsGame] from a `sports_games` row. The table stores state
+     * as "pre" | "live" | "final" while the model uses ESPN's "pre" | "live" |
+     * "post", so "final" is normalized here.
+     */
+    private fun mapRow(r: SportsGameRow): SportsGame {
+        val state = when (r.state) {
+            "live" -> "live"
+            "final", "post" -> "post"
+            else -> "pre"
+        }
+        val start = parseDate(r.startAt)
+        val statusDetail = r.statusDetail?.takeIf { it.isNotBlank() }
+            ?: when (state) {
+                "post" -> "Final"
+                else -> start?.let { formatGameTime(it) } ?: ""
+            }
+        val homeWins = (r.homeScore ?: 0) > (r.awayScore ?: 0)
+        val sport = r.sport.orEmpty()
+        return SportsGame(
+            id = r.gameId,
+            sport = sport,
+            leagueShort = sport,
+            state = state,
+            statusDetail = statusDetail,
+            home = SportsGame.TeamSummary(
+                name = r.homeName ?: r.homeAbbr.orEmpty(),
+                abbreviation = r.homeAbbr.orEmpty(),
+                logoUrl = null,
+                record = null,
+                uid = r.homeUid ?: r.homeId,
+                displayName = r.homeName ?: r.homeAbbr.orEmpty(),
+                shortName = r.homeName ?: r.homeAbbr.orEmpty(),
+                score = r.homeScore?.toString() ?: "",
+                primaryHex = null,
+                isWinner = state == "post" && homeWins,
+            ),
+            away = SportsGame.TeamSummary(
+                name = r.awayName ?: r.awayAbbr.orEmpty(),
+                abbreviation = r.awayAbbr.orEmpty(),
+                logoUrl = null,
+                record = null,
+                uid = r.awayUid ?: r.awayId,
+                displayName = r.awayName ?: r.awayAbbr.orEmpty(),
+                shortName = r.awayName ?: r.awayAbbr.orEmpty(),
+                score = r.awayScore?.toString() ?: "",
+                primaryHex = null,
+                isWinner = state == "post" && !homeWins,
+            ),
+            startTime = r.startAt,
+            startDate = start?.toEpochMilli(),
+            broadcasts = listOfNotNull(r.broadcast?.takeIf { it.isNotBlank() }),
+            homeScore = r.homeScore,
+            awayScore = r.awayScore,
+        )
     }
 
     private suspend fun fetch(endpoint: Endpoint): List<SportsGame> {

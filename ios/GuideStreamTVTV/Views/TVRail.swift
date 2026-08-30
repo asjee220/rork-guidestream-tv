@@ -62,6 +62,15 @@ struct TVRail<Content: View>: View {
                 }
             }
             .padding(.horizontal, 80)
+            // The See all capsule sits at the trailing end of this row while
+            // the cards below start at the leading edge, so a plain vertical
+            // move from a card never overlaps it and can never reach it. On
+            // the first rail the hero makes it worse: its focusable frame
+            // still covers this row, because the rail is pulled up over the
+            // hero art with a negative bottom padding. Making the header its
+            // own focus section lets a move up enter the section and pick
+            // See all regardless of horizontal alignment.
+            .focusSection()
 
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 32) {
@@ -70,6 +79,12 @@ struct TVRail<Content: View>: View {
                 .padding(.horizontal, 80)
                 .padding(.vertical, 30)
             }
+            // Cards are their own section too. With both halves sectioned,
+            // an up move out of the cards resolves section-to-section and
+            // lands in the header above, instead of being decided purely on
+            // frame overlap — which handed it to whatever the hero happened
+            // to have sitting directly above the focused card.
+            .focusSection()
         }
     }
 

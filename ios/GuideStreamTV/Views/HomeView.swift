@@ -434,9 +434,21 @@ struct HomeView: View {
     /// Recommended creators/podcasts based on followed creators' categories.
     /// Populated asynchronously; empty when the user has no followed creators.
     @State private var recommendedCreators: [RecommendedCreator] = []
+    /// Drives the Home re-auth banner (GUI-41). Kept current by
+    /// `pushReauthObserver()` applied to the scroll view below.
+    @State private var pushReauthPrompt = PushReauthPrompt.shared
     /// True when the user has at least one non-TMDB (creator/podcast) saved.
     private var hasFollowedCreators: Bool {
         streams.userStreams.contains { SourceKind.from(titleId: $0.titleId).isNonTMDB }
+    }
+
+    /// Non-TMDB title_ids the recommender scores against. Shared by the rail's
+    /// own fetch and the "See all" screen's deeper one so both ask the same
+    /// question.
+    private var followedCreatorIds: [String] {
+        streams.userStreams
+            .filter { SourceKind.from(titleId: $0.titleId).isNonTMDB }
+            .map { $0.titleId }
     }
 
     /// Compact inline sponsored slot inserted between home feed rows. Hidden
@@ -487,6 +499,18 @@ struct HomeView: View {
                 ScrollViewReader { scrollProxy in
                 ScrollView(showsIndicators: false) {
                     VStack(spacing: 20) {
+                        // GUI-41: the "notifications got turned off" message
+                        // used to live only on Profile → Notifications, which
+                        // nobody visits after a reinstall — they would just
+                        // stop getting alerts with no way to know why. Shows
+                        // only when the account wants push and iOS has no
+                        // grant; `pushReauthObserver()` on the ScrollView
+                        // keeps that current.
+                        if pushReauthPrompt.isVisible {
+                            PushReauthBanner()
+                                .padding(.horizontal, homeWidthClass.homeSearchHorizontalPadding)
+                        }
+
                         // Search bar tap target — opens SearchView
                         Button {
                             showSearch = true
@@ -606,7 +630,11 @@ struct HomeView: View {
                             HomeShimmerSection(title: "Today's Pick")
                                 .padding(.horizontal, homeWidthClass.homeHorizontalPadding)
                         } else if let pick = todaysPick {
-                            TodaysPickSection(pick: pick, isSubscribed: isSubscribedToService(pick.sourceName)) {
+                            TodaysPickSection(
+                                pick: pick,
+                                isSubscribed: isSubscribedToService(pick.sourceName),
+                                widthClass: homeWidthClass
+                            ) {
                                 WatchIntentLogger.shared.log(
                                     eventType: .cardTapped,
                                     titleId: String(pick.tmdbId),
@@ -793,6 +821,13 @@ struct HomeView: View {
                             } else {
                                 CreatorsForYouSection(
                                     creators: recommendedCreators,
+                                    onSeeAll: {
+                                        WatchIntentLogger.shared.log(
+                                            eventType: .cardTapped,
+                                            metadata: ["section": "creators_for_you_see_all"]
+                                        )
+                                        path.append(.creatorsForYou)
+                                    },
                                     onOpen: { creator in
                                         WatchIntentLogger.shared.log(
                                             eventType: .cardTapped,
@@ -1213,6 +1248,9 @@ struct HomeView: View {
                         Task { await streams.refreshIfStale() }
                     }
                 }
+                // GUI-41: keeps PushReauthPrompt.shared current for the
+                // banner at the top of this scroll view.
+                .pushReauthObserver()
                 .onChange(of: coachMark.scrollRequest) { _, req in
                     guard let id = req else { return }
                     withAnimation(.easeInOut(duration: 0.3)) {
@@ -1268,6 +1306,23 @@ struct HomeView: View {
                         sectionTitle: "Top Picks for You",
                         tag: "TOP PICK",
                         onSelect: { show in detailSubject = .show(show) }
+                    )
+                case .creatorsForYou:
+                    CreatorsForYouListView(
+                        initialCreators: recommendedCreators,
+                        followedIds: followedCreatorIds,
+                        onSelect: { creator in
+                            WatchIntentLogger.shared.log(
+                                eventType: .cardTapped,
+                                titleId: creator.titleId,
+                                platformId: creator.sourceType,
+                                metadata: ["section": "creators_for_you_all"]
+                            )
+                            creatorDetailTarget = CreatorDetailTarget(
+                                titleId: creator.titleId,
+                                initialEpisode: nil
+                            )
+                        }
                     )
                 case .everyonesWatching:
                     BingeWorthyListView(
@@ -1604,9 +1659,7 @@ struct HomeView: View {
     /// (category-overlap → 72–98% match range). Only fetches when the user has
     /// followed at least one creator/podcast; returns empty otherwise.
     private func loadRecommendedCreators() async {
-        let followedIds = streams.userStreams
-            .filter { SourceKind.from(titleId: $0.titleId).isNonTMDB }
-            .map { $0.titleId }
+        let followedIds = followedCreatorIds
         print("[HomeView] loadRecommendedCreators: followedIds=\(followedIds)")
         guard !followedIds.isEmpty else {
             print("[HomeView] loadRecommendedCreators: no followed non-TMDB ids, bailing")
@@ -2982,7 +3035,10 @@ private struct HomeHeroCarouselShimmer: View {
                 ForEach(0..<3, id: \.self) { i in
                     RoundedRectangle(cornerRadius: 18, style: .continuous)
                         .fill(Color.white.opacity(0.05))
-                        .frame(width: widthClass == .expanded ? 340 : 280, height: 250)
+                        .frame(
+                            width: widthClass == .expanded ? 340 : 280,
+                            height: widthClass.homeHeroHeight
+                        )
                         .overlay(
                             RoundedRectangle(cornerRadius: 18, style: .continuous)
                                 .fill(
@@ -3006,7 +3062,7 @@ private struct HomeHeroCarouselShimmer: View {
             .padding(.horizontal, widthClass == .expanded ? 0 : 12)
         }
         .disabled(true)
-        .frame(height: 250)
+        .frame(height: widthClass.homeHeroHeight)
     }
 }
 
@@ -3019,7 +3075,14 @@ private struct HomeHeroCarouselShimmer: View {
 private struct TodaysPickSection: View {
     let pick: StreamingRelease
     let isSubscribed: Bool
+    /// Drives the backdrop height. Defaulted so nothing else has to change.
+    var widthClass: GSWidthClass = .compact
     let onTap: () -> Void
+
+    /// Backdrop height for the current width. See
+    /// `GSWidthClass.homeTodaysPickBackdropHeight` — a fixed 200 here made the
+    /// card 6.8:1 on a 13-inch iPad and sliced the artwork through the middle.
+    private var backdropHeight: CGFloat { widthClass.homeTodaysPickBackdropHeight }
 
     /// 16:9 backdrop resolved client-side from TMDB (streaming_releases has no
     /// backdrop column). Until it arrives — or forever, if TMDB fails — the
@@ -3061,7 +3124,7 @@ private struct TodaysPickSection: View {
                             fallbackColors: HomeFallback.posterColors
                         )
                             .frame(maxWidth: .infinity)
-                            .frame(height: 200)
+                            .frame(height: backdropHeight)
                             .clipped()
                     } else {
                         RemoteImage(
@@ -3070,7 +3133,7 @@ private struct TodaysPickSection: View {
                             fallbackColors: HomeFallback.posterColors
                         )
                             .frame(maxWidth: .infinity)
-                            .frame(height: 200)
+                            .frame(height: backdropHeight)
                             .blur(radius: 20)
                             .opacity(0.55)
                             .clipped()
@@ -3080,7 +3143,7 @@ private struct TodaysPickSection: View {
                             fallbackColors: HomeFallback.posterColors
                         )
                             .frame(maxWidth: .infinity)
-                            .frame(height: 200)
+                            .frame(height: backdropHeight)
                             .clipped()
                     }
                     LinearGradient(
@@ -3089,7 +3152,7 @@ private struct TodaysPickSection: View {
                         endPoint: .bottom
                     )
                 }
-                .frame(height: 200)
+                .frame(height: backdropHeight)
                 .clipped()
 
                 // Title + meta + badge + CTA
@@ -3431,6 +3494,7 @@ private struct TopPicksSection: View {
 
 private struct CreatorsForYouSection: View {
     let creators: [RecommendedCreator]
+    var onSeeAll: (() -> Void)? = nil
     let onOpen: (RecommendedCreator) -> Void
 
     /// Mustard/goldenrod accent for the section header and match chips.
@@ -3440,7 +3504,7 @@ private struct CreatorsForYouSection: View {
         SectionGlassCard(
             title: "Creators/Podcasts for You",
             accentColor: Self.mustardAccent,
-            onSeeAll: nil
+            onSeeAll: onSeeAll
         ) {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 10) {

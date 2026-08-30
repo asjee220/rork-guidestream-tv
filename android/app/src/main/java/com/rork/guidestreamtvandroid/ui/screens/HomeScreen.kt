@@ -93,6 +93,7 @@ import com.rork.guidestreamtvandroid.data.repository.AuthViewModel
 import com.rork.guidestreamtvandroid.data.repository.StreamsViewModel
 import com.rork.guidestreamtvandroid.data.repository.WatchIntentLogger
 import com.rork.guidestreamtvandroid.ui.components.GsTopBar
+import com.rork.guidestreamtvandroid.ui.components.PushReauthBanner
 import com.rork.guidestreamtvandroid.ui.components.PosterCard
 import com.rork.guidestreamtvandroid.ui.components.RemoteImage
 import com.rork.guidestreamtvandroid.ui.components.ServicesBottomSheet
@@ -153,6 +154,9 @@ fun HomeScreen(
     onSeeAllPopular: (serviceId: String, providerId: Int) -> Unit = { _, _ -> },
     onOpenAroundTheWorld: (regionCode: String) -> Unit = {},
     onSeeAllList: (HomeListTarget) -> Unit = {},
+    /** Creators/Podcasts for You See all — the rail's filtered recommendations
+     *  and the followed non-TMDB ids the recommender scores against. */
+    onSeeAllCreators: (creators: List<RecommendedCreator>, followedIds: List<String>) -> Unit = { _, _ -> },
     onOpenWatchList: () -> Unit = {},
     onOpenWidgetSetup: () -> Unit = {},
     modifier: Modifier = Modifier,
@@ -291,6 +295,18 @@ fun HomeScreen(
     ) {
         // Reserve space for the pinned PageBar (status bar + 56dp bar height).
         Spacer(Modifier.statusBarsPadding().height(56.dp))
+
+        // GUI-41: the "notifications got turned off" message used to live only
+        // on Profile → Notifications, which nobody visits after a reinstall —
+        // they would just stop getting alerts with no way to know why. Renders
+        // nothing unless the account wants push and POST_NOTIFICATIONS has
+        // never been asked for on this install.
+        PushReauthBanner(
+            modifier = Modifier.padding(
+                horizontal = widthClass.homeHorizontalPadding,
+                vertical = 8.dp,
+            ),
+        )
 
         // Search bar
         SearchBar(
@@ -545,6 +561,7 @@ fun HomeScreen(
                 } else {
                     CreatorsForYouSection(
                         creators = creators,
+                        onSeeAll = { onSeeAllCreators(creators, followedCreatorIds.toList()) },
                         onOpen = { creator ->
                             WatchIntentLogger.get().log(
                                 WatchIntentLogger.IntentEventType.CARD_TAPPED,
@@ -2081,15 +2098,32 @@ private fun EmptyStateRow(title: String, message: String, onSeeAll: (() -> Unit)
 private fun CreatorsForYouSection(
     creators: List<RecommendedCreator>,
     onOpen: (RecommendedCreator) -> Unit,
+    onSeeAll: (() -> Unit)? = null,
 ) {
     if (creators.isEmpty()) return
     Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
-        Text(
-            text = "Creators/Podcasts for You",
-            fontSize = 18.sp,
-            fontWeight = FontWeight.Bold,
-            color = TextPrimary,
-        )
+        Row(verticalAlignment = Alignment.Bottom) {
+            Text(
+                text = "Creators/Podcasts for You",
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold,
+                color = TextPrimary,
+            )
+            if (onSeeAll != null) {
+                Spacer(Modifier.weight(1f))
+                Text(
+                    text = "See all",
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = BrandBlue,
+                    modifier = Modifier
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                        ) { onSeeAll() },
+                )
+            }
+        }
         Spacer(Modifier.height(10.dp))
         LazyRow(
             horizontalArrangement = Arrangement.spacedBy(14.dp),

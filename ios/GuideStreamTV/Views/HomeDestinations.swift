@@ -14,6 +14,7 @@ enum HomeRoute: Hashable {
     case continueWatching
     case topPicks
     case everyonesWatching
+    case creatorsForYou
     case leavingSoon
     case popularOnServiceCategories(serviceId: String, providerId: Int)
     case nowAndNext(serviceId: String)
@@ -932,6 +933,16 @@ struct EpisodeDetailSheet: View {
                 onBack: { showFullDetail = false }
             )
         }
+        // Opening the detail sheet is the user saying "I've seen this", so the
+        // NEW EPISODE / NEW UPLOAD chip on the watch-list card clears here.
+        // Only the deep-link and creator-detail paths cleared it before, so a
+        // title the user opened — or cast to a TV from this sheet — kept its
+        // chip until the seven-day window lapsed.
+        .task(id: "seen-\(socialTitleKey)") {
+            for id in watchlistSeenCandidateIds {
+                await streams.markWatchlistSeenIfSaved(titleId: id)
+            }
+        }
         .task(id: socialTitleKey) {
             await social.refreshCounts(titleId: socialTitleKey)
         }
@@ -959,6 +970,22 @@ struct EpisodeDetailSheet: View {
     private var socialTitleKey: String {
         if let tmdbId { return String(tmdbId) }
         return WatchIntentLogger.titleSlug(title)
+    }
+
+    /// Every `title_id` this subject could be saved under, in the watch list's
+    /// own keying: the prefixed non-TMDB id for creator content, the TMDB id as
+    /// a string, and the title slug deep links use. Mirrors how
+    /// `StreamingDeepLinker` clears the chip against both an id and a slug —
+    /// `markWatchlistSeenIfSaved` no-ops on any that isn't a saved row.
+    private var watchlistSeenCandidateIds: [String] {
+        var ids: [String] = []
+        if case .episode(let e) = subject, let tid = e.titleId, !tid.isEmpty {
+            ids.append(tid)
+        }
+        if let tmdbId { ids.append(String(tmdbId)) }
+        let slug = WatchIntentLogger.titleSlug(title)
+        if !slug.isEmpty { ids.append(slug) }
+        return ids
     }
 
     // MARK: - Source resolution

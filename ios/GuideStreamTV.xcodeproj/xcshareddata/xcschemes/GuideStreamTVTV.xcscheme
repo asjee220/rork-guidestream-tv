@@ -17,6 +17,7 @@
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "XX71A30A2228E328830383XX"
                BuildableName = "GuideStreamTVTV.app"
+               BlueprintName = "GuideStreamTVTV"
                ReferencedContainer = "container:GuideStreamTV.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
@@ -46,6 +47,7 @@
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "XX71A30A2228E328830383XX"
             BuildableName = "GuideStreamTVTV.app"
+            BlueprintName = "GuideStreamTVTV"
             ReferencedContainer = "container:GuideStreamTV.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
@@ -62,6 +64,7 @@
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "XX71A30A2228E328830383XX"
             BuildableName = "GuideStreamTVTV.app"
+            BlueprintName = "GuideStreamTVTV"
             ReferencedContainer = "container:GuideStreamTV.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>

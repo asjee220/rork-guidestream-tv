@@ -743,7 +743,8 @@ struct CastToTVSheet: View {
                     deviceName: device.name,
                     deviceKind: device.kind,
                     host: resolved.host,
-                    port: resolved.port
+                    port: resolved.port,
+                    titleId: tmdbId.map(String.init)
                 )
                 Task { @MainActor in
                     try? await Task.sleep(for: .milliseconds(1400))
@@ -788,7 +789,8 @@ struct CastToTVSheet: View {
                         deviceName: device.name,
                         deviceKind: device.kind,
                         host: host,
-                        port: device.port
+                        port: device.port,
+                        titleId: tmdbId.map(String.init)
                     )
                 case .needsApproval:
                     samsungPairingDevice = device
@@ -838,7 +840,8 @@ struct CastToTVSheet: View {
                     deviceName: device.name,
                     deviceKind: device.kind,
                     host: device.host,
-                    port: device.port
+                    port: device.port,
+                    titleId: tmdbId.map(String.init)
                 )
                 Task { @MainActor in
                     try? await Task.sleep(for: .milliseconds(1400))

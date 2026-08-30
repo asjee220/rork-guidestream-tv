@@ -7,6 +7,7 @@
 
 import Foundation
 import SwiftUI
+import Supabase
 
 // MARK: - Public Models
 
@@ -171,6 +172,77 @@ final class SportsService {
             }
             return match
         }
+    }
+
+    /// Resolves a single game by its ESPN id from Supabase's `sports_games`
+    /// table, which `sports_poll_and_notify` keeps current.
+    ///
+    /// `fetchAll()` reads ESPN's live scoreboards directly, so it only ever
+    /// contains games on today's slate — a "Final" push tapped later, or any
+    /// tap made while ESPN is refusing the app's requests, finds nothing there
+    /// and the sports push silently opens no detail. `sports_games` always
+    /// holds the row the push was generated from, so this is the authoritative
+    /// lookup for a notification tap. Returns nil when the id is unknown.
+    func fetchGame(id gameId: String) async -> SportsGame? {
+        let trimmed = gameId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        do {
+            let rows: [SportsGameRow] = try await SupabaseManager.shared.client
+                .from("sports_games")
+                .select()
+                .eq("game_id", value: trimmed)
+                .limit(1)
+                .execute()
+                .value
+            return rows.first.map(Self.mapRow)
+        } catch {
+            print("[SportsService] fetchGame(\(trimmed)) failed: \(error.localizedDescription)")
+            return nil
+        }
+    }
+
+    /// Builds a `SportsGame` from a `sports_games` row. Scores are stored as
+    /// integers there and as display strings on the model, so nil becomes "".
+    private static func mapRow(_ r: SportsGameRow) -> SportsGame {
+        let state: GameState = {
+            switch r.state {
+            case "live": return .live
+            case "final": return .post
+            default: return .pre
+            }
+        }()
+        let homeScore = r.home_score.map(String.init) ?? ""
+        let awayScore = r.away_score.map(String.init) ?? ""
+        let homeWins = (r.home_score ?? 0) > (r.away_score ?? 0)
+        return SportsGame(
+            id: r.game_id,
+            sport: r.sport ?? "",
+            leagueShort: r.sport ?? "",
+            state: state,
+            statusDetail: r.status_detail ?? "",
+            startDate: r.start_at.flatMap(parseDate) ?? Date(),
+            home: GameTeam(
+                id: r.home_id,
+                uid: r.home_uid,
+                abbreviation: r.home_abbr ?? "",
+                displayName: r.home_name ?? "",
+                shortName: r.home_name ?? "",
+                score: homeScore,
+                primaryHex: nil,
+                isWinner: state == .post && homeWins
+            ),
+            away: GameTeam(
+                id: r.away_id,
+                uid: r.away_uid,
+                abbreviation: r.away_abbr ?? "",
+                displayName: r.away_name ?? "",
+                shortName: r.away_name ?? "",
+                score: awayScore,
+                primaryHex: nil,
+                isWinner: state == .post && !homeWins
+            ),
+            broadcasts: [r.broadcast].compactMap { $0 }.filter { !$0.isEmpty }
+        )
     }
 
     private func fetch(endpoint ep: Endpoint) async -> [SportsGame] {
@@ -344,4 +416,28 @@ nonisolated struct ESPNTeam: Decodable {
     let name: String?
     let color: String?
     let logo: String?
+}
+
+
+/// Row decoder for `public.sports_games`, written by the
+/// `sports_poll_and_notify` edge function. Every column but `game_id` is
+/// optional so a partially-populated row still decodes.
+nonisolated struct SportsGameRow: Decodable, Sendable {
+    let game_id: String
+    let league: String?
+    let sport: String?
+    let home_uid: String?
+    let home_id: String?
+    let home_abbr: String?
+    let home_name: String?
+    let away_uid: String?
+    let away_id: String?
+    let away_abbr: String?
+    let away_name: String?
+    let state: String?
+    let status_detail: String?
+    let home_score: Int?
+    let away_score: Int?
+    let start_at: String?
+    let broadcast: String?
 }

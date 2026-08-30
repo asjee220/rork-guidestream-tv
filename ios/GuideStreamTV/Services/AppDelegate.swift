@@ -6,6 +6,7 @@
 import UIKit
 import UserNotifications
 import Supabase
+import GoogleSignIn
 
 /// Runtime gate for landscape support.
 ///
@@ -85,7 +86,12 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         open url: URL,
         options: [UIApplication.OpenURLOptionsKey: Any] = [:]
     ) -> Bool {
-        guard url.scheme == "guidestream" else { return false }
+        // Google's native sign-in returns on the reversed-client-id scheme,
+        // not ours — hand those to GoogleSignIn before the guard below drops
+        // them.
+        guard url.scheme == "guidestream" else {
+            return GIDSignIn.sharedInstance.handle(url)
+        }
         Task {
             await AuthViewModel.shared.handleAuthCallback(url: url)
         }

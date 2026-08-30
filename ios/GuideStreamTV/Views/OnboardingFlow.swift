@@ -188,7 +188,14 @@ struct WelcomeOnboardingView: View {
                 Spacer()
             }
             .padding(.horizontal, 20)
-            .padding(.top, 8)
+            // `DriftingPosterWall` ignores the safe area, which expands this
+            // ZStack's layout region to the whole screen — so a plain
+            // `.padding(.top, 8)` measures from the physical top edge and the
+            // chip lands inside the status bar. iPhone hides this because the
+            // notch reserves a large inset either way; on iPad the entire top
+            // inset *is* the status bar, so the chip collides with the clock
+            // and battery. `safeAreaPadding` adds the 8pt on top of the inset.
+            .safeAreaPadding(.top, 8)
         }
     }
 

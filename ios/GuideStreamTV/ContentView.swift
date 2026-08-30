@@ -59,8 +59,11 @@ struct ContentView: View {
         // no fallback URL open).
         .onReceive(NotificationCenter.default.publisher(for: .guideStreamOpenSports)) { notification in
             guard let gameId = notification.userInfo?["gameId"] as? String, !gameId.isEmpty else { return }
-            router.selectedTab = .sports
-            resolveSportsRoute(gameId)
+            // AppDelegate writes the inbox *and* posts, so on the warm path the
+            // inbox is left holding this id. Clear it, or a later drain
+            // re-routes to a game the user already dealt with.
+            _ = PendingRouteInbox.shared.takeGameId()
+            router.showGameDetail(id: gameId)
         }
         .animation(.easeOut(duration: 0.3), value: auth.hasCompletedOnboarding)
         .animation(.easeOut(duration: 0.3), value: auth.isSignedIn)
@@ -264,22 +267,7 @@ struct ContentView: View {
             router.showTitle(route)
         }
         if let gameId = PendingRouteInbox.shared.takeGameId() {
-            router.selectedTab = .sports
-            resolveSportsRoute(gameId)
-        }
-    }
-
-    /// Resolves a sports game id against the live scoreboard and, when found,
-    /// buffers the game-detail route in `AppRouter`. An unresolvable id leaves
-    /// the user on the Sports tab with no crash and no fallback URL open.
-    /// Shared by the `.guideStreamOpenSports` `.onReceive` handler and the
-    /// cold-launch inbox drain so both entry points behave identically.
-    private func resolveSportsRoute(_ gameId: String) {
-        Task { @MainActor in
-            let games = await SportsService.shared.fetchAll()
-            if let game = games.first(where: { $0.id == gameId }) {
-                router.showGameDetail(game)
-            }
+            router.showGameDetail(id: gameId)
         }
     }
 

@@ -155,6 +155,12 @@ struct TVHeroCarousel: View {
         .onChange(of: heroRegionFocused) { wasFocused, isFocused in
             if wasFocused && !isFocused { heroFocusEverLeft = true }
         }
+        .onChange(of: ctaFocused) { wasFocused, isFocused in
+            if wasFocused && !isFocused { heroFocusEverLeft = true }
+        }
+        .onChange(of: heroRegionFocused) { wasFocused, isFocused in
+            if wasFocused && !isFocused { heroFocusEverLeft = true }
+        }
         .onChange(of: index) { _, _ in
             startDwell()
         }

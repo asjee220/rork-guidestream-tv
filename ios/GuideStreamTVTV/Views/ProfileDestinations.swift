@@ -868,10 +868,18 @@ enum DeviceModelMap {
 // MARK: - Notifications Settings
 
 struct NotificationsSettingsView: View {
+    @Environment(\.scenePhase) private var scenePhase
     @State private var auth = AuthViewModel.shared
-    @State private var pushOn: Bool = AuthViewModel.shared.notifyPushEnabled
+    /// Master toggle state. Derived, never stored: push is only actually on
+    /// when the user wants it (`auth.notifyPushEnabled`) *and* tvOS has granted
+    /// authorization. Reconciled by `refreshSystemStatus()`.
+    @State private var pushOn: Bool = false
     @State private var smsOn: Bool = AuthViewModel.shared.notifySMSEnabled
     @State private var systemDenied: Bool = false
+    /// Authorization is `.notDetermined` while the account still wants push —
+    /// the delete/reinstall case. The grant is revoked with the app, so the
+    /// prompt has to be shown again.
+    @State private var needsReauth: Bool = false
 
     var body: some View {
         ZStack {
@@ -880,7 +888,15 @@ struct NotificationsSettingsView: View {
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 16) {
                     if systemDenied {
-                        deniedBanner
+                        statusBanner(
+                            title: "Notifications are off in Settings",
+                            message: "Tap Open iOS Settings below to turn them back on."
+                        )
+                    } else if needsReauth {
+                        statusBanner(
+                            title: "Turn notifications back on",
+                            message: "tvOS clears notification permission when an app is deleted. Flip the switch below to allow alerts again — your alert types are still saved."
+                        )
                     }
 
                     ProfileCard {
@@ -889,12 +905,12 @@ struct NotificationsSettingsView: View {
                             iconTint: Color.orange,
                             title: "Push notifications",
                             subtitle: "Allow GuideStream to send you alerts",
-                            isOn: $pushOn,
+                            isOn: Binding(
+                                get: { pushOn },
+                                set: { handlePushToggle($0) }
+                            ),
                             tint: Color.orange
                         )
-                        .onChange(of: pushOn) { _, newValue in
-                            handlePushToggle(newValue)
-                        }
                     }
 
                     ProfileCard {
@@ -951,6 +967,12 @@ struct NotificationsSettingsView: View {
                             tint: Color.orange
                         )
                     }
+                    // Category switches are meaningless while the master
+                    // toggle is off — dim and lock them so the screen can't
+                    // show five live-looking alert types that can't fire.
+                    .opacity(pushOn ? 1 : 0.4)
+                    .disabled(!pushOn)
+                    .animation(.easeInOut(duration: 0.2), value: pushOn)
 
                     ProfileCard {
                         NotificationToggleRow(
@@ -989,23 +1011,36 @@ struct NotificationsSettingsView: View {
             }
         }
         .navigationTitle("Notifications")
-        .task { await refreshSystemStatus() }
-        .task { await auth.loadNotificationCategoryPreferences() }
+        // Ordered deliberately: the server-side intent must land before the
+        // toggle is reconciled against the tvOS grant, otherwise the two
+        // `.task` blocks race and the master toggle settles on a stale value.
+        .task {
+            await auth.loadNotificationCategoryPreferences()
+            await refreshSystemStatus()
+        }
+        .onChange(of: scenePhase) { _, phase in
+            // Catches a grant (or revocation) made in Settings while the app
+            // was backgrounded.
+            guard phase == .active else { return }
+            Task { await refreshSystemStatus() }
+        }
     }
 
-    private var deniedBanner: some View {
+    private func statusBanner(title: String, message: String) -> some View {
         HStack(alignment: .top, spacing: 12) {
             Image(systemName: "exclamationmark.triangle.fill")
                 .scaledFont(size: 14, weight: .bold)
                 .foregroundStyle(Color.orange)
             VStack(alignment: .leading, spacing: 4) {
-                Text("Notifications are off in Settings")
+                Text(title)
                     .scaledFont(size: 13, weight: .semibold)
                     .foregroundStyle(.white)
-                Text("Tap Open iOS Settings below to turn them back on.")
+                Text(message)
                     .scaledFont(size: 12)
                     .foregroundStyle(Color.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
+            Spacer(minLength: 0)
         }
         .padding(14)
         .background(
@@ -1020,33 +1055,64 @@ struct NotificationsSettingsView: View {
 
     private func handlePushToggle(_ newValue: Bool) {
         guard newValue else {
+            pushOn = false
+            needsReauth = false
             auth.setNotificationPreferences(push: false, sms: smsOn)
             return
         }
         Task { @MainActor in
+            let status = await UNUserNotificationCenter.current()
+                .notificationSettings().authorizationStatus
+            // The system never re-prompts once denied — asking again silently
+            // returns false, so route the user to Settings instead of flipping
+            // their saved intent off.
+            guard status != .denied else {
+                pushOn = false
+                systemDenied = true
+                needsReauth = false
+                return
+            }
             do {
                 let granted = try await UNUserNotificationCenter.current()
                     .requestAuthorization(options: [.alert, .badge, .sound])
                 if granted {
                     UIApplication.shared.registerForRemoteNotifications()
+                    pushOn = true
+                    systemDenied = false
+                    needsReauth = false
                     auth.setNotificationPreferences(push: true, sms: smsOn)
                 } else {
                     pushOn = false
                     systemDenied = true
+                    needsReauth = false
                     auth.setNotificationPreferences(push: false, sms: smsOn)
                 }
             } catch {
                 pushOn = false
-                auth.setNotificationPreferences(push: false, sms: smsOn)
             }
         }
     }
 
+    /// Reconciles the master toggle with the system. The OS grant is the source
+    /// of truth for whether a push can actually arrive — deleting the app
+    /// revokes it — so a server-restored `notify_push = true` shows as off
+    /// until the user re-grants, and the re-auth banner explains why. The saved
+    /// intent is never overwritten here, so the account's alert types survive.
     private func refreshSystemStatus() async {
-        let settings = await UNUserNotificationCenter.current().notificationSettings()
-        let denied = settings.authorizationStatus == .denied
+        let status = await UNUserNotificationCenter.current()
+            .notificationSettings().authorizationStatus
+        let authorized = status == .authorized || status == .provisional
+        let wants = auth.notifyPushEnabled
         await MainActor.run {
-            systemDenied = denied && pushOn
+            pushOn = authorized && wants
+            systemDenied = status == .denied && wants
+            needsReauth = status == .notDetermined && wants
+            if authorized && wants {
+                // Reinstall keeps the row in `users` but issues a fresh APNs
+                // token — re-register so `push_tokens` isn't left pointing at
+                // the deleted install's dead token.
+                UIApplication.shared.registerForRemoteNotifications()
+            }
         }
     }
 

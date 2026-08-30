@@ -123,11 +123,15 @@ struct ProfileView: View {
                         // Floating tab bar safe area
                         Color.clear.frame(height: 110)
                     }
-                    .padding(.horizontal, 80)
+                    .padding(.leading, 80)
+                    .padding(.trailing, 40)
                     .padding(.top, 8)
                 }
                 .tracksTabBarVisibility()
             }
+            // See the note in SportsView: the enclosing NavigationStack
+            // re-applies the safe area inside itself.
+            .ignoresSafeArea()
             .navigationBarHidden(true)
             .navigationDestination(for: ProfileRoute.self) { route in
                 switch route {

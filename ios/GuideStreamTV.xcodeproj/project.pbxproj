@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		99D424DC303FA1E90014C218 /* YouTubeiOSPlayerHelper in Frameworks */ = {isa = PBXBuildFile; productRef = YY20A1B2C3D4E5F6A7B8C9D0YY /* YouTubeiOSPlayerHelper */; };
 		AB50D61ED0BAE05FA2F8EA /* Supabase in Frameworks */ = {isa = PBXBuildFile; productRef = AB1C9FF110ABBCE8BF456A /* Supabase */; };
+		GS30A1B2C3D4E5F6A7B8C9D0GS /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = GS20A1B2C3D4E5F6A7B8C9D0GS /* GoogleSignIn */; };
 		XX50D61ED0BAE05FA2F8E9XX /* Supabase in Frameworks */ = {isa = PBXBuildFile; productRef = XX1C9FF110ABBCE8BF456CXX /* Supabase */; };
 		XXAC3EF89597191F3A09AEXX /* YouTubeKit in Frameworks */ = {isa = PBXBuildFile; productRef = XX45D5A1BA7EF4022DE2E3XX /* YouTubeKit */; };
 		XXCC7674DCAED9654ED19DXX /* GuideStreamWidget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = XX878FD47A39EC99354D39XX /* GuideStreamWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
@@ -105,6 +106,7 @@
 				XX50D61ED0BAE05FA2F8E9XX /* Supabase in Frameworks */,
 				XXAC3EF89597191F3A09AEXX /* YouTubeKit in Frameworks */,
 				ZZ30A1B2C3D4E5F6A7B8C9D0ZZ /* GoogleMobileAds in Frameworks */,
+				GS30A1B2C3D4E5F6A7B8C9D0GS /* GoogleSignIn in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -194,6 +196,7 @@
 				XX45D5A1BA7EF4022DE2E3XX /* YouTubeKit */,
 				YY20A1B2C3D4E5F6A7B8C9D0YY /* YouTubeiOSPlayerHelper */,
 				ZZ20A1B2C3D4E5F6A7B8C9D0ZZ /* GoogleMobileAds */,
+				GS20A1B2C3D4E5F6A7B8C9D0GS /* GoogleSignIn */,
 			);
 			productName = GuideStreamTV;
 			productReference = 105FC57A2E9EAD3100EA8BCF /* GuideStreamTV.app */;
@@ -347,6 +350,7 @@
 				XXC440DD1AA4A7A1F8B8ADXX /* XCRemoteSwiftPackageReference "YouTubeKit" */,
 				YY30A1B2C3D4E5F6A7B8C9D0YY /* XCRemoteSwiftPackageReference "youtube-ios-player-helper" */,
 				ZZ10A1B2C3D4E5F6A7B8C9D0ZZ /* XCRemoteSwiftPackageReference "swift-package-manager-google-mobile-ads" */,
+				GS10A1B2C3D4E5F6A7B8C9D0GS /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */,
 			);
 			productRefGroup = 105FC57B2E9EAD3100EA8BCF /* Products */;
 			projectDirPath = "";
@@ -759,6 +763,7 @@
 				CODE_SIGN_ENTITLEMENTS = GuideStreamWidget/GuideStreamWidget.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 7;
+				DEVELOPMENT_TEAM = KDH93W2EVA;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = GuideStreamWidget/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "$(PRODUCT_NAME)";
@@ -786,6 +791,7 @@
 				CODE_SIGN_ENTITLEMENTS = GuideStreamWidget/GuideStreamWidget.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 7;
+				DEVELOPMENT_TEAM = KDH93W2EVA;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = GuideStreamWidget/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "$(PRODUCT_NAME)";
@@ -937,6 +943,14 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
+		GS10A1B2C3D4E5F6A7B8C9D0GS /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/google/GoogleSignIn-iOS.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 8.0.0;
+			};
+		};
 		XX20EB7F6EA71E9F2E096CXX /* XCRemoteSwiftPackageReference "supabase-swift" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/supabase/supabase-swift.git";
@@ -976,6 +990,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = XX20EB7F6EA71E9F2E096CXX /* XCRemoteSwiftPackageReference "supabase-swift" */;
 			productName = Supabase;
+		};
+		GS20A1B2C3D4E5F6A7B8C9D0GS /* GoogleSignIn */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = GS10A1B2C3D4E5F6A7B8C9D0GS /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */;
+			productName = GoogleSignIn;
 		};
 		XX1C9FF110ABBCE8BF456CXX /* Supabase */ = {
 			isa = XCSwiftPackageProductDependency;
