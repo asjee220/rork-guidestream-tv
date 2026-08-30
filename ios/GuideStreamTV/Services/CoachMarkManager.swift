@@ -32,7 +32,7 @@ struct CoachMark: Identifiable {
                   body: "The services you subscribe to. Everything below is filtered to what you can actually watch.",
                   targetKeys: ["services"]),
         CoachMark(id: "search", key: "search", title: "Find anything, fast",
-                  body: "Search shows, movies, creators and podcasts across every service at once.",
+                  body: "Search by name across every service — or open it and start from a genre tile.",
                   targetKeys: ["search"]),
         CoachMark(id: "reels", key: "reels", title: "Reels",
                   body: "Swipe trailers for what is new. Tap once to start watching.",
@@ -46,6 +46,19 @@ struct CoachMark: Identifiable {
         CoachMark(id: "genre", key: "genre", title: "Browse by genre",
                   body: "Pick a genre and the rail underneath refills with titles in it.",
                   targetKeys: ["genre", "because_you_watch"]),
+    ]
+
+    /// Fires the first time a genre results grid loads (GUI-66). The browse
+    /// landing is reached from the search field the home tour already points
+    /// at; what needs teaching is the filter machinery on the grid itself,
+    /// which is where every mark here lives.
+    static let browseTour: [CoachMark] = [
+        CoachMark(id: "browse_genre_rail", key: "browse_genre_rail", title: "Every genre, one tap away",
+                  body: "Switch genre from the rail and the grid underneath refills. No going back.",
+                  targetKeys: ["browse_genre_rail"]),
+        CoachMark(id: "browse_controls", key: "browse_controls", title: "Narrow it down",
+                  body: "Type, services, year and rating stack together, and the count updates as you add them. Sort reorders what is left.",
+                  targetKeys: ["browse_controls"]),
     ]
 
     static let sheetTour: [CoachMark] = [
@@ -103,11 +116,29 @@ final class CoachMarkManager {
     private(set) var completionToastVisible: Bool = false
     private var completionToastTask: Task<Void, Never>?
 
-    /// Tracks whether the currently active tour is the home tour, so the
-    /// completion toast only fires for the home tour even when unseen marks
-    /// have filtered `activeTour` down to a subset that no longer contains
-    /// the genre key.
-    private(set) var activeTourIsHome: Bool = false
+    /// Which tour is running — "home", "sheet" or "browse". Empty when none.
+    /// Held as a key rather than a flag so the done-key, the definition to
+    /// check for completion, and the completion toast all read from one
+    /// place even when unseen marks have filtered `activeTour` down to a
+    /// subset that no longer contains the tour's last mark.
+    private(set) var activeTourKey: String = ""
+
+    /// The completion toast belongs to the home tour alone.
+    private var activeTourIsHome: Bool { activeTourKey == "home" }
+
+    /// The full definition of the running tour, before unseen filtering.
+    private var activeTourDefinition: [CoachMark] {
+        Self.tour(for: activeTourKey)
+    }
+
+    private static func tour(for key: String) -> [CoachMark] {
+        switch key {
+        case "home": return CoachMark.homeTour
+        case "sheet": return CoachMark.sheetTour
+        case "browse": return CoachMark.browseTour
+        default: return []
+        }
+    }
 
     /// Monotonic counter incremented by `requestRemeasure()`. The host
     /// uses it in a `.task(id:)` composite so a re-measure pass re-runs the
@@ -198,6 +229,7 @@ final class CoachMarkManager {
 
     var homeTourDone: Bool { seenKeys["home_tour_done"] != nil }
     var sheetTourDone: Bool { seenKeys["sheet_tour_done"] != nil }
+    var browseTourDone: Bool { seenKeys["browse_tour_done"] != nil }
 
     /// Returns true if the home tour should fire now.
     func shouldStartHomeTour(isSignedIn: Bool, hasCompletedOnboarding: Bool,
@@ -221,30 +253,31 @@ final class CoachMarkManager {
         return !unseen.isEmpty
     }
 
-    // MARK: - Tour control
-
-    func startHomeTour() {
-        let unseen = CoachMark.homeTour.filter { seenKeys[$0.key] == nil }
-        guard !unseen.isEmpty else { return }
-        tourRuns["home"] = (tourRuns["home"] ?? 0) + 1
-        saveDeviceLocalCounters()
-        activeTour = unseen
-        activeTourIsHome = true
-        currentIndex = 0
-        measuredRects = [:]
-        scrollSettled = false
-        measureAttempt = 0
-        isShowing = true
-        handleScrollForCurrentMark()
+    /// Returns true if the browse tour should fire now — the first time a
+    /// genre results grid comes back with titles.
+    func shouldStartBrowseTour(resultsLoaded: Bool) -> Bool {
+        guard !browseTourDone, !isShowing, resultsLoaded else { return false }
+        // Hard per-install cap, same as the other two tours.
+        if (tourRuns["browse"] ?? 0) >= 3 { return false }
+        let unseen = CoachMark.browseTour.filter { seenKeys[$0.key] == nil }
+        return !unseen.isEmpty
     }
 
-    func startSheetTour() {
-        let unseen = CoachMark.sheetTour.filter { seenKeys[$0.key] == nil }
+    // MARK: - Tour control
+
+    func startHomeTour() { startTour("home") }
+
+    func startSheetTour() { startTour("sheet") }
+
+    func startBrowseTour() { startTour("browse") }
+
+    private func startTour(_ key: String) {
+        let unseen = Self.tour(for: key).filter { seenKeys[$0.key] == nil }
         guard !unseen.isEmpty else { return }
-        tourRuns["sheet"] = (tourRuns["sheet"] ?? 0) + 1
+        tourRuns[key] = (tourRuns[key] ?? 0) + 1
         saveDeviceLocalCounters()
         activeTour = unseen
-        activeTourIsHome = false
+        activeTourKey = key
         currentIndex = 0
         measuredRects = [:]
         scrollSettled = false
@@ -266,12 +299,8 @@ final class CoachMarkManager {
 
         if currentIndex + 1 >= activeTour.count {
             // Tour complete — mark the tour-level done key
-            if activeTourIsHome {
-                markAsSeen("home_tour_done")
-                showCompletionToast()
-            } else {
-                markAsSeen("sheet_tour_done")
-            }
+            markAsSeen("\(activeTourKey)_tour_done")
+            if activeTourIsHome { showCompletionToast() }
             genreHighlightActive = false
             dismissTour()
         } else {
@@ -294,6 +323,7 @@ final class CoachMarkManager {
         }
         markAsSeen("home_tour_done")
         markAsSeen("sheet_tour_done")
+        markAsSeen("browse_tour_done")
         genreHighlightActive = false
         dismissTour()
     }
@@ -313,7 +343,7 @@ final class CoachMarkManager {
     private func dismissTour() {
         isShowing = false
         activeTour = []
-        activeTourIsHome = false
+        activeTourKey = ""
         currentIndex = 0
         measuredRects = [:]
         scrollRequest = nil
@@ -342,10 +372,9 @@ final class CoachMarkManager {
             // (everything seen or retired), write the tour-level done key so
             // shouldStartHomeTour / shouldStartSheetTour stop re-arming it.
             // No completion toast: the user never actually finished it.
-            let fullTour = activeTourIsHome ? CoachMark.homeTour : CoachMark.sheetTour
-            let allSeen = fullTour.allSatisfy { seenKeys[$0.key] != nil }
+            let allSeen = activeTourDefinition.allSatisfy { seenKeys[$0.key] != nil }
             if allSeen {
-                markAsSeen(activeTourIsHome ? "home_tour_done" : "sheet_tour_done")
+                markAsSeen("\(activeTourKey)_tour_done")
             }
             genreHighlightActive = false
             dismissTour()

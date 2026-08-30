@@ -45,7 +45,7 @@ data class CoachMark(
                 "The services you subscribe to. Everything below is filtered to what you can actually watch.",
                 listOf("services")),
             CoachMark("search", "Find anything, fast",
-                "Search shows, movies, creators and podcasts across every service at once.",
+                "Search by name across every service — or open it and start from a genre tile.",
                 listOf("search")),
             CoachMark("reels", "Reels",
                 "Swipe trailers for what is new. Tap once to start watching.",
@@ -59,6 +59,21 @@ data class CoachMark(
             CoachMark("genre", "Browse by genre",
                 "Pick a genre and the rail underneath refills with titles in it.",
                 listOf("genre", "because_you_watch")),
+        )
+
+        /**
+         * Fires the first time a genre results grid loads (GUI-66). The browse
+         * landing is reached from the search field the home tour already points
+         * at; what needs teaching is the filter machinery on the grid itself,
+         * which is where both of these marks live.
+         */
+        val browseTour = listOf(
+            CoachMark("browse_genre_rail", "Every genre, one tap away",
+                "Switch genre from the rail and the grid underneath refills. No going back.",
+                listOf("browse_genre_rail")),
+            CoachMark("browse_controls", "Narrow it down",
+                "Type, services, year and rating stack together, and the count updates as you add them. Sort reorders what is left.",
+                listOf("browse_controls")),
         )
 
         val sheetTour = listOf(
@@ -142,8 +157,16 @@ class CoachMarkManager private constructor(private val context: Context) {
     var scrollSettled: Boolean by mutableStateOf(false)
         private set
 
-    var activeTourIsHome: Boolean by mutableStateOf(false)
+    /**
+     * Which tour is running — "home", "sheet" or "browse". Empty when none.
+     * Each host services only its own tour: the sheet tour runs while
+     * HomeScreen is still composed underneath, and the browse tour runs on a
+     * screen pushed over Search, so an unguarded handler would race.
+     */
+    var activeTourKey: String by mutableStateOf("")
         private set
+
+    val activeTourIsHome: Boolean get() = activeTourKey == "home"
 
     /** True while the genre mark is active so HomeScreen can bind highlight. */
     var genreHighlightActive: Boolean by mutableStateOf(false)
@@ -202,6 +225,7 @@ class CoachMarkManager private constructor(private val context: Context) {
 
     val homeTourDone: Boolean get() = seenKeys.containsKey("home_tour_done")
     val sheetTourDone: Boolean get() = seenKeys.containsKey("sheet_tour_done")
+    val browseTourDone: Boolean get() = seenKeys.containsKey("browse_tour_done")
 
     fun shouldStartHomeTour(
         isSignedIn: Boolean, hasCompletedOnboarding: Boolean,
@@ -217,28 +241,36 @@ class CoachMarkManager private constructor(private val context: Context) {
         return CoachMark.sheetTour.any { !seenKeys.containsKey(it.key) }
     }
 
+    /** True the first time a genre results grid comes back with titles. */
+    fun shouldStartBrowseTour(resultsLoaded: Boolean): Boolean {
+        if (browseTourDone || isShowing || !resultsLoaded) return false
+        return CoachMark.browseTour.any { !seenKeys.containsKey(it.key) }
+    }
+
     // ── Tour control ─────────────────────────────────────────────────
 
-    fun startHomeTour() {
-        val unseen = CoachMark.homeTour.filter { !seenKeys.containsKey(it.key) }
+    fun startHomeTour() = startTour("home")
+
+    fun startSheetTour() = startTour("sheet")
+
+    fun startBrowseTour() = startTour("browse")
+
+    private fun startTour(key: String) {
+        val unseen = tourFor(key).filter { !seenKeys.containsKey(it.key) }
         if (unseen.isEmpty()) return
         activeTour = unseen
-        activeTourIsHome = true
+        activeTourKey = key
         currentIndex = 0
         scrollSettled = false
         isShowing = true
         handleScrollForCurrentMark()
     }
 
-    fun startSheetTour() {
-        val unseen = CoachMark.sheetTour.filter { !seenKeys.containsKey(it.key) }
-        if (unseen.isEmpty()) return
-        activeTour = unseen
-        activeTourIsHome = false
-        currentIndex = 0
-        scrollSettled = false
-        isShowing = true
-        handleScrollForCurrentMark()
+    private fun tourFor(key: String): List<CoachMark> = when (key) {
+        "home" -> CoachMark.homeTour
+        "sheet" -> CoachMark.sheetTour
+        "browse" -> CoachMark.browseTour
+        else -> emptyList()
     }
 
     val currentMark: CoachMark?
@@ -248,12 +280,8 @@ class CoachMarkManager private constructor(private val context: Context) {
         val mark = currentMark ?: return
         markAsSeen(mark.key)
         if (currentIndex + 1 >= activeTour.size) {
-            if (activeTourIsHome) {
-                markAsSeen("home_tour_done")
-                showCompletionToast()
-            } else {
-                markAsSeen("sheet_tour_done")
-            }
+            markAsSeen("${activeTourKey}_tour_done")
+            if (activeTourIsHome) showCompletionToast()
             genreHighlightActive = false
             dismissTour()
         } else {
@@ -269,6 +297,7 @@ class CoachMarkManager private constructor(private val context: Context) {
         for (mark in remaining) markAsSeen(mark.key)
         markAsSeen("home_tour_done")
         markAsSeen("sheet_tour_done")
+        markAsSeen("browse_tour_done")
         genreHighlightActive = false
         dismissTour()
     }
@@ -283,7 +312,7 @@ class CoachMarkManager private constructor(private val context: Context) {
 
     private fun dismissTour() {
         isShowing = false
-        activeTourIsHome = false
+        activeTourKey = ""
         activeTour = emptyList()
         currentIndex = 0
         measuredRects.clear()

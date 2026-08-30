@@ -6,6 +6,8 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -62,6 +64,8 @@ import com.rork.guidestreamtvandroid.ui.home.HomeViewModel
 import com.rork.guidestreamtvandroid.ui.navigation.PendingTitleRoute
 import com.rork.guidestreamtvandroid.ui.theme.BottomSafeSpacer
 import com.rork.guidestreamtvandroid.ui.theme.BrandOrange
+import com.rork.guidestreamtvandroid.data.repository.CoachMarkManager
+import com.rork.guidestreamtvandroid.ui.components.CoachMarkOverlay
 import com.rork.guidestreamtvandroid.ui.theme.Navy
 import com.rork.guidestreamtvandroid.ui.theme.TextSecondary
 
@@ -96,6 +100,16 @@ fun BrowseResultsScreen(
 
     var showFilters by remember { mutableStateOf(false) }
     var showSort by remember { mutableStateOf(false) }
+    val coachMark = remember { CoachMarkManager.get() }
+
+    // GUI-66: the browse tour teaches the filter machinery, so it waits for a
+    // grid that actually has titles in it.
+    LaunchedEffect(results.isEmpty()) {
+        if (results.isEmpty()) return@LaunchedEffect
+        if (coachMark.shouldStartBrowseTour(resultsLoaded = true)) {
+            coachMark.startBrowseTour()
+        }
+    }
 
     LaunchedEffect(selectedServices) {
         controller.attachProviders(
@@ -104,7 +118,8 @@ fun BrowseResultsScreen(
         controller.reload()
     }
 
-    Column(modifier = modifier.fillMaxSize().background(Navy).statusBarsPadding()) {
+    Box(modifier = modifier.fillMaxSize()) {
+    Column(modifier = Modifier.fillMaxSize().background(Navy).statusBarsPadding()) {
         // Header
         Row(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
@@ -141,7 +156,9 @@ fun BrowseResultsScreen(
         LazyRow(
             contentPadding = PaddingValues(horizontal = 16.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier.padding(vertical = 6.dp),
+            modifier = Modifier
+                .padding(vertical = 6.dp)
+                .onGloballyPositioned { coachMark.setMeasuredRect("browse_genre_rail", it.boundsInRoot()) },
         ) {
             items(BrowseCatalog.genres, key = { it.id }) { genre ->
                 val selected = filters.genreIds.contains(genre.id)
@@ -181,7 +198,10 @@ fun BrowseResultsScreen(
 
         // Count + controls
         Row(
-            modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 10.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 16.dp, end = 16.dp, bottom = 10.dp)
+                .onGloballyPositioned { coachMark.setMeasuredRect("browse_controls", it.boundsInRoot()) },
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
@@ -305,6 +325,13 @@ fun BrowseResultsScreen(
                 }
             }
         }
+    }
+
+        CoachMarkOverlay(
+            manager = coachMark,
+            topInset = 72.dp,
+            bottomInset = 40.dp,
+        )
     }
 
     if (showFilters) {

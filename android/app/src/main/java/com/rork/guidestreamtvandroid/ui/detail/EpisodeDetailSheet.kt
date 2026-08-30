@@ -316,8 +316,9 @@ fun EpisodeDetailSheet(
     LaunchedEffect(coachMark.isShowing, coachMark.currentMark?.key) {
         if (!coachMark.isShowing) return@LaunchedEffect
         coachMark.currentMark ?: return@LaunchedEffect
-        // Only service the SHEET tour — the home tour is handled by HomeScreen.
-        if (coachMark.activeTourIsHome) return@LaunchedEffect
+        // Only service the SHEET tour — the home tour is handled by HomeScreen
+        // and the browse tour by BrowseResultsScreen.
+        if (coachMark.activeTourKey != "sheet") return@LaunchedEffect
         val id = coachMark.scrollRequestId
         if (id == "cmSheetActions" || id == "cmSheetWatch" || id == "cmSheetWatchlist") {
             coachMark.clearScrollRequest()

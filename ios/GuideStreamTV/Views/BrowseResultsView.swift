@@ -162,6 +162,7 @@ struct BrowseResultsView: View {
     @State private var model: BrowseResultsModel
     @State private var showFilters = false
     @State private var showSort = false
+    @State private var coachMark = CoachMarkManager.shared
 
     init(genreId: String, onSelect: @escaping (TMDBResult) -> Void) {
         self.genreId = genreId
@@ -184,8 +185,49 @@ struct BrowseResultsView: View {
             content
         }
         .background(BrandBackground())
+        .overlayPreferenceValue(CoachMarkAnchorKey.self) { anchors in
+            ZStack {
+                CoachMarkOverlay(manager: coachMark, topInset: 72, bottomInset: 40)
+                GeometryReader { proxy in
+                    Color.clear
+                        .task(id: "\(coachMark.currentMark?.key ?? "none")_\(coachMark.measureAttempt)") {
+                            guard coachMark.isShowing, let mark = coachMark.currentMark else { return }
+                            let markKey = mark.key
+                            var rects: [String: CGRect] = [:]
+                            for key in mark.targetKeys {
+                                if let anchor = anchors[key] { rects[key] = proxy[anchor] }
+                            }
+                            coachMark.setMeasuredRects(rects)
+                            coachMark.markScrollSettled()
+                            // One retry: the count row re-lays out when the
+                            // first page lands, so the first pass can measure
+                            // it before it has its final height.
+                            if coachMark.measureAttempt == 0 {
+                                let hasMissing = mark.targetKeys.contains {
+                                    coachMark.measuredRects[$0]?.isEmpty ?? true
+                                }
+                                if hasMissing {
+                                    try? await Task.sleep(for: .milliseconds(300))
+                                    guard coachMark.currentMark?.key == markKey else { return }
+                                    coachMark.requestRemeasure()
+                                }
+                            }
+                        }
+                }
+                .allowsHitTesting(false)
+            }
+            .ignoresSafeArea()
+        }
         .toolbar(.hidden, for: .navigationBar)
         .preferredColorScheme(.dark)
+        .onChange(of: model.results.isEmpty) { _, isEmpty in
+            // GUI-66: the browse tour teaches the filter machinery, so it
+            // waits for a grid that actually has titles in it.
+            guard !isEmpty else { return }
+            if coachMark.shouldStartBrowseTour(resultsLoaded: true) {
+                coachMark.startBrowseTour()
+            }
+        }
         .task {
             model.attachProviders(
                 StreamingCatalog.ordered(from: auth.selectedServices)
@@ -254,6 +296,9 @@ struct BrowseResultsView: View {
             .padding(.horizontal, 16)
         }
         .padding(.vertical, 6)
+        .anchorPreference(key: CoachMarkAnchorKey.self, value: .bounds) {
+            ["browse_genre_rail": $0]
+        }
     }
 
     // MARK: Applied filters
@@ -344,6 +389,9 @@ struct BrowseResultsView: View {
         }
         .padding(.horizontal, 16)
         .padding(.bottom, 10)
+        .anchorPreference(key: CoachMarkAnchorKey.self, value: .bounds) {
+            ["browse_controls": $0]
+        }
     }
 
     // MARK: Content
