@@ -70,7 +70,7 @@ struct SportsView: View {
     /// purpose — the prompt is about this install, not this account.
     @AppStorage("gs.sportsTeamPickerSeen.v1") private var hasSeenTeamPicker: Bool = false
 
-    private let sports: [String] = ["All", "NBA", "NBA Summer", "NFL", "Soccer", "MLB", "UFC"]
+    private let sports: [String] = ["All", "NFL", "CFB", "NBA", "NBA Summer", "WNBA", "NCAAM", "NCAAW", "MLB", "Soccer", "UFC"]
 
     private struct TeamChip: Hashable {
         let abbrev: String

@@ -78,11 +78,13 @@ private val streamingDestinations = setOf(
  */
 private val simulcastCompanions = mapOf(
     "nbc" to "Peacock", "nbcsn" to "Peacock", "cnbc" to "Peacock",
-    "usa" to "Peacock", "usanetwork" to "Peacock", "telemundo" to "Peacock",
+    "usa" to "Peacock", "usanetwork" to "Peacock", "usanet" to "Peacock",
+    "telemundo" to "Peacock",
     "universo" to "Peacock", "golf" to "Peacock", "golfchannel" to "Peacock",
     "cbs" to "Paramount+", "cbssn" to "Paramount+", "cbssportsnetwork" to "Paramount+",
     "abc" to "ESPN", "espn2" to "ESPN", "espnu" to "ESPN", "espnews" to "ESPN",
     "espndeportes" to "ESPN", "secn" to "ESPN", "secnetwork" to "ESPN",
+    "secnplus" to "ESPN",
     "accn" to "ESPN", "accnetwork" to "ESPN",
     "fox" to "Fox One", "foxsports" to "Fox One", "fs1" to "Fox One",
     "fs2" to "Fox One", "btn" to "Fox One", "bigtennetwork" to "Fox One",

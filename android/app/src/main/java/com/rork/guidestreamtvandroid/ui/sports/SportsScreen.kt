@@ -97,7 +97,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import com.rork.guidestreamtvandroid.ui.theme.TextSecondary
 import kotlinx.coroutines.launch
 
-private val sportOptions = listOf("All", "NBA", "NBA Summer", "NFL", "Soccer", "MLB", "UFC")
+private val sportOptions =
+    listOf("All", "NFL", "CFB", "NBA", "NBA Summer", "WNBA", "NCAAM", "NCAAW", "MLB", "Soccer", "UFC")
 private val LiveRed = Color(0xFFE50914)
 
 /** One-shot gate for the first-run team picker. Survives sign-out on purpose

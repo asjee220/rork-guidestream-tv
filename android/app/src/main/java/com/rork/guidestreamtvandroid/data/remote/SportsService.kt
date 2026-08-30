@@ -55,6 +55,13 @@ class SportsService {
         Endpoint("Soccer", "soccer/fifa.world/scoreboard"),
         Endpoint("MLB", "baseball/mlb/scoreboard"),
         Endpoint("UFC", "mma/ufc/scoreboard"),
+        Endpoint("WNBA", "basketball/wnba/scoreboard"),
+        // groups=80 is ESPN's FBS group. Without it college-football returns
+        // every division down to D3 (760 teams, 158 games on a Saturday), most
+        // of which carry no national broadcast to deep-link into.
+        Endpoint("CFB", "football/college-football/scoreboard?groups=80"),
+        Endpoint("NCAAM", "basketball/mens-college-basketball/scoreboard"),
+        Endpoint("NCAAW", "basketball/womens-college-basketball/scoreboard"),
     )
 
     @Serializable

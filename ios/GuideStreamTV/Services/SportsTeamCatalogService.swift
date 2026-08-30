@@ -60,14 +60,27 @@ final class SportsTeamCatalogService {
         isLoading = true
         defer { isLoading = false }
         do {
-            let rows: [SportsTeamRow] = try await SupabaseManager.shared.client
-                .from("sports_teams")
-                .select()
-                .eq("is_active", value: true)
-                .order("league", ascending: true)
-                .order("sort_order", ascending: true)
-                .execute()
-                .value
+            // PostgREST caps an unbounded select at max-rows (1000 by
+            // default). The catalogue is ~1k rows once college football and
+            // college basketball are in, so page explicitly rather than
+            // silently losing whichever leagues sort last.
+            let pageSize = 500
+            var rows: [SportsTeamRow] = []
+            var from = 0
+            while true {
+                let page: [SportsTeamRow] = try await SupabaseManager.shared.client
+                    .from("sports_teams")
+                    .select()
+                    .eq("is_active", value: true)
+                    .order("league", ascending: true)
+                    .order("sort_order", ascending: true)
+                    .range(from: from, to: from + pageSize - 1)
+                    .execute()
+                    .value
+                rows.append(contentsOf: page)
+                if page.count < pageSize { break }
+                from += pageSize
+            }
             if !rows.isEmpty {
                 teams = rows
                 saveLocalCache(rows)

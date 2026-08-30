@@ -33,11 +33,13 @@ nonisolated enum TVSportsSimulcast {
     /// substring, so unexpected network names (MSG, FDSSO, …) yield nothing.
     private static let companions: [String: String] = [
         "nbc": "Peacock", "nbcsn": "Peacock", "cnbc": "Peacock",
-        "usa": "Peacock", "usanetwork": "Peacock", "telemundo": "Peacock",
+        "usa": "Peacock", "usanetwork": "Peacock", "usanet": "Peacock",
+        "telemundo": "Peacock",
         "universo": "Peacock", "golf": "Peacock", "golfchannel": "Peacock",
         "cbs": "Paramount+", "cbssn": "Paramount+", "cbssportsnetwork": "Paramount+",
         "abc": "ESPN", "espn2": "ESPN", "espnu": "ESPN", "espnews": "ESPN",
         "espndeportes": "ESPN", "secn": "ESPN", "secnetwork": "ESPN",
+        "secnplus": "ESPN",
         "accn": "ESPN", "accnetwork": "ESPN",
         "fox": "Fox One", "foxsports": "Fox One", "fs1": "Fox One",
         "fs2": "Fox One", "btn": "Fox One", "bigtennetwork": "Fox One",
@@ -85,12 +87,26 @@ final class TVSportsService {
         let path: String
     }
 
+    // Kept deliberately identical to the iOS and Android endpoint lists — tvOS
+    // had drifted behind (no NBA Summer, no World Cup), so a game visible on
+    // the phone was missing on the TV.
     private let endpoints: [Endpoint] = [
         Endpoint(sport: "NBA",    path: "basketball/nba/scoreboard"),
+        Endpoint(sport: "NBA Summer", path: "basketball/nba-summer-las-vegas/scoreboard"),
+        Endpoint(sport: "NBA Summer", path: "basketball/nba-summer-utah/scoreboard"),
+        Endpoint(sport: "NBA Summer", path: "basketball/nba-summer-sacramento/scoreboard"),
         Endpoint(sport: "NFL",    path: "football/nfl/scoreboard"),
         Endpoint(sport: "Soccer", path: "soccer/eng.1/scoreboard"),
+        Endpoint(sport: "Soccer", path: "soccer/fifa.world/scoreboard"),
         Endpoint(sport: "MLB",    path: "baseball/mlb/scoreboard"),
-        Endpoint(sport: "UFC",    path: "mma/ufc/scoreboard")
+        Endpoint(sport: "UFC",    path: "mma/ufc/scoreboard"),
+        Endpoint(sport: "WNBA",   path: "basketball/wnba/scoreboard"),
+        // groups=80 is ESPN's FBS group. Without it college-football returns
+        // every division down to D3 (760 teams, 158 games on a Saturday), most
+        // of which carry no national broadcast to deep-link into.
+        Endpoint(sport: "CFB",    path: "football/college-football/scoreboard?groups=80"),
+        Endpoint(sport: "NCAAM",  path: "basketball/mens-college-basketball/scoreboard"),
+        Endpoint(sport: "NCAAW",  path: "basketball/womens-college-basketball/scoreboard")
     ]
 
     func fetchAll() async -> [TVSportsGame] {

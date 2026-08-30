@@ -70,14 +70,26 @@ class SportsTeamCatalogService private constructor() {
         if (_isLoading.value) return
         _isLoading.value = true
         try {
-            val rows = SupabaseManager.client.postgrest
-                .from("sports_teams")
-                .select {
-                    filter { eq("is_active", true) }
-                    order("league", Order.ASCENDING)
-                    order("sort_order", Order.ASCENDING)
-                }
-                .decodeList<SportsTeamRow>()
+            // PostgREST caps an unbounded select at max-rows (1000 by
+            // default). The catalogue is ~1k rows once college football and
+            // college basketball are in, so page explicitly rather than
+            // silently losing whichever leagues sort last.
+            val rows = mutableListOf<SportsTeamRow>()
+            var from = 0
+            while (true) {
+                val page = SupabaseManager.client.postgrest
+                    .from("sports_teams")
+                    .select {
+                        filter { eq("is_active", true) }
+                        order("league", Order.ASCENDING)
+                        order("sort_order", Order.ASCENDING)
+                        range(from.toLong(), (from + PAGE_SIZE - 1).toLong())
+                    }
+                    .decodeList<SportsTeamRow>()
+                rows += page
+                if (page.size < PAGE_SIZE) break
+                from += PAGE_SIZE
+            }
             if (rows.isNotEmpty()) _teams.value = rows
         } catch (e: CancellationException) {
             throw e
@@ -91,6 +103,7 @@ class SportsTeamCatalogService private constructor() {
 
     companion object {
         private const val TAG = "SportsTeamCatalog"
+        private const val PAGE_SIZE = 500
 
         @Volatile private var instance: SportsTeamCatalogService? = null
         fun get(): SportsTeamCatalogService = instance ?: synchronized(this) {
