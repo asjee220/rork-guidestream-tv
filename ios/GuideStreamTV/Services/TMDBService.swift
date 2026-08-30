@@ -532,7 +532,9 @@ nonisolated struct TMDBService {
         urlString += "&without_keywords=\(BrowseCatalog.adultKeywordIds)"
         let data = try await get(urlString)
         let env = try JSONDecoder().decode(TMDBTrendingEnvelope.self, from: data)
-        return env.results.map { stamp($0, mediaType: "tv") }
+        return env.results
+            .map { stamp($0, mediaType: "tv") }
+            .filter { !BrowseCatalog.blockedAnimeTmdbIds.contains($0.id) }
     }
 
     /// Onboarding show-picker: popular TV series on a specific streaming
@@ -1002,14 +1004,15 @@ nonisolated struct TMDBService {
 
         // Genre ids differ per media type, so resolve each selection against
         // the path being queried and drop the ones that do not apply.
-        let genreIds = f.selectedGenres.compactMap { $0.genreId(for: path) }
+        let genres = f.selectedGenres
+        let genreIds = genres.compactMap { $0.genreId(for: path) }
         if !genreIds.isEmpty {
             url += "&with_genres=\(genreIds.map(String.init).joined(separator: "%2C"))"
         }
 
         // Anime pins a single language; International supplies a pooled list.
         // Both arrive as `with_original_language`.
-        if let language = f.selectedGenres.compactMap({ $0.originalLanguage ?? $0.languagePool }).first {
+        if let language = genres.compactMap({ $0.originalLanguage ?? $0.languagePool }).first {
             let encoded = language.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? language
             url += "&with_original_language=\(encoded)"
         }
@@ -1039,18 +1042,23 @@ nonisolated struct TMDBService {
         // a 10.0 from three votes leads the grid; and whatever the selected
         // genre demands, which for Anime is content safety rather than taste.
         let sortFloor = (f.minRating != nil || f.sort.needsVoteFloor) ? 50 : nil
-        let genreFloor = f.selectedGenres.compactMap { $0.voteFloor }.max()
+        let genreFloor = genres.compactMap { $0.voteFloor }.max()
         if let floor = [sortFloor, genreFloor].compactMap({ $0 }).max() {
             url += "&vote_count.gte=\(floor)"
         }
-        if let keywords = f.selectedGenres.compactMap({ $0.excludedKeywordIds }).first {
+        if let keywords = genres.compactMap({ $0.excludedKeywordIds }).first {
             url += "&without_keywords=\(keywords)"
         }
 
         let data = try await get(url)
         let env = try JSONDecoder().decode(TMDBDiscoverEnvelope.self, from: data)
+        // TMDB has no `without_ids`, so the blocklist is applied here rather
+        // than in the query. It only ever has entries for Anime.
+        let blocked = genres.reduce(into: Set<Int>()) { $0.formUnion($1.blockedTmdbIds) }
         return BrowsePage(
-            results: env.results.map { stamp($0, mediaType: path) },
+            results: env.results
+                .map { stamp($0, mediaType: path) }
+                .filter { blocked.isEmpty || !blocked.contains($0.id) },
             page: env.page ?? page,
             totalPages: env.totalPages ?? 1,
             totalResults: env.totalResults ?? env.results.count

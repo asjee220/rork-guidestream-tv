@@ -102,6 +102,10 @@ data class BrowseGenre(
     /** TMDB keyword ids withheld from this genre, for `without_keywords`. */
     val excludedKeywordIds: String?
         get() = if (originalLanguage == "ja") BrowseCatalog.ADULT_KEYWORD_IDS else null
+
+    /** TMDB ids dropped from this genre's results after the call. */
+    val blockedTmdbIds: Set<Int>
+        get() = if (originalLanguage == "ja") BrowseCatalog.BLOCKED_ANIME_TMDB_IDS else emptySet()
 }
 
 object BrowseCatalog {
@@ -132,6 +136,38 @@ object BrowseCatalog {
      * them. **Do not lower this.**
      */
     const val ANIME_VOTE_FLOOR = 100
+
+    /**
+     * TMDB **TV** ids kept out of every anime surface.
+     *
+     * The two filters above do not reach these. A vote floor cannot: they are
+     * popular, which is the whole problem — Mushoku Tensei (94664) was leading
+     * the Anime tile. Keywords cannot either: TMDB's tagging is inconsistent
+     * enough that anime communities maintain their own "contains ecchi but is
+     * not tagged ecchi" lists, so filtering on a tag the source does not apply
+     * reliably buys false confidence.
+     *
+     * TMDB has no `without_ids` parameter, so this is applied client-side
+     * after the call rather than in the query.
+     *
+     * The bar is **sexual content is a selling point of the show**, not
+     * "contains a suggestive scene" — mainstream shonen stays. Every id was
+     * read off its TMDB page on 2026-08-30. Add to it as new series land.
+     */
+    val BLOCKED_ANIME_TMDB_IDS: Set<Int> = setOf(
+        94664, // Mushoku Tensei: Jobless Reincarnation
+        45950, // High School DxD
+        64706, // Prison School
+        65989, // Prison School — TMDB carries a second entry for it
+        96444, // Interspecies Reviewers
+        34742, // To LOVE-Ru
+        99071, // Redo of Healer
+        63323, // SHIMONETA
+        63187, // Monster Musume: Everyday Life with Monster Girls
+        56998, // High School of the Dead
+        80563, // How Not to Summon a Demon Lord
+        68148, // Keijo!!!!!!!!
+    )
 
     /**
      * The ten browsable genres, in display order.

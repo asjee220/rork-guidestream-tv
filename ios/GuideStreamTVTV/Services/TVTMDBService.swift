@@ -379,12 +379,13 @@ nonisolated struct TVTMDBService {
         var url = "\(base)/discover/\(path)?api_key=\(apiKey)&language=\(locale.tmdbLanguage)&page=\(page)"
         url += "&sort_by=\(f.sort.tmdbValue(for: path))"
 
-        let genreIds = f.selectedGenres.compactMap { $0.genreId(for: path) }
+        let genres = f.selectedGenres
+        let genreIds = genres.compactMap { $0.genreId(for: path) }
         if !genreIds.isEmpty {
             url += "&with_genres=\(genreIds.map(String.init).joined(separator: "%2C"))"
         }
 
-        if let language = f.selectedGenres.compactMap({ $0.originalLanguage ?? $0.languagePool }).first {
+        if let language = genres.compactMap({ $0.originalLanguage ?? $0.languagePool }).first {
             let encoded = language.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? language
             url += "&with_original_language=\(encoded)"
         }
@@ -413,18 +414,23 @@ nonisolated struct TVTMDBService {
         // genre's own, so neither can weaken the other. Anime's floor is a
         // content filter, not a quality preference — see BrowseCatalog.
         let sortFloor = (f.minRating != nil || f.sort.needsVoteFloor) ? 50 : nil
-        let genreFloor = f.selectedGenres.compactMap { $0.voteFloor }.max()
+        let genreFloor = genres.compactMap { $0.voteFloor }.max()
         if let floor = [sortFloor, genreFloor].compactMap({ $0 }).max() {
             url += "&vote_count.gte=\(floor)"
         }
-        if let keywords = f.selectedGenres.compactMap({ $0.excludedKeywordIds }).first {
+        if let keywords = genres.compactMap({ $0.excludedKeywordIds }).first {
             url += "&without_keywords=\(keywords)"
         }
 
         let data = try await get(url)
         let env = try JSONDecoder().decode(TVTMDBDiscoverEnvelope.self, from: data)
+        // TMDB has no `without_ids`, so the blocklist is applied here rather
+        // than in the query. It only ever has entries for Anime.
+        let blocked = genres.reduce(into: Set<Int>()) { $0.formUnion($1.blockedTmdbIds) }
         return TVBrowsePage(
-            results: env.results.map { stamp($0, mediaType: path) },
+            results: env.results
+                .map { stamp($0, mediaType: path) }
+                .filter { blocked.isEmpty || !blocked.contains($0.id) },
             page: env.page ?? page,
             totalPages: env.totalPages ?? 1,
             totalResults: env.totalResults ?? env.results.count

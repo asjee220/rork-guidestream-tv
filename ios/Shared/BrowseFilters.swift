@@ -117,6 +117,11 @@ struct BrowseGenre: Identifiable, Hashable, Sendable {
     nonisolated var excludedKeywordIds: String? {
         originalLanguage == "ja" ? BrowseCatalog.adultKeywordIds : nil
     }
+
+    /// TMDB ids dropped from this genre's results after the call.
+    nonisolated var blockedTmdbIds: Set<Int> {
+        originalLanguage == "ja" ? BrowseCatalog.blockedAnimeTmdbIds : []
+    }
 }
 
 enum BrowseCatalog {
@@ -143,6 +148,36 @@ enum BrowseCatalog {
     /// nothing at all. What separates those titles from real anime is that
     /// almost nobody rates them. **Do not lower this.**
     nonisolated static let animeVoteFloor = 100
+
+    /// TMDB **TV** ids kept out of every anime surface.
+    ///
+    /// The two filters above do not reach these. A vote floor cannot: they are
+    /// popular, which is the whole problem — Mushoku Tensei (94664) was
+    /// leading the Anime tile. Keywords cannot either: TMDB's tagging is
+    /// inconsistent enough that anime communities maintain their own
+    /// "contains ecchi but is not tagged ecchi" lists, so filtering on a tag
+    /// the source does not apply reliably buys false confidence.
+    ///
+    /// TMDB has no `without_ids` parameter, so this is applied client-side
+    /// after the call rather than in the query.
+    ///
+    /// The bar is **sexual content is a selling point of the show**, not
+    /// "contains a suggestive scene" — mainstream shonen stays. Every id was
+    /// read off its TMDB page on 2026-08-30. Add to it as new series land.
+    nonisolated static let blockedAnimeTmdbIds: Set<Int> = [
+        94664,  // Mushoku Tensei: Jobless Reincarnation
+        45950,  // High School DxD
+        64706,  // Prison School
+        65989,  // Prison School — TMDB carries a second entry for it
+        96444,  // Interspecies Reviewers
+        34742,  // To LOVE-Ru
+        99071,  // Redo of Healer
+        63323,  // SHIMONETA
+        63187,  // Monster Musume: Everyday Life with Monster Girls
+        56998,  // High School of the Dead
+        80563,  // How Not to Summon a Demon Lord
+        68148,  // Keijo!!!!!!!!
+    ]
 
     /// The ten browsable genres, in display order.
     ///

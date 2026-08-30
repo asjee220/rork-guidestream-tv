@@ -126,6 +126,7 @@ class TMDBService {
         val safety = "&vote_count.gte=${BrowseCatalog.ANIME_VOTE_FLOOR}" +
             "&without_keywords=${BrowseCatalog.ADULT_KEYWORD_IDS}"
         return fetchList("$base/discover/tv?api_key=$apiKey&language=${DeviceLocale.tmdbLanguage}&sort_by=popularity.desc&with_genres=16&with_original_language=ja&page=1$safety", "tv")
+            .filter { it.id !in BrowseCatalog.BLOCKED_ANIME_TMDB_IDS }
     }
 
     /** Onboarding show-picker: popular TV series on a specific streaming
@@ -612,8 +613,13 @@ class TMDBService {
 
         return try {
             val env: TMDBDiscoverEnvelope = client.get(url.toString()).body()
+            // TMDB has no `without_ids`, so the blocklist is applied here
+            // rather than in the query. It only ever has entries for Anime.
+            val blocked = f.selectedGenres.flatMap { it.blockedTmdbIds }.toSet()
             BrowsePage(
-                results = env.results.map { it.copy(mediaType = path) },
+                results = env.results
+                    .map { it.copy(mediaType = path) }
+                    .filter { blocked.isEmpty() || it.id !in blocked },
                 page = env.page,
                 totalPages = env.totalPages,
                 totalResults = env.totalResults,
