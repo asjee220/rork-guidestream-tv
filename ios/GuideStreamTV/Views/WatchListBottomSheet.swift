@@ -52,6 +52,43 @@ struct WatchListView: View {
     }
 }
 
+// MARK: - Tabs
+
+/// The three categories the saved list is split into. Shows and Movies are
+/// both TMDB entities separated by media type; Creators is every non-TMDB
+/// entity — YouTube, podcasts, Twitch, Kick.
+private enum WatchListTab: String, CaseIterable, Identifiable {
+    case shows, movies, creators
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .shows: return "Shows"
+        case .movies: return "Movies"
+        case .creators: return "Creators"
+        }
+    }
+
+    var glyph: String {
+        switch self {
+        case .shows: return "tv"
+        case .movies: return "film"
+        case .creators: return "person.2.fill"
+        }
+    }
+
+    /// Which tab a saved row belongs to. Every non-TMDB id is a creator;
+    /// TMDB rows split on `is_tv`, falling back to the id's own prefix and
+    /// only then to "show" — the same precedence the departure-reminder code
+    /// uses, so a saved movie is never quietly filed as a series.
+    static func of(_ item: UserStream) -> WatchListTab {
+        if SourceKind.from(titleId: item.titleId).isNonTMDB { return .creators }
+        let isTV = item.isTV ?? TitleID.isTV(from: item.titleId) ?? true
+        return isTV ? .shows : .movies
+    }
+}
+
 // MARK: - Shared content
 
 /// Renders the watch list itself — list, empty state, or guest prompt — plus
@@ -74,6 +111,11 @@ private struct WatchListContent: View {
     /// data already in hand (subscriptions + the expiring-titles cache).
     @State private var filterOnMyServices: Bool = false
     @State private var filterLeavingSoon: Bool = false
+    /// Which category tab is showing. Seeded once from the data so a user
+    /// whose list happens to be all movies does not land on an empty Shows
+    /// tab; after that it follows their taps only.
+    @State private var selectedTab: WatchListTab = .shows
+    @State private var didSeedTab: Bool = false
     @State private var reminders = ReleaseReminderService.shared
 
     var body: some View {
@@ -117,9 +159,13 @@ private struct WatchListContent: View {
             await hydrateLiveStatus()
             await hydrateSourceImages()
             await refreshDepartureReminders()
+            seedSelectedTabIfNeeded()
         }
         .task {
             await subscribeToLiveStatus()
+        }
+        .onChange(of: streams.userStreams.count) { _, _ in
+            seedSelectedTabIfNeeded()
         }
         .refreshable {
             await streams.fetchUserStreams()
@@ -152,54 +198,108 @@ private struct WatchListContent: View {
                 followCreatorsEntryCard
                     .padding(.horizontal, 16)
                     .padding(.top, 8)
-                    .padding(.bottom, 4)
+                    .padding(.bottom, 8)
+                tabBar
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 8)
                 filterBar
                     .padding(.horizontal, 16)
                     .padding(.bottom, 8)
                 if filteredStreams.isEmpty {
                     filteredEmptyState
                 } else {
-                List {
-                    ForEach(filteredStreams) { item in
-                        Button {
-                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                            let kind = SourceKind.from(titleId: item.titleId)
-                            if kind.isNonTMDB {
-                                creatorDetailTarget = CreatorDetailTarget(titleId: item.titleId, initialEpisode: nil)
-                            } else {
-                                detailSubject = .show(posterShow(from: item))
-                            }
-                        } label: {
-                            WatchListRow(
-                                item: item,
-                                isLive: liveStatusMap[item.titleId]?.isLive ?? false,
-                                isStreamer: SourceKind.from(titleId: item.titleId).isLivestream,
-                                streamTitle: liveStatusMap[item.titleId]?.streamTitle,
-                                effectivePosterUrl: CreatorImageOverrides.resolve(titleId: item.titleId, stored: item.posterUrl ?? sourceImageMap[item.titleId]),
-                                isWatched: social.isWatched(item.titleId),
-                                badgeText: streams.newBadgeText(for: item),
-                                expiryText: expiryBadgeText(for: item),
-                                isDepartureReminded: departureReminderKey(for: item)
-                                    .map { reminders.isReminded($0, kind: .departure) } ?? false,
-                                onToggleDepartureReminder: departureReminderAction(for: item)
-                            )
-                        }
-                        .buttonStyle(.plain)
-                        .listRowBackground(Color.clear)
-                        .listRowSeparatorTint(Color.white.opacity(0.06))
-                        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                            Button(role: .destructive) {
-                                remove(item)
-                            } label: {
-                                Label("Remove", systemImage: "trash")
-                            }
-                        }
-                    }
-                }
-                .listStyle(.plain)
-                .scrollContentBackground(.hidden)
+                    posterGrid
                 }
             }
+        }
+    }
+
+    /// Two-up poster grid, replacing the old single-column list. A saved
+    /// title is recognised by its artwork long before its name, and two
+    /// columns put roughly three times as many of them on screen.
+    private var posterGrid: some View {
+        ScrollView {
+            LazyVGrid(
+                columns: [
+                    GridItem(.flexible(), spacing: 14),
+                    GridItem(.flexible(), spacing: 14),
+                ],
+                alignment: .leading,
+                spacing: 18
+            ) {
+                ForEach(filteredStreams) { item in
+                    WatchListGridCell(
+                        item: item,
+                        isLive: liveStatusMap[item.titleId]?.isLive ?? false,
+                        isStreamer: SourceKind.from(titleId: item.titleId).isLivestream,
+                        streamTitle: liveStatusMap[item.titleId]?.streamTitle,
+                        effectivePosterUrl: CreatorImageOverrides.resolve(titleId: item.titleId, stored: item.posterUrl ?? sourceImageMap[item.titleId]),
+                        isWatched: social.isWatched(item.titleId),
+                        badgeText: streams.newBadgeText(for: item),
+                        expiryText: expiryBadgeText(for: item),
+                        isDepartureReminded: departureReminderKey(for: item)
+                            .map { reminders.isReminded($0, kind: .departure) } ?? false,
+                        onToggleDepartureReminder: departureReminderAction(for: item),
+                        onOpen: { open(item) },
+                        onRemove: { remove(item) }
+                    )
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.bottom, 24)
+        }
+        .scrollIndicators(.hidden)
+    }
+
+    /// The three category tabs, each with its own glyph, sitting directly
+    /// above the existing filter chips. The chips still apply, and now apply
+    /// within whichever tab is selected.
+    private var tabBar: some View {
+        HStack(spacing: 8) {
+            ForEach(WatchListTab.allCases) { tab in
+                WatchListTabChip(
+                    tab: tab,
+                    count: tabCounts[tab] ?? 0,
+                    isOn: selectedTab == tab
+                ) {
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    selectedTab = tab
+                }
+            }
+        }
+    }
+
+    /// Saved titles per tab, counted before any filter chip is applied, so
+    /// the empty-state copy can tell "this category is empty" apart from
+    /// "your filters excluded everything in it".
+    private var tabCounts: [WatchListTab: Int] {
+        Dictionary(grouping: streams.userStreams, by: { WatchListTab.of($0) })
+            .mapValues(\.count)
+    }
+
+    /// Opens a saved title — creators and podcasts go to CreatorDetailView,
+    /// everything else to the shared EpisodeDetailSheet. Lifted out of the
+    /// old row button so the grid cell and its context menu share one path.
+    private func open(_ item: UserStream) {
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        let kind = SourceKind.from(titleId: item.titleId)
+        if kind.isNonTMDB {
+            creatorDetailTarget = CreatorDetailTarget(titleId: item.titleId, initialEpisode: nil)
+        } else {
+            detailSubject = .show(posterShow(from: item))
+        }
+    }
+
+    /// Moves to the first tab that actually holds something, once, the first
+    /// time saved titles arrive. Never overrides a tab the user has tapped,
+    /// and never fires again once it has run.
+    private func seedSelectedTabIfNeeded() {
+        guard !didSeedTab, !streams.userStreams.isEmpty else { return }
+        didSeedTab = true
+        let counts = tabCounts
+        guard (counts[selectedTab] ?? 0) == 0 else { return }
+        if let first = WatchListTab.allCases.first(where: { (counts[$0] ?? 0) > 0 }) {
+            selectedTab = first
         }
     }
 
@@ -340,20 +440,52 @@ private struct WatchListContent: View {
         }
     }
 
-    /// Empty state shown when the active filters exclude every saved title.
+    /// Empty state for the visible grid. An empty category and a category
+    /// the filters emptied need different copy — "try turning a filter off"
+    /// is useless advice when no filter is on.
+    ///
+    /// Every string below is a literal sitting in a LocalizedStringKey
+    /// argument. A ternary inside `Text(...)` resolves to Text's String
+    /// overload instead, which drops localization entirely and hides the
+    /// literals from Xcode's extractor — written that way once, it marked the
+    /// already-translated "No titles match these filters" stale. The trap is
+    /// documented in claude/localization-state-aug2026.md.
     private var filteredEmptyState: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "line.3.horizontal.decrease.circle")
+        let tabIsEmpty = (tabCounts[selectedTab] ?? 0) == 0
+        return VStack(spacing: 12) {
+            Image(systemName: tabIsEmpty ? selectedTab.glyph : "line.3.horizontal.decrease.circle")
                 .scaledFont(size: 34, weight: .semibold)
                 .foregroundStyle(Color.white.opacity(0.35))
-            Text("No titles match these filters")
-                .scaledFont(size: 15, weight: .semibold)
-                .foregroundStyle(.white)
-            Text("Try turning a filter off.")
-                .scaledFont(size: 12)
-                .foregroundStyle(Color.textSecondary)
+            if !tabIsEmpty {
+                emptyCopy("No titles match these filters", "Try turning a filter off.")
+            } else {
+                switch selectedTab {
+                case .shows:
+                    emptyCopy("No shows saved yet", "Tap the + on any series to keep it here.")
+                case .movies:
+                    emptyCopy("No movies saved yet", "Tap the + on any movie to keep it here.")
+                case .creators:
+                    emptyCopy("No creators saved yet", "Follow a YouTube channel, podcast or streamer to see it here.")
+                }
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    /// Title and body pair shared by every empty state. Both parameters are
+    /// LocalizedStringKey so the literals at each call site above stay
+    /// statically extractable into the String Catalog.
+    private func emptyCopy(_ title: LocalizedStringKey, _ body: LocalizedStringKey) -> some View {
+        VStack(spacing: 12) {
+            Text(title)
+                .scaledFont(size: 15, weight: .semibold)
+                .foregroundStyle(.white)
+            Text(body)
+                .scaledFont(size: 12)
+                .foregroundStyle(Color.textSecondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 36)
+        }
     }
 
     // MARK: - Expiry cross-reference & filters
@@ -386,11 +518,12 @@ private struct WatchListContent: View {
         return AuthViewModel.shared.subscribesToService(named: platform)
     }
 
-    /// Saved titles after the active filters. Both filters on intersect;
-    /// neither on returns the unchanged sort order.
+    /// Saved titles in the selected tab, after the active filters. Both
+    /// filters on intersect; neither on returns the tab's own sort order.
     private var filteredStreams: [UserStream] {
-        guard filterOnMyServices || filterLeavingSoon else { return sortedStreams }
-        return sortedStreams.filter { item in
+        let inTab = sortedStreams.filter { WatchListTab.of($0) == selectedTab }
+        guard filterOnMyServices || filterLeavingSoon else { return inTab }
+        return inTab.filter { item in
             let onServicesOK = !filterOnMyServices || isOnMyServices(item)
             let leavingOK = !filterLeavingSoon || expiryInfo(for: item) != nil
             return onServicesOK && leavingOK
@@ -546,9 +679,13 @@ private struct WatchListContent: View {
     }
 }
 
-// MARK: - Row
+// MARK: - Grid cell
 
-private struct WatchListRow: View {
+/// One poster in the two-up grid. Carries everything the old list row did —
+/// service chip or LIVE pill, new-content badge, watched eye, expiry badge
+/// and its reminder bell — plus the two ways to remove a title now that
+/// there is no row to swipe: the X on the poster and a long-press menu.
+private struct WatchListGridCell: View {
     let item: UserStream
     var isLive: Bool = false
     var isStreamer: Bool = false
@@ -569,49 +706,87 @@ private struct WatchListRow: View {
     var isDepartureReminded: Bool = false
     /// Sets/unsets the departure reminder. nil when the title isn't leaving.
     var onToggleDepartureReminder: (() -> Void)? = nil
+    let onOpen: () -> Void
+    let onRemove: () -> Void
 
     private var posterKind: SourceKind { SourceKind.from(titleId: item.titleId) }
 
     var body: some View {
-        HStack(spacing: 12) {
-            ZStack {
-                // Full-bleed poster for all entities (TMDB and non-TMDB)
-                // at the small watch-list row size. Non-TMDB creators now
-                // fill the card the same way show/movie posters do — no more
-                // circular inset crop. Brand-colour fallback when no image.
-                Color.black
-                    .overlay {
-                        RemoteImage(
-                            urlString: effectivePosterUrl ?? item.posterUrl,
-                            contentMode: .fill,
-                            fallbackColors: posterKind.isNonTMDB
-                                ? [sourceKindColor(posterKind), sourceKindColor(posterKind).opacity(0.4)]
-                                : HomeFallback.posterColors
-                        )
-                        .overlay {
-                            if posterKind.isNonTMDB, ((effectivePosterUrl ?? item.posterUrl)?.isEmpty ?? true) {
-                                Image(systemName: posterKind == .podcast ? "mic.fill" : "play.rectangle.fill")
-                                    .font(.system(size: 16, weight: .semibold))
-                                    .foregroundStyle(.white.opacity(0.30))
-                            }
-                        }
-                        .allowsHitTesting(false)
-                    }
+        VStack(alignment: .leading, spacing: 6) {
+            poster
+            metaRow
+            Text(item.title ?? "Untitled")
+                .scaledFont(size: 14, weight: .semibold)
+                .foregroundStyle(Color.textPrimary)
+                .lineLimit(2)
+                .multilineTextAlignment(.leading)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            if isLive, let liveTitle = streamTitle {
+                Text(liveTitle)
+                    .scaledFont(size: 11)
+                    .foregroundStyle(Color.textSecondary)
+                    .lineLimit(1)
+            } else if let added = item.addedAt {
+                Text("Added \(WatchListGridCell.formatter.localizedString(for: added, relativeTo: Date()))")
+                    .scaledFont(size: 11)
+                    .foregroundStyle(Color.textTertiary)
+                    .lineLimit(1)
             }
-            .frame(width: 60, height: 90)
-            .clipShape(.rect(cornerRadius: 8))
+            if let expiry = expiryText {
+                expiryRow(expiry)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
+        .onTapGesture { onOpen() }
+        .contextMenu {
+            Button(role: .destructive) {
+                onRemove()
+            } label: {
+                Label("Remove from watch list", systemImage: "trash")
+            }
+        }
+    }
+
+    private var poster: some View {
+        Color.black
+            .overlay {
+                // Full-bleed poster for all entities (TMDB and non-TMDB).
+                // Creators fill the card the same way show and movie posters
+                // do — no circular inset crop. Brand-colour fallback when
+                // there is no image at all.
+                RemoteImage(
+                    urlString: effectivePosterUrl ?? item.posterUrl,
+                    contentMode: .fill,
+                    fallbackColors: posterKind.isNonTMDB
+                        ? [sourceKindColor(posterKind), sourceKindColor(posterKind).opacity(0.4)]
+                        : HomeFallback.posterColors
+                )
+                .overlay {
+                    if posterKind.isNonTMDB, ((effectivePosterUrl ?? item.posterUrl)?.isEmpty ?? true) {
+                        Image(systemName: posterKind == .podcast ? "mic.fill" : "play.rectangle.fill")
+                            .font(.system(size: 26, weight: .semibold))
+                            .foregroundStyle(.white.opacity(0.30))
+                    }
+                }
+                .allowsHitTesting(false)
+            }
+            .aspectRatio(2.0 / 3.0, contentMode: .fit)
+            .clipShape(.rect(cornerRadius: 10))
             .overlay(alignment: .topLeading) {
                 if let badge = badgeText {
                     Text(badge)
-                        .font(.system(size: 11, weight: .bold))
+                        .font(.system(size: 10, weight: .bold))
                         .textCase(.uppercase)
                         .foregroundStyle(.white)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 3)
                         .background(Color.black, in: RoundedRectangle(cornerRadius: 6))
-                        .padding(8)
+                        .padding(6)
                 }
             }
+            .overlay(alignment: .topTrailing) { removeButton }
             .overlay(alignment: .bottomTrailing) {
                 if isWatched {
                     Circle()
@@ -629,95 +804,94 @@ private struct WatchListRow: View {
                         .padding(4)
                 }
             }
+    }
 
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 6) {
-                    // Show LIVE/OFFLINE pill for streamer entities
-                    if isStreamer {
-                        if isLive {
-                            LivePill()
-                        } else {
-                            OfflinePill()
-                        }
-                    }
-                    // Only render the platform chip when we have a real,
-                    // recognised streaming service. Generic placeholders like
-                    // "Streaming" or "Stream" used to leak through here and
-                    // confused users who saw the same neutral grey chip on
-                    // every saved title.
-                    if !isStreamer {
-                        let resolved = Platform.from(providerName: item.platform)
-                        if let resolved = resolved, !resolved.name.isEmpty {
-                            Text(resolved.name.uppercased())
-                                .scaledFont(size: 9, weight: .heavy)
-                                .tracking(0.5)
-                                .lineLimit(1)
-                                .foregroundStyle(resolved.textColor)
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 2)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 4)
-                                        .fill(resolved.color)
-                                )
-                        } else if posterKind.isNonTMDB {
-                            SourceTypeBadge(kind: posterKind)
-                        }
-                    }
+    /// The grid's replacement for swipe-to-delete. Sits on the poster itself
+    /// so it is reachable with one thumb, and is a Button so it takes its own
+    /// tap rather than falling through to the cell's open gesture.
+    private var removeButton: some View {
+        Button {
+            onRemove()
+        } label: {
+            Image(systemName: "xmark")
+                .font(.system(size: 11, weight: .bold))
+                .foregroundStyle(.white)
+                .frame(width: 26, height: 26)
+                .background(Circle().fill(Color.black.opacity(0.55)))
+        }
+        .buttonStyle(.plain)
+        .padding(6)
+        .accessibilityLabel("Remove from watch list")
+    }
+
+    @ViewBuilder
+    private var metaRow: some View {
+        HStack(spacing: 6) {
+            // LIVE/OFFLINE for streamer entities; otherwise the real service
+            // chip. Generic placeholders like "Streaming" or "Stream" used to
+            // leak through here as a neutral grey chip on every saved title,
+            // so only a recognised service renders one.
+            if isStreamer {
+                if isLive {
+                    LivePill()
+                } else {
+                    OfflinePill()
                 }
-                if let expiry = expiryText {
-                    Text(expiry)
-                        .scaledFont(size: 10, weight: .heavy)
-                        .tracking(0.3)
+            } else {
+                let resolved = Platform.from(providerName: item.platform)
+                if let resolved = resolved, !resolved.name.isEmpty {
+                    Text(resolved.name.uppercased())
+                        .scaledFont(size: 9, weight: .heavy)
+                        .tracking(0.5)
                         .lineLimit(1)
-                        .foregroundStyle(Color.orange)
+                        .foregroundStyle(resolved.textColor)
                         .padding(.horizontal, 6)
-                        .padding(.vertical, 3)
+                        .padding(.vertical, 2)
                         .background(
-                            RoundedRectangle(cornerRadius: 4, style: .continuous)
-                                .fill(Color.orange.opacity(0.12))
+                            RoundedRectangle(cornerRadius: 4)
+                                .fill(resolved.color)
                         )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 4, style: .continuous)
-                                .stroke(Color.orange.opacity(0.35), lineWidth: 1)
-                        )
-                }
-                Text(item.title ?? "Untitled")
-                    .scaledFont(size: 16, weight: .semibold)
-                    .foregroundStyle(Color.textPrimary)
-                    .lineLimit(2)
-                if let added = item.addedAt {
-                    Text("Added \(WatchListRow.formatter.localizedString(for: added, relativeTo: Date()))")
-                        .scaledFont(size: 11)
-                        .foregroundStyle(Color.textTertiary)
-                }
-                if isLive, let liveTitle = streamTitle {
-                    Text(liveTitle)
-                        .scaledFont(size: 11)
-                        .foregroundStyle(Color.textSecondary)
-                        .lineLimit(1)
+                } else if posterKind.isNonTMDB {
+                    SourceTypeBadge(kind: posterKind)
                 }
             }
-            Spacer(minLength: 8)
+            Spacer(minLength: 0)
+        }
+    }
+
+    private func expiryRow(_ expiry: String) -> some View {
+        HStack(spacing: 6) {
+            Text(expiry)
+                .scaledFont(size: 10, weight: .heavy)
+                .tracking(0.3)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+                .foregroundStyle(Color.orange)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 3)
+                .background(
+                    RoundedRectangle(cornerRadius: 4, style: .continuous)
+                        .fill(Color.orange.opacity(0.12))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 4, style: .continuous)
+                        .stroke(Color.orange.opacity(0.35), lineWidth: 1)
+                )
             if let onToggleDepartureReminder {
                 Button {
                     UIImpactFeedbackGenerator(style: .light).impactOccurred()
                     onToggleDepartureReminder()
                 } label: {
                     Image(systemName: isDepartureReminded ? "bell.fill" : "bell")
-                        .scaledFont(size: 17, weight: .semibold)
+                        .scaledFont(size: 13, weight: .semibold)
                         .foregroundStyle(isDepartureReminded ? Color.orange : Color.white.opacity(0.55))
-                        .frame(width: 36, height: 36)
+                        .frame(width: 26, height: 26)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
             }
-            Image(systemName: "chevron.right")
-                .scaledFont(size: 13, weight: .semibold)
-                .foregroundStyle(Color.textTertiary)
+            Spacer(minLength: 0)
         }
-        .padding(.vertical, 8)
-        .padding(.horizontal, 4)
-        .contentShape(Rectangle())
     }
 
     private func sourceKindColor(_ kind: SourceKind) -> Color {
@@ -735,8 +909,52 @@ private struct WatchListRow: View {
         f.unitsStyle = .short
         return f
     }()
+}
 
+// MARK: - Tab chip
 
+/// One of the three category tabs. Shares the filter chip's capsule and
+/// depth tokens so the two bars read as one control stack, and stretches to
+/// an equal third of the row so the tabs sit on a steady grid.
+private struct WatchListTabChip: View {
+    let tab: WatchListTab
+    let count: Int
+    let isOn: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 5) {
+                Image(systemName: tab.glyph)
+                    .scaledFont(size: 12, weight: .semibold)
+                Text(LocalizedStringKey(tab.title))
+                    .scaledFont(size: 12, weight: .semibold)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
+            .foregroundStyle(isOn ? .white : Color.white.opacity(0.55))
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 8)
+            .background(
+                Capsule().fill(
+                    Color(
+                        red: isOn ? 0x2E / 255 : 0x1B / 255,
+                        green: isOn ? 0x3E / 255 : 0x27 / 255,
+                        blue: isOn ? 0x58 / 255 : 0x39 / 255
+                    )
+                )
+            )
+            .overlay(
+                Capsule().stroke(
+                    isOn ? Color.orange.opacity(0.85) : Color.white.opacity(0.10),
+                    lineWidth: 1
+                )
+            )
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("\(tab.title), \(count) saved")
+        .accessibilityAddTraits(isOn ? [.isSelected, .isButton] : .isButton)
+    }
 }
 
 // MARK: - Filter chip

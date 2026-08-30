@@ -27,7 +27,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.People
+import androidx.compose.material.icons.filled.Tv
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.outlined.NotificationsNone
 import androidx.compose.material3.Icon
@@ -39,6 +42,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -46,6 +50,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.rork.guidestreamtvandroid.data.models.Platform
+import com.rork.guidestreamtvandroid.data.models.SourceKind
 import com.rork.guidestreamtvandroid.data.models.StreamingCatalog
 import com.rork.guidestreamtvandroid.data.models.TitleId
 import com.rork.guidestreamtvandroid.data.models.UserStream
@@ -73,6 +78,51 @@ import com.rork.guidestreamtvandroid.ui.theme.BrandOrange
 import com.rork.guidestreamtvandroid.ui.theme.SurfaceContainer
 import com.rork.guidestreamtvandroid.ui.theme.systemBottomInset
 import kotlinx.coroutines.launch
+
+/**
+ * The three categories the saved list is split into. SHOWS and MOVIES are
+ * both TMDB entities separated by media type; CREATORS is every non-TMDB
+ * entity — YouTube, podcasts, Twitch, Kick. Mirrors iOS WatchListTab.
+ */
+private enum class WatchListTab(
+    val label: String,
+    val icon: ImageVector,
+    val emptyTitle: String,
+    val emptyBody: String,
+) {
+    SHOWS(
+        "Shows",
+        Icons.Filled.Tv,
+        "No shows saved yet",
+        "Tap the + on any series to keep it here.",
+    ),
+    MOVIES(
+        "Movies",
+        Icons.Filled.Movie,
+        "No movies saved yet",
+        "Tap the + on any movie to keep it here.",
+    ),
+    CREATORS(
+        "Creators",
+        Icons.Filled.People,
+        "No creators saved yet",
+        "Follow a YouTube channel, podcast or streamer to see it here.",
+    );
+
+    companion object {
+        /**
+         * Which tab a saved row belongs to. Every non-TMDB id is a creator;
+         * TMDB rows split on is_tv, falling back to the id's own prefix and
+         * only then to "show" — the same precedence the departure-reminder
+         * code uses, so a saved movie is never quietly filed as a series.
+         */
+        fun of(stream: UserStream): WatchListTab {
+            if (SourceKind.from(stream.titleId).isNonTMDB) return CREATORS
+            val isTv = stream.isTv ?: TitleId.isTv(stream.titleId) ?: true
+            return if (isTv) SHOWS else MOVIES
+        }
+    }
+}
 
 /**
  * Full "My Watch List" destination reached from the home feed's Watch List
@@ -108,6 +158,26 @@ fun WatchListScreen(
     var filterOnMyServices by remember { mutableStateOf(false) }
     var filterLeavingSoon by remember { mutableStateOf(false) }
 
+    // Which category tab is showing. Seeded once from the data so a user
+    // whose list happens to be all movies does not land on an empty Shows
+    // tab; after that it follows their taps only.
+    var selectedTab by remember { mutableStateOf(WatchListTab.SHOWS) }
+    var didSeedTab by remember { mutableStateOf(false) }
+
+    // Counted before any filter chip applies, so the empty-state copy can
+    // tell "this category is empty" apart from "your filters emptied it".
+    val tabCounts = userStreams.groupingBy { WatchListTab.of(it) }.eachCount()
+
+    androidx.compose.runtime.LaunchedEffect(userStreams.size) {
+        if (!didSeedTab && userStreams.isNotEmpty()) {
+            didSeedTab = true
+            if ((tabCounts[selectedTab] ?: 0) == 0) {
+                WatchListTab.values().firstOrNull { (tabCounts[it] ?: 0) > 0 }
+                    ?.let { selectedTab = it }
+            }
+        }
+    }
+
     // Expiring rows keyed by tmdb id — first row wins (soonest leaving date)
     // when a title is leaving multiple services. Read straight from the
     // service cache; never a new network call, never a write.
@@ -130,11 +200,13 @@ fun WatchListScreen(
         }
     }
 
-    // Both filters on intersect; neither on leaves the saved order untouched.
+    // The tab scopes the list first; the chips then filter within it. Both
+    // filters on intersect; neither on leaves the tab's order untouched.
+    val inTab = userStreams.filter { WatchListTab.of(it) == selectedTab }
     val filteredStreams = if (!filterOnMyServices && !filterLeavingSoon) {
-        userStreams
+        inTab
     } else {
-        userStreams.filter { stream ->
+        inTab.filter { stream ->
             val onServicesOk = !filterOnMyServices || isOnMyServices(stream)
             val leavingOk = !filterLeavingSoon ||
                 (TitleId.tmdbId(stream.titleId)?.let { expiryByTmdbId.containsKey(it) } == true)
@@ -208,6 +280,28 @@ fun WatchListScreen(
 
         Spacer(Modifier.height(8.dp))
 
+        // Category tabs, then the existing filter chips beneath them. The
+        // chips still apply, and now apply within whichever tab is selected.
+        if (userStreams.isNotEmpty()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                WatchListTab.values().forEach { tab ->
+                    WatchListTabChip(
+                        tab = tab,
+                        isOn = selectedTab == tab,
+                        onSelect = { selectedTab = tab },
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(8.dp))
+        }
+
         // Watch-list filters — shown only when there are saved titles.
         if (userStreams.isNotEmpty()) {
             Row(
@@ -279,7 +373,10 @@ fun WatchListScreen(
                 )
             }
         } else if (filteredStreams.isEmpty()) {
-            // Filters excluded every saved title — explicit empty state.
+            // An empty category and a category the filters emptied need
+            // different copy — "try turning a filter off" is useless advice
+            // when no filter is on.
+            val tabIsEmpty = (tabCounts[selectedTab] ?: 0) == 0
             Column(
                 modifier = Modifier
                     .fillMaxSize()
@@ -288,8 +385,15 @@ fun WatchListScreen(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center,
             ) {
+                Icon(
+                    imageVector = if (tabIsEmpty) selectedTab.icon else Icons.Filled.Close,
+                    contentDescription = null,
+                    tint = Color.White.copy(alpha = 0.35f),
+                    modifier = Modifier.size(34.dp),
+                )
+                Spacer(Modifier.height(10.dp))
                 Text(
-                    text = "No titles match these filters",
+                    text = if (tabIsEmpty) selectedTab.emptyTitle else "No titles match these filters",
                     fontSize = 17.sp,
                     fontWeight = FontWeight.Bold,
                     color = Color.White,
@@ -297,7 +401,7 @@ fun WatchListScreen(
                 )
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    text = "Try turning a filter off.",
+                    text = if (tabIsEmpty) selectedTab.emptyBody else "Try turning a filter off.",
                     fontSize = 13.sp,
                     color = TextSecondary,
                     textAlign = TextAlign.Center,
@@ -549,6 +653,53 @@ private fun expiryBadgeText(row: ExpiringTitlesService.ExpiringTitleRow): String
             append(" · ")
             append(row.serviceName)
         }
+    }
+}
+
+/**
+ * One of the three category tabs. Shares the filter chip's capsule and depth
+ * tokens so the two bars read as one control stack, and takes an equal third
+ * of the row so the tabs sit on a steady grid.
+ */
+@Composable
+private fun WatchListTabChip(
+    tab: WatchListTab,
+    isOn: Boolean,
+    onSelect: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier
+            .clip(RoundedCornerShape(16.dp))
+            .background(if (isOn) Color(0xFF2E3E58) else Color(0xFF1B2739))
+            .border(
+                width = 1.dp,
+                color = if (isOn) BrandOrange else Color.White.copy(alpha = 0.10f),
+                shape = RoundedCornerShape(16.dp),
+            )
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+            ) { onSelect() }
+            .padding(horizontal = 8.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            imageVector = tab.icon,
+            contentDescription = null,
+            tint = if (isOn) Color.White else TextSecondary,
+            modifier = Modifier.size(15.dp),
+        )
+        Spacer(Modifier.width(5.dp))
+        Text(
+            text = tab.label,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = if (isOn) Color.White else TextSecondary,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 
