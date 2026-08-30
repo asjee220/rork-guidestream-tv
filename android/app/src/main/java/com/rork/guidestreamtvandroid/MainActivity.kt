@@ -29,6 +29,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import android.util.Log
 import com.rork.guidestreamtvandroid.data.remote.RemoteConfigService
+import com.rork.guidestreamtvandroid.data.repository.AppUpdateGate
 import com.rork.guidestreamtvandroid.data.remote.SupabaseManager
 import com.rork.guidestreamtvandroid.data.repository.AuthViewModel
 import com.rork.guidestreamtvandroid.data.repository.PushTokenManager
@@ -141,6 +142,13 @@ class MainActivity : ComponentActivity() {
         adConsentScope.launch {
             withTimeoutOrNull(2000L) {
                 RemoteConfigService.load()
+            }
+            // GUI-43: version floor, update nudge and release notes. Evaluated
+            // after the load so a first launch on a new install sees fresh
+            // config; on every later launch the cached row has already
+            // hydrated the same values in Application.onCreate.
+            withContext(Dispatchers.Main) {
+                AppUpdateGate.get().evaluate()
             }
             withContext(Dispatchers.Main) {
                 AdManager.get().gatherConsentThenInitialize(this@MainActivity)

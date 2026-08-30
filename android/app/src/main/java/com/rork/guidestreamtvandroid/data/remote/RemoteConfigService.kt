@@ -37,6 +37,12 @@ object RemoteConfigService {
     @Volatile private var advertisers: List<RemoteAdvertiser> = emptyList()
     @Volatile private var appContext: Context? = null
 
+    /**
+     * Version floor / newest release / release notes (GUI-43). Null until the
+     * `app_update` row exists, which is the switched-off state.
+     */
+    @Volatile private var appUpdate: RemoteAppUpdate? = null
+
     @Serializable
     private data class RemoteAdConfig(
         val banner: String? = null,
@@ -62,6 +68,31 @@ object RemoteConfigService {
         val peacock: String? = null,
         val paramount: String? = null,
         val prime: String? = null,
+    )
+
+    /** Per-platform half of the `app_update` config row. */
+    @Serializable
+    data class RemoteAppUpdatePlatform(
+        /** Versions below this cannot run. Null or empty = no floor. */
+        val min: String? = null,
+        /** The newest released version. Null or empty = no nudge. */
+        val latest: String? = null,
+        /** Store URL the update buttons open. */
+        val url: String? = null,
+    )
+
+    /** Release notes shown after the user has updated. */
+    @Serializable
+    data class RemoteAppUpdateNotes(
+        val title: String? = null,
+        val items: List<String> = emptyList(),
+    )
+
+    @Serializable
+    data class RemoteAppUpdate(
+        val ios: RemoteAppUpdatePlatform? = null,
+        val android: RemoteAppUpdatePlatform? = null,
+        val notes: RemoteAppUpdateNotes? = null,
     )
 
     @Serializable
@@ -144,6 +175,7 @@ object RemoteConfigService {
     private fun ingest(rows: List<AppConfigRow>, persist: Boolean) {
         var newAds: RemoteAdConfig? = null
         var newRakuten: RemoteRakutenConfig? = null
+        var newAppUpdate: RemoteAppUpdate? = null
         for (row in rows) {
             try {
                 val data = json.encodeToString(JsonElement.serializer(), row.value)
@@ -162,6 +194,12 @@ object RemoteConfigService {
                             data,
                         )
                     }
+                    "app_update" -> {
+                        newAppUpdate = json.decodeFromString(
+                            RemoteAppUpdate.serializer(),
+                            data,
+                        )
+                    }
                 }
             } catch (_: Throwable) {
                 // Malformed row — skip; never crash.
@@ -169,6 +207,7 @@ object RemoteConfigService {
         }
         if (newAds != null) adsConfig = newAds
         if (newRakuten != null) rakutenConfig = newRakuten
+        if (newAppUpdate != null) appUpdate = newAppUpdate
 
         if (persist) {
             try {
@@ -213,6 +252,12 @@ object RemoteConfigService {
     }
 
     /** Returns the Rakuten publisher id, or null when missing/empty. */
+    /**
+     * The version floor / newest release / release notes, or null when the
+     * `app_update` row is absent — which is how the whole feature is off.
+     */
+    fun appUpdateConfig(): RemoteAppUpdate? = appUpdate
+
     fun rakutenPublisherId(): String? =
         rakutenConfig?.publisherId?.takeIf { it.isNotBlank() }
 

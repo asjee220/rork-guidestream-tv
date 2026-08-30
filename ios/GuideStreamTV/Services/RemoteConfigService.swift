@@ -105,6 +105,9 @@ final class RemoteConfigService {
     private var adsConfig: RemoteAdConfig?
     private var rakutenConfig: RemoteRakutenConfig?
     private var advertisers: [RemoteAdvertiser] = []
+    /// Version floor / newest release / release notes (GUI-43). Nil until the
+    /// `app_update` row exists, which is the switched-off state.
+    private var appUpdate: RemoteAppUpdate?
 
     private init() {
         hydrateFromCache()
@@ -147,6 +150,7 @@ final class RemoteConfigService {
         let decoder = JSONDecoder()
         var newAds: RemoteAdConfig?
         var newRakuten: RemoteRakutenConfig?
+        var newAppUpdate: RemoteAppUpdate?
 
         for row in rows {
             guard let data = try? encoder.encode(row.value) else { continue }
@@ -159,6 +163,8 @@ final class RemoteConfigService {
                 }
             case "affiliate_rakuten":
                 newRakuten = try? decoder.decode(RemoteRakutenConfig.self, from: data)
+            case "app_update":
+                newAppUpdate = try? decoder.decode(RemoteAppUpdate.self, from: data)
             default:
                 break
             }
@@ -166,6 +172,7 @@ final class RemoteConfigService {
 
         if newAds != nil { adsConfig = newAds }
         if newRakuten != nil { rakutenConfig = newRakuten }
+        if newAppUpdate != nil { appUpdate = newAppUpdate }
 
         if let cacheData = try? encoder.encode(rows) {
             UserDefaults.standard.set(cacheData, forKey: cacheKey)
@@ -199,6 +206,11 @@ final class RemoteConfigService {
         return value
     }
 
+    /// The version floor / newest release / release notes, or nil when the
+    /// `app_update` row is absent — which is how the whole feature is turned
+    /// off.
+    var appUpdateConfig: RemoteAppUpdate? { appUpdate }
+
     /// Returns the Rakuten publisher id, or nil when missing/empty.
     var rakutenPublisherId: String? {
         guard let id = rakutenConfig?.publisherId, !id.isEmpty else { return nil }
@@ -228,6 +240,8 @@ final class RemoteConfigService {
             for row in rows {
                 guard let rowData = try? encoder.encode(row.value) else { continue }
                 switch row.key {
+                case "app_update":
+                    appUpdate = try? decoder.decode(RemoteAppUpdate.self, from: rowData)
                 case "ads_ios":
                     adsConfig = try? decoder.decode(RemoteAdConfig.self, from: rowData)
                 case "ads_android":

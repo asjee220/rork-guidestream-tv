@@ -8,6 +8,7 @@ import com.rork.guidestreamtvandroid.data.DeviceLocale
 import com.rork.guidestreamtvandroid.data.local.DeviceIdentity
 import com.rork.guidestreamtvandroid.data.local.DeviceSessionService
 import com.rork.guidestreamtvandroid.data.remote.RemoteConfigService
+import com.rork.guidestreamtvandroid.data.repository.AppUpdateGate
 import com.rork.guidestreamtvandroid.data.repository.AuthViewModel
 import com.rork.guidestreamtvandroid.data.repository.PushTokenManager
 import com.rork.guidestreamtvandroid.data.repository.ReelsBadgeService
@@ -34,6 +35,7 @@ class GuideStreamTVApp : Application() {
         safe("DeviceIdentity") { DeviceIdentity.init(this) }
         safe("DeviceLocale") { DeviceLocale.init(this) }
         safe("RemoteConfig") { RemoteConfigService.init(this) }
+        safe("AppUpdateGate") { AppUpdateGate.init(this) }
         safe("AuthViewModel") { AuthViewModel.init(this) }
         safe("WatchIntentLogger") { WatchIntentLogger.init(this) }
         safe("DeviceSessionService") { DeviceSessionService.init(this) }

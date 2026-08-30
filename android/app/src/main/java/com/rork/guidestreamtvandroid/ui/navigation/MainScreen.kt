@@ -28,6 +28,8 @@ import com.rork.guidestreamtvandroid.data.remote.SportsService
 import com.rork.guidestreamtvandroid.data.models.TMDBResult
 import com.rork.guidestreamtvandroid.data.repository.ReelsBadgeService
 import com.rork.guidestreamtvandroid.ui.ask.AskStreamSheet
+import com.rork.guidestreamtvandroid.data.repository.AppUpdateGate
+import com.rork.guidestreamtvandroid.ui.components.AppUpdateHost
 import com.rork.guidestreamtvandroid.ui.components.CoachMarkOverlay
 import com.rork.guidestreamtvandroid.ui.components.FloatingTabBar
 import com.rork.guidestreamtvandroid.data.repository.AuthViewModel
@@ -103,6 +105,7 @@ fun MainScreen(
     var showWatchList by remember { mutableStateOf(false) }
     var showWidgetSetup by remember { mutableStateOf(false) }
     val coachMark = CoachMarkManager.get()
+    val updateGate = AppUpdateGate.get()
     val authVm = AuthViewModel.get()
     val reelsBadge = ReelsBadgeService.get()
     val coroutineScope = rememberCoroutineScope()
@@ -498,6 +501,13 @@ fun MainScreen(
         // Coach mark overlay — last child so it paints above everything
         CoachMarkOverlay(manager = coachMark)
     }
+
+    // GUI-43: version floor, update nudge and release notes. Above the coach
+    // marks on purpose — a required update outranks a tour.
+    AppUpdateHost(
+        prompt = updateGate.prompt,
+        onDismiss = { updateGate.dismissCurrent() },
+    )
 
     // Home tour trigger
     LaunchedEffect(selectedTab, homeReady, tabBarVisible, isSignedIn, hasCompletedOnboarding, coachMark.pendingReplay) {

@@ -11,11 +11,31 @@ import WidgetKit
 struct GuideStreamTVApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @Environment(\.scenePhase) private var scenePhase
+    @State private var updateGate = AppUpdateGate.shared
 
     var body: some Scene {
         WindowGroup {
             ContentView()
                 .preferredColorScheme(.dark)
+                // GUI-43: version floor, update nudge and release notes. The
+                // gate decides which — if any — of the three applies; a
+                // required update is a full-screen cover with no way out,
+                // the other two are dismissible sheets.
+                .fullScreenCover(isPresented: .constant(updateGate.isBlocking)) {
+                    if let prompt = updateGate.prompt {
+                        AppUpdateSheet(prompt: prompt, onDismiss: {})
+                    }
+                }
+                .sheet(isPresented: Binding(
+                    get: { updateGate.prompt != nil && !updateGate.isBlocking },
+                    set: { if !$0 { updateGate.dismissCurrent() } }
+                )) {
+                    if let prompt = updateGate.prompt {
+                        AppUpdateSheet(prompt: prompt, onDismiss: { updateGate.dismissCurrent() })
+                            .presentationDetents([.medium, .large])
+                            .presentationDragIndicator(.visible)
+                    }
+                }
                 .onChange(of: scenePhase) { _, newPhase in
                     switch newPhase {
                     case .active:
@@ -45,6 +65,10 @@ struct GuideStreamTVApp: App {
                 }
                 .task {
                     await RemoteConfigService.shared.load()
+                    // Evaluated after the load so a first launch on a new
+                    // install sees fresh config; on every later launch the
+                    // cached row has already hydrated the same values.
+                    updateGate.evaluate(config: RemoteConfigService.shared.appUpdateConfig)
                     await SportsLiveActivityController.shared.reconcile()
                 }
                 .onOpenURL { url in
