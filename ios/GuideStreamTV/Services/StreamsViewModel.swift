@@ -73,14 +73,8 @@ final class StreamsViewModel {
         // watch-list sheet opens, so the Home rail badge matches the sheet's
         // badge after a cold launch. Mirrors Android's refreshAll().
         await fetchWatchlistSeen()
-        // After we have a fresh watch list, kick off the episode tracker
-        // so any titles that aired a new episode show up in the rail on
-        // the next fetch. The tracker has its own 6h cooldown so calling
-        // it on every refresh is safe.
-        EpisodeTrackerService.shared.scanIfNeeded()
-        // Also scan followed YouTube creators for recent uploads so their
-        // videos populate the New Episodes rail.
-        EpisodeTrackerService.shared.scanYouTubeIfNeeded()
+        // `new_episodes` is populated server-side (youtube_websub_callback,
+        // rss_poll_podcasts and the TMDB refresh jobs). The client only reads it.
         // Keep the widget in sync with the latest counts.
         WidgetDataService.shared.pushCounts(
             watchlistCount: userStreams.count,
@@ -415,10 +409,8 @@ final class StreamsViewModel {
         }
         // Local optimistic row stays even on failure — user still has it on
         // this device.
-        // Adding a new title is the most likely moment we'll discover a
-        // fresh episode for it, so trigger an immediate tracker scan
-        // (bypassing the 6h cooldown) without blocking the caller.
-        EpisodeTrackerService.shared.scanIfNeeded(force: true)
+        // `new_episodes` is server-owned: the WebSub / RSS / TMDB refresh jobs
+        // write it. Nothing to trigger client-side on add.
         // Keep the widget in sync after add.
         WidgetDataService.shared.pushCounts(
             watchlistCount: userStreams.count,
@@ -560,34 +552,6 @@ final class StreamsViewModel {
             try await query.execute()
         } catch {
             print("[Streams] updateStreamMediaType failed: \(error.localizedDescription)")
-        }
-    }
-
-    /// Mark any `new_episodes` rows older than 24h as no longer new for the current user's titles.
-    func markStaleEpisodesSeen() async {
-        let deviceId = DeviceIdentity.shared.deviceId
-        do {
-            var query = SupabaseManager.shared.client
-                .from("user_streams")
-                .select("title_id")
-            if let uid = currentUserId?.uuidString {
-                query = query.eq("user_id", value: uid)
-            } else {
-                query = query.eq("device_id", value: deviceId)
-                    .filter("user_id", operator: "is", value: "null")
-            }
-            let mine: [UserStream] = try await query.execute().value
-            let titleIds = mine.map { $0.titleId }
-            guard !titleIds.isEmpty else { return }
-            let cutoff = ISO8601DateFormatter().string(from: Date().addingTimeInterval(-24 * 60 * 60))
-            try await SupabaseManager.shared.client
-                .from("new_episodes")
-                .update(["is_new": false])
-                .in("title_id", values: titleIds)
-                .lt("released_at", value: cutoff)
-                .execute()
-        } catch {
-            print("[Streams] markStaleEpisodesSeen failed: \(error.localizedDescription)")
         }
     }
 

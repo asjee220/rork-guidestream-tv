@@ -49,7 +49,18 @@ nonisolated struct DeviceLocale: Sendable, Equatable {
                 tmdbLanguage = "\(override)-\(region)"
             }
         } else {
-            let language = Locale.current.language.languageCode?.identifier ?? "en"
+            // The language MUST come from `Locale.preferredLanguages`, not from
+            // `Locale.current`. `Locale.current` reports the locale iOS resolved
+            // FOR THE APP: the user's preferred-language list intersected with the
+            // localizations present in the bundle. Per Apple QA1828, when none of
+            // the user's preferred languages are supported by the app, iOS falls
+            // back to `CFBundleDevelopmentRegion`. This bundle ships English only,
+            // so `Locale.current.language` collapses to "en" on every device and a
+            // Spanish user in Spain requests "en-ES" — right region, wrong language.
+            // `Locale.preferredLanguages` is the user's raw Settings choice and is
+            // independent of what the bundle supports.
+            let preferred = Locale.preferredLanguages.first ?? "en"
+            let language = Locale(identifier: preferred).language.languageCode?.identifier ?? "en"
             tmdbLanguage = "\(language)-\(region)"
         }
 

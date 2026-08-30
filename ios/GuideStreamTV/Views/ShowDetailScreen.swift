@@ -1447,6 +1447,9 @@ struct ShowDetailScreen: View {
                                             type: s.type,
                                             price: s.price
                                         )
+                                        .lockOnAppear(
+                                            delay: Double(group.sources.firstIndex(where: { $0.id == s.id }) ?? 0) * 0.08
+                                        )
                                     }
                                     .buttonStyle(.plain)
                                 }
@@ -1461,51 +1464,22 @@ struct ShowDetailScreen: View {
         .padding(.top, 24)
     }
 
-    /// Fixed-height placeholder matching the loaded "Where to Watch" chip row
-    /// (horizontal scroll, 10pt spacing, ServiceBadge-sized chips) so the
-    /// section doesn't reflow when the real chips replace the loading text.
-    /// Mirrors ServiceBadge's paddings for an exact height match; shimmer
-    /// treatment matches the trailers / Deep Dives placeholders.
+    /// Pending "Where to Watch" strip. Same geometry as the loaded chips, so
+    /// the section holds its height and nothing below it moves when the real
+    /// services arrive. Brand marks flick past while the lookup runs — the
+    /// same Lock-On treatment the detail sheet uses.
     private var servicesShimmer: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 10) {
                 ForEach(0..<3, id: \.self) { i in
-                    let nameBarWidth: CGFloat = [72, 56, 88][i]
-                    HStack(spacing: 8) {
-                        Circle()
-                            .fill(Color.white.opacity(0.10))
-                            .frame(width: 8, height: 8)
-                        RoundedRectangle(cornerRadius: 4, style: .continuous)
-                            .fill(Color.white.opacity(0.10))
-                            .frame(width: nameBarWidth, height: 17)
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 10)
-                    .background(
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .fill(Color.white.opacity(0.06))
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .fill(
-                                LinearGradient(
-                                    colors: [
-                                        Color.white.opacity(0.0),
-                                        Color.white.opacity(0.06),
-                                        Color.white.opacity(0.0)
-                                    ],
-                                    startPoint: UnitPoint(x: CGFloat(i) * 0.35 - 1.2, y: 0.5),
-                                    endPoint: UnitPoint(x: CGFloat(i) * 0.35 - 0.2, y: 0.5)
-                                )
-                            )
-                    )
-                    .padding(.top, 8)
-                    .padding(.trailing, 8)
+                    ShufflingServiceChip(seed: i)
                 }
             }
             .padding(.horizontal, 20)
         }
         .disabled(true)
+        .accessibilityElement()
+        .accessibilityLabel("Finding streaming services")
     }
 
     /// Home-region display name, mapped from the literal "US" region code so

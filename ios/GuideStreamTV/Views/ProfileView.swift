@@ -665,13 +665,13 @@ struct ProfileRow: View {
                 .frame(width: 36, height: 36)
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(title)
+                    Text(LocalizedStringKey(title))
                         .scaledFont(size: 16, weight: .semibold)
                         .foregroundStyle(titleColor)
                         .lineLimit(1)
                         .minimumScaleFactor(0.85)
                     if !subtitle.isEmpty {
-                        Text(subtitle)
+                        Text(LocalizedStringKey(subtitle))
                             .scaledFont(size: 12)
                             .foregroundStyle(Color.textSecondary)
                             .lineLimit(2)

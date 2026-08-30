@@ -657,6 +657,12 @@ struct EpisodeDetailSheet: View {
         return nil
     }
 
+    /// `true` while the CTA is still waiting on a source or an episode-level
+    /// deep link. Drives the capsule sheen that replaced the spinner.
+    private var ctaIsResolving: Bool {
+        (isResolvingSource && resolvedSource == nil) || isResolvingEpisodeSources
+    }
+
     /// CTA verb for the watch button: Rent/Buy for transactional tiers,
     /// Get for unsubscribed subs, Watch otherwise.
     private var ctaVerb: String {
@@ -1082,9 +1088,35 @@ struct EpisodeDetailSheet: View {
 
     // MARK: - Where to watch row
 
+    /// `true` while the source lookup is still running and has produced
+    /// nothing yet — the window the Reserved Frame placeholders cover.
+    private var isPendingSources: Bool { allSources.isEmpty && isResolvingSource }
+
     @ViewBuilder
     private var whereToWatchRow: some View {
-        if !allSources.isEmpty {
+        if isPendingSources {
+            // Reserved Frame: the row is mounted at its final height with
+            // shuffling brand marks, so the CTA and everything below it never
+            // move when the real sources land. A finished lookup with no
+            // sources still renders nothing — that is a final answer, and the
+            // one height change on this surface that is honest.
+            VStack(alignment: .leading, spacing: 10) {
+                Text("WHERE TO WATCH")
+                    .scaledFont(size: 12, weight: .heavy)
+                    .tracking(1.4)
+                    .foregroundStyle(Color.white.opacity(0.45))
+
+                HStack(spacing: 10) {
+                    ForEach(0..<3, id: \.self) { i in
+                        ShufflingServiceChip(seed: i)
+                    }
+                }
+            }
+            .anchorPreference(key: CoachMarkAnchorKey.self, value: .bounds) {
+                ["sheet_where_to_watch": $0]
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        } else if !allSources.isEmpty {
             VStack(alignment: .leading, spacing: 10) {
                 Text("WHERE TO WATCH")
                     .scaledFont(size: 12, weight: .heavy)
@@ -1117,6 +1149,9 @@ struct EpisodeDetailSheet: View {
                                             isSelected: resolvedSource?.sourceId == source.sourceId,
                                             type: source.type,
                                             price: source.price
+                                        )
+                                        .lockOnAppear(
+                                            delay: Double(group.sources.firstIndex(where: { $0.id == source.id }) ?? 0) * 0.08
                                         )
                                     }
                                     .buttonStyle(.plain)
@@ -1191,12 +1226,21 @@ struct EpisodeDetailSheet: View {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 8) {
                     if hasResolvedPlatform || isResolvingSource {
-                        Text(platformName.uppercased())
-                            .scaledFont(size: 11, weight: .heavy)
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 6)
-                            .background(Capsule().fill(platformColor))
+                        // One Group across both states so the pill keeps its
+                        // identity through the swap and can animate the snap.
+                        Group {
+                            if hasResolvedPlatform {
+                                Text(platformName.uppercased())
+                                    .scaledFont(size: 11, weight: .heavy)
+                                    .foregroundStyle(.white)
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 6)
+                                    .background(Capsule().fill(platformColor))
+                            } else {
+                                ShufflingPlatformPill()
+                            }
+                        }
+                        .lockOn(isResolved: hasResolvedPlatform, cornerRadius: 14)
                     }
 
                     Text("Drama")
@@ -1628,19 +1672,14 @@ struct EpisodeDetailSheet: View {
             }
         } label: {
             HStack(spacing: 8) {
-                if (isResolvingSource && resolvedSource == nil) || isResolvingEpisodeSources {
-                    ProgressView()
-                        .controlSize(.small)
-                        .tint(.white)
-                }
                 if let ctx = episodeContext, !episodeSourceUnavailable {
                     Text("\(ctaVerb) \(DisplayFormatting.seasonEpisodeColon(season: ctx.seasonNum, episode: ctx.episodeNum))")
                         .scaledFont(size: 15, weight: .semibold)
                         .lineLimit(1)
+                } else if ctaIsResolving {
+                    ResolvingCTALabel(size: 17)
                 } else {
-                    Text(resolvedSource == nil && isResolvingSource
-                         ? "Finding service…"
-                         : "\(ctaVerb) on")
+                    Text("\(ctaVerb) on")
                         .scaledFont(size: 17, weight: .semibold)
                         .lineLimit(1)
                 }
@@ -1651,12 +1690,20 @@ struct EpisodeDetailSheet: View {
                         .padding(.horizontal, 8)
                         .padding(.vertical, 3)
                         .background(RoundedRectangle(cornerRadius: 6).fill(platformColor))
+                        .transition(.scale(scale: 0.8).combined(with: .opacity))
                 }
             }
+            .animation(SheetMotion.settle, value: hasResolvedPlatform)
             .foregroundStyle(.white)
             .frame(maxWidth: .infinity)
             .frame(height: 56)
-            .background(Capsule().fill(Color.orange))
+            .background(
+                Capsule()
+                    .fill(Color.orange)
+                    .overlay { if ctaIsResolving { CTASheen() } }
+                    .clipShape(Capsule())
+            )
+            .lockOn(isResolved: !ctaIsResolving, cornerRadius: 28, haptic: true)
             .shadow(color: Color.orange.opacity(0.55), radius: 22, y: 0)
         }
         .buttonStyle(.plain)
