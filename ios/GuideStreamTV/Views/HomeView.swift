@@ -3473,11 +3473,15 @@ private struct TopPicksSection: View {
                                 }
                                 .clipShape(.rect(cornerRadius: 10))
 
-                                Text(show.title)
-                                    .scaledFont(size: 12, weight: .semibold)
-                                    .foregroundStyle(Color.textPrimary)
-                                    .lineLimit(1)
-                                    .frame(width: 164, alignment: .leading)
+                                // GUI-70: movie vs series at a glance.
+                                HStack(spacing: 4) {
+                                    MediaTypeGlyph(isTV: show.isTV, size: 12)
+                                    Text(show.title)
+                                        .scaledFont(size: 12, weight: .semibold)
+                                        .foregroundStyle(Color.textPrimary)
+                                        .lineLimit(1)
+                                }
+                                .frame(width: 164, alignment: .leading)
                             }
                         }
                         .buttonStyle(.plain)
@@ -4354,11 +4358,15 @@ private struct TrendingRankedSection: View {
                                 }
                                 .clipShape(.rect(cornerRadius: 10))
 
-                                Text(show.title)
-                                    .scaledFont(size: 12, weight: .semibold)
-                                    .foregroundStyle(Color.textPrimary)
-                                    .lineLimit(1)
-                                    .frame(width: 164, alignment: .leading)
+                                // GUI-70: movie vs series at a glance.
+                                HStack(spacing: 4) {
+                                    MediaTypeGlyph(isTV: show.isTV, size: 12)
+                                    Text(show.title)
+                                        .scaledFont(size: 12, weight: .semibold)
+                                        .foregroundStyle(Color.textPrimary)
+                                        .lineLimit(1)
+                                }
+                                .frame(width: 164, alignment: .leading)
                             }
                         }
                         .buttonStyle(.plain)
@@ -4587,10 +4595,14 @@ private struct LeavingSoonSection: View {
                                 }
 
                                 VStack(alignment: .leading, spacing: 2) {
-                                    Text(show.title)
-                                        .scaledFont(size: 14, weight: .semibold)
-                                        .foregroundStyle(Color.textPrimary)
-                                        .lineLimit(1)
+                                    // GUI-70: movie vs series at a glance.
+                                    HStack(spacing: 4) {
+                                        MediaTypeGlyph(isTV: show.isTV, size: 13)
+                                        Text(show.title)
+                                            .scaledFont(size: 14, weight: .semibold)
+                                            .foregroundStyle(Color.textPrimary)
+                                            .lineLimit(1)
+                                    }
                                     Text(platformName(for: show))
                                         .scaledFont(size: 11)
                                         .foregroundStyle(Color.textTertiary)

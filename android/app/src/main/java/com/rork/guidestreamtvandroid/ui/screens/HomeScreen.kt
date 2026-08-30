@@ -1569,14 +1569,24 @@ private fun WatchListCard(
             }
         }
         Spacer(Modifier.height(6.dp))
-        Text(
-            text = stream.title ?: stream.titleName ?: "Untitled",
-            fontSize = 11.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = TextPrimary,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            // GUI-70: movie vs series at a glance. A saved row whose media
+            // type never resolves (legacy row, creator, podcast, game) gets no
+            // glyph rather than a guessed one.
+            val savedIsTv = stream.isTv ?: TitleId.isTv(stream.titleId)
+            if (savedIsTv != null) MediaTypeGlyph(isTV = savedIsTv, size = 11.dp)
+            Text(
+                text = stream.title ?: stream.titleName ?: "Untitled",
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = TextPrimary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
     }
 }
 
@@ -1701,14 +1711,21 @@ private fun PosterCardWithBadge(
             }
         }
         Spacer(Modifier.height(6.dp))
-        Text(
-            text = show.displayName,
-            fontSize = 11.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = TextPrimary,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            // GUI-70: movie vs series at a glance.
+            MediaTypeGlyph(isTV = show.isTV, size = 11.dp)
+            Text(
+                text = show.displayName,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = TextPrimary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
         if (!badgeAsMatchChip) {
             if (badgeText != null) {
                 Text(
