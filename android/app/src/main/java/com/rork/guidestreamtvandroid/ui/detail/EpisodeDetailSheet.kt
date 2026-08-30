@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -93,6 +94,9 @@ import com.rork.guidestreamtvandroid.ui.components.GsSheetHeader
 import com.rork.guidestreamtvandroid.ui.components.RemoteImage
 import com.rork.guidestreamtvandroid.ui.components.SocialCounterRow
 import com.rork.guidestreamtvandroid.ui.navigation.PendingTitleRoute
+import com.rork.guidestreamtvandroid.ui.reels.ReelTab
+import com.rork.guidestreamtvandroid.ui.reels.ReelsScreen
+import com.rork.guidestreamtvandroid.ui.reels.TrailerItem
 import com.rork.guidestreamtvandroid.ui.theme.BrandBlue
 import com.rork.guidestreamtvandroid.ui.theme.BrandOrange
 import com.rork.guidestreamtvandroid.ui.theme.Hairline
@@ -101,6 +105,8 @@ import com.rork.guidestreamtvandroid.ui.theme.SheetSurfaceBase
 import com.rork.guidestreamtvandroid.ui.theme.TextPrimary
 import com.rork.guidestreamtvandroid.ui.theme.TextSecondary
 import com.rork.guidestreamtvandroid.ui.theme.sheetTopInset
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
@@ -166,6 +172,15 @@ fun EpisodeDetailSheet(
      * movies, and when TMDB has no per-episode synopsis.
      */
     var episodeOverview by remember(route.titleId) { mutableStateOf<String?>(null) }
+    /**
+     * Trailers & clips for a coming-to-streaming title. A title that has not
+     * landed yet has nothing to watch, so the trailers are the only playable
+     * thing on the sheet. Empty for every other layout.
+     */
+    var trailerVideos by remember(route.titleId) { mutableStateOf<List<TMDBService.TMDBVideo>>(emptyList()) }
+    /** Non-null while the title-scoped Reels player is up. */
+    var reelsFeed by remember { mutableStateOf<List<TrailerItem>?>(null) }
+    var reelsStartIndex by remember { mutableStateOf(0) }
     var isResolvingSources by remember { mutableStateOf(false) }
     var showComments by remember { mutableStateOf(false) }
     var showCast by remember { mutableStateOf(false) }
@@ -195,6 +210,16 @@ fun EpisodeDetailSheet(
     LaunchedEffect(reminderKey, route.isComingToStreaming) {
         if (route.isComingToStreaming && reminderKey.isNotEmpty()) {
             reminders.refreshReminded(reminderKey)
+        }
+    }
+
+    // Trailers & clips, coming-soon layout only — the full layout routes to
+    // ShowDetailScreen, which carries its own Trailers & Clips row.
+    LaunchedEffect(tmdbId, isTV, route.isComingToStreaming) {
+        val tid = tmdbId ?: return@LaunchedEffect
+        if (!route.isComingToStreaming) return@LaunchedEffect
+        trailerVideos = withContext(Dispatchers.IO) {
+            try { TMDBService.get().getTitleVideos(tid, isTV) } catch (_: Exception) { emptyList() }
         }
     }
 
@@ -466,6 +491,38 @@ fun EpisodeDetailSheet(
                 AboutSection(
                     overview = detail?.overview,
                     fallback = "We'll let you know the moment $displayTitle lands on streaming.",
+                )
+                TitleTrailersRow(
+                    videos = trailerVideos,
+                    onTrailerTap = { idx ->
+                        val posterU = posterUrl
+                        val backdropU = detail?.backdropPath?.let {
+                            "https://image.tmdb.org/t/p/w1280${if (it.startsWith("/")) it else "/$it"}"
+                        }
+                        reelsStartIndex = idx
+                        reelsFeed = trailerVideos.map { v ->
+                            TrailerItem(
+                                id = v.key,
+                                tmdbId = tmdbId ?: 0,
+                                showName = displayTitle,
+                                synopsis = detail?.overview ?: "",
+                                genre = detail?.genres?.firstOrNull()?.name ?: "",
+                                runtime = "",
+                                platformId = "",
+                                platformName = "TRAILER",
+                                platformColor = BrandOrange,
+                                backdropUrl = backdropU,
+                                posterUrl = posterU,
+                                trailerKey = v.key,
+                                thumbnailUrl = "https://img.youtube.com/vi/${v.key}/hqdefault.jpg",
+                                voteAverage = detail?.voteAverage ?: 0.0,
+                                tab = ReelTab.FOR_YOU,
+                                isTV = isTV,
+                                videoType = v.type,
+                                videoName = v.name,
+                            )
+                        }
+                    },
                 )
             } else {
                 Hairline()
@@ -790,6 +847,23 @@ fun EpisodeDetailSheet(
             watchmodeSource = selectedSource,
             episodeRokuUrl = episodeSource?.rokuUrl,
         )
+    }
+
+    // Title-scoped Reels player for Trailers & Clips. The sheet is itself a
+    // dialog window, so the player gets its own full-bleed dialog rather than
+    // an in-sheet overlay, which would be clipped to the sheet's bounds.
+    reelsFeed?.let { feed ->
+        Dialog(
+            onDismissRequest = { reelsFeed = null },
+            properties = DialogProperties(usePlatformDefaultWidth = false),
+        ) {
+            ReelsScreen(
+                onDismiss = { reelsFeed = null },
+                injectedReels = feed,
+                injectedStartIndex = reelsStartIndex,
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
     }
 }
 

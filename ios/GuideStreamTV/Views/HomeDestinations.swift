@@ -478,6 +478,14 @@ enum DetailSubject: Identifiable, Hashable {
 
 // MARK: - Episode Detail Sheet
 
+/// Identifiable payload carrying the sheet's title-scoped Reels feed and the
+/// tapped start index into the full-screen cover.
+private struct SheetTrailerReels: Identifiable {
+    let id = UUID()
+    let feed: [TrailerItem]
+    let startIndex: Int
+}
+
 struct EpisodeDetailSheet: View {
     let subject: DetailSubject
     /// Visual elevation: `.base` for top-level sheets, `.raised` when
@@ -531,6 +539,13 @@ struct EpisodeDetailSheet: View {
     /// two or more of them.
     @State private var allSources: [WatchmodeSource] = []
     @State private var reminders = ReleaseReminderService.shared
+    /// Trailers & clips for a coming-to-streaming title. A title that hasn't
+    /// landed yet has nothing to watch, so the trailers are the only playable
+    /// thing on the sheet. Empty until the TMDB videos resolve.
+    @State private var trailerVideos: [TMDBVideo] = []
+    @State private var isFetchingTrailers: Bool = false
+    /// Non-nil while the title-scoped Reels player is up.
+    @State private var trailerReels: SheetTrailerReels?
 
     private var platformColor: Color {
         if let name = resolvedSource?.name { return brandColor(for: name) }
@@ -748,6 +763,9 @@ struct EpisodeDetailSheet: View {
                     aboutSection
                         .padding(.horizontal, 20)
                         .padding(.top, 28)
+                        .padding(.bottom, 8)
+
+                    trailersSection
                         .padding(.bottom, 28)
                 } else {
                     GsSheetHeader(title: title, subtitle: meta)
@@ -884,6 +902,18 @@ struct EpisodeDetailSheet: View {
             if isComingToStreaming, tmdbId != nil {
                 await reminders.refreshReminded(titleId: reminderKey)
             }
+            // Trailers & clips, coming-soon layout only — the full layout
+            // already routes to ShowDetailScreen, which carries its own row.
+            if isComingToStreaming, let tid = tmdbId {
+                await MainActor.run { self.isFetchingTrailers = true }
+                let vids = (try? await TMDBService.shared.getTitleVideos(
+                    tmdbId: tid, isTV: isTV
+                )) ?? []
+                await MainActor.run {
+                    self.trailerVideos = vids
+                    self.isFetchingTrailers = false
+                }
+            }
             // Run source resolution and TMDB detail fetch in parallel
             // so showLatestEpisode is ready before the user can tap
             // "Full details" — otherwise knownLatestEpisode is nil and
@@ -958,6 +988,13 @@ struct EpisodeDetailSheet: View {
                coachMark.shouldStartSheetTour(sourcesResolved: true) {
                 coachMark.startSheetTour()
             }
+        }
+        .fullScreenCover(item: $trailerReels) { reels in
+            ReelsScreen(
+                onDismiss: { trailerReels = nil },
+                injectedReels: reels.feed,
+                injectedStartIndex: reels.startIndex
+            )
         }
         .fullScreenCover(isPresented: $showFullDetail) {
             ShowDetailScreen(
@@ -1515,6 +1552,114 @@ struct EpisodeDetailSheet: View {
         if n >= 1_000_000 { return String(format: "%.1fM", Double(n) / 1_000_000) }
         if n >= 1_000 { return String(format: "%.1fK", Double(n) / 1_000) }
         return "\(n)"
+    }
+
+    // MARK: - Trailers & Clips
+
+    /// Horizontal row of up to six trailer/clip cards, matching the
+    /// ShowDetailScreen row. Renders nothing until the videos resolve, and
+    /// stays hidden when the title has none.
+    @ViewBuilder
+    private var trailersSection: some View {
+        if !trailerVideos.isEmpty {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Trailers & Clips")
+                    .scaledFont(size: 17, weight: .semibold)
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 20)
+
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 10) {
+                        ForEach(Array(trailerVideos.prefix(6).enumerated()), id: \.element.key) { idx, video in
+                            Button {
+                                openTrailerReels(startIndex: idx)
+                            } label: {
+                                trailerCard(video)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.horizontal, 20)
+                }
+            }
+        }
+    }
+
+    private func trailerCard(_ video: TMDBVideo) -> some View {
+        let thumb = URL(string: "https://img.youtube.com/vi/\(video.key)/hqdefault.jpg")
+        return RoundedRectangle(cornerRadius: 12, style: .continuous)
+            .fill(Color.white.opacity(0.05))
+            .frame(width: 130, height: 195)
+            .overlay { RemoteImage(url: thumb, contentMode: .fill) }
+            .clipShape(.rect(cornerRadius: 12))
+            .overlay(alignment: .center) {
+                Image(systemName: "play.circle.fill")
+                    .scaledFont(size: 34, weight: .regular)
+                    .foregroundStyle(.white.opacity(0.92))
+                    .shadow(color: .black.opacity(0.4), radius: 8)
+            }
+            .overlay(alignment: .topLeading) {
+                if let type = video.type, !type.isEmpty {
+                    Text(type)
+                        .scaledFont(size: 9, weight: .bold)
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 3)
+                        .background(.ultraThinMaterial, in: .rect(cornerRadius: 5))
+                        .padding(6)
+                }
+            }
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(Color.white.opacity(0.10), lineWidth: 0.5)
+            )
+    }
+
+    /// Title-scoped Reels feed built from the loaded videos — every item
+    /// shares this title's identity and differs only by video key / type.
+    private func buildTrailerReelFeed() -> [TrailerItem] {
+        let posterU = posterUrl.flatMap { URL(string: $0) }
+        let backdropU = resolvedBackdrop.flatMap { URL(string: $0) }
+        let identity = String(title.prefix(3)).uppercased()
+        let svcName = resolvedSource?.name ?? resolvedProviderName ?? ""
+        let color = svcName.isEmpty ? Color.orange : brandColor(for: svcName)
+        return trailerVideos.map { v in
+            TrailerItem(
+                id: v.key,
+                tmdbId: tmdbId ?? 0,
+                showName: title,
+                synopsis: resolvedOverview ?? "",
+                genre: "",
+                runtime: "",
+                platformId: svcName.lowercased(),
+                platformName: svcName.isEmpty ? "TRAILER" : svcName.uppercased(),
+                platformColor: color,
+                platformTextColor: .white,
+                backdropURL: backdropU,
+                posterURL: posterU,
+                trailerKey: v.key,
+                thumbnailURL: URL(string: "https://img.youtube.com/vi/\(v.key)/hqdefault.jpg"),
+                youtubeURL: URL(string: "https://www.youtube.com/watch?v=\(v.key)"),
+                deepLinkURL: nil,
+                voteAverage: 0,
+                likes: 0,
+                comments: 0,
+                tab: .forYou,
+                identityCode: identity,
+                gradeColor: color.opacity(0.15),
+                isSponsored: false,
+                isTV: isTV,
+                videoType: v.type,
+                videoName: v.name
+            )
+        }
+    }
+
+    private func openTrailerReels(startIndex: Int) {
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        let feed = buildTrailerReelFeed()
+        guard !feed.isEmpty else { return }
+        trailerReels = SheetTrailerReels(feed: feed, startIndex: startIndex)
     }
 
     // MARK: - About

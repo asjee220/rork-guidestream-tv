@@ -1188,7 +1188,7 @@ private fun isUsableStreamUrl(url: String?): Boolean {
  * Hidden entirely when there are no qualifying videos.
  */
 @Composable
-private fun TitleTrailersRow(
+internal fun TitleTrailersRow(
     videos: List<TMDBService.TMDBVideo>,
     onTrailerTap: (Int) -> Unit,
 ) {
