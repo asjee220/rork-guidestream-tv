@@ -18,6 +18,29 @@
             <action android:name="android.speech.RecognitionService" />
         </intent>
         <package android:name="com.roku.remote" />
+
+        <!--
+          GUI-77: sports broadcaster apps the Watch button launches when the
+          broadcaster does not claim its own https URL as a verified App Link.
+          getLaunchIntentForPackage returns null without this visibility on
+          Android 11+, even when the app is installed. Every package here was
+          checked against its live Play Store listing.
+        -->
+        <package android:name="com.espn.score_center" />
+        <package android:name="com.foxsports.android" />
+        <package android:name="com.peacocktv.peacockandroid" />
+        <package android:name="com.cbs.app" />
+        <package android:name="com.handmark.sportcaster" />
+        <package android:name="com.wbd.stream" />
+        <package android:name="com.bleacherreport.android.teamstream" />
+        <package android:name="com.gotv.nflgamecenter.us.lite" />
+        <package android:name="com.nbaimd.gametime.nba2011" />
+        <package android:name="com.bamnetworks.mobile.android.gameday.atbat" />
+        <package android:name="com.nhl.gc1112.free" />
+        <package android:name="tv.fubo.mobile" />
+        <package android:name="com.sling" />
+        <package android:name="com.dazn" />
+        <package android:name="com.amazon.avod.thirdpartyclient" />
     </queries>
 
     <application

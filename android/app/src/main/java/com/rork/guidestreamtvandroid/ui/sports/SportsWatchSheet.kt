@@ -1,7 +1,5 @@
 package com.rork.guidestreamtvandroid.ui.sports
 
-import android.content.Intent
-import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -63,6 +61,7 @@ import com.rork.guidestreamtvandroid.data.models.SportsGame
 import com.rork.guidestreamtvandroid.data.repository.AuthViewModel
 import com.rork.guidestreamtvandroid.data.repository.StreamsViewModel
 import com.rork.guidestreamtvandroid.data.repository.TeamFavoritesService
+import com.rork.guidestreamtvandroid.data.SportsBroadcastLinks
 import com.rork.guidestreamtvandroid.data.repository.WatchIntentLogger
 import com.rork.guidestreamtvandroid.ui.cast.CastToTVSheet
 import com.rork.guidestreamtvandroid.ui.theme.BrandOrange
@@ -283,12 +282,14 @@ fun SportsWatchSheet(
                                 platformId = activeBroadcast?.lowercase(),
                                 metadata = mapOf("sport" to game.sport, "platform_name" to (activeBroadcast ?: "")),
                             )
-                            val q = Uri.encode("watch ${activeBroadcast ?: ""} $gameTitle live")
-                            runCatching {
-                                context.startActivity(
-                                    Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com/search?q=$q")),
-                                )
-                            }
+                            // GUI-77: land in the broadcaster's app when it is
+                            // installed. This used to be an unconditional
+                            // Google search URL, so it always opened a browser.
+                            SportsBroadcastLinks.open(
+                                context = context,
+                                broadcast = activeBroadcast ?: "",
+                                gameTitle = gameTitle,
+                            )
                             onDismiss()
                         },
                     contentAlignment = Alignment.Center,
