@@ -105,8 +105,8 @@ final class TVSportsService {
         // every division down to D3 (760 teams, 158 games on a Saturday), most
         // of which carry no national broadcast to deep-link into.
         Endpoint(sport: "CFB",    path: "football/college-football/scoreboard?groups=80"),
-        Endpoint(sport: "NCAAM",  path: "basketball/mens-college-basketball/scoreboard"),
-        Endpoint(sport: "NCAAW",  path: "basketball/womens-college-basketball/scoreboard")
+        Endpoint(sport: "NCAA Men",  path: "basketball/mens-college-basketball/scoreboard"),
+        Endpoint(sport: "NCAA Women",  path: "basketball/womens-college-basketball/scoreboard")
     ]
 
     func fetchAll() async -> [TVSportsGame] {

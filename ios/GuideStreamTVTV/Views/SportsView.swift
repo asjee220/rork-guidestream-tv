@@ -53,7 +53,7 @@ struct SportsView: View {
     @State private var showServicesSheet: Bool = false
     @State private var auth = AuthViewModel.shared
 
-    private let sports: [String] = ["All", "NFL", "CFB", "NBA", "NBA Summer", "WNBA", "NCAAM", "NCAAW", "MLB", "Soccer", "UFC"]
+    private let sports: [String] = ["All", "NFL", "CFB", "NBA", "NBA Summer", "WNBA", "NCAA Men", "NCAA Women", "MLB", "Soccer", "UFC"]
 
     private struct TeamChip: Hashable {
         let abbrev: String

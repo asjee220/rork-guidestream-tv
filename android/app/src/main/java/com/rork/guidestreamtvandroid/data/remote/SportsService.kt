@@ -60,8 +60,8 @@ class SportsService {
         // every division down to D3 (760 teams, 158 games on a Saturday), most
         // of which carry no national broadcast to deep-link into.
         Endpoint("CFB", "football/college-football/scoreboard?groups=80"),
-        Endpoint("NCAAM", "basketball/mens-college-basketball/scoreboard"),
-        Endpoint("NCAAW", "basketball/womens-college-basketball/scoreboard"),
+        Endpoint("NCAA Men", "basketball/mens-college-basketball/scoreboard"),
+        Endpoint("NCAA Women", "basketball/womens-college-basketball/scoreboard"),
     )
 
     @Serializable
