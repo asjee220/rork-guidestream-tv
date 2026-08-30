@@ -33,11 +33,11 @@ import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.SportsSoccer
+import androidx.compose.material.icons.filled.SportsFootball
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.PlayArrow
-import androidx.compose.material.icons.outlined.SportsSoccer
+import androidx.compose.material.icons.outlined.SportsFootball
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -264,7 +264,7 @@ private fun AskFab(onClick: () -> Unit) {
 private fun tabIconPair(tab: AppTab): Pair<ImageVector, ImageVector> = when (tab) {
     AppTab.HOME -> Icons.Filled.Home to Icons.Outlined.Home
     AppTab.REELS -> Icons.Filled.PlayArrow to Icons.Outlined.PlayArrow
-    AppTab.SPORTS -> Icons.Filled.SportsSoccer to Icons.Outlined.SportsSoccer
+    AppTab.SPORTS -> Icons.Filled.SportsFootball to Icons.Outlined.SportsFootball
     AppTab.PROFILE -> Icons.Filled.Person to Icons.Outlined.Person
     AppTab.ASK -> Icons.Filled.AutoAwesome to Icons.Filled.AutoAwesome
 }

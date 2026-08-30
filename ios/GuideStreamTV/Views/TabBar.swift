@@ -13,7 +13,7 @@ enum AppTab: Int, CaseIterable, Hashable {
     var symbol: String {
         switch self {
         case .home: return "house.fill"
-        case .sports: return "soccerball"
+        case .sports: return "american.football.fill"
         case .ask: return "sparkles"
         case .reels: return "play.square.stack.fill"
         case .profile: return "person.fill"
