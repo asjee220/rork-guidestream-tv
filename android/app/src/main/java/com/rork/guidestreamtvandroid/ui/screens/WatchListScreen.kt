@@ -329,7 +329,7 @@ fun WatchListScreen(
                                     tmdbId = tmdbKey,
                                     source = "watchlist_leaving",
                                     reminderKind = ReleaseReminderService.REMINDER_KIND_DEPARTURE,
-                                    mediaType = if (stream.isTv ?: true) "tv" else "movie",
+                                    mediaType = if (stream.isTv ?: TitleId.isTv(stream.titleId) ?: true) "tv" else "movie",
                                 )
                             }
                         } else {
@@ -341,7 +341,7 @@ fun WatchListScreen(
                                     titleId = stream.titleId,
                                     titleName = stream.title ?: stream.titleName,
                                     posterUrl = stream.posterUrl,
-                                    isTv = stream.isTv ?: true,
+                                    isTv = stream.isTv ?: TitleId.isTv(stream.titleId) ?: true,
                                 ),
                             )
                         },

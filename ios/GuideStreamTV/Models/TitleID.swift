@@ -34,4 +34,19 @@ enum TitleID {
         }
         return nil
     }
+
+    /// True for a TV title, false for a movie, nil when `raw` carries no media
+    /// type — a bare integer, a creator/podcast/sports id, or nothing at all.
+    ///
+    /// The companion to `UserStream.isTV`, which is nil on legacy rows written
+    /// before `is_tv` existed and on every non-TMDB entity. Callers that used
+    /// to write `item.isTV ?? true` were guessing, and guessing "series" put a
+    /// TV label on saved movies.
+    static func isTV(from raw: String?) -> Bool? {
+        guard let raw else { return nil }
+        let lower = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if lower.hasPrefix("tmdb:tv:") { return true }
+        if lower.hasPrefix("tmdb:movie:") { return false }
+        return nil
+    }
 }

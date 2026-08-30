@@ -231,4 +231,16 @@ enum TitleID {
         }
         return nil
     }
+
+    /// True for a TV title, false for a movie, nil when `raw` carries no media
+    /// type. Kept byte-identical to the iOS copy in Models/TitleID.swift —
+    /// tvOS has its own declaration of this enum, so the two must be changed
+    /// together.
+    static func isTV(from raw: String?) -> Bool? {
+        guard let raw else { return nil }
+        let lower = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if lower.hasPrefix("tmdb:tv:") { return true }
+        if lower.hasPrefix("tmdb:movie:") { return false }
+        return nil
+    }
 }

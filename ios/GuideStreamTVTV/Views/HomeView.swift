@@ -227,6 +227,10 @@ struct PosterShow: Identifiable, Hashable {
     let symbol: String
     var posterUrl: String? = nil
     var tmdbId: Int? = nil
+    /// nil when the source row does not say. GUI-70's glyph is simply omitted
+    /// then — an unknown draws nothing rather than guessing, which is how the
+    /// watch list ended up labelling saved movies as series.
+    var isTV: Bool? = nil
 }
 
 /// Default gradient colors used as a tasteful fallback while TMDB images load or when they fail.
@@ -612,7 +616,8 @@ struct HomeView: View {
             posterColors: colors,
             symbol: "play.tv.fill",
             posterUrl: r.posterUrl,
-            tmdbId: r.id
+            tmdbId: r.id,
+            isTV: r.isTV
         )
     }
 
@@ -645,7 +650,8 @@ struct HomeView: View {
                     posterColors: HomeFallback.posterColors,
                     symbol: "play.tv.fill",
                     posterUrl: r.posterUrl,
-                    tmdbId: r.id
+                    tmdbId: r.id,
+                    isTV: r.isTV
                 )
             }
     }
@@ -667,7 +673,8 @@ struct HomeView: View {
                     posterColors: HomeFallback.posterColors,
                     symbol: "flame.fill",
                     posterUrl: r.posterUrl,
-                    tmdbId: r.id
+                    tmdbId: r.id,
+                    isTV: r.isTV
                 )
             }
     }
@@ -1246,10 +1253,18 @@ private struct PosterCard: View {
                     .clipShape(.rect(cornerRadius: 10))
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(show.title)
-                        .scaledFont(size: 12, weight: .semibold)
-                        .foregroundStyle(Color.textPrimary)
-                        .lineLimit(1)
+                    // GUI-70. Note the tvOS card is 110pt wide against iOS's
+                    // 164, so the glyph is 11pt here rather than 12 — any
+                    // larger and it crowds a title that is already one line.
+                    HStack(spacing: 4) {
+                        if let isTV = show.isTV {
+                            MediaTypeGlyph(isTV: isTV, size: 11)
+                        }
+                        Text(show.title)
+                            .scaledFont(size: 12, weight: .semibold)
+                            .foregroundStyle(Color.textPrimary)
+                            .lineLimit(1)
+                    }
                     Text(show.meta)
                         .scaledFont(size: 10)
                         .foregroundStyle(Color.textTertiary)

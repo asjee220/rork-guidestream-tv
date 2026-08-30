@@ -281,9 +281,19 @@ final class SportsLiveActivityController {
         if let userId = AuthViewModel.shared.currentUser?.id {
             payload["user_id"] = .string(userId.uuidString)
         }
+        // returning: .minimal is load-bearing, not a micro-optimisation.
+        // The default asks PostgREST for the row back, which makes the
+        // statement an INSERT ... RETURNING — and Postgres applies the SELECT
+        // policy to a RETURNING clause. live_activities_read_own is
+        // `auth.uid() = user_id`, authenticated only, so a GUEST has no SELECT
+        // policy at all and the whole write is rejected with "new row violates
+        // row-level security policy". Guests could never register an activity,
+        // which is why their scores never updated in the background. Nothing
+        // here ever reads the row, so asking for it back was always wrong:
+        // this table is write-only, as the header says.
         try await SupabaseManager.shared.client
             .from("live_activities")
-            .upsert(payload, onConflict: "activity_id")
+            .upsert(payload, onConflict: "activity_id", returning: .minimal)
             .execute()
     }
 
@@ -296,7 +306,7 @@ final class SportsLiveActivityController {
         do {
             try await SupabaseManager.shared.client
                 .from("live_activities")
-                .upsert(payload, onConflict: "activity_id")
+                .upsert(payload, onConflict: "activity_id", returning: .minimal)
                 .execute()
         } catch {
             print("[LiveActivity] token rotation update failed: \(error.localizedDescription)")
@@ -312,7 +322,7 @@ final class SportsLiveActivityController {
         do {
             try await SupabaseManager.shared.client
                 .from("live_activities")
-                .upsert(payload, onConflict: "activity_id")
+                .upsert(payload, onConflict: "activity_id", returning: .minimal)
                 .execute()
         } catch {
             print("[LiveActivity] ended_at stamp failed: \(error.localizedDescription)")

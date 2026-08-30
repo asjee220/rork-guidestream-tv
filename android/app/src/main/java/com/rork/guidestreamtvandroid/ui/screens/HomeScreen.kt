@@ -45,6 +45,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
+import com.rork.guidestreamtvandroid.ui.components.MediaTypeGlyph
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -365,7 +366,7 @@ fun HomeScreen(
                         titleId = stream.titleId,
                         titleName = stream.title ?: stream.titleName,
                         posterUrl = stream.posterUrl,
-                        isTv = stream.isTv ?: true,
+                        isTv = stream.isTv ?: TitleId.isTv(stream.titleId) ?: true,
                     ))
                 },
                 onSeeAll = {
@@ -2029,14 +2030,21 @@ private fun NowNextPosterCard(
             }
         }
         Spacer(Modifier.height(6.dp))
-        Text(
-            text = entry.result.displayName,
-            fontSize = 11.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = TextPrimary,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            // GUI-70: movie vs series at a glance.
+            MediaTypeGlyph(isTV = entry.result.isTV, size = 11.dp)
+            Text(
+                text = entry.result.displayName,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = TextPrimary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
         Text(
             text = entry.meta,
             fontSize = 10.sp,

@@ -444,7 +444,10 @@ private struct WatchListContent: View {
         guard expiryInfo(for: item) != nil,
               let key = departureReminderKey(for: item) else { return nil }
         let tmdbId = Int(key)
-        let mediaType = (item.isTV ?? true) ? "tv" : "movie"
+        // is_tv is null on legacy rows; the title id still says which it is.
+        // Defaulting to "tv" here quietly filed saved movies as series.
+        let resolvedIsTV = item.isTV ?? TitleID.isTV(from: item.titleId) ?? true
+        let mediaType = resolvedIsTV ? "tv" : "movie"
         return {
             Task {
                 await reminders.toggleReminder(
@@ -538,7 +541,7 @@ private struct WatchListContent: View {
             symbol: "play.tv.fill",
             posterUrl: item.posterUrl,
             tmdbId: TitleID.tmdbId(from: item.titleId),
-            isTV: item.isTV ?? true
+            isTV: item.isTV ?? TitleID.isTV(from: item.titleId) ?? true
         )
     }
 }

@@ -31,4 +31,22 @@ object TitleId {
         }
         return null
     }
+
+    /**
+     * True for a TV title, false for a movie, null when [raw] carries no media
+     * type — a bare integer, a creator/podcast/sports id, or nothing at all.
+     *
+     * The companion to UserStream.isTv, which is null on legacy rows written
+     * before is_tv existed and on every non-TMDB entity. Callers that wrote
+     * `stream.isTv ?: true` were guessing, and guessing "series" put a TV label
+     * on saved movies.
+     */
+    fun isTv(raw: String?): Boolean? {
+        val lower = raw?.trim()?.lowercase() ?: return null
+        return when {
+            lower.startsWith("tmdb:tv:") -> true
+            lower.startsWith("tmdb:movie:") -> false
+            else -> null
+        }
+    }
 }

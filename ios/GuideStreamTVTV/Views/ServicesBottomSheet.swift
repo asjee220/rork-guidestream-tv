@@ -207,7 +207,10 @@ struct WatchListBottomSheet: View {
             posterColors: HomeFallback.posterColors,
             symbol: "bookmark.fill",
             posterUrl: row.posterUrl,
-            tmdbId: Int(row.titleId)
+            tmdbId: Int(row.titleId),
+            // is_tv is null on legacy watch list rows; the title id still says
+            // which it is. Nil only for ids that carry no media type at all.
+            isTV: row.isTv ?? TitleID.isTV(from: row.titleId)
         )
     }
 }

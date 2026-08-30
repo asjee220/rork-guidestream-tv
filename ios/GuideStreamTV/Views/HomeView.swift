@@ -4176,10 +4176,16 @@ private struct PosterCard: View {
                 }
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(show.title)
-                        .scaledFont(size: 12 * typeScale, weight: .semibold)
-                        .foregroundStyle(Color.textPrimary)
-                        .lineLimit(1)
+                    // GUI-70: movie vs series at a glance. The glyph scales
+                    // with the card so it holds its weight against the title
+                    // at every rail size.
+                    HStack(spacing: 4) {
+                        MediaTypeGlyph(isTV: show.isTV, size: 12 * typeScale)
+                        Text(show.title)
+                            .scaledFont(size: 12 * typeScale, weight: .semibold)
+                            .foregroundStyle(Color.textPrimary)
+                            .lineLimit(1)
+                    }
                     Text(show.meta)
                         .scaledFont(size: 10 * typeScale)
                         .foregroundStyle(Color.textTertiary)
@@ -4966,10 +4972,13 @@ private struct NowNextPosterCard: View {
                     .clipShape(.rect(cornerRadius: 12))
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(entry.show.title)
-                        .scaledFont(size: 14, weight: .semibold)
-                        .foregroundStyle(Color.textPrimary)
-                        .lineLimit(1)
+                    HStack(spacing: 4) {
+                        MediaTypeGlyph(isTV: entry.show.isTV, size: 13)
+                        Text(entry.show.title)
+                            .scaledFont(size: 14, weight: .semibold)
+                            .foregroundStyle(Color.textPrimary)
+                            .lineLimit(1)
+                    }
                     Text(entry.show.meta)
                         .scaledFont(size: 11)
                         .foregroundStyle(Color.textTertiary)
@@ -5064,10 +5073,13 @@ private struct ComingSoonPosterCard: View {
                 }
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(item.show.title)
-                        .scaledFont(size: 14, weight: .semibold)
-                        .foregroundStyle(Color.textPrimary)
-                        .lineLimit(1)
+                    HStack(spacing: 4) {
+                        MediaTypeGlyph(isTV: item.show.isTV, size: 13)
+                        Text(item.show.title)
+                            .scaledFont(size: 14, weight: .semibold)
+                            .foregroundStyle(Color.textPrimary)
+                            .lineLimit(1)
+                    }
                     Text(item.show.meta)
                         .scaledFont(size: 11)
                         .foregroundStyle(Color.textTertiary)

@@ -246,6 +246,15 @@ class SportsLiveScoreController private constructor(context: Context) {
             }
             SupabaseManager.client.postgrest
                 .from("live_activities")
+                // NEVER add select() here, and never decode the result.
+                // supabase-kt returns minimal by default, which is the only
+                // reason this write survives: select() would make it an
+                // INSERT ... RETURNING, and Postgres applies the SELECT policy
+                // to a RETURNING clause. live_activities_read_own is
+                // `auth.uid() = user_id`, authenticated only, so a GUEST has no
+                // SELECT policy at all and the whole write would be rejected
+                // with "new row violates row-level security policy" — which is
+                // exactly the bug the iOS client had. The table is write-only.
                 .upsert(payload) { onConflict = "activity_id" }
         } catch (e: Throwable) {
             if (e is CancellationException) throw e
