@@ -292,6 +292,22 @@ final class TVStreamsViewModel {
         }
     }
 
+    /// Whether a `new_episodes` row should show the NEW chip for *this*
+    /// viewer. `new_episodes.is_new` is a shared, server-owned column, so on
+    /// its own it can never reflect one person having already watched
+    /// (GUI-74). Three conditions, all required:
+    ///  * the server still considers the row new,
+    ///  * the episode has actually landed — a future `released_at` is a
+    ///    scheduled drop, not a new episode,
+    ///  * this viewer has not opened the title since it landed.
+    func isNewForViewer(_ row: NewEpisodeRow, now: Date = Date()) -> Bool {
+        guard row.isNew ?? true else { return false }
+        guard let released = row.releasedAt else { return true }
+        guard released <= now else { return false }
+        let seen = seenContentAt[row.titleId] ?? .distantPast
+        return seen < released
+    }
+
     /// Upserts a `watchlist_seen` row marking the title as seen now, and
     /// optimistically updates `seenContentAt` so the badge disappears
     /// immediately. Owner is the signed-in user id when authenticated,

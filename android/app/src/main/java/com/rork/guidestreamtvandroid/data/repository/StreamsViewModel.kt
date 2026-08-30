@@ -367,12 +367,45 @@ class StreamsViewModel private constructor(context: Context) {
                     .decodeList<NewEpisodeRow>()
                 allRows.addAll(nonTmdbRows)
             }
-            _newEpisodes.value = allRows.sortedByDescending { it.releasedAt }.take(20)
+            _newEpisodes.value = allRows
+                .filter { isNewForViewer(it) }
+                .sortedByDescending { it.releasedAt }
+                .take(20)
         } catch (e: Throwable) {
             if (e is CancellationException) throw e
             _lastError.value = e.message
         } finally {
             _isLoadingEpisodes.value = false
+        }
+    }
+
+    /**
+     * Whether a `new_episodes` row is still new for *this* viewer. `is_new` is
+     * a shared, server-owned column, so on its own it can never reflect one
+     * person having already watched (GUI-74). Three conditions, all required:
+     * the server still considers the row new; the episode has actually landed
+     * (a future `released_at` is a scheduled drop, not a new episode); and the
+     * viewer has not opened the title since it landed.
+     */
+    fun isNewForViewer(row: NewEpisodeRow, nowMillis: Long = System.currentTimeMillis()): Boolean {
+        if (row.isNew == false) return false
+        val released = parseTimestampMillis(row.releasedAt) ?: return true
+        if (released > nowMillis) return false
+        val seen = _seenContentAt.value[row.titleId] ?: return true
+        return seen < released
+    }
+
+    /** Parses an ISO-8601 timestamp the same way `fetchWatchlistSeen` does. */
+    private fun parseTimestampMillis(raw: String?): Long? {
+        if (raw.isNullOrBlank()) return null
+        return try {
+            java.time.Instant.parse(raw).toEpochMilli()
+        } catch (_: Exception) {
+            try {
+                java.time.OffsetDateTime.parse(raw).toInstant().toEpochMilli()
+            } catch (_: Exception) {
+                null
+            }
         }
     }
 
