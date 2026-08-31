@@ -288,7 +288,15 @@ class SportsService {
                 SportsGame(
                     id = ev.id,
                     sport = endpoint.sport,
-                    leagueShort = ev.season?.slug ?: endpoint.sport,
+                    // GUI-81: NOT ev.season?.slug. ESPN's season slug is the
+                    // season TYPE — "regular-season", "preseason",
+                    // "post-season", "round-of-16", "final" — never a league.
+                    // It reached the live-score notification's subtext, the
+                    // widget's live section and team_favorites.league, which is
+                    // why a Phillies game announced itself as REGULAR-SEASON on
+                    // the lock screen. endpoint.sport is the label the pills,
+                    // the picker and the Supabase mapRow path all already use.
+                    leagueShort = endpoint.sport,
                     state = state,
                     statusDetail = statusDetail,
                     home = makeTeam(home),

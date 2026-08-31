@@ -175,7 +175,10 @@ final class TVSportsService {
         return TVSportsGame(
             id: ev.id ?? UUID().uuidString,
             sport: sport,
-            leagueShort: ev.season?.slug ?? sport,
+            // GUI-81: NOT ev.season?.slug — that is the season type
+            // ("regular-season", "final", …), never a league. Kept identical
+            // to the phone and Android services.
+            leagueShort: sport,
             state: state,
             statusDetail: detail,
             startDate: parseDate(ev.date),

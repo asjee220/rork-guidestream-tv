@@ -302,7 +302,12 @@ final class SportsService {
             return Array(Set(names)).sorted()
         }()
 
-        let leagueShort = ev.season?.slug ?? sport
+        // GUI-81: NOT ev.season?.slug. ESPN's season slug is the season
+        // TYPE — "regular-season", "preseason", "post-season", "round-of-16",
+        // "final" — never a league. It reached the Live Activity, the game
+        // detail header and team_favorites.league. `sport` is the label the
+        // pills, the picker and the Supabase path all already use.
+        let leagueShort = sport
 
         return SportsGame(
             id: ev.id ?? UUID().uuidString,
