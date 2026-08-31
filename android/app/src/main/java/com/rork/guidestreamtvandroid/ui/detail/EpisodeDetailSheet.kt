@@ -612,6 +612,24 @@ fun EpisodeDetailSheet(
                     )
                 }
 
+                // ── Latest episode ───────────────────────────────────
+                // Between the service chips and the CTA, so the button can
+                // stay the full-size "Watch on" + service chip. Hidden for
+                // movies and for shows TMDB has no last_episode_to_air for,
+                // so nothing shifts when there is nothing to say. (GUI-82)
+                if (isTV) {
+                    val lastEp = detail?.lastEpisodeToAir
+                    val season = lastEp?.seasonNumber
+                    val episode = lastEp?.episodeNumber
+                    if (season != null && episode != null) {
+                        LatestEpisodeRow(
+                            season = season,
+                            episode = episode,
+                            episodeName = lastEp.name,
+                        )
+                    }
+                }
+
                 // ── Watch CTA + watchlist circle ─────────────────────
                 Row(
                     modifier = Modifier
@@ -864,6 +882,66 @@ fun EpisodeDetailSheet(
                 injectedStartIndex = reelsStartIndex,
                 modifier = Modifier.fillMaxSize(),
             )
+        }
+    }
+}
+
+/**
+ * Season and episode of the newest aired episode, directly above the Watch
+ * button. The numbers are what that button is about to open, so they belong
+ * next to it rather than inside it. Mirrors iOS. (GUI-82)
+ */
+@Composable
+private fun LatestEpisodeRow(
+    season: Int,
+    episode: Int,
+    episodeName: String?,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp)
+            .padding(top = 18.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text(
+            text = "LATEST EPISODE",
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Bold,
+            letterSpacing = 0.9.sp,
+            color = TextSecondary,
+        )
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Color(0xFF2E3E58))
+                    .padding(horizontal = 10.dp, vertical = 5.dp),
+            ) {
+                Text(
+                    text = "S$season EP$episode",
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = TextPrimary,
+                )
+            }
+            // TMDB falls back to a generic "Episode 10" when a series has no
+            // real episode titles, which just restates the pill. Drop it.
+            val realName = episodeName
+                ?.takeIf { it.isNotBlank() }
+                ?.takeIf { !it.equals("Episode $episode", ignoreCase = true) }
+            if (realName != null) {
+                Text(
+                    text = realName,
+                    fontSize = 14.sp,
+                    color = TextPrimary.copy(alpha = 0.78f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
     }
 }

@@ -523,6 +523,10 @@ struct EpisodeDetailSheet: View {
     /// Latest episode (season, episode) pulled from TMDB when the subject is a
     /// show. Drives the "Watch S:1 EP:10 on Paramount+" button label.
     @State private var showLatestEpisode: (seasonNum: Int, episodeNum: Int)? = nil
+    /// Title of that latest episode, shown beside the numbers in the row above
+    /// the Watch button. Optional — TMDB leaves it empty on some series, and
+    /// the row reads fine without it. (GUI-82)
+    @State private var showLatestEpisodeName: String? = nil
     /// Per-episode deep link URL resolved from Watchmode's episode-level
     /// sources endpoint. When non-nil, the watch button opens this URL
     /// instead of `episodeDeeplinkURL` so that Paramount+ and other
@@ -796,9 +800,13 @@ struct EpisodeDetailSheet: View {
                         .padding(.horizontal, 20)
                         .padding(.top, 22)
 
+                    latestEpisodeRow
+                        .padding(.horizontal, 20)
+                        .padding(.top, 18)
+
                     watchActions
                         .padding(.horizontal, 20)
-                        .padding(.top, 22)
+                        .padding(.top, 14)
 
                     if let caption = availabilityCaption {
                         Text(caption)
@@ -926,6 +934,7 @@ struct EpisodeDetailSheet: View {
                        let sn = last.seasonNumber, let en = last.episodeNumber {
                         await MainActor.run {
                             self.showLatestEpisode = (sn, en)
+                            self.showLatestEpisodeName = last.name
                             NSLog("[EP_SHEET_DIAG] tmdbId=\(tid) lastEpisodeToAir=S\(sn):E\(en) name=\(last.name ?? "nil")")
                         }
                     } else {
@@ -1700,6 +1709,58 @@ struct EpisodeDetailSheet: View {
         }
     }
 
+    // MARK: - Latest episode
+
+    /// Season and episode of the newest aired episode, directly above the
+    /// Watch button.
+    ///
+    /// These numbers used to live inside the CTA, which cost the button the
+    /// word "on" and dropped its label from 17pt to 15pt to fit. They are
+    /// what that button is about to open, so they read better beside it than
+    /// inside it — and Android can carry the identical row, which it could
+    /// not do while the numbers were part of an iOS button label. (GUI-82)
+    ///
+    /// Renders nothing for movies, for shows TMDB has no `last_episode_to_air`
+    /// for, or when the resolved source has no episode-level entry — so the
+    /// layout never reserves space for a row it cannot fill.
+    @ViewBuilder
+    private var latestEpisodeRow: some View {
+        if let ctx = episodeContext, !episodeSourceUnavailable {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("LATEST EPISODE")
+                    .scaledFont(size: 11, weight: .bold)
+                    .tracking(0.9)
+                    .foregroundStyle(Color.textSecondary)
+                HStack(spacing: 10) {
+                    Text(DisplayFormatting.seasonEpisodeCompact(
+                        season: ctx.seasonNum, episode: ctx.episodeNum
+                    ))
+                    .scaledFont(size: 13, weight: .bold)
+                    .foregroundStyle(Color.textPrimary)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(Theme.sheetSurfaceRaised)
+                    )
+                    // TMDB falls back to a generic "Episode 10" when a series
+                    // has no real episode titles, which just restates the pill.
+                    if let name = showLatestEpisodeName,
+                       !name.isEmpty,
+                       name.compare("Episode \(ctx.episodeNum)", options: .caseInsensitive) != .orderedSame {
+                        Text(name)
+                            .scaledFont(size: 14)
+                            .foregroundStyle(Color.white.opacity(0.78))
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                    }
+                    Spacer(minLength: 0)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
     // MARK: - CTA
 
     private var watchActions: some View {
@@ -1848,11 +1909,11 @@ struct EpisodeDetailSheet: View {
             }
         } label: {
             HStack(spacing: 8) {
-                if let ctx = episodeContext, !episodeSourceUnavailable {
-                    Text("\(ctaVerb) \(DisplayFormatting.seasonEpisodeColon(season: ctx.seasonNum, episode: ctx.episodeNum))")
-                        .scaledFont(size: 15, weight: .semibold)
-                        .lineLimit(1)
-                } else if ctaIsResolving {
+                // One label in every case now. The season/episode variant that
+                // used to live here moved to `latestEpisodeRow` above the
+                // button, which is what let this go back to 17pt with the
+                // word "on" intact. (GUI-82)
+                if ctaIsResolving {
                     ResolvingCTALabel(size: 17)
                 } else {
                     Text("\(ctaVerb) on")
