@@ -6,6 +6,7 @@ import com.rork.guidestreamtvandroid.data.CountryCatalog
 import com.rork.guidestreamtvandroid.data.CountryCatalogEntry
 import com.rork.guidestreamtvandroid.data.models.BrowseCatalog
 import com.rork.guidestreamtvandroid.data.models.Platform
+import com.rork.guidestreamtvandroid.data.models.NewEpisodeRow
 import com.rork.guidestreamtvandroid.data.models.SourceKind
 import com.rork.guidestreamtvandroid.data.models.StreamingCatalog
 import com.rork.guidestreamtvandroid.data.models.TitleId
@@ -20,6 +21,7 @@ import com.rork.guidestreamtvandroid.data.remote.StreamingUpcomingService
 import com.rork.guidestreamtvandroid.data.remote.TMDBService
 import com.rork.guidestreamtvandroid.data.remote.toTMDBResult
 import com.rork.guidestreamtvandroid.data.repository.StreamsViewModel
+import com.rork.guidestreamtvandroid.ui.sports.SportsViewModel
 import com.rork.guidestreamtvandroid.widget.WidgetDataService
 import com.rork.guidestreamtvandroid.widget.WidgetFeedItem
 import com.rork.guidestreamtvandroid.data.remote.LiveStatusService
@@ -125,6 +127,15 @@ class HomeViewModel : ViewModel() {
 
     private val _recommendedCreators = MutableStateFlow<List<RecommendedCreator>>(emptyList())
     val recommendedCreators: StateFlow<List<RecommendedCreator>> = _recommendedCreators.asStateFlow()
+
+    // Hero rail inputs beyond trending media. Live games are not duplicated
+    // here — the hero reads SportsViewModel directly so Home and the Sports
+    // tab share one fetch and one cache.
+    private val _heroLiveCreators = MutableStateFlow<List<HeroLiveCreator>>(emptyList())
+    val heroLiveCreators: StateFlow<List<HeroLiveCreator>> = _heroLiveCreators.asStateFlow()
+
+    private val _heroCreatorUploads = MutableStateFlow<List<NewEpisodeRow>>(emptyList())
+    val heroCreatorUploads: StateFlow<List<NewEpisodeRow>> = _heroCreatorUploads.asStateFlow()
 
     private val _popularByService = MutableStateFlow<Map<String, List<TMDBResult>>>(emptyMap())
     val popularByService: StateFlow<Map<String, List<TMDBResult>>> = _popularByService.asStateFlow()
@@ -291,6 +302,16 @@ class HomeViewModel : ViewModel() {
             }
             launchDeferred { StreamsViewModel.get().refreshAll() }
 
+            // Hero rail: live sports, plus the viewer's live creators and
+            // their newest uploads. Deferred rather than blocking, so a slow
+            // ESPN fan-out delays those cards appearing and nothing else —
+            // the rail rebuilds reactively as each source lands.
+            launchDeferred {
+                val sports = SportsViewModel.get()
+                if (sports.games.value.isEmpty()) sports.fetchGames()
+            }
+            launchDeferred { loadHeroCreatorItems() }
+
             // Resolve the user's taste genres in the background. Additive and
             // best-effort — never blocks the Top Picks row from rendering.
             resolvePreferredGenres()
@@ -299,6 +320,49 @@ class HomeViewModel : ViewModel() {
             // and best-effort — never blocks the feed from rendering.
             loadRecommendedCreators()
         }
+    }
+
+    /**
+     * Live creators and newest uploads for the hero rail.
+     *
+     * Both are scoped to what this viewer follows: the live tier is their own
+     * livestream user_streams rows joined with live_status, and the uploads
+     * are their new_episodes rows from the last 72 hours. Same sources the
+     * widget feed already uses, so the two cannot disagree about who is live.
+     */
+    private suspend fun loadHeroCreatorItems() {
+        val streams = StreamsViewModel.get()
+
+        val livestreamRows = streams.userStreams.value
+            .filter { SourceKind.from(it.titleId).isLivestream }
+        val statuses = LiveStatusService.get()
+            .fetchLiveStatus(livestreamRows.map { it.titleId })
+            ?: emptyList()
+        val statusByTitle = statuses.associateBy { it.titleId }
+
+        _heroLiveCreators.value = livestreamRows
+            .mapNotNull { row ->
+                val status = statusByTitle[row.titleId]?.takeIf { it.isLive } ?: return@mapNotNull null
+                HeroLiveCreator(
+                    titleId = row.titleId,
+                    displayName = row.title ?: row.titleName ?: row.titleId,
+                    avatarUrl = row.posterUrl,
+                    streamTitle = status.streamTitle,
+                    category = status.category,
+                    viewerCount = status.viewerCount,
+                    startedAtEpoch = parseHeroDate(status.startedAt),
+                    kind = SourceKind.from(row.titleId),
+                )
+            }
+            .sortedByDescending { it.startedAtEpoch ?: Long.MAX_VALUE }
+
+        // Uploads from followed creators only — a new episode of a saved TMDB
+        // series belongs in the watch list rail, not the hero.
+        val cutoff = System.currentTimeMillis() - 72L * 60L * 60L * 1000L
+        _heroCreatorUploads.value = streams.newEpisodes.value
+            .filter { SourceKind.from(it.titleId).isNonTMDB }
+            .filter { (parseHeroDate(it.releasedAt) ?: Long.MIN_VALUE) > cutoff }
+            .sortedByDescending { parseHeroDate(it.releasedAt) ?: Long.MIN_VALUE }
     }
 
     /** Fire-and-forget background job: isolated failure, never crashes. */

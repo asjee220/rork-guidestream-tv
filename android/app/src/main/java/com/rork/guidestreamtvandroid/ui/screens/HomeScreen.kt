@@ -36,6 +36,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Star
@@ -77,12 +78,18 @@ import kotlinx.coroutines.delay
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.rork.guidestreamtvandroid.data.models.Platform
 import com.rork.guidestreamtvandroid.data.models.SourceKind
+import com.rork.guidestreamtvandroid.ui.sports.SportsViewModel
+import com.rork.guidestreamtvandroid.ui.home.heroSourceColor
+import com.rork.guidestreamtvandroid.ui.home.buildHeroRail
+import com.rork.guidestreamtvandroid.ui.home.HeroItem
+import com.rork.guidestreamtvandroid.data.models.SportsGame
 import com.rork.guidestreamtvandroid.data.models.StreamingCatalog
 import com.rork.guidestreamtvandroid.data.models.selectionAccent
 import com.rork.guidestreamtvandroid.data.models.selectionGlyphColor
@@ -160,11 +167,19 @@ fun HomeScreen(
     onSeeAllCreators: (creators: List<RecommendedCreator>, followedIds: List<String>) -> Unit = { _, _ -> },
     onOpenWatchList: () -> Unit = {},
     onOpenWidgetSetup: () -> Unit = {},
+    /** Opens the sports game detail for a hero rail game card. */
+    onOpenGame: (SportsGame) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val homeVm = HomeViewModel.get()
     val streamsVm = StreamsViewModel.get()
     val authVm = AuthViewModel.get()
+
+    // Hero rail inputs. Games come from SportsViewModel so Home and the Sports
+    // tab share one fetch; HomeViewModel kicks that load on its deferred pass.
+    val heroGames by SportsViewModel.get().games.collectAsStateWithLifecycle()
+    val heroLiveCreators by homeVm.heroLiveCreators.collectAsStateWithLifecycle()
+    val heroCreatorUploads by homeVm.heroCreatorUploads.collectAsStateWithLifecycle()
 
     val homeReady by homeVm.homeContentReady.collectAsStateWithLifecycle()
     val trending by homeVm.trending.collectAsStateWithLifecycle()
@@ -322,26 +337,92 @@ fun HomeScreen(
             Box(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
                 ShimmerHero()
             }
-        } else if (trending.isNotEmpty()) {
-            HeroCarousel(
-                widthClass = widthClass,
-                items = trending.filter { providerByTmdb[it.id] != null }.take(15),
-                providerByTmdb = providerByTmdb,
-                onOpen = { result ->
-                    val platform = providerByTmdb[result.id]
-                    WatchIntentLogger.get().log(
-                        WatchIntentLogger.IntentEventType.CARD_TAPPED,
-                        titleId = result.id.toString(),
-                        platformId = platform?.name?.lowercase() ?: "tmdb",
-                        metadata = mapOf("section" to "hero_carousel"),
-                    )
-                    onOpenTitle(PendingTitleRoute(
-                        titleId = result.id.toString(),
-                        titleName = result.displayName,
-                        isTv = result.isTV,
-                    ))
-                },
-            )
+        } else {
+            val heroItems = remember(
+                trending, onAir, bingeReady, providerByTmdb,
+                heroGames, heroLiveCreators, heroCreatorUploads,
+            ) {
+                buildHeroRail(
+                    trending = trending,
+                    onAir = onAir,
+                    bingeReady = bingeReady,
+                    providerByTmdb = providerByTmdb,
+                    games = heroGames,
+                    liveCreators = heroLiveCreators,
+                    creatorUploads = heroCreatorUploads,
+                )
+            }
+            if (heroItems.isNotEmpty()) {
+                HeroCarousel(
+                    widthClass = widthClass,
+                    items = heroItems,
+                    onSelect = { item ->
+                        val logger = WatchIntentLogger.get()
+                        when (item) {
+                            is HeroItem.Media -> {
+                                logger.log(
+                                    WatchIntentLogger.IntentEventType.CARD_TAPPED,
+                                    titleId = item.result.id.toString(),
+                                    platformId = item.platform?.name?.lowercase() ?: "tmdb",
+                                    metadata = mapOf("section" to "hero_carousel"),
+                                )
+                                onOpenTitle(PendingTitleRoute(
+                                    titleId = item.result.id.toString(),
+                                    titleName = item.result.displayName,
+                                    isTv = item.result.isTV,
+                                ))
+                            }
+                            is HeroItem.Game -> {
+                                logger.log(
+                                    WatchIntentLogger.IntentEventType.CARD_TAPPED,
+                                    titleId = item.game.id,
+                                    platformId = item.game.broadcasts.firstOrNull()?.lowercase() ?: "",
+                                    metadata = mapOf(
+                                        "section" to "hero_carousel",
+                                        "kind" to "sport",
+                                        "state" to item.game.state,
+                                    ),
+                                )
+                                onOpenGame(item.game)
+                            }
+                            is HeroItem.LiveCreator -> {
+                                logger.log(
+                                    WatchIntentLogger.IntentEventType.CARD_TAPPED,
+                                    titleId = item.creator.titleId,
+                                    platformId = item.creator.kind.sourceType,
+                                    metadata = mapOf(
+                                        "section" to "hero_carousel",
+                                        "kind" to "live_creator",
+                                    ),
+                                )
+                                onOpenTitle(PendingTitleRoute(
+                                    titleId = item.creator.titleId,
+                                    titleName = item.creator.displayName,
+                                    posterUrl = item.creator.avatarUrl,
+                                    isTv = false,
+                                ))
+                            }
+                            is HeroItem.CreatorUpload -> {
+                                logger.log(
+                                    WatchIntentLogger.IntentEventType.CARD_TAPPED,
+                                    titleId = item.upload.titleId,
+                                    platformId = SourceKind.from(item.upload.titleId).sourceType,
+                                    metadata = mapOf(
+                                        "section" to "hero_carousel",
+                                        "kind" to "creator_upload",
+                                    ),
+                                )
+                                onOpenTitle(PendingTitleRoute(
+                                    titleId = item.upload.titleId,
+                                    titleName = item.upload.title ?: "",
+                                    posterUrl = item.upload.thumbnailUrl ?: item.upload.posterUrl,
+                                    isTv = false,
+                                ))
+                            }
+                        }
+                    },
+                )
+            }
         }
 
         // My Watch List
@@ -980,99 +1061,409 @@ private fun SearchBar(
     }
 }
 
-// ── Hero Carousel ────────────────────────────────────────────────────────────
+// -- Hero Carousel -----------------------------------------------------------
 
+/**
+ * The home hero. Mixes live sports, live creators, new creator uploads and
+ * trending media in one newest-first rail, mirroring iOS HomeHeroCarousel.
+ * Every card is one large hit target with its own tinted CTA: orange for
+ * shows and movies, blue for sport, brand colour for creators.
+ */
 @Composable
 private fun HeroCarousel(
     widthClass: GSWidthClass,
-    items: List<TMDBResult>,
-    providerByTmdb: Map<Int, Platform>,
-    onOpen: (TMDBResult) -> Unit,
+    items: List<HeroItem>,
+    onSelect: (HeroItem) -> Unit,
 ) {
     if (items.isEmpty()) return
     LazyRow(
         contentPadding = PaddingValues(horizontal = widthClass.homeHorizontalPadding),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
         modifier = Modifier.padding(vertical = 8.dp),
     ) {
-        items(items.take(10)) { result ->
-            val platform = providerByTmdb[result.id]
-            val accent = platform?.color ?: BrandOrange
+        items(items, key = { it.id }) { item ->
+            HeroCard(
+                item = item,
+                width = if (widthClass == GSWidthClass.Expanded) 360.dp else 300.dp,
+                onSelect = { onSelect(item) },
+            )
+        }
+    }
+}
+
+private val HeroLiveRed = Color(0xFFE50914)
+private val HeroSportsBlue = Color(0xFF3B82F6)
+
+/** Accent that carries the card's meaning: what kind of thing this is. */
+private fun heroAccent(item: HeroItem): Color = when (item) {
+    is HeroItem.Media -> BrandOrange
+    is HeroItem.Game -> HeroSportsBlue
+    is HeroItem.LiveCreator -> heroSourceColor(item.creator.kind)
+    is HeroItem.CreatorUpload -> heroSourceColor(SourceKind.from(item.upload.titleId))
+}
+
+/** ESPN gives team colours as bare hex with no leading #. */
+private fun teamColor(hex: String?, fallback: Color): Color {
+    val clean = hex?.removePrefix("#")?.trim()?.takeIf { it.length == 6 } ?: return fallback
+    return runCatching { Color("FF$clean".toLong(16)) }.getOrDefault(fallback)
+}
+
+@Composable
+private fun HeroCard(
+    item: HeroItem,
+    width: Dp,
+    onSelect: () -> Unit,
+) {
+    val accent = heroAccent(item)
+    Box(
+        modifier = Modifier
+            .width(width)
+            .aspectRatio(1.7f)
+            .clip(RoundedCornerShape(18.dp))
+            .border(1.dp, accent.copy(alpha = 0.35f), RoundedCornerShape(18.dp))
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+            ) { onSelect() },
+    ) {
+        HeroBackdrop(item)
+
+        // Scrim. Heavier at the foot than the media-only carousel had, because
+        // these cards now carry three stacked lines over the artwork.
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(
+                            Color.Black.copy(alpha = 0.10f),
+                            Color.Black.copy(alpha = 0.45f),
+                            Color.Black.copy(alpha = 0.85f),
+                        ),
+                    ),
+                ),
+        )
+
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(16.dp),
+        ) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                HeroTopBadges(item)
+            }
+            Spacer(Modifier.weight(1f))
+            HeroBottom(item, accent)
+        }
+    }
+}
+
+@Composable
+private fun HeroBackdrop(item: HeroItem) {
+    when (item) {
+        is HeroItem.Media -> RemoteImage(
+            url = item.result.backdropUrl ?: item.result.posterUrl,
+            contentDescription = item.result.displayName,
+            modifier = Modifier.fillMaxSize(),
+            cornerRadius = 18,
+            placeholderText = item.result.displayName.take(2).uppercase(),
+            placeholderFontSize = 28.sp,
+        )
+
+        is HeroItem.Game -> {
+            // No artwork exists for a game, so the two teams' own colours carry
+            // it, with their abbreviations set large and faint for depth.
+            val away = teamColor(item.game.away.primaryHex, Color(0xFF19294F))
+            val home = teamColor(item.game.home.primaryHex, Color(0xFF521926))
             Box(
                 modifier = Modifier
-                    .width(if (widthClass == GSWidthClass.Expanded) 360.dp else 280.dp)
-                    .aspectRatio(1.7f)
-                    .clip(RoundedCornerShape(16.dp))
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                    ) { onOpen(result) },
-            ) {
-                RemoteImage(
-                    url = result.backdropUrl ?: result.posterUrl,
-                    contentDescription = result.displayName,
-                    modifier = Modifier.fillMaxSize(),
-                    cornerRadius = 16,
-                    placeholderText = result.displayName.take(2).uppercase(),
-                    placeholderFontSize = 28.sp,
-                )
-                // Gradient overlay
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(
-                            Brush.verticalGradient(
-                                colors = listOf(
-                                    Color.Transparent,
-                                    Color.Black.copy(alpha = 0.3f),
-                                    Color.Black.copy(alpha = 0.75f),
-                                ),
+                    .fillMaxSize()
+                    .background(
+                        Brush.linearGradient(
+                            colors = listOf(
+                                away,
+                                away.copy(alpha = 0.85f),
+                                home.copy(alpha = 0.85f),
+                                home,
                             ),
                         ),
-                )
-                // Platform badge
-                if (platform != null) {
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.TopStart)
-                            .padding(10.dp)
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(accent.copy(alpha = 0.85f))
-                            .padding(horizontal = 8.dp, vertical = 3.dp),
-                    ) {
-                        Text(
-                            text = platform.name,
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White,
-                        )
-                    }
-                }
-                // Title
-                Column(
-                    modifier = Modifier
-                        .align(Alignment.BottomStart)
-                        .padding(14.dp),
+                    ),
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxSize(),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        text = result.displayName,
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = TextPrimary,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
+                        text = item.game.away.abbreviation,
+                        fontSize = 56.sp,
+                        fontWeight = FontWeight.Black,
+                        color = Color.White.copy(alpha = 0.10f),
+                        maxLines = 1,
                     )
-                    if (result.voteAverage != null) {
-                        Text(
-                            text = "★ ${String.format("%.1f", result.voteAverage)}",
-                            fontSize = 12.sp,
-                            color = BrandOrange,
-                            fontWeight = FontWeight.SemiBold,
-                        )
-                    }
+                    Spacer(Modifier.weight(1f))
+                    Text(
+                        text = item.game.home.abbreviation,
+                        fontSize = 56.sp,
+                        fontWeight = FontWeight.Black,
+                        color = Color.White.copy(alpha = 0.10f),
+                        maxLines = 1,
+                    )
                 }
             }
         }
+
+        is HeroItem.LiveCreator -> RemoteImage(
+            url = item.creator.avatarUrl,
+            contentDescription = item.creator.displayName,
+            modifier = Modifier.fillMaxSize(),
+            cornerRadius = 18,
+            placeholderText = item.creator.displayName.take(2).uppercase(),
+            placeholderFontSize = 28.sp,
+        )
+
+        is HeroItem.CreatorUpload -> RemoteImage(
+            url = item.upload.thumbnailUrl ?: item.upload.posterUrl,
+            contentDescription = item.upload.title,
+            modifier = Modifier.fillMaxSize(),
+            cornerRadius = 18,
+            placeholderText = (item.upload.title ?: "?").take(2).uppercase(),
+            placeholderFontSize = 28.sp,
+        )
+    }
+}
+
+@Composable
+private fun HeroTopBadges(item: HeroItem) {
+    when (item) {
+        is HeroItem.Media -> {
+            HeroBadge("TRENDING", BrandOrange)
+            item.platform?.let { HeroBadge(it.name, it.color) }
+        }
+
+        is HeroItem.Game -> {
+            when (item.game.state) {
+                "live" -> HeroLivePill()
+                "post" -> HeroBadge("FINAL", Color.White.copy(alpha = 0.20f))
+                else -> HeroBadge("UPCOMING", BrandOrange)
+            }
+            HeroBadge(item.game.sport.uppercase(), Color.White.copy(alpha = 0.18f))
+        }
+
+        is HeroItem.LiveCreator -> {
+            HeroLivePill()
+            HeroBadge(
+                item.creator.kind.displayLabel.uppercase(),
+                heroSourceColor(item.creator.kind),
+            )
+        }
+
+        is HeroItem.CreatorUpload -> {
+            val kind = SourceKind.from(item.upload.titleId)
+            HeroBadge(kind.displayLabel.uppercase(), heroSourceColor(kind))
+        }
+    }
+}
+
+@Composable
+private fun HeroBottom(item: HeroItem, accent: Color) {
+    val title: String
+    val cta: String
+    when (item) {
+        is HeroItem.Media -> {
+            title = item.result.displayName
+            cta = "Play"
+        }
+        is HeroItem.Game -> {
+            title = "${item.game.away.shortName.ifEmpty { item.game.away.name }} vs " +
+                item.game.home.shortName.ifEmpty { item.game.home.name }
+            cta = when (item.game.state) {
+                "live" -> "Watch Live"
+                "post" -> "Watch Recap"
+                else -> "View Game"
+            }
+        }
+        is HeroItem.LiveCreator -> {
+            title = item.creator.streamTitle ?: item.creator.displayName
+            cta = "Watch live"
+        }
+        is HeroItem.CreatorUpload -> {
+            title = item.upload.episodeTitle ?: item.upload.title ?: ""
+            cta = "Watch"
+        }
+    }
+
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(
+            text = title,
+            fontSize = 20.sp,
+            fontWeight = FontWeight.Bold,
+            color = Color.White,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+        HeroMetaRow(item)
+        HeroCtaPill(cta, accent)
+    }
+}
+
+@Composable
+private fun HeroMetaRow(item: HeroItem) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        when (item) {
+            is HeroItem.Media -> {
+                HeroMeta(if (item.result.isTV) "Series" else "Movie")
+                item.result.year?.let { HeroDot(); HeroMeta(it.toString()) }
+                item.result.voteAverage?.takeIf { it > 0 }?.let {
+                    HeroDot()
+                    Text(
+                        text = "\u2605 ${String.format("%.1f", it)}",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = BrandOrange,
+                    )
+                }
+            }
+
+            is HeroItem.Game -> {
+                if (item.game.state != "pre") {
+                    Text(
+                        text = "${item.game.away.abbreviation} ${item.game.away.score}" +
+                            " \u2013 ${item.game.home.score} ${item.game.home.abbreviation}",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Black,
+                        color = Color.White,
+                        maxLines = 1,
+                    )
+                    HeroDot()
+                }
+                HeroMeta(item.game.statusDetail, weight = FontWeight.SemiBold)
+            }
+
+            is HeroItem.LiveCreator -> {
+                HeroMeta(item.creator.displayName, weight = FontWeight.SemiBold)
+                item.creator.category?.takeIf { it.isNotEmpty() }?.let {
+                    HeroDot(); HeroMeta(it)
+                }
+                item.creator.viewerCount?.takeIf { it > 0 }?.let {
+                    HeroDot()
+                    Text(
+                        text = compactViewers(it),
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color.White,
+                    )
+                }
+            }
+
+            is HeroItem.CreatorUpload -> {
+                HeroMeta(item.upload.title ?: "", weight = FontWeight.SemiBold)
+            }
+        }
+    }
+}
+
+private fun compactViewers(n: Int): String = when {
+    n >= 1_000_000 -> String.format("%.1fM watching", n / 1_000_000.0)
+    n >= 1_000 -> String.format("%.1fK watching", n / 1_000.0)
+    else -> "$n watching"
+}
+
+@Composable
+private fun HeroMeta(text: String, weight: FontWeight = FontWeight.Medium) {
+    Text(
+        text = text,
+        fontSize = 12.sp,
+        fontWeight = weight,
+        color = Color.White.copy(alpha = 0.78f),
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+    )
+}
+
+@Composable
+private fun HeroDot() {
+    Text(
+        text = "\u00B7",
+        fontSize = 12.sp,
+        fontWeight = FontWeight.Bold,
+        color = Color.White.copy(alpha = 0.4f),
+    )
+}
+
+@Composable
+private fun HeroBadge(text: String, bg: Color) {
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(50))
+            .background(bg.copy(alpha = 0.9f))
+            .padding(horizontal = 9.dp, vertical = 4.dp),
+    ) {
+        Text(
+            text = text,
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Black,
+            color = Color.White,
+            maxLines = 1,
+        )
+    }
+}
+
+@Composable
+private fun HeroLivePill() {
+    Row(
+        modifier = Modifier
+            .clip(RoundedCornerShape(50))
+            .background(HeroLiveRed)
+            .padding(horizontal = 9.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(5.dp),
+    ) {
+        Box(
+            modifier = Modifier
+                .size(6.dp)
+                .clip(CircleShape)
+                .background(Color.White),
+        )
+        Text(
+            text = "LIVE",
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Black,
+            color = Color.White,
+            maxLines = 1,
+        )
+    }
+}
+
+@Composable
+private fun HeroCtaPill(label: String, tint: Color) {
+    Row(
+        modifier = Modifier
+            .clip(RoundedCornerShape(50))
+            .background(Color.Black.copy(alpha = 0.42f))
+            .border(1.5.dp, tint, RoundedCornerShape(50))
+            .padding(horizontal = 14.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Icon(
+            imageVector = Icons.Filled.PlayArrow,
+            contentDescription = null,
+            tint = tint,
+            modifier = Modifier.size(15.dp),
+        )
+        Text(
+            text = label,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Bold,
+            color = tint,
+            maxLines = 1,
+        )
     }
 }
 

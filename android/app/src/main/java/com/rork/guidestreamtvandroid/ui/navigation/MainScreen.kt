@@ -188,6 +188,9 @@ fun MainScreen(
                     },
                     onOpenWatchList = { showWatchList = true },
                     onOpenWidgetSetup = { showWidgetSetup = true },
+                    // Hero rail game cards open the same detail the Sports tab
+                    // does, through the same state.
+                    onOpenGame = { game -> selectedGame = game },
                 )
                 AppTab.SPORTS -> SportsScreen(
                     onOpenGameDetail = { game -> selectedGame = game },
