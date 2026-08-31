@@ -32,7 +32,23 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
+import android.graphics.drawable.Drawable
+import android.view.ViewGroup
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.ViewCompositionStrategy
+import androidx.core.graphics.drawable.toBitmap
 import com.google.android.gms.ads.AdListener
+import com.google.android.gms.ads.AdLoader
+import com.google.android.gms.ads.nativead.NativeAd
+import com.google.android.gms.ads.nativead.NativeAdOptions
+import com.google.android.gms.ads.nativead.NativeAdView
 import com.google.android.gms.ads.AdRequest
 import com.google.android.gms.ads.AdSize
 import com.google.android.gms.ads.AdView
@@ -61,40 +77,17 @@ fun NativeAdCard(
     onAdFailedToLoad: () -> Unit = {},
 ) {
     if (feedStyle) {
-        Column(
-            modifier = modifier
-                .fillMaxSize()
-                // End inset clears the caller's close control.
-                .padding(start = 12.dp, end = 44.dp, top = 10.dp, bottom = 10.dp),
-        ) {
-            // Attribution — the same muted chip the affiliate presentation uses.
-            Box(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(3.dp))
-                    .background(Color.White.copy(alpha = 0.12f))
-                    .padding(horizontal = 5.dp, vertical = 1.dp),
-            ) {
-                Text(
-                    text = "Ad",
-                    fontSize = 10.sp,
-                    // Pinned so the app's 24.sp body line height does not eat
-                    // the 50dp the banner needs below it.
-                    lineHeight = 12.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = Color.White.copy(alpha = 0.62f),
-                )
-            }
-            Spacer(Modifier.height(6.dp))
-            // Banner ad — same ad unit resolution as the standard card.
-            BannerAd(
-                adUnitId = AdUnitResolver.native(LocalContext.current),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f),
-                onAdLoaded = onAdLoaded,
-                onAdFailedToLoad = onAdFailedToLoad,
-            )
-        }
+        // GUI-85: a real native ad, laid out by us. This used to be an "Ad"
+        // pill above an AdView banner, which is why the chip carried no
+        // headline and no advertiser -- a banner has no separable assets, so
+        // there was nothing to lay out and the 50dp creative could never fill
+        // the caller's 96dp box.
+        NativeAdChip(
+            adUnitId = AdUnitResolver.native(LocalContext.current),
+            modifier = modifier,
+            onAdLoaded = onAdLoaded,
+            onAdFailedToLoad = onAdFailedToLoad,
+        )
     } else {
         Column(
             modifier = modifier
@@ -123,8 +116,11 @@ fun NativeAdCard(
             }
             Spacer(Modifier.height(8.dp))
             // Banner ad
+            // Still an AdView, so it resolves the BANNER slot. Before GUI-85
+            // both paths asked for the "native" slot, which is why that slot
+            // had to hold a Banner unit.
             BannerAd(
-                adUnitId = AdUnitResolver.native(LocalContext.current),
+                adUnitId = AdUnitResolver.banner(LocalContext.current),
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(if (compact) 50.dp else 100.dp),
@@ -185,3 +181,214 @@ fun BannerAd(
     )
 }
 
+
+// ── Native chip (GUI-85) ─────────────────────────────────────────────────────
+
+/**
+ * The 96dp feed chip, rendered from a real AdMob **native advanced** ad.
+ *
+ * Why this exists: the chip used to draw an "Ad" pill above an `AdView` at
+ * `AdSize.BANNER`. A banner ad is a single opaque creative with no separable
+ * assets, so there was no headline and no advertiser to lay out, and a 50dp
+ * banner could not fill the caller's 96dp box. iOS has always loaded a native
+ * ad and laid out its assets itself, which is the whole reason the two
+ * platforms looked nothing alike.
+ *
+ * Layout is deliberately identical to `RakutenAffiliatePresentation`'s feed
+ * branch — same 96dp flush square, same 14sp/17sp three-line headline, same
+ * 11sp advertiser line, same muted attribution chip — so a slot looks the same
+ * whether AdMob fills it or the affiliate fallback does.
+ *
+ * Mechanics worth knowing before editing:
+ *  * AdMob requires the ad's assets to be displayed inside a [NativeAdView]
+ *    with the asset views registered on it. The whole chip is drawn by one
+ *    [ComposeView] registered as `headlineView`, which both satisfies that and
+ *    makes the entire card the click target — matching iOS, where the card is
+ *    one tap target with no CTA pill.
+ *  * `setNativeAd` makes the NativeAdView add its own AdChoices overlay, so
+ *    the policy requirement is met without drawing one.
+ *  * `bodyView` and `callToActionView` are deliberately NOT registered. The
+ *    chip draws neither, and registering an asset view that is never shown is
+ *    a policy risk (see claude/ad-chip-v2-aug2026.md).
+ */
+@Composable
+private fun NativeAdChip(
+    adUnitId: String,
+    modifier: Modifier = Modifier,
+    onAdLoaded: () -> Unit = {},
+    onAdFailedToLoad: () -> Unit = {},
+) {
+    val context = LocalContext.current
+    val adManager = AdManager.get()
+    val sdkReady by adManager.sdkInitialized.collectAsState()
+    var nativeAd by remember { mutableStateOf<NativeAd?>(null) }
+
+    // Keyed on sdkReady as well as the unit: requesting before
+    // MobileAds.initialize completes fails asynchronously, and that failure
+    // used to mark the slot as no-fill permanently.
+    DisposableEffect(adUnitId, sdkReady) {
+        if (sdkReady) {
+            adManager.recordNativeAttempt()
+            AdLoader.Builder(context, adUnitId)
+                .forNativeAd { ad ->
+                    nativeAd?.destroy()
+                    nativeAd = ad
+                    adManager.recordNativeLoaded()
+                    onAdLoaded()
+                }
+                .withAdListener(object : AdListener() {
+                    override fun onAdFailedToLoad(error: LoadAdError) {
+                        adManager.recordNativeError("[${error.code}] ${error.message}")
+                        onAdFailedToLoad()
+                    }
+                })
+                .withNativeAdOptions(
+                    NativeAdOptions.Builder()
+                        // Bottom-trailing, where the reference layout puts its
+                        // "···" and where iOS puts AdChoices.
+                        .setAdChoicesPlacement(NativeAdOptions.ADCHOICES_BOTTOM_RIGHT)
+                        .build(),
+                )
+                .build()
+                .loadAd(AdRequest.Builder().build())
+        }
+        onDispose {
+            // A NativeAd holds native resources; leaking one leaks the ad.
+            nativeAd?.destroy()
+            nativeAd = null
+        }
+    }
+
+    val ad = nativeAd ?: return
+
+    AndroidView(
+        modifier = modifier.fillMaxSize(),
+        factory = { ctx ->
+            NativeAdView(ctx).apply {
+                val content = ComposeView(ctx).apply {
+                    setViewCompositionStrategy(
+                        ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed,
+                    )
+                }
+                addView(
+                    content,
+                    ViewGroup.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                    ),
+                )
+                headlineView = content
+            }
+        },
+        update = { view ->
+            (view.getChildAt(0) as? ComposeView)?.setContent { NativeChipContent(ad) }
+            // Must come after the asset views are registered.
+            view.setNativeAd(ad)
+        },
+    )
+}
+
+/** Drawable -> ImageBitmap, guarding the zero-intrinsic-size case. */
+@Composable
+private fun rememberDrawableBitmap(drawable: Drawable?) = remember(drawable) {
+    val w = drawable?.intrinsicWidth ?: 0
+    val h = drawable?.intrinsicHeight ?: 0
+    if (drawable == null || w <= 0 || h <= 0) null
+    else runCatching { drawable.toBitmap().asImageBitmap() }.getOrNull()
+}
+
+@Composable
+private fun NativeChipContent(ad: NativeAd) {
+    // `icon` is the square asset; `images` is the landscape creative. The chip
+    // is a 96dp square, so the icon is preferred and the first image is the
+    // fallback for fills that omit it.
+    val creative = rememberDrawableBitmap(
+        ad.icon?.drawable ?: ad.images.firstOrNull()?.drawable,
+    )
+    val headline = ad.headline?.takeIf { it.isNotBlank() } ?: "Sponsored"
+    // Native fills often omit `advertiser`; `store` is the usual stand-in.
+    val advertiser = ad.advertiser?.takeIf { it.isNotBlank() }
+        ?: ad.store?.takeIf { it.isNotBlank() }
+
+    Row(
+        modifier = Modifier.fillMaxSize(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        // Creative — flush to the start edge, full height, square corners. The
+        // caller's clip rounds the two corners that meet the card's edge.
+        Box(
+            modifier = Modifier
+                .fillMaxHeight()
+                .width(96.dp)
+                .background(Color.White.copy(alpha = 0.06f)),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (creative != null) {
+                Image(
+                    bitmap = creative,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            } else {
+                Text(
+                    text = headline.take(3).uppercase(),
+                    fontSize = 19.sp,
+                    lineHeight = 23.sp,
+                    fontWeight = FontWeight.Black,
+                    color = Color.White,
+                )
+            }
+        }
+        Spacer(Modifier.width(12.dp))
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                // End inset clears the caller's close control so a three-line
+                // headline never runs underneath it.
+                .padding(end = 44.dp, top = 12.dp, bottom = 12.dp),
+        ) {
+            Text(
+                text = headline,
+                fontSize = 14.sp,
+                // Every Text pins its own lineHeight: AppTypography.bodyLarge
+                // carries 24.sp, and inheriting it overflows the 96dp box.
+                lineHeight = 17.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = TextPrimary,
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(Modifier.height(5.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (advertiser != null) {
+                    Text(
+                        text = advertiser,
+                        fontSize = 11.sp,
+                        lineHeight = 14.sp,
+                        color = Color.White.copy(alpha = 0.52f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false),
+                    )
+                    Spacer(Modifier.width(5.dp))
+                }
+                // Required attribution, right after the advertiser name.
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(3.dp))
+                        .background(Color.White.copy(alpha = 0.12f))
+                        .padding(horizontal = 5.dp, vertical = 1.dp),
+                ) {
+                    Text(
+                        text = "Ad",
+                        fontSize = 10.sp,
+                        lineHeight = 12.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = Color.White.copy(alpha = 0.62f),
+                    )
+                }
+            }
+        }
+    }
+}

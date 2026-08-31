@@ -60,13 +60,21 @@ android {
         // against the manifest app id at runtime). Committed as the real units;
         // the env vars still override for CI.
         //
-        // NOTE: the "native" slot is served by an AdView banner (NativeAdCard.kt
-        // -> BannerAd, AdSize.BANNER), so ADMOB_NATIVE_AD_UNIT_ID must be a
-        // Banner unit. A Native advanced unit here never fills.
+        // GUI-85: the feed chip now loads a real NATIVE ADVANCED ad, so this
+        // must be a Native unit. It was a Banner id, which is why the chip
+        // could only ever render a bare AdView creative with no headline and
+        // no advertiser. The banner unit lives on in ADMOB_BANNER_AD_UNIT_ID
+        // for the Reels carousel card, which still uses an AdView.
         buildConfigField(
             "String",
             "ADMOB_NATIVE_AD_UNIT_ID",
             "\"${System.getenv("ANDROID_ADMOB_NATIVE_AD_UNIT_ID")
+                ?: "ca-app-pub-6595855555549220/8358142755"}\"",
+        )
+        buildConfigField(
+            "String",
+            "ADMOB_BANNER_AD_UNIT_ID",
+            "\"${System.getenv("ANDROID_ADMOB_BANNER_AD_UNIT_ID")
                 ?: "ca-app-pub-6595855555549220/8484572161"}\"",
         )
         buildConfigField(
@@ -97,9 +105,19 @@ android {
             // AdView banner).
             manifestPlaceholders["ANDROID_ADMOB_APP_ID"] =
                 "ca-app-pub-3940256099942544~3347511713"
+            // Google's NATIVE ADVANCED test unit. This was the debug fallback
+            // before 2026-08-31 and it never filled -- because the code was
+            // requesting a banner. Now that the chip loads a native ad it is
+            // the right id again, and it is how the chip layout gets verified
+            // on an emulator without touching a live unit.
             buildConfigField(
                 "String",
                 "ADMOB_NATIVE_AD_UNIT_ID",
+                "\"ca-app-pub-3940256099942544/2247696110\"",
+            )
+            buildConfigField(
+                "String",
+                "ADMOB_BANNER_AD_UNIT_ID",
                 "\"ca-app-pub-3940256099942544/6300978111\"",
             )
             buildConfigField(

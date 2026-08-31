@@ -88,6 +88,18 @@ object AdUnitResolver {
     fun native(context: Context): String =
         resolve(context, "native", AppConfig.ADMOB_NATIVE_AD_UNIT_ID)
 
+    /**
+     * Convenience accessor for the banner slot (GUI-85).
+     *
+     * Kept separate from [native] because the two slots now want different
+     * AdMob formats: the feed chip loads a Native advanced ad, while the Reels
+     * carousel card is still an AdView. Requesting one format against the
+     * other's unit is a guaranteed no-fill, which is exactly how the chip ended
+     * up rendering a bare banner creative with no copy.
+     */
+    fun banner(context: Context): String =
+        resolve(context, "banner", AppConfig.ADMOB_BANNER_AD_UNIT_ID)
+
     /** Convenience accessor for the interstitial slot. */
     fun interstitial(context: Context): String =
         resolve(context, "interstitial", AppConfig.ADMOB_INTERSTITIAL_AD_UNIT_ID)

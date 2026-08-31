@@ -30,5 +30,6 @@ object AppConfig {
     // remote-config row can override these without a new build; AdUnitResolver
     // validates any remote unit's publisher against the manifest app id.
     val ADMOB_NATIVE_AD_UNIT_ID: String = BuildConfig.ADMOB_NATIVE_AD_UNIT_ID
+    val ADMOB_BANNER_AD_UNIT_ID: String = BuildConfig.ADMOB_BANNER_AD_UNIT_ID
     val ADMOB_INTERSTITIAL_AD_UNIT_ID: String = BuildConfig.ADMOB_INTERSTITIAL_AD_UNIT_ID
 }
