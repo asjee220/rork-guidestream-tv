@@ -1,6 +1,5 @@
 package com.rork.guidestreamtvandroid.ui.reels
 
-import android.app.Activity
 import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.content.res.Configuration
@@ -91,6 +90,8 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.window.DialogWindowProvider
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontFamily
@@ -124,6 +125,7 @@ import com.rork.guidestreamtvandroid.ui.ads.NativeAdCard
 import com.rork.guidestreamtvandroid.ui.ads.RakutenAffiliatePresentation
 import com.rork.guidestreamtvandroid.ui.comments.TitleCommentsSheet
 import com.rork.guidestreamtvandroid.ui.components.RemoteImage
+import com.rork.guidestreamtvandroid.ui.components.findActivity
 import com.rork.guidestreamtvandroid.ui.navigation.PendingTitleRoute
 import java.util.Locale
 import kotlin.math.abs
@@ -170,14 +172,19 @@ fun ReelsScreen(
     // because MainActivity already sets FULL_USER on 600dp+ tablets and
     // hardcoding portrait would break tablet rotation. Declared above the
     // injected early-return so Trailers & Clips rotates identically.
+    // findActivity, not `as? Activity`: the coming-soon sheet hosts this player
+    // in a Compose Dialog, whose LocalContext is a themed ContextWrapper rather
+    // than the Activity. The cast returned null there, the rotation request was
+    // dropped without a trace, and Trailers & Clips would not turn landscape on
+    // that route while working fine from the title detail screen. (GUI-84)
     val orientationContext = LocalContext.current
-    DisposableEffect(Unit) {
-        val activity = orientationContext as? Activity
-        val previousOrientation = activity?.requestedOrientation
-        activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_USER
+    val hostActivity = orientationContext.findActivity()
+    DisposableEffect(hostActivity) {
+        val previousOrientation = hostActivity?.requestedOrientation
+        hostActivity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_USER
         onDispose {
-            if (activity != null && previousOrientation != null) {
-                activity.requestedOrientation = previousOrientation
+            if (hostActivity != null && previousOrientation != null) {
+                hostActivity.requestedOrientation = previousOrientation
             }
         }
     }
@@ -194,9 +201,15 @@ fun ReelsScreen(
     val immersiveLandscape =
         LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
     val immersiveLifecycleOwner = LocalLifecycleOwner.current
-    DisposableEffect(immersiveLandscape) {
-        val activity = orientationContext as? Activity
-        val controller = activity?.window?.let { window ->
+    // Same Dialog problem, second symptom: when the player is in a dialog, the
+    // dialog owns the topmost window, so hiding the bars on the Activity's
+    // window leaves them drawn over the trailer. Target the dialog's own window
+    // when there is one and fall back to the Activity's otherwise.
+    val hostView = LocalView.current
+    val immersiveWindow = (hostView.parent as? DialogWindowProvider)?.window
+        ?: hostActivity?.window
+    DisposableEffect(immersiveLandscape, immersiveWindow) {
+        val controller = immersiveWindow?.let { window ->
             WindowCompat.getInsetsController(window, window.decorView)
         }
         val applyImmersive: () -> Unit = {
