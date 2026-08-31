@@ -49,6 +49,15 @@ class StreamsViewModel private constructor(context: Context) {
     )
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    /**
+     * How far back the New Episodes surfaces look. Wide enough that a weekend
+     * away, or a reinstall that re-mints the push token, does not silently
+     * erase what landed; short enough that the rail still reads as "new".
+     * `new_episodes` rows are deleted at 30 days, so this can never outrun the
+     * data.
+     */
+    private val BACKLOG_DAYS = 7L
     private val prefs = context.getSharedPreferences("gs_prefs", Context.MODE_PRIVATE)
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
 
@@ -360,13 +369,23 @@ class StreamsViewModel private constructor(context: Context) {
             val tmdbIds = titleIds.filter { TitleId.tmdbId(it) != null }
             val nonTmdbIds = titleIds.filter { TitleId.tmdbId(it) == null }
             val allRows = mutableListOf<NewEpisodeRow>()
+            // Both branches are bounded by BACKLOG_DAYS rather than by
+            // `is_new`. The nightly cleanup job flips that shared column false
+            // 48h after release, which used to mean a user whose push token was
+            // re-minted after those 48h — a reinstall, or an FCM 404 deleting
+            // the row — got neither the push nor any in-app trace that the
+            // episode had happened. Ten such misses in the 30 days to
+            // 2026-08-31, every one of them token churn.
+            val backlogCutoff = java.time.Instant.now()
+                .minus(java.time.Duration.ofDays(BACKLOG_DAYS))
+                .toString()
             if (tmdbIds.isNotEmpty()) {
                 val tmdbRows = SupabaseManager.client.postgrest
                     .from("new_episodes")
                     .select {
                         filter {
                             isIn("title_id", tmdbIds)
-                            eq("is_new", true)
+                            gte("released_at", backlogCutoff)
                         }
                         order("released_at", Order.DESCENDING)
                         limit(20)
@@ -378,7 +397,10 @@ class StreamsViewModel private constructor(context: Context) {
                 val nonTmdbRows = SupabaseManager.client.postgrest
                     .from("new_episodes")
                     .select {
-                        filter { isIn("title_id", nonTmdbIds) }
+                        filter {
+                            isIn("title_id", nonTmdbIds)
+                            gte("released_at", backlogCutoff)
+                        }
                         order("released_at", Order.DESCENDING)
                         limit(20)
                     }
@@ -398,15 +420,21 @@ class StreamsViewModel private constructor(context: Context) {
     }
 
     /**
-     * Whether a `new_episodes` row is still new for *this* viewer. `is_new` is
-     * a shared, server-owned column, so on its own it can never reflect one
-     * person having already watched (GUI-74). Three conditions, all required:
-     * the server still considers the row new; the episode has actually landed
-     * (a future `released_at` is a scheduled drop, not a new episode); and the
-     * viewer has not opened the title since it landed.
+     * Whether a `new_episodes` row is still new for *this* viewer. Two
+     * conditions, both required: the episode has actually landed (a future
+     * `released_at` is a scheduled drop, not a new episode), and the viewer has
+     * not opened the title since it landed.
+     *
+     * It deliberately does NOT consult `is_new`. That column is shared and
+     * server-owned — it could never reflect one person having already watched,
+     * which is what GUI-74 was about — and the nightly cleanup job flips it
+     * false 48 hours after release, on a schedule that has nothing to do with
+     * any particular viewer. Gating on it meant a user who was away for two
+     * days came back to an empty New Episodes surface. `watchlist_seen` is the
+     * only per-viewer signal there is, so it is the only one used here; the
+     * BACKLOG_DAYS bound on the query is what stops this reaching back forever.
      */
     fun isNewForViewer(row: NewEpisodeRow, nowMillis: Long = System.currentTimeMillis()): Boolean {
-        if (row.isNew == false) return false
         val released = parseTimestampMillis(row.releasedAt) ?: return true
         if (released > nowMillis) return false
         val seen = _seenContentAt.value[row.titleId] ?: return true

@@ -34,6 +34,13 @@ final class StreamsViewModel {
     /// Maps title_id → last-seen timestamp from `watchlist_seen`. Populated by
     /// `fetchWatchlistSeen()` and updated optimistically by `markWatchlistSeen`.
     var seenContentAt: [String: Date] = [:]
+
+    /// How far back the New Episodes surfaces look, in days. Wide enough that a
+    /// weekend away, or a reinstall that re-mints the push token, does not
+    /// silently erase what landed; short enough that the rail still reads as
+    /// "new". `new_episodes` rows are deleted at 30 days, so this can never
+    /// outrun the data. Mirrors Android's StreamsViewModel.BACKLOG_DAYS.
+    static let backlogDays: TimeInterval = 7
     var isLoadingStreams: Bool = false
     var isLoadingEpisodes: Bool = false
     var lastError: String?
@@ -155,21 +162,28 @@ final class StreamsViewModel {
             }
 
             // Split title IDs: TMDB (numeric) vs non-TMDB (prefixed like yt:, tw:, kick:, pod:).
-            // TMDB titles only surface episodes marked is_new = true (freshly aired),
-            // while non-TMDB creators surface all recent uploads regardless of push state
-            // because YouTube/Twitch uploads are not gated by an is_new lifecycle.
             let tmdbIds = titleIds.filter { Int($0.trimmingCharacters(in: .whitespaces)) != nil }
             let nonTmdbIds = titleIds.filter { !tmdbIds.contains($0) }
 
             var allRows: [NewEpisodeRow] = []
 
-            // TMDB: only fresh (is_new = true) episodes.
+            // Both branches are bounded by backlogDays rather than by `is_new`.
+            // The nightly cleanup job flips that shared column false 48h after
+            // release, which used to mean a user whose push token was re-minted
+            // after those 48h — a reinstall, or an FCM 404 deleting the row —
+            // got neither the push nor any in-app trace that the episode had
+            // happened. Ten such misses in the 30 days to 2026-08-31, every one
+            // of them token churn.
+            let backlogCutoff = ISO8601DateFormatter().string(
+                from: Date().addingTimeInterval(-Self.backlogDays * 86_400)
+            )
+
             if !tmdbIds.isEmpty {
                 let tmdbRows: [NewEpisodeRow] = try await SupabaseManager.shared.client
                     .from("new_episodes")
                     .select()
                     .in("title_id", values: tmdbIds)
-                    .eq("is_new", value: true)
+                    .gte("released_at", value: backlogCutoff)
                     .order("released_at", ascending: false)
                     .limit(20)
                     .execute()
@@ -177,14 +191,12 @@ final class StreamsViewModel {
                 allRows.append(contentsOf: tmdbRows)
             }
 
-            // Non-TMDB creators: all recent uploads, regardless of is_new.
-            // The push-notification cron flips is_new → false for TMDB episodes,
-            // but YouTube/Twitch creator uploads live outside that lifecycle.
             if !nonTmdbIds.isEmpty {
                 let nonTmdbRows: [NewEpisodeRow] = try await SupabaseManager.shared.client
                     .from("new_episodes")
                     .select()
                     .in("title_id", values: nonTmdbIds)
+                    .gte("released_at", value: backlogCutoff)
                     .order("released_at", ascending: false)
                     .limit(20)
                     .execute()
@@ -273,15 +285,19 @@ final class StreamsViewModel {
     }
 
     /// Whether a `new_episodes` row should show the NEW chip for *this*
-    /// viewer. `new_episodes.is_new` is a shared, server-owned column, so on
-    /// its own it can never reflect one person having already watched
-    /// (GUI-74). Three conditions, all required:
-    ///  * the server still considers the row new,
+    /// viewer. Two conditions, both required:
     ///  * the episode has actually landed — a future `released_at` is a
     ///    scheduled drop, not a new episode,
     ///  * this viewer has not opened the title since it landed.
+    ///
+    /// It deliberately does NOT consult `is_new`. That column is shared and
+    /// server-owned — it could never reflect one person having already
+    /// watched, which is what GUI-74 was about — and the nightly cleanup job
+    /// flips it false 48 hours after release, on a schedule that has nothing to
+    /// do with any particular viewer. `watchlist_seen` is the only per-viewer
+    /// signal there is, so it is the only one used here; the `backlogDays`
+    /// bound on the fetch is what stops this reaching back forever.
     func isNewForViewer(_ row: NewEpisodeRow, now: Date = Date()) -> Bool {
-        guard row.isNew ?? true else { return false }
         guard let released = row.releasedAt else { return true }
         guard released <= now else { return false }
         let seen = seenContentAt[row.titleId] ?? .distantPast
