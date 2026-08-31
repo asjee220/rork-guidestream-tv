@@ -14,6 +14,7 @@ import com.rork.guidestreamtvandroid.MainActivity
 import com.rork.guidestreamtvandroid.data.repository.PushTokenManager
 import com.rork.guidestreamtvandroid.data.repository.SportsLiveScoreController
 import com.rork.guidestreamtvandroid.data.repository.WatchIntentLogger
+import com.rork.guidestreamtvandroid.R
 
 /**
  * FCM messaging service — mirrors iOS AppDelegate push handling.
@@ -116,7 +117,8 @@ class GuideStreamFirebaseMessagingService : FirebaseMessagingService() {
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle(title)
             .setContentText(body)
-            .setSmallIcon(android.R.drawable.ic_media_play)
+            .setSmallIcon(R.drawable.ic_stat_popcorn)
+            .setColor(androidx.core.content.ContextCompat.getColor(this, R.color.gs_notification_accent))
             .setAutoCancel(true)
             .setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION))
             .setContentIntent(pendingIntent)

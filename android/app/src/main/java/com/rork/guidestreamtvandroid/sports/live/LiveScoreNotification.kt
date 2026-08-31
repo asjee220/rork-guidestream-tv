@@ -10,6 +10,7 @@ import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import com.rork.guidestreamtvandroid.MainActivity
+import com.rork.guidestreamtvandroid.R
 
 /**
  * The ongoing notification that stands in for the iOS Live Activity.
@@ -86,7 +87,8 @@ object LiveScoreNotification {
             .joinToString(" · ")
 
         val builder = NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.ic_media_play)
+            .setSmallIcon(R.drawable.ic_stat_popcorn)
+            .setColor(androidx.core.content.ContextCompat.getColor(context, R.color.gs_notification_accent))
             .setContentTitle(snapshot.headline)
             .setContentText(detail)
             .setSubText(snapshot.leagueShort.uppercase())

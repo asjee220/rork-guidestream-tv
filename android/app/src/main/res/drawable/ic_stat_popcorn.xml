@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Status-bar notification icon (GUI-86).
+
+  Android treats a notification small icon as an ALPHA MASK: every colour is
+  thrown away and the silhouette is tinted by the system, or by the colour
+  passed to setColor()/default_notification_color. So this is one flat shape —
+  no strokes, no gradients, nothing that depends on colour to read.
+
+  Drawn in a 24dp frame. Three things make it read as popcorn rather than a
+  cupcake at status-bar size, and all three were arrived at by rendering it:
+    * the kernels OVERHANG the box on both sides — that overhang is the single
+      strongest cue, and without it the shape reads as frosting on a muffin
+    * the kernel mass is nine overlapping circles of varied size, so the top
+      edge is lumpy rather than a smooth dome; nonZero fill unions them
+    * the box carries two stripes, punched out with evenOdd. They blur at 24dp
+      but still register as texture, and they are what says "concession stand"
+
+  Replaces android.R.drawable.ic_media_play — a stock platform play triangle
+  that had nothing to do with this app.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+
+    <!-- Popped kernels. -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M3.1,9.2a2.5,2.5 0 1,0 5.0,0a2.5,2.5 0 1,0 -5.0,0Z
+                          M6.1,7.0a2.9,2.9 0 1,0 5.8,0a2.9,2.9 0 1,0 -5.8,0Z
+                          M9.7,5.6a2.7,2.7 0 1,0 5.4,0a2.7,2.7 0 1,0 -5.4,0Z
+                          M12.8,7.2a2.8,2.8 0 1,0 5.6,0a2.8,2.8 0 1,0 -5.6,0Z
+                          M16.1,9.4a2.4,2.4 0 1,0 4.8,0a2.4,2.4 0 1,0 -4.8,0Z
+                          M4.1,11.2a2.5,2.5 0 1,0 5.0,0a2.5,2.5 0 1,0 -5.0,0Z
+                          M8.6,9.6a2.6,2.6 0 1,0 5.2,0a2.6,2.6 0 1,0 -5.2,0Z
+                          M11.5,10.3a2.5,2.5 0 1,0 5.0,0a2.5,2.5 0 1,0 -5.0,0Z
+                          M14.6,11.2a2.4,2.4 0 1,0 4.8,0a2.4,2.4 0 1,0 -4.8,0Z" />
+
+    <!-- Box, with two stripes punched out. -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:fillType="evenOdd"
+        android:pathData="M4.4,11.4 L19.6,11.4 L16.9,21.6 L7.1,21.6 Z
+                          M9.3,13.2 L10.8,13.2 L10.6,20.1 L9.3,20.1 Z
+                          M13.2,13.2 L14.7,13.2 L14.7,20.1 L13.4,20.1 Z" />
+</vector>

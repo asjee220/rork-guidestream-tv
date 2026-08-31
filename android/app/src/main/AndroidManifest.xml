@@ -98,6 +98,19 @@
             android:name="com.google.firebase.messaging.default_notification_channel_id"
             android:value="gs_episodes" />
 
+        <!-- GUI-86. Without these two, a notification-payload push that arrives
+             while the app is backgrounded is drawn by the Firebase SDK with the
+             APPLICATION ICON flattened to a white silhouette — in practice a
+             blank or grey square, because a full-colour launcher icon has no
+             usable alpha mask. Declaring them here is the only way to fix that
+             path; setSmallIcon in the app's own builders never runs for it. -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_icon"
+            android:resource="@drawable/ic_stat_popcorn" />
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_color"
+            android:resource="@color/gs_notification_accent" />
+
         <!-- "Stop tracking" on the live-score notification. The Android
              counterpart of iOS's StopTrackingGameIntent: runs in the app's
              process without bringing the app forward. -->

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      Tint applied to the notification small icon, and to the accent line
+      Android draws beside a notification. Matches ui.theme.Color.kt's
+      BrandOrange (0xF5821F) — keep the two in step.
+    -->
+    <color name="gs_notification_accent">#F5821F</color>
+</resources>
