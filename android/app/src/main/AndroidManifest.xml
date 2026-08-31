@@ -111,6 +111,26 @@
             android:name="com.google.firebase.messaging.default_notification_color"
             android:resource="@color/gs_notification_accent" />
 
+        <!-- AdMob's native ad validator overlay, off.
+
+             It only ever appears on TEST ads on a test device, so it can never
+             reach a real user, but it lands on top of the inline chip and makes
+             the chip impossible to eyeball on an emulator.
+
+             It is a real check, not just noise: it inspects a rendered native ad
+             for policy problems, and publishing with unresolved ones risks an
+             account level violation. It reported "No implementation issues
+             found" against the GUI-85 chip on 2026-08-31, which is what makes
+             turning it off reasonable now.
+
+             Flip this to true whenever the native chip's layout or its
+             registered asset views change, check it once, then flip it back.
+
+             NB: an XML comment may not contain a double hyphen. -->
+        <meta-data
+            android:name="com.google.android.gms.ads.flag.NATIVE_AD_DEBUGGER_ENABLED"
+            android:value="false" />
+
         <!-- "Stop tracking" on the live-score notification. The Android
              counterpart of iOS's StopTrackingGameIntent: runs in the app's
              process without bringing the app forward. -->
