@@ -42,8 +42,8 @@ android {
         // like 21 or 22 is therefore far BELOW what Play already has and is
         // rejected on upload. Keep the epoch convention: when bumping, use
         // `date +%s` at the time of the build.
-        versionCode = 1788151888
-        versionName = "1.0.24"
+        versionCode = 1788196440
+        versionName = "1.0.25"
 
         // Production AdMob app id, committed as the default — the same shape as
         // iOS Info.plist's GADApplicationIdentifier. An env-var-only path is not
