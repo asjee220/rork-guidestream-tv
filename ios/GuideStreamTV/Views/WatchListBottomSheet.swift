@@ -23,16 +23,21 @@ import Supabase
 struct WatchListBottomSheet: View {
     @Environment(\.dismiss) private var dismiss
 
+    // No NavigationStack. `sheetSurface` puts the drag handle and its hairline
+    // in a top safe-area inset, and a NavigationStack wrapped around the
+    // content does not pass that inset through to it — the header drew at the
+    // very top of the sheet instead of below the handle, so its upper half sat
+    // behind the inset's opaque background with the hairline struck through the
+    // title. The eight other sheets in the app are a plain VStack for exactly
+    // this reason; this one only had the stack in order to hide the navigation
+    // bar the stack itself introduced. (GUI-79)
     var body: some View {
-        NavigationStack {
-            VStack(spacing: 0) {
-                GsSheetHeader(title: "My Watch List") {
-                    Button("Close") { dismiss() }
-                        .foregroundStyle(Color.textSecondary)
-                }
-                WatchListContent()
+        VStack(spacing: 0) {
+            GsSheetHeader(title: "My Watch List") {
+                Button("Close") { dismiss() }
+                    .foregroundStyle(Color.textSecondary)
             }
-            .toolbar(.hidden, for: .navigationBar)
+            WatchListContent()
         }
         .preferredColorScheme(.dark)
         .sheetSurface(.base)
