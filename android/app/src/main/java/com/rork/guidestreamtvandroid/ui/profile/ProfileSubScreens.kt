@@ -2,6 +2,8 @@ package com.rork.guidestreamtvandroid.ui.profile
 
 import android.Manifest
 import android.app.Activity
+import android.content.Intent
+import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -58,7 +60,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.rork.guidestreamtvandroid.data.models.StreamingCatalog
 import com.rork.guidestreamtvandroid.data.repository.AuthViewModel
 import com.rork.guidestreamtvandroid.data.repository.PushTokenManager
-import com.rork.guidestreamtvandroid.ui.ads.AdDiagnosticsDialog
 import com.rork.guidestreamtvandroid.ui.ads.AdManager
 import com.rork.guidestreamtvandroid.ui.components.NotificationPermissionState
 import com.rork.guidestreamtvandroid.ui.components.glassCard
@@ -537,9 +538,38 @@ fun HelpScreen(
         Text("Need help? We're here for you.", fontSize = 15.sp, color = TextSecondary)
         Spacer(Modifier.height(20.dp))
 
-        HelpRow("Contact Support", "Email us at support@guidestream.tv")
-        HelpRow("Privacy Policy", "How we handle your data")
-        HelpRow("Terms of Service", "Our terms and conditions")
+        // These three were rendered with no onClick at all, so they were not
+        // merely broken links - they were not tappable. The URLs are the ones
+        // the onboarding consent copy already links to, and both pages are
+        // live. (GUI-83)
+        val helpContext = LocalContext.current
+        val openUrl: (String) -> Unit = { url ->
+            runCatching {
+                helpContext.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+            }
+        }
+        HelpRow(
+            "Contact Support",
+            "Email us at support@guidestream.tv",
+            onClick = {
+                runCatching {
+                    helpContext.startActivity(
+                        Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:support@guidestream.tv"))
+                            .putExtra(Intent.EXTRA_SUBJECT, "GuideStream TV support"),
+                    )
+                }
+            },
+        )
+        HelpRow(
+            "Privacy Policy",
+            "How we handle your data",
+            onClick = { openUrl("https://guidestream.tv/privacy") },
+        )
+        HelpRow(
+            "Terms of Service",
+            "Our terms and conditions",
+            onClick = { openUrl("https://guidestream.tv/terms") },
+        )
         // Ad privacy options entry point — only rendered where UMP says one
         // is required (EEA/UK). Hidden, not disabled, elsewhere.
         val adManager = AdManager.get()
@@ -554,17 +584,9 @@ fun HelpScreen(
                 },
             )
         }
-        // Ad stack inspector — explains why sponsored slots are empty on a
-        // real build (consent, SDK init, ad-unit mismatch, or no-fill).
-        var showAdDiagnostics by remember { mutableStateOf(false) }
-        HelpRow(
-            "Ad Diagnostics",
-            "Check why sponsored cards aren't showing",
-            onClick = { showAdDiagnostics = true },
-        )
-        if (showAdDiagnostics) {
-            AdDiagnosticsDialog(onDismiss = { showAdDiagnostics = false })
-        }
+        // Ad Diagnostics removed (GUI-83). It was an engineering inspector for
+        // why sponsored slots come back empty - consent, SDK init, ad-unit
+        // mismatch, no-fill - and nothing a customer can act on.
         HelpRow("About", "Guide Stream TV v1.0")
 
         Spacer(Modifier.height(40.dp))

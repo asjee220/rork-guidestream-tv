@@ -1858,7 +1858,6 @@ private struct ProfileEditorSheet: View {
 struct HelpFeedbackView: View {
     @Environment(\.requestReview) private var requestReview
     @State private var showDiagnostics: Bool = false
-    @State private var showAdDiagnostics: Bool = false
     @State private var expandedFAQ: UUID?
 
     /// Shared ad manager — observed so the Ad Privacy Options row appears
@@ -1893,9 +1892,6 @@ struct HelpFeedbackView: View {
         .toolbarColorScheme(.dark, for: .navigationBar)
         .sheet(isPresented: $showDiagnostics) {
             SupabaseDiagnosticsView()
-        }
-        .sheet(isPresented: $showAdDiagnostics) {
-            AdDiagnosticsView()
         }
     }
 
@@ -2006,14 +2002,6 @@ struct HelpFeedbackView: View {
                 title: "App Diagnostics",
                 subtitle: "View device ID, sync status, and recent errors",
                 onTap: { showDiagnostics = true }
-            )
-            ProfileRowDivider()
-            ProfileRow(
-                icon: "rectangle.badge.checkmark",
-                iconTint: Color.orange,
-                title: "Ad Diagnostics",
-                subtitle: "Check why sponsored cards aren't showing",
-                onTap: { showAdDiagnostics = true }
             )
         }
     }
