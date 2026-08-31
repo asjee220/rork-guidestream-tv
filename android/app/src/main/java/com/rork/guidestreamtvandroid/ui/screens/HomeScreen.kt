@@ -47,6 +47,9 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import com.rork.guidestreamtvandroid.ui.components.MediaTypeGlyph
+import com.rork.guidestreamtvandroid.ui.components.NewEpisodeCard
+import com.rork.guidestreamtvandroid.ui.components.newEpisodeShowName
+import com.rork.guidestreamtvandroid.data.models.NewEpisodeRow
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -166,6 +169,8 @@ fun HomeScreen(
      *  and the followed non-TMDB ids the recommender scores against. */
     onSeeAllCreators: (creators: List<RecommendedCreator>, followedIds: List<String>) -> Unit = { _, _ -> },
     onOpenWatchList: () -> Unit = {},
+    /** New Episodes See all — opens the full list of everything new. */
+    onOpenNewEpisodes: () -> Unit = {},
     onOpenWidgetSetup: () -> Unit = {},
     /** Opens the sports game detail for a hero rail game card. */
     onOpenGame: (SportsGame) -> Unit = {},
@@ -204,6 +209,7 @@ fun HomeScreen(
     val latestContentAt by streamsVm.latestContentAt.collectAsStateWithLifecycle()
     val latestContentKind by streamsVm.latestContentKind.collectAsStateWithLifecycle()
     val seenContentAt by streamsVm.seenContentAt.collectAsStateWithLifecycle()
+    val newEpisodes by streamsVm.newEpisodes.collectAsStateWithLifecycle()
     val selectedServices by authVm.selectedServices.collectAsStateWithLifecycle()
 
     LaunchedEffect(Unit) { homeVm.loadAll() }
@@ -483,6 +489,35 @@ fun HomeScreen(
                 },
             )
         }
+
+        // New Episodes — what has actually landed on the shows you follow.
+        // No shimmer placeholder on purpose: the section renders nothing when
+        // there is nothing new, and a shimmer that resolves to an absent rail
+        // reads as a rail that failed to load.
+        NewEpisodesSection(
+            episodes = newEpisodes,
+            onOpen = { row ->
+                WatchIntentLogger.get().log(
+                    WatchIntentLogger.IntentEventType.CARD_TAPPED,
+                    titleId = row.titleId,
+                    platformId = row.platform?.lowercase() ?: "tmdb",
+                    metadata = mapOf("section" to "new_episodes"),
+                )
+                onOpenTitle(PendingTitleRoute(
+                    titleId = row.titleId,
+                    titleName = newEpisodeShowName(row),
+                    posterUrl = row.posterUrl,
+                    isTv = TitleId.isTv(row.titleId) ?: true,
+                ))
+            },
+            onSeeAll = {
+                WatchIntentLogger.get().log(
+                    WatchIntentLogger.IntentEventType.CARD_TAPPED,
+                    metadata = mapOf("section" to "new_episodes_see_all"),
+                )
+                onOpenNewEpisodes()
+            },
+        )
 
         // Around the World — rotating daily country rail
         if (homeReady) {
@@ -1694,6 +1729,60 @@ private fun TodaysPickSpotlight(
                     .clickable { onOpen(pick) }
                     .padding(vertical = 13.dp),
             )
+        }
+    }
+}
+
+// ── New Episodes Section ─────────────────────────────────────────────────────
+
+/**
+ * Home rail for `new_episodes`. Mirrors the iOS section of the same name.
+ *
+ * Android had no New Episodes surface at all until now — `Routes.NEW_EPISODES`
+ * was declared and never referenced, and nothing on Home read
+ * `StreamsViewModel.newEpisodes` — so a followed show could fire a push and
+ * still appear nowhere in the app. See
+ * `claude/lioness-s3e5-no-alert-no-badge-aug31-2026.md`.
+ *
+ * That flow is already filtered to rows still new for THIS viewer
+ * (`isNewForViewer`, GUI-74), sorted newest-first and capped at 20, so the rail
+ * only slices it. Renders nothing at all when there is nothing new.
+ */
+@Composable
+private fun NewEpisodesSection(
+    episodes: List<NewEpisodeRow>,
+    onOpen: (NewEpisodeRow) -> Unit,
+    onSeeAll: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    if (episodes.isEmpty()) return
+    Column(modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+        Row(verticalAlignment = Alignment.Bottom) {
+            Text(
+                text = "New Episodes",
+                fontSize = 18.sp,
+                lineHeight = 22.sp,
+                fontWeight = FontWeight.Bold,
+                color = TextPrimary,
+            )
+            Spacer(Modifier.weight(1f))
+            Text(
+                text = "See all",
+                fontSize = 13.sp,
+                lineHeight = 16.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = BrandOrange,
+                modifier = Modifier.clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                ) { onSeeAll() },
+            )
+        }
+        Spacer(Modifier.height(10.dp))
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            items(episodes.take(12)) { row ->
+                NewEpisodeCard(row = row, onClick = { onOpen(row) })
+            }
         }
     }
 }

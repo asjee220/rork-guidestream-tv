@@ -43,6 +43,7 @@ import com.rork.guidestreamtvandroid.ui.reels.ReelsScreen
 import com.rork.guidestreamtvandroid.data.remote.RecommendedCreator
 import com.rork.guidestreamtvandroid.ui.screens.CreatorsForYouListScreen
 import com.rork.guidestreamtvandroid.ui.screens.HomeListScreen
+import com.rork.guidestreamtvandroid.ui.screens.NewEpisodesScreen
 import com.rork.guidestreamtvandroid.ui.screens.HomeScreen
 import com.rork.guidestreamtvandroid.ui.screens.AroundTheWorldScreen
 import com.rork.guidestreamtvandroid.ui.screens.PopularOnServiceCategoriesScreen
@@ -102,6 +103,7 @@ fun MainScreen(
      *  plus the followed ids, so the screen can seed instantly and then ask
      *  the recommender for a deeper list. */
     var showCreatorsForYou by remember { mutableStateOf<Pair<List<RecommendedCreator>, List<String>>?>(null) }
+    var showNewEpisodes by remember { mutableStateOf(false) }
     var showWatchList by remember { mutableStateOf(false) }
     var showWidgetSetup by remember { mutableStateOf(false) }
     val coachMark = CoachMarkManager.get()
@@ -187,6 +189,7 @@ fun MainScreen(
                         showCreatorsForYou = creators to followedIds
                     },
                     onOpenWatchList = { showWatchList = true },
+                    onOpenNewEpisodes = { showNewEpisodes = true },
                     onOpenWidgetSetup = { showWidgetSetup = true },
                     // Hero rail game cards open the same detail the Sports tab
                     // does, through the same state.
@@ -224,7 +227,7 @@ fun MainScreen(
         }
 
         // Full-screen overlay open flag — hides the floating tab bar behind opaque covers
-        val overlayOpen = showDetail != null || showCreatorDetail != null || showSearch || selectedGame != null || showPopularCategories != null || showAroundTheWorld != null || showHomeList != null || showCreatorsForYou != null || showWatchList || showWidgetSetup || showAskSheet
+        val overlayOpen = showDetail != null || showCreatorDetail != null || showSearch || selectedGame != null || showPopularCategories != null || showAroundTheWorld != null || showHomeList != null || showCreatorsForYou != null || showNewEpisodes || showWatchList || showWidgetSetup || showAskSheet
 
         // Show detail (full-screen cover equivalent)
         showDetail?.let { route ->
@@ -367,6 +370,30 @@ fun MainScreen(
                     onBack = { showHomeList = null },
                     onOpenTitle = { route ->
                         showHomeList = null
+                        val kind = SourceKind.from(route.titleId)
+                        if (kind.isNonTMDB) {
+                            showCreatorDetail = route.titleId
+                        } else {
+                            detailSheetRoute = route
+                        }
+                    },
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
+        }
+
+        // New Episodes "See all" list
+        if (showNewEpisodes) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Navy)
+                    .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { },
+            ) {
+                NewEpisodesScreen(
+                    onBack = { showNewEpisodes = false },
+                    onOpenTitle = { route ->
+                        showNewEpisodes = false
                         val kind = SourceKind.from(route.titleId)
                         if (kind.isNonTMDB) {
                             showCreatorDetail = route.titleId
