@@ -98,47 +98,65 @@ class StreamsViewModel private constructor(context: Context) {
             instance ?: error("StreamsViewModel not initialized")
     }
 
+    /**
+     * Launch/foreground refresh. [fetchLatestContentDates] and
+     * [fetchWatchlistSeen] both key off the saved titles, so they must not run
+     * until `user_streams` has actually landed. Running them concurrently meant
+     * that on a cold launch — no local cache to seed `_userStreams` — they saw
+     * an empty list, and nothing re-ran them, so every NEW EPISODE chip stayed
+     * suppressed until a later launch warmed the cache.
+     */
     fun refreshAll() {
         scope.launch {
-            fetchUserStreams()
-            fetchNewEpisodes()
-            fetchLatestContentDates()
-            fetchWatchlistSeen()
+            _isLoadingStreams.value = true
+            _isLoadingEpisodes.value = true
+            val episodes = launch(Dispatchers.IO) {
+                try { fetchNewEpisodesNow() }
+                catch (c: CancellationException) { throw c }
+                catch (_: Exception) {}
+            }
+            try { fetchUserStreamsNow() }
+            catch (c: CancellationException) { throw c }
+            catch (_: Exception) {}
+            try { fetchLatestContentDates() }
+            catch (c: CancellationException) { throw c }
+            catch (_: Exception) {}
+            try { fetchWatchlistSeen() }
+            catch (c: CancellationException) { throw c }
+            catch (_: Exception) {}
+            episodes.join()
         }
     }
 
     /**
-     * Awaitable variant of [refreshAll] for pull-to-refresh. Launches all four
-     * fetches concurrently inside [coroutineScope], each individually isolated so
-     * a thrown exception in one never cancels the others and never propagates
-     * out of this function (CancellationException is rethrown). Returns when
-     * all four have completed.
+     * Awaitable variant of [refreshAll] for pull-to-refresh. `user_streams` and
+     * `new_episodes` run concurrently; `title_recency` and `watchlist_seen`
+     * wait for `user_streams` because they are filtered by the saved title ids
+     * and would otherwise see an empty list. Each fetch is individually
+     * isolated so a thrown exception in one never cancels the others and never
+     * propagates out of this function (CancellationException is rethrown).
+     * Returns when all four have completed.
      */
     suspend fun refreshAllNow() {
         coroutineScope {
-            val jobs = listOf(
-                launch(Dispatchers.IO) {
-                    try { fetchUserStreamsNow() }
-                    catch (c: CancellationException) { throw c }
-                    catch (_: Exception) {}
-                },
-                launch(Dispatchers.IO) {
-                    try { fetchNewEpisodesNow() }
-                    catch (c: CancellationException) { throw c }
-                    catch (_: Exception) {}
-                },
-                launch(Dispatchers.IO) {
-                    try { fetchLatestContentDates() }
-                    catch (c: CancellationException) { throw c }
-                    catch (_: Exception) {}
-                },
-                launch(Dispatchers.IO) {
-                    try { fetchWatchlistSeen() }
-                    catch (c: CancellationException) { throw c }
-                    catch (_: Exception) {}
-                },
-            )
-            jobs.forEach { it.join() }
+            val episodes = launch(Dispatchers.IO) {
+                try { fetchNewEpisodesNow() }
+                catch (c: CancellationException) { throw c }
+                catch (_: Exception) {}
+            }
+            val streams = launch(Dispatchers.IO) {
+                try { fetchUserStreamsNow() }
+                catch (c: CancellationException) { throw c }
+                catch (_: Exception) {}
+                try { fetchLatestContentDates() }
+                catch (c: CancellationException) { throw c }
+                catch (_: Exception) {}
+                try { fetchWatchlistSeen() }
+                catch (c: CancellationException) { throw c }
+                catch (_: Exception) {}
+            }
+            episodes.join()
+            streams.join()
         }
     }
 
@@ -645,11 +663,10 @@ class StreamsViewModel private constructor(context: Context) {
      * existing added_at position. Failures leave the previous map untouched.
      */
     private suspend fun fetchLatestContentDates() {
-        if (_userStreams.value.isEmpty()) {
-            _latestContentAt.value = emptyMap()
-            _latestContentKind.value = emptyMap()
-            return
-        }
+        // Nothing saved yet: leave whatever we already hold alone. Clearing
+        // here used to wipe both maps whenever this ran before user_streams
+        // had landed, suppressing every NEW EPISODE chip for the session.
+        if (_userStreams.value.isEmpty()) return
         try {
             val titleIds = _userStreams.value.map { it.titleId }.distinct()
             val rows = SupabaseManager.client.postgrest
@@ -694,10 +711,9 @@ class StreamsViewModel private constructor(context: Context) {
      * `user_streams`.
      */
     suspend fun fetchWatchlistSeen() {
-        if (_userStreams.value.isEmpty()) {
-            _seenContentAt.value = emptyMap()
-            return
-        }
+        // As in [fetchLatestContentDates]: no saved titles means we have
+        // nothing to ask for, not that the existing map is wrong.
+        if (_userStreams.value.isEmpty()) return
         try {
             val titleIds = _userStreams.value.map { it.titleId }.distinct()
             val owner = currentUserId ?: DeviceIdentity.get().deviceId
