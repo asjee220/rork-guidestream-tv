@@ -45,28 +45,35 @@ android {
         versionCode = 1788151888
         versionName = "1.0.24"
 
-        // Production AdMob app id — supplied via the ANDROID_ADMOB_APP_ID env
-        // var at release build time; falls back to Google's test app id so
-        // local and debug builds keep serving test ads.
+        // Production AdMob app id, committed as the default — the same shape as
+        // iOS Info.plist's GADApplicationIdentifier. An env-var-only path is not
+        // safe here: Android Studio launched from Finder inherits no shell
+        // environment, so every release bundle since 1.0.21 silently shipped
+        // Google's test app id. ANDROID_ADMOB_APP_ID still overrides for CI, and
+        // the debug build type below pins Google's test ids.
         manifestPlaceholders["ANDROID_ADMOB_APP_ID"] = System.getenv("ANDROID_ADMOB_APP_ID")
-            ?: "ca-app-pub-3940256099942544~1458002511"
+            ?: "ca-app-pub-6595855555549220~6152605646"
 
         // Bundled ad units — the last-resort fallback when the Supabase
         // `ads_android` remote-config row is missing or carries units from a
         // different AdMob app (AdUnitResolver validates the publisher prefix
-        // against the manifest app id at runtime). Real units arrive via env
-        // vars at release build time; test units keep debug builds filling.
+        // against the manifest app id at runtime). Committed as the real units;
+        // the env vars still override for CI.
+        //
+        // NOTE: the "native" slot is served by an AdView banner (NativeAdCard.kt
+        // -> BannerAd, AdSize.BANNER), so ADMOB_NATIVE_AD_UNIT_ID must be a
+        // Banner unit. A Native advanced unit here never fills.
         buildConfigField(
             "String",
             "ADMOB_NATIVE_AD_UNIT_ID",
             "\"${System.getenv("ANDROID_ADMOB_NATIVE_AD_UNIT_ID")
-                ?: "ca-app-pub-3940256099942544/2247696110"}\"",
+                ?: "ca-app-pub-6595855555549220/8484572161"}\"",
         )
         buildConfigField(
             "String",
             "ADMOB_INTERSTITIAL_AD_UNIT_ID",
             "\"${System.getenv("ANDROID_ADMOB_INTERSTITIAL_AD_UNIT_ID")
-                ?: "ca-app-pub-3940256099942544/1033173712"}\"",
+                ?: "ca-app-pub-6595855555549220/7171490491"}\"",
         )
     }
 
@@ -82,6 +89,25 @@ android {
     }
 
     buildTypes {
+        debug {
+            // Never request the live units from a debug build — developer and
+            // emulator traffic on a real unit risks an invalid-traffic flag.
+            // Google's Android test ids (the previous defaults were the iOS test
+            // app id and a Native advanced unit, neither of which can fill an
+            // AdView banner).
+            manifestPlaceholders["ANDROID_ADMOB_APP_ID"] =
+                "ca-app-pub-3940256099942544~3347511713"
+            buildConfigField(
+                "String",
+                "ADMOB_NATIVE_AD_UNIT_ID",
+                "\"ca-app-pub-3940256099942544/6300978111\"",
+            )
+            buildConfigField(
+                "String",
+                "ADMOB_INTERSTITIAL_AD_UNIT_ID",
+                "\"ca-app-pub-3940256099942544/1033173712\"",
+            )
+        }
         release {
             isMinifyEnabled = false
             signingConfig = if (hasReleaseSigning) {
