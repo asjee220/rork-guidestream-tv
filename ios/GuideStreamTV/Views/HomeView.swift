@@ -655,39 +655,46 @@ struct HomeView: View {
                             .padding(.horizontal, homeWidthClass.homeHorizontalPadding)
                         }
 
-                        // FIXME: Temporarily disabled — re-enable when new episodes are populated
-                        // NewEpisodesSection(
-                        //     sectionTitle: (streams.userStreams.isEmpty && !trending.isEmpty) ? "Trending This Week" : "New Episodes",
-                        //     episodes: liveNewEpisodes,
-                        //     onSeeAll: {
-                        //         WatchIntentLogger.shared.log(
-                        //             eventType: .cardTapped,
-                        //             metadata: ["section": "new_episodes_see_all"]
-                        //         )
-                        //         path.append(.newEpisodes)
-                        //     },
-                        //     onOpen: { ep in
-                        //         WatchIntentLogger.shared.log(
-                        //             eventType: .cardTapped,
-                        //             titleId: ep.titleId ?? WatchIntentLogger.titleSlug(ep.title),
-                        //             platformId: ep.platform.lowercased()
-                        //         )
-                        //         if let tid = ep.titleId, SourceKind.from(titleId: tid).isNonTMDB {
-                        //             creatorDetailTarget = CreatorDetailTarget(
-                        //                 titleId: tid,
-                        //                 initialEpisode: CreatorInitialEpisode(
-                        //                     episodeId: ep.episodeId,
-                        //                     deepLinkUrl: ep.deepLinkUrl,
-                        //                     title: ep.title,
-                        //                     posterUrl: ep.posterUrl
-                        //                 )
-                        //             )
-                        //         } else {
-                        //             detailSubject = .episode(ep)
-                        //         }
-                        //     }
-                        // )
-                        // .padding(.horizontal, 20)
+                        // Re-enabled 2026-08-31: new_episodes is populated and the
+                        // .newEpisodes destination below has been live all along, so the
+                        // only thing missing was the rail that reaches it. Guarded on
+                        // empty because liveNewEpisodes also backs off to onAir/trending,
+                        // and all three are empty for the first moments of a cold launch —
+                        // an empty SectionGlassCard reads as a broken rail.
+                        if !liveNewEpisodes.isEmpty {
+                            NewEpisodesSection(
+                                sectionTitle: (streams.userStreams.isEmpty && !trending.isEmpty) ? "Trending This Week" : "New Episodes",
+                                episodes: liveNewEpisodes,
+                                onSeeAll: {
+                                    WatchIntentLogger.shared.log(
+                                        eventType: .cardTapped,
+                                        metadata: ["section": "new_episodes_see_all"]
+                                    )
+                                    path.append(.newEpisodes)
+                                },
+                                onOpen: { ep in
+                                    WatchIntentLogger.shared.log(
+                                        eventType: .cardTapped,
+                                        titleId: ep.titleId ?? WatchIntentLogger.titleSlug(ep.title),
+                                        platformId: ep.platform.lowercased()
+                                    )
+                                    if let tid = ep.titleId, SourceKind.from(titleId: tid).isNonTMDB {
+                                        creatorDetailTarget = CreatorDetailTarget(
+                                            titleId: tid,
+                                            initialEpisode: CreatorInitialEpisode(
+                                                episodeId: ep.episodeId,
+                                                deepLinkUrl: ep.deepLinkUrl,
+                                                title: ep.title,
+                                                posterUrl: ep.posterUrl
+                                            )
+                                        )
+                                    } else {
+                                        detailSubject = .episode(ep)
+                                    }
+                                }
+                            )
+                            .padding(.horizontal, 20)
+                        }
 
                         // Around the World — rotating daily country rail
                         if let aroundCountry = aroundTheWorldEntry,
