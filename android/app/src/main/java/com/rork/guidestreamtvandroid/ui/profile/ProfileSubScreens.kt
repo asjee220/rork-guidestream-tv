@@ -61,6 +61,7 @@ import com.rork.guidestreamtvandroid.data.repository.PushTokenManager
 import com.rork.guidestreamtvandroid.ui.ads.AdManager
 import com.rork.guidestreamtvandroid.ui.components.NotificationPermissionState
 import com.rork.guidestreamtvandroid.ui.components.glassCard
+import com.rork.guidestreamtvandroid.data.repository.ReviewPromptManager
 import com.rork.guidestreamtvandroid.ui.components.openInAppBrowser
 import com.rork.guidestreamtvandroid.ui.components.markNotificationPermissionAsked
 import com.rork.guidestreamtvandroid.ui.components.notificationPermissionState
@@ -568,6 +569,14 @@ fun HelpScreen(
             "Report a Problem",
             "Something not working? Let us know.",
             onClick = { supportTopic = "Something is broken" },
+        )
+        // Opens the Play Store listing, not Play's in-app review sheet — that
+        // sheet is quota'd and silently no-ops once spent, so a button wired to
+        // it looks broken. The automatic prompt owns the quota.
+        HelpRow(
+            "Rate Guide Stream TV",
+            "Tell us how we're doing on Google Play",
+            onClick = { ReviewPromptManager.openStoreListing(helpContext) },
         )
         HelpRow(
             "Privacy Policy",

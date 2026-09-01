@@ -1,7 +1,10 @@
 package com.rork.guidestreamtvandroid.data.repository
 
 import android.app.Activity
+import android.content.ActivityNotFoundException
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import android.content.SharedPreferences
 import android.util.Log
 import com.google.android.play.core.review.ReviewManagerFactory
@@ -173,7 +176,30 @@ object ReviewPromptManager {
         return next
     }
 
-    /** Play Store page with the review sheet — used by the explicit Rate row. */
-    const val PLAY_STORE_URL =
-        "https://play.google.com/store/apps/details?id=com.rork.guidestreamtvandroid"
+    private const val PACKAGE = "com.rork.guidestreamtvandroid"
+
+    /**
+     * Opens the Play Store listing for the explicit "Rate" row.
+     *
+     * Deliberately NOT [launchReviewFlow]: Play's in-app sheet is quota'd and
+     * silently does nothing once spent, so a button wired to it would look
+     * broken exactly when a user has decided to leave a review. The listing
+     * always works.
+     *
+     * Tries the Play Store app first (`market://`) and falls back to the web
+     * listing on devices without it.
+     */
+    fun openStoreListing(context: Context) {
+        val market = Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=$PACKAGE"))
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        try {
+            context.startActivity(market)
+        } catch (_: ActivityNotFoundException) {
+            val web = Intent(
+                Intent.ACTION_VIEW,
+                Uri.parse("https://play.google.com/store/apps/details?id=$PACKAGE"),
+            ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            runCatching { context.startActivity(web) }
+        }
+    }
 }
