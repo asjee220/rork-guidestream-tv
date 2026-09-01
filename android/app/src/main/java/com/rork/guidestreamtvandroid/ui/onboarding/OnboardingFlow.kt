@@ -50,6 +50,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.ui.text.LinkAnnotation
+import androidx.compose.ui.text.LinkInteractionListener
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.withLink
@@ -119,6 +120,7 @@ import com.rork.guidestreamtvandroid.data.repository.AuthViewModel
 import com.rork.guidestreamtvandroid.data.repository.PushTokenManager
 import com.rork.guidestreamtvandroid.data.repository.StreamsViewModel
 import com.rork.guidestreamtvandroid.ui.components.RemoteImage
+import com.rork.guidestreamtvandroid.ui.components.openInAppBrowser
 import com.rork.guidestreamtvandroid.ui.theme.BrandBackground
 import com.rork.guidestreamtvandroid.ui.theme.BrandBlue
 import com.rork.guidestreamtvandroid.ui.theme.BrandOrange
@@ -459,16 +461,33 @@ private fun WelcomeScreen(
                 }
 
                 Spacer(Modifier.height(8.dp))
+                // GUI-87: the consent links open in a Custom Tab over
+                // onboarding. Without the listener the default handler fires
+                // an ACTION_VIEW and drops the customer into the browser
+                // mid-signup, where a good number never came back.
+                val openLegal = LinkInteractionListener { link ->
+                    (link as? LinkAnnotation.Url)?.let { openInAppBrowser(context, it.url) }
+                }
                 Text(
                     text = buildAnnotatedString {
                         append("By continuing, you agree to our ")
-                        withLink(LinkAnnotation.Url("https://guidestream.tv/privacy")) {
+                        withLink(
+                            LinkAnnotation.Url(
+                                "https://guidestream.tv/privacy",
+                                linkInteractionListener = openLegal,
+                            ),
+                        ) {
                             withStyle(SpanStyle(color = BrandBlue)) {
                                 append("Privacy Policy")
                             }
                         }
                         append(" and ")
-                        withLink(LinkAnnotation.Url("https://guidestream.tv/terms")) {
+                        withLink(
+                            LinkAnnotation.Url(
+                                "https://guidestream.tv/terms",
+                                linkInteractionListener = openLegal,
+                            ),
+                        ) {
                             withStyle(SpanStyle(color = BrandBlue)) {
                                 append("Terms of Service")
                             }

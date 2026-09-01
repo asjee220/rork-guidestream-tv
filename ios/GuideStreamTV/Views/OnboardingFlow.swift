@@ -176,6 +176,11 @@ struct WelcomeOnboardingView: View {
     @State private var auth = AuthViewModel.shared
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+    /// GUI-87 — the consent copy's Privacy / Terms links open in an
+    /// SFSafariViewController sheet over onboarding instead of throwing the
+    /// customer out to Safari mid-signup, where a good number never came back.
+    @State private var browserLink: InAppBrowserLink?
+
     var body: some View {
         ZStack {
             DriftingPosterWall(reduceMotion: reduceMotion)
@@ -349,6 +354,16 @@ struct WelcomeOnboardingView: View {
             .font(.custom("SF Pro Text", size: 13))
             .multilineTextAlignment(.center)
             .fixedSize(horizontal: false, vertical: true)
+            // Intercept the AttributedString link taps before SwiftUI hands
+            // them to the system browser.
+            .environment(\.openURL, OpenURLAction { url in
+                browserLink = InAppBrowserLink(url: url)
+                return .handled
+            })
+            .sheet(item: $browserLink) { link in
+                SafariView(url: link.url)
+                    .ignoresSafeArea()
+            }
     }
 }
 
