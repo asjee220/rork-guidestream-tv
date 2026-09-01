@@ -826,6 +826,7 @@
 				DEVELOPMENT_TEAM = KDH93W2EVA;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "GuideStream TV";
 				INFOPLIST_KEY_CFBundleURLTypes = "{\n    CFBundleTypeRole = Editor;\n    CFBundleURLName = \"com.guidestream.tv\";\n    CFBundleURLSchemes =     (\n        guidestream\n    );\n}";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationQueriesSchemes = "nflx hulu disneyplus hbomax aiv videos paramountplus peacock youtube crunchyroll";
@@ -861,6 +862,7 @@
 				DEVELOPMENT_TEAM = KDH93W2EVA;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "GuideStream TV";
 				INFOPLIST_KEY_CFBundleURLTypes = "{\n    CFBundleTypeRole = Editor;\n    CFBundleURLName = \"com.guidestream.tv\";\n    CFBundleURLSchemes =     (\n        guidestream\n    );\n}";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationQueriesSchemes = "nflx hulu disneyplus hbomax aiv videos paramountplus peacock youtube crunchyroll";
