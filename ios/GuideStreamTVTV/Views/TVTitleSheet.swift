@@ -235,7 +235,16 @@ struct TVTitleSheet: View {
             // into, the way the Apple TV title screen behaves.
             ScrollViewReader { proxy in
             ScrollView(.vertical, showsIndicators: false) {
-                LazyVStack(alignment: .leading, spacing: 64) {
+                // Deliberately NOT a LazyVStack. The hero is a full screen
+                // tall, so with lazy construction nothing below it is ever
+                // built while the hero is on screen — the focus engine then
+                // has no view to move down to and the remote just cycles
+                // sideways through the hero's own buttons. TVHomeView gets
+                // away with a LazyVStack only because its hero carries a
+                // negative bottom padding that pulls the first rail into
+                // view. This screen is six sections, not a feed, so eager
+                // construction costs nothing.
+                VStack(alignment: .leading, spacing: 64) {
                     heroSection
                         .containerRelativeFrame(.vertical)
 
@@ -401,6 +410,10 @@ struct TVTitleSheet: View {
                 likeButton
             }
             .padding(.top, 6)
+            // Same reason TVRail sections its header and its cards: a move
+            // down out of this row should resolve to the next section, not
+            // be decided by which view happens to overlap its frame.
+            .focusSection()
         }
         .padding(.horizontal, 80)
         .padding(.bottom, 130)
@@ -471,6 +484,7 @@ struct TVTitleSheet: View {
             whereToWatchRow
                 .padding(.horizontal, 80)
         }
+        .focusSection()
     }
 
     // MARK: Episodes
