@@ -70,6 +70,23 @@ struct TVTitleSheet: View {
     // selectedServiceName when a new title loads.
     @State private var didPrefillEpisode: Bool = false
 
+    // MARK: GUI-88 — sectioned detail state
+
+    /// Numbered seasons for a series (TMDB's season 0 "Specials" filtered
+    /// out). Empty for movies and for anything that fails to resolve, which
+    /// is what hides the season picker.
+    @State private var seasonSummaries: [TMDBSeasonSummary] = []
+    /// The season the Episodes rail is showing — not necessarily the one the
+    /// deep link targets, which stays on `season`/`episode`.
+    @State private var browsingSeason: Int = 1
+    @State private var episodes: [TMDBEpisode] = []
+    @State private var isLoadingEpisodes: Bool = false
+    @State private var recommendations: [TVTMDBResult] = []
+    /// One title-scoped reel, or nil when the title has no playable trailer.
+    /// Nil hides Trailers & Clips rather than showing tiles that do nothing.
+    @State private var trailerReel: TVReelItem?
+    @State private var reelsPresentation: TVReelsPresentation?
+
     // Parsed from titleId via the tvOS TVTitleID helper (mirrors the iOS
     // TitleID enum). Accepts both bare numeric ids ("94997") and the
     // legacy prefixed form ("tmdb:tv:1396").
@@ -201,121 +218,45 @@ struct TVTitleSheet: View {
 
     var body: some View {
         ZStack {
-            // Cinematic backdrop
-            TVRemoteImage(urlString: detail.backdropUrl ?? detail.posterUrl, contentMode: .fill)
-                .ignoresSafeArea()
-                .overlay {
-                    LinearGradient(
-                        colors: [
-                            .black.opacity(0.4),
-                            .black.opacity(0.85),
-                            .black
-                        ],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                }
+            backdropLayer
 
-            HStack(alignment: .top, spacing: 60) {
-                // Poster
-                TVRemoteImage(urlString: detail.posterUrl, contentMode: .fill)
-                    .frame(width: 360, height: 540)
-                    .clipShape(.rect(cornerRadius: 20))
-                    .shadow(color: .black.opacity(0.6), radius: 36, y: 18)
+            // GUI-88: the screen was a single non-scrolling ZStack — poster
+            // left, one column right, nothing below the fold. It is now a
+            // full-screen hero followed by sections the viewer walks down
+            // into, the way the Apple TV title screen behaves.
+            ScrollView(.vertical, showsIndicators: false) {
+                LazyVStack(alignment: .leading, spacing: 64) {
+                    heroSection
+                        .containerRelativeFrame(.vertical)
 
-                VStack(alignment: .leading, spacing: 24) {
-                    // Tag + year
-                    HStack(spacing: 12) {
-                        Text(detail.tag.uppercased())
-                            .font(.system(size: 16, weight: .heavy))
-                            .foregroundStyle(detail.accent)
-                            .tracking(2)
-                        if let year = detail.year {
-                            Text("·  \(String(year))")
-                                .font(.system(size: 16, weight: .heavy))
-                                .foregroundStyle(TVTheme.textSecondary)
-                                .tracking(1)
-                        }
-                    }
-
-                    // Title
-                    Text(detail.title)
-                        .font(.system(size: 56, weight: .black))
-                        .foregroundStyle(.white)
-                        .lineLimit(3)
-
-                    // Synopsis
-                    if let synopsis = synopsisText {
-                        Text(synopsis)
-                            .font(.system(size: 22))
-                            .foregroundStyle(TVTheme.textSecondary)
-                            .lineLimit(6)
-                            .frame(maxWidth: 760, alignment: .leading)
-                    }
-
-                    // Season / Episode stepper (TV only, hidden for creators)
-                    if isTV, youTubeChannelId == nil {
-                        seasonEpisodeStepper
-                    }
-
-                    // Platform badge (only when no resolved source)
-                    if resolvedStreaming == nil,
-                       let platform = detail.platform, !platform.isEmpty {
-                        HStack(spacing: 10) {
-                            Image(systemName: "play.tv.fill")
-                                .font(.system(size: 18, weight: .bold))
-                                .foregroundStyle(detail.accent)
-                            Text("Streaming on \(platform)")
-                                .font(.system(size: 18, weight: .semibold))
-                                .foregroundStyle(.white)
-                        }
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 8)
-                        .background(.white.opacity(0.08), in: Capsule())
-                    }
-
-                    // Where to Watch chips (hidden when no resolved sources
-                    // or for YouTube creator rows)
                     if !usSources.isEmpty, youTubeChannelId == nil {
-                        whereToWatchRow
+                        whereToWatchSection
                     }
-
-                    // Action buttons row
-                    HStack(spacing: 24) {
-                        // Play on <service> — or, for services that can't be
-                        // launched from another app on tvOS, a non-interactive
-                        // hint telling the viewer to open the app manually.
-                        if showPlayButton {
-                            playButton
-                        } else {
-                            manualOpenHint
-                        }
-
-                        // Like / Unlike
-                        likeButton
-
-                        // Watched toggle
-                        watchedButton
-
-                        // Watch List toggle
-                        watchListButton
-
-                        // Close
-                        closeButton
+                    if isTV, youTubeChannelId == nil, !episodes.isEmpty {
+                        episodesSection
                     }
-                    .padding(.top, 12)
+                    if trailerReel != nil {
+                        trailersSection
+                    }
+                    if !recommendations.isEmpty {
+                        moreLikeThisSection
+                    }
+                    detailsSection
+
+                    Color.clear.frame(height: 60)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .padding(.horizontal, 80)
-            .padding(.vertical, 60)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+            .ignoresSafeArea()
         }
         .task {
             selectedServiceName = nil
             didProbeMediaType = false
             didPrefillEpisode = false
             await loadData()
+            await loadSections()
+        }
+        .fullScreenCover(item: $reelsPresentation) { payload in
+            TVReelsView(injectedReels: payload.feed, startIndex: payload.startIndex)
         }
         .onChange(of: season) { _, _ in
             Task { await resolveStreamingData() }
@@ -326,6 +267,384 @@ struct TVTitleSheet: View {
         .onChange(of: selectedServiceName) { _, _ in
             Task { await resolveStreamingData() }
         }
+    }
+
+    // MARK: - GUI-88 sections
+
+    /// Cinematic backdrop behind every section. Unchanged from the previous
+    /// layout apart from the gradient running further down, so text stays
+    /// legible over art once the viewer has scrolled.
+    private var backdropLayer: some View {
+        TVRemoteImage(urlString: detail.backdropUrl ?? detail.posterUrl, contentMode: .fill)
+            .ignoresSafeArea()
+            .overlay {
+                LinearGradient(
+                    colors: [.black.opacity(0.35), .black.opacity(0.88), .black],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+            }
+    }
+
+    private func sectionHeader(_ title: String, accent: Color = TVTheme.orange) -> some View {
+        HStack(spacing: 14) {
+            Capsule()
+                .fill(accent)
+                .frame(width: 6, height: 30)
+                .shadow(color: accent.opacity(0.65), radius: 10)
+            Text(title)
+                .font(.system(size: 30, weight: .heavy))
+                .foregroundStyle(.white)
+        }
+        .padding(.horizontal, 80)
+    }
+
+    /// Full-screen first page: art, title, synopsis, the season/episode
+    /// target and every action. Everything here already existed — it is
+    /// re-laid-out, not rebuilt.
+    private var heroSection: some View {
+        VStack(alignment: .leading, spacing: 22) {
+            Spacer(minLength: 0)
+
+            HStack(spacing: 12) {
+                Text(detail.tag.uppercased())
+                    .font(.system(size: 16, weight: .heavy))
+                    .foregroundStyle(detail.accent)
+                    .tracking(2)
+                if let year = detail.year {
+                    Text("·  \(String(year))")
+                        .font(.system(size: 16, weight: .heavy))
+                        .foregroundStyle(TVTheme.textSecondary)
+                        .tracking(1)
+                }
+            }
+
+            Text(detail.title)
+                .font(.system(size: 64, weight: .black))
+                .foregroundStyle(.white)
+                .lineLimit(2)
+
+            if let synopsis = synopsisText {
+                Text(synopsis)
+                    .font(.system(size: 24))
+                    .foregroundStyle(TVTheme.textSecondary)
+                    .lineLimit(4)
+                    .frame(maxWidth: 900, alignment: .leading)
+            }
+
+            if isTV, youTubeChannelId == nil {
+                seasonEpisodeStepper
+            }
+
+            HStack(spacing: 24) {
+                if showPlayButton { playButton } else { manualOpenHint }
+                likeButton
+                watchedButton
+                watchListButton
+                closeButton
+            }
+            .padding(.top, 8)
+        }
+        .padding(.horizontal, 80)
+        .padding(.bottom, 110)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// The chips that already shipped, lifted into their own section.
+    private var whereToWatchSection: some View {
+        VStack(alignment: .leading, spacing: 24) {
+            sectionHeader("Where to Watch")
+            whereToWatchRow
+                .padding(.horizontal, 80)
+        }
+    }
+
+    // MARK: Episodes
+
+    private var episodesSection: some View {
+        VStack(alignment: .leading, spacing: 24) {
+            sectionHeader("Episodes")
+
+            if seasonSummaries.count > 1 {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 18) {
+                        ForEach(seasonSummaries, id: \.id) { summary in
+                            seasonPill(for: summary)
+                        }
+                    }
+                    .padding(.horizontal, 80)
+                    .padding(.vertical, 8)
+                }
+                .focusSection()
+            }
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(alignment: .top, spacing: 32) {
+                    ForEach(episodes, id: \.id) { ep in
+                        episodeCard(ep)
+                    }
+                }
+                .padding(.horizontal, 80)
+                .padding(.vertical, 24)
+            }
+            .focusSection()
+        }
+    }
+
+    private func seasonPill(for summary: TMDBSeasonSummary) -> some View {
+        let number = summary.seasonNumber ?? 1
+        let isOn = number == browsingSeason
+        return Button {
+            browsingSeason = number
+            Task { await loadEpisodes(season: number) }
+        } label: {
+            Text(summary.name ?? "Season \(number)")
+                .font(.system(size: 24, weight: .semibold))
+                .foregroundStyle(isOn ? Color.black : TVTheme.textSecondary)
+                .padding(.horizontal, 26)
+                .padding(.vertical, 12)
+                .background(isOn ? Color.white.opacity(0.92) : Color.white.opacity(0.10), in: Capsule())
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// 16:9 still with the episode's own metadata under it, matching the
+    /// Apple TV episode rail. Selecting one re-targets the deep link at that
+    /// episode — `season`/`episode` drive `resolveStreamingData`, so the Play
+    /// button then opens that episode rather than the series page. That is
+    /// something Apple's own screen cannot do for third-party services.
+    private func episodeCard(_ ep: TMDBEpisode) -> some View {
+        let isTarget = (ep.seasonNumber ?? browsingSeason) == season && ep.episodeNumber == episode
+        return Button {
+            season = ep.seasonNumber ?? browsingSeason
+            episode = ep.episodeNumber
+            focusedField = showPlayButton ? .play : .watchList
+        } label: {
+            VStack(alignment: .leading, spacing: 12) {
+                ZStack(alignment: .bottomLeading) {
+                    Color(white: 0.05)
+                        .overlay { TVRemoteImage(urlString: ep.stillUrl, contentMode: .fill).allowsHitTesting(false) }
+                        .overlay {
+                            LinearGradient(colors: [.black.opacity(0.75), .clear],
+                                           startPoint: .bottom, endPoint: .center)
+                        }
+                    if let runtime = ep.runtime {
+                        Text("\(runtime)m")
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .padding(12)
+                    }
+                }
+                .frame(width: 420, height: 236)
+                .clipShape(.rect(cornerRadius: 14))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .stroke(isTarget ? detail.accent : Color.white.opacity(0.08),
+                                lineWidth: isTarget ? 3 : 1)
+                }
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Episode \(ep.episodeNumber)")
+                        .font(.system(size: 16, weight: .heavy))
+                        .foregroundStyle(TVTheme.textSecondary)
+                        .tracking(1.2)
+                    Text(ep.name ?? "Episode \(ep.episodeNumber)")
+                        .font(.system(size: 24, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .lineLimit(1)
+                    if let overview = ep.overview, !overview.isEmpty {
+                        Text(overview)
+                            .font(.system(size: 19))
+                            .foregroundStyle(TVTheme.textSecondary)
+                            .lineLimit(3)
+                            .multilineTextAlignment(.leading)
+                    }
+                    if let air = ep.airDate, !air.isEmpty {
+                        Text(air)
+                            .font(.system(size: 17, weight: .medium))
+                            .foregroundStyle(TVTheme.textTertiary)
+                    }
+                }
+                .frame(width: 420, alignment: .leading)
+            }
+        }
+        .buttonStyle(.card)
+    }
+
+    // MARK: Trailers & Clips
+
+    /// Opens Reels on this title, the way the phone and Android do it —
+    /// `TVReelsView(injectedReels:startIndex:)` mirrors the iPhone's
+    /// `ReelsScreen(injectedReels:injectedStartIndex:)`. The row is only
+    /// built when a playable trailer actually resolved, so it never shows
+    /// a tile that leads nowhere.
+    private var trailersSection: some View {
+        VStack(alignment: .leading, spacing: 24) {
+            sectionHeader("Trailers & Clips", accent: TVTheme.blue)
+            HStack(spacing: 32) {
+                if let reel = trailerReel {
+                    Button {
+                        WatchIntentLogger.shared.log(
+                            eventType: .cardTapped,
+                            titleId: detail.titleId,
+                            metadata: ["section": "trailers_and_clips"]
+                        )
+                        reelsPresentation = TVReelsPresentation(feed: [reel], startIndex: 0)
+                    } label: {
+                        ZStack(alignment: .bottomLeading) {
+                            Color(white: 0.05)
+                                .overlay {
+                                    TVRemoteImage(urlString: reel.backdropUrl ?? reel.posterUrl, contentMode: .fill)
+                                        .allowsHitTesting(false)
+                                }
+                                .overlay {
+                                    LinearGradient(colors: [.black.opacity(0.8), .clear],
+                                                   startPoint: .bottom, endPoint: .center)
+                                }
+                            HStack(spacing: 12) {
+                                Image(systemName: "play.circle.fill")
+                                    .font(.system(size: 30, weight: .bold))
+                                Text("Play trailer")
+                                    .font(.system(size: 22, weight: .semibold))
+                            }
+                            .foregroundStyle(.white)
+                            .padding(18)
+                        }
+                        .frame(width: 480, height: 270)
+                        .clipShape(.rect(cornerRadius: 14))
+                    }
+                    .buttonStyle(.card)
+                }
+            }
+            .padding(.horizontal, 80)
+            .padding(.vertical, 20)
+        }
+        .focusSection()
+    }
+
+    // MARK: More Like This
+
+    private var moreLikeThisSection: some View {
+        VStack(alignment: .leading, spacing: 24) {
+            sectionHeader("More Like This")
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 32) {
+                    ForEach(recommendations) { item in
+                        TVPosterCard(
+                            title: item.displayName,
+                            subtitle: item.isTV ? "Series" : "Movie",
+                            posterUrl: item.posterUrl,
+                            accent: TVTheme.orange,
+                            isSaved: streams.contains(titleId: item.canonicalTitleId)
+                        ) {
+                            // Re-presenting the sheet from inside itself would
+                            // stack full-screen covers, so this dismisses back
+                            // to the caller, which owns presentation.
+                            dismiss()
+                        }
+                    }
+                }
+                .padding(.horizontal, 80)
+                .padding(.vertical, 24)
+            }
+            .focusSection()
+        }
+    }
+
+    // MARK: Details
+
+    private var detailsSection: some View {
+        VStack(alignment: .leading, spacing: 24) {
+            sectionHeader("Details")
+            VStack(alignment: .leading, spacing: 16) {
+                detailRow("Type", detail.tag.capitalized)
+                if let year = detail.year { detailRow("Released", String(year)) }
+                if let platform = detail.platform, !platform.isEmpty {
+                    detailRow("Streaming on", platform)
+                }
+                if isTV, !seasonSummaries.isEmpty {
+                    detailRow("Seasons", String(seasonSummaries.count))
+                }
+                if let synopsis = synopsisText {
+                    detailRow("Synopsis", synopsis)
+                }
+            }
+            .padding(.horizontal, 80)
+        }
+    }
+
+    private func detailRow(_ label: String, _ value: String) -> some View {
+        HStack(alignment: .top, spacing: 40) {
+            Text(label)
+                .font(.system(size: 20, weight: .semibold))
+                .foregroundStyle(TVTheme.textSecondary)
+                .frame(width: 220, alignment: .leading)
+            Text(value)
+                .font(.system(size: 20))
+                .foregroundStyle(.white)
+                .frame(maxWidth: 1100, alignment: .leading)
+        }
+    }
+
+    // MARK: - GUI-88 section loading
+
+    /// Seasons, episodes, recommendations and the trailer reel, all fail-soft:
+    /// a section that resolves to nothing simply does not render.
+    private func loadSections() async {
+        guard let tid = tmdbId else { return }
+        let tv = isTV
+
+        async let recsTask = TVTMDBService.shared.getRecommendations(tmdbId: tid, isTV: tv)
+        async let reelTask = buildTrailerReel(tmdbId: tid, isTV: tv)
+
+        if tv, youTubeChannelId == nil {
+            let summaries = await TVTMDBService.shared.getSeasonSummaries(tmdbId: tid)
+            seasonSummaries = summaries
+            // Open on the season the deep link is already targeting, so the
+            // rail and the Play button agree on first paint.
+            let opening = summaries.first(where: { $0.seasonNumber == season })?.seasonNumber
+                ?? summaries.last?.seasonNumber ?? 1
+            browsingSeason = opening
+            await loadEpisodes(season: opening)
+        }
+
+        let (recs, reel) = await (recsTask, reelTask)
+        recommendations = Array(recs.prefix(20))
+        trailerReel = reel
+    }
+
+    private func loadEpisodes(season number: Int) async {
+        guard let tid = tmdbId else { return }
+        isLoadingEpisodes = true
+        defer { isLoadingEpisodes = false }
+        let fetched = try? await TVTMDBService.shared.getSeason(tmdbId: tid, seasonNumber: number)
+        episodes = fetched?.episodes ?? []
+    }
+
+    private func buildTrailerReel(tmdbId tid: Int, isTV tv: Bool) async -> TVReelItem? {
+        let keys: [String]
+        if let verified = await TVTrailerResolveService.resolve(tmdbId: tid, isTV: tv) {
+            keys = verified
+        } else {
+            keys = await TVTMDBService.shared.getTrailerKeys(tmdbId: tid, isTV: tv)
+        }
+        guard !keys.isEmpty else { return nil }
+        return TVReelItem(
+            id: "tmdb:\(tv ? "tv" : "movie"):\(tid)",
+            tmdbId: tid,
+            isTV: tv,
+            title: detail.title,
+            synopsis: synopsisText ?? "",
+            backdropUrl: detail.backdropUrl,
+            posterUrl: detail.posterUrl,
+            year: detail.year,
+            genre: nil,
+            platformName: detail.platform,
+            platformId: nil,
+            trailerKeys: keys,
+            isSponsored: false,
+            advertiserKey: nil
+        )
     }
 
     // MARK: - Where to Watch chips
@@ -799,4 +1118,14 @@ struct TVTitleSheet: View {
     private func gsDisplayName(for raw: String) -> String {
         Platform.from(providerName: raw)?.displayName ?? raw
     }
+}
+
+// MARK: - Trailer reels presentation payload
+
+/// Carries the title-scoped Reels feed and the tapped start index into the
+/// full-screen cover. Mirrors `TrailerReelsPresentation` on iPhone.
+struct TVReelsPresentation: Identifiable {
+    let id = UUID()
+    let feed: [TVReelItem]
+    let startIndex: Int
 }

@@ -70,6 +70,56 @@ final class TVReelsViewModel {
     private var seenIds: Set<String> = []
     private var adSlot = 0
 
+    // MARK: - Injected feed
+
+    /// Seeds the feed with a title-scoped list instead of the browse feed,
+    /// so the detail screen's Trailers & Clips row can open Reels on the
+    /// title the viewer is looking at. Mirrors the iPhone, where
+    /// `ReelsScreen(injectedReels:injectedStartIndex:)` does the same.
+    ///
+    /// `load()` guards on `reels.isEmpty`, so seeding here means the browse
+    /// feed never replaces what was injected. Pagination is deliberately
+    /// left off: an injected feed is a closed set, not an endless one.
+    func inject(_ items: [TVReelItem]) {
+        guard !items.isEmpty else { return }
+        reels = items
+        seenIds = Set(items.map(\.canonicalTitleId))
+        isInjected = true
+    }
+
+    /// True when the feed was seeded by a caller. Suppresses pagination.
+    private(set) var isInjected = false
+
+    /// Builds a one-title feed from a TMDB result, resolving its trailer
+    /// keys the same way the browse feed does. Returns nil when the title
+    /// has no playable trailer, so callers can hide the row rather than
+    /// open an empty player.
+    func reelItem(for result: TVTMDBResult, platformName: String?) async -> TVReelItem? {
+        let keys: [String]
+        if let verified = await TVTrailerResolveService.resolve(tmdbId: result.id, isTV: result.isTV) {
+            keys = verified
+        } else {
+            keys = await TVTMDBService.shared.getTrailerKeys(tmdbId: result.id, isTV: result.isTV)
+        }
+        guard !keys.isEmpty else { return nil }
+        return TVReelItem(
+            id: result.canonicalTitleId,
+            tmdbId: result.id,
+            isTV: result.isTV,
+            title: result.displayName,
+            synopsis: result.overview ?? "",
+            backdropUrl: result.backdropUrl,
+            posterUrl: result.posterUrl,
+            year: result.year,
+            genre: nil,
+            platformName: platformName,
+            platformId: nil,
+            trailerKeys: keys,
+            isSponsored: false,
+            advertiserKey: nil
+        )
+    }
+
     // MARK: - Load
 
     func load() async {
@@ -96,6 +146,7 @@ final class TVReelsViewModel {
 
     /// Called as the viewer nears the end of the feed.
     func loadMoreIfNeeded(currentIndex: Int) async {
+        guard !isInjected else { return }
         guard !isLoadingMore, !isLoading else { return }
         guard currentIndex >= reels.count - Self.loadMoreThreshold else { return }
         guard exhausted.count < Source.allCases.count else { return }

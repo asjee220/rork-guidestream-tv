@@ -446,9 +446,9 @@ extension TVTMDBService {
     /// the data they already have.
     func getTVDetail(tmdbId: Int) async throws -> TMDBTVDetail? { nil }
 
-    /// Season lookup stub — returns nil so episode rails just stay empty
-    /// on tvOS.
-    func getSeason(tmdbId: Int, seasonNumber: Int) async throws -> TMDBSeason? { nil }
+    // `getSeason` is no longer a stub — it is implemented for real in
+    // TVTMDBService so the title detail screen can show an episode rail.
+    // Do not re-add a stub here; it would shadow the working call.
 }
 
 // MARK: - Minimal TMDB detail / season stubs

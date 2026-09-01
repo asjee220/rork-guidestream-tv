@@ -35,6 +35,10 @@ private nonisolated struct TVTMDBVideosEnvelope: Decodable, Sendable {
     let results: [TVTMDBVideo]
 }
 
+private nonisolated struct TVTMDBSeasonsEnvelope: Decodable, Sendable {
+    let seasons: [TMDBSeasonSummary]?
+}
+
 private nonisolated struct TVTMDBGenre: Decodable, Sendable {
     let name: String
 }
@@ -252,6 +256,44 @@ nonisolated struct TVTMDBService {
         guard let data = try? await get(urlString) else { return nil }
         guard let env = try? JSONDecoder().decode(TVTMDBMoviePoster.self, from: data) else { return nil }
         return env.posterPath
+    }
+
+    /// Full season with its episode list — titles, stills, air dates,
+    /// overviews and runtimes. This is the only source for that data:
+    /// `watchmode_title_cache.episodes` carries season/episode numbers and
+    /// per-episode deep links but no descriptive fields at all.
+    ///
+    /// Replaces the stub that used to live in TVCompatStubs and return nil,
+    /// which is why the tvOS episode rails were always empty.
+    func getSeason(tmdbId: Int, seasonNumber: Int) async throws -> TMDBSeason? {
+        let locale = DeviceLocale.current()
+        let urlString = "\(base)/tv/\(tmdbId)/season/\(seasonNumber)?api_key=\(apiKey)&language=\(locale.tmdbLanguage)"
+        guard let data = try? await get(urlString) else { return nil }
+        return try? JSONDecoder().decode(TMDBSeason.self, from: data)
+    }
+
+    /// Season summaries for a series, so the detail screen knows how many
+    /// seasons exist before it fetches one. Returns an empty array on any
+    /// failure so the season picker simply does not render.
+    func getSeasonSummaries(tmdbId: Int) async -> [TMDBSeasonSummary] {
+        let locale = DeviceLocale.current()
+        let urlString = "\(base)/tv/\(tmdbId)?api_key=\(apiKey)&language=\(locale.tmdbLanguage)"
+        guard let data = try? await get(urlString) else { return [] }
+        guard let env = try? JSONDecoder().decode(TVTMDBSeasonsEnvelope.self, from: data) else { return [] }
+        // Season 0 is TMDB's "Specials" bucket; the detail screen shows
+        // numbered seasons only, matching Apple TV.
+        return (env.seasons ?? []).filter { ($0.seasonNumber ?? 0) > 0 }
+    }
+
+    /// TMDB recommendations for a title, stamped with a media type so the
+    /// cards route correctly. Feeds the "More Like This" rail. Never throws.
+    func getRecommendations(tmdbId: Int, isTV: Bool) async -> [TVTMDBResult] {
+        let locale = DeviceLocale.current()
+        let path = isTV ? "tv" : "movie"
+        let urlString = "\(base)/\(path)/\(tmdbId)/recommendations?api_key=\(apiKey)&language=\(locale.tmdbLanguage)"
+        guard let data = try? await get(urlString) else { return [] }
+        guard let env = try? JSONDecoder().decode(TVTMDBSearchEnvelope.self, from: data) else { return [] }
+        return env.results.map { stamp($0, mediaType: $0.mediaType ?? path) }
     }
 
     /// Now-playing movies in the US — mirrors the iOS `getNowPlayingMovies`.

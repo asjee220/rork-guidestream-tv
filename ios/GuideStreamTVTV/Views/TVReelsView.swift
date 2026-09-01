@@ -25,6 +25,16 @@ import SwiftUI
 import AVFoundation
 
 struct TVReelsView: View {
+    /// When non-empty the screen plays this title-scoped feed instead of the
+    /// browse feed — how the detail screen's Trailers & Clips row opens.
+    /// Mirrors `ReelsScreen(injectedReels:injectedStartIndex:)` on iPhone.
+    private let injectedReels: [TVReelItem]
+
+    init(injectedReels: [TVReelItem] = [], startIndex: Int = 0) {
+        self.injectedReels = injectedReels
+        _index = State(initialValue: max(0, startIndex))
+    }
+
     @State private var vm = TVReelsViewModel()
     @State private var social = TVSocialService.shared
     @State private var streams = TVStreamsViewModel.shared
@@ -81,7 +91,11 @@ struct TVReelsView: View {
         .onTapGesture { fire() }
         .onPlayPauseCommand { togglePlayback() }
         .task {
-            await vm.load()
+            if !injectedReels.isEmpty {
+                vm.inject(injectedReels)
+            } else {
+                await vm.load()
+            }
             hasFocus = true
             armChromeHide()
             await startPlayback()
