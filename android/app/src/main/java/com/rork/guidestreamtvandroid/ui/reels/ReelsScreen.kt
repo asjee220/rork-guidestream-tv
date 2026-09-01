@@ -280,7 +280,12 @@ fun ReelsScreen(
     }
 
     var isPlaying by remember { mutableStateOf(true) }
-    var isMuted by remember { mutableStateOf(true) }
+    // GUI-89: reels start with sound, matching iOS (`isMuted = false` in
+    // ReelsScreen.swift). Autoplay is not at risk: the IFrame is still built
+    // with .mute(1) in YouTubeReelPlayer, which is what satisfies the WebView
+    // autoplay policy, and onReady calls unMute() the moment the player is
+    // ready. Do not "fix" that option to mute(0) -- it would block autoplay.
+    var isMuted by remember { mutableStateOf(false) }
 
     val isLandscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
     val (landscapeLeading, landscapeTrailing) = landscapeSideInsets()
@@ -1232,7 +1237,12 @@ private fun InjectedReelsScreen(
     var showMoreTmdb by remember { mutableStateOf<Int?>(null) }
 
     var isPlaying by remember { mutableStateOf(true) }
-    var isMuted by remember { mutableStateOf(true) }
+    // GUI-89: reels start with sound, matching iOS (`isMuted = false` in
+    // ReelsScreen.swift). Autoplay is not at risk: the IFrame is still built
+    // with .mute(1) in YouTubeReelPlayer, which is what satisfies the WebView
+    // autoplay policy, and onReady calls unMute() the moment the player is
+    // ready. Do not "fix" that option to mute(0) -- it would block autoplay.
+    var isMuted by remember { mutableStateOf(false) }
 
     val isLandscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
     val (landscapeLeading, landscapeTrailing) = landscapeSideInsets()
