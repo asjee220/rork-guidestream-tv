@@ -187,6 +187,7 @@ dependencies {
     implementation(libs.supabase.postgrest)
     implementation(libs.androidx.datastore.preferences)
     implementation(libs.play.services.ads)
+    implementation(libs.play.review)
     implementation(libs.user.messaging.platform)
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.messaging)

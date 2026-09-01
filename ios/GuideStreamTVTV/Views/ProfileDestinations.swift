@@ -1554,9 +1554,6 @@ private struct ProfileEditorSheet: View {
 // MARK: - Help & Feedback
 
 struct HelpFeedbackView: View {
-    #if !os(tvOS)
-    @Environment(\.requestReview) private var requestReview
-    #endif
     @State private var expandedFAQ: UUID?
 
     /// GUI-87 — tvOS has neither a Mail app nor a web container, so the
@@ -1709,14 +1706,11 @@ struct HelpFeedbackView: View {
         supportRequest = TVSupportTopicRequest(topic: "Something is broken")
     }
 
-    /// In-app App Store rating prompt. On iOS we use `requestReview` from
-    /// the SwiftUI environment; tvOS doesn't ship that API, so we silently
-    /// no-op (the App Store rating flow on Apple TV happens at the system
-    /// level).
+    /// tvOS has no `requestReview` API, so this opens the App Store product
+    /// page with the write-review action. Previously a total no-op.
     private func rateOnAppStore() {
-        #if !os(tvOS)
-        requestReview()
-        #endif
+        guard let url = URL(string: "itms-apps://apps.apple.com/app/id6773443577?action=write-review") else { return }
+        TVOSDeepLinker.openAppStore(itmsURL: url, completion: nil)
     }
 
     private var appVersion: String {

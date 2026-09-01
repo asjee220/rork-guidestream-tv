@@ -6,12 +6,15 @@
 import SwiftUI
 import Supabase
 import WidgetKit
+import StoreKit
 
 @main
 struct GuideStreamTVApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @Environment(\.scenePhase) private var scenePhase
     @State private var updateGate = AppUpdateGate.shared
+    @State private var reviewPrompt = ReviewPromptManager.shared
+    @Environment(\.requestReview) private var requestReview
 
     var body: some Scene {
         WindowGroup {
@@ -57,10 +60,23 @@ struct GuideStreamTVApp: App {
                         // while the app was closed, so a finished game's
                         // Dynamic Island / Lock Screen card does not linger.
                         Task { await SportsLiveActivityController.shared.reconcile() }
+                        // GUI-90: in-app review gate. Fires only on a return
+                        // to the app after a qualifying action, never mid-task.
+                        reviewPrompt.appDidBecomeActive()
                     case .background:
                         DeviceSessionService.shared.noteBackgrounded()
                     default:
                         break
+                    }
+                }
+                .onChange(of: reviewPrompt.pendingTrigger) { _, trigger in
+                    guard trigger != nil else { return }
+                    // Small delay so the prompt lands after the home screen has
+                    // settled rather than on top of a transition.
+                    Task { @MainActor in
+                        try? await Task.sleep(for: .seconds(1.2))
+                        requestReview()
+                        reviewPrompt.didPresent()
                     }
                 }
                 .task {

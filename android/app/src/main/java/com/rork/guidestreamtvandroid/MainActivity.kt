@@ -33,6 +33,7 @@ import com.rork.guidestreamtvandroid.data.repository.AppUpdateGate
 import com.rork.guidestreamtvandroid.data.remote.SupabaseManager
 import com.rork.guidestreamtvandroid.data.repository.AuthViewModel
 import com.rork.guidestreamtvandroid.data.repository.PushTokenManager
+import com.rork.guidestreamtvandroid.data.repository.ReviewPromptManager
 import com.rork.guidestreamtvandroid.data.repository.SportsLiveScoreController
 import com.rork.guidestreamtvandroid.data.repository.StreamsViewModel
 import io.github.jan.supabase.auth.handleDeeplinks
@@ -195,6 +196,9 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        // GUI-90: in-app review gate. Only ever fires on a return to the app
+        // after a qualifying action — never mid-task.
+        ReviewPromptManager.maybePresent(this)
         // Refresh FCM registration whenever the app foregrounds — mirrors
         // iOS refreshRegistrationIfAuthorized on scenePhase == .active. The
         // apns_token conflict target makes repeated calls idempotent. Never

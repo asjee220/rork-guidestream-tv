@@ -1856,7 +1856,7 @@ private struct ProfileEditorSheet: View {
 // MARK: - Help & Feedback
 
 struct HelpFeedbackView: View {
-    @Environment(\.requestReview) private var requestReview
+    @Environment(\.openURL) private var openURL
     @State private var expandedFAQ: UUID?
 
     /// GUI-87 — legal pages open in an SFSafariViewController sheet over the
@@ -1910,7 +1910,12 @@ struct HelpFeedbackView: View {
                 iconTint: Color(red: 0.96, green: 0.78, blue: 0.20),
                 title: "Rate GuideStream TV",
                 subtitle: "Tell us how we're doing on the App Store",
-                onTap: { requestReview() }
+                // Deliberately NOT `requestReview()`: the system prompt is
+                // rate-limited to 3 per year and silently no-ops when the
+                // quota is spent, so an explicit tap would appear broken.
+                // The automatic prompt owns `requestReview`; this row always
+                // opens the App Store write-review page.
+                onTap: { openURL(ReviewPromptManager.writeReviewURL) }
             )
             ProfileRowDivider()
             ProfileRow(

@@ -42,6 +42,7 @@ enum IntentEventType: String {
     case onboardingCompleted = "onboarding_completed"
     case serviceSelected = "service_selected"
     case appOpened = "app_opened"
+    case reviewPromptRequested = "review_prompt_requested"
 }
 
 /// Captured error entry — surfaced in the in-app diagnostics screen so the
@@ -118,6 +119,17 @@ final class WatchIntentLogger {
             mergedMeta["watch_duration_seconds"] = duration
         }
         let metadataJSON: AnyJSON? = Self.toAnyJSON(mergedMeta)
+
+        // Feed the in-app review gate. Deliberately before any auth check —
+        // most installs never sign in, so guest activity has to count.
+        switch eventType {
+        case .sessionStarted: ReviewPromptManager.shared.noteSessionStarted()
+        case .deeplinkFired: ReviewPromptManager.shared.noteDeepLinkFired()
+        case .watchedToggled: ReviewPromptManager.shared.noteWatchedToggled()
+        case .playOnDeviceChosen: ReviewPromptManager.shared.noteCastStarted()
+        case .notifyReleaseTapped: ReviewPromptManager.shared.noteAlertOpened()
+        default: break
+        }
 
         totalAttempts += 1
 

@@ -59,6 +59,7 @@ class WatchIntentLogger private constructor(context: Context) {
         APP_OPENED("app_opened"),
         WATCHED_TOGGLED("watched_toggled"),
         SHARE_TAPPED("share_tapped"),
+        REVIEW_PROMPT_REQUESTED("review_prompt_requested"),
     }
 
     data class LoggerError(
@@ -117,6 +118,17 @@ class WatchIntentLogger private constructor(context: Context) {
             platformId
         } else {
             Platform.from(providerName = platformId)?.catalogId ?: platformId.lowercase()
+        }
+
+        // Feed the in-app review gate. Before any auth check — most installs
+        // never sign in, so guest activity has to count.
+        when (eventType) {
+            IntentEventType.SESSION_STARTED -> ReviewPromptManager.noteSessionStarted()
+            IntentEventType.DEEPLINK_FIRED -> ReviewPromptManager.noteDeepLinkFired()
+            IntentEventType.WATCHED_TOGGLED -> ReviewPromptManager.noteWatchedToggled()
+            IntentEventType.PLAY_ON_DEVICE_CHOSEN -> ReviewPromptManager.noteCastStarted()
+            IntentEventType.NOTIFY_RELEASE_TAPPED -> ReviewPromptManager.noteAlertOpened()
+            else -> Unit
         }
 
         totalAttempts += 1

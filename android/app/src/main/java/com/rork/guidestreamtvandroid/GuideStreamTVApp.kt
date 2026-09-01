@@ -17,6 +17,7 @@ import com.rork.guidestreamtvandroid.data.repository.SocialViewModel
 import com.rork.guidestreamtvandroid.data.repository.SportsLiveScoreController
 import com.rork.guidestreamtvandroid.data.repository.StreamsViewModel
 import com.rork.guidestreamtvandroid.data.repository.TeamFavoritesService
+import com.rork.guidestreamtvandroid.data.repository.ReviewPromptManager
 import com.rork.guidestreamtvandroid.data.repository.WatchIntentLogger
 import com.rork.guidestreamtvandroid.push.GuideStreamFirebaseMessagingService
 import com.rork.guidestreamtvandroid.sports.live.LiveScoreNotification
@@ -37,6 +38,8 @@ class GuideStreamTVApp : Application() {
         safe("RemoteConfig") { RemoteConfigService.init(this) }
         safe("AppUpdateGate") { AppUpdateGate.init(this) }
         safe("AuthViewModel") { AuthViewModel.init(this) }
+        // Before the logger — the logger feeds it on every event.
+        safe("ReviewPromptManager") { ReviewPromptManager.init(this) }
         safe("WatchIntentLogger") { WatchIntentLogger.init(this) }
         safe("DeviceSessionService") { DeviceSessionService.init(this) }
         safe("StreamsViewModel") { StreamsViewModel.init(this) }
