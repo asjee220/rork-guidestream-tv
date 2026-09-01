@@ -37,6 +37,25 @@ private struct NowNextItem: Identifiable {
     var id: Int { release.tmdbId }
 }
 
+/// One resolved row of the Continue Watching rail. `service` is nil when the
+/// stored platform id does not map to a StreamingCatalog entry — the
+/// source events store free text, so a miss is expected, not an error.
+private struct ContinueWatchingItem: Identifiable {
+    let row: TVContinueWatchingRow
+    let posterUrl: String?
+    let service: StreamingService?
+    var id: Int { row.tmdbId }
+    var titleId: String { "tmdb:\(row.isTV ? "tv" : "movie"):\(row.tmdbId)" }
+    var accent: Color { service?.color ?? TVTheme.orange }
+    /// "Resume on Netflix" when the service resolves, otherwise the plain
+    /// media type — never a percentage, because launch intent does not
+    /// tell us how far the title got.
+    var subtitle: String {
+        if let service { return "Resume on \(service.name)" }
+        return row.isTV ? "Series" : "Movie"
+    }
+}
+
 private struct NowAndNextRail: Identifiable {
     let service: StreamingService
     let items: [NowNextItem]
@@ -84,6 +103,10 @@ struct TVHomeView: View {
     @State private var didClaimInitialFocus: Bool = false
 
     @State private var streams = TVStreamsViewModel.shared
+    /// Observed so Continue Watching reloads when the Supabase session is
+    /// restored — `loadAll()` fires from `.task` before auth settles, so a
+    /// one-shot fetch there sees a signed-out client and returns nothing.
+    @State private var auth = TVAuthViewModel.shared
 
     // New rails
     @State private var everyonesWatching: [EveryonesWatchingItem] = []
@@ -91,6 +114,10 @@ struct TVHomeView: View {
     @State private var popularOnService: [String: [TVTMDBResult]] = [:]
     @State private var recommendedCreators: [TVRecommendedCreator] = []
     @State private var nowAndNextRails: [NowAndNextRail] = []
+
+    /// Continue Watching — titles launched from any platform by this signed-in
+    /// user. Empty for guests and whenever the view returns nothing.
+    @State private var continueWatching: [ContinueWatchingItem] = []
 
     /// Deterministic daily pick from streaming_releases, resolved once per
     /// load. Nil when the table is empty or unreachable.
@@ -138,6 +165,29 @@ struct TVHomeView: View {
                     .padding(.bottom, -194)
                     .padding(.leading, -railLeading)
                     .padding(.trailing, -trailingBleed)
+
+                // 1a. Continue Watching — highest-intent rail on the screen, so
+                // it sits directly under the hero. Hidden entirely when the
+                // user is a guest or has no recent launches.
+                if !continueWatching.isEmpty {
+                    TVRail(
+                        title: "Continue Watching",
+                        accent: TVTheme.orange,
+                        count: continueWatching.count,
+                        seeAllKey: "continue_watching",
+                        onSeeAll: {
+                            seeAllPayload = TVSeeAllGridPayload(
+                                title: "Continue Watching",
+                                accent: TVTheme.orange,
+                                items: continueWatchingGridItems
+                            )
+                        }
+                    ) {
+                        ForEach(continueWatching) { item in
+                            continueWatchingCard(for: item)
+                        }
+                    }
+                }
 
                 // 2. Everyone's Watching
                 if !everyonesWatching.isEmpty {
@@ -300,6 +350,11 @@ struct TVHomeView: View {
             .background(TVTheme.backgroundGradient.ignoresSafeArea())
             .defaultFocus($heroCTAFocused, true)
             .task { await loadAll() }
+            // Keyed on the signed-in user: runs once on appear and again the
+            // moment a restored session lands, which is the only way this
+            // rail ever fills on a cold launch. Every other rail on this
+            // screen is anonymous, so none of them need this.
+            .task(id: auth.currentUser?.id) { await buildContinueWatching() }
             .onChange(of: heroItems.isEmpty) { _, isEmpty in
                 guard !isEmpty, !didClaimInitialFocus else { return }
                 didClaimInitialFocus = true
@@ -477,6 +532,88 @@ struct TVHomeView: View {
                 year: item.result.year,
                 platform: nil,
                 isTVHint: item.result.isTV
+            )
+        }
+    }
+
+    // MARK: - Continue Watching
+
+    private func continueWatchingCard(for item: ContinueWatchingItem) -> some View {
+        TVPosterCard(
+            title: item.row.titleName,
+            subtitle: item.subtitle,
+            posterUrl: item.posterUrl,
+            accent: item.accent,
+            isSaved: streams.contains(titleId: item.titleId)
+        ) {
+            pendingDetail = TVTitleDetail(
+                titleId: item.titleId,
+                title: item.row.titleName,
+                overview: nil,
+                posterUrl: item.posterUrl,
+                backdropUrl: nil,
+                tag: item.row.isTV ? "SERIES" : "MOVIE",
+                accent: item.accent,
+                year: nil,
+                platform: item.service?.name,
+                isTVHint: item.row.isTV
+            )
+        }
+    }
+
+    private var continueWatchingGridItems: [TVSeeAllGridItem] {
+        continueWatching.map { item in
+            TVSeeAllGridItem(
+                titleId: item.titleId,
+                title: item.row.titleName,
+                subtitle: item.subtitle,
+                posterUrl: item.posterUrl,
+                overview: nil,
+                backdropUrl: nil,
+                tag: item.row.isTV ? "SERIES" : "MOVIE",
+                year: nil,
+                isTVHint: item.row.isTV
+            )
+        }
+    }
+
+    /// Loads the Continue Watching rows and resolves a poster for each. The view
+    /// returns no artwork — it is built from analytics rows — so each title
+    /// needs one TMDB lookup, run concurrently and capped at the 20 rows the
+    /// view already limits to. A row whose poster fails to resolve is kept
+    /// and renders on TVPosterCard's placeholder rather than being dropped.
+    private func buildContinueWatching() async {
+        guard let rows = await TVContinueWatchingService.shared.fetch(), !rows.isEmpty else {
+            continueWatching = []
+            return
+        }
+        // Only the poster path is resolved off the main actor; the items
+        // themselves are built below, so nothing non-Sendable crosses the
+        // task-group boundary.
+        let paths = await withTaskGroup(of: (Int, String?).self) { group in
+            for (index, row) in rows.enumerated() {
+                let tmdbId = row.tmdbId
+                let isTV = row.isTV
+                group.addTask {
+                    let path: String? = isTV
+                        ? await TVTMDBService.shared.getTVFreshness(tmdbId: tmdbId).posterPath
+                        : await TVTMDBService.shared.getMoviePosterPath(tmdbId: tmdbId)
+                    return (index, path)
+                }
+            }
+            var out: [Int: String?] = [:]
+            for await (index, path) in group { out[index] = path }
+            return out
+        }
+
+        continueWatching = rows.enumerated().map { index, row in
+            let service = row.platformId.flatMap { id in
+                StreamingCatalog.all.first { $0.id == id.lowercased() }
+            }
+            return ContinueWatchingItem(
+                row: row,
+                posterUrl: TVTMDBImage.url(paths[index] ?? nil, size: .poster500),
+                service: service
             )
         }
     }

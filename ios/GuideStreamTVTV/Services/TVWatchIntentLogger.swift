@@ -77,6 +77,21 @@ final class WatchIntentLogger {
         // Build merged metadata on the main actor so the [String: Any]
         // dict never crosses the Sendable boundary as-is.
         var mergedMeta: [String: Any] = metadata ?? [:]
+
+        // Stamp the resolved TMDB id and media type whenever the title id
+        // encodes them. The Jump Back In rail is built from these rows and
+        // can only include a title it can resolve to a TMDB id, so leaving
+        // this to individual call sites is how launches go missing from it.
+        // Sports slugs ("tt-chw-phi-mlb") and creator ids ("yt:UC...")
+        // parse to nil and are left untouched, exactly as before. A value
+        // the caller passed explicitly always wins.
+        if let tmdbId = TVTitleID.tmdbId(from: titleId), mergedMeta["tmdb_id"] == nil {
+            mergedMeta["tmdb_id"] = tmdbId
+        }
+        if let media = TVTitleID.mediaType(from: titleId), mergedMeta["media_type"] == nil {
+            mergedMeta["media_type"] = media
+        }
+
         mergedMeta["device_id"] = deviceId
         mergedMeta["is_guest"] = false
         mergedMeta["is_authenticated"] = true

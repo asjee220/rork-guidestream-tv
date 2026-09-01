@@ -148,10 +148,16 @@ enum SupabaseSetupSQL {
     alter table public.watch_intent_events enable row level security;
     drop policy if exists "watch_intent_anyone_insert" on public.watch_intent_events;
     drop policy if exists "watch_intent_read_all" on public.watch_intent_events;
+    drop policy if exists "watch_intent_read_own" on public.watch_intent_events;
     create policy "watch_intent_anyone_insert"
       on public.watch_intent_events for insert with check (true);
-    create policy "watch_intent_read_all"
-      on public.watch_intent_events for select using (true);
+    -- Read is per-user, not public. Inserts stay open so guest and pre-auth
+    -- telemetry keeps writing. Do NOT restore a `using (true)` select policy:
+    -- this table carries every user's launch history, subscribed services and
+    -- Ask queries, and the anon key ships inside the app.
+    create policy "watch_intent_read_own"
+      on public.watch_intent_events for select
+      to authenticated using (user_id = auth.uid());
 
     -- DEVICE SESSIONS (one row per install — the guest profile)
     create table if not exists public.device_sessions (
