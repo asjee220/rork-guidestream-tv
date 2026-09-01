@@ -59,7 +59,9 @@ if [ -n "$KEY_PATH" ] && [ ! -f "$KEY_PATH" ]; then
   echo "✗ GS_KEY_PATH is set but no file there: $KEY_PATH" >&2; exit 1
 fi
 if [ -z "$KEY_PATH" ]; then
+  ICLOUD="$HOME/Library/Mobile Documents/com~apple~CloudDocs"
   for d in "$HOME/private_keys" "$HOME/.appstoreconnect/private_keys" \
+           "$ICLOUD/GuideStreamIdeas/appStoreKey" \
            "$HOME/Downloads" "$HOME/Documents" "$HOME/Desktop"; do
     if [ -f "$d/AuthKey_${KEY_ID}.p8" ]; then KEY_PATH="$d/AuthKey_${KEY_ID}.p8"; break; fi
   done
@@ -84,6 +86,21 @@ if [ -n "$DERIVED_ID" ] && [ "$DERIVED_ID" != "$KEY_ID" ]; then
 fi
 KEY_ID="${GS_KEY_ID:-$KEY_ID}"
 ISSUER_ID="${GS_ISSUER_ID:-$ISSUER_ID}"
+# An iCloud Drive file may be a placeholder that is not downloaded yet.
+# Reading it asks the daemon to materialise it before xcodebuild needs it.
+case "$KEY_PATH" in
+  *"com~apple~CloudDocs"*)
+    cat "$KEY_PATH" > /dev/null 2>&1 || true
+    for _ in 1 2 3 4 5; do
+      [ -s "$KEY_PATH" ] && break
+      sleep 1; cat "$KEY_PATH" > /dev/null 2>&1 || true
+    done
+    if [ ! -s "$KEY_PATH" ]; then
+      echo "✗ The key is in iCloud Drive but has not downloaded. Open it in Finder once, then re-run." >&2
+      exit 1
+    fi
+    ;;
+esac
 echo "▸ API key: $KEY_PATH"
 echo "▸ Key ID:  $KEY_ID   Issuer: $ISSUER_ID"
 
