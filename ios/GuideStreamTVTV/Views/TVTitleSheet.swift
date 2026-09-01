@@ -39,6 +39,8 @@ private enum SheetFocus: Hashable {
 // MARK: - Sheet
 
 struct TVTitleSheet: View {
+    private static let sectionsTopAnchor = "gui88.sectionsTop"
+
     let detail: TVTitleDetail
     let onDismiss: (Bool) -> Void
 
@@ -86,6 +88,13 @@ struct TVTitleSheet: View {
     /// Nil hides Trailers & Clips rather than showing tiles that do nothing.
     @State private var trailerReel: TVReelItem?
     @State private var reelsPresentation: TVReelsPresentation?
+    /// "Series · Drama · Thriller" for the hero meta line. Nil until TMDB
+    /// answers, which simply shortens the line.
+    @State private var genreText: String?
+    /// "New episode every Sunday", derived from the gap between the last two
+    /// aired episodes. Nil unless that gap is genuinely weekly, so the badge
+    /// never claims a cadence the schedule does not support.
+    @State private var cadenceBadge: String?
 
     // Parsed from titleId via the tvOS TVTitleID helper (mirrors the iOS
     // TitleID enum). Accepts both bare numeric ids ("94997") and the
@@ -224,10 +233,17 @@ struct TVTitleSheet: View {
             // left, one column right, nothing below the fold. It is now a
             // full-screen hero followed by sections the viewer walks down
             // into, the way the Apple TV title screen behaves.
+            ScrollViewReader { proxy in
             ScrollView(.vertical, showsIndicators: false) {
                 LazyVStack(alignment: .leading, spacing: 64) {
                     heroSection
                         .containerRelativeFrame(.vertical)
+
+                    // The title rides at the top of everything below the
+                    // hero, so the first move down lands on a page headed by
+                    // the show's name rather than mid-rail.
+                    sectionsTitleHeader
+                        .id(Self.sectionsTopAnchor)
 
                     if !usSources.isEmpty, youTubeChannelId == nil {
                         whereToWatchSection
@@ -247,7 +263,22 @@ struct TVTitleSheet: View {
                 }
             }
             .ignoresSafeArea()
+            // The focus engine scrolls the focused view into view, but it
+            // stops as soon as the target is on screen, which leaves the
+            // title half-way up. `focusedField` is non-nil only while a hero
+            // button holds focus, so the moment it clears, focus has moved
+            // into the sections and the page is pinned to the title.
+            .onChange(of: focusedField) { previous, current in
+                guard previous != nil, current == nil else { return }
+                withAnimation(.easeOut(duration: 0.35)) {
+                    proxy.scrollTo(Self.sectionsTopAnchor, anchor: .top)
+                }
+            }
+            }
         }
+        // Close is the remote's Menu button now that the on-screen Close
+        // button is gone, matching Apple's own detail screen.
+        .onExitCommand { dismiss() }
         .task {
             selectedServiceName = nil
             didProbeMediaType = false
@@ -303,51 +334,134 @@ struct TVTitleSheet: View {
     /// target and every action. Everything here already existed — it is
     /// re-laid-out, not rebuilt.
     private var heroSection: some View {
-        VStack(alignment: .leading, spacing: 22) {
+        VStack(alignment: .leading, spacing: 20) {
             Spacer(minLength: 0)
 
-            HStack(spacing: 12) {
-                Text(detail.tag.uppercased())
-                    .font(.system(size: 16, weight: .heavy))
-                    .foregroundStyle(detail.accent)
-                    .tracking(2)
-                if let year = detail.year {
-                    Text("·  \(String(year))")
-                        .font(.system(size: 16, weight: .heavy))
-                        .foregroundStyle(TVTheme.textSecondary)
-                        .tracking(1)
-                }
+            if let cadence = cadenceBadge {
+                Text(cadence)
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 22)
+                    .padding(.vertical, 11)
+                    .background(.black.opacity(0.55), in: Capsule())
+                    .overlay(Capsule().stroke(.white.opacity(0.18), lineWidth: 1))
             }
 
-            Text(detail.title)
-                .font(.system(size: 64, weight: .black))
+            // Wordmark treatment, matching the mock: uppercase and tracked
+            // out rather than the 56pt black title the sheet used to show.
+            Text(detail.title.uppercased())
+                .font(.system(size: 76, weight: .heavy))
+                .tracking(16)
                 .foregroundStyle(.white)
                 .lineLimit(2)
+                .minimumScaleFactor(0.5)
 
-            if let synopsis = synopsisText {
+            HStack(spacing: 14) {
+                if let short = serviceShortCode {
+                    Text(short)
+                        .font(.system(size: 13, weight: .heavy))
+                        .foregroundStyle(.white)
+                        .frame(width: 34, height: 34)
+                        .background(detail.accent, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                }
+                Text(heroMetaLine)
+                    .font(.system(size: 24, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.9))
+            }
+
+            if let line = heroEpisodeLine {
+                line
+                    .font(.system(size: 24))
+                    .foregroundStyle(.white.opacity(0.78))
+                    .lineLimit(3)
+                    .frame(maxWidth: 900, alignment: .leading)
+            } else if let synopsis = synopsisText {
                 Text(synopsis)
                     .font(.system(size: 24))
-                    .foregroundStyle(TVTheme.textSecondary)
-                    .lineLimit(4)
+                    .foregroundStyle(.white.opacity(0.78))
+                    .lineLimit(3)
                     .frame(maxWidth: 900, alignment: .leading)
             }
 
-            if isTV, youTubeChannelId == nil {
-                seasonEpisodeStepper
+            if !heroFactLine.isEmpty {
+                Text(heroFactLine)
+                    .font(.system(size: 21, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.72))
             }
 
-            HStack(spacing: 24) {
+            // Mock's action row: the primary watch pill, then Watch List,
+            // Watched and Like as round buttons. The season/episode stepper
+            // and the on-screen Close button are gone — Close is now the
+            // remote's Menu button via .onExitCommand, which is what Apple's
+            // own detail screen does.
+            HStack(spacing: 22) {
                 if showPlayButton { playButton } else { manualOpenHint }
-                likeButton
-                watchedButton
                 watchListButton
-                closeButton
+                watchedButton
+                likeButton
             }
-            .padding(.top, 8)
+            .padding(.top, 6)
         }
         .padding(.horizontal, 80)
-        .padding(.bottom, 110)
+        .padding(.bottom, 130)
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// Two-letter service badge for the meta line, e.g. "P+" for Paramount+.
+    private var serviceShortCode: String? {
+        guard let name = activeSource?.name ?? detail.platform, !name.isEmpty else { return nil }
+        let words = name.split(separator: " ")
+        let initials = words.prefix(2).compactMap { $0.first }.map(String.init).joined()
+        return name.contains("+") ? String(initials.prefix(1)) + "+" : initials.uppercased()
+    }
+
+    /// "Series · Drama · Thriller", degrading to just the media type when
+    /// TMDB has not answered with genres.
+    private var heroMetaLine: String {
+        var parts = [isTV ? "Series" : "Movie"]
+        if let genreText, !genreText.isEmpty { parts.append(genreText) }
+        return parts.joined(separator: " · ")
+    }
+
+    /// "S3, E5 · Wish the Fight Away: <overview>" — the bold prefix names the
+    /// episode the Play button is currently targeting, so the hero and the
+    /// deep link always agree.
+    private var heroEpisodeLine: Text? {
+        guard isTV, youTubeChannelId == nil else { return nil }
+        guard let ep = episodes.first(where: {
+            $0.episodeNumber == episode && ($0.seasonNumber ?? browsingSeason) == season
+        }) else { return nil }
+        let name = ep.name ?? "Episode \(ep.episodeNumber)"
+        let head = Text("S\(season), E\(episode) · \(name):").font(.system(size: 24, weight: .semibold)).foregroundStyle(.white)
+        guard let overview = ep.overview, !overview.isEmpty else { return head }
+        return head + Text("  " + overview)
+    }
+
+    /// "2024 · 53m". Runtime comes from the targeted episode, which is the
+    /// one piece of Apple's fact row this app genuinely has.
+    private var heroFactLine: String {
+        var parts: [String] = []
+        if let year = detail.year { parts.append(String(year)) }
+        if let ep = episodes.first(where: {
+            $0.episodeNumber == episode && ($0.seasonNumber ?? browsingSeason) == season
+        }), let runtime = ep.runtime {
+            parts.append("\(runtime)m")
+        }
+        return parts.joined(separator: " · ")
+    }
+
+    /// Title pinned above the first section, so a move down out of the hero
+    /// lands on a page headed by the show's name — the second reference shot
+    /// on GUI-88.
+    private var sectionsTitleHeader: some View {
+        Text(detail.title.uppercased())
+            .font(.system(size: 44, weight: .heavy))
+            .tracking(10)
+            .foregroundStyle(.white)
+            .lineLimit(1)
+            .minimumScaleFactor(0.5)
+            .padding(.horizontal, 80)
+            .padding(.top, 40)
     }
 
     /// The chips that already shipped, lifted into their own section.
@@ -608,9 +722,36 @@ struct TVTitleSheet: View {
             await loadEpisodes(season: opening)
         }
 
+        if tv {
+            genreText = try? await TVTMDBService.shared.getTVGenre(tmdbId: tid)
+        }
+        cadenceBadge = weeklyCadenceBadge(from: episodes)
+
         let (recs, reel) = await (recsTask, reelTask)
         recommendations = Array(recs.prefix(20))
         trailerReel = reel
+    }
+
+    /// "New episode every Sunday", but only when the last two aired episodes
+    /// are genuinely a week apart. A show that has finished, or that dropped
+    /// a whole season at once, gets no badge rather than a false promise.
+    private func weeklyCadenceBadge(from list: [TMDBEpisode]) -> String? {
+        let fmt = DateFormatter()
+        fmt.dateFormat = "yyyy-MM-dd"
+        fmt.timeZone = TimeZone(identifier: "UTC")
+        let now = Date()
+        let aired = list.compactMap { ep -> Date? in
+            guard let raw = ep.airDate, let d = fmt.date(from: raw) else { return nil }
+            return d
+        }.sorted()
+        guard aired.count >= 2 else { return nil }
+        // Only claim a cadence while the show is still running.
+        guard let latest = aired.last, latest > now.addingTimeInterval(-21 * 86_400) else { return nil }
+        let gap = latest.timeIntervalSince(aired[aired.count - 2]) / 86_400
+        guard gap >= 6, gap <= 8 else { return nil }
+        let weekday = DateFormatter()
+        weekday.dateFormat = "EEEE"
+        return "New episode every \(weekday.string(from: latest))"
     }
 
     private func loadEpisodes(season number: Int) async {
