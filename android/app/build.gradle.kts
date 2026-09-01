@@ -199,6 +199,7 @@ dependencies {
     implementation(libs.androidx.credentials.play.services.auth)
     implementation(libs.googleid)
     implementation(libs.androidx.webkit)
+    implementation(libs.androidx.browser)
     implementation(libs.android.youtube.player)
     debugImplementation(libs.androidx.ui.tooling)
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")

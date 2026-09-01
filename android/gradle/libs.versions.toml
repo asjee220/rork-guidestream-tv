@@ -22,6 +22,7 @@ playServicesAuth = "21.3.0"
 credentials = "1.5.0"
 googleid = "1.2.0"
 webkit = "1.14.0"
+browser = "1.8.0"
 androidYouTubePlayer = "13.0.0"
 googleServices = "4.4.3"
 userMessagingPlatform = "3.2.0"
@@ -64,6 +65,7 @@ androidx-credentials = { group = "androidx.credentials", name = "credentials", v
 androidx-credentials-play-services-auth = { group = "androidx.credentials", name = "credentials-play-services-auth", version.ref = "credentials" }
 googleid = { group = "com.google.android.libraries.identity.googleid", name = "googleid", version.ref = "googleid" }
 androidx-webkit = { group = "androidx.webkit", name = "webkit", version.ref = "webkit" }
+androidx-browser = { group = "androidx.browser", name = "browser", version.ref = "browser" }
 android-youtube-player = { group = "com.pierfrancescosoffritti.androidyoutubeplayer", name = "core", version.ref = "androidYouTubePlayer" }
 
 [plugins]

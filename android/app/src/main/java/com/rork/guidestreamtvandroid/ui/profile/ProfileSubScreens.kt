@@ -2,8 +2,6 @@ package com.rork.guidestreamtvandroid.ui.profile
 
 import android.Manifest
 import android.app.Activity
-import android.content.Intent
-import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -63,6 +61,7 @@ import com.rork.guidestreamtvandroid.data.repository.PushTokenManager
 import com.rork.guidestreamtvandroid.ui.ads.AdManager
 import com.rork.guidestreamtvandroid.ui.components.NotificationPermissionState
 import com.rork.guidestreamtvandroid.ui.components.glassCard
+import com.rork.guidestreamtvandroid.ui.components.openInAppBrowser
 import com.rork.guidestreamtvandroid.ui.components.markNotificationPermissionAsked
 import com.rork.guidestreamtvandroid.ui.components.notificationPermissionState
 import com.rork.guidestreamtvandroid.ui.components.openAppNotificationSettings
@@ -515,6 +514,18 @@ fun HelpScreen(
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    // Non-null while the in-app support form is open, carrying the topic the
+    // tapped row preselects (GUI-87).
+    var supportTopic by remember { mutableStateOf<String?>(null) }
+    if (supportTopic != null) {
+        SupportFormScreen(
+            presetTopic = supportTopic!!,
+            onClose = { supportTopic = null },
+            modifier = modifier,
+        )
+        return
+    }
+
     Column(
         modifier = modifier.fillMaxSize().background(Color(red = 0x04, green = 0x09, blue = 0x0F))
             .verticalScroll(rememberScrollState())
@@ -542,23 +553,21 @@ fun HelpScreen(
         // merely broken links - they were not tappable. The URLs are the ones
         // the onboarding consent copy already links to, and both pages are
         // live. (GUI-83)
+        //
+        // GUI-87: the legal pages now open in a Chrome Custom Tab over the app
+        // rather than task-switching to the browser, and Contact Support opens
+        // the in-app form instead of handing off to a mail app.
         val helpContext = LocalContext.current
-        val openUrl: (String) -> Unit = { url ->
-            runCatching {
-                helpContext.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
-            }
-        }
+        val openUrl: (String) -> Unit = { url -> openInAppBrowser(helpContext, url) }
         HelpRow(
             "Contact Support",
-            "Email us at support@guidestream.tv",
-            onClick = {
-                runCatching {
-                    helpContext.startActivity(
-                        Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:support@guidestream.tv"))
-                            .putExtra(Intent.EXTRA_SUBJECT, "GuideStream TV support"),
-                    )
-                }
-            },
+            "Write to us without leaving the app",
+            onClick = { supportTopic = "I have a question" },
+        )
+        HelpRow(
+            "Report a Problem",
+            "Something not working? Let us know.",
+            onClick = { supportTopic = "Something is broken" },
         )
         HelpRow(
             "Privacy Policy",

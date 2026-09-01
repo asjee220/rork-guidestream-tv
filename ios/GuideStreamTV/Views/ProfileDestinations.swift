@@ -1860,11 +1860,16 @@ struct HelpFeedbackView: View {
     @State private var showDiagnostics: Bool = false
     @State private var expandedFAQ: UUID?
 
+    /// GUI-87 — legal pages open in an SFSafariViewController sheet over the
+    /// app, and the two former mailto: rows open the in-app support form, so
+    /// Help & Feedback never task-switches out to Safari or Mail.
+    @State private var browserLink: InAppBrowserLink?
+    @State private var supportRequest: SupportTopicRequest?
+
     /// Shared ad manager — observed so the Ad Privacy Options row appears
     /// as soon as UMP says a privacy options entry point is required.
     @ObservedObject private var adManager = AdManager.shared
 
-    private let supportEmail = "support@guidestream.tv"
     private let privacyURL = URL(string: "https://guidestream.tv/privacy")!
     private let termsURL = URL(string: "https://guidestream.tv/terms")!
     private let youTubeTermsURL = URL(string: "https://www.youtube.com/t/terms")!
@@ -1900,8 +1905,8 @@ struct HelpFeedbackView: View {
             ProfileRow(
                 icon: "envelope.fill",
                 iconTint: Color.orange,
-                title: "Email Support",
-                subtitle: supportEmail,
+                title: "Contact Support",
+                subtitle: "Write to us without leaving the app",
                 onTap: emailSupport
             )
             ProfileRowDivider()
@@ -1920,6 +1925,9 @@ struct HelpFeedbackView: View {
                 subtitle: "Something not working? Let us know.",
                 onTap: reportBug
             )
+        }
+        .sheet(item: $supportRequest) { request in
+            SupportFormView(presetTopic: request.topic)
         }
     }
 
@@ -1956,7 +1964,7 @@ struct HelpFeedbackView: View {
                     iconTint: Color(red: 0.55, green: 0.78, blue: 0.95),
                     title: "Privacy Policy",
                     subtitle: "How we handle your data",
-                    onTap: { open(privacyURL) }
+                    onTap: { openInApp(privacyURL) }
                 )
                 ProfileRowDivider()
                 ProfileRow(
@@ -1964,7 +1972,7 @@ struct HelpFeedbackView: View {
                     iconTint: Color.textSecondary,
                     title: "Terms of Service",
                     subtitle: "The fine print",
-                    onTap: { open(termsURL) }
+                    onTap: { openInApp(termsURL) }
                 )
                 if adManager.privacyOptionsRequired {
                     ProfileRowDivider()
@@ -1982,7 +1990,7 @@ struct HelpFeedbackView: View {
                     iconTint: Color(red: 0.92, green: 0.25, blue: 0.25),
                     title: "YouTube Terms of Service",
                     subtitle: "Trailers are powered by YouTube",
-                    onTap: { open(youTubeTermsURL) }
+                    onTap: { openInApp(youTubeTermsURL) }
                 )
             }
 
@@ -1991,6 +1999,10 @@ struct HelpFeedbackView: View {
                 .foregroundStyle(Color.textTertiary)
                 .padding(.leading, 4)
                 .padding(.top, 2)
+        }
+        .sheet(item: $browserLink) { link in
+            SafariView(url: link.url)
+                .ignoresSafeArea()
         }
     }
 
@@ -2034,44 +2046,25 @@ struct HelpFeedbackView: View {
 
     // MARK: - Actions
 
+    /// Opens the in-app support form. The version, build, device model, OS
+    /// version and device id that used to be pasted into the mail body are
+    /// attached by SupportRequestService instead, so they arrive even when a
+    /// customer trims the message.
     private func emailSupport() {
-        let subject = "GuideStream TV Support".addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
-        let body = """
-
-        ----
-        Version: \(appVersion) (\(buildNumber))
-        Device: \(UIDevice.current.model)
-        iOS: \(UIDevice.current.systemVersion)
-        Device ID: \(DeviceIdentity.shared.deviceId)
-        """.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
-        let urlString = "mailto:\(supportEmail)?subject=\(subject)&body=\(body)"
-        if let url = URL(string: urlString) {
-            open(url)
-        }
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        supportRequest = SupportTopicRequest(topic: "I have a question")
     }
 
     private func reportBug() {
-        let subject = "GuideStream TV bug report".addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
-        let body = """
-
-        Describe what happened:
-
-
-        ----
-        Version: \(appVersion) (\(buildNumber))
-        Device: \(UIDevice.current.model)
-        iOS: \(UIDevice.current.systemVersion)
-        Device ID: \(DeviceIdentity.shared.deviceId)
-        """.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
-        let urlString = "mailto:\(supportEmail)?subject=\(subject)&body=\(body)"
-        if let url = URL(string: urlString) {
-            open(url)
-        }
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        supportRequest = SupportTopicRequest(topic: "Something is broken")
     }
 
-    private func open(_ url: URL) {
+    /// Presents a web page in an SFSafariViewController sheet over the app
+    /// rather than handing off to Safari.
+    private func openInApp(_ url: URL) {
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
-        UIApplication.shared.open(url)
+        browserLink = InAppBrowserLink(url: url)
     }
 
     private var appVersion: String {

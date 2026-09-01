@@ -1560,9 +1560,16 @@ struct HelpFeedbackView: View {
     @State private var showDiagnostics: Bool = false
     @State private var expandedFAQ: UUID?
 
-    private let supportEmail = "support@guidestream.tv"
-    private let privacyURL = URL(string: "https://guidestream.tv/privacy")!
-    private let termsURL = URL(string: "https://guidestream.tv/terms")!
+    /// GUI-87 — tvOS has neither a Mail app nor a web container, so the
+    /// mailto: and https rows here were silently dead. Support now opens a
+    /// native form that posts to the same support_request function the phone
+    /// apps and the website use; the legal rows explain where to read the
+    /// page instead of doing nothing.
+    @State private var supportRequest: TVSupportTopicRequest?
+    @State private var legalNotice: TVLegalNotice?
+
+    private let privacyURL = "guidestream.tv/privacy"
+    private let termsURL = "guidestream.tv/terms"
 
     var body: some View {
         ZStack {
@@ -1598,8 +1605,8 @@ struct HelpFeedbackView: View {
             ProfileRow(
                 icon: "envelope.fill",
                 iconTint: Color.orange,
-                title: "Email Support",
-                subtitle: supportEmail,
+                title: "Contact Support",
+                subtitle: "Write to us without leaving the app",
                 onTap: emailSupport
             )
             ProfileRowDivider()
@@ -1618,6 +1625,9 @@ struct HelpFeedbackView: View {
                 subtitle: "Something not working? Let us know.",
                 onTap: reportBug
             )
+        }
+        .fullScreenCover(item: $supportRequest) { request in
+            TVSupportFormView(presetTopic: request.topic)
         }
     }
 
@@ -1653,7 +1663,7 @@ struct HelpFeedbackView: View {
                 iconTint: Color(red: 0.55, green: 0.78, blue: 0.95),
                 title: "Privacy Policy",
                 subtitle: "How we handle your data",
-                onTap: { open(privacyURL) }
+                onTap: { legalNotice = TVLegalNotice(title: "Privacy Policy", url: privacyURL) }
             )
             ProfileRowDivider()
             ProfileRow(
@@ -1661,8 +1671,11 @@ struct HelpFeedbackView: View {
                 iconTint: Color.textSecondary,
                 title: "Terms of Service",
                 subtitle: "The fine print",
-                onTap: { open(termsURL) }
+                onTap: { legalNotice = TVLegalNotice(title: "Terms of Service", url: termsURL) }
             )
+        }
+        .fullScreenCover(item: $legalNotice) { notice in
+            TVLegalNoticeView(title: notice.title, url: notice.url)
         }
     }
 
@@ -1709,42 +1722,11 @@ struct HelpFeedbackView: View {
     // MARK: - Actions
 
     private func emailSupport() {
-        let subject = "GuideStream TV Support".addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
-        let body = """
-
-        ----
-        Version: \(appVersion) (\(buildNumber))
-        Device: \(UIDevice.current.model)
-        iOS: \(UIDevice.current.systemVersion)
-        Device ID: \(DeviceIdentity.shared.deviceId)
-        """.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
-        let urlString = "mailto:\(supportEmail)?subject=\(subject)&body=\(body)"
-        if let url = URL(string: urlString) {
-            open(url)
-        }
+        supportRequest = TVSupportTopicRequest(topic: "I have a question")
     }
 
     private func reportBug() {
-        let subject = "GuideStream TV bug report".addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
-        let body = """
-
-        Describe what happened:
-
-
-        ----
-        Version: \(appVersion) (\(buildNumber))
-        Device: \(UIDevice.current.model)
-        iOS: \(UIDevice.current.systemVersion)
-        Device ID: \(DeviceIdentity.shared.deviceId)
-        """.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
-        let urlString = "mailto:\(supportEmail)?subject=\(subject)&body=\(body)"
-        if let url = URL(string: urlString) {
-            open(url)
-        }
-    }
-
-    private func open(_ url: URL) {
-        UIApplication.shared.open(url)
+        supportRequest = TVSupportTopicRequest(topic: "Something is broken")
     }
 
     /// In-app App Store rating prompt. On iOS we use `requestReview` from
