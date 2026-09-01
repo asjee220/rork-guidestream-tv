@@ -1557,7 +1557,6 @@ struct HelpFeedbackView: View {
     #if !os(tvOS)
     @Environment(\.requestReview) private var requestReview
     #endif
-    @State private var showDiagnostics: Bool = false
     @State private var expandedFAQ: UUID?
 
     /// GUI-87 — tvOS has neither a Mail app nor a web container, so the
@@ -1580,7 +1579,6 @@ struct HelpFeedbackView: View {
                     contactCard
                     faqSection
                     legalCard
-                    diagnosticsCard
                     versionFooter
                 }
                 .padding(.horizontal, 20)
@@ -1589,15 +1587,6 @@ struct HelpFeedbackView: View {
             }
         }
         .navigationTitle("Help & Feedback")
-        #if os(tvOS)
-        .fullScreenCover(isPresented: $showDiagnostics) {
-            SupabaseDiagnosticsView()
-        }
-        #else
-        .sheet(isPresented: $showDiagnostics) {
-            SupabaseDiagnosticsView()
-        }
-        #endif
     }
 
     private var contactCard: some View {
@@ -1679,17 +1668,8 @@ struct HelpFeedbackView: View {
         }
     }
 
-    private var diagnosticsCard: some View {
-        ProfileCard {
-            ProfileRow(
-                icon: "waveform.path.ecg",
-                iconTint: Color.green,
-                title: "App Diagnostics",
-                subtitle: "View device ID, sync status, and recent errors",
-                onTap: { showDiagnostics = true }
-            )
-        }
-    }
+    // App Diagnostics removed from Help & Feedback - see the iOS note.
+    // Still reachable from the Profile screen's Supabase setup banner.
 
     private var versionFooter: some View {
         VStack(spacing: 4) {

@@ -1857,7 +1857,6 @@ private struct ProfileEditorSheet: View {
 
 struct HelpFeedbackView: View {
     @Environment(\.requestReview) private var requestReview
-    @State private var showDiagnostics: Bool = false
     @State private var expandedFAQ: UUID?
 
     /// GUI-87 — legal pages open in an SFSafariViewController sheet over the
@@ -1883,7 +1882,6 @@ struct HelpFeedbackView: View {
                     contactCard
                     faqSection
                     legalCard
-                    diagnosticsCard
                     versionFooter
                 }
                 .padding(.horizontal, 20)
@@ -1895,9 +1893,6 @@ struct HelpFeedbackView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(Color.navy, for: .navigationBar)
         .toolbarColorScheme(.dark, for: .navigationBar)
-        .sheet(isPresented: $showDiagnostics) {
-            SupabaseDiagnosticsView()
-        }
     }
 
     private var contactCard: some View {
@@ -2006,17 +2001,12 @@ struct HelpFeedbackView: View {
         }
     }
 
-    private var diagnosticsCard: some View {
-        ProfileCard {
-            ProfileRow(
-                icon: "waveform.path.ecg",
-                iconTint: Color.green,
-                title: "App Diagnostics",
-                subtitle: "View device ID, sync status, and recent errors",
-                onTap: { showDiagnostics = true }
-            )
-        }
-    }
+    // App Diagnostics removed from Help & Feedback. It is an engineering
+    // inspector - schema probes, RLS failures, raw device id - and nothing a
+    // customer can act on; Android dropped its equivalent in GUI-83.
+    // SupabaseDiagnosticsView is still reachable from the Profile screen's
+    // "Supabase setup needed" banner, which only appears when a probe has
+    // actually failed.
 
     private var versionFooter: some View {
         VStack(spacing: 4) {

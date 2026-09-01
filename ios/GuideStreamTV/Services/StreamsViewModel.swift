@@ -496,7 +496,7 @@ final class StreamsViewModel {
                     continue
                 }
                 if lowered.contains("42501") || lowered.contains("row-level security") {
-                    self.lastError = "Supabase blocked the write. Open Profile → Help & Feedback → App Diagnostics and run the schema setup SQL."
+                    self.lastError = "Supabase blocked the write. Open Profile and tap the Supabase setup banner to run the schema setup SQL."
                 } else {
                     self.lastError = message
                 }
