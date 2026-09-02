@@ -65,6 +65,11 @@ struct TVTitleSheet: View {
     /// button still means "watch it" when there is only one answer.
     @State private var showWatchOptions = false
     @FocusState private var focusedOption: Int?
+    @FocusState private var focusedSeason: Int?
+    @FocusState private var focusedCast: Int?
+
+    /// Billed cast, TMDB order. Empty hides the section.
+    @State private var cast: [TMDBCastMember] = []
 
     // Season / episode stepper (TV only)
     @State private var season: Int = 1
@@ -307,6 +312,10 @@ struct TVTitleSheet: View {
                             moreLikeThisSection
                         }
                         detailsSection
+
+                        if !cast.isEmpty {
+                            castSection
+                        }
 
                         Color.clear.frame(height: 60)
                     }
@@ -592,6 +601,7 @@ struct TVTitleSheet: View {
     private func seasonPill(for summary: TMDBSeasonSummary) -> some View {
         let number = summary.seasonNumber ?? 1
         let isOn = number == browsingSeason
+        let focused = focusedSeason == number
         return Button {
             browsingSeason = number
             Task { await loadEpisodes(season: number) }
@@ -601,9 +611,19 @@ struct TVTitleSheet: View {
                 .foregroundStyle(isOn ? Color.black : TVTheme.textSecondary)
                 .padding(.horizontal, 26)
                 .padding(.vertical, 12)
+                // Selection and focus are separate cues, the way the side
+                // menu keeps its orange bar and its plate independent: the
+                // filled capsule says which season is showing, the plate
+                // says which pill the remote is on.
                 .background(isOn ? Color.white.opacity(0.92) : Color.white.opacity(0.10), in: Capsule())
+                .overlay(Capsule().fill(Color.white.opacity(focused && !isOn ? 0.16 : 0)))
+                .overlay(Capsule().stroke(Color.white.opacity(focused ? 0.9 : 0), lineWidth: 2))
+                .scaleEffect(focused ? 1.06 : 1.0)
+                .animation(.easeOut(duration: 0.15), value: focused)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(TVFlatButtonStyle())
+        .focusEffectDisabled()
+        .focused($focusedSeason, equals: number)
     }
 
     /// 16:9 still with the episode's own metadata under it, matching the
@@ -784,6 +804,76 @@ struct TVTitleSheet: View {
         }
     }
 
+    // MARK: Cast
+
+    /// Billed cast as a portrait rail. The cards do nothing when selected —
+    /// there is no person screen on tvOS — but they are focusable anyway,
+    /// because a section with no focusable view in it cannot be scrolled to:
+    /// the focus engine is what moves this page.
+    private var castSection: some View {
+        VStack(alignment: .leading, spacing: 24) {
+            sectionHeader("Cast")
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(alignment: .top, spacing: 28) {
+                    ForEach(Array(cast.prefix(24).enumerated()), id: \.offset) { index, member in
+                        castCard(member, index: index)
+                    }
+                }
+                .padding(.horizontal, 80)
+                .padding(.vertical, 14)
+            }
+        }
+        .focusSection()
+    }
+
+    private func castCard(_ member: TMDBCastMember, index: Int) -> some View {
+        let focused = focusedCast == index
+
+        return VStack(alignment: .leading, spacing: 12) {
+            ZStack {
+                Color(white: 0.10)
+                if let path = member.profilePath, !path.isEmpty {
+                    TVRemoteImage(urlString: TVTMDBImage.url(path, size: .poster342),
+                                  contentMode: .fill)
+                } else {
+                    Image(systemName: "person.fill")
+                        .font(.system(size: 54))
+                        .foregroundStyle(.white.opacity(0.35))
+                }
+            }
+            .frame(width: 200, height: 300)
+            .clipShape(.rect(cornerRadius: 14))
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(Color.white.opacity(focused ? 0.16 : 0))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(focused ? Color.white : Color.white.opacity(0.08),
+                            lineWidth: focused ? 3 : 1)
+            )
+
+            Text(member.name)
+                .font(.system(size: 20, weight: .semibold))
+                .foregroundStyle(.white)
+                .lineLimit(1)
+
+            if let character = member.character, !character.isEmpty {
+                Text(character)
+                    .font(.system(size: 18))
+                    .foregroundStyle(TVTheme.textSecondary)
+                    .lineLimit(1)
+            }
+        }
+        .frame(width: 200, alignment: .leading)
+        .scaleEffect(focused ? 1.06 : 1.0)
+        .animation(.easeOut(duration: 0.15), value: focused)
+        .focusable()
+        .focusEffectDisabled()
+        .focused($focusedCast, equals: index)
+    }
+
     // MARK: - GUI-88 section loading
 
     /// Seasons, episodes, recommendations and the trailer reel, all fail-soft:
@@ -794,6 +884,7 @@ struct TVTitleSheet: View {
 
         async let recsTask = TVTMDBService.shared.getRecommendations(tmdbId: tid, isTV: tv)
         async let reelTask = buildTrailerReel(tmdbId: tid, isTV: tv)
+        async let castTask = TVTMDBService.shared.getCast(tmdbId: tid, isTV: tv)
 
         if tv, youTubeChannelId == nil {
             let summaries = await TVTMDBService.shared.getSeasonSummaries(tmdbId: tid)
@@ -811,9 +902,10 @@ struct TVTitleSheet: View {
         }
         cadenceBadge = weeklyCadenceBadge(from: episodes)
 
-        let (recs, reel) = await (recsTask, reelTask)
+        let (recs, reel, people) = await (recsTask, reelTask, castTask)
         recommendations = Array(recs.prefix(20))
         trailerReel = reel
+        cast = people
     }
 
     /// "New episode every Sunday", but only when the last two aired episodes

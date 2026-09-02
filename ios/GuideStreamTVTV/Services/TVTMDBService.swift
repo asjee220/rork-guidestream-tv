@@ -296,6 +296,17 @@ nonisolated struct TVTMDBService {
         return env.results.map { stamp($0, mediaType: $0.mediaType ?? path) }
     }
 
+    /// Billed cast for a title. Never throws — an empty list simply means
+    /// the Cast section does not render.
+    func getCast(tmdbId: Int, isTV: Bool) async -> [TMDBCastMember] {
+        let locale = DeviceLocale.current()
+        let path = isTV ? "tv" : "movie"
+        let urlString = "\(base)/\(path)/\(tmdbId)/credits?api_key=\(apiKey)&language=\(locale.tmdbLanguage)"
+        guard let data = try? await get(urlString) else { return [] }
+        guard let env = try? JSONDecoder().decode(TMDBCreditsEnvelope.self, from: data) else { return [] }
+        return env.cast ?? []
+    }
+
     /// Now-playing movies in the US — mirrors the iOS `getNowPlayingMovies`.
     func getNowPlayingMovies() async -> [TVTMDBResult] {
         let locale = DeviceLocale.current()

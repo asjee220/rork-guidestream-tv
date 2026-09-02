@@ -505,6 +505,22 @@ nonisolated struct TMDBSeasonSummary: Sendable, Decodable, Hashable {
     }
 }
 
+nonisolated struct TMDBCastMember: Sendable, Decodable, Hashable {
+    let id: Int
+    let name: String
+    let character: String?
+    let profilePath: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id, name, character
+        case profilePath = "profile_path"
+    }
+}
+
+nonisolated struct TMDBCreditsEnvelope: Sendable, Decodable {
+    let cast: [TMDBCastMember]?
+}
+
 nonisolated struct TMDBSeason: Sendable, Decodable {
     let id: Int
     let name: String?
