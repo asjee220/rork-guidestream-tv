@@ -253,12 +253,18 @@ struct TVTitleSheet: View {
                 // construction costs nothing.
                 VStack(alignment: .leading, spacing: 0) {
                     heroSection
-                        .containerRelativeFrame(.vertical) { length, _ in
-                            // Clamped: the container reports 0 on the first
-                            // layout pass, and a negative height is an
-                            // invalid frame dimension.
-                            max(length - Self.foldPeek, 0)
-                        }
+                        // A full screen, always. Shortening this frame is
+                        // what broke it the first time: the hero's own block
+                        // — badge, 76pt wordmark, meta, synopsis, actions —
+                        // is taller than a screen minus the peek, so a
+                        // VStack in a short fixed frame spilled its actions
+                        // and half its wordmark past the bottom edge.
+                        //
+                        // The peek is made the way Home makes it instead:
+                        // the hero's content is padded clear of the bottom
+                        // band, and the sections are pulled up into it.
+                        .containerRelativeFrame(.vertical)
+                        .padding(.bottom, -Self.foldPeek)
 
                     // Episodes lead. The seasons row is what shows at the
                     // fold and what the first move down lands on, so the
@@ -430,7 +436,9 @@ struct TVTitleSheet: View {
             .focusSection()
         }
         .padding(.horizontal, 80)
-        .padding(.bottom, 130)
+        // Clears the peeking episodes row the same way TVHomeView's metadata
+        // clears its first rail. Was 130, when nothing sat below the fold.
+        .padding(.bottom, Self.foldPeek + 40)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
