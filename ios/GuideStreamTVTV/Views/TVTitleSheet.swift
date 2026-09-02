@@ -212,16 +212,29 @@ struct TVTitleSheet: View {
         return detail.platform ?? "Streaming"
     }
 
-    // Sources the viewer pays a subscription for.
-    private var subscribedSources: [TVWatchmodeResolver.TVResolvedSource] {
-        usSources.filter { AuthViewModel.shared.subscribesToService(named: $0.name) }
+    /// Rent or buy. "purchase" is Watchmode's other spelling for buy;
+    /// watchmode_resolve v23 normalises the tier key server-side, but the raw
+    /// type still arrives either way.
+    private func isTransactional(_ source: TVWatchmodeResolver.TVResolvedSource) -> Bool {
+        ["rent", "buy", "purchase"].contains(source.type.lowercased())
     }
 
-    // Rent and buy offers. "purchase" is Watchmode's other spelling for buy;
-    // watchmode_resolve v23 normalises the tier key server-side, but the raw
-    // type still arrives either way.
+    /// Sources the viewer's subscription actually covers.
+    ///
+    /// The tier check is load-bearing. Star Trek returns an Apple TV *Store*
+    /// buy row, and the viewer subscribes to Apple TV+, so a name-only test
+    /// counted that offer as a second subscription — two subscriptions, so
+    /// the button asked which, when the honest answer was Paramount+ and
+    /// nothing else. Owning a subscription to a storefront's sibling service
+    /// does not make a $2.99 purchase something you already pay for.
+    private var subscribedSources: [TVWatchmodeResolver.TVResolvedSource] {
+        usSources.filter {
+            !isTransactional($0) && AuthViewModel.shared.subscribesToService(named: $0.name)
+        }
+    }
+
     private var transactionalSources: [TVWatchmodeResolver.TVResolvedSource] {
-        usSources.filter { ["rent", "buy", "purchase"].contains($0.type.lowercased()) }
+        usSources.filter(isTransactional)
     }
 
     /// Everything the watch button could reasonably open: what the viewer
@@ -246,7 +259,10 @@ struct TVTitleSheet: View {
         // only that said "not subscribed" and the sheet appeared even though
         // provider_name_fallback said Paramount+.
         let candidates = [
-            activeSource?.name,
+            // Only when the active source is not itself a rent/buy row —
+            // otherwise a storefront the viewer happens to subscribe to
+            // elsewhere would answer for the whole title.
+            activeSource.flatMap { isTransactional($0) ? nil : $0.name },
             resolvedStreaming?.providerNameFallback,
             detail.platform
         ].compactMap { $0 }.filter { !$0.isEmpty }
