@@ -25,7 +25,12 @@ struct GuideStreamTVTVApp: App {
                 // never renders — so on Apple TV the map has always been
                 // empty: Platform.from fell through to its twelve-entry
                 // local catalogue and every logo lookup returned nil.
-                .task { await TVProviderBrandMapService.shared.refresh() }
+                .task {
+                    await TVProviderBrandMapService.shared.refresh()
+                    // Also on every launch, not just at sign-in: a session
+                    // restored from the keychain never runs the sign-in path.
+                    await TVAuthViewModel.shared.loadSelectedServices()
+                }
                 .onOpenURL { url in
                     guard url.scheme == "guidestream" else { return }
                     Task {

@@ -64,7 +64,6 @@ struct TVTitleSheet: View {
     /// subscribed services, or several rent/buy offers. One tap on the watch
     /// button still means "watch it" when there is only one answer.
     @State private var showWatchOptions = false
-    @FocusState private var focusedOption: Int?
     @FocusState private var focusedSeason: Int?
     @FocusState private var focusedCast: Int?
 
@@ -378,7 +377,18 @@ struct TVTitleSheet: View {
             TVReelsView(injectedReels: payload.feed, startIndex: payload.startIndex)
         }
         .fullScreenCover(isPresented: $showWatchOptions) {
-            watchOptionsSheet
+            TVWatchOptionsSheet(
+                title: detail.title,
+                options: watchOptions,
+                onPick: { source in
+                    // Remember the choice so the hero's mark, meta line and
+                    // deep link all agree with what was just opened.
+                    selectedServiceName = source.name
+                    showWatchOptions = false
+                    open(source: source)
+                },
+                onClose: { showWatchOptions = false }
+            )
         }
         .onChange(of: season) { _, _ in
             Task { await resolveStreamingData() }
@@ -1122,104 +1132,6 @@ struct TVTitleSheet: View {
 
     // MARK: - Watch options
 
-    /// Presented only when the button cannot pick for the viewer. Subscribed
-    /// services first — what they already pay for is what they want — then
-    /// rent and buy, each carrying its price when Watchmode returned one.
-    private var watchOptionsSheet: some View {
-        ZStack {
-            Color.black.opacity(0.94).ignoresSafeArea()
-
-            VStack(alignment: .leading, spacing: 14) {
-                Text(detail.title.uppercased())
-                    .font(.system(size: 34, weight: .heavy))
-                    .tracking(6)
-                    .foregroundStyle(.white.opacity(0.7))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.6)
-
-                Text("Where do you want to watch?")
-                    .font(.system(size: 44, weight: .bold))
-                    .foregroundStyle(.white)
-                    .padding(.bottom, 18)
-
-                ScrollView(.vertical, showsIndicators: false) {
-                    VStack(alignment: .leading, spacing: 18) {
-                        ForEach(Array(watchOptions.enumerated()), id: \.offset) { index, source in
-                            watchOptionRow(for: source, index: index)
-                        }
-                    }
-                    // A focused row lifts 1.04, and a ScrollView clips to its
-                    // own bounds — without this the first row lost its ends.
-                    .padding(.horizontal, 26)
-                    .padding(.vertical, 20)
-                }
-            }
-            .padding(.horizontal, 120)
-            .padding(.vertical, 90)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-            .focusSection()
-        }
-        .onExitCommand { showWatchOptions = false }
-        // A full-screen cover comes up with focus nowhere, so the rows could
-        // not be reached at all. The delay is the same 0.15 the sheet uses
-        // for its own initial focus — the cover has to finish presenting
-        // before a FocusState assignment takes.
-        .onAppear {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-                focusedOption = 0
-            }
-        }
-    }
-
-    private func watchOptionRow(for source: TVWatchmodeResolver.TVResolvedSource,
-                                index: Int) -> some View {
-        let subscribed = AuthViewModel.shared.subscribesToService(named: source.name)
-        let focused = focusedOption == index
-        return Button {
-            // Remember the choice so the hero's badge, meta line and deep
-            // link all agree with what was just opened.
-            selectedServiceName = source.name
-            showWatchOptions = false
-            open(source: source)
-        } label: {
-            HStack(spacing: 22) {
-                providerMark(for: source.name, size: 52)
-
-                Text(gsDisplayName(for: source.name))
-                    .font(.system(size: 26, weight: .bold))
-                    .foregroundStyle(.white)
-
-                Spacer(minLength: 24)
-
-                Text(offerLabel(for: source, subscribed: subscribed))
-                    .font(.system(size: 22, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.85))
-            }
-            .padding(.horizontal, 26)
-            .padding(.vertical, 20)
-            .frame(maxWidth: 900, alignment: .leading)
-            // Neutral, so the brand-coloured mark is the thing carrying the
-            // service's identity — a row painted in the same colour swallows
-            // its own icon.
-            .background(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(Color.white.opacity(focused ? 0.16 : 0.07))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .stroke(Color.white.opacity(focused ? 0.85 : 0.10),
-                            lineWidth: focused ? 2 : 1)
-            )
-            .scaleEffect(focused ? 1.04 : 1.0)
-            .animation(.easeOut(duration: 0.15), value: focused)
-        }
-        .buttonStyle(TVFlatButtonStyle())
-        .focusEffectDisabled()
-        .focused($focusedOption, equals: index)
-    }
-
-    /// The service's own logo from `provider_brand_map`, falling back to the
-    /// lettered badge when the map has no row or no logo for the name.
     /// The service's mark, from the catalogue ported out of iPhone's
     /// services pill. See TVServiceBrandMark.swift for why this is drawn
     /// rather than loaded from provider_brand_map's logo_path.
@@ -1234,24 +1146,6 @@ struct TVTitleSheet: View {
         let words = display.split(separator: " ")
         let initials = words.prefix(2).compactMap { $0.first }.map(String.init).joined()
         return display.contains("+") ? String(initials.prefix(1)) + "+" : initials.uppercased()
-    }
-
-    /// "Included" for something already paid for, otherwise "Rent $3.99" —
-    /// and just "Rent" when the offer arrived without a price, which is what
-    /// a TMDB-sourced fallback row looks like.
-    private func offerLabel(for source: TVWatchmodeResolver.TVResolvedSource,
-                            subscribed: Bool) -> String {
-        let tier = source.type.lowercased()
-        let name: String
-        switch tier {
-        case "rent": name = "Rent"
-        case "buy", "purchase": name = "Buy"
-        case "free": name = "Free"
-        case "tve": name = "With TV provider"
-        default: name = subscribed ? "Included" : "Subscription"
-        }
-        guard let price = source.price, price > 0 else { return name }
-        return String(format: "%@ $%.2f", name, price)
     }
 
     // MARK: - Circular actions

@@ -176,6 +176,7 @@ final class TVAuthViewModel {
                     UserDefaults.standard.set(appleName, forKey: "gs.tv.displayName")
                 }
                 await loadDisplayName()
+                await loadSelectedServices()
                 Task { await TVStreamsViewModel.shared.fetchUserStreams() }
                 Task { await PushTokenManager.shared.resaveCachedToken() }
             } catch {
@@ -213,6 +214,38 @@ final class TVAuthViewModel {
             }
         } catch {
             print("[TVAuth] loadDisplayName failed: \(error.localizedDescription)")
+        }
+    }
+
+    /// Pulls `users.services` into the local selected-services set.
+    ///
+    /// `AuthViewModel.selectedServices` is a UserDefaults set written only by
+    /// this device's onboarding, so an Apple TV signed in with an account set
+    /// up on the phone had an empty list — and every "do you subscribe to
+    /// this?" check in the app answered no. That is why the watch button kept
+    /// offering to sell an episode of a Paramount+ show to a Paramount+
+    /// subscriber, and it also silently affected the gap-service ad chips and
+    /// the Now & Next rails, which are built from the same set.
+    ///
+    /// The server list is authoritative when it has anything in it; a local
+    /// selection made on this device survives an empty server row.
+    func loadSelectedServices() async {
+        guard let uid = currentUser?.id.uuidString else { return }
+        do {
+            let rows: [TVUserServicesRow] = try await TVSupabaseManager.shared.client
+                .from("users")
+                .select("services")
+                .eq("id", value: uid)
+                .limit(1)
+                .execute()
+                .value
+            guard let services = rows.first?.services, !services.isEmpty else { return }
+            await MainActor.run {
+                AuthViewModel.shared.setSelectedServices(Set(services))
+            }
+            print("[TVAuth] selected services from account: \(services)")
+        } catch {
+            print("[TVAuth] loadSelectedServices failed: \(error.localizedDescription)")
         }
     }
 
@@ -295,4 +328,9 @@ private final class AppleSignInControllerDelegate: NSObject,
             .first?.windows
             .first ?? UIWindow()
     }
+}
+
+/// `users.services` — the account's subscribed catalog ids.
+private struct TVUserServicesRow: Decodable {
+    let services: [String]?
 }
