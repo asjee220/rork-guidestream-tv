@@ -107,14 +107,22 @@ struct TVRail<Content: View>: View {
                 .foregroundStyle(seeAllFocused ? Color.white : TVTheme.textSecondary)
                 .padding(.horizontal, 28)
                 .padding(.vertical, 10)
+                // Same selected treatment as the side menu rows: a white 16%
+                // plate and a 1.06 lift, with the resting outline kept so the
+                // control still reads as a button when nothing is focused.
                 .background(
-                    Capsule().stroke(
-                        seeAllFocused ? TVTheme.orange : Color.white.opacity(0.25),
-                        lineWidth: seeAllFocused ? 2 : 1
-                    )
+                    Capsule().fill(Color.white.opacity(seeAllFocused ? 0.16 : 0))
                 )
+                .background(
+                    Capsule().stroke(Color.white.opacity(seeAllFocused ? 0 : 0.25),
+                                     lineWidth: 1)
+                )
+                .scaleEffect(seeAllFocused ? 1.06 : 1.0)
+                .animation(.easeOut(duration: 0.15), value: seeAllFocused)
         }
         .buttonStyle(.plain)
+        // tvOS otherwise draws its own white focus slab on top of the plate.
+        .focusEffectDisabled()
         .focused($seeAllFocused)
     }
 }

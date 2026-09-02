@@ -162,12 +162,6 @@ struct TVTitleSheet: View {
     /// active platform is verified-launchable on tvOS. While the service is
     /// still resolving (no name known yet), defaults to true so a launchable
     /// service can still surface once resolution completes.
-    private var showPlayButton: Bool {
-        if youTubeChannelId != nil { return true }
-        let name = activeSource?.name ?? detail.platform ?? ""
-        guard !name.isEmpty else { return true }
-        return TVOSDeepLinker.isLaunchable(platform: name)
-    }
 
     // All resolved US streaming sources for this title.
     private var usSources: [TVWatchmodeResolver.TVResolvedSource] {
@@ -462,7 +456,7 @@ struct TVTitleSheet: View {
             // remote's Menu button via .onExitCommand, which is what Apple's
             // own detail screen does.
             HStack(alignment: .top, spacing: 26) {
-                if showPlayButton { watchButton } else { manualOpenHint }
+                watchButton
                 watchListButton
                 watchedButton
                 likeButton
@@ -618,7 +612,7 @@ struct TVTitleSheet: View {
         return Button {
             season = ep.seasonNumber ?? browsingSeason
             episode = ep.episodeNumber
-            focusedField = showPlayButton ? .play : .watchList
+            focusedField = .play
         } label: {
             VStack(alignment: .leading, spacing: 12) {
                 ZStack(alignment: .bottomLeading) {
@@ -952,22 +946,6 @@ struct TVTitleSheet: View {
     /// streaming services whose tvOS app cannot be launched from another
     /// app. Plain view (not a Button, not focusable) so it never steals
     /// focus from a real control.
-    private var manualOpenHint: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "tv")
-                .font(.system(size: 24, weight: .bold))
-            Text("Open the \(playServiceName) app on your Apple TV to watch.")
-                .font(.system(size: 20, weight: .semibold))
-        }
-        .foregroundStyle(TVTheme.textSecondary)
-        .padding(.horizontal, 28)
-        .padding(.vertical, 18)
-        .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(Color.white.opacity(0.06))
-        )
-    }
-
     // MARK: - Watch button
 
     /// "Watch on ▣" — the destination is named by the service mark rather
@@ -1127,17 +1105,16 @@ struct TVTitleSheet: View {
         return Button(action: action) {
             VStack(spacing: 12) {
                 ZStack {
+                    // The side menu's plate, in circular form: white 16% when
+                    // focused, nothing when not, plus the same 1.06 lift.
                     Circle()
-                        .fill(Color.white.opacity(focused ? 0.22 : 0.10))
-                    Circle()
-                        .stroke(focused ? Color.white : Color.white.opacity(0.18),
-                                lineWidth: focused ? 3 : 1)
+                        .fill(Color.white.opacity(focused ? 0.16 : 0.06))
                     Image(systemName: icon)
                         .font(.system(size: 34, weight: .semibold))
                         .foregroundStyle(tint)
                 }
                 .frame(width: 84, height: 84)
-                .scaleEffect(focused ? 1.08 : 1.0)
+                .scaleEffect(focused ? 1.06 : 1.0)
                 .animation(.easeOut(duration: 0.15), value: focused)
 
                 if let caption {
@@ -1148,6 +1125,10 @@ struct TVTitleSheet: View {
             }
         }
         .buttonStyle(.plain)
+        // Without this tvOS lays its own white focus slab over the button —
+        // the big pale rectangle these had. TVSideMenu disables it for the
+        // same reason and draws its own plate.
+        .focusEffectDisabled()
         .focused($focusedField, equals: field)
     }
 
@@ -1251,10 +1232,10 @@ struct TVTitleSheet: View {
             await resolveStreamingData()
         }
 
-        // Set initial focus — Play when launchable, otherwise Watch List
-        // so focus never targets the non-interactive manual-open hint.
+        // Watch is always the primary action now, so it is always where
+        // focus starts.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-            focusedField = showPlayButton ? .play : .watchList
+            focusedField = .play
         }
     }
 
