@@ -1173,14 +1173,17 @@ struct TVTitleSheet: View {
             .padding(.horizontal, 26)
             .padding(.vertical, 20)
             .frame(maxWidth: 900, alignment: .leading)
+            // Neutral, so the brand-coloured mark is the thing carrying the
+            // service's identity — a row painted in the same colour swallows
+            // its own icon.
             .background(
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(brandColor(for: source.name))
+                    .fill(Color.white.opacity(focused ? 0.16 : 0.07))
             )
-            // The side menu's plate again, over the brand colour.
             .overlay(
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(Color.white.opacity(focused ? 0.16 : 0))
+                    .stroke(Color.white.opacity(focused ? 0.85 : 0.10),
+                            lineWidth: focused ? 2 : 1)
             )
             .scaleEffect(focused ? 1.04 : 1.0)
             .animation(.easeOut(duration: 0.15), value: focused)
@@ -1192,32 +1195,30 @@ struct TVTitleSheet: View {
 
     /// The service's own logo from `provider_brand_map`, falling back to the
     /// lettered badge when the map has no row or no logo for the name.
-    /// The service's own mark, in the shape iPhone's services pill uses: a
-    /// circle carrying the brand. The TMDB logo from `provider_brand_map`
-    /// when there is one, the service's initials in its brand colour when
-    /// there is not — never a generic black square, which is what the
-    /// previous fallback produced for every row at once.
-    @ViewBuilder
+    /// The service's own mark, drawn the way iPhone's services pill draws
+    /// it: a circle in the service's brand colour with its glyph on top.
+    ///
+    /// Deliberately not the TMDB logo. `provider_brand_map.logo_path` points
+    /// at TMDB's provider artwork, which is served as JPEG — no alpha channel
+    /// exists in the file, so the white is part of the image and clipping it
+    /// to a circle only makes a white disc. The brand colour now resolves for
+    /// far more services than it used to, since the map is actually loaded
+    /// (0396b41), so drawing the mark ourselves is both cleaner and truer to
+    /// the phone.
     private func providerMark(for name: String, size: CGFloat) -> some View {
-        ZStack {
-            Circle().fill(.white)
-
-            if let logo = TVProviderBrandMapService.shared.logoURL(forProviderName: name) {
-                TVRemoteImage(urlString: logo, contentMode: .fit)
-                    .padding(size * 0.12)
-                    .clipShape(Circle())
-            } else {
+        Circle()
+            .fill(brandColor(for: name))
+            .frame(width: size, height: size)
+            .overlay {
                 Text(shortCode(for: name))
                     .font(.system(size: size * 0.36, weight: .black))
-                    .foregroundStyle(brandColor(for: name))
+                    .foregroundStyle(.white)
                     .minimumScaleFactor(0.5)
                     .lineLimit(1)
                     .padding(size * 0.14)
             }
-        }
-        .frame(width: size, height: size)
-        // Keeps the mark off a row painted in the same brand colour.
-        .overlay(Circle().stroke(Color.black.opacity(0.15), lineWidth: 1))
+            // Separates the mark from a row painted in the same colour.
+            .overlay(Circle().stroke(Color.white.opacity(0.28), lineWidth: 1))
     }
 
     /// "P+" for Paramount+, "AT" for Apple TV+ — initials of the first two
