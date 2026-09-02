@@ -19,6 +19,13 @@ struct GuideStreamTVTVApp: App {
         WindowGroup {
             ContentView()
                 .preferredColorScheme(.dark)
+                // provider_brand_map carries every service's display name,
+                // aliases and TMDB logo. The only refresh call in the repo
+                // sits in HomeView.swift — the stale iOS mirror this target
+                // never renders — so on Apple TV the map has always been
+                // empty: Platform.from fell through to its twelve-entry
+                // local catalogue and every logo lookup returned nil.
+                .task { await TVProviderBrandMapService.shared.refresh() }
                 .onOpenURL { url in
                     guard url.scheme == "guidestream" else { return }
                     Task {

@@ -1192,26 +1192,32 @@ struct TVTitleSheet: View {
 
     /// The service's own logo from `provider_brand_map`, falling back to the
     /// lettered badge when the map has no row or no logo for the name.
+    /// The service's own mark, in the shape iPhone's services pill uses: a
+    /// circle carrying the brand. The TMDB logo from `provider_brand_map`
+    /// when there is one, the service's initials in its brand colour when
+    /// there is not — never a generic black square, which is what the
+    /// previous fallback produced for every row at once.
     @ViewBuilder
     private func providerMark(for name: String, size: CGFloat) -> some View {
-        if let logo = TVProviderBrandMapService.shared.logoURL(forProviderName: name) {
-            TVRemoteImage(urlString: logo, contentMode: .fit)
-                .frame(width: size, height: size)
-                .background(Color.white.opacity(0.9))
-                .clipShape(RoundedRectangle(cornerRadius: size * 0.235, style: .continuous))
-        } else {
-            // The row's own initials. This used to fall back to
-            // serviceBadge(), which is built from the *hero's* active
-            // service — so every row in the sheet wore the same mark.
-            Text(shortCode(for: name))
-                .font(.system(size: size * 0.34, weight: .heavy))
-                .foregroundStyle(.white)
-                .frame(width: size, height: size)
-                .background(
-                    Color.black.opacity(0.35),
-                    in: RoundedRectangle(cornerRadius: size * 0.235, style: .continuous)
-                )
+        ZStack {
+            Circle().fill(.white)
+
+            if let logo = TVProviderBrandMapService.shared.logoURL(forProviderName: name) {
+                TVRemoteImage(urlString: logo, contentMode: .fit)
+                    .padding(size * 0.12)
+                    .clipShape(Circle())
+            } else {
+                Text(shortCode(for: name))
+                    .font(.system(size: size * 0.36, weight: .black))
+                    .foregroundStyle(brandColor(for: name))
+                    .minimumScaleFactor(0.5)
+                    .lineLimit(1)
+                    .padding(size * 0.14)
+            }
         }
+        .frame(width: size, height: size)
+        // Keeps the mark off a row painted in the same brand colour.
+        .overlay(Circle().stroke(Color.black.opacity(0.15), lineWidth: 1))
     }
 
     /// "P+" for Paramount+, "AT" for Apple TV+ — initials of the first two
