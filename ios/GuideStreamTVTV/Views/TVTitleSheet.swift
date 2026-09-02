@@ -41,6 +41,13 @@ private enum SheetFocus: Hashable {
 struct TVTitleSheet: View {
     private static let sectionsTopAnchor = "gui88.sectionsTop"
 
+    /// How much of the screen the first section is allowed to occupy while
+    /// the hero is still the page. The hero is a screen tall *minus* this,
+    /// so the episodes row is cut off by the bottom edge rather than sitting
+    /// just below it — the standard lean-back cue that there is more down
+    /// there. Home does the same thing with a negative bottom padding.
+    private static let foldPeek: CGFloat = 260
+
     let detail: TVTitleDetail
     let onDismiss: (Bool) -> Void
 
@@ -244,31 +251,38 @@ struct TVTitleSheet: View {
                 // negative bottom padding that pulls the first rail into
                 // view. This screen is six sections, not a feed, so eager
                 // construction costs nothing.
-                VStack(alignment: .leading, spacing: 64) {
+                VStack(alignment: .leading, spacing: 0) {
                     heroSection
-                        .containerRelativeFrame(.vertical)
+                        .containerRelativeFrame(.vertical) { length, _ in
+                            // Clamped: the container reports 0 on the first
+                            // layout pass, and a negative height is an
+                            // invalid frame dimension.
+                            max(length - Self.foldPeek, 0)
+                        }
 
-                    // The title rides at the top of everything below the
-                    // hero, so the first move down lands on a page headed by
-                    // the show's name rather than mid-rail.
-                    sectionsTitleHeader
-                        .id(Self.sectionsTopAnchor)
+                    // Episodes lead. The seasons row is what shows at the
+                    // fold and what the first move down lands on, so the
+                    // show's own wordmark is not repeated here — it is
+                    // already the largest thing on the screen above.
+                    VStack(alignment: .leading, spacing: 64) {
+                        if isTV, youTubeChannelId == nil, !episodes.isEmpty {
+                            episodesSection
+                        }
+                        if !usSources.isEmpty, youTubeChannelId == nil {
+                            whereToWatchSection
+                        }
+                        if trailerReel != nil {
+                            trailersSection
+                        }
+                        if !recommendations.isEmpty {
+                            moreLikeThisSection
+                        }
+                        detailsSection
 
-                    if !usSources.isEmpty, youTubeChannelId == nil {
-                        whereToWatchSection
+                        Color.clear.frame(height: 60)
                     }
-                    if isTV, youTubeChannelId == nil, !episodes.isEmpty {
-                        episodesSection
-                    }
-                    if trailerReel != nil {
-                        trailersSection
-                    }
-                    if !recommendations.isEmpty {
-                        moreLikeThisSection
-                    }
-                    detailsSection
-
-                    Color.clear.frame(height: 60)
+                    .padding(.top, 24)
+                    .id(Self.sectionsTopAnchor)
                 }
             }
             .ignoresSafeArea()
@@ -466,6 +480,11 @@ struct TVTitleSheet: View {
     /// Title pinned above the first section, so a move down out of the hero
     /// lands on a page headed by the show's name — the second reference shot
     /// on GUI-88.
+    ///
+    /// Currently unused: the Sep 2 reference leads the second page with the
+    /// seasons row instead, and repeating a 44pt wordmark one screen below a
+    /// 76pt one reads as a header the viewer has to scroll past. Kept so
+    /// restoring it is one line in the section stack.
     private var sectionsTitleHeader: some View {
         Text(detail.title.uppercased())
             .font(.system(size: 44, weight: .heavy))
