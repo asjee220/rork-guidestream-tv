@@ -334,16 +334,32 @@ struct TVTitleSheet: View {
     /// Cinematic backdrop behind every section. Unchanged from the previous
     /// layout apart from the gradient running further down, so text stays
     /// legible over art once the viewer has scrolled.
+    ///
+    /// The art is pinned to an explicit screen-sized frame and clipped. A
+    /// `.resizable()` image with `.aspectRatio(.fill)` and no frame reports
+    /// the size it would *like* — the source asset's own dimensions — and in
+    /// a ZStack that inflates the stack, and with it the container that
+    /// `containerRelativeFrame(.vertical)` measures the hero against. The
+    /// hero then came out taller than the screen: wordmark pushed to the
+    /// bottom edge, action row off screen entirely.
+    ///
+    /// That is why the only title that behaved was the one with no artwork —
+    /// its fallback is a gradient, which takes the size it is offered. The
+    /// backdrop must never be able to drive layout.
     private var backdropLayer: some View {
-        TVRemoteImage(urlString: detail.backdropUrl ?? detail.posterUrl, contentMode: .fill)
-            .ignoresSafeArea()
-            .overlay {
-                LinearGradient(
-                    colors: [.black.opacity(0.35), .black.opacity(0.88), .black],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-            }
+        GeometryReader { proxy in
+            TVRemoteImage(urlString: detail.backdropUrl ?? detail.posterUrl, contentMode: .fill)
+                .frame(width: proxy.size.width, height: proxy.size.height)
+                .clipped()
+                .overlay {
+                    LinearGradient(
+                        colors: [.black.opacity(0.35), .black.opacity(0.88), .black],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                }
+        }
+        .ignoresSafeArea()
     }
 
     private func sectionHeader(_ title: String, accent: Color = TVTheme.orange) -> some View {
