@@ -231,11 +231,29 @@ struct TVTitleSheet: View {
         subscribedSources + transactionalSources
     }
 
+    /// True when the service this title is *labelled* with is one the viewer
+    /// subscribes to, even though Watchmode returned no row for it.
+    ///
+    /// This is the common case, not an edge one: Watchmode frequently returns
+    /// only transactional rows for a current show — Star Trek came back as
+    /// three "Buy $2.99" offers and no Paramount+ row — while the resolver's
+    /// provider_name_fallback still names the service correctly, which is
+    /// what the badge under the title has been showing all along. Offering to
+    /// sell a viewer an episode they can already stream is the wrong answer.
+    private var subscribesToLabelledService: Bool {
+        let name = activeSource?.name
+            ?? resolvedStreaming?.providerNameFallback
+            ?? detail.platform
+        guard let name, !name.isEmpty else { return false }
+        return AuthViewModel.shared.subscribesToService(named: name)
+    }
+
     /// The button only asks when it genuinely cannot pick: several
     /// subscriptions the viewer owns, or — owning none — several ways to pay.
     private var needsWatchOptions: Bool {
         if subscribedSources.count >= 2 { return true }
-        if subscribedSources.isEmpty && transactionalSources.count >= 2 { return true }
+        if subscribedSources.isEmpty, !subscribesToLabelledService,
+           transactionalSources.count >= 2 { return true }
         return false
     }
 
@@ -437,7 +455,7 @@ struct TVTitleSheet: View {
                 .minimumScaleFactor(0.5)
 
             HStack(spacing: 14) {
-                serviceBadge(size: 34)
+                providerMark(for: playServiceName, size: 34)
                 Text(heroMetaLine)
                     .font(.system(size: 24, weight: .semibold))
                     .foregroundStyle(.white.opacity(0.9))
@@ -487,29 +505,13 @@ struct TVTitleSheet: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    /// The small service mark that sits under the title — and, at a slightly
-    /// larger size, inside the watch button, so the button names its
-    /// destination with the same object the metadata line already used.
-    @ViewBuilder
-    private func serviceBadge(size: CGFloat) -> some View {
-        if let short = serviceShortCode {
-            Text(short)
-                .font(.system(size: size * 0.38, weight: .heavy))
-                .foregroundStyle(.white)
-                .frame(width: size, height: size)
-                .background(
-                    detail.accent,
-                    in: RoundedRectangle(cornerRadius: size * 0.235, style: .continuous)
-                )
-        }
-    }
-
     /// Two-letter service badge for the meta line, e.g. "P+" for Paramount+.
     private var serviceShortCode: String? {
-        guard let name = activeSource?.name ?? detail.platform, !name.isEmpty else { return nil }
-        let words = name.split(separator: " ")
-        let initials = words.prefix(2).compactMap { $0.first }.map(String.init).joined()
-        return name.contains("+") ? String(initials.prefix(1)) + "+" : initials.uppercased()
+        let raw = activeSource?.name
+            ?? resolvedStreaming?.providerNameFallback
+            ?? detail.platform
+        guard let raw, !raw.isEmpty else { return nil }
+        return shortCode(for: raw)
     }
 
     /// "Series · Drama · Thriller", degrading to just the media type when
@@ -1062,6 +1064,11 @@ struct TVTitleSheet: View {
                 // to ask — rent and buy offers are not alternatives to a
                 // subscription they own.
                 open(source: subscribedSources[0])
+            } else if subscribedSources.isEmpty, subscribesToLabelledService {
+                // Subscribed to the service the title is labelled with, but
+                // Watchmode gave no row for it. Open it by name — the same
+                // chain, resolving through the deep linker's own catalogue.
+                TVOSDeepLinker.open(platform: playServiceName, title: detail.title)
             } else if needsWatchOptions {
                 showWatchOptions = true
             } else if let source = activeSource {
@@ -1086,7 +1093,7 @@ struct TVTitleSheet: View {
                 } else {
                     Text("Watch on")
                         .font(.system(size: 22, weight: .semibold))
-                    serviceBadge(size: 40)
+                    providerMark(for: playServiceName, size: 40)
                 }
             }
             .foregroundStyle(.white)
@@ -1193,8 +1200,27 @@ struct TVTitleSheet: View {
                 .background(Color.white.opacity(0.9))
                 .clipShape(RoundedRectangle(cornerRadius: size * 0.235, style: .continuous))
         } else {
-            serviceBadge(size: size)
+            // The row's own initials. This used to fall back to
+            // serviceBadge(), which is built from the *hero's* active
+            // service — so every row in the sheet wore the same mark.
+            Text(shortCode(for: name))
+                .font(.system(size: size * 0.34, weight: .heavy))
+                .foregroundStyle(.white)
+                .frame(width: size, height: size)
+                .background(
+                    Color.black.opacity(0.35),
+                    in: RoundedRectangle(cornerRadius: size * 0.235, style: .continuous)
+                )
         }
+    }
+
+    /// "P+" for Paramount+, "AT" for Apple TV+ — initials of the first two
+    /// words, with a trailing + preserved.
+    private func shortCode(for name: String) -> String {
+        let display = gsDisplayName(for: name)
+        let words = display.split(separator: " ")
+        let initials = words.prefix(2).compactMap { $0.first }.map(String.init).joined()
+        return display.contains("+") ? String(initials.prefix(1)) + "+" : initials.uppercased()
     }
 
     /// "Included" for something already paid for, otherwise "Rent $3.99" —
