@@ -119,6 +119,11 @@ struct TVHomeView: View {
     /// user. Empty for guests and whenever the view returns nothing.
     @State private var continueWatching: [ContinueWatchingItem] = []
 
+    /// Focus scope for the Continue Watching cards, so entering the rail
+    /// lands on the first card rather than wherever the focus engine picks.
+    @Namespace private var continueWatchingScope
+    @FocusState private var focusedContinueWatching: Int?
+
     /// Deterministic daily pick from streaming_releases, resolved once per
     /// load. Nil when the table is empty or unreachable.
     @State private var todaysPick: TVStreamingRelease?
@@ -183,8 +188,23 @@ struct TVHomeView: View {
                             )
                         }
                     ) {
-                        ForEach(continueWatching) { item in
-                            continueWatchingCard(for: item)
+                        // The rail's cards are their own focus section, and a
+                        // move into a section is resolved by the focus engine
+                        // rather than by position — which was landing on the
+                        // last card. Its own scope with the first card
+                        // declared the default settles it.
+                        HStack(spacing: 32) {
+                            ForEach(Array(continueWatching.enumerated()),
+                                    id: \.element.id) { index, item in
+                                continueWatchingCard(for: item)
+                                    .prefersDefaultFocus(index == 0, in: continueWatchingScope)
+                                    .focused($focusedContinueWatching, equals: index)
+                            }
+                        }
+                        .focusScope(continueWatchingScope)
+                        .onChange(of: focusedContinueWatching) { _, index in
+                            guard let index else { return }
+                            TVNavLog.log("continue watching focus -> card \(index) of \(continueWatching.count)")
                         }
                     }
                 }

@@ -240,13 +240,22 @@ struct TVTitleSheet: View {
     /// provider_name_fallback still names the service correctly, which is
     /// what the badge under the title has been showing all along. Offering to
     /// sell a viewer an episode they can already stream is the wrong answer.
-    private var subscribesToLabelledService: Bool {
-        let name = activeSource?.name
-            ?? resolvedStreaming?.providerNameFallback
-            ?? detail.platform
-        guard let name, !name.isEmpty else { return false }
-        return AuthViewModel.shared.subscribesToService(named: name)
+    private var subscribedLabelName: String? {
+        // Every name the screen has for this title, not just the first that
+        // happens to be non-nil. activeSource is whatever Watchmode ranked
+        // first — on Star Trek that was a Buy row for Apple TV, so checking
+        // only that said "not subscribed" and the sheet appeared even though
+        // provider_name_fallback said Paramount+.
+        let candidates = [
+            activeSource?.name,
+            resolvedStreaming?.providerNameFallback,
+            detail.platform
+        ].compactMap { $0 }.filter { !$0.isEmpty }
+
+        return candidates.first { AuthViewModel.shared.subscribesToService(named: $0) }
     }
+
+    private var subscribesToLabelledService: Bool { subscribedLabelName != nil }
 
     /// The button only asks when it genuinely cannot pick: several
     /// subscriptions the viewer owns, or — owning none — several ways to pay.
@@ -1057,6 +1066,11 @@ struct TVTitleSheet: View {
     /// app — so it lands on the title, not the service's home screen.
     private var watchButton: some View {
         Button {
+            TVNavLog.log("watch pressed: subscribedSources=\(subscribedSources.map(\.name)) "
+                         + "labelled=\(subscribedLabelName ?? "none") "
+                         + "transactional=\(transactionalSources.count) "
+                         + "active=\(activeSource?.name ?? "nil") "
+                         + "fallback=\(resolvedStreaming?.providerNameFallback ?? "nil")")
             if let channelId = youTubeChannelId {
                 TVOSDeepLinker.openYouTubeChannel(channelId: channelId, name: detail.title)
             } else if subscribedSources.count == 1 {
@@ -1064,11 +1078,12 @@ struct TVTitleSheet: View {
                 // to ask — rent and buy offers are not alternatives to a
                 // subscription they own.
                 open(source: subscribedSources[0])
-            } else if subscribedSources.isEmpty, subscribesToLabelledService {
+            } else if subscribedSources.isEmpty, let owned = subscribedLabelName {
                 // Subscribed to the service the title is labelled with, but
                 // Watchmode gave no row for it. Open it by name — the same
                 // chain, resolving through the deep linker's own catalogue.
-                TVOSDeepLinker.open(platform: playServiceName, title: detail.title)
+                TVNavLog.log("watch: opening owned subscription \(owned)")
+                TVOSDeepLinker.open(platform: owned, title: detail.title)
             } else if needsWatchOptions {
                 showWatchOptions = true
             } else if let source = activeSource {
@@ -1142,8 +1157,18 @@ struct TVTitleSheet: View {
             .padding(.horizontal, 120)
             .padding(.vertical, 90)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+            .focusSection()
         }
         .onExitCommand { showWatchOptions = false }
+        // A full-screen cover comes up with focus nowhere, so the rows could
+        // not be reached at all. The delay is the same 0.15 the sheet uses
+        // for its own initial focus — the cover has to finish presenting
+        // before a FocusState assignment takes.
+        .onAppear {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                focusedOption = 0
+            }
+        }
     }
 
     private func watchOptionRow(for source: TVWatchmodeResolver.TVResolvedSource,
@@ -1195,30 +1220,11 @@ struct TVTitleSheet: View {
 
     /// The service's own logo from `provider_brand_map`, falling back to the
     /// lettered badge when the map has no row or no logo for the name.
-    /// The service's own mark, drawn the way iPhone's services pill draws
-    /// it: a circle in the service's brand colour with its glyph on top.
-    ///
-    /// Deliberately not the TMDB logo. `provider_brand_map.logo_path` points
-    /// at TMDB's provider artwork, which is served as JPEG — no alpha channel
-    /// exists in the file, so the white is part of the image and clipping it
-    /// to a circle only makes a white disc. The brand colour now resolves for
-    /// far more services than it used to, since the map is actually loaded
-    /// (0396b41), so drawing the mark ourselves is both cleaner and truer to
-    /// the phone.
+    /// The service's mark, from the catalogue ported out of iPhone's
+    /// services pill. See TVServiceBrandMark.swift for why this is drawn
+    /// rather than loaded from provider_brand_map's logo_path.
     private func providerMark(for name: String, size: CGFloat) -> some View {
-        Circle()
-            .fill(brandColor(for: name))
-            .frame(width: size, height: size)
-            .overlay {
-                Text(shortCode(for: name))
-                    .font(.system(size: size * 0.36, weight: .black))
-                    .foregroundStyle(.white)
-                    .minimumScaleFactor(0.5)
-                    .lineLimit(1)
-                    .padding(size * 0.14)
-            }
-            // Separates the mark from a row painted in the same colour.
-            .overlay(Circle().stroke(Color.white.opacity(0.28), lineWidth: 1))
+        TVServiceBrandMark(providerName: name, size: size)
     }
 
     /// "P+" for Paramount+, "AT" for Apple TV+ — initials of the first two
