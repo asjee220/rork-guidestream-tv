@@ -137,6 +137,10 @@ struct TVHeroCarousel: View {
         .focusScope(heroNamespace)
         .focusEffectDisabled()
         .onMoveCommand(perform: handleMoveCommand)
+        // Clicks arrive as move commands; swipes across the touch surface do
+        // not. Same handler, so both step the carousel and both open the menu
+        // from the first item.
+        .onRemoteSwipe(isEnabled: heroRegionFocused || ctaFocused, perform: handleMoveCommand)
         .preference(key: TVHeroSideMenuRequestKey.self, value: menuRequestCount)
         .onAppear {
             autoAdvanceDisabled = false

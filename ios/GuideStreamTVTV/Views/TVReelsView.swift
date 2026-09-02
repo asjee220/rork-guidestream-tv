@@ -87,6 +87,9 @@ struct TVReelsView: View {
         .focusScope(reelScope)
         .focusEffectDisabled()
         .onMoveCommand(perform: handleMove)
+        // The screen is one focusable view, so a swipe has nowhere to move
+        // focus to and would otherwise do nothing at all here.
+        .onRemoteSwipe(isEnabled: hasFocus, perform: handleMove)
         // On tvOS a tap gesture on a focused view is the Select button.
         .onTapGesture { fire() }
         .onPlayPauseCommand { togglePlayback() }
