@@ -54,6 +54,13 @@ struct TVSideMenu: View {
     @Binding var selection: TVSideMenuItem
     @Binding var isOpen: Bool
 
+    /// False while another surface is holding a direction that would
+    /// otherwise move focus in here — today, the hero stepping its carousel
+    /// on left. The rows unmount their buttons for the duration, the same
+    /// device the collapsed rail used to use to stay out of the focus
+    /// engine's way. Defaults to true so every other screen is unaffected.
+    var isFocusable: Bool = true
+
     @FocusState private var focusedItem: TVSideMenuItem?
 
     /// Focus scope for the rail. The selected row declares itself the
@@ -167,8 +174,16 @@ struct TVSideMenu: View {
     /// While collapsed the rows are plain views — the menu contains no
     /// focusable views, so tvOS can neither assign it initial focus nor
     /// land focus in it by accident. Only the open state mounts buttons.
+    @ViewBuilder
     private func menuRow(for item: TVSideMenuItem) -> some View {
-        menuButton(for: item)
+        if isFocusable {
+            menuButton(for: item)
+        } else {
+            // A plain view mounts no focusable content, so the focus engine
+            // has no target to the left of the hero and leaves focus there.
+            rowContent(for: item, isFocused: false)
+                .padding(.vertical, 6)
+        }
     }
 
     private func menuButton(for item: TVSideMenuItem) -> some View {

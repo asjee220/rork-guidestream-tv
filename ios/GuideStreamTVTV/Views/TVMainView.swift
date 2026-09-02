@@ -34,6 +34,11 @@ struct TVMainView: View {
     /// Without it tvOS picks the leading-most focusable view — the rail —
     /// and the menu would be expanded before the user touches the remote.
     @Namespace private var rootNamespace
+
+    /// True while the hero is stepping its carousel and needs left for
+    /// itself. The rail drops its focusable rows for the duration, so the
+    /// focus engine finds nothing to the left and leaves focus on the hero.
+    @State private var heroHoldsLeft = false
     @Environment(\.resetFocus) private var resetFocus
 
     var body: some View {
@@ -69,7 +74,8 @@ struct TVMainView: View {
             // the art, not text, so the title-safe margin buys it nothing —
             // it only pushed the panel inward and widened the channel
             // between it and the content.
-            TVSideMenu(selection: $selection, isOpen: $menuIsOpen)
+            TVSideMenu(selection: $selection, isOpen: $menuIsOpen,
+                       isFocusable: !heroHoldsLeft)
                 .padding(.leading, -safeLeading)
             }
         }
@@ -96,10 +102,15 @@ struct TVMainView: View {
             menuIsOpen = false
             resetFocus(in: rootNamespace)
         }
+        .onPreferenceChange(TVHeroHoldsLeftKey.self) { holds in
+            TVNavLog.log("main sees heroHoldsLeft=\(holds)")
+            heroHoldsLeft = holds
+        }
         .onPreferenceChange(TVHeroSideMenuRequestKey.self) { count in
             // The hero consumes its own move commands to step the carousel,
             // so the focus engine never sees a left move there. This is the
             // one place that still has to ask for the menu explicitly.
+            TVNavLog.log("main sees menu request count=\(count) open=\(menuIsOpen)")
             if count > 0, !menuIsOpen {
                 menuIsOpen = true
             }

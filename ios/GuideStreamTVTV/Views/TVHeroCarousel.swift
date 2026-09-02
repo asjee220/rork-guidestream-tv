@@ -31,6 +31,25 @@ struct TVHeroSideMenuRequestKey: PreferenceKey {
     }
 }
 
+/// Raised while the hero holds the left direction for itself — that is,
+/// while its CTA has focus and the carousel is past its first item.
+///
+/// Left has to do two different things from the same button: step back
+/// through the heroes, and open the side menu once there is nothing left to
+/// step back to. `.onMoveCommand` cannot express that, because it consumes
+/// all four directions and traps focus in the hero. So the hero states its
+/// claim here and the rail makes itself unfocusable for as long as it holds:
+/// the focus engine finds no target to the left and focus stays put, which
+/// is what lets the hero step instead. On the first item the claim drops,
+/// the rail becomes focusable again, and left moves focus into the menu the
+/// ordinary way.
+struct TVHeroHoldsLeftKey: PreferenceKey {
+    static var defaultValue: Bool = false
+    static func reduce(value: inout Bool, nextValue: () -> Bool) {
+        value = value || nextValue()
+    }
+}
+
 struct TVHeroCarousel: View {
     let items: [TVTMDBResult]
     /// Bound from TVHomeView so the scroll content can declare the CTA the
@@ -132,15 +151,21 @@ struct TVHeroCarousel: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .clipped()
-        .focusable()
-        .focused($heroRegionFocused)
+        // The art is deliberately not focusable. It used to be, which put a
+        // focus stop on the hero region *containing* the CTA — focus landed
+        // there instead of on Add to Watch List, and the button was awkward
+        // to reach. The CTA is now the hero's only stop.
         .focusScope(heroNamespace)
         .focusEffectDisabled()
-        .onMoveCommand(perform: handleMoveCommand)
-        // Clicks arrive as move commands; swipes across the touch surface do
-        // not. Same handler, so both step the carousel and both open the menu
-        // from the first item.
-        .onRemoteSwipe(isEnabled: heroRegionFocused || ctaFocused, perform: handleMoveCommand)
+        // Deliberately NOT .onMoveCommand: it consumes all four directions
+        // while the hero holds focus, which trapped focus here — down never
+        // reached the focus engine, so the rails were unreachable, and left
+        // never reached the side menu. This observes instead, so up, down and
+        // left stay ordinary focus movement and only right is acted on.
+        .onRemoteDirection(isEnabled: ctaFocused) {
+            handleMove($0, source: "remote")
+        }
+        .preference(key: TVHeroHoldsLeftKey.self, value: ctaFocused && index > 0)
         .preference(key: TVHeroSideMenuRequestKey.self, value: menuRequestCount)
         .onAppear {
             autoAdvanceDisabled = false
@@ -263,7 +288,6 @@ struct TVHeroCarousel: View {
                 // The CTA holds focus on arrival, so left/right land here
                 // rather than on the hero region behind it. Without this the
                 // carousel cannot be stepped through at all.
-                .onMoveCommand(perform: handleMoveCommand)
                 .prefersDefaultFocus(true, in: heroNamespace)
                 .padding(.top, 6)
             }
@@ -631,15 +655,31 @@ struct TVHeroCarousel: View {
     /// holds focus. Clamps at both ends, no wrapping; the first manual
     /// move permanently stops auto-advance. A left move at the first item
     /// falls through to opening the side menu instead of being swallowed.
+    private func handleMove(_ move: MoveCommandDirection, source: String) {
+        TVNavLog.log("hero \(source) \(move) index=\(index)/\(items.count) "
+                     + "cta=\(ctaFocused) region=\(heroRegionFocused)")
+        handleMoveCommand(move)
+    }
+
     private func handleMoveCommand(_ move: MoveCommandDirection) {
         switch move {
         case .right:
+            // The one direction the hero claims. Right is a dead end for the
+            // focus engine here anyway — nothing sits to the right of the CTA.
             guard items.count > 1, index < items.count - 1 else { return }
             autoAdvanceDisabled = true
             direction = 1
             index += 1
         case .left:
+            // While the carousel has somewhere to step back to, the rail is
+            // unfocusable (TVHeroHoldsLeftKey), so the focus engine leaves
+            // focus here and this is the only thing that acts on left.
             guard items.count > 1, index > 0 else {
+                // First item: the rail is focusable again and the focus
+                // engine is moving into it. Asking as well costs nothing and
+                // keeps the hero from being a dead end if that move finds no
+                // target; TVMainView ignores a request while the menu is open.
+                TVNavLog.log("hero requests side menu (count \(menuRequestCount + 1))")
                 menuRequestCount += 1
                 return
             }
@@ -647,6 +687,8 @@ struct TVHeroCarousel: View {
             direction = -1
             index -= 1
         default:
+            // Up and down belong to the focus engine — this is what lets the
+            // rails be reached from the hero.
             break
         }
     }
