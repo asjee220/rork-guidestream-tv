@@ -60,6 +60,11 @@ struct TVTitleSheet: View {
     @State private var resolvedStreaming: TVWatchmodeResolver.TVResolvedStreaming?
     @State private var isResolving = false
 
+    /// Presented when the title can be watched more than one way — several
+    /// subscribed services, or several rent/buy offers. One tap on the watch
+    /// button still means "watch it" when there is only one answer.
+    @State private var showWatchOptions = false
+
     // Season / episode stepper (TV only)
     @State private var season: Int = 1
     @State private var episode: Int = 1
@@ -208,6 +213,29 @@ struct TVTitleSheet: View {
         return detail.platform ?? "Streaming"
     }
 
+    // Sources the viewer pays a subscription for.
+    private var subscribedSources: [TVWatchmodeResolver.TVResolvedSource] {
+        usSources.filter { AuthViewModel.shared.subscribesToService(named: $0.name) }
+    }
+
+    // Rent and buy offers. "purchase" is Watchmode's other spelling for buy;
+    // watchmode_resolve v23 normalises the tier key server-side, but the raw
+    // type still arrives either way.
+    private var transactionalSources: [TVWatchmodeResolver.TVResolvedSource] {
+        usSources.filter { ["rent", "buy", "purchase"].contains($0.type.lowercased()) }
+    }
+
+    /// Everything the watch button could reasonably open: what the viewer
+    /// already pays for, then what they can rent or buy.
+    private var watchOptions: [TVWatchmodeResolver.TVResolvedSource] {
+        subscribedSources + transactionalSources
+    }
+
+    /// Two or more of either kind means the button cannot pick for them.
+    private var needsWatchOptions: Bool {
+        subscribedSources.count >= 2 || transactionalSources.count >= 2
+    }
+
     // Best deep-link URL for the Play button — strictly from activeSource,
     // subject to the brand guard.
     private var bestDeepLinkURL: URL? {
@@ -274,9 +302,6 @@ struct TVTitleSheet: View {
                         if isTV, youTubeChannelId == nil, !episodes.isEmpty {
                             episodesSection
                         }
-                        if !usSources.isEmpty, youTubeChannelId == nil {
-                            whereToWatchSection
-                        }
                         if trailerReel != nil {
                             trailersSection
                         }
@@ -317,6 +342,9 @@ struct TVTitleSheet: View {
         }
         .fullScreenCover(item: $reelsPresentation) { payload in
             TVReelsView(injectedReels: payload.feed, startIndex: payload.startIndex)
+        }
+        .fullScreenCover(isPresented: $showWatchOptions) {
+            watchOptionsSheet
         }
         .onChange(of: season) { _, _ in
             Task { await resolveStreamingData() }
@@ -402,13 +430,7 @@ struct TVTitleSheet: View {
                 .minimumScaleFactor(0.5)
 
             HStack(spacing: 14) {
-                if let short = serviceShortCode {
-                    Text(short)
-                        .font(.system(size: 13, weight: .heavy))
-                        .foregroundStyle(.white)
-                        .frame(width: 34, height: 34)
-                        .background(detail.accent, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                }
+                serviceBadge(size: 34)
                 Text(heroMetaLine)
                     .font(.system(size: 24, weight: .semibold))
                     .foregroundStyle(.white.opacity(0.9))
@@ -439,8 +461,8 @@ struct TVTitleSheet: View {
             // and the on-screen Close button are gone — Close is now the
             // remote's Menu button via .onExitCommand, which is what Apple's
             // own detail screen does.
-            HStack(spacing: 22) {
-                if showPlayButton { playButton } else { manualOpenHint }
+            HStack(alignment: .top, spacing: 26) {
+                if showPlayButton { watchButton } else { manualOpenHint }
                 watchListButton
                 watchedButton
                 likeButton
@@ -456,6 +478,23 @@ struct TVTitleSheet: View {
         // clears its first rail. Was 130, when nothing sat below the fold.
         .padding(.bottom, Self.foldPeek + 40)
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// The small service mark that sits under the title — and, at a slightly
+    /// larger size, inside the watch button, so the button names its
+    /// destination with the same object the metadata line already used.
+    @ViewBuilder
+    private func serviceBadge(size: CGFloat) -> some View {
+        if let short = serviceShortCode {
+            Text(short)
+                .font(.system(size: size * 0.38, weight: .heavy))
+                .foregroundStyle(.white)
+                .frame(width: size, height: size)
+                .background(
+                    detail.accent,
+                    in: RoundedRectangle(cornerRadius: size * 0.235, style: .continuous)
+                )
+        }
     }
 
     /// Two-letter service badge for the meta line, e.g. "P+" for Paramount+.
@@ -518,16 +557,6 @@ struct TVTitleSheet: View {
             .minimumScaleFactor(0.5)
             .padding(.horizontal, 80)
             .padding(.top, 40)
-    }
-
-    /// The chips that already shipped, lifted into their own section.
-    private var whereToWatchSection: some View {
-        VStack(alignment: .leading, spacing: 24) {
-            sectionHeader("Where to Watch")
-            whereToWatchRow
-                .padding(.horizontal, 80)
-        }
-        .focusSection()
     }
 
     // MARK: Episodes
@@ -847,63 +876,6 @@ struct TVTitleSheet: View {
 
     // MARK: - Where to Watch chips
 
-    private var whereToWatchRow: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("WHERE TO WATCH")
-                .font(.system(size: 15, weight: .heavy))
-                .foregroundStyle(TVTheme.textTertiary)
-                .tracking(2)
-
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 18) {
-                    ForEach(sortedSources, id: \.sourceId) { source in
-                        serviceChip(for: source)
-                    }
-                }
-                .padding(.vertical, 6)
-            }
-        }
-    }
-
-    private func serviceChip(for source: TVWatchmodeResolver.TVResolvedSource) -> some View {
-        let isSubscribed = AuthViewModel.shared.subscribesToService(named: source.name)
-        let isActive = activeSource?.sourceId == source.sourceId
-        return Button {
-            if subscribedSourceCount >= 2 && isSubscribed {
-                selectedServiceName = source.name
-            } else {
-                // Only launch when the service is verified-launchable on
-                // tvOS; otherwise the chip stays a where-to-watch indicator.
-                if TVOSDeepLinker.isLaunchable(platform: source.name) {
-                    open(source: source)
-                }
-            }
-        } label: {
-            HStack(spacing: 8) {
-                Text(gsDisplayName(for: source.name))
-                    .font(.system(size: 18, weight: .bold))
-                    .foregroundStyle(.white)
-                if isSubscribed {
-                    Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 16, weight: .bold))
-                        .foregroundStyle(.white.opacity(0.9))
-                }
-            }
-            .padding(.horizontal, 22)
-            .padding(.vertical, 14)
-            .background(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(brandColor(for: source.name))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .stroke(isActive ? TVTheme.orange : Color.white.opacity(0.12),
-                            lineWidth: isActive ? 4 : 1)
-            )
-        }
-        .buttonStyle(.card)
-    }
-
     // MARK: - Season / Episode stepper
 
     private var seasonEpisodeStepper: some View {
@@ -996,12 +968,23 @@ struct TVTitleSheet: View {
         )
     }
 
-    // MARK: - Play button
+    // MARK: - Watch button
 
-    private var playButton: some View {
+    /// "Watch on ▣" — the destination is named by the service mark rather
+    /// than spelled out, which is what keeps the button one line whatever the
+    /// service is called, and matches the badge under the title.
+    ///
+    /// One tap means watch. It only asks a question when there genuinely is
+    /// one: several subscribed services, or several rent/buy offers. The open
+    /// itself goes through the existing chain — the source's tvOS scheme,
+    /// then its iOS scheme, then the universal link, then a search inside the
+    /// app — so it lands on the title, not the service's home screen.
+    private var watchButton: some View {
         Button {
             if let channelId = youTubeChannelId {
                 TVOSDeepLinker.openYouTubeChannel(channelId: channelId, name: detail.title)
+            } else if needsWatchOptions {
+                showWatchOptions = true
             } else if let source = activeSource {
                 open(source: source)
             } else {
@@ -1015,10 +998,17 @@ struct TVTitleSheet: View {
                         .tint(.white)
                 } else {
                     Image(systemName: "play.fill")
-                        .font(.system(size: 28, weight: .bold))
+                        .font(.system(size: 26, weight: .bold))
                 }
-                Text(youTubeChannelId != nil ? "Play on YouTube" : "Play on \(playServiceName.capitalized)")
-                    .font(.system(size: 22, weight: .semibold))
+
+                if youTubeChannelId != nil {
+                    Text("Watch on YouTube")
+                        .font(.system(size: 22, weight: .semibold))
+                } else {
+                    Text("Watch on")
+                        .font(.system(size: 22, weight: .semibold))
+                    serviceBadge(size: 40)
+                }
             }
             .foregroundStyle(.white)
             .padding(.horizontal, 28)
@@ -1029,10 +1019,146 @@ struct TVTitleSheet: View {
         .disabled(isResolving && resolvedStreaming == nil && youTubeChannelId == nil)
     }
 
+    // MARK: - Watch options
+
+    /// Presented only when the button cannot pick for the viewer. Subscribed
+    /// services first — what they already pay for is what they want — then
+    /// rent and buy, each carrying its price when Watchmode returned one.
+    private var watchOptionsSheet: some View {
+        ZStack {
+            Color.black.opacity(0.94).ignoresSafeArea()
+
+            VStack(alignment: .leading, spacing: 14) {
+                Text(detail.title.uppercased())
+                    .font(.system(size: 34, weight: .heavy))
+                    .tracking(6)
+                    .foregroundStyle(.white.opacity(0.7))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
+
+                Text("Where do you want to watch?")
+                    .font(.system(size: 44, weight: .bold))
+                    .foregroundStyle(.white)
+                    .padding(.bottom, 18)
+
+                ScrollView(.vertical, showsIndicators: false) {
+                    VStack(alignment: .leading, spacing: 18) {
+                        ForEach(Array(watchOptions.enumerated()), id: \.offset) { _, source in
+                            watchOptionRow(for: source)
+                        }
+                    }
+                    .padding(.vertical, 6)
+                }
+            }
+            .padding(.horizontal, 120)
+            .padding(.vertical, 90)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        }
+        .onExitCommand { showWatchOptions = false }
+    }
+
+    private func watchOptionRow(for source: TVWatchmodeResolver.TVResolvedSource) -> some View {
+        let subscribed = AuthViewModel.shared.subscribesToService(named: source.name)
+        return Button {
+            // Remember the choice so the hero's badge, meta line and deep
+            // link all agree with what was just opened.
+            selectedServiceName = source.name
+            showWatchOptions = false
+            open(source: source)
+        } label: {
+            HStack(spacing: 22) {
+                Text(gsDisplayName(for: source.name))
+                    .font(.system(size: 26, weight: .bold))
+                    .foregroundStyle(.white)
+
+                Spacer(minLength: 24)
+
+                Text(offerLabel(for: source, subscribed: subscribed))
+                    .font(.system(size: 22, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.8))
+            }
+            .padding(.horizontal, 30)
+            .padding(.vertical, 24)
+            .frame(maxWidth: 900, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(brandColor(for: source.name))
+            )
+        }
+        .buttonStyle(.card)
+    }
+
+    /// "Included" for something already paid for, otherwise "Rent $3.99" —
+    /// and just "Rent" when the offer arrived without a price, which is what
+    /// a TMDB-sourced fallback row looks like.
+    private func offerLabel(for source: TVWatchmodeResolver.TVResolvedSource,
+                            subscribed: Bool) -> String {
+        let tier = source.type.lowercased()
+        let name: String
+        switch tier {
+        case "rent": name = "Rent"
+        case "buy", "purchase": name = "Buy"
+        case "free": name = "Free"
+        case "tve": name = "With TV provider"
+        default: name = subscribed ? "Included" : "Subscription"
+        }
+        guard let price = source.price, price > 0 else { return name }
+        return String(format: "%@ $%.2f", name, price)
+    }
+
+    // MARK: - Circular actions
+
+    /// The tvOS reading of iPhone's `circleAction`: a circle with an icon and
+    /// nothing else, because plus and heart say what they do. Only Watched
+    /// carries its caption — an eye does not read as "have you seen this?"
+    /// from ten feet away, and the phone labels it for the same reason.
+    ///
+    /// Focus is drawn from `focusedField` rather than a button style: the
+    /// sheet already tracks it, and `.card` would put a rounded rectangle
+    /// behind a circle.
+    private func circleAction(
+        field: SheetFocus,
+        icon: String,
+        tint: Color,
+        caption: String? = nil,
+        action: @escaping () -> Void
+    ) -> some View {
+        let focused = focusedField == field
+        return Button(action: action) {
+            VStack(spacing: 12) {
+                ZStack {
+                    Circle()
+                        .fill(Color.white.opacity(focused ? 0.22 : 0.10))
+                    Circle()
+                        .stroke(focused ? Color.white : Color.white.opacity(0.18),
+                                lineWidth: focused ? 3 : 1)
+                    Image(systemName: icon)
+                        .font(.system(size: 34, weight: .semibold))
+                        .foregroundStyle(tint)
+                }
+                .frame(width: 84, height: 84)
+                .scaleEffect(focused ? 1.08 : 1.0)
+                .animation(.easeOut(duration: 0.15), value: focused)
+
+                if let caption {
+                    Text(caption)
+                        .font(.system(size: 20, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.75))
+                }
+            }
+        }
+        .buttonStyle(.plain)
+        .focused($focusedField, equals: field)
+    }
+
     // MARK: - Like button
 
     private var likeButton: some View {
-        Button {
+        circleAction(
+            field: .like,
+            icon: isLiked ? "heart.fill" : "heart",
+            tint: isLiked ? TVTheme.orange : .white
+        ) {
             Task {
                 await social.toggleLike(
                     titleId: detail.titleId,
@@ -1040,25 +1166,18 @@ struct TVTitleSheet: View {
                     tmdbId: tmdbId
                 )
             }
-        } label: {
-            HStack(spacing: 10) {
-                Image(systemName: isLiked ? "heart.fill" : "heart")
-                    .font(.system(size: 24, weight: .bold))
-                Text(isLiked ? "Liked" : "Like")
-                    .font(.system(size: 22, weight: .semibold))
-            }
-            .foregroundStyle(isLiked ? TVTheme.orange : .white)
-            .padding(.horizontal, 28)
-            .padding(.vertical, 18)
         }
-        .buttonStyle(.card)
-        .focused($focusedField, equals: .like)
     }
 
     // MARK: - Watched button
 
     private var watchedButton: some View {
-        Button {
+        circleAction(
+            field: .watched,
+            icon: isWatched ? "eye.fill" : "eye",
+            tint: isWatched ? TVTheme.blue : .white,
+            caption: isWatched ? "Watched" : "Watched?"
+        ) {
             Task {
                 await social.toggleWatched(
                     titleId: detail.titleId,
@@ -1067,25 +1186,17 @@ struct TVTitleSheet: View {
                     tmdbId: tmdbId
                 )
             }
-        } label: {
-            HStack(spacing: 10) {
-                Image(systemName: isWatched ? "eye.fill" : "eye")
-                    .font(.system(size: 24, weight: .bold))
-                Text(isWatched ? "Watched" : "Watched?")
-                    .font(.system(size: 22, weight: .semibold))
-            }
-            .foregroundStyle(isWatched ? TVTheme.blue : .white)
-            .padding(.horizontal, 28)
-            .padding(.vertical, 18)
         }
-        .buttonStyle(.card)
-        .focused($focusedField, equals: .watched)
     }
 
     // MARK: - Watch List button
 
     private var watchListButton: some View {
-        Button {
+        circleAction(
+            field: .watchList,
+            icon: isSaved ? "checkmark.circle.fill" : "plus.circle.fill",
+            tint: .white
+        ) {
             Task {
                 await streams.toggle(
                     titleId: detail.titleId,
@@ -1096,19 +1207,7 @@ struct TVTitleSheet: View {
                 onDismiss(streams.contains(titleId: detail.titleId))
                 dismiss()
             }
-        } label: {
-            HStack(spacing: 14) {
-                Image(systemName: isSaved ? "checkmark.circle.fill" : "plus.circle.fill")
-                    .font(.system(size: 28, weight: .bold))
-                Text(isSaved ? "Remove from Watch List" : "Add to Watch List")
-                    .font(.system(size: 22, weight: .semibold))
-            }
-            .foregroundStyle(.white)
-            .padding(.horizontal, 28)
-            .padding(.vertical, 18)
         }
-        .buttonStyle(.card)
-        .focused($focusedField, equals: .watchList)
     }
 
     // MARK: - Close button
