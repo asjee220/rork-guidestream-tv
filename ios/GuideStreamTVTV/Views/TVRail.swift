@@ -120,9 +120,17 @@ struct TVRail<Content: View>: View {
                 .scaleEffect(seeAllFocused ? 1.06 : 1.0)
                 .animation(.easeOut(duration: 0.15), value: seeAllFocused)
         }
-        .buttonStyle(.plain)
-        // tvOS otherwise draws its own white focus slab on top of the plate.
+        // An empty style, not .plain: .plain still lets tvOS lay its own
+        // white focus slab over the control even with the effect disabled.
+        .buttonStyle(TVRailFlatButtonStyle())
         .focusEffectDisabled()
         .focused($seeAllFocused)
+    }
+}
+
+/// Draws nothing, so the See all button's own plate is the only focus cue.
+private struct TVRailFlatButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
     }
 }

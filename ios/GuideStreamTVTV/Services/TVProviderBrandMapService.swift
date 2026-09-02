@@ -90,3 +90,42 @@ final class TVProviderBrandMapService: @unchecked Sendable {
         }
     }
 }
+
+// MARK: - Provider logos
+
+extension TVProviderBrandMapService {
+    /// TMDB logo URL for a Watchmode or TMDB provider name, matched against
+    /// the brand map's own display name and aliases. Nil when the map has no
+    /// row for the name or the row carries no logo — callers fall back to the
+    /// lettered badge.
+    func logoURL(forProviderName raw: String,
+                 size: TVTMDBImageSize = .poster342) -> String? {
+        let target = Self.normaliseProviderName(raw)
+        guard !target.isEmpty else { return nil }
+
+        for row in rows {
+            let names = [row.displayName] + row.aliases
+            guard names.contains(where: { Self.normaliseProviderName($0) == target }) else {
+                continue
+            }
+            return TVTMDBImage.url(row.logoPath, size: size)
+        }
+        return nil
+    }
+
+    /// Same normalisation `Platform.from(providerName:)` uses, so a name that
+    /// resolves to a brand there resolves to a logo here: reseller suffixes
+    /// dropped, "plus" folded to "+", then reduced to letters and digits.
+    private static func normaliseProviderName(_ raw: String) -> String {
+        var s = raw.lowercased()
+        let suffixes = ["amazon channel", "apple tv channel", "roku premium channel"]
+        for suffix in suffixes where s.hasSuffix(suffix) {
+            s = String(s.dropLast(suffix.count))
+            break
+        }
+        s = s.trimmingCharacters(in: .whitespacesAndNewlines)
+        if s.hasPrefix("the ") { s = String(s.dropFirst(4)) }
+        s = s.split(separator: " ").map { $0 == "plus" ? "+" : String($0) }.joined(separator: " ")
+        return s.filter { ($0 >= "a" && $0 <= "z") || ($0 >= "0" && $0 <= "9") }
+    }
+}

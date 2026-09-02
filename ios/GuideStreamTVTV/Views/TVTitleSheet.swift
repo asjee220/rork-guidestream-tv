@@ -64,6 +64,7 @@ struct TVTitleSheet: View {
     /// subscribed services, or several rent/buy offers. One tap on the watch
     /// button still means "watch it" when there is only one answer.
     @State private var showWatchOptions = false
+    @FocusState private var focusedOption: Int?
 
     // Season / episode stepper (TV only)
     @State private var season: Int = 1
@@ -225,9 +226,12 @@ struct TVTitleSheet: View {
         subscribedSources + transactionalSources
     }
 
-    /// Two or more of either kind means the button cannot pick for them.
+    /// The button only asks when it genuinely cannot pick: several
+    /// subscriptions the viewer owns, or — owning none — several ways to pay.
     private var needsWatchOptions: Bool {
-        subscribedSources.count >= 2 || transactionalSources.count >= 2
+        if subscribedSources.count >= 2 { return true }
+        if subscribedSources.isEmpty && transactionalSources.count >= 2 { return true }
+        return false
     }
 
     // Best deep-link URL for the Play button — strictly from activeSource,
@@ -961,6 +965,11 @@ struct TVTitleSheet: View {
         Button {
             if let channelId = youTubeChannelId {
                 TVOSDeepLinker.openYouTubeChannel(channelId: channelId, name: detail.title)
+            } else if subscribedSources.count == 1 {
+                // One service the viewer already pays for. There is nothing
+                // to ask — rent and buy offers are not alternatives to a
+                // subscription they own.
+                open(source: subscribedSources[0])
             } else if needsWatchOptions {
                 showWatchOptions = true
             } else if let source = activeSource {
@@ -1021,11 +1030,14 @@ struct TVTitleSheet: View {
 
                 ScrollView(.vertical, showsIndicators: false) {
                     VStack(alignment: .leading, spacing: 18) {
-                        ForEach(Array(watchOptions.enumerated()), id: \.offset) { _, source in
-                            watchOptionRow(for: source)
+                        ForEach(Array(watchOptions.enumerated()), id: \.offset) { index, source in
+                            watchOptionRow(for: source, index: index)
                         }
                     }
-                    .padding(.vertical, 6)
+                    // A focused row lifts 1.04, and a ScrollView clips to its
+                    // own bounds — without this the first row lost its ends.
+                    .padding(.horizontal, 26)
+                    .padding(.vertical, 20)
                 }
             }
             .padding(.horizontal, 120)
@@ -1035,8 +1047,10 @@ struct TVTitleSheet: View {
         .onExitCommand { showWatchOptions = false }
     }
 
-    private func watchOptionRow(for source: TVWatchmodeResolver.TVResolvedSource) -> some View {
+    private func watchOptionRow(for source: TVWatchmodeResolver.TVResolvedSource,
+                                index: Int) -> some View {
         let subscribed = AuthViewModel.shared.subscribesToService(named: source.name)
+        let focused = focusedOption == index
         return Button {
             // Remember the choice so the hero's badge, meta line and deep
             // link all agree with what was just opened.
@@ -1045,6 +1059,8 @@ struct TVTitleSheet: View {
             open(source: source)
         } label: {
             HStack(spacing: 22) {
+                providerMark(for: source.name, size: 52)
+
                 Text(gsDisplayName(for: source.name))
                     .font(.system(size: 26, weight: .bold))
                     .foregroundStyle(.white)
@@ -1053,17 +1069,40 @@ struct TVTitleSheet: View {
 
                 Text(offerLabel(for: source, subscribed: subscribed))
                     .font(.system(size: 22, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.8))
+                    .foregroundStyle(.white.opacity(0.85))
             }
-            .padding(.horizontal, 30)
-            .padding(.vertical, 24)
+            .padding(.horizontal, 26)
+            .padding(.vertical, 20)
             .frame(maxWidth: 900, alignment: .leading)
             .background(
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .fill(brandColor(for: source.name))
             )
+            // The side menu's plate again, over the brand colour.
+            .overlay(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(Color.white.opacity(focused ? 0.16 : 0))
+            )
+            .scaleEffect(focused ? 1.04 : 1.0)
+            .animation(.easeOut(duration: 0.15), value: focused)
         }
-        .buttonStyle(.card)
+        .buttonStyle(TVFlatButtonStyle())
+        .focusEffectDisabled()
+        .focused($focusedOption, equals: index)
+    }
+
+    /// The service's own logo from `provider_brand_map`, falling back to the
+    /// lettered badge when the map has no row or no logo for the name.
+    @ViewBuilder
+    private func providerMark(for name: String, size: CGFloat) -> some View {
+        if let logo = TVProviderBrandMapService.shared.logoURL(forProviderName: name) {
+            TVRemoteImage(urlString: logo, contentMode: .fit)
+                .frame(width: size, height: size)
+                .background(Color.white.opacity(0.9))
+                .clipShape(RoundedRectangle(cornerRadius: size * 0.235, style: .continuous))
+        } else {
+            serviceBadge(size: size)
+        }
     }
 
     /// "Included" for something already paid for, otherwise "Rent $3.99" —
@@ -1124,10 +1163,11 @@ struct TVTitleSheet: View {
                 }
             }
         }
-        .buttonStyle(.plain)
-        // Without this tvOS lays its own white focus slab over the button —
-        // the big pale rectangle these had. TVSideMenu disables it for the
-        // same reason and draws its own plate.
+        // .plain still lets tvOS lay its own white focus slab over the
+        // control — that pale rectangle survived .focusEffectDisabled() on
+        // its own. An empty custom style draws nothing at all, which is how
+        // TVSideMenu's rows stay clean.
+        .buttonStyle(TVFlatButtonStyle())
         .focusEffectDisabled()
         .focused($focusedField, equals: field)
     }
@@ -1395,6 +1435,15 @@ struct TVTitleSheet: View {
 
     private func gsDisplayName(for raw: String) -> String {
         Platform.from(providerName: raw)?.displayName ?? raw
+    }
+}
+
+/// Draws nothing: no background, no lift, no focus decoration. Every focus
+/// cue on this screen is drawn by the view itself, the way TVMenuButtonStyle
+/// lets the side menu draw its own plate.
+private struct TVFlatButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
     }
 }
 
