@@ -384,6 +384,13 @@ struct TVTitleSheet: View {
                     .padding(.top, 24)
                     .id(Self.sectionsTopAnchor)
                 }
+                // Clear of the collapsed rail, the same inset every other
+                // surface gets from TVMainView. The title screen is rendered
+                // without that inset so its backdrop can reach the physical
+                // edge, but the backdrop is a separate layer behind this
+                // stack — the words and cards still have to start where the
+                // rail ends, or the menu sits on top of the first episode.
+                .padding(.leading, TVLayout.contentLeadingInset)
             }
             .ignoresSafeArea()
             // The focus engine scrolls the focused view into view, but it
