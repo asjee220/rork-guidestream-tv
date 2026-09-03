@@ -13,7 +13,6 @@ import com.google.firebase.messaging.RemoteMessage
 import com.rork.guidestreamtvandroid.MainActivity
 import com.rork.guidestreamtvandroid.data.repository.PushTokenManager
 import com.rork.guidestreamtvandroid.data.repository.SportsLiveScoreController
-import com.rork.guidestreamtvandroid.data.repository.WatchIntentLogger
 import com.rork.guidestreamtvandroid.R
 
 /**
@@ -127,11 +126,17 @@ class GuideStreamFirebaseMessagingService : FirebaseMessagingService() {
         val manager = getSystemService(NotificationManager::class.java)
         manager?.notify(requestCode, notification)
 
-        if (deepLink != null) {
-            WatchIntentLogger.get().log(
-                WatchIntentLogger.IntentEventType.DEEPLINK_FIRED,
-                metadata = mapOf("source" to "push_notification", "url" to deepLink),
-            )
-        }
+        // Deliberately no watch-intent log here. This runs when a
+        // notification is *displayed*, not when anyone taps it, and it used
+        // to write DEEPLINK_FIRED — 62 of the last 30 days' launch events,
+        // every one of them meaning "a push arrived on this phone" rather
+        // than "someone chose to watch this". They also carried no title_id,
+        // so `continue_watching` discarded them, while
+        // ReviewPromptManager.noteDeepLinkFired() counted every single one
+        // toward the in-app review gate.
+        //
+        // The tap is logged in MainActivity.handleNotificationIntent, where
+        // the title is actually known. See
+        // claude/continue-watching-ingest-gap-sep3-2026.md.
     }
 }

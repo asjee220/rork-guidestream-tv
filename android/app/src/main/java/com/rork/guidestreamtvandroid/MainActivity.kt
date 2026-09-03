@@ -28,6 +28,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import android.util.Log
+import com.rork.guidestreamtvandroid.data.repository.WatchIntentLogger
 import com.rork.guidestreamtvandroid.data.remote.RemoteConfigService
 import com.rork.guidestreamtvandroid.data.repository.AppUpdateGate
 import com.rork.guidestreamtvandroid.data.remote.SupabaseManager
@@ -266,6 +267,19 @@ class MainActivity : ComponentActivity() {
 
         val titleId = extras?.getString("title_id")?.takeIf { it.isNotBlank() }
         if (titleId != null) {
+            // The tap, with the title attached — mirroring iOS's AppDelegate.
+            // NOTIFICATION_OPENED, not DEEPLINK_FIRED: this opens our own
+            // detail screen, and nothing has been launched on a streaming
+            // service yet. That launch is logged where it happens, by the
+            // detail sheet's watch button.
+            WatchIntentLogger.get().log(
+                WatchIntentLogger.IntentEventType.NOTIFICATION_OPENED,
+                titleId = titleId,
+                metadata = mapOf(
+                    "source" to "push_notification",
+                    "notification_type" to (extras.getString("notification_type") ?: ""),
+                ),
+            )
             router.showTitle(
                 PendingTitleRoute(
                     titleId = titleId,
