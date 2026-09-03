@@ -43,7 +43,9 @@ enum TVSideMenuItem: String, CaseIterable, Identifiable {
         case .profile: return "person.fill"
         case .reels: return "play.fill"
         case .sports: return "american.football.fill"
-        case .watchList: return "play.rectangle.fill"
+        // A list, not a play button. The row sat next to Reels' play glyph
+        // and read as a second video surface rather than a saved list.
+        case .watchList: return "list.bullet"
         case .home: return "house"
         case .search: return "magnifyingglass"
         }
