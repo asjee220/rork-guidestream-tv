@@ -120,6 +120,17 @@ struct TVTitleSheet: View {
     /// One title-scoped reel, or nil when the title has no playable trailer.
     /// Nil hides Trailers & Clips rather than showing tiles that do nothing.
     @State private var trailerReel: TVReelItem?
+
+    /// Whether a stream actually resolved for this title's trailer keys.
+    ///
+    /// The section used to render whenever TMDB returned a key, but a key is
+    /// not a video: tvOS ships no WebKit, so the only way to play one is
+    /// YouTubeKit extracting a direct stream, and that is currently failing
+    /// on every title (YouTube changed its player; 0.4.9 does not fix it —
+    /// see 4e0f999). The section therefore promised a trailer and delivered
+    /// a poster. It now renders only when there is something to play, and
+    /// comes back on its own the day extraction works again.
+    @State private var trailerPlayable = false
     @State private var reelsPresentation: TVReelsPresentation?
     /// "Series · Drama · Thriller" for the hero meta line. Nil until TMDB
     /// answers, which simply shortens the line.
@@ -363,7 +374,7 @@ struct TVTitleSheet: View {
                         if isTV, youTubeChannelId == nil, !episodes.isEmpty {
                             episodesSection
                         }
-                        if trailerReel != nil {
+                        if trailerReel != nil, trailerPlayable {
                             trailersSection
                         }
                         if !recommendations.isEmpty {
@@ -977,6 +988,19 @@ struct TVTitleSheet: View {
         recommendations = Array(recs.prefix(20))
         trailerReel = reel
         cast = people
+
+        // Ask for the stream before offering the section. One extraction
+        // attempt per open, and it is the same call the hero makes, so a
+        // resolved stream is already warm in the service by the time the
+        // viewer presses play.
+        if reel != nil, let tid = tmdbId {
+            let streams = await TVTrailerStreamService.shared
+                .fetchTrailerStreams(for: [(tmdbId: tid, isTV: tv)])
+            trailerPlayable = !streams.isEmpty
+            TVNavLog.log("trailers: playable=\(trailerPlayable) for tmdb \(tid)")
+        } else {
+            trailerPlayable = false
+        }
     }
 
     /// "New episode every Sunday", but only when the last two aired episodes
