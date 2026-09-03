@@ -1100,12 +1100,28 @@ struct TVHomeView: View {
         #if DEBUG
         print("[hero] pool=\(heroItems.count) titles: \(heroItems.map(\.displayName).joined(separator: ", "))")
         #endif
-        async let hostedTask = TVFeaturetteService.shared.fetchFeaturettes(for: featurettePool)
-        async let trailerTask = TVTrailerStreamService.shared.fetchTrailerStreams(for: featurettePool)
-        let (hosted, trailers) = await (hostedTask, trailerTask)
+        // Hosted first, and on its own. These two used to run concurrently,
+        // which meant every title paid for a YouTubeKit resolve even when a
+        // hosted clip was going to win the merge anyway — roughly a second of
+        // JavaScriptCore descrambling each, and the same work that once blew
+        // the 2GB per-app limit on a real Apple TV and got the app killed.
+        // Extraction now only sees the titles nothing else can serve, so
+        // filling title_featurettes buys back its own cost.
+        //
+        // The trade is one Supabase round trip (~100ms, a single batched
+        // query) no longer overlapping extraction. Worth it: that is the
+        // floor, while extraction is seconds and the thing that fails.
+        let hosted = await TVFeaturetteService.shared.fetchFeaturettes(for: featurettePool)
+        let needsTrailer = heroItems
+            .filter { hosted[$0.canonicalTitleId] == nil }
+            .map { (tmdbId: $0.id, isTV: $0.isTV) }
+        let trailers = needsTrailer.isEmpty
+            ? [:]
+            : await TVTrailerStreamService.shared.fetchTrailerStreams(for: needsTrailer)
         heroFeaturettes = trailers.merging(hosted) { _, hostedURL in hostedURL }
         #if DEBUG
-        print("[hero] video resolved for \(heroFeaturettes.count)/\(heroItems.count) — hosted=\(hosted.count) trailers=\(trailers.count)")
+        print("[hero] video resolved for \(heroFeaturettes.count)/\(heroItems.count) — "
+              + "hosted=\(hosted.count) extracted=\(trailers.count) of \(needsTrailer.count) attempted")
         #endif
     }
 
