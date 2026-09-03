@@ -10,6 +10,7 @@
 //
 
 import SwiftUI
+import UIKit
 
 // MARK: - Rail item structs
 
@@ -121,10 +122,6 @@ struct TVHomeView: View {
 
     /// Focus scope for the Continue Watching cards, so entering the rail
     /// lands on the first card rather than wherever the focus engine picks.
-    /// Bumped when the detail sheet is closed by a left move. Published on
-    /// TVHeroSideMenuRequestKey alongside the hero's own count.
-    @State private var sheetMenuRequests = 0
-
     @Namespace private var continueWatchingScope
     @FocusState private var focusedContinueWatching: Int?
 
@@ -174,6 +171,22 @@ struct TVHomeView: View {
                     .padding(.bottom, -194)
                     .padding(.leading, -railLeading)
                     .padding(.trailing, -trailingBleed)
+                    // TEMPORARY: what the hero's frame actually is against
+                    // the physical screen, so the border is measured rather
+                    // than guessed at.
+                    .background {
+                        GeometryReader { p in
+                            Color.clear.task {
+                                let f = p.frame(in: .global)
+                                let s = UIScreen.main.bounds
+                                TVNavLog.log(String(
+                                    format: "hero frame x=%.0f y=%.0f w=%.0f h=%.0f | screen w=%.0f h=%.0f | leadingBleed=%.0f trailingBleed=%.0f railLeading=%.0f",
+                                    f.minX, f.minY, f.width, f.height,
+                                    s.width, s.height,
+                                    leadingBleed, trailingBleed, railLeading))
+                            }
+                        }
+                    }
 
                 // 1a. Continue Watching — highest-intent rail on the screen, so
                 // it sits directly under the hero. Hidden entirely when the
@@ -387,27 +400,10 @@ struct TVHomeView: View {
                     heroCTAFocused = true
                 }
             }
-            // fullScreenCover, not sheet: tvOS insets a sheet and rounds
-            // its corners, leaving a band of the presenting screen along the
-            // top and the trailing edge. The hero art — and the video that
-            // will play there once there is a source — is meant to reach the
-            // physical edge.
-            .fullScreenCover(item: $pendingDetail) { detail in
-                TVTitleSheet(detail: detail) { isSaved in
-                    pendingDetail = nil
-                } onRequestMenu: {
-                    // Raised through the same preference the hero uses, so
-                    // TVMainView has one place that opens the menu. The
-                    // counter only ever increases; the key reduces by max.
-                    sheetMenuRequests += 1
-                }
-            }
+            .routesTitleDetail($pendingDetail)
             .fullScreenCover(item: $seeAllPayload) { payload in
                 TVSeeAllGridView(payload: payload, pendingDetail: $pendingDetail)
             }
-            // The hero publishes this key too; the key reduces by max and
-            // both counters only increase, so TVMainView sees either.
-            .preference(key: TVHeroSideMenuRequestKey.self, value: sheetMenuRequests)
     }
 
     // MARK: - Hero

@@ -51,17 +51,10 @@ struct TVTitleSheet: View {
     let detail: TVTitleDetail
     let onDismiss: (Bool) -> Void
 
-    /// Called when the viewer moves left off the watch button. A sheet is a
-    /// modal: tvOS hands it all the focus, so the side rail visible behind
-    /// it is the presenting screen and the focus engine cannot reach it —
-    /// left had nothing to do. The screen closes and asks for the menu
-    /// instead, which is what left means everywhere else in the app.
-    var onRequestMenu: (() -> Void)? = nil
-
     @State private var streams = TVStreamsViewModel.shared
     @State private var social = SocialViewModel.shared
     @FocusState private var focusedField: SheetFocus?
-    @Environment(\.dismiss) private var dismiss
+    @Environment(\.showTitleDetail) private var showTitleDetail
 
     // Resolution state
     @State private var resolvedStreaming: TVWatchmodeResolver.TVResolvedStreaming?
@@ -407,19 +400,9 @@ struct TVTitleSheet: View {
             }
         }
         // Close is the remote's Menu button now that the on-screen Close
-        // button is gone, matching Apple's own detail screen.
-        .onExitCommand { dismiss() }
-        // Left off the watch button — the leading-most control on the page —
-        // leaves for the menu. Observed, not consumed, so left anywhere else
-        // (the action circles, the episode and cast rails) stays ordinary
-        // focus movement.
-        .onRemoteDirection(isEnabled: focusedField == .play) { direction in
-            guard direction == .left else { return }
-            TVNavLog.log("title sheet: left off watch button, closing for the menu")
-            onDismiss(isSaved)
-            dismiss()
-            onRequestMenu?()
-        }
+        // button is gone, matching Apple's own detail screen. `onDismiss` is
+        // the close signal — the shell owns the route and clears it.
+        .onExitCommand { onDismiss(isSaved) }
         // Coming back from the streaming app resets the button. A launch
         // that worked is only ever seen for a blink; one that did not leaves
         // the failure text until the viewer moves on.
@@ -837,10 +820,22 @@ struct TVTitleSheet: View {
                             accent: TVTheme.orange,
                             isSaved: streams.contains(titleId: item.canonicalTitleId)
                         ) {
-                            // Re-presenting the sheet from inside itself would
-                            // stack full-screen covers, so this dismisses back
-                            // to the caller, which owns presentation.
-                            dismiss()
+                            // Now that the title screen is a route rather than
+                            // a presentation, a recommendation navigates
+                            // instead of dead-ending: the shell swaps the
+                            // route, so there are never two of these stacked.
+                            showTitleDetail(TVTitleDetail(
+                                titleId: item.canonicalTitleId,
+                                title: item.displayName,
+                                overview: item.overview,
+                                posterUrl: item.posterUrl,
+                                backdropUrl: item.backdropUrl,
+                                tag: item.isTV ? "SERIES" : "MOVIE",
+                                accent: TVTheme.orange,
+                                year: item.year,
+                                platform: nil,
+                                isTVHint: item.isTV
+                            ))
                         }
                     }
                 }
@@ -1338,7 +1333,6 @@ struct TVTitleSheet: View {
                     platform: detail.platform
                 )
                 onDismiss(streams.contains(titleId: detail.titleId))
-                dismiss()
             }
         }
     }
@@ -1348,7 +1342,6 @@ struct TVTitleSheet: View {
     private var closeButton: some View {
         Button {
             onDismiss(isSaved)
-            dismiss()
         } label: {
             Text("Close")
                 .font(.system(size: 22, weight: .semibold))

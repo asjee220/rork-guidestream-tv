@@ -39,6 +39,10 @@ struct TVMainView: View {
     /// itself. The rail drops its focusable rows for the duration, so the
     /// focus engine finds nothing to the left and leaves focus on the hero.
     @State private var heroHoldsLeft = false
+
+    /// The title screen, when one is open. Rendered in place of the current
+    /// tab rather than presented over it — see TVTitleRoute.swift for why.
+    @State private var titleRoute: TVTitleDetail?
     @Environment(\.resetFocus) private var resetFocus
 
     var body: some View {
@@ -51,8 +55,22 @@ struct TVMainView: View {
             let safeLeading = proxy.frame(in: .global).minX
 
             ZStack(alignment: .leading) {
-            screen(for: selection, leadingBleed: safeLeading + contentLeadingInset)
-                .padding(.leading, contentLeadingInset)
+            Group {
+                if let titleRoute {
+                    // The title screen is a route, not a presentation. It
+                    // takes no leading inset — its art is meant to reach the
+                    // physical edge, exactly like the Home hero — and the
+                    // rail stays a sibling, so the focus engine moves into
+                    // the menu on a left move with nothing bolted on.
+                    TVTitleSheet(detail: titleRoute) { _ in
+                        self.titleRoute = nil
+                        resetFocus(in: rootNamespace)
+                    }
+                } else {
+                    screen(for: selection, leadingBleed: safeLeading + contentLeadingInset)
+                        .padding(.leading, contentLeadingInset)
+                }
+            }
                 .focusSection()
                 .prefersDefaultFocus(true, in: rootNamespace)
 
@@ -94,7 +112,13 @@ struct TVMainView: View {
         .ignoresSafeArea()
         .animation(.easeOut(duration: 0.25), value: menuIsOpen)
         .background(TVTheme.backgroundGradient.ignoresSafeArea())
+        .environment(\.showTitleDetail) { detail in
+            titleRoute = detail
+            menuIsOpen = false
+        }
         .onChange(of: selection) { _, _ in
+            // Choosing a tab leaves the title screen.
+            titleRoute = nil
             // The menu is closed on every screen entry, including returns
             // from sheets and full-screen covers. Resetting the root scope
             // hands focus back to the content, which is what collapses the
