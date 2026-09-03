@@ -127,6 +127,15 @@ struct TVHomeView: View {
     @Namespace private var continueWatchingScope
     @FocusState private var focusedContinueWatching: Int?
 
+    /// Set the moment the hero CTA gives up focus, cleared by whichever card
+    /// claims it next. prefersDefaultFocus only decides where a *reset* puts
+    /// focus, not where a directional move lands, so a move down out of the
+    /// hero was still resolved by the engine's own geometry and kept picking
+    /// the rail's far end. This flag is what lets the rail tell a hand-off
+    /// from the hero apart from a move up out of the rail below, where the
+    /// card the viewer left is the right place to return to.
+    @State private var heroHandingOffFocus = false
+
     /// Deterministic daily pick from streaming_releases, resolved once per
     /// load. Nil when the table is empty or unreachable.
     @State private var todaysPick: TVStreamingRelease?
@@ -181,6 +190,12 @@ struct TVHomeView: View {
                     .padding(.bottom, -194)
                     .padding(.leading, -railLeading)
                     .padding(.trailing, -trailingBleed)
+                    // The hero is giving focus up. Where it goes is the
+                    // focus engine's call; the rail below only needs to know
+                    // that the move came from here.
+                    .onChange(of: heroCTAFocused) { wasFocused, isFocused in
+                        if wasFocused, !isFocused { heroHandingOffFocus = true }
+                    }
 
                 // 1a. Continue Watching — highest-intent rail on the screen, so
                 // it sits directly under the hero. Hidden entirely when the
@@ -216,6 +231,11 @@ struct TVHomeView: View {
                         .onChange(of: focusedContinueWatching) { _, index in
                             guard let index else { return }
                             TVNavLog.log("continue watching focus -> card \(index) of \(continueWatching.count)")
+                            guard heroHandingOffFocus else { return }
+                            heroHandingOffFocus = false
+                            // Coming down off the hero always means the first
+                            // card, however the engine resolved the move.
+                            if index != 0 { focusedContinueWatching = 0 }
                         }
                     }
                 }
