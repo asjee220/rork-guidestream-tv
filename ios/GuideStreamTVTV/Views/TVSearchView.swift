@@ -54,7 +54,12 @@ struct TVSearchView: View {
         }
         .task { await loadTrending() }
         .task(id: trimmedQuery) { await runSearch() }
-        .sheet(item: $pendingDetail) { detail in
+        // fullScreenCover, not sheet: tvOS insets a sheet and rounds
+        // its corners, leaving a band of the presenting screen along the
+        // top and the trailing edge. The hero art — and the video that
+        // will play there once there is a source — is meant to reach the
+        // physical edge.
+        .fullScreenCover(item: $pendingDetail) { detail in
             TVTitleSheet(detail: detail) { _ in pendingDetail = nil }
         }
         .fullScreenCover(item: $browseGenre) { genre in

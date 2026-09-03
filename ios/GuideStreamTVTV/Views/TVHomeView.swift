@@ -387,7 +387,12 @@ struct TVHomeView: View {
                     heroCTAFocused = true
                 }
             }
-            .sheet(item: $pendingDetail) { detail in
+            // fullScreenCover, not sheet: tvOS insets a sheet and rounds
+            // its corners, leaving a band of the presenting screen along the
+            // top and the trailing edge. The hero art — and the video that
+            // will play there once there is a source — is meant to reach the
+            // physical edge.
+            .fullScreenCover(item: $pendingDetail) { detail in
                 TVTitleSheet(detail: detail) { isSaved in
                     pendingDetail = nil
                 } onRequestMenu: {
