@@ -121,6 +121,10 @@ struct TVHomeView: View {
 
     /// Focus scope for the Continue Watching cards, so entering the rail
     /// lands on the first card rather than wherever the focus engine picks.
+    /// Bumped when the detail sheet is closed by a left move. Published on
+    /// TVHeroSideMenuRequestKey alongside the hero's own count.
+    @State private var sheetMenuRequests = 0
+
     @Namespace private var continueWatchingScope
     @FocusState private var focusedContinueWatching: Int?
 
@@ -386,11 +390,19 @@ struct TVHomeView: View {
             .sheet(item: $pendingDetail) { detail in
                 TVTitleSheet(detail: detail) { isSaved in
                     pendingDetail = nil
+                } onRequestMenu: {
+                    // Raised through the same preference the hero uses, so
+                    // TVMainView has one place that opens the menu. The
+                    // counter only ever increases; the key reduces by max.
+                    sheetMenuRequests += 1
                 }
             }
             .fullScreenCover(item: $seeAllPayload) { payload in
                 TVSeeAllGridView(payload: payload, pendingDetail: $pendingDetail)
             }
+            // The hero publishes this key too; the key reduces by max and
+            // both counters only increase, so TVMainView sees either.
+            .preference(key: TVHeroSideMenuRequestKey.self, value: sheetMenuRequests)
     }
 
     // MARK: - Hero
