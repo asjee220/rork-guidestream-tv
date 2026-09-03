@@ -135,7 +135,11 @@ enum TVLayout {
     /// side menu never covers content. The hero cancels it to run full
     /// bleed, and re-adds it to its own text block so the copy still lines
     /// up with the rails below.
-    static let contentLeadingInset: CGFloat = 72
+    ///
+    /// 120, not 72: at 72 the copy started 46pt past the rail, which on a
+    /// 1080 screen reads as no gap at all — the words looked bolted to the
+    /// menu. 120 leaves a 96pt channel, about a rail icon's width.
+    static let contentLeadingInset: CGFloat = 120
 
     /// Distance from the **physical** left edge of the display to the rail
     /// titles, poster cards and hero copy on Home.
@@ -145,7 +149,10 @@ enum TVLayout {
     /// TVRail's gutter — which summed to 232pt against a menu ending at
     /// 72pt, leaving a 160pt channel of nothing running the full height of
     /// the screen. Home now positions from the edge instead of accumulating.
-    static let contentLeading: CGFloat = 150
+    ///
+    /// Tracks contentLeadingInset + railGutter, so Home's hero copy and rail
+    /// titles land in the same column as every other surface's content.
+    static let contentLeading: CGFloat = 200
 
     /// TVRail's own horizontal gutter, which sits *inside* contentLeading
     /// rather than adding to it.
