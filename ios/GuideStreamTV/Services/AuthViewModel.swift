@@ -1126,8 +1126,18 @@ final class AuthViewModel {
         guard let presenter = UIApplication.shared.topViewController() else {
             throw NativeGoogleError.noPresenter
         }
+        // Google echoes this nonce back inside the id_token unhashed. Supabase
+        // rejects the exchange outright — "Passed nonce and nonce in id_token
+        // should either both exist or not" — unless the same value is on both
+        // sides of the call. Unlike the Apple path, it is not SHA256'd.
+        let nonce = Self.randomNonceString()
         GIDSignIn.sharedInstance.configuration = GIDConfiguration(clientID: clientID)
-        let result = try await GIDSignIn.sharedInstance.signIn(withPresenting: presenter)
+        let result = try await GIDSignIn.sharedInstance.signIn(
+            withPresenting: presenter,
+            hint: nil,
+            additionalScopes: nil,
+            nonce: nonce
+        )
         guard let idToken = result.user.idToken?.tokenString else {
             throw NativeGoogleError.missingIdentityToken
         }
@@ -1135,7 +1145,8 @@ final class AuthViewModel {
             credentials: .init(
                 provider: .google,
                 idToken: idToken,
-                accessToken: result.user.accessToken.tokenString
+                accessToken: result.user.accessToken.tokenString,
+                nonce: nonce
             )
         )
     }
