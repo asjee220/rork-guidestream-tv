@@ -426,7 +426,11 @@ struct TVHeroCarousel: View {
         guard !audioSessionActivated else { return }
         audioSessionActivated = true
         do {
-            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback, options: [.mixWithOthers])
+            // .mixWithOthers was right for a silent backdrop and wrong now
+            // that the hero has sound: it would play under whatever else is
+            // making noise instead of owning the room. Same category Reels
+            // uses.
+            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback)
             try AVAudioSession.sharedInstance().setActive(true)
         } catch {
             audioSessionActivated = false
@@ -449,7 +453,10 @@ struct TVHeroCarousel: View {
 
         prerolledPlayer?.pause()
         let warm = AVPlayer(playerItem: AVPlayerItem(url: url))
-        warm.isMuted = true
+        // Audio on, every surface. The hero used to be a silent backdrop;
+        // it is the app's front page and it plays with sound like Apple's TV
+        // app and every service's own home screen.
+        warm.isMuted = false
         warm.automaticallyWaitsToMinimizeStalling = true
         prerolledPlayer = warm
         prerolledIndex = next
@@ -475,7 +482,7 @@ struct TVHeroCarousel: View {
             newPlayer = AVPlayer(playerItem: AVPlayerItem(url: url))
         }
         guard let playerItem = newPlayer.currentItem else { return }
-        newPlayer.isMuted = true
+        newPlayer.isMuted = false
         player = newPlayer
         newPlayer.play()
 

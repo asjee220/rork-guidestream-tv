@@ -167,26 +167,18 @@ struct TVHomeView: View {
                 // bottom pull lets the first rail sit over the art at the
                 // fold so the video / poster fades off into it.
                 heroSection(metadataInset: TVLayout.contentLeading)
-                    .containerRelativeFrame(.vertical)
+                    // The screen's height, not the container's.
+                    // containerRelativeFrame resolved to two different values
+                    // on two layout passes — measured on Living Room 7 as
+                    // h=766 then h=886 against a 1080 screen. 766 is 1080
+                    // minus the 120pt title-safe inset minus this 194 pull,
+                    // so the first pass gets a safe-area-inset container and
+                    // whatever paints in it leaves a band across the top.
+                    // The screen is 1080 on every pass.
+                    .frame(height: UIScreen.main.bounds.height)
                     .padding(.bottom, -194)
                     .padding(.leading, -railLeading)
                     .padding(.trailing, -trailingBleed)
-                    // TEMPORARY: what the hero's frame actually is against
-                    // the physical screen, so the border is measured rather
-                    // than guessed at.
-                    .background {
-                        GeometryReader { p in
-                            Color.clear.task {
-                                let f = p.frame(in: .global)
-                                let s = UIScreen.main.bounds
-                                TVNavLog.log(String(
-                                    format: "hero frame x=%.0f y=%.0f w=%.0f h=%.0f | screen w=%.0f h=%.0f | leadingBleed=%.0f trailingBleed=%.0f railLeading=%.0f",
-                                    f.minX, f.minY, f.width, f.height,
-                                    s.width, s.height,
-                                    leadingBleed, trailingBleed, railLeading))
-                            }
-                        }
-                    }
 
                 // 1a. Continue Watching — highest-intent rail on the screen, so
                 // it sits directly under the hero. Hidden entirely when the
