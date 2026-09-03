@@ -4,10 +4,14 @@
 //
 //  The browse landing's genre picker: the ten genres from
 //  Shared/BrowseFilters.swift laid out five across, two rows, so every one
-//  is on screen without scrolling. The phone fetches artwork per genre;
-//  here each tile carries its own brand gradient, which never blanks and
-//  needs no extra network call on a screen the viewer is only passing
-//  through.
+//  is on screen without scrolling.
+//
+//  Artwork per genre, the same as the phone: a tinted rectangle with a word
+//  on it does not sell a category — the tile has to show what is inside it.
+//  Ported from ios/GuideStreamTV/Views/GenreTileGrid.swift, including the
+//  assignment pass that stops two tiles showing the same title. The brand
+//  gradient stays as the resting state and the fallback, so the grid is
+//  never empty and never janks.
 //
 
 import SwiftUI
@@ -33,22 +37,92 @@ enum TVGenreTint {
     }
 }
 
+/// One backdrop per genre, fetched once per launch.
+///
+/// Ten discover calls, concurrently, the first time the browse surface
+/// appears. Held for the life of the process — the tiles are decoration, so
+/// a stale-by-an-hour backdrop is not worth a refetch.
+@MainActor
+@Observable
+final class TVBrowseArtworkStore {
+    static let shared = TVBrowseArtworkStore()
+
+    /// How many backdrops each genre offers up for the assignment pass. One
+    /// is not enough: a title that tops two genres claims both tiles.
+    private static let candidateDepth = 8
+
+    private(set) var backdrops: [String: String] = [:]
+    private var isLoading = false
+
+    private init() {}
+
+    func loadIfNeeded() async {
+        guard !isLoading, backdrops.count < BrowseCatalog.genres.count else { return }
+        isLoading = true
+        defer { isLoading = false }
+
+        let pending = BrowseCatalog.genres.filter { backdrops[$0.id] == nil }
+        let candidates = await withTaskGroup(of: (String, [String]).self) { group in
+            for genre in pending {
+                group.addTask {
+                    // No provider filter: the tile should show the genre's
+                    // best-known title, not whatever the viewer subscribes to.
+                    let filters = BrowseFilters(genreIds: [genre.id], onlyMyServices: false)
+                    let page = try? await TVTMDBService.shared.discoverBrowse(filters)
+                    let urls = (page?.results ?? [])
+                        .compactMap(\.backdropUrl)
+                        .prefix(Self.candidateDepth)
+                    return (genre.id, Array(urls))
+                }
+            }
+            var out: [String: [String]] = [:]
+            for await (id, urls) in group { out[id] = urls }
+            return out
+        }
+
+        // Assign in catalogue order rather than completion order, so which
+        // tile gets first claim on a shared title does not depend on which
+        // network call happened to return first. Each tile takes its most
+        // popular backdrop that no earlier tile has taken — Reacher tops both
+        // Crime & Thriller and Action, and those two tiles would otherwise
+        // show the identical image.
+        var used = Set(backdrops.values)
+        var resolved: [String: String] = [:]
+        for genre in BrowseCatalog.genres {
+            guard let options = candidates[genre.id], !options.isEmpty else { continue }
+            // If every candidate is spoken for, take the first anyway: a
+            // repeated tile still reads better than an empty one.
+            let pick = options.first { !used.contains($0) } ?? options[0]
+            used.insert(pick)
+            resolved[genre.id] = pick
+        }
+
+        backdrops.merge(resolved) { _, new in new }
+    }
+}
+
 struct TVGenreTileGrid: View {
     let onSelect: (BrowseGenre) -> Void
+
+    @State private var artwork = TVBrowseArtworkStore.shared
 
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 26), count: 5)
 
     var body: some View {
         LazyVGrid(columns: columns, spacing: 26) {
             ForEach(BrowseCatalog.genres) { genre in
-                TVGenreTile(genre: genre) { onSelect(genre) }
+                TVGenreTile(genre: genre, backdropUrl: artwork.backdrops[genre.id]) {
+                    onSelect(genre)
+                }
             }
         }
+        .task { await artwork.loadIfNeeded() }
     }
 }
 
 private struct TVGenreTile: View {
     let genre: BrowseGenre
+    let backdropUrl: String?
     let action: () -> Void
 
     @FocusState private var isFocused: Bool
@@ -61,6 +135,19 @@ private struct TVGenreTile: View {
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing
                 )
+
+                // Only mounted once a URL has resolved, so the gradient is
+                // what shows while the fetch is in flight rather than a
+                // shimmer. Given an explicit frame and clipped: a resizable
+                // fill image with no frame reports the size it would like and
+                // inflates whatever contains it — the bug that broke the
+                // title screen's layout earlier (8364c25).
+                if let backdropUrl {
+                    TVRemoteImage(urlString: backdropUrl, contentMode: .fill)
+                        .frame(height: 190)
+                        .clipped()
+                        .allowsHitTesting(false)
+                }
 
                 LinearGradient(
                     colors: [Color.black.opacity(0.72), Color.black.opacity(0.0)],
