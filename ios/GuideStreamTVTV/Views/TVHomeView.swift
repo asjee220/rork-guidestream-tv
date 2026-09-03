@@ -122,6 +122,8 @@ struct TVHomeView: View {
 
     /// Focus scope for the Continue Watching cards, so entering the rail
     /// lands on the first card rather than wherever the focus engine picks.
+    @Environment(\.showTitleDetail) private var showTitleDetail
+
     @Namespace private var continueWatchingScope
     @FocusState private var focusedContinueWatching: Int?
 
@@ -421,21 +423,54 @@ struct TVHomeView: View {
             TVHeroCarousel(
                 items: heroItems,
                 ctaFocused: $heroCTAFocused,
-                onToggleSave: { item in
-                    Task {
-                        await streams.toggle(
-                            titleId: item.canonicalTitleId,
-                            title: item.displayName,
-                            posterUrl: item.posterUrl,
-                            platform: nil
-                        )
-                    }
+                continueState: { item in
+                    // Same identity the rail is built on — "tmdb:tv:1396".
+                    guard let match = continueWatching.first(where: {
+                        $0.titleId == item.canonicalTitleId
+                    }) else { return nil }
+                    return TVHeroContinueState(serviceName: match.service?.name)
                 },
-                isSaved: { item in streams.contains(titleId: item.canonicalTitleId) },
+                onContinue: { item, serviceName in
+                    guard let serviceName else {
+                        // No service resolved for the row, so there is
+                        // nothing to open. The title screen rather than a
+                        // dead press.
+                        showTitleDetail(heroDetail(for: item))
+                        return
+                    }
+                    WatchIntentLogger.shared.log(
+                        eventType: .deeplinkFired,
+                        titleId: item.canonicalTitleId,
+                        platformId: Platform.from(providerName: serviceName)?.catalogId ?? serviceName,
+                        metadata: [
+                            "source": "tv_hero_continue",
+                            "tmdb_id": item.id,
+                            "media_type": item.isTV ? "tv" : "movie"
+                        ]
+                    )
+                    TVOSDeepLinker.open(platform: serviceName, title: item.displayName)
+                },
+                onWatchNow: { item in showTitleDetail(heroDetail(for: item)) },
                 featurettes: heroFeaturettes,
                 metadataInset: metadataInset
             )
         }
+    }
+
+    /// The hero item as a title-screen payload.
+    private func heroDetail(for item: TVTMDBResult) -> TVTitleDetail {
+        TVTitleDetail(
+            titleId: item.canonicalTitleId,
+            title: item.displayName,
+            overview: item.overview,
+            posterUrl: item.posterUrl,
+            backdropUrl: item.backdropUrl,
+            tag: item.isTV ? "SERIES" : "MOVIE",
+            accent: TVTheme.orange,
+            year: item.year,
+            platform: nil,
+            isTVHint: item.isTV
+        )
     }
 
     // MARK: - Today's Pick

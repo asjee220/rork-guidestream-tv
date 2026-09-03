@@ -21,6 +21,12 @@ import AVFoundation
 import Supabase
 import UIKit
 
+/// What the hero's CTA offers for a title the viewer has already started.
+struct TVHeroContinueState {
+    /// The service they were watching on; nil when it did not resolve.
+    let serviceName: String?
+}
+
 /// Preference the hero raises when a left move at the first item should
 /// fall through to opening the side menu. Handled by TVMainView; the
 /// value is a monotonic counter so only real requests open the menu.
@@ -56,8 +62,15 @@ struct TVHeroCarousel: View {
     /// default focus for the scene, preventing launch focus from landing on
     /// a rail card and scrolling the hero off screen.
     @FocusState.Binding var ctaFocused: Bool
-    let onToggleSave: (TVTMDBResult) -> Void
-    let isSaved: (TVTMDBResult) -> Bool
+    /// Non-nil when this title is already in the Continue Watching rail —
+    /// the viewer has started it. `serviceName` is what they started it on,
+    /// and is nil when the stored platform id maps to no catalogue entry,
+    /// which the rail treats as expected rather than an error.
+    let continueState: (TVTMDBResult) -> TVHeroContinueState?
+    /// Resume: open the service they were watching on.
+    let onContinue: (TVTMDBResult, String?) -> Void
+    /// Not started: open the title screen.
+    let onWatchNow: (TVTMDBResult) -> Void
     /// canonicalTitleId -> hosted featurette URL. A missing key means the
     /// item renders as a drifting still.
     let featurettes: [String: String]
@@ -97,9 +110,9 @@ struct TVHeroCarousel: View {
     @State private var prerolledIndex: Int?
 
     @FocusState private var heroRegionFocused: Bool
-    /// Focus scope for the hero region. The Add to Watch List button is
-    /// the default focus inside this scope so Home appears with the hero
-    /// focused rather than the first rail card.
+    /// Focus scope for the hero region. The CTA is the default focus inside
+    /// this scope so Home appears with the hero focused rather than the
+    /// first rail card.
     @Namespace private var heroNamespace
 
     private var currentItem: TVTMDBResult? {
@@ -270,14 +283,38 @@ struct TVHeroCarousel: View {
                         .frame(maxWidth: 700, alignment: .leading)
                 }
 
+                // The CTA reads the viewer's own history: a title they have
+                // started resumes on the service they started it on, and one
+                // they have not opens the title screen. Add to Watch List
+                // moved off the hero with this — it is on the title screen,
+                // and asking someone to file a title they are mid-way
+                // through was the wrong offer on the app's front page.
+                let resume = continueState(item)
                 Button {
-                    onToggleSave(item)
+                    if let resume {
+                        onContinue(item, resume.serviceName)
+                    } else {
+                        onWatchNow(item)
+                    }
                 } label: {
                     HStack(spacing: 14) {
-                        Image(systemName: isSaved(item) ? "checkmark.circle.fill" : "plus.circle.fill")
-                            .font(.system(size: 28, weight: .bold))
-                        Text(isSaved(item) ? "Saved to Watch List" : "Add to Watch List")
-                            .font(.system(size: 22, weight: .semibold))
+                        Image(systemName: "play.fill")
+                            .font(.system(size: 26, weight: .bold))
+                        if let resume {
+                            if let service = resume.serviceName {
+                                Text("Continue on")
+                                    .font(.system(size: 22, weight: .semibold))
+                                TVServiceBrandMark(providerName: service, size: 40)
+                            } else {
+                                // In the rail, but the stored platform id
+                                // named no service we know. Still a resume.
+                                Text("Continue Watching")
+                                    .font(.system(size: 22, weight: .semibold))
+                            }
+                        } else {
+                            Text("Watch Now")
+                                .font(.system(size: 22, weight: .semibold))
+                        }
                     }
                     .foregroundStyle(.white)
                     .padding(.horizontal, 28)
