@@ -64,6 +64,15 @@ struct TVTitleSheet: View {
     /// subscribed services, or several rent/buy offers. One tap on the watch
     /// button still means "watch it" when there is only one answer.
     @State private var showWatchOptions = false
+
+    /// Set while a launch is in flight, cleared when this app comes back to
+    /// the front. tvOS asks nothing before handing off to another app, and
+    /// on a successful launch this is on screen for a blink — its real job
+    /// is the case where the service is not installed on this Apple TV,
+    /// where the button would otherwise look broken.
+    @State private var launchingService: String?
+    @State private var launchFailedService: String?
+    @Environment(\.scenePhase) private var scenePhase
     @FocusState private var focusedSeason: Int?
     @FocusState private var focusedCast: Int?
 
@@ -382,6 +391,13 @@ struct TVTitleSheet: View {
         // Close is the remote's Menu button now that the on-screen Close
         // button is gone, matching Apple's own detail screen.
         .onExitCommand { dismiss() }
+        // Coming back from the streaming app resets the button. A launch
+        // that worked is only ever seen for a blink; one that did not leaves
+        // the failure text until the viewer moves on.
+        .onChange(of: scenePhase) { _, phase in
+            guard phase == .active else { return }
+            launchingService = nil
+        }
         .task {
             selectedServiceName = nil
             didProbeMediaType = false
@@ -1109,26 +1125,39 @@ struct TVTitleSheet: View {
                 // Watchmode gave no row for it. Open it by name — the same
                 // chain, resolving through the deep linker's own catalogue.
                 TVNavLog.log("watch: opening owned subscription \(owned)")
-                TVOSDeepLinker.open(platform: owned, title: detail.title)
+                openByName(owned)
             } else if needsWatchOptions {
                 showWatchOptions = true
             } else if let source = activeSource {
                 open(source: source)
             } else {
                 // No resolved source — fall back to the name-based open chain.
-                TVOSDeepLinker.open(platform: playServiceName, title: detail.title)
+                openByName(playServiceName)
             }
         } label: {
             HStack(spacing: 14) {
-                if isResolving && resolvedStreaming == nil {
+                if isResolving && resolvedStreaming == nil || launchingService != nil {
                     ProgressView()
                         .tint(.white)
+                } else if launchFailedService != nil {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 24, weight: .bold))
                 } else {
                     Image(systemName: "play.fill")
                         .font(.system(size: 26, weight: .bold))
                 }
 
-                if youTubeChannelId != nil {
+                if let launchingService {
+                    // No confirmation before the hand-off — tvOS does not ask
+                    // and neither does Apple's own TV app. This is only so
+                    // the beat before another app takes the screen is not
+                    // silent.
+                    Text("Opening \(launchingService)…")
+                        .font(.system(size: 22, weight: .semibold))
+                } else if let launchFailedService {
+                    Text("Couldn't open \(launchFailedService) — is it installed?")
+                        .font(.system(size: 22, weight: .semibold))
+                } else if youTubeChannelId != nil {
                     Text("Watch on YouTube")
                         .font(.system(size: 22, weight: .semibold))
                 } else {
@@ -1360,16 +1389,64 @@ struct TVTitleSheet: View {
     /// falling back to the name-based open chain. Shared by the Play button and
     /// the chip launch path.
     private func open(source: TVWatchmodeResolver.TVResolvedSource) {
+        beginLaunch(serviceName: source.name)
         if let deepLink = guardedDeepLink(for: source) {
             TVOSDeepLinker.open(
                 platform: source.name,
                 title: detail.title,
                 contentURL: guardedWebURL(for: source),
-                tvosDeepLink: deepLink
+                tvosDeepLink: deepLink,
+                completion: { ok in endLaunch(serviceName: source.name, opened: ok) }
             )
         } else {
-            TVOSDeepLinker.open(platform: source.name, title: detail.title)
+            TVOSDeepLinker.open(
+                platform: source.name,
+                title: detail.title,
+                completion: { ok in endLaunch(serviceName: source.name, opened: ok) }
+            )
         }
+    }
+
+    /// Opens by name, for a service the viewer subscribes to that Watchmode
+    /// returned no row for.
+    private func openByName(_ serviceName: String) {
+        beginLaunch(serviceName: serviceName)
+        TVOSDeepLinker.open(
+            platform: serviceName,
+            title: detail.title,
+            completion: { ok in endLaunch(serviceName: serviceName, opened: ok) }
+        )
+    }
+
+    /// Records the launch intent and shows the "Opening…" state.
+    ///
+    /// The log line is what puts this title in Continue Watching. That rail
+    /// reads `continue_watching`, a view over `watch_intent_events` — and
+    /// this screen, the app's only watch button, had never written one.
+    /// Reels and Sports did, which is why only those ever appeared.
+    private func beginLaunch(serviceName: String) {
+        launchFailedService = nil
+        launchingService = gsDisplayName(for: serviceName)
+
+        var meta: [String: Any] = ["source": "tv_title_sheet_watch"]
+        if let tmdbId { meta["tmdb_id"] = tmdbId }
+        // The view drops any row whose media type it cannot resolve, and a
+        // bare numeric title_id carries none.
+        meta["media_type"] = isTV ? "tv" : "movie"
+
+        WatchIntentLogger.shared.log(
+            eventType: .deeplinkFired,
+            titleId: detail.titleId,
+            platformId: Platform.from(providerName: serviceName)?.catalogId ?? serviceName,
+            metadata: meta
+        )
+    }
+
+    private func endLaunch(serviceName: String, opened: Bool) {
+        guard !opened else { return }
+        launchingService = nil
+        launchFailedService = gsDisplayName(for: serviceName)
+        TVNavLog.log("launch failed for \(serviceName)")
     }
 
     /// The episode source only applies when it belongs to the same service as
