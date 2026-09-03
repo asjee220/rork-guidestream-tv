@@ -1616,14 +1616,6 @@ struct TVTitleSheet: View {
     }
 }
 
-/// Draws nothing: no background, no lift, no focus decoration. Every focus
-/// cue on this screen is drawn by the view itself, the way TVMenuButtonStyle
-/// lets the side menu draw its own plate.
-private struct TVFlatButtonStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-    }
-}
 
 // MARK: - Trailer reels presentation payload
 

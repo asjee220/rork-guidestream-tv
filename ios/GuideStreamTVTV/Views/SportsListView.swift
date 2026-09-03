@@ -112,6 +112,9 @@ struct SportsListView: View {
     let sportFilter: String
 
     @State private var selectedGame: SportsGame?
+    /// Focus is a thin white outline here too — `.plain` lays tvOS's white
+    /// slab over the whole row.
+    @FocusState private var focusedGameId: String?
 
     var body: some View {
         ZStack {
@@ -123,12 +126,20 @@ struct SportsListView: View {
                 ScrollView(.vertical, showsIndicators: false) {
                     LazyVStack(spacing: 12) {
                         ForEach(games) { game in
+                            let isFocused = focusedGameId == game.id
                             Button {
                                 selectedGame = game
                             } label: {
                                 row(for: game)
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 16)
+                                            .stroke(Color.white.opacity(isFocused ? 1 : 0), lineWidth: 2)
+                                    )
+                                    .animation(.easeOut(duration: 0.15), value: isFocused)
                             }
-                            .buttonStyle(.plain)
+                            .buttonStyle(TVFlatButtonStyle())
+                            .focusEffectDisabled()
+                            .focused($focusedGameId, equals: game.id)
                         }
                     }
                     .padding(.horizontal, 16)

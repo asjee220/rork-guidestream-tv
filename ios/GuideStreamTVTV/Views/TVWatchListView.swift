@@ -242,7 +242,7 @@ struct TVWatchListView: View {
         }
         // An empty style, not .plain: .plain still lays tvOS's white slab
         // over the chip even with the focus effect disabled.
-        .buttonStyle(TVWatchListFlatButtonStyle())
+        .buttonStyle(TVFlatButtonStyle())
         .focusEffectDisabled()
         .focused($focusedTab, equals: tab)
     }
@@ -340,9 +340,3 @@ struct TVWatchListView: View {
     }
 }
 
-/// Draws nothing, so a chip's own capsule is the only focus cue.
-private struct TVWatchListFlatButtonStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-    }
-}

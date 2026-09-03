@@ -20,8 +20,6 @@ struct TVRail<Content: View>: View {
     let onSeeAll: (() -> Void)?
     @ViewBuilder var content: () -> Content
 
-    @FocusState private var seeAllFocused: Bool
-
     init(
         title: String,
         accent: Color = TVTheme.orange,
@@ -57,8 +55,13 @@ struct TVRail<Content: View>: View {
                         .background(.white.opacity(0.08), in: Capsule())
                 }
                 Spacer()
-                if onSeeAll != nil {
-                    seeAllButton
+                if let onSeeAll {
+                    // The shared control, so Sports' headers and these
+                    // agree — see TVSecondaryButton.swift for why there
+                    // used to be two.
+                    TVSecondaryButton(title: "See all", sectionKey: seeAllKey ?? "rail") {
+                        onSeeAll()
+                    }
                 }
             }
             .padding(.horizontal, 80)
@@ -88,49 +91,4 @@ struct TVRail<Content: View>: View {
         }
     }
 
-    // MARK: - See all
-
-    /// Trailing "See all" capsule — transparent fill with a 1pt white-25%
-    /// stroke that thickens to 2pt orange with a white label on focus.
-    /// Selecting it logs `.cardTapped` with the rail's section key, then
-    /// invokes the caller's closure.
-    private var seeAllButton: some View {
-        Button {
-            WatchIntentLogger.shared.log(
-                eventType: .cardTapped,
-                metadata: ["section": "\(seeAllKey ?? "rail")_see_all"]
-            )
-            onSeeAll?()
-        } label: {
-            Text("See all")
-                .font(.system(size: 20, weight: .semibold))
-                .foregroundStyle(seeAllFocused ? Color.white : TVTheme.textSecondary)
-                .padding(.horizontal, 28)
-                .padding(.vertical, 10)
-                // Same selected treatment as the side menu rows: a white 16%
-                // plate and a 1.06 lift, with the resting outline kept so the
-                // control still reads as a button when nothing is focused.
-                .background(
-                    Capsule().fill(Color.white.opacity(seeAllFocused ? 0.16 : 0))
-                )
-                .background(
-                    Capsule().stroke(Color.white.opacity(seeAllFocused ? 0 : 0.25),
-                                     lineWidth: 1)
-                )
-                .scaleEffect(seeAllFocused ? 1.06 : 1.0)
-                .animation(.easeOut(duration: 0.15), value: seeAllFocused)
-        }
-        // An empty style, not .plain: .plain still lets tvOS lay its own
-        // white focus slab over the control even with the effect disabled.
-        .buttonStyle(TVRailFlatButtonStyle())
-        .focusEffectDisabled()
-        .focused($seeAllFocused)
-    }
-}
-
-/// Draws nothing, so the See all button's own plate is the only focus cue.
-private struct TVRailFlatButtonStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-    }
 }

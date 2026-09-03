@@ -137,6 +137,12 @@ enum TVGameState: String {
 }
 
 struct TVGameTeam: Hashable {
+    /// ESPN's team id and its globally-unique uid. The uid is the join key
+    /// `team_favorites` is built on, so without it a team on a game card
+    /// cannot be matched to a followed team. Declared first with defaults so
+    /// every existing construction site keeps compiling.
+    var id: String? = nil
+    var uid: String? = nil
     let abbreviation: String
     let displayName: String
     let shortName: String

@@ -52,6 +52,23 @@ struct SportsView: View {
     @State private var selectedGame: SportsGame?
     @State private var showServicesSheet: Bool = false
     @State private var auth = AuthViewModel.shared
+    @State private var favorites = TVTeamFavoritesService.shared
+    /// Non-nil while the picker is up; carries which mode it opened in.
+    @State private var picker: TVTeamPickerView.Mode?
+
+    // Focus is drawn by the controls themselves on this screen — a thin
+    // white outline on the item's own shape. tvOS's `.plain` button style
+    // lays a white slab over whatever it wraps even with
+    // .focusEffectDisabled(), which is why every control here uses
+    // TVFlatButtonStyle and reads its own focus state instead.
+    @FocusState private var focusedSport: String?
+    @FocusState private var focusedTeam: String?
+    @FocusState private var focusedGameId: String?
+    /// One-shot: a viewer with no teams is offered the picker the first time
+    /// they open Sports, and never again whatever they choose. Same key the
+    /// phone uses, but UserDefaults is per-device, so the Apple TV asks once
+    /// of its own accord.
+    @AppStorage("gs.sportsTeamPickerSeen.v1") private var hasSeenPicker = false
 
     private let sports: [String] = ["All", "NFL", "CFB", "NBA", "NBA Summer", "WNBA", "NCAA Men", "NCAA Women", "MLB", "Soccer", "UFC"]
 
@@ -73,39 +90,70 @@ struct SportsView: View {
     private var upcomingGames: [SportsGame] { filteredGames.filter { $0.state == .pre } }
     private var finalGames: [SportsGame] { filteredGames.filter { $0.state == .post } }
 
-    /// Real "My Teams" derived from the day's live + upcoming games. Unique
-    /// teams ordered by live > today > later; capped at 5 chips so the rail
-    /// stays compact. The "Edit" affordance is a stub — a real favorites
-    /// store would replace this derivation.
-    private var derivedTeams: [TeamChip] {
+    /// My Teams, from the teams the viewer actually follows.
+    ///
+    /// This used to be derived from whichever teams happened to be playing
+    /// today, capped at five — which meant the rail changed every day, showed
+    /// teams nobody had asked for, and had an Edit button that did nothing.
+    /// It now reads `team_favorites`, the same rows the phone writes, and
+    /// each chip carries that team's own next game.
+    private var favoriteTeams: [TeamChip] {
         let cal = Calendar.current
-        let pool = (liveGames + upcomingGames).filter { game in
-            guard let date = game.startDate else { return true }
-            return game.state == .live || cal.isDateInToday(date) || date.timeIntervalSinceNow < 60 * 60 * 24 * 7
-        }
-        var seen = Set<String>()
-        var chips: [TeamChip] = []
-        for game in pool {
-            for team in [game.away, game.home] {
-                guard !team.abbreviation.isEmpty, team.abbreviation != "—" else { continue }
-                if seen.contains(team.abbreviation) { continue }
-                seen.insert(team.abbreviation)
-                let color = team.primaryHex.map { Color(hex: $0) } ?? Color.white.opacity(0.15)
-                let label = nextLabel(for: game, cal: cal)
-                chips.append(TeamChip(
-                    abbrev: team.abbreviation,
-                    name: team.shortName,
-                    color: color,
-                    next: label,
-                    isLive: game.state == .live,
-                    logoURL: team.logoURL,
-                    team: team
-                ))
-                if chips.count >= 5 { break }
+        return favorites.favoriteUids().compactMap { uid -> TeamChip? in
+            let row = favorites.rows[uid]
+            // Prefer the live game object: it carries the logo, the colour
+            // and the score. Fall back to the stored row so a followed team
+            // still shows a chip on a day it is not playing.
+            let game = nextGame(forUid: uid)
+            let team = game.flatMap { g in
+                [g.away, g.home].first { $0.uid == uid }
             }
-            if chips.count >= 5 { break }
+            let abbrev = team?.abbreviation ?? row?.team_abbr ?? ""
+            let name = team?.shortName ?? row?.team_name ?? ""
+            guard !abbrev.isEmpty || !name.isEmpty else { return nil }
+            let color = team?.primaryHex.map { Color(hex: $0) } ?? Color.white.opacity(0.15)
+            return TeamChip(
+                abbrev: abbrev.isEmpty ? String(name.prefix(3)).uppercased() : abbrev,
+                name: name.isEmpty ? abbrev : name,
+                color: color,
+                next: game.map { nextLabel(for: $0, cal: cal) } ?? "",
+                isLive: game?.state == .live,
+                logoURL: team?.logoURL,
+                team: team ?? TVGameTeam(
+                    id: row?.team_id,
+                    uid: uid,
+                    abbreviation: abbrev,
+                    displayName: name,
+                    shortName: name,
+                    score: "",
+                    primaryHex: nil,
+                    isWinner: false
+                )
+            )
         }
-        return chips
+        // Live first, then whoever plays soonest, then the rest by name, so
+        // the chip worth pressing is the one nearest the left edge.
+        .sorted { a, b in
+            if a.isLive != b.isLive { return a.isLive }
+            return a.name < b.name
+        }
+    }
+
+    /// The followed team's next game: live if one is on, else the soonest
+    /// upcoming, else the most recent final.
+    private func nextGame(forUid uid: String) -> SportsGame? {
+        func involves(_ game: SportsGame) -> Bool {
+            game.away.uid == uid || game.home.uid == uid
+        }
+        if let live = liveGames.first(where: involves) { return live }
+        if let next = upcomingGames
+            .filter(involves)
+            .sorted(by: { ($0.startDate ?? .distantFuture) < ($1.startDate ?? .distantFuture) })
+            .first { return next }
+        return finalGames
+            .filter(involves)
+            .sorted(by: { ($0.startDate ?? .distantPast) > ($1.startDate ?? .distantPast) })
+            .first
     }
 
     private func nextLabel(for game: SportsGame, cal: Calendar) -> String {
@@ -129,12 +177,14 @@ struct SportsView: View {
                     LazyVStack(alignment: .leading, spacing: 34) {
                         header
                         sportPills
-                        if !derivedTeams.isEmpty {
-                            myTeamsSection
-                            Rectangle()
-                                .fill(Color.white.opacity(0.06))
-                                .frame(height: 1)
-                        }
+                        // Always shown now: with nothing followed the
+                        // section is the invitation to follow something,
+                        // which is the whole point of the screen having
+                        // favourites at all.
+                        myTeamsSection
+                        Rectangle()
+                            .fill(Color.white.opacity(0.06))
+                            .frame(height: 1)
 
                         if isLoading && games.isEmpty {
                             loadingPlaceholder
@@ -183,6 +233,9 @@ struct SportsView: View {
             .fullScreenCover(isPresented: $showServicesSheet) {
                 ServicesBottomSheet()
             }
+            .fullScreenCover(item: $picker) { mode in
+                TVTeamPickerView(mode: mode) { picker = nil }
+            }
             #else
             .sheet(item: $selectedGame) { game in
                 SportsWatchSheet(game: game)
@@ -192,7 +245,17 @@ struct SportsView: View {
             }
             #endif
         }
-        .task { await load() }
+        .task {
+            await load()
+            await favorites.load()
+            // A viewer with nothing followed is offered the picker once, on
+            // their first Sports visit. Whatever they do with it, the flag is
+            // set, so the screen never asks again on its own.
+            if !hasSeenPicker, favorites.favoriteUids().isEmpty {
+                hasSeenPicker = true
+                picker = .onboarding
+            }
+        }
     }
 
     /// Selected service ids in catalogue order — keeps the pill's stacked icons
@@ -247,21 +310,22 @@ struct SportsView: View {
 
     private var sportPills: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
+            HStack(spacing: 14) {
                 ForEach(sports, id: \.self) { sport in
                     let isActive = sport == selectedSport
+                    let isFocused = focusedSport == sport
                     Button {
                         selectedSport = sport
                     } label: {
                         Text(sport)
-                            .scaledFont(size: 18, weight: .bold)
-                            .foregroundStyle(isActive ? Color.white : Color.white.opacity(0.5))
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 7)
+                            .scaledFont(size: 28, weight: .bold)
+                            .foregroundStyle(isActive || isFocused ? Color.white : Color.white.opacity(0.5))
+                            .padding(.horizontal, 30)
+                            .padding(.vertical, 16)
                             .background(
                                 Group {
                                     if isActive {
-                                        RoundedRectangle(cornerRadius: 20)
+                                        RoundedRectangle(cornerRadius: 32)
                                             .fill(Color(hex: "F5821F"))
                                     } else {
                                         Color.clear
@@ -269,14 +333,26 @@ struct SportsView: View {
                                 }
                             )
                             .overlay(
-                                RoundedRectangle(cornerRadius: 20)
-                                    .stroke(isActive ? Color.clear : Color.white.opacity(0.15), lineWidth: 1)
+                                RoundedRectangle(cornerRadius: 32)
+                                    .stroke(
+                                        isFocused ? Color.white : (isActive ? Color.clear : Color.white.opacity(0.15)),
+                                        lineWidth: isFocused ? 2 : 1
+                                    )
                             )
+                            .animation(.easeOut(duration: 0.15), value: isFocused)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(TVFlatButtonStyle())
+                    .focusEffectDisabled()
+                    .focused($focusedSport, equals: sport)
                 }
             }
+            .padding(.vertical, 4)
         }
+        // Without this the row is not a focus destination of its own and an
+        // up move from My Teams had nothing to land on — the league pills
+        // could not be reached with the remote at all. Every other section
+        // on this screen is already a focus section.
+        .focusSection()
     }
 
     // MARK: - My Teams (derived from real games)
@@ -288,39 +364,73 @@ struct SportsView: View {
                     .scaledFont(size: 24, weight: .bold)
                     .foregroundStyle(.white)
                 Spacer()
-                GhostButton(title: "Edit") {
-                    // Placeholder — real favorites flow lives in Profile.
+                TVSecondaryButton(title: "Edit", sectionKey: "my_teams") {
+                    picker = .edit
                 }
             }
+            .focusSection()
 
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 10) {
-                    ForEach(derivedTeams, id: \.abbrev) { team in
-                        Button {
-                            if let game = teamGame(for: team) {
-                                selectedGame = game
+            if favoriteTeams.isEmpty {
+                noFavoritesPrompt
+            } else {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 10) {
+                        ForEach(favoriteTeams, id: \.abbrev) { team in
+                            Button {
+                                if let game = teamGame(for: team) {
+                                    selectedGame = game
+                                }
+                            } label: {
+                                teamChip(team, isFocused: focusedTeam == team.abbrev)
                             }
-                        } label: {
-                            teamChip(team)
+                            .buttonStyle(TVFlatButtonStyle())
+                            .focusEffectDisabled()
+                            .focused($focusedTeam, equals: team.abbrev)
                         }
-                        .buttonStyle(.plain)
+                        addTeamChip
                     }
-                    addTeamChip
                 }
+                .focusSection()
             }
         }
+    }
+
+    /// Shown in place of the rail when nothing is followed yet — the same
+    /// invitation the phone shows, rather than an empty row.
+    private var noFavoritesPrompt: some View {
+        HStack(spacing: 28) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Follow your teams")
+                    .scaledFont(size: 26, weight: .bold)
+                    .foregroundStyle(.white)
+                Text("Their games lead this screen, and you get alerts when they start.")
+                    .scaledFont(size: 20)
+                    .foregroundStyle(TVTheme.textSecondary)
+            }
+            Spacer()
+            TVSecondaryButton(title: "Pick teams", sectionKey: "my_teams_empty") {
+                picker = .onboarding
+            }
+        }
+        .padding(32)
+        .background(RoundedRectangle(cornerRadius: 16).fill(Color.white.opacity(0.04)))
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.white.opacity(0.07), lineWidth: 1))
+        .focusSection()
     }
 
     /// Finds the next game involving `team` so tapping a chip opens that
     /// game's sheet rather than a dead-end.
     private func teamGame(for team: TeamChip) -> SportsGame? {
+        if let uid = team.team.uid, let game = nextGame(forUid: uid) { return game }
+        // A followed team with no uid on the card (an older stored row) still
+        // matches on abbreviation.
         let abbr = team.abbrev
         return (liveGames + upcomingGames).first { game in
             game.away.abbreviation == abbr || game.home.abbreviation == abbr
         }
     }
 
-    private func teamChip(_ team: TeamChip) -> some View {
+    private func teamChip(_ team: TeamChip, isFocused: Bool = false) -> some View {
         VStack(spacing: 3) {
             TeamLogoBadge(team: team.team, size: 72, cornerRadius: 7, inset: 9, abbreviationFontSize: 11)
             Text(team.name)
@@ -340,13 +450,20 @@ struct SportsView: View {
         )
         .overlay(
             RoundedRectangle(cornerRadius: 12)
-                .stroke(team.isLive ? Color(hex: "E50914").opacity(0.35) : Color.white.opacity(0.07), lineWidth: 1)
+                .stroke(
+                    isFocused
+                        ? Color.white
+                        : (team.isLive ? Color(hex: "E50914").opacity(0.35) : Color.white.opacity(0.07)),
+                    lineWidth: isFocused ? 2 : 1
+                )
         )
+        .animation(.easeOut(duration: 0.15), value: isFocused)
     }
 
     private var addTeamChip: some View {
-        Button {
-            // Placeholder — real favorites flow lives in Profile.
+        let isFocused = focusedTeam == "__add__"
+        return Button {
+            picker = .edit
         } label: {
             VStack(spacing: 3) {
                 Text("+")
@@ -362,26 +479,49 @@ struct SportsView: View {
             .padding(32)
             .frame(minWidth: 270, minHeight: 180)
             .overlay(
-                RoundedRectangle(cornerRadius: 12)
-                    .stroke(style: StrokeStyle(lineWidth: 1, dash: [4]))
-                    .foregroundStyle(Color.white.opacity(0.15))
+                Group {
+                    if isFocused {
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(Color.white, lineWidth: 2)
+                    } else {
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(style: StrokeStyle(lineWidth: 1, dash: [4]))
+                            .foregroundStyle(Color.white.opacity(0.15))
+                    }
+                }
             )
+            .animation(.easeOut(duration: 0.15), value: isFocused)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(TVFlatButtonStyle())
+        .focusEffectDisabled()
+        .focused($focusedTeam, equals: "__add__")
     }
 
     // MARK: - Helper for tappable card wrapper
 
-    /// Wraps a card view in a Button that opens the SportsWatchSheet. Uses
-    /// `.plain` style so the visual layout is preserved exactly.
+    /// Wraps a card view in a Button that opens the SportsWatchSheet.
+    ///
+    /// `.plain` used to be the style here "so the visual layout is preserved
+    /// exactly" — but on tvOS it also lays a white slab over the whole card
+    /// on focus, which is the overlay this screen was asked to stop using.
+    /// TVFlatButtonStyle draws nothing, so the card keeps its own layout and
+    /// focus is a thin white outline on its own shape.
     @ViewBuilder
     private func tappableCard<Content: View>(_ game: SportsGame, @ViewBuilder content: () -> Content) -> some View {
+        let isFocused = focusedGameId == game.id
         Button {
             selectedGame = game
         } label: {
             content()
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16)
+                        .stroke(Color.white.opacity(isFocused ? 1 : 0), lineWidth: 2)
+                )
+                .animation(.easeOut(duration: 0.15), value: isFocused)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(TVFlatButtonStyle())
+        .focusEffectDisabled()
+        .focused($focusedGameId, equals: game.id)
     }
 
     // MARK: - Live Now
@@ -679,47 +819,13 @@ struct SportsView: View {
                     Capsule().fill(Color.white.opacity(0.08))
                 )
             Spacer()
-            GhostButton(title: "See all", action: onSeeAll)
+            TVSecondaryButton(title: "See all",
+                              sectionKey: title.lowercased().replacingOccurrences(of: " ", with: "_"),
+                              action: onSeeAll)
         }
     }
 }
 
-// MARK: - Ghost secondary affordance
-
-/// Ghosted secondary button used by the My Teams "Edit" affordance and every
-/// section "See all": orange text inside a 2pt orange rounded outline on a
-/// clear background, inverting to a filled orange pill with dark text when
-/// focused so the focused control is unmistakable at ten feet. Focus is read
-/// with @FocusState bound to the Button — the pattern used by TVPosterCard
-/// and TVSponsoredChip — because @Environment(\.isFocused) inside a
-/// ButtonStyle does not track the button's own focus on tvOS.
-private struct GhostButton: View {
-    let title: String
-    let action: () -> Void
-
-    @FocusState private var isFocused: Bool
-
-    var body: some View {
-        Button(action: action) {
-            Text(title)
-                .scaledFont(size: 20, weight: .medium)
-                .foregroundStyle(isFocused ? Color.navy : TVTheme.orange)
-                .padding(.horizontal, 28)
-                .padding(.vertical, 14)
-                .background(
-                    RoundedRectangle(cornerRadius: 12)
-                        .fill(isFocused ? TVTheme.orange : Color.clear)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12)
-                        .stroke(TVTheme.orange, lineWidth: 2)
-                )
-        }
-        .buttonStyle(.plain)
-        .focused($isFocused)
-        .animation(.spring(response: 0.3, dampingFraction: 0.85), value: isFocused)
-    }
-}
 
 #Preview {
     SportsView()

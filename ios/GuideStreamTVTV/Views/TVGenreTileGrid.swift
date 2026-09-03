@@ -177,7 +177,7 @@ private struct TVGenreTile: View {
         // tile. An empty style draws nothing, leaving the outline and glow
         // below as the only focus cue — the same treatment the poster cards
         // in the results grid use.
-        .buttonStyle(TVGenreTileButtonStyle())
+        .buttonStyle(TVFlatButtonStyle())
         .focused($isFocused)
         .focusEffectDisabled()
         .scaleEffect(isFocused ? 1.05 : 1.0)
@@ -191,9 +191,3 @@ private struct TVGenreTile: View {
     }
 }
 
-/// Draws nothing, so the tile's own outline and glow are the focus cue.
-private struct TVGenreTileButtonStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-    }
-}

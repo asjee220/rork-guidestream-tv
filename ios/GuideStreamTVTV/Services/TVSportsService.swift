@@ -194,6 +194,8 @@ final class TVSportsService {
             return "—"
         }()
         return TVGameTeam(
+            id: c.team?.id,
+            uid: c.team?.uid,
             abbreviation: c.team?.abbreviation ?? fallbackAbbrev,
             displayName: c.team?.displayName ?? "—",
             shortName: c.team?.shortDisplayName ?? c.team?.name ?? "—",
@@ -256,6 +258,8 @@ nonisolated struct TVESPNCompetitor: Decodable {
 }
 
 nonisolated struct TVESPNTeam: Decodable {
+    let id: String?
+    let uid: String?
     let abbreviation: String?
     let displayName: String?
     let shortDisplayName: String?

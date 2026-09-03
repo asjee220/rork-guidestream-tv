@@ -293,7 +293,7 @@ struct TVCreatorDetailView: View {
             .scaleEffect(focusedField == .watch ? 1.04 : 1.0)
             .animation(.easeOut(duration: 0.15), value: focusedField)
         }
-        .buttonStyle(TVCreatorFlatButtonStyle())
+        .buttonStyle(TVFlatButtonStyle())
         .focusEffectDisabled()
         .focused($focusedField, equals: .watch)
     }
@@ -317,7 +317,7 @@ struct TVCreatorDetailView: View {
                     .scaleEffect(focused ? 1.06 : 1.0)
                     .animation(.easeOut(duration: 0.15), value: focused)
             }
-            .buttonStyle(TVCreatorFlatButtonStyle())
+            .buttonStyle(TVFlatButtonStyle())
             .focusEffectDisabled()
             .focused($focusedField, equals: field)
 
@@ -475,7 +475,7 @@ struct TVCreatorDetailView: View {
                     radius: focused ? 36 : 14, y: focused ? 24 : 8)
             .animation(.spring(response: 0.35, dampingFraction: 0.75), value: focused)
         }
-        .buttonStyle(TVCreatorFlatButtonStyle())
+        .buttonStyle(TVFlatButtonStyle())
         .focusEffectDisabled()
         .focused($focusedField, equals: .upload(upload.videoId))
     }
@@ -538,7 +538,7 @@ struct TVCreatorDetailView: View {
                     radius: focused ? 36 : 14, y: focused ? 24 : 8)
             .animation(.spring(response: 0.35, dampingFraction: 0.75), value: focused)
         }
-        .buttonStyle(TVCreatorFlatButtonStyle())
+        .buttonStyle(TVFlatButtonStyle())
         .focusEffectDisabled()
         .focused($focusedField, equals: .episode(episode.id))
     }
@@ -751,10 +751,3 @@ private struct TVPodcastPlayer: View {
 
 // MARK: - Focus style
 
-/// Draws nothing, so each control's own plate, capsule or outline is the
-/// focus cue. `.plain` still paints tvOS's white slab over the control.
-private struct TVCreatorFlatButtonStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-    }
-}
