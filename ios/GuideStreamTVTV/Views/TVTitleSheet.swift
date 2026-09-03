@@ -709,6 +709,16 @@ struct TVTitleSheet: View {
             season = ep.seasonNumber ?? browsingSeason
             episode = ep.episodeNumber
             focusedField = .play
+            // Selecting an episode is a request to watch that episode, not a
+            // request to re-target a button the viewer has to scroll back up
+            // to press — which is what it was, and why it read as doing
+            // nothing at all. The resolve is awaited first: season and
+            // episode feed the deep link, so launching before it returns
+            // would open whatever the previous target was.
+            Task {
+                await resolveStreamingData()
+                launchWatch()
+            }
         } label: {
             VStack(alignment: .leading, spacing: 12) {
                 ZStack(alignment: .bottomLeading) {
@@ -1150,34 +1160,42 @@ struct TVTitleSheet: View {
     /// itself goes through the existing chain — the source's tvOS scheme,
     /// then its iOS scheme, then the universal link, then a search inside the
     /// app — so it lands on the title, not the service's home screen.
+    /// Everything the watch button does when pressed, as a method so the
+    /// episode cards can reach it too — an episode is a watch request for
+    /// that episode, and it has to run the identical chain: subscription,
+    /// owned-label, offer sheet, resolved source, name fallback.
+    private func launchWatch() {
+        TVNavLog.log("watch pressed: subscribedSources=\(subscribedSources.map(\.name)) "
+                     + "labelled=\(subscribedLabelName ?? "none") "
+                     + "transactional=\(transactionalSources.count) "
+                     + "active=\(activeSource?.name ?? "nil") "
+                     + "fallback=\(resolvedStreaming?.providerNameFallback ?? "nil")")
+        if let channelId = youTubeChannelId {
+            TVOSDeepLinker.openYouTubeChannel(channelId: channelId, name: detail.title)
+        } else if subscribedSources.count == 1 {
+            // One service the viewer already pays for. There is nothing
+            // to ask — rent and buy offers are not alternatives to a
+            // subscription they own.
+            open(source: subscribedSources[0])
+        } else if subscribedSources.isEmpty, let owned = subscribedLabelName {
+            // Subscribed to the service the title is labelled with, but
+            // Watchmode gave no row for it. Open it by name — the same
+            // chain, resolving through the deep linker's own catalogue.
+            TVNavLog.log("watch: opening owned subscription \(owned)")
+            openByName(owned)
+        } else if needsWatchOptions {
+            showWatchOptions = true
+        } else if let source = activeSource {
+            open(source: source)
+        } else {
+            // No resolved source — fall back to the name-based open chain.
+            openByName(playServiceName)
+        }
+    }
+
     private var watchButton: some View {
         Button {
-            TVNavLog.log("watch pressed: subscribedSources=\(subscribedSources.map(\.name)) "
-                         + "labelled=\(subscribedLabelName ?? "none") "
-                         + "transactional=\(transactionalSources.count) "
-                         + "active=\(activeSource?.name ?? "nil") "
-                         + "fallback=\(resolvedStreaming?.providerNameFallback ?? "nil")")
-            if let channelId = youTubeChannelId {
-                TVOSDeepLinker.openYouTubeChannel(channelId: channelId, name: detail.title)
-            } else if subscribedSources.count == 1 {
-                // One service the viewer already pays for. There is nothing
-                // to ask — rent and buy offers are not alternatives to a
-                // subscription they own.
-                open(source: subscribedSources[0])
-            } else if subscribedSources.isEmpty, let owned = subscribedLabelName {
-                // Subscribed to the service the title is labelled with, but
-                // Watchmode gave no row for it. Open it by name — the same
-                // chain, resolving through the deep linker's own catalogue.
-                TVNavLog.log("watch: opening owned subscription \(owned)")
-                openByName(owned)
-            } else if needsWatchOptions {
-                showWatchOptions = true
-            } else if let source = activeSource {
-                open(source: source)
-            } else {
-                // No resolved source — fall back to the name-based open chain.
-                openByName(playServiceName)
-            }
+            launchWatch()
         } label: {
             HStack(spacing: 14) {
                 if isResolving && resolvedStreaming == nil || launchingService != nil {
