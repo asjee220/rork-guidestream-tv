@@ -135,7 +135,7 @@ struct TVSideMenu: View {
             resetFocus(in: menuNamespace)
             focusedItem = selection
         }
-        .onChange(of: focusedItem) { _, focused in
+        .onChange(of: focusedItem) { previous, focused in
             // The rail is a real focus section, so the focus engine moves
             // into it from the leading-most item of any row and back out to
             // the right — exactly the Paramount+ behaviour. Expansion simply
@@ -145,6 +145,26 @@ struct TVSideMenu: View {
             // prefersDefaultFocus in the root scope, so tvOS picks the
             // content, not the rail, on first appearance.
             isOpen = (focused != nil)
+
+            // Land on the current page, not on whatever row happens to sit
+            // level with the content the move came from.
+            //
+            // prefersDefaultFocus(item == selection) does not govern a
+            // directional move — it only decides where focus goes when the
+            // scope is given focus by assignment or resetFocus. A left move
+            // is resolved geometrically, so focus arrives at the row nearest
+            // the previously focused view, and since the hero's CTA and
+            // every rail sit low on the screen that was the bottom row:
+            // Profile, on every screen, every time.
+            //
+            // Only on entry. Once focus is inside the rail, up and down have
+            // to keep moving between rows, and `previous == nil` is what
+            // separates arriving from the content from moving within the
+            // menu. The reassignment re-enters this handler with a non-nil
+            // `previous`, so it cannot loop.
+            guard previous == nil, let focused, focused != selection else { return }
+            resetFocus(in: menuNamespace)
+            focusedItem = selection
         }
     }
 
