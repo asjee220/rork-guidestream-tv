@@ -63,6 +63,8 @@ final class TVTrailerStreamService {
     private var pendingURLs: [String: [String]] = [:]
     /// Resolution of the stream picked for each key, for the diagnostics.
     private var resolvedResolution: [String: Int] = [:]
+    /// Whether the stream picked for each key was progressive (video+audio).
+    private var resolvedProgressive: [String: Bool] = [:]
 
     private let selectedColumns = "tmdb_id,media_type,keys"
 
@@ -186,24 +188,29 @@ final class TVTrailerStreamService {
         // is also why some titles came up with no video at all.
         var out: [String: String] = [:]
         var chosenResolution: [String: Int] = [:]
+        var chosenProgressive: [String: Bool] = [:]
         for chunk in stride(from: 0, to: wanted.count, by: Self.maxConcurrentExtractions).map({
             Array(wanted[$0..<min($0 + Self.maxConcurrentExtractions, wanted.count)])
         }) {
-            await withTaskGroup(of: (String, [String], Int).self) { group in
+            await withTaskGroup(of: (String, [String], Int, Bool).self) { group in
                 for item in chunk {
                     let cached = resolved[item.key]
                     let cachedRes = resolvedResolution[item.key]
+                    let cachedProgressive = resolvedProgressive[item.key]
                     group.addTask {
-                        if let cached { return (item.titleId, [cached], cachedRes ?? 0) }
+                        if let cached {
+                            return (item.titleId, [cached], cachedRes ?? 0, cachedProgressive ?? false)
+                        }
                         let result = await Self.streamCandidatesWithResolution(for: item.key)
-                        return (item.titleId, result.urls, result.resolution)
+                        return (item.titleId, result.urls, result.resolution, result.progressive)
                     }
                 }
-                for await (titleId, urls, resolution) in group {
+                for await (titleId, urls, resolution, progressive) in group {
                     guard let best = urls.first else { continue }
                     out[titleId] = best
                     pendingURLs[titleId] = Array(urls.dropFirst())
                     chosenResolution[titleId] = resolution
+                    chosenProgressive[titleId] = progressive
                 }
             }
         }
@@ -213,6 +220,7 @@ final class TVTrailerStreamService {
             if let url = out[item.titleId] {
                 resolved[item.key] = url
                 resolvedResolution[item.key] = chosenResolution[item.titleId] ?? 0
+                resolvedProgressive[item.key] = chosenProgressive[item.titleId] ?? false
             } else {
                 failed.insert(item.key)
             }
@@ -223,7 +231,8 @@ final class TVTrailerStreamService {
             pool: pool,
             keys: keyByTmdbId,
             resolvedURLs: out,
-            resolutions: chosenResolution
+            resolutions: chosenResolution,
+            progressive: chosenProgressive
         )
         #endif
 
@@ -244,10 +253,12 @@ final class TVTrailerStreamService {
         while var keys = candidateKeys[titleId], !keys.isEmpty {
             let key = keys.removeFirst()
             candidateKeys[titleId] = keys
-            let urls = await Self.streamCandidates(for: key)
-            if let best = urls.first {
+            let result = await Self.streamCandidatesWithResolution(for: key)
+            if let best = result.urls.first {
                 resolved[key] = best
-                pendingURLs[titleId] = Array(urls.dropFirst())
+                resolvedResolution[key] = result.resolution
+                resolvedProgressive[key] = result.progressive
+                pendingURLs[titleId] = Array(result.urls.dropFirst())
                 return best
             }
             failed.insert(key)
@@ -262,7 +273,8 @@ final class TVTrailerStreamService {
         pool: [(tmdbId: Int, isTV: Bool)],
         keys: [Int: String],
         resolvedURLs: [String: String],
-        resolutions: [String: Int]
+        resolutions: [String: Int],
+        progressive: [String: Bool]
     ) async {
         for entry in pool {
             let kind = entry.isTV ? "tv" : "movie"
@@ -279,7 +291,9 @@ final class TVTrailerStreamService {
                     "content_url": .string(url.map { String($0.prefix(120)) } ?? "NO_STREAM"),
                     "device_kind": .string({
                         let res = resolutions[titleId] ?? 0
-                        return res == 0 ? "none" : "\(res)p"
+                        guard res > 0 else { return "none" }
+                        let kind = (progressive[titleId] ?? false) ? "progressive" : "adaptive"
+                        return "\(res)p-" + kind
                     }()),
                     "matched": .bool((resolutions[titleId] ?? 0) >= 1080)
                 ] as [String: AnyJSON])
@@ -290,48 +304,50 @@ final class TVTrailerStreamService {
 
     /// Playable streams for one video, best first.
     ///
-    /// The hero plays muted, so an audio track is dead weight — and that is
-    /// what was capping quality. `includesVideoAndAudioTrack` is an alias for
-    /// "progressive", and progressive YouTube tops out at 720p; the 1080p and
-    /// better renditions are all adaptive, video-only. Dropping the audio
-    /// requirement puts them back on the table, and AVPlayer opens a
-    /// video-only MP4 the same as any other.
+    /// **Progressive wins.** `includesVideoAndAudioTrack` is an alias for
+    /// "progressive": one file, video and audio muxed, which is what AVPlayer
+    /// opens reliably from googlevideo. The adaptive renditions are DASH
+    /// segments meant to be fetched by range, and handing one to AVPlayer as
+    /// a plain URL is what produced `item=failed err=unknown error
+    /// httpStatus=0` on 194 of 238 hero attempts. Resolution ranking used to
+    /// come first, and since progressive YouTube tops out at 720p that meant
+    /// a 1080p adaptive stream was chosen every single time.
+    ///
+    /// The hero also plays with sound now, so a video-only stream is silent
+    /// as well as fragile — two reasons to prefer the muxed file.
     ///
     /// `isNativelyPlayable` is codec-aware where an `.mp4` extension is not:
     /// three of five heroes were once handed mp4 containers Apple TV could
     /// not decode, and went straight to `.failed`.
     ///
-    /// Ranked highest resolution first, capped at 1080 — a muted hero behind
-    /// a scrim gains nothing above that and 4K costs bandwidth for nothing.
-    /// At equal resolution a progressive stream wins, being the better-trodden
-    /// path. Returns several so a URL that resolves but then refuses to play
-    /// can be stepped past without abandoning the title.
-    private nonisolated static func streamCandidates(for videoID: String) async -> [String] {
-        await streamCandidatesWithResolution(for: videoID).urls
-    }
-
-    /// As above, plus the resolution actually chosen — 0 when nothing
-    /// resolved. Recorded so the titles that cannot reach 1080 from YouTube
-    /// are a list rather than a guess: those are the ones worth a hosted
-    /// featurette in `title_featurettes`.
+    /// Adaptive is kept as a fallback rather than dropped — a title with no
+    /// progressive rendition is better off trying than showing a still.
+    /// Capped at 1080 either way. Returns several so a URL that resolves and
+    /// then refuses to play can be stepped past without abandoning the title.
+    ///
+    /// Also reports the resolution actually chosen (0 when nothing resolved)
+    /// and whether it was progressive, so `debug_logs` says which path each
+    /// title took instead of leaving it to be guessed.
     private nonisolated static func streamCandidatesWithResolution(
         for videoID: String
-    ) async -> (urls: [String], resolution: Int) {
+    ) async -> (urls: [String], resolution: Int, progressive: Bool) {
         do {
             let streams = try await YouTube(videoID: videoID).streams
             let playable = streams.filter { $0.isNativelyPlayable && $0.includesVideoTrack }
             let capped = playable.filter { ($0.videoResolution ?? 0) <= 1080 }
             let pool = capped.isEmpty ? playable : capped
-            let ranked = pool.sorted { lhs, rhs in
-                let lr = lhs.videoResolution ?? 0
-                let rr = rhs.videoResolution ?? 0
-                if lr != rr { return lr > rr }
-                return lhs.includesVideoAndAudioTrack && !rhs.includesVideoAndAudioTrack
-            }
+            let progressive = pool
+                .filter { $0.includesVideoAndAudioTrack }
+                .sorted { ($0.videoResolution ?? 0) > ($1.videoResolution ?? 0) }
+            let adaptive = pool
+                .filter { !$0.includesVideoAndAudioTrack }
+                .sorted { ($0.videoResolution ?? 0) > ($1.videoResolution ?? 0) }
+            let ranked = progressive + adaptive
             return (ranked.prefix(4).map { $0.url.absoluteString },
-                    ranked.first?.videoResolution ?? 0)
+                    ranked.first?.videoResolution ?? 0,
+                    ranked.first?.includesVideoAndAudioTrack ?? false)
         } catch {
-            return ([], 0)
+            return ([], 0, false)
         }
     }
 }

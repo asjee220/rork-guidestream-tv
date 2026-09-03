@@ -494,7 +494,12 @@ struct TVHeroCarousel: View {
         // it is the app's front page and it plays with sound like Apple's TV
         // app and every service's own home screen.
         warm.isMuted = false
-        warm.automaticallyWaitsToMinimizeStalling = true
+        // Waiting to minimise stalling is the wrong trade for a hero that
+        // holds the screen for 26 seconds: AVPlayer sits at .paused with a
+        // ready item while it decides, the layer never fades in, and the
+        // item loses its turn. Start on demand and let it rebuffer if it
+        // must — the dwell already advances on a real stall.
+        warm.automaticallyWaitsToMinimizeStalling = false
         prerolledPlayer = warm
         prerolledIndex = next
     }
@@ -520,6 +525,7 @@ struct TVHeroCarousel: View {
         }
         guard let playerItem = newPlayer.currentItem else { return }
         newPlayer.isMuted = false
+        newPlayer.automaticallyWaitsToMinimizeStalling = false
         player = newPlayer
         newPlayer.play()
 
@@ -545,6 +551,7 @@ struct TVHeroCarousel: View {
             // 100ms ticks over the same 20s budget: the poster gives way the
             // moment the stream is genuinely playing, with no hold in front
             // of it, so the only thing between still and video is the fade.
+            var readyButStalled = 0
             for _ in 0..<200 {
                 guard !Task.isCancelled else { return }
                 guard let newPlayer else { return }
@@ -555,6 +562,21 @@ struct TVHeroCarousel: View {
                 if newPlayer.currentItem?.status == .failed {
                     await retryWithNextStream(for: item)
                     return
+                }
+                // An item that reaches .readyToPlay and still will not play
+                // never reaches .failed either, so it used to sit here for
+                // the whole 22s grace and the carousel rotated on the still.
+                // Nudge it once at 3s, then move to the next stream at 6s.
+                if newPlayer.currentItem?.status == .readyToPlay {
+                    readyButStalled += 1
+                    if readyButStalled == 30 {
+                        newPlayer.play()
+                    } else if readyButStalled >= 60 {
+                        await retryWithNextStream(for: item)
+                        return
+                    }
+                } else {
+                    readyButStalled = 0
                 }
                 try? await Task.sleep(for: .milliseconds(100))
             }
