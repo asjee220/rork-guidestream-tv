@@ -167,14 +167,33 @@ private struct TVGenreTile: View {
             .clipShape(.rect(cornerRadius: 14))
             .overlay {
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .stroke(isFocused ? TVTheme.orange : Color.clear, lineWidth: 4)
+                    .stroke(
+                        isFocused ? TVTheme.orange.opacity(0.95) : Color.white.opacity(0.06),
+                        lineWidth: isFocused ? 4 : 1
+                    )
             }
         }
-        .buttonStyle(.plain)
+        // Not .plain: that style still paints tvOS's white slab over the
+        // tile. An empty style draws nothing, leaving the outline and glow
+        // below as the only focus cue — the same treatment the poster cards
+        // in the results grid use.
+        .buttonStyle(TVGenreTileButtonStyle())
         .focused($isFocused)
         .focusEffectDisabled()
         .scaleEffect(isFocused ? 1.05 : 1.0)
-        .animation(.easeOut(duration: 0.15), value: isFocused)
+        .shadow(
+            color: isFocused ? TVTheme.orange.opacity(0.55) : Color.black.opacity(0.45),
+            radius: isFocused ? 36 : 14,
+            y: isFocused ? 24 : 8
+        )
+        .animation(.spring(response: 0.35, dampingFraction: 0.75), value: isFocused)
         .accessibilityLabel("Browse \(genre.name)")
+    }
+}
+
+/// Draws nothing, so the tile's own outline and glow are the focus cue.
+private struct TVGenreTileButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
     }
 }
