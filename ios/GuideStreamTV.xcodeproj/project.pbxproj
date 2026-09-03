@@ -968,7 +968,7 @@
 			repositoryURL = "https://github.com/alexeichhorn/YouTubeKit.git";
 			requirement = {
 				kind = upToNextMajorVersion;
-				minimumVersion = 0.4.8;
+				minimumVersion = 0.4.9;
 			};
 		};
 		YY30A1B2C3D4E5F6A7B8C9D0YY /* XCRemoteSwiftPackageReference "youtube-ios-player-helper" */ = {
