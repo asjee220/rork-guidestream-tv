@@ -62,9 +62,20 @@ struct TVMainView: View {
                     // physical edge, exactly like the Home hero — and the
                     // rail stays a sibling, so the focus engine moves into
                     // the menu on a left move with nothing bolted on.
-                    TVTitleSheet(detail: titleRoute) { _ in
-                        self.titleRoute = nil
-                        resetFocus(in: rootNamespace)
+                    // A creator is not a TMDB title: TVTitleSheet is built
+                    // around a tmdb_id, so a yt:/pod:/tw:/kick: row opened
+                    // there showed a stretched avatar and five empty
+                    // sections. Same route, different screen.
+                    if TVCreatorKind.from(titleId: titleRoute.titleId) != nil {
+                        TVCreatorDetailView(detail: titleRoute) { _ in
+                            self.titleRoute = nil
+                            resetFocus(in: rootNamespace)
+                        }
+                    } else {
+                        TVTitleSheet(detail: titleRoute) { _ in
+                            self.titleRoute = nil
+                            resetFocus(in: rootNamespace)
+                        }
                     }
                 } else {
                     screen(for: selection, leadingBleed: safeLeading + contentLeadingInset)

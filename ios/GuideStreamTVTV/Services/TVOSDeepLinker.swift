@@ -89,6 +89,15 @@ enum TVOSDeepLinker {
         }
     }
 
+    /// Opens the first URL in `urls` the system can handle, falling through
+    /// on refusal. The creator screen builds its own chains — a Twitch or
+    /// Kick slug is not a streaming-service name, so `resolve(platform:…)`
+    /// has nothing to say about it — and this is the shared walker.
+    @MainActor
+    static func openURLChain(_ urls: [URL], completion: ((Bool) -> Void)? = nil) {
+        openChain(urls, completion: completion)
+    }
+
     /// Opens a YouTube creator channel on the tvOS YouTube app. Walks the
     /// channel URL, then a search by name, then the YouTube app home, so a
     /// creator lands on their channel where the tvOS app supports it and
