@@ -137,6 +137,15 @@ struct TVMainView: View {
             menuIsOpen = false
             resetFocus(in: rootNamespace)
         }
+        .onChange(of: menuIsOpen) { _, open in
+            // Closing the menu has to hand focus somewhere. Clearing the
+            // rail's @FocusState leaves tvOS with no focused view at all, and
+            // a remote with nothing focused is a dead remote. Resetting the
+            // root scope gives it to the content, which is what
+            // prefersDefaultFocus(true, in: rootNamespace) marks.
+            guard !open else { return }
+            resetFocus(in: rootNamespace)
+        }
         .onPreferenceChange(TVHeroHoldsLeftKey.self) { holds in
             TVNavLog.log("main sees heroHoldsLeft=\(holds)")
             heroHoldsLeft = holds

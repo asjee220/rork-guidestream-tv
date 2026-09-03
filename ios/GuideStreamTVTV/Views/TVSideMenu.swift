@@ -124,6 +124,24 @@ struct TVSideMenu: View {
         .padding(.vertical, verticalInset)
         .focusSection()
         .focusScope(menuNamespace)
+        // Right is the way out, and it has to be said explicitly.
+        //
+        // The panel overlays the content rather than displacing it: open, it
+        // covers 0–300pt, while the content's own inset starts it at 120pt.
+        // So the focusable views nearest the rail — the hero's CTA, the first
+        // poster in a row — *overlap* it horizontally instead of sitting to
+        // its right, and a right move gives the focus engine no candidate to
+        // land on. Focus stayed in the menu with nothing to do about it.
+        //
+        // Observed, not consumed: .onMoveCommand would take up and down as
+        // well and trap focus here permanently, which is the trap documented
+        // at the top of TVRemoteSwipe. Clearing focusedItem collapses the
+        // panel through the handler below, and TVMainView hands focus back to
+        // the content when it sees the menu close.
+        .onRemoteDirection(isEnabled: focusedItem != nil) { direction in
+            guard direction == .right else { return }
+            focusedItem = nil
+        }
         .animation(.easeOut(duration: 0.25), value: isOpen)
         .onChange(of: isOpen) { _, open in
             // The hero raises isOpen without focus moving, because it
