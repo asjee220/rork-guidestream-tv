@@ -45,6 +45,10 @@ struct CastToTVSheet: View {
     @State private var isManualEntryExpanded: Bool = false
     @State private var manualHost: String = ""
     @State private var isProbingManual: Bool = false
+    /// Apple TV names registered to the signed-in account. `nil` while the
+    /// lookup is in flight, when signed out, or when it failed — in all three
+    /// the sheet says nothing rather than guessing.
+    @State private var registeredTVNames: Set<String>? = nil
     @FocusState private var manualFieldFocused: Bool
 
     /// Roku and Apple TV. Everything else discovery turns up is filtered
@@ -87,6 +91,22 @@ struct CastToTVSheet: View {
             let key = Self.castName(device.name).lowercased()
             return bestByName[key]?.id == device.id
         }
+    }
+
+    /// True when this is an Apple TV the account has never seen listening.
+    ///
+    /// A play command goes out on `play-commands:{userId}` and only a TV
+    /// signed into the same account is on that topic, so casting to one that
+    /// is not registered does nothing at all — the broadcast is published and
+    /// simply has no listener. Bonjour cannot tell the two apart, which is
+    /// why the sheet has to.
+    ///
+    /// Deliberately conservative: unknown (`nil`) never warns, and a TV that
+    /// has the app but has not signed in yet reads the same as one on another
+    /// account, because for casting purposes it is the same thing.
+    private func isUnreachableAppleTV(_ device: DiscoveredTVDevice) -> Bool {
+        guard device.kind == .appleTV, let names = registeredTVNames else { return false }
+        return !names.contains(Self.castName(device.name).lowercased())
     }
 
     /// The name the Apple TV will recognise as its own.
@@ -141,6 +161,7 @@ struct CastToTVSheet: View {
             .presentationSizing(.page)
             .sheetSurface(.raised)
             .onAppear { startScan(prewarm: true) }
+            .task { registeredTVNames = await TVReceiverDirectory.registeredNames() }
             .onDisappear {
                 discovery.stop()
                 permissionCheckTask?.cancel()
@@ -625,9 +646,19 @@ struct CastToTVSheet: View {
                         .scaledFont(size: 16, weight: .semibold)
                         .foregroundStyle(.white)
                         .lineLimit(1)
-                    Text(sendingDeviceId == device.id ? "Connecting…" : device.subtitle)
-                        .scaledFont(size: 12)
-                        .foregroundStyle(Color.white.opacity(0.55))
+                    if sendingDeviceId != device.id, isUnreachableAppleTV(device) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "person.crop.circle.badge.exclamationmark")
+                                .scaledFont(size: 11, weight: .semibold)
+                            Text("Not signed in on this account")
+                                .scaledFont(size: 12)
+                        }
+                        .foregroundStyle(Color.orange.opacity(0.9))
+                    } else {
+                        Text(sendingDeviceId == device.id ? "Connecting…" : device.subtitle)
+                            .scaledFont(size: 12)
+                            .foregroundStyle(Color.white.opacity(0.55))
+                    }
                 }
 
                 Spacer(minLength: 0)
@@ -887,6 +918,22 @@ struct CastToTVSheet: View {
                 guard ok else {
                     UINotificationFeedbackGenerator().notificationOccurred(.error)
                     showToast(ToastState(message: "Couldn't reach \(device.name)", icon: "exclamationmark.triangle.fill"))
+                    return
+                }
+                // The command was published, but an Apple TV that has never
+                // registered on this account is not on this account's
+                // play-command topic and cannot have heard it. Deliberately
+                // still sent rather than blocked: a TV running an older tvOS
+                // build does not register either, and it does receive
+                // normally, so blocking would break a working setup during
+                // the version skew. What changes is the claim — a caution
+                // the user can act on instead of "Playing on…" over silence.
+                guard !isUnreachableAppleTV(device) else {
+                    UINotificationFeedbackGenerator().notificationOccurred(.warning)
+                    showToast(ToastState(
+                        message: "Nothing on \(device.name) is signed in to this account",
+                        icon: "person.crop.circle.badge.exclamationmark"
+                    ))
                     return
                 }
                 UINotificationFeedbackGenerator().notificationOccurred(.success)

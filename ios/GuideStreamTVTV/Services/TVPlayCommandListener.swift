@@ -139,6 +139,13 @@ final class TVPlayCommandListener {
         let stream = ch.broadcastStream(event: "play-command")
         await ch.subscribe()
 
+        // Tell the account this TV is listening, and under what name. The
+        // phone's cast sheet reads these rows to spot a TV that is signed
+        // into a different account — the failure that looks like nothing
+        // happening at all. Detached so a slow AirPlay name probe or a
+        // failed write never delays the listening loop.
+        Task { @MainActor in await TVReceiverRegistry.register(userId: userId) }
+
         #if DEBUG
         // Subscribe tracing is a debug aid, not shipping behaviour — this
         // wrote a debug_logs row on every reconnect in build 16.
