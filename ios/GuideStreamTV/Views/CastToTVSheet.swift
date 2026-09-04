@@ -232,6 +232,10 @@ struct CastToTVSheet: View {
                     ForEach(castableDevices) { device in
                         deviceRow(device)
                     }
+                    if hiddenAppleTVCount > 0 {
+                        appleTVNoticeCard
+                            .padding(.top, 4)
+                    }
                     manualEntrySection
                         .padding(.top, 4)
                     rescanButton
@@ -241,6 +245,66 @@ struct CastToTVSheet: View {
                 .padding(.bottom, 28)
             }
         }
+    }
+
+    /// The phone itself has to be signed in to pair with any Apple TV, so a
+    /// signed-out phone needs different advice from "sign in on the TV".
+    private var isPhoneSignedOut: Bool { !AuthViewModel.shared.isAuthenticated }
+
+    private var appleTVNoticeTitle: String {
+        if isPhoneSignedOut { return "Sign in to use an Apple TV" }
+        return hiddenAppleTVCount == 1
+            ? "1 Apple TV isn't signed in"
+            : "\(hiddenAppleTVCount) Apple TVs aren't signed in"
+    }
+
+    private var appleTVNoticeBody: String {
+        if isPhoneSignedOut {
+            return "Sending to an Apple TV pairs your phone with the TV, so you need to be signed in on both. Roku works either way."
+        }
+        return "Sign in to GuideStream on the TV with the same account you use here and it'll appear in this list."
+    }
+
+    /// Sits under the device rows whenever discovery found Apple TVs that
+    /// cannot receive. It is a note, never a replacement for the list — a
+    /// Roku on the network is still castable and must stay on screen.
+    private var appleTVNoticeCard: some View {
+        Button { showAppleTVHelp = true } label: {
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: "appletv")
+                    .scaledFont(size: 14, weight: .semibold)
+                    .foregroundStyle(Color.orange)
+                    .padding(.top, 1)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(appleTVNoticeTitle)
+                        .scaledFont(size: 13, weight: .semibold)
+                        .foregroundStyle(.white)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Text(appleTVNoticeBody)
+                        .scaledFont(size: 12)
+                        .foregroundStyle(Color.white.opacity(0.6))
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Text("Show me how")
+                        .scaledFont(size: 12, weight: .semibold)
+                        .foregroundStyle(Color.orange)
+                        .padding(.top, 2)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            .background(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(Color.orange.opacity(0.08))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(Color.orange.opacity(0.22), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
     }
 
     /// `true` when the app is running in any iOS Simulator (including Rork's
@@ -333,14 +397,12 @@ struct CastToTVSheet: View {
                         rescanButton
                     }
                 } else if hiddenAppleTVCount > 0 {
-                    Text(hiddenAppleTVCount == 1
-                         ? "Your Apple TV isn't signed in yet"
-                         : "None of your Apple TVs are signed in yet")
+                    Text(appleTVNoticeTitle)
                         .scaledFont(size: 16, weight: .semibold)
                         .foregroundStyle(.white)
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, 18)
-                    Text("Open GuideStream on the Apple TV and sign in with the same account you use here. It'll show up in this list straight away.")
+                    Text(appleTVNoticeBody)
                         .scaledFont(size: 13)
                         .foregroundStyle(Color.white.opacity(0.6))
                         .multilineTextAlignment(.center)
