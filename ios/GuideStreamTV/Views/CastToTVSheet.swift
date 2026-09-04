@@ -49,6 +49,7 @@ struct CastToTVSheet: View {
     /// lookup is in flight, when signed out, or when it failed — in all three
     /// the sheet says nothing rather than guessing.
     @State private var registeredTVNames: Set<String>? = nil
+    @State private var showAppleTVHelp: Bool = false
     @FocusState private var manualFieldFocused: Bool
 
     /// Roku and Apple TV. Everything else discovery turns up is filtered
@@ -86,27 +87,42 @@ struct CastToTVSheet: View {
                 bestByName[key] = device
             }
         }
-        // Return in discovery order, keeping only the best per name.
+        // Return in discovery order, keeping only the best per name — and,
+        // for Apple TVs, only the ones that are actually listening.
         return rokus.filter { device in
             let key = Self.castName(device.name).lowercased()
-            return bestByName[key]?.id == device.id
+            guard bestByName[key]?.id == device.id else { return false }
+            return device.kind != .appleTV || isListeningAppleTV(device)
         }
     }
 
-    /// True when this is an Apple TV the account has never seen listening.
+    /// Apple TVs discovery found that are NOT listening on this account, so
+    /// the sheet can explain an empty list instead of just being empty.
+    private var hiddenAppleTVCount: Int {
+        discovery.devices
+            .filter { $0.kind == .appleTV && !isListeningAppleTV($0) }
+            .reduce(into: Set<String>()) { $0.insert(Self.castName($1.name).lowercased()) }
+            .count
+    }
+
+    /// True when this Apple TV has told this account it is listening for play
+    /// commands — i.e. the GuideStream tvOS app is installed, signed into the
+    /// same account, and has subscribed at least once.
     ///
-    /// A play command goes out on `play-commands:{userId}` and only a TV
-    /// signed into the same account is on that topic, so casting to one that
-    /// is not registered does nothing at all — the broadcast is published and
-    /// simply has no listener. Bonjour cannot tell the two apart, which is
-    /// why the sheet has to.
+    /// This is the whole eligibility test for the list. A play command goes
+    /// out on `play-commands:{userId}`; only a TV signed into that account is
+    /// on that topic, so anything else is a target the phone can publish to
+    /// and never reach. Bonjour cannot tell the two apart — it also answers
+    /// for AirPlay receivers that are not Apple TVs at all, like an LG webOS
+    /// set or an iPad, which can never run the tvOS app. Registration
+    /// separates them all in one test.
     ///
-    /// Deliberately conservative: unknown (`nil`) never warns, and a TV that
-    /// has the app but has not signed in yet reads the same as one on another
-    /// account, because for casting purposes it is the same thing.
-    private func isUnreachableAppleTV(_ device: DiscoveredTVDevice) -> Bool {
-        guard device.kind == .appleTV, let names = registeredTVNames else { return false }
-        return !names.contains(Self.castName(device.name).lowercased())
+    /// `nil` — signed out, or the lookup failed — means nothing is known to
+    /// be listening, and a signed-out phone genuinely cannot cast to any
+    /// Apple TV, so nothing qualifies.
+    private func isListeningAppleTV(_ device: DiscoveredTVDevice) -> Bool {
+        guard let names = registeredTVNames else { return false }
+        return names.contains(Self.castName(device.name).lowercased())
     }
 
     /// The name the Apple TV will recognise as its own.
@@ -162,6 +178,7 @@ struct CastToTVSheet: View {
             .sheetSurface(.raised)
             .onAppear { startScan(prewarm: true) }
             .task { registeredTVNames = await TVReceiverDirectory.registeredNames() }
+            .sheet(isPresented: $showAppleTVHelp) { AppleTVSignInHelpSheet() }
             .onDisappear {
                 discovery.stop()
                 permissionCheckTask?.cancel()
@@ -178,12 +195,28 @@ struct CastToTVSheet: View {
                     ? "Scanning your network…"
                     : "Choose a device to send \"\(showTitle)\""
             )
-            Text("Play on TV supports Roku and Apple TV. Support for more TV platforms is coming in a future update.")
-                .scaledFont(size: 12)
-                .foregroundStyle(Color.white.opacity(0.5))
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.horizontal, 10)
-                .padding(.bottom, 12)
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Play on TV supports Roku and Apple TV. Support for more TV platforms is coming in a future update.")
+                    .scaledFont(size: 12)
+                    .foregroundStyle(Color.white.opacity(0.5))
+                    .fixedSize(horizontal: false, vertical: true)
+                Text("An Apple TV shows up here only once you've signed in to GuideStream on the TV itself — that's what lets your phone hand a show over to it.")
+                    .scaledFont(size: 12)
+                    .foregroundStyle(Color.white.opacity(0.5))
+                    .fixedSize(horizontal: false, vertical: true)
+                Button { showAppleTVHelp = true } label: {
+                    HStack(spacing: 4) {
+                        Text("Why isn't my Apple TV here?")
+                            .scaledFont(size: 12, weight: .semibold)
+                        Image(systemName: "chevron.right")
+                            .scaledFont(size: 9, weight: .semibold)
+                    }
+                    .foregroundStyle(Color.orange)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 10)
+            .padding(.bottom, 12)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -299,6 +332,26 @@ struct CastToTVSheet: View {
                         openWiFiSettingsButton
                         rescanButton
                     }
+                } else if hiddenAppleTVCount > 0 {
+                    Text(hiddenAppleTVCount == 1
+                         ? "Your Apple TV isn't signed in yet"
+                         : "None of your Apple TVs are signed in yet")
+                        .scaledFont(size: 16, weight: .semibold)
+                        .foregroundStyle(.white)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 18)
+                    Text("Open GuideStream on the Apple TV and sign in with the same account you use here. It'll show up in this list straight away.")
+                        .scaledFont(size: 13)
+                        .foregroundStyle(Color.white.opacity(0.6))
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 28)
+                    Button { showAppleTVHelp = true } label: {
+                        Text("Show me how")
+                            .scaledFont(size: 13, weight: .semibold)
+                            .foregroundStyle(Color.orange)
+                    }
+                    .buttonStyle(.plain)
+                    rescanButton
                 } else if showPermissionPrompt {
                     Text("Couldn't find any devices yet")
                         .scaledFont(size: 16, weight: .semibold)
@@ -646,19 +699,9 @@ struct CastToTVSheet: View {
                         .scaledFont(size: 16, weight: .semibold)
                         .foregroundStyle(.white)
                         .lineLimit(1)
-                    if sendingDeviceId != device.id, isUnreachableAppleTV(device) {
-                        HStack(spacing: 4) {
-                            Image(systemName: "person.crop.circle.badge.exclamationmark")
-                                .scaledFont(size: 11, weight: .semibold)
-                            Text("Not signed in on this account")
-                                .scaledFont(size: 12)
-                        }
-                        .foregroundStyle(Color.orange.opacity(0.9))
-                    } else {
-                        Text(sendingDeviceId == device.id ? "Connecting…" : device.subtitle)
-                            .scaledFont(size: 12)
-                            .foregroundStyle(Color.white.opacity(0.55))
-                    }
+                    Text(sendingDeviceId == device.id ? "Connecting…" : device.subtitle)
+                        .scaledFont(size: 12)
+                        .foregroundStyle(Color.white.opacity(0.55))
                 }
 
                 Spacer(minLength: 0)
@@ -918,22 +961,6 @@ struct CastToTVSheet: View {
                 guard ok else {
                     UINotificationFeedbackGenerator().notificationOccurred(.error)
                     showToast(ToastState(message: "Couldn't reach \(device.name)", icon: "exclamationmark.triangle.fill"))
-                    return
-                }
-                // The command was published, but an Apple TV that has never
-                // registered on this account is not on this account's
-                // play-command topic and cannot have heard it. Deliberately
-                // still sent rather than blocked: a TV running an older tvOS
-                // build does not register either, and it does receive
-                // normally, so blocking would break a working setup during
-                // the version skew. What changes is the claim — a caution
-                // the user can act on instead of "Playing on…" over silence.
-                guard !isUnreachableAppleTV(device) else {
-                    UINotificationFeedbackGenerator().notificationOccurred(.warning)
-                    showToast(ToastState(
-                        message: "Nothing on \(device.name) is signed in to this account",
-                        icon: "person.crop.circle.badge.exclamationmark"
-                    ))
                     return
                 }
                 UINotificationFeedbackGenerator().notificationOccurred(.success)
