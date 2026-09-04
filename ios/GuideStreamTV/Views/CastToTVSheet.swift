@@ -577,6 +577,35 @@ struct CastToTVSheet: View {
         }
     }
 
+    /// The badge was a hardcoded purple circle with the Roku wordmark on
+    /// every row, which was fine while Roku was the only device that could
+    /// be listed. An Apple TV arriving in Roku's badge is worse than no
+    /// badge at all, so each kind carries its own mark.
+    private func badgeFill(_ kind: TVDeviceKind) -> Color {
+        switch kind {
+        case .roku:    return Color(red: 0x66/255, green: 0x2D/255, blue: 0x91/255)
+        case .appleTV: return .black
+        default:       return Color.white.opacity(0.16)
+        }
+    }
+
+    @ViewBuilder
+    private func badgeMark(_ kind: TVDeviceKind) -> some View {
+        switch kind {
+        case .roku:
+            Text("Roku")
+                .scaledFont(size: 12, weight: .bold)
+                .foregroundStyle(.white)
+                .minimumScaleFactor(0.8)
+        default:
+            // `appletv` for an Apple TV, and whatever deviceIconName already
+            // maps for the rest — one place decides the glyph.
+            Image(systemName: deviceIconName(kind))
+                .scaledFont(size: 21, weight: .medium)
+                .foregroundStyle(.white)
+        }
+    }
+
     // MARK: Device row
     private func deviceRow(_ device: DiscoveredTVDevice) -> some View {
         Button {
@@ -585,12 +614,10 @@ struct CastToTVSheet: View {
             HStack(spacing: 14) {
                 ZStack {
                     Circle()
-                        .fill(Color(red: 0x66/255, green: 0x2D/255, blue: 0x91/255))
+                        .fill(badgeFill(device.kind))
                         .frame(width: 46, height: 46)
-                    Text("Roku")
-                        .scaledFont(size: 12, weight: .bold)
-                        .foregroundStyle(.white)
-                        .minimumScaleFactor(0.8)
+                        .overlay(Circle().stroke(Color.white.opacity(0.12), lineWidth: 1))
+                    badgeMark(device.kind)
                 }
 
                 VStack(alignment: .leading, spacing: 2) {
