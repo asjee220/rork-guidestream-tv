@@ -166,14 +166,27 @@ final class TVPlayCommandListener {
 
     // MARK: - JSONObject decoding
 
+    /// Pull the command out of a broadcast frame.
+    ///
+    /// Supabase hands the subscriber the whole envelope —
+    /// `{"type":"broadcast","event":"play-command","payload":{...}}` — not the
+    /// bare message, and that is true for a phone broadcast and a server-side
+    /// `realtime.send()` alike. This used to read `json["platform"]` off the
+    /// envelope, which is always nil, so every command that arrived was
+    /// dropped in silence. Both shapes are accepted now so an older sender
+    /// still works.
     private func decodePayload(from json: JSONObject) -> PlayCommandPayload? {
-        guard case .string(let platform) = json["platform"],
-              case .string(let title) = json["title"],
-              case .string(let targetName) = json["target_name"] else {
+        let body: JSONObject = {
+            if case .object(let inner) = json["payload"] { return inner }
+            return json
+        }()
+        guard case .string(let platform) = body["platform"],
+              case .string(let title) = body["title"],
+              case .string(let targetName) = body["target_name"] else {
             return nil
         }
         let contentURL: String? = {
-            guard case .string(let s) = json["contentURL"], !s.isEmpty else { return nil }
+            guard case .string(let s) = body["contentURL"], !s.isEmpty else { return nil }
             return s
         }()
         return PlayCommandPayload(platform: platform, title: title, contentURL: contentURL, targetName: targetName)
@@ -182,8 +195,11 @@ final class TVPlayCommandListener {
     private func handle(event: JSONObject, myDeviceId: String) async {
         guard let payload = decodePayload(from: event) else {
             #if DEBUG
-            print("[TVPlayCommand] decode failed")
+            print("[TVPlayCommand] decode failed: \(event)")
             #endif
+            // A silent decode failure is what hid this bug: the command was
+            // arriving, nothing was logged, and the TV looked deaf.
+            Task { @MainActor in await logDecodeFailure(event) }
             return
         }
 
@@ -235,6 +251,22 @@ final class TVPlayCommandListener {
             "matched": .bool(matched),
             "platform": .string(payload.platform),
             "title": .string(payload.title)
+        ]
+        try? await TVSupabaseManager.shared.client
+            .from("debug_logs")
+            .insert(payloadDict)
+            .execute()
+    }
+
+    /// Record a broadcast the TV could not read, with the raw keys, so a
+    /// shape change on the sending side is visible instead of invisible.
+    private func logDecodeFailure(_ event: JSONObject) async {
+        let keys = event.keys.sorted().joined(separator: ",")
+        let payloadDict: [String: AnyJSON] = [
+            "event": .string("play_command_undecodable"),
+            "device_name": .string(UIDevice.current.name),
+            "target_name": .string("keys=\(keys)"),
+            "matched": .bool(false)
         ]
         try? await TVSupabaseManager.shared.client
             .from("debug_logs")
