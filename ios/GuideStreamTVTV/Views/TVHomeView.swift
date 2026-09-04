@@ -95,6 +95,13 @@ struct TVHomeView: View {
     @State private var heroFeaturettes: [String: String] = [:]
 
     @State private var pendingDetail: TVTitleDetail?
+    /// 16:9 backdrop for Today's Pick, resolved from TMDB. `streaming_releases`
+    /// carries poster art only, and a 2:3 poster filled into the wide banner
+    /// crops the picture to a strip of its middle. Nil until it resolves (or
+    /// if the title has no backdrop), in which case the poster is shown whole
+    /// rather than cropped.
+    @State private var todaysPickBackdropUrl: String? = nil
+    @State private var todaysPickBackdropTmdbId: Int? = nil
 
     /// Drives the hero's Add to Watch List button as the default focus for
     /// the Home scene, so the app opens with the hero fully visible.
@@ -514,9 +521,26 @@ struct TVHomeView: View {
             GeometryReader { proxy in
                 todaysPickCard(for: pick, width: proxy.size.width)
             }
-            .frame(height: 270)
+            .frame(height: Self.todaysPickHeight)
             .padding(.horizontal, 80)
         }
+        .task(id: pick.tmdbId) { await resolveTodaysPickBackdrop(for: pick) }
+    }
+
+    /// Banner height. 270 was the shared TVWideCard default and left the
+    /// artwork squeezed; 420 gives a full-width 16:9 backdrop room to breathe
+    /// on a 1080-tall screen without pushing Top Picks off the fold.
+    private static let todaysPickHeight: CGFloat = 420
+
+    /// Resolves the pick's TMDB backdrop once per title. Failures are silent:
+    /// the poster fallback renders whole, so there is nothing to report.
+    private func resolveTodaysPickBackdrop(for pick: TVStreamingRelease) async {
+        guard todaysPickBackdropTmdbId != pick.tmdbId else { return }
+        todaysPickBackdropTmdbId = pick.tmdbId
+        todaysPickBackdropUrl = nil
+        let path = await TVTMDBService.shared.getBackdropPath(tmdbId: pick.tmdbId, isTV: pick.isTV)
+        guard todaysPickBackdropTmdbId == pick.tmdbId else { return }
+        todaysPickBackdropUrl = TVTMDBImage.url(path, size: .backdrop1280)
     }
 
     /// Full-width TVWideCard for the daily pick — shows the title, the
@@ -531,13 +555,19 @@ struct TVHomeView: View {
         let isSubscribed = pick.sourceName.map {
             AuthViewModel.shared.subscribesToService(named: $0)
         } ?? false
+        // A backdrop is 16:9 and fills the banner correctly. Without one the
+        // poster is shown whole — letterboxed on a blurred bed of its own
+        // colours — rather than cropped to its middle strip.
+        let hasBackdrop = todaysPickBackdropUrl != nil
         return TVWideCard(
             title: pick.title,
             subtitle: pick.sourceName,
-            backdropUrl: posterUrl,
+            backdropUrl: todaysPickBackdropUrl ?? posterUrl,
             accent: TVTheme.orange,
             isSaved: streams.contains(titleId: titleId),
-            width: width
+            width: width,
+            height: Self.todaysPickHeight,
+            imageContentMode: hasBackdrop ? .fill : .fit
         ) {
             pendingDetail = TVTitleDetail(
                 titleId: titleId,

@@ -115,6 +115,14 @@ struct TVWideCard: View {
     /// sites render exactly as before. Used by full-width layouts such as
     /// the Home "Today's Pick" banner.
     let width: CGFloat?
+    /// Optional height override — defaults to 270 so existing call sites are
+    /// unchanged. The Home "Today's Pick" banner asks for more.
+    let height: CGFloat?
+    /// How the artwork fills the card. `.fill` is right for a 16:9 backdrop.
+    /// `.fit` is for a portrait poster, which `.fill` would crop to a sliver
+    /// of its middle — the Today's Pick banner was showing faces cut in half
+    /// because a 2:3 poster was being filled into a wide box.
+    let imageContentMode: ContentMode
     let action: () -> Void
 
     @FocusState private var isFocused: Bool
@@ -126,6 +134,8 @@ struct TVWideCard: View {
         accent: Color = TVTheme.newsGreen,
         isSaved: Bool = false,
         width: CGFloat? = nil,
+        height: CGFloat? = nil,
+        imageContentMode: ContentMode = .fill,
         action: @escaping () -> Void
     ) {
         self.title = title
@@ -134,6 +144,8 @@ struct TVWideCard: View {
         self.accent = accent
         self.isSaved = isSaved
         self.width = width
+        self.height = height
+        self.imageContentMode = imageContentMode
         self.action = action
     }
 
@@ -142,7 +154,19 @@ struct TVWideCard: View {
             ZStack(alignment: .topLeading) {
                 Color(white: 0.05)
                     .overlay {
-                        TVRemoteImage(urlString: backdropUrl)
+                        // A blurred, over-scaled copy fills the corners so a
+                        // `.fit` image sits on a soft bed of its own colours
+                        // instead of black bars. Invisible under a `.fill`
+                        // image, so `.fill` call sites are unaffected.
+                        if imageContentMode == .fit {
+                            TVRemoteImage(urlString: backdropUrl, contentMode: .fill)
+                                .blur(radius: 40)
+                                .opacity(0.55)
+                                .allowsHitTesting(false)
+                        }
+                    }
+                    .overlay {
+                        TVRemoteImage(urlString: backdropUrl, contentMode: imageContentMode)
                             .allowsHitTesting(false)
                     }
                     .overlay(alignment: .bottomLeading) {
@@ -196,7 +220,7 @@ struct TVWideCard: View {
         }
         .buttonStyle(.card)
         .focused($isFocused)
-        .frame(width: width ?? 480, height: 270)
+        .frame(width: width ?? 480, height: height ?? 270)
         .shadow(
             color: isFocused ? accent.opacity(0.55) : Color.black.opacity(0.45),
             radius: isFocused ? 36 : 14,

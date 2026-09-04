@@ -84,6 +84,14 @@ private nonisolated struct TVTMDBFreshnessEpisode: Decodable, Sendable {
     }
 }
 
+private nonisolated struct TVTMDBBackdrop: Decodable, Sendable {
+    let backdropPath: String?
+
+    enum CodingKeys: String, CodingKey {
+        case backdropPath = "backdrop_path"
+    }
+}
+
 private nonisolated struct TVTMDBMoviePoster: Decodable, Sendable {
     let posterPath: String?
 
@@ -312,6 +320,21 @@ nonisolated struct TVTMDBService {
         guard let data = try? await get(urlString) else { return nil }
         guard let env = try? JSONDecoder().decode(TVTMDBMoviePoster.self, from: data) else { return nil }
         return env.posterPath
+    }
+
+    /// The 16:9 backdrop path for a title.
+    ///
+    /// `streaming_releases` stores only poster art, and a 2:3 poster filled
+    /// into the wide Today's Pick banner crops most of the picture away. This
+    /// gives that banner an image shaped like the box it goes in. Returns nil
+    /// on any error so the caller can fall back to the poster.
+    func getBackdropPath(tmdbId: Int, isTV: Bool) async -> String? {
+        let locale = DeviceLocale.current()
+        let kind = isTV ? "tv" : "movie"
+        let urlString = "\(base)/\(kind)/\(tmdbId)?api_key=\(apiKey)&language=\(locale.tmdbLanguage)"
+        guard let data = try? await get(urlString) else { return nil }
+        guard let env = try? JSONDecoder().decode(TVTMDBBackdrop.self, from: data) else { return nil }
+        return env.backdropPath
     }
 
     /// Full season with its episode list — titles, stills, air dates,
