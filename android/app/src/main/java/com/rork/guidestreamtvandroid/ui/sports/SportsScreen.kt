@@ -114,6 +114,7 @@ private const val TEAM_PICKER_SEEN_KEY = "gs.sportsTeamPickerSeen.v1"
 @Composable
 fun SportsScreen(
     onOpenGameDetail: (SportsGame) -> Unit,
+    onOpenSchedule: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val vm = SportsViewModel.get()
@@ -248,6 +249,7 @@ fun SportsScreen(
                     MyTeamsSection(
                         chips = teamChips,
                         onEdit = { teamPickerMode = TeamPickerMode.EDIT },
+                        onOpenSchedule = onOpenSchedule,
                         onChipTap = { chip ->
                             findGameForFavorite(games, chip.uid, chip.abbrev)?.let { watchGame = it }
                         },
@@ -410,12 +412,27 @@ data class TeamChip(
 private fun MyTeamsSection(
     chips: List<TeamChip>,
     onEdit: () -> Unit,
+    onOpenSchedule: () -> Unit,
     onChipTap: (TeamChip) -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("My Teams", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
             Spacer(Modifier.weight(1f))
+            // GUI-95 — the week view of games for followed teams.
+            Text(
+                text = "Schedule",
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = BrandOrange,
+                modifier = Modifier
+                    .clip(CircleShape)
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                    ) { onOpenSchedule() }
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
+            )
             Text(
                 text = "Edit",
                 fontSize = 13.sp,

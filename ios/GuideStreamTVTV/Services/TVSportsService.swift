@@ -126,8 +126,42 @@ final class TVSportsService {
         }
     }
 
-    private func fetch(endpoint ep: Endpoint) async -> [TVSportsGame] {
-        let urlString = "https://site.api.espn.com/apis/site/v2/sports/\(ep.path)"
+    /// Every game on the scoreboards between `from` and `to` for the given
+    /// sports. Backs the Schedule week grid (GUI-95). Mirrors the phone's
+    /// `SportsService.fetchRange` exactly — see that comment for why the
+    /// window is padded (ESPN reads `dates=` in UTC) and why `sports` narrows
+    /// the fan-out.
+    func fetchRange(from: Date, to: Date, sports: Set<String>? = nil) async -> [TVSportsGame] {
+        let stamp = DateFormatter()
+        stamp.locale = Locale(identifier: "en_US_POSIX")
+        stamp.timeZone = TimeZone(identifier: "UTC")
+        stamp.dateFormat = "yyyyMMdd"
+        let range = "\(stamp.string(from: from.addingTimeInterval(-86_400)))-\(stamp.string(from: to.addingTimeInterval(86_400)))"
+
+        let targets: [Endpoint] = {
+            guard let sports, !sports.isEmpty else { return endpoints }
+            return endpoints.filter { sports.contains($0.sport) }
+        }()
+        guard !targets.isEmpty else { return [] }
+
+        return await withTaskGroup(of: [TVSportsGame].self) { group in
+            for ep in targets {
+                group.addTask { [weak self] in
+                    guard let self else { return [] }
+                    return await self.fetch(endpoint: ep, dates: range)
+                }
+            }
+            var all: [TVSportsGame] = []
+            for await games in group { all.append(contentsOf: games) }
+            return all.sorted { ($0.startDate ?? .distantFuture) < ($1.startDate ?? .distantFuture) }
+        }
+    }
+
+    private func fetch(endpoint ep: Endpoint, dates: String? = nil) async -> [TVSportsGame] {
+        var urlString = "https://site.api.espn.com/apis/site/v2/sports/\(ep.path)"
+        if let dates {
+            urlString += (ep.path.contains("?") ? "&" : "?") + "dates=\(dates)&limit=400"
+        }
         guard let url = URL(string: urlString) else { return [] }
         do {
             let (data, _) = try await URLSession.shared.data(from: url)

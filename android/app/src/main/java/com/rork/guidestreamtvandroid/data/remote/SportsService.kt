@@ -19,6 +19,10 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import java.util.TimeZone
 
 /**
  * Sports service — mirrors iOS SportsService.swift.
@@ -266,9 +270,44 @@ class SportsService {
         )
     }
 
-    private suspend fun fetch(endpoint: Endpoint): List<SportsGame> {
+    /**
+     * Every game on the scoreboards between [from] and [to] (epoch millis) for
+     * the given [sports]. Backs the Schedule week view (GUI-95); [fetchAll]
+     * feeds the live Sports tab and is deliberately left returning today's
+     * slate only.
+     *
+     * Two things this has to get right:
+     *
+     * - ESPN reads `dates=YYYYMMDD-YYYYMMDD` in **UTC**, so the window is
+     *   padded a day on each end and the caller re-filters against local week
+     *   bounds. Without the padding a 10pm ET Saturday game (02:00Z Sunday)
+     *   falls outside the week it visibly belongs to.
+     * - Passing [sports] narrows the fan-out to the endpoints that could hold
+     *   a favorited team — usually two or three calls, not all thirteen.
+     */
+    suspend fun fetchRange(from: Long, to: Long, sports: Set<String>? = null): List<SportsGame> =
+        withContext(Dispatchers.IO) {
+            val stamp = SimpleDateFormat("yyyyMMdd", Locale.US).apply {
+                timeZone = TimeZone.getTimeZone("UTC")
+            }
+            val range = "${stamp.format(Date(from - DAY_MILLIS))}-${stamp.format(Date(to + DAY_MILLIS))}"
+            val targets = if (sports.isNullOrEmpty()) endpoints else endpoints.filter { it.sport in sports }
+            if (targets.isEmpty()) return@withContext emptyList()
+            coroutineScope {
+                targets.map { ep -> async { fetch(ep, range) } }
+                    .awaitAll()
+                    .flatten()
+                    .sortedBy { it.startDate ?: Long.MAX_VALUE }
+            }
+        }
+
+    private suspend fun fetch(endpoint: Endpoint, dates: String? = null): List<SportsGame> {
         return try {
-            val url = "https://site.api.espn.com/apis/site/v2/sports/${endpoint.path}"
+            val separator = if (endpoint.path.contains("?")) "&" else "?"
+            // `limit` matters: a college-football Saturday inside a week range
+            // is well past ESPN's default page size.
+            val suffix = if (dates != null) "${separator}dates=$dates&limit=400" else ""
+            val url = "https://site.api.espn.com/apis/site/v2/sports/${endpoint.path}$suffix"
             val response: ESPNResponse = client.get(url).body()
             response.events.mapNotNull { ev ->
                 val comp = ev.competitions.firstOrNull() ?: return@mapNotNull null
@@ -359,6 +398,9 @@ class SportsService {
 
     companion object {
         @Volatile private var instance: SportsService? = null
+        /** One day in millis — pads the UTC fetch window in [fetchRange]. */
+        private const val DAY_MILLIS = 86_400_000L
+
         fun get(): SportsService = instance ?: synchronized(this) {
             instance ?: SportsService().also { instance = it }
         }

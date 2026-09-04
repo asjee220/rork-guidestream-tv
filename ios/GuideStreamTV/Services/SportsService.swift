@@ -254,8 +254,53 @@ final class SportsService {
         )
     }
 
-    private func fetch(endpoint ep: Endpoint) async -> [SportsGame] {
-        let urlString = "https://site.api.espn.com/apis/site/v2/sports/\(ep.path)"
+    /// Every game on the scoreboards between `from` and `to` for the given
+    /// sports. Backs the Schedule week view (GUI-95); `fetchAll()` is
+    /// deliberately left alone because it feeds the live Sports tab and must
+    /// keep returning today's slate only.
+    ///
+    /// Two things this has to get right:
+    ///
+    /// * ESPN reads `dates=YYYYMMDD-YYYYMMDD` in **UTC**, so the window is
+    ///   padded a day on each end and the caller re-filters against local
+    ///   week bounds. Without the padding a 10pm ET Saturday game (02:00Z
+    ///   Sunday) falls outside the week it visibly belongs to.
+    /// * Passing `sports` narrows the fan-out to the endpoints that could
+    ///   contain a favorited team — typically two or three calls instead of
+    ///   all thirteen.
+    func fetchRange(from: Date, to: Date, sports: Set<String>? = nil) async -> [SportsGame] {
+        let stamp = DateFormatter()
+        stamp.locale = Locale(identifier: "en_US_POSIX")
+        stamp.timeZone = TimeZone(identifier: "UTC")
+        stamp.dateFormat = "yyyyMMdd"
+        let range = "\(stamp.string(from: from.addingTimeInterval(-86_400)))-\(stamp.string(from: to.addingTimeInterval(86_400)))"
+
+        let targets: [Endpoint] = {
+            guard let sports, !sports.isEmpty else { return endpoints }
+            return endpoints.filter { sports.contains($0.sport) }
+        }()
+        guard !targets.isEmpty else { return [] }
+
+        return await withTaskGroup(of: [SportsGame].self) { group in
+            for ep in targets {
+                group.addTask { [weak self] in
+                    guard let self else { return [] }
+                    return await self.fetch(endpoint: ep, dates: range)
+                }
+            }
+            var all: [SportsGame] = []
+            for await games in group { all.append(contentsOf: games) }
+            return all.sorted { $0.startDate < $1.startDate }
+        }
+    }
+
+    private func fetch(endpoint ep: Endpoint, dates: String? = nil) async -> [SportsGame] {
+        var urlString = "https://site.api.espn.com/apis/site/v2/sports/\(ep.path)"
+        if let dates {
+            // `limit` matters: a college-football Saturday inside a week range
+            // is well past ESPN's default page size.
+            urlString += (ep.path.contains("?") ? "&" : "?") + "dates=\(dates)&limit=400"
+        }
         guard let url = URL(string: urlString) else { return [] }
         do {
             let (data, _) = try await URLSession.shared.data(from: url)

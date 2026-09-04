@@ -49,6 +49,8 @@ enum SportsRoute: Hashable {
     /// back (and nothing ever, if they did not). A tap must always open a
     /// screen.
     case gameDetailById(String)
+    /// GUI-95 — the week view for the teams in My Teams.
+    case schedule
 }
 
 // MARK: - SportsView
@@ -251,6 +253,8 @@ struct SportsView: View {
                     SportsGameDetailView(game: game)
                 case .gameDetailById(let gameId):
                     SportsGameDetailLoader(gameId: gameId)
+                case .schedule:
+                    ScheduleView(surface: .sports)
                 }
             }
             .sheet(item: $selectedGame) { game in
@@ -385,6 +389,15 @@ struct SportsView: View {
                     .scaledFont(size: 16, weight: .bold)
                     .foregroundStyle(.white)
                 Spacer()
+                Button {
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    path.append(.schedule)
+                } label: {
+                    Label("Schedule", systemImage: "calendar")
+                        .scaledFont(size: 13, weight: .semibold)
+                        .foregroundStyle(Color(hex: "F5821F"))
+                }
+                .buttonStyle(.plain)
                 Button {
                     UIImpactFeedbackGenerator(style: .light).impactOccurred()
                     teamPickerMode = .edit

@@ -153,6 +153,8 @@ private struct WatchListContent: View {
     /// list's existing order.
     @State private var creatorSort: WatchListSort = .recentUpload
     @State private var reminders = ReleaseReminderService.shared
+    /// GUI-95 — the week view of upcoming episodes for saved shows.
+    @State private var showSchedule: Bool = false
 
     var body: some View {
         ZStack {
@@ -176,6 +178,9 @@ private struct WatchListContent: View {
         }
         .sheet(item: $detailSubject) { subject in
             EpisodeDetailSheet(subject: subject, level: .raised)
+        }
+        .sheet(isPresented: $showSchedule) {
+            ScheduleSheet(surface: .watchlist)
         }
         .sheet(item: $creatorDetailTarget) { target in
             CreatorDetailView(
@@ -416,6 +421,29 @@ private struct WatchListContent: View {
             Spacer(minLength: 0)
             if selectedTab == .creators {
                 sortMenu
+            }
+            // GUI-95. Shows only: Movies have a release date rather than a
+            // weekly slot, and Creators upload on no schedule at all, so a
+            // week view of either would be a mostly-empty grid.
+            if selectedTab == .shows {
+                Button {
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    showSchedule = true
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: "calendar")
+                            .scaledFont(size: 11, weight: .semibold)
+                        Text("Schedule")
+                            .scaledFont(size: 12, weight: .semibold)
+                    }
+                    .foregroundStyle(Color.white.opacity(0.85))
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(Capsule().fill(Color(red: 0x1B / 255, green: 0x27 / 255, blue: 0x39 / 255)))
+                    .overlay(Capsule().stroke(Color.white.opacity(0.10), lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Open schedule")
             }
         }
     }

@@ -54,6 +54,8 @@ import com.rork.guidestreamtvandroid.ui.sports.SportsGameDetailScreen
 import com.rork.guidestreamtvandroid.ui.sports.SportsScreen
 import com.rork.guidestreamtvandroid.ui.profile.ProfileScreen
 import com.rork.guidestreamtvandroid.ui.theme.BrandBackground
+import com.rork.guidestreamtvandroid.ui.schedule.ScheduleScreen
+import com.rork.guidestreamtvandroid.ui.schedule.ScheduleViewModel
 import com.rork.guidestreamtvandroid.ui.theme.Navy
 
 /** Target for the "Popular on {service}" full-screen category browser overlay. */
@@ -104,6 +106,9 @@ fun MainScreen(
      *  the recommender for a deeper list. */
     var showCreatorsForYou by remember { mutableStateOf<Pair<List<RecommendedCreator>, List<String>>?>(null) }
     var showNewEpisodes by remember { mutableStateOf(false) }
+    // GUI-95 — the Schedule week view, one state per surface so the two entry
+    // points stay independent.
+    var scheduleSurface by remember { mutableStateOf<ScheduleViewModel.Surface?>(null) }
     var showWatchList by remember { mutableStateOf(false) }
     var showWidgetSetup by remember { mutableStateOf(false) }
     val coachMark = CoachMarkManager.get()
@@ -197,6 +202,7 @@ fun MainScreen(
                 )
                 AppTab.SPORTS -> SportsScreen(
                     onOpenGameDetail = { game -> selectedGame = game },
+                    onOpenSchedule = { scheduleSurface = ScheduleViewModel.Surface.SPORTS },
                 )
                 AppTab.ASK -> { /* Intercepted — opens sheet via onOpenAsk */ }
                 AppTab.REELS -> ReelsScreen(
@@ -227,7 +233,7 @@ fun MainScreen(
         }
 
         // Full-screen overlay open flag — hides the floating tab bar behind opaque covers
-        val overlayOpen = showDetail != null || showCreatorDetail != null || showSearch || selectedGame != null || showPopularCategories != null || showAroundTheWorld != null || showHomeList != null || showCreatorsForYou != null || showNewEpisodes || showWatchList || showWidgetSetup || showAskSheet
+        val overlayOpen = showDetail != null || showCreatorDetail != null || showSearch || selectedGame != null || showPopularCategories != null || showAroundTheWorld != null || showHomeList != null || showCreatorsForYou != null || showNewEpisodes || scheduleSurface != null || showWatchList || showWidgetSetup || showAskSheet
 
         // Show detail (full-screen cover equivalent)
         showDetail?.let { route ->
@@ -406,6 +412,35 @@ fun MainScreen(
             }
         }
 
+        // Schedule week view (GUI-95) — Sports and Watch List share the screen.
+        scheduleSurface?.let { surface ->
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Navy)
+                    .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { },
+            ) {
+                ScheduleScreen(
+                    surface = surface,
+                    onBack = { scheduleSurface = null },
+                    onOpenGame = { game ->
+                        scheduleSurface = null
+                        selectedGame = game
+                    },
+                    onOpenTitle = { episode ->
+                        scheduleSurface = null
+                        detailSheetRoute = PendingTitleRoute(
+                            titleId = episode.titleId,
+                            titleName = episode.showTitle,
+                            posterUrl = episode.posterUrl,
+                            isTv = true,
+                        )
+                    },
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
+        }
+
         // Creators/Podcasts for You "See all" grid
         showCreatorsForYou?.let { (seed, followedIds) ->
             Box(
@@ -439,6 +474,7 @@ fun MainScreen(
             ) {
                 WatchListScreen(
                     onBack = { showWatchList = false },
+                    onOpenSchedule = { scheduleSurface = ScheduleViewModel.Surface.WATCHLIST },
                     onOpenTitle = { route ->
                         showWatchList = false
                         val kind = SourceKind.from(route.titleId)

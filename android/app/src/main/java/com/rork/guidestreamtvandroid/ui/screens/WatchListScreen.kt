@@ -150,6 +150,7 @@ private enum class WatchListSort(val label: String) {
 fun WatchListScreen(
     onBack: () -> Unit,
     onOpenTitle: (PendingTitleRoute) -> Unit,
+    onOpenSchedule: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     BackHandler { onBack() }
@@ -357,6 +358,13 @@ fun WatchListScreen(
                         label = creatorSort.label,
                         onToggle = { creatorSort = creatorSort.next },
                     )
+                }
+                // GUI-95. Shows only: movies have a release date rather than a
+                // weekly slot, and creators upload on no schedule at all, so a
+                // week view of either would be a mostly-empty screen.
+                if (selectedTab == WatchListTab.SHOWS) {
+                    Spacer(Modifier.weight(1f))
+                    WatchListActionChip(label = "Schedule", onTap = onOpenSchedule)
                 }
             }
         }
@@ -770,6 +778,40 @@ private fun WatchListSortChip(
     ) {
         Text(
             text = "Sort: $label",
+            fontSize = 13.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = Color.White.copy(alpha = 0.85f),
+        )
+    }
+}
+
+/**
+ * Plain action chip in the filter row — same shape as the sort chip but with
+ * no "Sort:" prefix, because it opens a screen rather than cycling a value.
+ */
+@Composable
+private fun WatchListActionChip(
+    label: String,
+    onTap: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .clip(RoundedCornerShape(16.dp))
+            .background(Color(0xFF1B2739))
+            .border(
+                width = 1.dp,
+                color = Color.White.copy(alpha = 0.10f),
+                shape = RoundedCornerShape(16.dp),
+            )
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+            ) { onTap() }
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = label,
             fontSize = 13.sp,
             fontWeight = FontWeight.SemiBold,
             color = Color.White.copy(alpha = 0.85f),

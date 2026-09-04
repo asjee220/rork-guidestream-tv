@@ -99,6 +99,8 @@ struct TVWatchListView: View {
     /// list's existing recency order.
     @State private var creatorSort: TVWatchListSort = .recentUpload
     @FocusState private var sortChipFocused: Bool
+    /// GUI-95 — the week grid of upcoming episodes for saved shows.
+    @State private var showSchedule: Bool = false
 
     /// Six columns that share the row's width rather than each claiming a
     /// fixed 260pt. Fixed columns totalled 1740pt, more than the row has
@@ -194,6 +196,9 @@ struct TVWatchListView: View {
                     }
                 }
             }
+        }
+        .fullScreenCover(isPresented: $showSchedule) {
+            TVScheduleView(surface: .watchlist) { showSchedule = false }
         }
         .task {
             await streams.fetchUserStreams()
@@ -353,6 +358,13 @@ struct TVWatchListView: View {
             Spacer()
             if streams.isLoading {
                 ProgressView().tint(.white)
+            }
+            // GUI-95. Shows only — movies have a release date rather than a
+            // weekly slot, and creators upload on no schedule at all.
+            if selectedTab == .shows {
+                TVSecondaryButton(title: "Schedule", sectionKey: "watchlist_schedule") {
+                    showSchedule = true
+                }
             }
         }
     }
