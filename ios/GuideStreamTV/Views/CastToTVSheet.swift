@@ -1077,9 +1077,12 @@ struct CastToTVSheet: View {
         }
     }
 
-    /// Inserts a row into `debug_logs` on every outbound play command so
-    /// both sides of the Play on TV flow are traceable.
+    /// Traces an outbound play command to `debug_logs` so both sides of the
+    /// flow are visible while working on it. Debug builds only — this ran in
+    /// shipping builds and wrote a row, with the resolved deep links, on
+    /// every cast.
     private func logPlayCommandSent(device: DiscoveredTVDevice, userId: String, resolvedURL: URL?) async {
+        #if DEBUG
         let payloadDict: [String: AnyJSON] = [
             "event": .string("play_command_sent"),
             "user_id": .string(userId),
@@ -1089,12 +1092,13 @@ struct CastToTVSheet: View {
             "platform": .string(platform),
             "title": .string(showTitle),
             "content_url": .string(resolvedURL?.absoluteString ?? ""),
-            "device_name": .string("STAMP-C tvos=\(watchmodeSource?.tvosUrl ?? "nil") roku=\(watchmodeSource?.rokuUrl ?? "nil")")
+            "device_name": .string("tvos=\(watchmodeSource?.tvosUrl ?? "nil") roku=\(watchmodeSource?.rokuUrl ?? "nil")")
         ]
         try? await SupabaseManager.shared.client
             .from("debug_logs")
             .insert(payloadDict)
             .execute()
+        #endif
     }
 
     /// Final step in the cast flow — runs after the "Playing on" banner has

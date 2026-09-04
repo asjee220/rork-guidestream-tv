@@ -79,8 +79,12 @@ final class TVPlayCommandListener {
         var backoff: Double = 2
         while !Task.isCancelled {
             let began = Date()
-            await connectAndListen()
+            let connected = await connectAndListen()
             guard !Task.isCancelled else { return }
+            // Signed out: there is no channel to listen on and no amount of
+            // retrying makes one. Exit rather than spin — ContentView's
+            // isSignedIn observer starts us again the moment a session lands.
+            guard connected else { return }
             // A connection that held for a while is not a failing one; only
             // a fast drop should slow the next attempt down.
             if Date().timeIntervalSince(began) > 60 || reconnectNow {
@@ -103,24 +107,27 @@ final class TVPlayCommandListener {
 
     // MARK: - Private
 
-    private func connectAndListen() async {
+    /// Returns false when there is no session to listen on, so the supervisor
+    /// can stand down instead of retrying something that cannot succeed.
+    @discardableResult
+    private func connectAndListen() async -> Bool {
         let client = TVSupabaseManager.shared.client
         let deviceId = TVDeviceIdentity.shared.deviceId
 
-        // Use the Supabase user id when signed in; fall back to "guest"
-        // so commands still reach the TV even before sign-in completes
-        // (the device row is keyed on deviceId, not user id).
-        let userId: String
-        var accessToken: String? = nil
-        do {
-            let session = try await client.auth.session
-            userId = session.user.id.uuidString
-            accessToken = session.accessToken
-        } catch {
-            userId = "guest"
+        // Signed-in only. This used to fall back to "play-commands:guest",
+        // which is one topic shared by every signed-out install everywhere —
+        // and the RLS policies grant anon read and write on it, so any
+        // stranger's TV could be told what to open. A signed-out TV simply
+        // does not listen.
+        guard let session = try? await client.auth.session else {
+            #if DEBUG
+            print("[TVPlayCommand] no session — not subscribing")
+            #endif
+            return false
         }
+        let userId = session.user.id.uuidString
 
-        if let accessToken { try? await client.realtimeV2.setAuth(accessToken) }
+        try? await client.realtimeV2.setAuth(session.accessToken)
 
         let ch = client.realtimeV2.channel("play-commands:\(userId)") { config in config.isPrivate = true }
         self.channel = ch
@@ -132,17 +139,19 @@ final class TVPlayCommandListener {
         let stream = ch.broadcastStream(event: "play-command")
         await ch.subscribe()
 
-        // STAMP_A_START
+        #if DEBUG
+        // Subscribe tracing is a debug aid, not shipping behaviour — this
+        // wrote a debug_logs row on every reconnect in build 16.
         try? await TVSupabaseManager.shared.client
             .from("debug_logs")
             .insert([
                 "event": .string("tv_listener_subscribed"),
                 "user_id": .string(userId),
-                "device_name": .string("STAMP-C status=\(ch.status)"),
+                "device_name": .string("status=\(ch.status)"),
                 "target_name": .string("play-commands:\(userId)")
             ] as [String: AnyJSON])
             .execute()
-        // STAMP_A_END
+        #endif
 
         #if DEBUG
         print("[TVPlayCommand] subscribed status=\(ch.status)")
@@ -162,6 +171,9 @@ final class TVPlayCommandListener {
             guard !Task.isCancelled else { break }
             await handle(event: event, myDeviceId: deviceId)
         }
+        // The stream ended: the socket dropped, or wake() cut the channel.
+        // Either way there was a session, so the supervisor should reconnect.
+        return true
     }
 
     // MARK: - JSONObject decoding
