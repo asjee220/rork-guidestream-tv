@@ -80,11 +80,22 @@ final class TVCastDiscovery {
     @ObservationIgnored private var permissionPokeListener: NWListener?
     @ObservationIgnored private var subnetScanTask: Task<Void, Never>?
     @ObservationIgnored private var rokuOnly: Bool = true
+    /// Ids confirmed by the scan that is running now. A rescan no longer
+    /// empties `devices` — it lets the previous results stand and prunes
+    /// whatever this scan failed to see, but only once the scan finishes.
+    @ObservationIgnored private var seenThisScan: Set<String> = []
 
     func start(rokuOnly: Bool = true) {
         guard !isScanning else { return }
         isScanning = true
-        devices = []
+        // Deliberately NOT `devices = []`. Apple TVs come back from Bonjour
+        // in milliseconds; a Roku only answers once the /24 probe reaches it,
+        // seconds later. Wiping the list on every open meant the cast sheet
+        // showed Apple TVs with the Roku missing for the first few seconds,
+        // which reads as "my Roku is gone" — and it is the window a user
+        // screenshots. Previous results stand until this scan finishes and
+        // prunes what it could not confirm.
+        seenThisScan = []
         localIPv4 = nil
         scannedHosts = 0
         totalHosts = 0
@@ -315,6 +326,20 @@ final class TVCastDiscovery {
             #if DEBUG
             print("[TVCastDiscovery] probing subnet \(prefix)0/24")
             #endif
+
+            // Hosts we already know a device on, probed before the full
+            // sweep so a Roku that is still there is re-confirmed in about a
+            // second rather than after 254 connects.
+            let knownHosts = await MainActor.run {
+                TVCastDiscoveryStore.knownHosts().filter { $0.hasPrefix(prefix) }
+            }
+            if !knownHosts.isEmpty {
+                await withTaskGroup(of: Void.self) { group in
+                    for host in knownHosts {
+                        group.addTask { await Self.probe(host: host, rokuOnly: rokuOnlyFlag) }
+                    }
+                }
+            }
 
             let allHosts = (1...254).map { "\(prefix)\($0)" }
             await MainActor.run {
@@ -905,6 +930,7 @@ final class TVCastDiscovery {
 
     fileprivate func mergeFound(_ items: [(id: String, name: String, host: String?, port: UInt16?)], kind: TVDeviceKind) {
         for item in items {
+            seenThisScan.insert(item.id)
             if let idx = devices.firstIndex(where: { $0.id == item.id }) {
                 let existing = devices[idx]
                 let newHost = existing.host ?? item.host
@@ -930,12 +956,21 @@ final class TVCastDiscovery {
         }
     }
 
+    fileprivate var currentKnownHosts: [String] { devices.compactMap(\.host) }
+
     fileprivate func setLocalIPv4(_ ip: String) { localIPv4 = ip }
     fileprivate func setTotalHosts(_ total: Int) { totalHosts = total }
     fileprivate func incrementScannedHosts() { scannedHosts += 1 }
     fileprivate func setScanFinished() {
         isScanning = false
         lastScanCompletedAt = Date()
+        // A completed sweep is authoritative: anything it never saw is gone
+        // from the network and should stop being offered. A cancelled scan
+        // never gets here, so closing the sheet mid-sweep leaves the list
+        // intact rather than emptying it.
+        if !seenThisScan.isEmpty {
+            devices.removeAll { !seenThisScan.contains($0.id) }
+        }
     }
     fileprivate func recordBonjourEndpoints(_ count: Int) {
         bonjourEndpointsSeen = max(bonjourEndpointsSeen, count)
@@ -954,6 +989,7 @@ enum TVCastDiscoveryStore {
         current?.mergeFound(snapshot, kind: kind)
     }
 
+    static func knownHosts() -> [String] { current?.currentKnownHosts ?? [] }
     static func setLocalIPv4(_ ip: String) { current?.setLocalIPv4(ip) }
     static func setTotalHosts(_ total: Int) { current?.setTotalHosts(total) }
     static func incrementScannedHosts() { current?.incrementScannedHosts() }
