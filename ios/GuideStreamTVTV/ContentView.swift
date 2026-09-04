@@ -12,6 +12,7 @@ import SwiftUI
 
 struct ContentView: View {
     @State private var auth = TVAuthViewModel.shared
+    @Environment(\.scenePhase) private var scenePhase
     @State private var hasRestored: Bool = false
 
     var body: some View {
@@ -38,6 +39,14 @@ struct ContentView: View {
             // when the user signs in or out.
             TVPlayCommandListener.shared.stop()
             TVPlayCommandListener.shared.start()
+        }
+        .onChange(of: scenePhase) { _, phase in
+            // The only trigger used to be cold launch. tvOS suspends the app
+            // whenever the viewer goes to the home screen or opens Netflix,
+            // and the realtime socket dies with it — so the TV came back
+            // looking open and listening while it was subscribed to nothing.
+            guard phase == .active else { return }
+            TVPlayCommandListener.shared.wake()
         }
     }
 

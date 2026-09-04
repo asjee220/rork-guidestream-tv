@@ -34,17 +34,61 @@ final class TVPlayCommandListener {
 
     private var channel: RealtimeChannelV2?
     private var listeningTask: Task<Void, Never>?
+    /// Set by `wake()` so the supervisor retries immediately rather than
+    /// serving out whatever backoff the last failure earned.
+    private var reconnectNow = false
 
     private init() {}
 
     // MARK: - Public
 
     /// Start listening for commands from the iPhone. Safe to call multiple
-    /// times — subsequent calls are no-ops while already subscribed.
+    /// times — subsequent calls are no-ops while the supervisor is running.
     func start() {
         guard listeningTask == nil else { return }
-        listeningTask = Task { @MainActor in
+        listeningTask = Task { @MainActor [weak self] in
+            await self?.supervise()
+            self?.listeningTask = nil
+        }
+    }
+
+    /// Called when the app comes back to the foreground.
+    ///
+    /// tvOS suspends the app and the WebSocket dies with it. Ending the
+    /// current channel makes the broadcast stream finish, which drops the
+    /// supervisor into an immediate reconnect — cheaper and more certain than
+    /// asking the socket whether it is still alive.
+    func wake() {
+        guard listeningTask != nil else {
+            start()
+            return
+        }
+        reconnectNow = true
+        Task { @MainActor [channel] in await channel?.unsubscribe() }
+    }
+
+    /// Reconnect for as long as the app is running.
+    ///
+    /// `connectAndListen` returns when the broadcast stream ends, and a
+    /// dropped socket is exactly what that looks like from here. Before this
+    /// existed, that return left `listeningTask` non-nil forever, so `start()`
+    /// became a permanent no-op and the TV never listened again until the
+    /// process was killed and cold-launched. The Apple TV would sit on the
+    /// home screen with the app open, subscribed to nothing.
+    private func supervise() async {
+        var backoff: Double = 2
+        while !Task.isCancelled {
+            let began = Date()
             await connectAndListen()
+            guard !Task.isCancelled else { return }
+            // A connection that held for a while is not a failing one; only
+            // a fast drop should slow the next attempt down.
+            if Date().timeIntervalSince(began) > 60 || reconnectNow {
+                backoff = 2
+            }
+            reconnectNow = false
+            try? await Task.sleep(for: .seconds(backoff))
+            backoff = min(backoff * 2, 30)
         }
     }
 
