@@ -47,18 +47,35 @@ struct CastToTVSheet: View {
     @State private var isProbingManual: Bool = false
     @FocusState private var manualFieldFocused: Bool
 
-    /// Only Roku devices are listed — Play on TV currently supports Roku ECP
-    /// launches. Other discovered devices are filtered out so the user never
-    /// sees a device they can't actually cast to.
-    private var rokuDevices: [DiscoveredTVDevice] {
-        let rokus = discovery.devices.filter { $0.kind == .roku }
+    /// Roku and Apple TV. Everything else discovery turns up is filtered
+    /// out, so the user never sees a device that cannot actually be cast to.
+    ///
+    /// Apple TV was excluded until the tvOS companion app existed: there is
+    /// no public way to make an Apple TV launch someone else's streaming app,
+    /// and AirPlay only mirrors. Now that GuideStream ships on tvOS, the
+    /// phone broadcasts a play command over `play-commands:{userId}` and the
+    /// TV app does the deep-link locally — which it can, because it is
+    /// running on the box. Roku still goes over ECP.
+    ///
+    /// Apple TV surfaces on three Bonjour services (_airplay, _raop,
+    /// _companion-link), so the dedupe below is doing real work there, not
+    /// just tidying Roku duplicates.
+    private var castableDevices: [DiscoveredTVDevice] {
+        let rokus = discovery.devices.filter { $0.kind == .roku || $0.kind == .appleTV }
         // Deduplicate by case-insensitive trimmed name, preferring rows
         // with a non-nil host. At most one row survives per name.
         var bestByName: [String: DiscoveredTVDevice] = [:]
         for device in rokus {
-            let key = device.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            let key = Self.castName(device.name).lowercased()
             if let existing = bestByName[key] {
-                if existing.host == nil && device.host != nil {
+                // Prefer a row that can actually be reached, then one whose
+                // name needed no cleaning — the AirPlay and companion-link
+                // services carry the plain name, RAOP prefixes it with the
+                // MAC address, and the plain one is what the TV will match on.
+                let existingIsRaw = !existing.name.contains("@")
+                let candidateIsRaw = !device.name.contains("@")
+                if (existing.host == nil && device.host != nil)
+                    || (!existingIsRaw && candidateIsRaw) {
                     bestByName[key] = device
                 }
             } else {
@@ -67,9 +84,35 @@ struct CastToTVSheet: View {
         }
         // Return in discovery order, keeping only the best per name.
         return rokus.filter { device in
-            let key = device.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            let key = Self.castName(device.name).lowercased()
             return bestByName[key]?.id == device.id
         }
+    }
+
+    /// The name the Apple TV will recognise as its own.
+    ///
+    /// An Apple TV answers on three Bonjour services and does not name itself
+    /// the same way on all of them: `_raop._tcp` prefixes the device name with
+    /// its MAC address (`AABBCCDDEEFF@Living Room`), while `_airplay` and
+    /// `_companion-link` carry the plain name. The tvOS listener compares
+    /// against `UIDevice.current.name`, which is the plain one, so the prefix
+    /// has to come off before the name is used as a key or sent as a target —
+    /// otherwise the same TV appears twice and one of the two rows silently
+    /// never matches.
+    static func castName(_ raw: String) -> String {
+        var name = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let at = name.firstIndex(of: "@") {
+            let prefix = name[name.startIndex..<at]
+            let hex = prefix.filter { $0.isHexDigit }
+            // 12 hex digits, with or without separators, is a MAC address.
+            if hex.count == 12 && prefix.allSatisfy({ $0.isHexDigit || $0 == ":" || $0 == "-" }) {
+                name = String(name[name.index(after: at)...])
+            }
+        }
+        if name.lowercased().hasSuffix(".local") {
+            name = String(name.dropLast(6))
+        }
+        return name.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     var body: some View {
@@ -110,11 +153,11 @@ struct CastToTVSheet: View {
         VStack(alignment: .leading, spacing: 0) {
             GsSheetHeader(
                 title: "Play on TV",
-                subtitle: discovery.isScanning && rokuDevices.isEmpty
+                subtitle: discovery.isScanning && castableDevices.isEmpty
                     ? "Scanning your network…"
                     : "Choose a device to send \"\(showTitle)\""
             )
-            Text("Play on TV currently supports Roku devices. Support for more TV platforms is coming in a future update.")
+            Text("Play on TV supports Roku and Apple TV. Support for more TV platforms is coming in a future update.")
                 .scaledFont(size: 12)
                 .foregroundStyle(Color.white.opacity(0.5))
                 .fixedSize(horizontal: false, vertical: true)
@@ -127,12 +170,12 @@ struct CastToTVSheet: View {
     // MARK: Content
     @ViewBuilder
     private var content: some View {
-        if rokuDevices.isEmpty {
+        if castableDevices.isEmpty {
             emptyState
         } else {
             ScrollView {
                 VStack(spacing: 10) {
-                    ForEach(rokuDevices) { device in
+                    ForEach(castableDevices) { device in
                         deviceRow(device)
                     }
                     manualEntrySection
@@ -249,7 +292,7 @@ struct CastToTVSheet: View {
                         rescanButton
                     }
                 } else {
-                    Text("Looking for Roku devices…")
+                    Text("Looking for Roku and Apple TV devices…")
                         .scaledFont(size: 15)
                         .foregroundStyle(Color.white.opacity(0.7))
                     Text("Make sure your phone and TV are on the same Wi-Fi network.")
@@ -638,7 +681,7 @@ struct CastToTVSheet: View {
                 try? await Task.sleep(for: .milliseconds(250))
                 guard !Task.isCancelled else { return }
                 if !discovery.isScanning {
-                    if rokuDevices.isEmpty {
+                    if castableDevices.isEmpty {
                         withAnimation(.easeInOut(duration: 0.25)) {
                             showPermissionPrompt = true
                         }
@@ -647,7 +690,7 @@ struct CastToTVSheet: View {
                 }
             }
             // 9-second ceiling — scan never reported completion.
-            if rokuDevices.isEmpty {
+            if castableDevices.isEmpty {
                 withAnimation(.easeInOut(duration: 0.25)) {
                     showPermissionPrompt = true
                 }
@@ -986,7 +1029,7 @@ struct CastToTVSheet: View {
             platform: platform,
             title: showTitle,
             contentURL: castURL,
-            target_name: device.name
+            target_name: Self.castName(device.name)
         )
 
         do {

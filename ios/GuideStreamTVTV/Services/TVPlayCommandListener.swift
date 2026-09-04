@@ -151,10 +151,18 @@ final class TVPlayCommandListener {
         print("[TVPlayCommand] received: platform=\(payload.platform) title=\(payload.title) contentURL=\(payload.contentURL ?? "nil") matched=\(nameMatched)")
         #endif
 
-        // Log every received command — matched flag is informational only.
+        // Log every received command, matched or not — a mismatch is the
+        // thing worth seeing, and both names are in the row.
         Task { @MainActor in
             await logReceivedEvent(payload: payload, matched: nameMatched)
         }
+
+        // Only the TV that was picked acts on it. The broadcast reaches every
+        // Apple TV signed into the account, and this used to open the title on
+        // all of them — invisible with one TV in the house, wrong with two.
+        // An empty target is treated as addressed to everyone, since an older
+        // phone build sending no name should still work.
+        guard nameMatched || targetName.isEmpty else { return }
 
         let contentURL: URL? = {
             guard let s = payload.contentURL,
