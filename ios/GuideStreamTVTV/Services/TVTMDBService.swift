@@ -28,7 +28,24 @@ private nonisolated struct TVTMDBVideo: Decodable, Sendable {
     let key: String?
     let site: String?
     let type: String?
+    let name: String?
     let official: Bool?
+}
+
+/// One YouTube video attached to a title — trailer, teaser, clip, featurette
+/// or behind-the-scenes. The detail screen hands the key to the YouTube app
+/// rather than extracting a stream, so every video TMDB lists is offerable;
+/// nothing here depends on a rendition AVPlayer happens to be able to open.
+nonisolated struct TVTitleVideo: Identifiable, Hashable, Sendable {
+    let key: String
+    let name: String
+    let type: String
+
+    var id: String { key }
+
+    /// YouTube's own still. hqdefault exists for every video; maxresdefault
+    /// does not, and a missing one is a broken tile.
+    var thumbnailURL: String { "https://img.youtube.com/vi/\(key)/hqdefault.jpg" }
 }
 
 private nonisolated struct TVTMDBVideosEnvelope: Decodable, Sendable {
@@ -219,6 +236,45 @@ nonisolated struct TVTMDBService {
             .sorted { rank($0) < rank($1) }
             .compactMap { $0.key }
             .filter { seen.insert($0).inserted }
+    }
+
+    /// Every YouTube video TMDB lists for a title, ranked the way
+    /// `getTrailerKeys` ranks them — official trailers first, then trailers,
+    /// teasers, and everything else — so the row leads with the trailer and
+    /// the clips and featurettes follow.
+    ///
+    /// Unlike `getTrailerKeys` this keeps the name and type, because the row
+    /// labels each tile rather than offering one anonymous "Play trailer".
+    func getVideos(tmdbId: Int, isTV: Bool) async -> [TVTitleVideo] {
+        let locale = DeviceLocale.current()
+        let kind = isTV ? "tv" : "movie"
+        let urlString = "\(base)/\(kind)/\(tmdbId)/videos?api_key=\(apiKey)&language=\(locale.tmdbLanguage)"
+        guard let data = try? await get(urlString),
+              let env = try? JSONDecoder().decode(TVTMDBVideosEnvelope.self, from: data) else {
+            return []
+        }
+        func rank(_ video: TVTMDBVideo) -> Int {
+            let type = video.type ?? ""
+            if type == "Trailer" && (video.official ?? false) { return 0 }
+            if type == "Trailer" { return 1 }
+            if type == "Teaser" { return 2 }
+            if type == "Clip" { return 3 }
+            if type == "Featurette" { return 4 }
+            if type == "Behind the Scenes" { return 5 }
+            return 6
+        }
+        var seen = Set<String>()
+        return env.results
+            .filter { ($0.site ?? "").lowercased() == "youtube" && !($0.key ?? "").isEmpty }
+            .sorted { rank($0) < rank($1) }
+            .compactMap { video -> TVTitleVideo? in
+                guard let key = video.key, seen.insert(key).inserted else { return nil }
+                return TVTitleVideo(
+                    key: key,
+                    name: (video.name?.isEmpty == false ? video.name! : (video.type ?? "Video")),
+                    type: video.type ?? "Video"
+                )
+            }
     }
 
     /// Returns the top US streaming provider for a title, or nil if no

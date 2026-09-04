@@ -169,7 +169,7 @@ struct TVMainView: View {
         case .sports: SportsView()
         case .profile: ProfileView()
         case .search: TVSearchView()
-        case .reels: TVReelsView()
+//        case .reels: TVReelsView()
         }
     }
 }

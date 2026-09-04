@@ -112,7 +112,7 @@ struct TVTitleSheet: View {
     @State private var recommendations: [TVTMDBResult] = []
     /// One title-scoped reel, or nil when the title has no playable trailer.
     /// Nil hides Trailers & Clips rather than showing tiles that do nothing.
-    @State private var trailerReel: TVReelItem?
+    @State private var titleVideos: [TVTitleVideo] = []
 
     /// Whether a stream actually resolved for this title's trailer keys.
     ///
@@ -123,8 +123,6 @@ struct TVTitleSheet: View {
     /// see 4e0f999). The section therefore promised a trailer and delivered
     /// a poster. It now renders only when there is something to play, and
     /// comes back on its own the day extraction works again.
-    @State private var trailerPlayable = false
-    @State private var reelsPresentation: TVReelsPresentation?
     /// "Series · Drama · Thriller" for the hero meta line. Nil until TMDB
     /// answers, which simply shortens the line.
     @State private var genreText: String?
@@ -367,7 +365,7 @@ struct TVTitleSheet: View {
                         if isTV, youTubeChannelId == nil, !episodes.isEmpty {
                             episodesSection
                         }
-                        if trailerReel != nil, trailerPlayable {
+                        if !titleVideos.isEmpty {
                             trailersSection
                         }
                         if !recommendations.isEmpty {
@@ -423,9 +421,6 @@ struct TVTitleSheet: View {
             didPrefillEpisode = false
             await loadData()
             await loadSections()
-        }
-        .fullScreenCover(item: $reelsPresentation) { payload in
-            TVReelsView(injectedReels: payload.feed, startIndex: payload.startIndex)
         }
         .fullScreenCover(isPresented: $showWatchOptions) {
             TVWatchOptionsSheet(
@@ -773,53 +768,49 @@ struct TVTitleSheet: View {
 
     // MARK: Trailers & Clips
 
-    /// Opens Reels on this title, the way the phone and Android do it —
-    /// `TVReelsView(injectedReels:startIndex:)` mirrors the iPhone's
-    /// `ReelsScreen(injectedReels:injectedStartIndex:)`. The row is only
-    /// built when a playable trailer actually resolved, so it never shows
-    /// a tile that leads nowhere.
+    /// Every YouTube video TMDB lists for the title — trailer, teaser, clips,
+    /// featurettes, behind the scenes — each handing off to the YouTube app.
+    ///
+    /// It used to be one anonymous "Play trailer" tile that opened Reels in
+    /// app, gated on whether YouTubeKit could extract a playable stream. That
+    /// gate hid the section for most titles, because the renditions that
+    /// resolve are adaptive and video-only. Handing the key to YouTube needs
+    /// no extraction at all, so every video TMDB knows about can be offered,
+    /// and it plays in the app that is licensed to play it.
     private var trailersSection: some View {
         VStack(alignment: .leading, spacing: 24) {
             sectionHeader("Trailers & Clips", accent: TVTheme.blue)
-            HStack(spacing: 32) {
-                if let reel = trailerReel {
-                    Button {
-                        WatchIntentLogger.shared.log(
-                            eventType: .cardTapped,
-                            titleId: detail.titleId,
-                            metadata: ["section": "trailers_and_clips"]
-                        )
-                        reelsPresentation = TVReelsPresentation(feed: [reel], startIndex: 0)
-                    } label: {
-                        ZStack(alignment: .bottomLeading) {
-                            Color(white: 0.05)
-                                .overlay {
-                                    TVRemoteImage(urlString: reel.backdropUrl ?? reel.posterUrl, contentMode: .fill)
-                                        .allowsHitTesting(false)
-                                }
-                                .overlay {
-                                    LinearGradient(colors: [.black.opacity(0.8), .clear],
-                                                   startPoint: .bottom, endPoint: .center)
-                                }
-                            HStack(spacing: 12) {
-                                Image(systemName: "play.circle.fill")
-                                    .font(.system(size: 30, weight: .bold))
-                                Text("Play trailer")
-                                    .font(.system(size: 22, weight: .semibold))
-                            }
-                            .foregroundStyle(.white)
-                            .padding(18)
-                        }
-                        .frame(width: 480, height: 270)
-                        .clipShape(.rect(cornerRadius: 14))
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 32) {
+                    ForEach(titleVideos) { video in
+                        TVTitleVideoTile(video: video) { open(video) }
                     }
-                    .buttonStyle(.card)
                 }
+                .padding(.horizontal, 80)
+                .padding(.vertical, 20)
             }
-            .padding(.horizontal, 80)
-            .padding(.vertical, 20)
         }
         .focusSection()
+    }
+
+    private func open(_ video: TVTitleVideo) {
+        WatchIntentLogger.shared.log(
+            eventType: .cardTapped,
+            titleId: detail.titleId,
+            metadata: [
+                "section": "trailers_and_clips",
+                "video_id": video.key,
+                "video_type": video.type
+            ]
+        )
+        // App scheme first, then the web URL, then the app's home screen —
+        // the same walk TVCreatorDetailView uses for a creator's uploads.
+        let chain = [
+            URL(string: "youtube://www.youtube.com/watch?v=\(video.key)"),
+            URL(string: "https://www.youtube.com/watch?v=\(video.key)"),
+            URL(string: "youtube://")
+        ].compactMap { $0 }
+        TVOSDeepLinker.openURLChain(chain)
     }
 
     // MARK: More Like This
@@ -977,7 +968,7 @@ struct TVTitleSheet: View {
         let tv = isTV
 
         async let recsTask = TVTMDBService.shared.getRecommendations(tmdbId: tid, isTV: tv)
-        async let reelTask = buildTrailerReel(tmdbId: tid, isTV: tv)
+        async let videosTask = TVTMDBService.shared.getVideos(tmdbId: tid, isTV: tv)
         async let castTask = TVTMDBService.shared.getCast(tmdbId: tid, isTV: tv)
 
         if tv, youTubeChannelId == nil {
@@ -996,23 +987,16 @@ struct TVTitleSheet: View {
         }
         cadenceBadge = weeklyCadenceBadge(from: episodes)
 
-        let (recs, reel, people) = await (recsTask, reelTask, castTask)
+        let (recs, videos, people) = await (recsTask, videosTask, castTask)
         recommendations = Array(recs.prefix(20))
-        trailerReel = reel
+        titleVideos = videos
         cast = people
 
         // Ask for the stream before offering the section. One extraction
         // attempt per open, and it is the same call the hero makes, so a
         // resolved stream is already warm in the service by the time the
         // viewer presses play.
-        if reel != nil, let tid = tmdbId {
-            let streams = await TVTrailerStreamService.shared
-                .fetchTrailerStreams(for: [(tmdbId: tid, isTV: tv)])
-            trailerPlayable = !streams.isEmpty
-            TVNavLog.log("trailers: playable=\(trailerPlayable) for tmdb \(tid)")
-        } else {
-            trailerPlayable = false
-        }
+        TVNavLog.log("videos: \(titleVideos.count) for tmdb \(tid)")
     }
 
     /// "New episode every Sunday", but only when the last two aired episodes
@@ -1043,32 +1027,6 @@ struct TVTitleSheet: View {
         defer { isLoadingEpisodes = false }
         let fetched = try? await TVTMDBService.shared.getSeason(tmdbId: tid, seasonNumber: number)
         episodes = fetched?.episodes ?? []
-    }
-
-    private func buildTrailerReel(tmdbId tid: Int, isTV tv: Bool) async -> TVReelItem? {
-        let keys: [String]
-        if let verified = await TVTrailerResolveService.resolve(tmdbId: tid, isTV: tv) {
-            keys = verified
-        } else {
-            keys = await TVTMDBService.shared.getTrailerKeys(tmdbId: tid, isTV: tv)
-        }
-        guard !keys.isEmpty else { return nil }
-        return TVReelItem(
-            id: "tmdb:\(tv ? "tv" : "movie"):\(tid)",
-            tmdbId: tid,
-            isTV: tv,
-            title: detail.title,
-            synopsis: synopsisText ?? "",
-            backdropUrl: detail.backdropUrl,
-            posterUrl: detail.posterUrl,
-            year: detail.year,
-            genre: nil,
-            platformName: detail.platform,
-            platformId: nil,
-            trailerKeys: keys,
-            isSponsored: false,
-            advertiserKey: nil
-        )
     }
 
     // MARK: - Where to Watch chips
@@ -1616,6 +1574,63 @@ struct TVTitleSheet: View {
     }
 }
 
+
+// MARK: - Trailer / clip tile
+
+/// One video in the Trailers & Clips row. Art is YouTube's own still, so the
+/// tile shows the video rather than the title's backdrop repeated six times.
+/// Focus is a white outline and a lift — `.card` would put tvOS's plate over
+/// the artwork.
+private struct TVTitleVideoTile: View {
+    let video: TVTitleVideo
+    let action: () -> Void
+
+    @FocusState private var isFocused: Bool
+
+    var body: some View {
+        Button(action: action) {
+            VStack(alignment: .leading, spacing: 12) {
+                ZStack(alignment: .bottomLeading) {
+                    Color(white: 0.05)
+                        .overlay {
+                            TVRemoteImage(urlString: video.thumbnailURL, contentMode: .fill)
+                                .allowsHitTesting(false)
+                        }
+                        .overlay {
+                            LinearGradient(colors: [.black.opacity(0.75), .clear],
+                                           startPoint: .bottom, endPoint: .center)
+                        }
+                    HStack(spacing: 10) {
+                        Image(systemName: "play.circle.fill")
+                            .font(.system(size: 26, weight: .bold))
+                        Text(video.type)
+                            .font(.system(size: 18, weight: .semibold))
+                    }
+                    .foregroundStyle(.white)
+                    .padding(16)
+                }
+                .frame(width: 380, height: 214)
+                .clipShape(.rect(cornerRadius: 14))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .stroke(Color.white.opacity(isFocused ? 1 : 0), lineWidth: 3)
+                }
+                .scaleEffect(isFocused ? 1.05 : 1.0)
+
+                Text(video.name)
+                    .font(.system(size: 20, weight: .medium))
+                    .foregroundStyle(isFocused ? .white : TVTheme.textSecondary)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+                    .frame(width: 380, alignment: .leading)
+            }
+            .animation(.easeOut(duration: 0.15), value: isFocused)
+        }
+        .buttonStyle(TVFlatButtonStyle())
+        .focusEffectDisabled()
+        .focused($isFocused)
+    }
+}
 
 // MARK: - Trailer reels presentation payload
 

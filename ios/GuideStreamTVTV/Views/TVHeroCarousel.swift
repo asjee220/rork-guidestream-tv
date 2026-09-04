@@ -334,7 +334,14 @@ struct TVHeroCarousel: View {
             // The hero grew by the title-safe margin when it opted out, so
             // this has to clear more than it used to.
             .padding(.bottom, 290)
-            .opacity(metadataVisible ? 1 : 0)
+            // Not zero. tvOS will not move focus onto a fully transparent
+            // view, and the CTA lives in this block — so once focus had left
+            // the hero once, `metadataVisible` went false, the block went to
+            // alpha 0, and there was no longer anything up there to move back
+            // to. Down into the rails was a one-way trip. 0.02 is invisible
+            // on screen and focusable to the engine, which is the whole
+            // difference.
+            .opacity(metadataVisible ? 1 : 0.02)
             .animation(.easeInOut(duration: 0.3), value: metadataVisible)
             .animation(.easeOut(duration: 0.35), value: index)
         }

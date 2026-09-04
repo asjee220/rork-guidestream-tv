@@ -14,15 +14,21 @@
 import SwiftUI
 
 /// The destinations the side menu routes to, in the top-to-bottom order
-/// shown in the design mockups: Search, Home, Watchlist, Sports, Reels,
-/// Profile. Reels and Search are wired to placeholder screens for now so
-/// the menu structure matches the mockups; the screens can be filled in later.
+/// shown in the design mockups: Search, Home, Watchlist, Sports, Profile.
+///
+/// Reels is commented out rather than deleted. The screen and its view model
+/// still build; what changed is that a title's trailers, clips and
+/// featurettes now hand off to the YouTube app from the detail screen, which
+/// plays them in the app licensed to play them and needs no stream
+/// extraction — so an in-app Reels surface has nothing left to show that the
+/// detail screen does not. Restore the case and its `screen(for:)` arm to
+/// bring it back.
 enum TVSideMenuItem: String, CaseIterable, Identifiable {
     case search
     case home
     case watchList
     case sports
-    case reels
+//    case reels
     case profile
 
     var id: String { rawValue }
@@ -30,7 +36,7 @@ enum TVSideMenuItem: String, CaseIterable, Identifiable {
     var label: String {
         switch self {
         case .profile: return "Profile"
-        case .reels: return "Reels"
+//        case .reels: return "Reels"
         case .sports: return "Sports"
         case .watchList: return "Watchlist"
         case .home: return "Home"
@@ -41,7 +47,7 @@ enum TVSideMenuItem: String, CaseIterable, Identifiable {
     var icon: String {
         switch self {
         case .profile: return "person.fill"
-        case .reels: return "play.fill"
+//        case .reels: return "play.fill"
         case .sports: return "american.football.fill"
         // A list, not a play button. The row sat next to Reels' play glyph
         // and read as a second video surface rather than a saved list.
