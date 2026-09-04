@@ -392,15 +392,56 @@ struct ConnectedServicesView: View {
     @State private var auth = AuthViewModel.shared
     @State private var selected: Set<String>
     @State private var saveFlash: Bool = false
+    @State private var serviceQuery: String = ""
+    @FocusState private var isSearchFocused: Bool
 
+    // Three fixed columns is the phone's layout, and on a 1920 screen it made
+    // each tile roughly 530pt — a wall of six enormous cards. Adaptive columns
+    // size the grid to the space instead, at a tile size meant to be read from
+    // a sofa rather than held in a hand.
     private let columns = [
-        GridItem(.flexible(), spacing: 14),
-        GridItem(.flexible(), spacing: 14),
-        GridItem(.flexible(), spacing: 14)
+        GridItem(.adaptive(minimum: 200, maximum: 240), spacing: 30)
     ]
 
     init() {
         _selected = State(initialValue: AuthViewModel.shared.selectedServices)
+    }
+
+    private var filteredServices: [StreamingService] {
+        let q = serviceQuery.trimmingCharacters(in: .whitespaces)
+        guard !q.isEmpty else { return StreamingCatalog.all }
+        return StreamingCatalog.all.filter { $0.name.localizedCaseInsensitiveContains(q) }
+    }
+
+    /// Same field the phone has. On tvOS the focused text field hands off to
+    /// the system keyboard, so this is one focus stop that opens the full
+    /// typing surface — worth it once the catalogue is longer than a screen.
+    private var searchField: some View {
+        HStack(spacing: 14) {
+            Image(systemName: "magnifyingglass")
+                .scaledFont(size: 26, weight: .semibold)
+                .foregroundStyle(Color.textSecondary)
+            TextField(
+                "",
+                text: $serviceQuery,
+                prompt: Text("Search services").foregroundStyle(Color.textSecondary)
+            )
+            .scaledFont(size: 28)
+            .foregroundStyle(.white)
+            .focused($isSearchFocused)
+            .autocorrectionDisabled()
+            .textInputAutocapitalization(.never)
+        }
+        .padding(.horizontal, 26)
+        .frame(height: 76)
+        .background(Capsule().fill(Color.white.opacity(0.05)))
+        .overlay(
+            Capsule().stroke(
+                isSearchFocused ? Color.white : Color.white.opacity(0.10),
+                lineWidth: isSearchFocused ? 3 : 1
+            )
+        )
+        .animation(.easeOut(duration: 0.15), value: isSearchFocused)
     }
 
     var body: some View {
@@ -411,25 +452,37 @@ struct ConnectedServicesView: View {
                 ScrollView(showsIndicators: false) {
                     VStack(alignment: .leading, spacing: 14) {
                         Text("Pick every service you have so your home feed only shows shows and movies you can actually watch.")
-                            .scaledFont(size: 13)
+                            .scaledFont(size: 26)
                             .foregroundStyle(Color.textSecondary)
+                            .frame(maxWidth: 1100, alignment: .leading)
                             .padding(.top, 4)
 
                         currentlySelectedSection
 
-                        LazyVGrid(columns: columns, spacing: 22) {
-                            ForEach(StreamingCatalog.all) { svc in
-                                ServiceTile(
-                                    service: svc,
-                                    isSelected: selected.contains(svc.id),
-                                    onTap: { toggle(svc.id) }
-                                )
+                        searchField
+                            .padding(.top, 8)
+
+                        if filteredServices.isEmpty {
+                            Text("No services match")
+                                .scaledFont(size: 26)
+                                .foregroundStyle(Color.textSecondary)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 60)
+                        } else {
+                            LazyVGrid(columns: columns, spacing: 34) {
+                                ForEach(filteredServices) { svc in
+                                    ServiceTile(
+                                        service: svc,
+                                        isSelected: selected.contains(svc.id),
+                                        onTap: { toggle(svc.id) }
+                                    )
+                                }
                             }
+                            .padding(.top, 16)
+                            .padding(.bottom, 40)
                         }
-                        .padding(.top, 8)
-                        .padding(.bottom, 24)
                     }
-                    .padding(.horizontal, 20)
+                    .padding(.horizontal, 80)
                     .padding(.top, 8)
                 }
 
@@ -445,20 +498,24 @@ struct ConnectedServicesView: View {
         if !services.isEmpty {
             VStack(alignment: .leading, spacing: 8) {
                 Text("CONNECTED")
-                    .scaledFont(size: 11, weight: .semibold)
-                    .tracking(0.8)
+                    .scaledFont(size: 22, weight: .semibold)
+                    .tracking(1.4)
                     .foregroundStyle(Color.textTertiary)
                 ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
+                    HStack(spacing: 16) {
                         ForEach(Array(services), id: \.id) { svc in
-                            HStack(spacing: 6) {
-                                ServiceMiniIcon(service: svc, size: 18)
+                            HStack(spacing: 14) {
+                                TVServiceBrandMark(
+                                    providerName: svc.name,
+                                    size: 48,
+                                    catalogId: svc.id
+                                )
                                 Text(svc.name)
-                                    .scaledFont(size: 12, weight: .semibold)
+                                    .scaledFont(size: 26, weight: .semibold)
                                     .foregroundStyle(.white)
                             }
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 6)
+                            .padding(.horizontal, 22)
+                            .padding(.vertical, 14)
                             .background(
                                 Capsule().fill(Color.white.opacity(0.06))
                             )
@@ -467,6 +524,7 @@ struct ConnectedServicesView: View {
                             )
                         }
                     }
+                    .padding(.vertical, 4)
                 }
             }
             .padding(.top, 4)
@@ -474,28 +532,28 @@ struct ConnectedServicesView: View {
     }
 
     private var bottomBar: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: 16) {
             Text("\(DisplayFormatting.services(selected.count)) selected")
-                .scaledFont(size: 12)
+                .scaledFont(size: 26)
                 .foregroundStyle(Color.textSecondary)
 
             Button(action: save) {
-                HStack(spacing: 8) {
+                HStack(spacing: 14) {
                     if saveFlash {
                         Image(systemName: "checkmark")
-                            .scaledFont(size: 14, weight: .bold)
+                            .scaledFont(size: 26, weight: .bold)
                         Text("Saved")
-                            .scaledFont(size: 16, weight: .bold)
+                            .scaledFont(size: 30, weight: .bold)
                     } else {
                         Image(systemName: "tray.and.arrow.down.fill")
-                            .scaledFont(size: 14, weight: .bold)
+                            .scaledFont(size: 26, weight: .bold)
                         Text("Save Changes")
-                            .scaledFont(size: 16, weight: .bold)
+                            .scaledFont(size: 30, weight: .bold)
                     }
                 }
                 .foregroundStyle(.white)
-                .frame(maxWidth: .infinity)
-                .frame(height: 52)
+                .frame(maxWidth: 700)
+                .frame(height: 80)
                 .background(
                     LinearGradient(
                         colors: [Color.orange, Color.orange.opacity(0.85)],
@@ -507,9 +565,9 @@ struct ConnectedServicesView: View {
             }
             .buttonStyle(.plain)
         }
-        .padding(.horizontal, 20)
-        .padding(.top, 8)
-        .padding(.bottom, 16)
+        .padding(.horizontal, 80)
+        .padding(.top, 20)
+        .padding(.bottom, 32)
         .background(
             Color.navy
                 .background(.ultraThinMaterial)

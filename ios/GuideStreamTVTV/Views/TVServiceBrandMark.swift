@@ -116,22 +116,40 @@ enum TVServiceBrandCatalog {
     }
 }
 
-/// Circular brand mark. `size` is the diameter.
+/// Brand mark. `size` is the diameter, or the side of the square when
+/// `cornerRadius` is given.
 struct TVServiceBrandMark: View {
     let providerName: String
     var size: CGFloat = 52
+    /// The exact catalog id, when the caller has one. StreamingCatalog's ids
+    /// are this catalog's ids, so matching on it is exact — the name match
+    /// below is a heuristic built for TMDB's provider strings and should not
+    /// be relied on when the id is already in hand.
+    var catalogId: String? = nil
+    /// nil draws the circular mark the pills use. A value draws a rounded
+    /// square, which is what the services grid needs to match the phone.
+    var cornerRadius: CGFloat? = nil
 
     private var brand: TVServiceBrand? {
-        TVServiceBrandCatalog.brand(providerName: providerName)
+        TVServiceBrandCatalog.brand(id: catalogId)
+            ?? TVServiceBrandCatalog.brand(providerName: providerName)
     }
 
     var body: some View {
-        Circle()
+        if let cornerRadius {
+            mark(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+        } else {
+            mark(Circle())
+        }
+    }
+
+    private func mark<S: InsettableShape>(_ shape: S) -> some View {
+        shape
             .fill(brand?.bg ?? Color(white: 0.16))
             .frame(width: size, height: size)
             .overlay { content.padding(size * 0.14) }
-            .overlay(Circle().stroke(.white.opacity(0.22), lineWidth: 1))
-            .clipShape(Circle())
+            .overlay(shape.stroke(.white.opacity(0.22), lineWidth: 1))
+            .clipShape(shape)
     }
 
     @ViewBuilder
