@@ -11,12 +11,20 @@
 import SwiftUI
 import UIKit
 
+/// Focus targets on the sheet. tvOS selection here is a 2pt white stroke on
+/// each control's own shape — never `.buttonStyle(.plain)`, which lays a white
+/// slab over whatever it wraps even under `.focusEffectDisabled()`.
+private enum SportsSheetFocus: Hashable {
+    case remind, like, favoriteAway, favoriteHome, watch, watchlist, close
+}
+
 struct SportsWatchSheet: View {
     let game: SportsGame
     @Environment(\.dismiss) private var dismiss
 
     @State private var isReminderSet: Bool = false
-    @State private var showCastSheet: Bool = false
+    @State private var favorites = TVTeamFavoritesService.shared
+    @FocusState private var focus: SportsSheetFocus?
     @State private var streams = StreamsViewModel.shared
     @State private var social = SocialViewModel.shared
     @State private var isToggleSaving: Bool = false
@@ -129,27 +137,6 @@ struct SportsWatchSheet: View {
         .presentationDragIndicator(.visible)
         .presentationContentInteraction(.scrolls)
         #endif
-        #if os(tvOS)
-        .fullScreenCover(isPresented: $showCastSheet) {
-            CastToTVSheet(
-                isPresented: $showCastSheet,
-                showTitle: gameTitle,
-                platform: primaryBroadcast ?? "",
-                tmdbId: nil,
-                isTV: false
-            )
-        }
-        #else
-        .sheet(isPresented: $showCastSheet) {
-            CastToTVSheet(
-                isPresented: $showCastSheet,
-                showTitle: gameTitle,
-                platform: primaryBroadcast ?? "",
-                tmdbId: nil,
-                isTV: false
-            )
-        }
-        #endif
         .onAppear {
             WatchIntentLogger.shared.log(
                 eventType: .episodeDetailViewed,
@@ -172,26 +159,26 @@ struct SportsWatchSheet: View {
     private var headerRow: some View {
         HStack(alignment: .top, spacing: 16) {
             gameThumbnail
-                .frame(width: 110, height: 150)
-                .clipShape(.rect(cornerRadius: 12))
+                .frame(width: 170, height: 232)
+                .clipShape(.rect(cornerRadius: 16))
 
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 12) {
                 Text(gameTitle)
-                    .scaledFont(size: 24, weight: .bold)
+                    .scaledFont(size: 44, weight: .bold)
                     .foregroundStyle(.white)
                     .lineLimit(2)
 
                 Text(metaText)
-                    .scaledFont(size: 13)
+                    .scaledFont(size: 22)
                     .foregroundStyle(Color.white.opacity(0.55))
 
-                HStack(spacing: 8) {
+                HStack(spacing: 10) {
                     statusChip
                     Text(game.sport.uppercased())
-                        .scaledFont(size: 11, weight: .heavy)
+                        .scaledFont(size: 18, weight: .heavy)
                         .foregroundStyle(.white)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 9)
                         .background(Capsule().fill(Color.white.opacity(0.10)))
                 }
                 .padding(.top, 2)
@@ -212,21 +199,21 @@ struct SportsWatchSheet: View {
                 awayColor
                 VStack(alignment: .leading, spacing: 4) {
                     Text("AWAY")
-                        .scaledFont(size: 8, weight: .heavy)
+                        .scaledFont(size: 14, weight: .heavy)
                         .tracking(1)
                         .foregroundStyle(.white.opacity(0.65))
                     HStack(spacing: 6) {
                         if let logoURL = game.away.logoURL, !logoURL.isEmpty, let url = URL(string: logoURL) {
                             AsyncImage(url: url) { phase in
                                 if case .success(let image) = phase {
-                                    image.resizable().scaledToFit().frame(width: 22, height: 22)
+                                    image.resizable().scaledToFit().frame(width: 34, height: 34)
                                 } else {
                                     EmptyView()
                                 }
                             }
                         }
                         Text(game.away.abbreviation)
-                            .scaledFont(size: 22, weight: .black)
+                            .scaledFont(size: 32, weight: .black)
                             .foregroundStyle(.white)
                     }
                 }
@@ -237,17 +224,17 @@ struct SportsWatchSheet: View {
                 homeColor
                 VStack(alignment: .trailing, spacing: 4) {
                     Text("HOME")
-                        .scaledFont(size: 8, weight: .heavy)
+                        .scaledFont(size: 14, weight: .heavy)
                         .tracking(1)
                         .foregroundStyle(.white.opacity(0.65))
                     HStack(spacing: 6) {
                         Text(game.home.abbreviation)
-                            .scaledFont(size: 22, weight: .black)
+                            .scaledFont(size: 32, weight: .black)
                             .foregroundStyle(.white)
                         if let logoURL = game.home.logoURL, !logoURL.isEmpty, let url = URL(string: logoURL) {
                             AsyncImage(url: url) { phase in
                                 if case .success(let image) = phase {
-                                    image.resizable().scaledToFit().frame(width: 22, height: 22)
+                                    image.resizable().scaledToFit().frame(width: 34, height: 34)
                                 } else {
                                     EmptyView()
                                 }
@@ -266,10 +253,10 @@ struct SportsWatchSheet: View {
         )
         .overlay(alignment: .center) {
             Text("VS")
-                .scaledFont(size: 11, weight: .black)
+                .scaledFont(size: 17, weight: .black)
                 .foregroundStyle(.white)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 7)
                 .background(
                     Circle().fill(.black.opacity(0.5))
                         .overlay(Circle().stroke(Color.white.opacity(0.18), lineWidth: 1))
@@ -284,50 +271,50 @@ struct SportsWatchSheet: View {
             HStack(spacing: 5) {
                 Circle()
                     .fill(.white)
-                    .frame(width: 6, height: 6)
+                    .frame(width: 10, height: 10)
                 Text("LIVE")
-                    .scaledFont(size: 11, weight: .heavy)
+                    .scaledFont(size: 18, weight: .heavy)
             }
             .foregroundStyle(.white)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 9)
             .background(Capsule().fill(Color(hex: "E50914")))
         case .pre:
             Text("UPCOMING")
-                .scaledFont(size: 11, weight: .heavy)
+                .scaledFont(size: 18, weight: .heavy)
                 .foregroundStyle(.white)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 9)
                 .background(Capsule().fill(Color.orange))
         case .post:
             Text("FINAL")
-                .scaledFont(size: 11, weight: .heavy)
+                .scaledFont(size: 18, weight: .heavy)
                 .foregroundStyle(.white)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 9)
                 .background(Capsule().fill(Color.white.opacity(0.18)))
         }
     }
 
     private var liveScoreRow: some View {
-        HStack(spacing: 16) {
-            VStack(alignment: .leading, spacing: 2) {
+        HStack(spacing: 26) {
+            VStack(alignment: .leading, spacing: 3) {
                 Text(game.away.abbreviation)
-                    .scaledFont(size: 10, weight: .heavy)
+                    .scaledFont(size: 18, weight: .heavy)
                     .foregroundStyle(Color.white.opacity(0.6))
                 Text(game.away.score)
-                    .scaledFont(size: 22, weight: .black)
+                    .scaledFont(size: 40, weight: .black)
                     .foregroundStyle(game.away.isWinner ? .white : Color.white.opacity(0.7))
             }
             Text("–")
-                .scaledFont(size: 16, weight: .bold)
+                .scaledFont(size: 28, weight: .bold)
                 .foregroundStyle(Color.white.opacity(0.3))
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 3) {
                 Text(game.home.abbreviation)
-                    .scaledFont(size: 10, weight: .heavy)
+                    .scaledFont(size: 18, weight: .heavy)
                     .foregroundStyle(Color.white.opacity(0.6))
                 Text(game.home.score)
-                    .scaledFont(size: 22, weight: .black)
+                    .scaledFont(size: 40, weight: .black)
                     .foregroundStyle(game.home.isWinner ? .white : Color.white.opacity(0.7))
             }
         }
@@ -345,7 +332,8 @@ struct SportsWatchSheet: View {
                 label: "Remind me",
                 count: nil,
                 tint: isReminderSet ? Color.orange : .white,
-                showDot: isReminderSet
+                showDot: isReminderSet,
+                focusKey: .remind
             ) {
                 withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) { isReminderSet.toggle() }
             }
@@ -356,7 +344,9 @@ struct SportsWatchSheet: View {
                 label: "Like",
                 count: likeCount,
                 tint: isLiked ? Color.orange : .white,
-                showDot: false
+                showDot: false,
+                focusKey: .like,
+                isHighlighted: isLiked
             ) {
                 guard !isTogglingLike else { return }
                 isTogglingLike = true
@@ -367,58 +357,93 @@ struct SportsWatchSheet: View {
             }
             .frame(maxWidth: .infinity)
 
-            circleAction(
-                icon: "tv",
-                label: "Send to TV",
-                count: nil,
-                tint: .white,
-                showDot: false
-            ) {
-                showCastSheet = true
-            }
-            .frame(maxWidth: .infinity)
+            favoriteAction(team: game.away, focusKey: .favoriteAway)
+                .frame(maxWidth: .infinity)
+
+            favoriteAction(team: game.home, focusKey: .favoriteHome)
+                .frame(maxWidth: .infinity)
         }
     }
 
+    /// Star toggle for one of the two teams, wired to the same
+    /// `TVTeamFavoritesService` My Teams and the Schedule read. A team already
+    /// followed opens filled and highlighted rather than waiting to be
+    /// discovered.
+    private func favoriteAction(team: TVGameTeam, focusKey: SportsSheetFocus) -> some View {
+        let isFavorite = favorites.isFavorite(team.uid)
+        return circleAction(
+            icon: isFavorite ? "star.fill" : "star",
+            label: team.abbreviation,
+            count: nil,
+            tint: isFavorite ? Color.orange : .white,
+            showDot: false,
+            focusKey: focusKey,
+            isHighlighted: isFavorite
+        ) {
+            Task { await favorites.toggle(team: team, league: game.leagueShort, sport: game.sport) }
+        }
+        .disabled(team.uid == nil)
+    }
+
+    /// One circular action. `isHighlighted` is the resting "already on" state
+    /// — a followed team, not a focused one; focus stays the 2pt white stroke.
     private func circleAction(
         icon: String,
         label: String,
         count: Int?,
         tint: Color,
         showDot: Bool,
+        focusKey: SportsSheetFocus,
+        isHighlighted: Bool = false,
         action: @escaping () -> Void
     ) -> some View {
-        Button(action: action) {
-            VStack(spacing: 8) {
+        let isFocused = focus == focusKey
+        return Button(action: action) {
+            VStack(spacing: 12) {
                 ZStack {
                     Circle()
-                        .fill(Color.white.opacity(0.08))
-                        .frame(width: 54, height: 54)
+                        .fill(isHighlighted ? Color.orange.opacity(0.22) : Color.white.opacity(0.08))
+                        .frame(width: 84, height: 84)
+                    if isHighlighted {
+                        Circle()
+                            .stroke(Color.orange, lineWidth: 2)
+                            .frame(width: 84, height: 84)
+                    }
+                    // Focus is the house 2pt white stroke on the shape itself.
+                    Circle()
+                        .stroke(isFocused ? Color.white : Color.clear, lineWidth: 2)
+                        .frame(width: 84, height: 84)
                     Image(systemName: icon)
-                        .scaledFont(size: 22, weight: .regular)
+                        .scaledFont(size: 34, weight: .regular)
                         .foregroundStyle(tint)
                     if showDot {
                         Circle()
                             .fill(Color(red: 0x3D/255, green: 0xE0/255, blue: 0x6A/255))
-                            .frame(width: 10, height: 10)
-                            .overlay(Circle().stroke(Color(red: 0x06/255, green: 0x0C/255, blue: 0x18/255), lineWidth: 2))
-                            .offset(x: 16, y: -16)
+                            .frame(width: 16, height: 16)
+                            .overlay(Circle().stroke(Color(red: 0x06/255, green: 0x0C/255, blue: 0x18/255), lineWidth: 3))
+                            .offset(x: 26, y: -26)
                     }
                 }
-                VStack(spacing: 2) {
+                VStack(spacing: 3) {
                     Text(label)
-                        .scaledFont(size: 13)
-                        .foregroundStyle(Color.white.opacity(0.7))
+                        .scaledFont(size: 20)
+                        .foregroundStyle(Color.white.opacity(isFocused ? 1 : 0.7))
                         .lineLimit(1)
                     if let count, count > 0 {
                         Text(formatSocialCount(count))
-                            .scaledFont(size: 11, weight: .heavy)
+                            .scaledFont(size: 18, weight: .heavy)
                             .foregroundStyle(.white)
                     }
                 }
             }
+            .scaleEffect(isFocused ? 1.06 : 1.0)
+            .animation(.easeOut(duration: 0.15), value: isFocused)
         }
-        .buttonStyle(.plain)
+        // Never `.plain` on tvOS: it lays a white slab over the label on focus
+        // even under `.focusEffectDisabled()`.
+        .buttonStyle(TVFlatButtonStyle())
+        .focusEffectDisabled()
+        .focused($focus, equals: focusKey)
     }
 
     /// Compact count formatting used by the actions row, matching the
@@ -435,11 +460,11 @@ struct SportsWatchSheet: View {
     private var aboutSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("ABOUT")
-                .scaledFont(size: 12, weight: .heavy)
-                .tracking(1.4)
+                .scaledFont(size: 19, weight: .heavy)
+                .tracking(2)
                 .foregroundStyle(Color.white.opacity(0.45))
             Text(aboutText)
-                .scaledFont(size: 15)
+                .scaledFont(size: 23)
                 .foregroundStyle(Color.white.opacity(0.85))
                 .lineSpacing(4)
         }
@@ -454,13 +479,13 @@ struct SportsWatchSheet: View {
         let enriched = TVSportsSimulcast.enrich(game.broadcasts)
         return VStack(alignment: .leading, spacing: 10) {
             Text("WHERE TO WATCH")
-                .scaledFont(size: 12, weight: .heavy)
-                .tracking(1.4)
+                .scaledFont(size: 19, weight: .heavy)
+                .tracking(2)
                 .foregroundStyle(Color.white.opacity(0.45))
 
             if enriched.isEmpty {
                 Text("Broadcast not announced yet — check back closer to game time.")
-                    .scaledFont(size: 13)
+                    .scaledFont(size: 21)
                     .foregroundStyle(Color.white.opacity(0.5))
             } else {
                 ScrollView(.horizontal, showsIndicators: false) {
@@ -475,7 +500,7 @@ struct SportsWatchSheet: View {
 
             if !enriched.isEmpty {
                 Text(availabilityLabel)
-                    .scaledFont(size: 13)
+                    .scaledFont(size: 21)
                     .foregroundStyle(Color.white.opacity(0.5))
                     .padding(.top, 2)
             }
@@ -495,10 +520,10 @@ struct SportsWatchSheet: View {
 
     private func broadcastChip(_ name: String) -> some View {
         Text(name)
-            .scaledFont(size: 13, weight: .heavy)
+            .scaledFont(size: 20, weight: .heavy)
             .foregroundStyle(.white)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 8)
+            .padding(.horizontal, 20)
+            .padding(.vertical, 11)
             .background(Capsule().fill(broadcastColor(name)))
     }
 
@@ -529,9 +554,14 @@ struct SportsWatchSheet: View {
         // `.top` alignment keeps the full-width Watch CTA pinned to the top
         // while the watchlist circle + label hangs below — matches the
         // Reels rail rhythm so the affordance feels consistent.
-        HStack(alignment: .top, spacing: 12) {
+        // The CTA no longer stretches edge to edge — at TV width a full-bleed
+        // capsule reads as a banner rather than a button. It sizes to its own
+        // label up to a cap, and the trailing Spacer keeps it and the watch-list
+        // circle together on the leading side.
+        HStack(alignment: .top, spacing: 24) {
             watchButton
             watchlistButton
+            Spacer(minLength: 0)
         }
     }
 
@@ -557,19 +587,25 @@ struct SportsWatchSheet: View {
             )
             dismiss()
         } label: {
-            HStack(spacing: 8) {
+            HStack(spacing: 14) {
                 Image(systemName: game.state == .live ? "play.fill" : "play.tv.fill")
-                    .scaledFont(size: 15, weight: .bold)
+                    .scaledFont(size: 26, weight: .bold)
                 Text(canWatch ? "Watch on \(platform)" : "Broadcast TBA")
-                    .scaledFont(size: 17, weight: .semibold)
+                    .scaledFont(size: 28, weight: .semibold)
+                    .lineLimit(1)
             }
             .foregroundStyle(.white)
-            .frame(maxWidth: .infinity)
-            .frame(height: 56)
+            .padding(.horizontal, 52)
+            .frame(height: 92)
             .background(Capsule().fill(canWatch ? Color.orange : Color.white.opacity(0.15)))
+            .overlay(Capsule().stroke(focus == .watch ? Color.white : Color.clear, lineWidth: 2))
             .shadow(color: canWatch ? Color.orange.opacity(0.55) : .clear, radius: 22, y: 0)
+            .scaleEffect(focus == .watch ? 1.04 : 1.0)
+            .animation(.easeOut(duration: 0.15), value: focus == .watch)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(TVFlatButtonStyle())
+        .focusEffectDisabled()
+        .focused($focus, equals: .watch)
         .disabled(!canWatch)
     }
 
@@ -601,7 +637,7 @@ struct SportsWatchSheet: View {
                     if isSaved {
                         Circle()
                             .fill(Color.clear)
-                            .overlay(Circle().stroke(Color.white, lineWidth: 1.8))
+                            .overlay(Circle().stroke(Color.white, lineWidth: 2.5))
                     } else {
                         Circle()
                             .fill(Color.orange)
@@ -613,19 +649,26 @@ struct SportsWatchSheet: View {
                             .tint(.white)
                     } else {
                         Image(systemName: isSaved ? "checkmark" : "plus")
-                            .scaledFont(size: 22, weight: .bold)
+                            .scaledFont(size: 34, weight: .bold)
                             .foregroundStyle(.white)
                     }
                 }
-                .frame(width: 56, height: 56)
+                .frame(width: 84, height: 84)
+                .overlay(
+                    Circle().stroke(focus == .watchlist ? Color.white : Color.clear, lineWidth: 2)
+                )
 
                 Text(isSaved ? "Saved" : "Watch List")
-                    .scaledFont(size: 11, weight: .semibold)
+                    .scaledFont(size: 18, weight: .semibold)
                     .foregroundStyle(.white)
                     .lineLimit(1)
             }
+            .scaleEffect(focus == .watchlist ? 1.06 : 1.0)
+            .animation(.easeOut(duration: 0.15), value: focus == .watchlist)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(TVFlatButtonStyle())
+        .focusEffectDisabled()
+        .focused($focus, equals: .watchlist)
         .disabled(isToggleSaving)
         .accessibilityLabel(isSaved ? "Saved to watch list. Tap to remove." : "Add game to watch list")
     }
@@ -651,15 +694,20 @@ struct SportsWatchSheet: View {
 
     private var closeButton: some View {
         Button(action: { dismiss() }) {
-            HStack(spacing: 6) {
+            HStack(spacing: 10) {
                 Text("Close")
-                    .scaledFont(size: 15, weight: .semibold)
+                    .scaledFont(size: 24, weight: .semibold)
                 Image(systemName: "xmark")
-                    .scaledFont(size: 13, weight: .semibold)
+                    .scaledFont(size: 20, weight: .semibold)
             }
-            .foregroundStyle(Color.white.opacity(0.85))
+            .foregroundStyle(Color.white.opacity(focus == .close ? 1 : 0.85))
+            .padding(.horizontal, 30)
+            .padding(.vertical, 14)
+            .overlay(Capsule().stroke(focus == .close ? Color.white : Color.clear, lineWidth: 2))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(TVFlatButtonStyle())
+        .focusEffectDisabled()
+        .focused($focus, equals: .close)
     }
 }
 
