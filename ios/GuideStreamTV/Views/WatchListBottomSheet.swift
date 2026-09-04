@@ -94,6 +94,35 @@ private enum WatchListTab: String, CaseIterable, Identifiable {
     }
 }
 
+// MARK: - Sort
+
+/// How the Creators tab orders its rows. `.recentUpload` is the list's
+/// long-standing order — live first, then newest content — and stays the
+/// default; `.alphabetical` is the opt-in added for GUI-94.
+private enum WatchListSort: String, CaseIterable, Identifiable {
+    case recentUpload, alphabetical
+
+    var id: String { rawValue }
+
+    /// A `Text` rather than a `String`: a String handed to `Text(...)`
+    /// resolves to the non-localizing overload and never reaches the string
+    /// extractor. The trap is documented in claude/localization-state-aug2026.md.
+    var text: Text {
+        switch self {
+        case .recentUpload: return Text("Recent upload")
+        case .alphabetical: return Text("A–Z")
+        }
+    }
+
+    /// Plain-text twin for accessibility values, which take a String.
+    var accessibilityLabel: String {
+        switch self {
+        case .recentUpload: return "Recent upload"
+        case .alphabetical: return "A–Z"
+        }
+    }
+}
+
 // MARK: - Shared content
 
 /// Renders the watch list itself — list, empty state, or guest prompt — plus
@@ -120,6 +149,9 @@ private struct WatchListContent: View {
     /// tab; after that it follows their taps only.
     @State private var selectedTab: WatchListTab = .shows
     @State private var didSeedTab: Bool = false
+    /// Sort applied to the Creators tab only. Shows and Movies keep the
+    /// list's existing order.
+    @State private var creatorSort: WatchListSort = .recentUpload
     @State private var reminders = ReleaseReminderService.shared
 
     var body: some View {
@@ -382,7 +414,36 @@ private struct WatchListContent: View {
                 filterLeavingSoon.toggle()
             }
             Spacer(minLength: 0)
+            if selectedTab == .creators {
+                sortMenu
+            }
         }
+    }
+
+    /// Sort picker for the Creators tab. A menu rather than a third chip so
+    /// the filter row keeps its two-toggle shape at every width.
+    private var sortMenu: some View {
+        Menu {
+            Picker("Sort", selection: $creatorSort) {
+                ForEach(WatchListSort.allCases) { option in
+                    option.text.tag(option)
+                }
+            }
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: "arrow.up.arrow.down")
+                    .scaledFont(size: 11, weight: .semibold)
+                creatorSort.text
+                    .scaledFont(size: 12, weight: .semibold)
+            }
+            .foregroundStyle(Color.white.opacity(0.85))
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(Capsule().fill(Color(red: 0x1B / 255, green: 0x27 / 255, blue: 0x39 / 255)))
+            .overlay(Capsule().stroke(Color.white.opacity(0.10), lineWidth: 1))
+        }
+        .accessibilityLabel("Sort creators")
+        .accessibilityValue(creatorSort.accessibilityLabel)
     }
 
     /// Empty state for the visible grid. An empty category and a category
@@ -466,7 +527,12 @@ private struct WatchListContent: View {
     /// Saved titles in the selected tab, after the active filters. Both
     /// filters on intersect; neither on returns the tab's own sort order.
     private var filteredStreams: [UserStream] {
-        let inTab = sortedStreams.filter { WatchListTab.of($0) == selectedTab }
+        var inTab = sortedStreams.filter { WatchListTab.of($0) == selectedTab }
+        if selectedTab == .creators, creatorSort == .alphabetical {
+            inTab.sort {
+                ($0.title ?? $0.titleId).localizedStandardCompare($1.title ?? $1.titleId) == .orderedAscending
+            }
+        }
         guard filterOnMyServices || filterLeavingSoon else { return inTab }
         return inTab.filter { item in
             let onServicesOK = !filterOnMyServices || isOnMyServices(item)

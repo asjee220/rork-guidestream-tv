@@ -125,6 +125,20 @@ private enum class WatchListTab(
 }
 
 /**
+ * How the Creators tab orders its rows. RECENT_UPLOAD is the default and
+ * matches the phone and TV watch lists — newest content first; ALPHABETICAL
+ * is the opt-in added for GUI-94.
+ */
+private enum class WatchListSort(val label: String) {
+    RECENT_UPLOAD("Recent upload"),
+    ALPHABETICAL("A\u2013Z"),
+    ;
+
+    val next: WatchListSort
+        get() = if (this == RECENT_UPLOAD) ALPHABETICAL else RECENT_UPLOAD
+}
+
+/**
  * Full "My Watch List" destination reached from the home feed's Watch List
  * "See all" link. Android-native mirror of iOS WatchListBottomSheet: a back
  * arrow, title, and a two-column poster grid of every saved title with a
@@ -162,6 +176,9 @@ fun WatchListScreen(
     // whose list happens to be all movies does not land on an empty Shows
     // tab; after that it follows their taps only.
     var selectedTab by remember { mutableStateOf(WatchListTab.SHOWS) }
+    // Sort applied to the Creators tab only; the other tabs keep the list's
+    // existing order.
+    var creatorSort by remember { mutableStateOf(WatchListSort.RECENT_UPLOAD) }
     var didSeedTab by remember { mutableStateOf(false) }
 
     // Counted before any filter chip applies, so the empty-state copy can
@@ -202,7 +219,21 @@ fun WatchListScreen(
 
     // The tab scopes the list first; the chips then filter within it. Both
     // filters on intersect; neither on leaves the tab's order untouched.
-    val inTab = userStreams.filter { WatchListTab.of(it) == selectedTab }
+    val inTabRaw = userStreams.filter { WatchListTab.of(it) == selectedTab }
+    // Creators-only sort. Titles with no title_recency row sink below those
+    // that have one, alphabetical among themselves, so an unknown upload date
+    // never reads as a fresh one.
+    val inTab = if (selectedTab != WatchListTab.CREATORS) {
+        inTabRaw
+    } else when (creatorSort) {
+        WatchListSort.ALPHABETICAL ->
+            inTabRaw.sortedBy { (it.title ?: it.titleId).lowercase() }
+        WatchListSort.RECENT_UPLOAD ->
+            inTabRaw.sortedWith(
+                compareByDescending<UserStream> { latestContentAt[it.titleId] ?: Long.MIN_VALUE }
+                    .thenBy { (it.title ?: it.titleId).lowercase() }
+            )
+    }
     val filteredStreams = if (!filterOnMyServices && !filterLeavingSoon) {
         inTab
     } else {
@@ -320,6 +351,13 @@ fun WatchListScreen(
                     isOn = filterLeavingSoon,
                     onToggle = { filterLeavingSoon = !filterLeavingSoon },
                 )
+                if (selectedTab == WatchListTab.CREATORS) {
+                    Spacer(Modifier.weight(1f))
+                    WatchListSortChip(
+                        label = creatorSort.label,
+                        onToggle = { creatorSort = creatorSort.next },
+                    )
+                }
             }
         }
 
@@ -708,6 +746,37 @@ private fun WatchListTabChip(
  * uses the literal depth tokens (#1B2739 fill, #2E3E58 raised) rather than
  * theme aliases.
  */
+@Composable
+private fun WatchListSortChip(
+    label: String,
+    onToggle: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .clip(RoundedCornerShape(16.dp))
+            .background(Color(0xFF1B2739))
+            .border(
+                width = 1.dp,
+                color = Color.White.copy(alpha = 0.10f),
+                shape = RoundedCornerShape(16.dp),
+            )
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+            ) { onToggle() }
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = "Sort: $label",
+            fontSize = 13.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = Color.White.copy(alpha = 0.85f),
+        )
+    }
+}
+
 @Composable
 private fun WatchListFilterChip(
     label: String,

@@ -49,6 +49,41 @@ private enum TVWatchListTab: String, CaseIterable, Identifiable {
     }
 }
 
+/// How the Creators tab orders its rows. `.recentUpload` is the list's
+/// long-standing order — newest content first — and stays the default;
+/// `.alphabetical` is the opt-in added for GUI-94.
+private enum TVWatchListSort: String, CaseIterable, Identifiable {
+    case recentUpload, alphabetical
+
+    var id: String { rawValue }
+
+    /// A `Text` rather than a `String`: a String handed to `Text(...)`
+    /// resolves to the non-localizing overload and never reaches the string
+    /// extractor. See claude/localization-state-aug2026.md.
+    var text: Text {
+        switch self {
+        case .recentUpload: return Text("Recent upload")
+        case .alphabetical: return Text("A–Z")
+        }
+    }
+
+    /// Plain-text twin for accessibility values, which take a String.
+    var accessibilityLabel: String {
+        switch self {
+        case .recentUpload: return "Recent upload"
+        case .alphabetical: return "A–Z"
+        }
+    }
+
+    var next: TVWatchListSort {
+        self == .recentUpload ? .alphabetical : .recentUpload
+    }
+
+    var glyph: String {
+        self == .alphabetical ? "textformat.abc" : "clock.arrow.circlepath"
+    }
+}
+
 struct TVWatchListView: View {
     @State private var streams = TVStreamsViewModel.shared
     @State private var social = SocialViewModel.shared
@@ -60,6 +95,10 @@ struct TVWatchListView: View {
     @State private var selectedTab: TVWatchListTab = .shows
     @State private var didSeedTab = false
     @FocusState private var focusedTab: TVWatchListTab?
+    /// Sort applied to the Creators tab only; Shows and Movies keep the
+    /// list's existing recency order.
+    @State private var creatorSort: TVWatchListSort = .recentUpload
+    @FocusState private var sortChipFocused: Bool
 
     /// Six columns that share the row's width rather than each claiming a
     /// fixed 260pt. Fixed columns totalled 1740pt, more than the row has
@@ -175,7 +214,11 @@ struct TVWatchListView: View {
     /// the header count and the sponsored chip all read this, so nothing on
     /// screen can disagree with the tab that is lit.
     private var visibleStreams: [TVUserStream] {
-        sortedStreams.filter { TVWatchListTab.of($0) == selectedTab }
+        let inTab = sortedStreams.filter { TVWatchListTab.of($0) == selectedTab }
+        guard selectedTab == .creators, creatorSort == .alphabetical else { return inTab }
+        return inTab.sorted {
+            ($0.title ?? $0.titleId).localizedStandardCompare($1.title ?? $1.titleId) == .orderedAscending
+        }
     }
 
     /// Saved titles per tab, counted before the tab filter, so a chip can
@@ -206,8 +249,39 @@ struct TVWatchListView: View {
             ForEach(TVWatchListTab.allCases) { tab in
                 tabChip(tab)
             }
+            if selectedTab == .creators {
+                sortChip
+            }
         }
         .focusSection()
+    }
+
+    /// Creators-only sort toggle, living in the chip row so it needs no focus
+    /// section of its own — right from the last tab lands on it. Flat style
+    /// plus a 2pt stroke, the house selection treatment for tvOS.
+    private var sortChip: some View {
+        Button {
+            creatorSort = creatorSort.next
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: creatorSort.glyph)
+                    .font(.system(size: 20, weight: .semibold))
+                creatorSort.text
+                    .font(.system(size: 22, weight: .semibold))
+            }
+            .foregroundStyle(TVTheme.textSecondary)
+            .padding(.horizontal, 22)
+            .padding(.vertical, 12)
+            .background(Color.white.opacity(0.10), in: Capsule())
+            .overlay(Capsule().stroke(Color.white.opacity(sortChipFocused ? 0.9 : 0), lineWidth: 2))
+            .scaleEffect(sortChipFocused ? 1.06 : 1.0)
+            .animation(.easeOut(duration: 0.15), value: sortChipFocused)
+        }
+        .buttonStyle(TVFlatButtonStyle())
+        .focusEffectDisabled()
+        .focused($sortChipFocused)
+        .accessibilityLabel("Sort creators")
+        .accessibilityValue(creatorSort.accessibilityLabel)
     }
 
     private func tabChip(_ tab: TVWatchListTab) -> some View {

@@ -104,6 +104,26 @@ final class ContentSourcesService {
         return rows
     }
 
+    /// Maps the given title_ids to their most-recent upload timestamp from
+    /// `title_recency` — the same table the watch list sorts by. Only ids the
+    /// ingest has seen have a row, so the result is deliberately sparse and
+    /// callers must decide where the unknowns land.
+    func fetchLatestUploadDates(for titleIds: [String]) async -> [String: Date] {
+        guard !titleIds.isEmpty else { return [:] }
+        guard let rows: [TitleRecencyRow] = try? await client
+            .from("title_recency")
+            .select("title_id,last_content_at,content_kind")
+            .in("title_id", values: titleIds)
+            .execute()
+            .value
+        else { return [:] }
+        var map: [String: Date] = [:]
+        for row in rows where row.lastContentAt != nil {
+            map[row.titleId] = row.lastContentAt
+        }
+        return map
+    }
+
     /// Returns live_status rows where is_live is true (all currently live channels).
     func fetchCurrentlyLive() async throws -> [LiveStatus] {
         let rows: [LiveStatus] = try await client

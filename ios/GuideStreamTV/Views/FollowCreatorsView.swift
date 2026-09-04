@@ -18,6 +18,10 @@ struct FollowCreatorsView: View {
     @State private var searchText: String = ""
     @State private var selectedFilter: CreatorFilter = .all
     @State private var followedIds: Set<String> = []
+    @State private var sortOption: CreatorSort = .recentUpload
+    /// title_id → most-recent upload, filled after each load. Sparse: only
+    /// creators the ingest has seen have a `title_recency` row.
+    @State private var latestUploadAt: [String: Date] = [:]
     @State private var streams = StreamsViewModel.shared
     @State private var creatorDetailTarget: CreatorDetailTarget?
 
@@ -40,6 +44,33 @@ struct FollowCreatorsView: View {
             case .youtube: return "youtube"
             case .podcasts: return "podcast"
             case .streamers: return nil // twitch + kick handled in filter
+            }
+        }
+    }
+
+    /// How the list orders its rows. `.recentUpload` keeps the order the
+    /// service already returns (live first, newest content first);
+    /// `.alphabetical` is the opt-in added for GUI-94.
+    enum CreatorSort: String, CaseIterable, Identifiable {
+        case recentUpload, alphabetical
+
+        var id: String { rawValue }
+
+        /// A `Text` rather than a `String`: a String handed to `Text(...)`
+        /// resolves to the non-localizing overload and never reaches the
+        /// string extractor. See claude/localization-state-aug2026.md.
+        var text: Text {
+            switch self {
+            case .recentUpload: return Text("Recent upload")
+            case .alphabetical: return Text("A–Z")
+            }
+        }
+
+        /// Plain-text twin for accessibility values, which take a String.
+        var accessibilityLabel: String {
+            switch self {
+            case .recentUpload: return "Recent upload"
+            case .alphabetical: return "A–Z"
             }
         }
     }
@@ -117,6 +148,35 @@ struct FollowCreatorsView: View {
                         .padding(.horizontal, 16)
                         .padding(.vertical, 10)
                     }
+
+                    // Sort picker — sits under the filter chips so it applies
+                    // to whatever the chips leave on screen.
+                    HStack(spacing: 8) {
+                        Spacer(minLength: 0)
+                        Menu {
+                            Picker("Sort", selection: $sortOption) {
+                                ForEach(CreatorSort.allCases) { option in
+                                    option.text.tag(option)
+                                }
+                            }
+                        } label: {
+                            HStack(spacing: 5) {
+                                Image(systemName: "arrow.up.arrow.down")
+                                    .scaledFont(size: 11, weight: .semibold)
+                                sortOption.text
+                                    .scaledFont(size: 12, weight: .semibold)
+                            }
+                            .foregroundStyle(Color.white.opacity(0.85))
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 7)
+                            .background(Capsule().fill(Color.white.opacity(0.08)))
+                            .overlay(Capsule().stroke(Color.white.opacity(0.10), lineWidth: 1))
+                        }
+                        .accessibilityLabel("Sort creators")
+                        .accessibilityValue(sortOption.accessibilityLabel)
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 6)
 
                     // Content
                     if isLoading {
@@ -210,7 +270,25 @@ struct FollowCreatorsView: View {
         } else if let st = selectedFilter.sourceType {
             result = result.filter { $0.sourceType == st }
         }
-        // Live sort is handled server-side; preserve order
+        switch sortOption {
+        case .recentUpload:
+            // Live first, then newest upload. Creators with no recency row
+            // sink below those that have one, alphabetical among themselves,
+            // so an unknown date never masquerades as a fresh one.
+            result.sort { a, b in
+                if a.isLive != b.isLive { return a.isLive }
+                let aDate = latestUploadAt[a.titleId]
+                let bDate = latestUploadAt[b.titleId]
+                if let aD = aDate, let bD = bDate, aD != bD { return aD > bD }
+                if aDate != nil && bDate == nil { return true }
+                if aDate == nil && bDate != nil { return false }
+                return a.displayName.localizedStandardCompare(b.displayName) == .orderedAscending
+            }
+        case .alphabetical:
+            result.sort { a, b in
+                a.displayName.localizedStandardCompare(b.displayName) == .orderedAscending
+            }
+        }
         return result
     }
 
@@ -264,6 +342,10 @@ struct FollowCreatorsView: View {
         } catch {
             creators = []
         }
+
+        latestUploadAt = await ContentSourcesService.shared.fetchLatestUploadDates(
+            for: creators.map(\.titleId)
+        )
     }
 
     // MARK: - Follow toggle
