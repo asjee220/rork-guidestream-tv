@@ -95,8 +95,18 @@ final class TVScheduleService {
             games = cached
             return
         }
-        let favorites = TVTeamFavoritesService.shared.rows
-        guard !favorites.isEmpty else {
+        // Key off `favoriteUids()`, not `rows`.
+        //
+        // The two are not interchangeable: `favoriteUids` is seeded from the
+        // local cache at init and survives a signed-out or offline launch,
+        // while `rows` is filled only by a successful `load()` from Supabase.
+        // tvOS's My Teams rail already reads the uids and treats a row as
+        // optional decoration, so the rail could be full of chips while this
+        // screen — which used to require `rows` — reported "none of your teams
+        // play", which is exactly what it did.
+        let favorites = TVTeamFavoritesService.shared
+        let uids = favorites.favoriteUids()
+        guard !uids.isEmpty else {
             games = []
             return
         }
@@ -104,17 +114,19 @@ final class TVScheduleService {
         isLoadingGames = true
         defer { isLoadingGames = false }
 
-        let uids = Set(favorites.keys)
+        // Rows, when present, only narrow the work: the abbreviation is a
+        // fallback match for pre-uid rows and the sport trims the fan-out.
+        // Absent rows mean every endpoint gets asked, which is correct rather
+        // than empty.
+        let stored = uids.compactMap { favorites.rows[$0] }
         let abbrs = Set(
-            favorites.values
+            stored
                 .compactMap { $0.team_abbr?.uppercased() }
                 .filter { !$0.isEmpty }
         )
-        let sports = Set(
-            favorites.values
-                .compactMap { $0.sport }
-                .filter { !$0.isEmpty }
-        )
+        let sports = stored.count == uids.count
+            ? Set(stored.compactMap { $0.sport }.filter { !$0.isEmpty })
+            : Set<String>()
 
         let end = TVScheduleWeek.end(of: weekStart)
         let all = await TVSportsService.shared.fetchRange(

@@ -116,8 +116,14 @@ final class ScheduleService {
             games = cached
             return
         }
-        let favorites = TeamFavoritesService.shared.rows
-        guard !favorites.isEmpty else {
+        // Key off `favoriteUids()`, not `rows` — see the note on the tvOS
+        // twin. `favoriteUids` is seeded from the local cache and survives a
+        // signed-out or offline launch; `rows` is filled only by a successful
+        // Supabase `load()`. Requiring rows made the week silently empty
+        // whenever that load had not landed.
+        let favorites = TeamFavoritesService.shared
+        let uids = favorites.favoriteUids()
+        guard !uids.isEmpty else {
             games = []
             return
         }
@@ -125,17 +131,20 @@ final class ScheduleService {
         isLoadingGames = true
         defer { isLoadingGames = false }
 
-        let uids = Set(favorites.keys)
+        // Rows, when present, only narrow the work: the abbreviation is a
+        // fallback match for pre-uid rows and the sport trims the fan-out.
+        // Trimming by sport is only safe when every followed team has a row —
+        // otherwise a team whose row is missing would have its league dropped
+        // from the fetch.
+        let stored = uids.compactMap { favorites.rows[$0] }
         let abbrs = Set(
-            favorites.values
+            stored
                 .compactMap { $0.team_abbr?.uppercased() }
                 .filter { !$0.isEmpty }
         )
-        let sports = Set(
-            favorites.values
-                .compactMap { $0.sport }
-                .filter { !$0.isEmpty }
-        )
+        let sports = stored.count == uids.count
+            ? Set(stored.compactMap { $0.sport }.filter { !$0.isEmpty })
+            : Set<String>()
 
         let end = ScheduleWeek.end(of: weekStart)
         let all = await SportsService.shared.fetchRange(
