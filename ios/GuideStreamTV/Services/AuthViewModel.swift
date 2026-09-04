@@ -1126,17 +1126,21 @@ final class AuthViewModel {
         guard let presenter = UIApplication.shared.topViewController() else {
             throw NativeGoogleError.noPresenter
         }
-        // Google echoes this nonce back inside the id_token unhashed. Supabase
-        // rejects the exchange outright — "Passed nonce and nonce in id_token
-        // should either both exist or not" — unless the same value is on both
-        // sides of the call. Unlike the Apple path, it is not SHA256'd.
+        // Same shape as the Apple path, and for the same reason. Google echoes
+        // whatever string it is given straight into the id_token's nonce claim,
+        // and Supabase always compares sha256hex(the nonce you send it) against
+        // that claim — every provider, no exceptions (auth's IdTokenGrant has
+        // one comparison and it is unconditionally hashed). So Google gets the
+        // digest and Supabase gets the raw value. Handing the raw value to both,
+        // as this did, makes the claim raw and the comparison can never pass:
+        // "Nonces mismatch" on every attempt.
         let nonce = Self.randomNonceString()
         GIDSignIn.sharedInstance.configuration = GIDConfiguration(clientID: clientID)
         let result = try await GIDSignIn.sharedInstance.signIn(
             withPresenting: presenter,
             hint: nil,
             additionalScopes: nil,
-            nonce: nonce
+            nonce: Self.sha256(nonce)
         )
         guard let idToken = result.user.idToken?.tokenString else {
             throw NativeGoogleError.missingIdentityToken
