@@ -101,7 +101,6 @@ struct TVWatchListView: View {
     @FocusState private var sortChipFocused: Bool
     /// GUI-95 — the week grid of upcoming episodes for saved shows.
     @State private var showSchedule: Bool = false
-    @FocusState private var scheduleChipFocused: Bool
 
     /// Six columns that share the row's width rather than each claiming a
     /// fixed 260pt. Fixed columns totalled 1740pt, more than the row has
@@ -263,37 +262,10 @@ struct TVWatchListView: View {
             // in the chip row rather than the header because the header is not
             // a focus section: from the grid there was no way to reach it.
             if selectedTab == .shows {
-                scheduleChip
+                TVScheduleChip { showSchedule = true }
             }
         }
         .focusSection()
-    }
-
-    /// Opens the week view. Orange outline and orange text so it reads as an
-    /// action rather than a fourth category, and keeps the house tvOS
-    /// selection treatment: flat style, a 2pt stroke on focus, no white slab.
-    private var scheduleChip: some View {
-        Button {
-            showSchedule = true
-        } label: {
-            HStack(spacing: 12) {
-                Image(systemName: "calendar")
-                    .font(.system(size: 22, weight: .semibold))
-                Text("Schedule")
-                    .font(.system(size: 24, weight: .semibold))
-            }
-            .foregroundStyle(TVTheme.orange)
-            .padding(.horizontal, 26)
-            .padding(.vertical, 12)
-            .background(Capsule().fill(TVTheme.orange.opacity(scheduleChipFocused ? 0.16 : 0)))
-            .overlay(Capsule().stroke(TVTheme.orange, lineWidth: 2))
-            .scaleEffect(scheduleChipFocused ? 1.06 : 1.0)
-            .animation(.easeOut(duration: 0.15), value: scheduleChipFocused)
-        }
-        .buttonStyle(TVFlatButtonStyle())
-        .focusEffectDisabled()
-        .focused($scheduleChipFocused)
-        .accessibilityLabel("Open schedule")
     }
 
     /// Creators-only sort toggle, living in the chip row so it needs no focus

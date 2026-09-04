@@ -240,11 +240,49 @@ final class TVSportsService {
         )
     }
 
+    /// ESPN scoreboard dates come in several variants:
+    ///
+    ///     2026-06-27T00:00:00.000Z  (fractional seconds)
+    ///     2026-06-27T00:00:00Z      (with seconds)
+    ///     2026-06-27T00:00Z         (no seconds — MOST COMMON)
+    ///
+    /// This used to be `ISO8601DateFormatter` with `.withInternetDateTime`
+    /// alone, which requires seconds and therefore returned nil for nearly
+    /// every game ESPN serves. Nothing on tvOS noticed, because
+    /// `TVSportsGame.startDate` is optional and the Home rail only sorts by it
+    /// (`?? .distantFuture`) — a nil sorts last instead of failing loudly. The
+    /// Schedule week view (GUI-95) filters by it, so every game fell outside
+    /// every week and the grid was always empty while the phone's was full.
+    ///
+    /// Kept identical to `SportsService.parseDate` on the phone.
     private static func parseDate(_ s: String?) -> Date? {
         guard let s else { return nil }
-        let f = ISO8601DateFormatter()
-        f.formatOptions = [.withInternetDateTime]
-        return f.date(from: s)
+
+        let isoFractional = ISO8601DateFormatter()
+        isoFractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let d = isoFractional.date(from: s) { return d }
+
+        let iso = ISO8601DateFormatter()
+        iso.formatOptions = [.withInternetDateTime]
+        if let d = iso.date(from: s) { return d }
+
+        let withSeconds: DateFormatter = {
+            let f = DateFormatter()
+            f.locale = Locale(identifier: "en_US_POSIX")
+            f.dateFormat = "yyyy-MM-dd'T'HH:mm:ssXXXXX"
+            return f
+        }()
+        if let d = withSeconds.date(from: s) { return d }
+
+        let withoutSeconds: DateFormatter = {
+            let f = DateFormatter()
+            f.locale = Locale(identifier: "en_US_POSIX")
+            f.dateFormat = "yyyy-MM-dd'T'HH:mmXXXXX"
+            return f
+        }()
+        if let d = withoutSeconds.date(from: s) { return d }
+
+        return nil
     }
 }
 

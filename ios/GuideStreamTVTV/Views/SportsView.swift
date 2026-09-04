@@ -369,9 +369,7 @@ struct SportsView: View {
                     .scaledFont(size: 24, weight: .bold)
                     .foregroundStyle(.white)
                 Spacer()
-                TVSecondaryButton(title: "Schedule", sectionKey: "my_teams_schedule") {
-                    showSchedule = true
-                }
+                TVScheduleChip { showSchedule = true }
                 TVSecondaryButton(title: "Edit", sectionKey: "my_teams") {
                     picker = .edit
                 }

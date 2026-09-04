@@ -376,6 +376,43 @@ struct TVScheduleView: View {
     }
 }
 
+// MARK: - Entry chip
+
+/// The control that opens the Schedule, shared by Sports and the Watch List so
+/// the two entry points are visibly the same thing.
+///
+/// Orange outline, orange text, calendar glyph — an action, not a category.
+/// Selection follows the house tvOS rule: flat style, a 2pt stroke on focus,
+/// no white slab. It owns its own `@FocusState` so it drops into any chip row
+/// without the host view having to carry one.
+struct TVScheduleChip: View {
+    var action: () -> Void
+
+    @FocusState private var isFocused: Bool
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 12) {
+                Image(systemName: "calendar")
+                    .font(.system(size: 22, weight: .semibold))
+                Text("Schedule")
+                    .font(.system(size: 24, weight: .semibold))
+            }
+            .foregroundStyle(TVTheme.orange)
+            .padding(.horizontal, 26)
+            .padding(.vertical, 12)
+            .background(Capsule().fill(TVTheme.orange.opacity(isFocused ? 0.16 : 0)))
+            .overlay(Capsule().stroke(TVTheme.orange, lineWidth: 2))
+            .scaleEffect(isFocused ? 1.06 : 1.0)
+            .animation(.easeOut(duration: 0.15), value: isFocused)
+        }
+        .buttonStyle(TVFlatButtonStyle())
+        .focusEffectDisabled()
+        .focused($isFocused)
+        .accessibilityLabel("Open schedule")
+    }
+}
+
 // MARK: - Crest
 
 /// Crest on the shared neutral light plate, falling back to the team-colour
