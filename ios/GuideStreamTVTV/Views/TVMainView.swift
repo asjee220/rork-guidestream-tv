@@ -43,6 +43,12 @@ struct TVMainView: View {
     /// The title screen, when one is open. Rendered in place of the current
     /// tab rather than presented over it — see TVTitleRoute.swift for why.
     @State private var titleRoute: TVTitleDetail?
+
+    /// The Schedule week view, when one is open. A route rather than a
+    /// presentation, for the reason given in TVTitleRoute.swift — and it sits
+    /// *under* the title route, so opening a show from the Schedule and
+    /// pressing Back returns to the week rather than to the tab.
+    @State private var scheduleRoute: TVScheduleSurface?
     @Environment(\.resetFocus) private var resetFocus
 
     var body: some View {
@@ -77,6 +83,12 @@ struct TVMainView: View {
                             resetFocus(in: rootNamespace)
                         }
                     }
+                } else if let scheduleRoute {
+                    TVScheduleView(surface: scheduleRoute) {
+                        self.scheduleRoute = nil
+                        resetFocus(in: rootNamespace)
+                    }
+                    .padding(.leading, contentLeadingInset)
                 } else {
                     screen(for: selection, leadingBleed: safeLeading + contentLeadingInset)
                         .padding(.leading, contentLeadingInset)
@@ -127,9 +139,19 @@ struct TVMainView: View {
             titleRoute = detail
             menuIsOpen = false
         }
+        .environment(\.showSchedule) { surface in
+            scheduleRoute = surface
+            menuIsOpen = false
+        }
+        .onChange(of: scheduleRoute) { _, _ in
+            // Entering or leaving the week has to hand focus somewhere, the
+            // same as a tab change does.
+            resetFocus(in: rootNamespace)
+        }
         .onChange(of: selection) { _, _ in
-            // Choosing a tab leaves the title screen.
+            // Choosing a tab leaves the title screen and the week view.
             titleRoute = nil
+            scheduleRoute = nil
             // The menu is closed on every screen entry, including returns
             // from sheets and full-screen covers. Resetting the root scope
             // hands focus back to the content, which is what collapses the

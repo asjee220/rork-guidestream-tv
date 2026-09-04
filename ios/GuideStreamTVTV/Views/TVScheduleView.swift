@@ -57,6 +57,12 @@ struct TVScheduleView: View {
     @State private var weekOffset: Int = 0
     @FocusState private var focus: TVScheduleFocus?
 
+    /// A game card opens the same watch sheet the Sports tab opens.
+    @State private var selectedGame: TVSportsGame?
+    /// A show card hands off to the shell's title route, so Back from the
+    /// title screen lands on the week again rather than on the tab.
+    @Environment(\.showTitleDetail) private var showTitleDetail
+
     private let calendar = Calendar.current
 
     private var weekStart: Date {
@@ -78,7 +84,9 @@ struct TVScheduleView: View {
 
     var body: some View {
         ZStack {
-            TVTheme.backgroundGradient.ignoresSafeArea()
+            // No ignoresSafeArea: as a shell route this sits beside the side
+            // rail rather than over it, the same as every tab screen.
+            TVTheme.backgroundGradient
 
             VStack(alignment: .leading, spacing: 24) {
                 header
@@ -101,6 +109,9 @@ struct TVScheduleView: View {
         }
         .task(id: weekStart) { await load() }
         .onExitCommand { onClose() }
+        .fullScreenCover(item: $selectedGame) { game in
+            SportsWatchSheet(game: game)
+        }
     }
 
     // MARK: - Loading
@@ -231,10 +242,7 @@ struct TVScheduleView: View {
     private func gameCard(_ game: TVSportsGame) -> some View {
         let key = TVScheduleFocus.item(game.id)
         return Button {
-            // Opening a game from here would need the detail route this screen
-            // is presented over; for now the card is a focusable read-only
-            // tile, matching how the Home sports rail behaves before a game
-            // is live.
+            selectedGame = game
         } label: {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 6) {
@@ -271,7 +279,22 @@ struct TVScheduleView: View {
     private func episodeCard(_ episode: TVScheduledEpisode) -> some View {
         let key = TVScheduleFocus.item(episode.id)
         return Button {
-            // Read-only tile, as above.
+            showTitleDetail(
+                TVTitleDetail(
+                    titleId: episode.titleId,
+                    title: episode.showTitle,
+                    overview: nil,
+                    posterUrl: episode.posterUrl,
+                    backdropUrl: episode.posterUrl,
+                    tag: episode.episodeLabel,
+                    accent: surface.accent,
+                    year: nil,
+                    platform: episode.platform,
+                    // Every row on this surface came from a saved TV title, so
+                    // the sheet can skip its media-type probe.
+                    isTVHint: true
+                )
+            )
         } label: {
             VStack(alignment: .leading, spacing: 8) {
                 TVRemoteImage(url: episode.posterUrl.flatMap(URL.init(string:)))

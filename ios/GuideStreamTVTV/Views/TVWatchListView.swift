@@ -99,8 +99,9 @@ struct TVWatchListView: View {
     /// list's existing recency order.
     @State private var creatorSort: TVWatchListSort = .recentUpload
     @FocusState private var sortChipFocused: Bool
-    /// GUI-95 — the week grid of upcoming episodes for saved shows.
-    @State private var showSchedule: Bool = false
+    /// GUI-95 — the week grid of upcoming episodes for saved shows. A shell
+    /// route, not a presentation: see TVTitleRoute.swift.
+    @Environment(\.showSchedule) private var showSchedule
 
     /// Six columns that share the row's width rather than each claiming a
     /// fixed 260pt. Fixed columns totalled 1740pt, more than the row has
@@ -197,9 +198,6 @@ struct TVWatchListView: View {
                 }
             }
         }
-        .fullScreenCover(isPresented: $showSchedule) {
-            TVScheduleView(surface: .watchlist) { showSchedule = false }
-        }
         .task {
             await streams.fetchUserStreams()
             await streams.fetchLatestContentDates()
@@ -262,7 +260,7 @@ struct TVWatchListView: View {
             // in the chip row rather than the header because the header is not
             // a focus section: from the grid there was no way to reach it.
             if selectedTab == .shows {
-                TVScheduleChip { showSchedule = true }
+                TVScheduleChip { showSchedule(.watchlist) }
             }
         }
         .focusSection()

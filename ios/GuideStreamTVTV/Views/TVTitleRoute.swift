@@ -33,6 +33,25 @@ extension EnvironmentValues {
     }
 }
 
+private struct TVShowScheduleKey: EnvironmentKey {
+    static let defaultValue: (TVScheduleSurface) -> Void = { _ in }
+}
+
+extension EnvironmentValues {
+    /// Opens the Schedule week view on the shell. Injected by TVMainView.
+    ///
+    /// Schedule is a route for the same reason the title screen is: a modal
+    /// on tvOS owns all of the focus and cannot hand off. A Schedule presented
+    /// as a `fullScreenCover` could not open a title screen at all — the shell
+    /// would swap its tab content *behind* the cover and the viewer would see
+    /// nothing happen. As a route it is a sibling of the title screen, so a
+    /// card can open one from the other and Back walks the way in reverse.
+    var showSchedule: (TVScheduleSurface) -> Void {
+        get { self[TVShowScheduleKey.self] }
+        set { self[TVShowScheduleKey.self] = newValue }
+    }
+}
+
 extension View {
     /// Bridges a screen's existing `pendingDetail` state to the shell route.
     ///

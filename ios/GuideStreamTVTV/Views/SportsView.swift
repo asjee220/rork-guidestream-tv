@@ -55,8 +55,9 @@ struct SportsView: View {
     @State private var favorites = TVTeamFavoritesService.shared
     /// Non-nil while the picker is up; carries which mode it opened in.
     @State private var picker: TVTeamPickerView.Mode?
-    /// GUI-95 — the week grid of games for followed teams.
-    @State private var showSchedule: Bool = false
+    /// GUI-95 — the week grid of games for followed teams. A shell route, not
+    /// a presentation: see TVTitleRoute.swift.
+    @Environment(\.showSchedule) private var showSchedule
 
     // Focus is drawn by the controls themselves on this screen — a thin
     // white outline on the item's own shape. tvOS's `.plain` button style
@@ -238,9 +239,6 @@ struct SportsView: View {
             .fullScreenCover(item: $picker) { mode in
                 TVTeamPickerView(mode: mode) { picker = nil }
             }
-            .fullScreenCover(isPresented: $showSchedule) {
-                TVScheduleView(surface: .sports) { showSchedule = false }
-            }
             #else
             .sheet(item: $selectedGame) { game in
                 SportsWatchSheet(game: game)
@@ -369,7 +367,7 @@ struct SportsView: View {
                     .scaledFont(size: 24, weight: .bold)
                     .foregroundStyle(.white)
                 Spacer()
-                TVScheduleChip { showSchedule = true }
+                TVScheduleChip { showSchedule(.sports) }
                 TVSecondaryButton(title: "Edit", sectionKey: "my_teams") {
                     picker = .edit
                 }
