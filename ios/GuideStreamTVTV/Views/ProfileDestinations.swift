@@ -429,6 +429,11 @@ struct ConnectedServicesView: View {
             .scaledFont(size: 28)
             .foregroundStyle(.white)
             .focused($isSearchFocused)
+            // tvOS gives a focused TextField a filled white platter of its
+            // own, on top of whatever the field is drawn in. Same slab
+            // .buttonStyle(.plain) puts over a tile, and the same answer:
+            // turn it off and let the capsule's outline be the only cue.
+            .focusEffectDisabled()
             .autocorrectionDisabled()
             .textInputAutocapitalization(.never)
         }
