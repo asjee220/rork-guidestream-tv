@@ -32,6 +32,7 @@ struct ContentView: View {
         .task {
             await auth.restoreSession()
             hasRestored = true
+            TVSelfName.shared.refresh()
             TVPlayCommandListener.shared.start()
         }
         .onChange(of: auth.isSignedIn) { _, _ in
@@ -47,6 +48,9 @@ struct ContentView: View {
             // looking open and listening while it was subscribed to nothing.
             guard phase == .active else { return }
             TVPlayCommandListener.shared.wake()
+            // The user can rename the TV in Settings at any time, so re-ask
+            // rather than trusting the cache forever.
+            TVSelfName.shared.refresh()
         }
     }
 

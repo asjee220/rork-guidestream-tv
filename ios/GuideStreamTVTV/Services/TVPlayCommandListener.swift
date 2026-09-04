@@ -203,7 +203,12 @@ final class TVPlayCommandListener {
             return
         }
 
-        let myName = UIDevice.current.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Not UIDevice.current.name — on tvOS that is the model name, so
+        // every command aimed at "Living Room 7" was filtered out as being
+        // for somebody else. TVSelfName asks the Apple TV's own AirPlay
+        // receiver, which is the same source the phone read the name from.
+        await TVSelfName.shared.resolveNow()
+        let myName = TVSelfName.shared.name.trimmingCharacters(in: .whitespacesAndNewlines)
         let targetName = payload.targetName.trimmingCharacters(in: .whitespacesAndNewlines)
         let nameMatched = myName.caseInsensitiveCompare(targetName) == .orderedSame
 
@@ -221,8 +226,12 @@ final class TVPlayCommandListener {
         // Apple TV signed into the account, and this used to open the title on
         // all of them — invisible with one TV in the house, wrong with two.
         // An empty target is treated as addressed to everyone, since an older
-        // phone build sending no name should still work.
-        guard nameMatched || targetName.isEmpty else { return }
+        // phone build sending no name should still work. So is a command this
+        // TV cannot check, because the AirPlay probe never answered: acting on
+        // it may open the title on a second Apple TV in the house, but
+        // refusing everything we cannot verify is how this feature spent its
+        // whole life doing nothing at all.
+        guard nameMatched || targetName.isEmpty || !TVSelfName.shared.isResolved else { return }
 
         let contentURL: URL? = {
             guard let s = payload.contentURL,
@@ -242,7 +251,9 @@ final class TVPlayCommandListener {
 
     private func logReceivedEvent(payload: PlayCommandPayload, matched: Bool) async {
         guard let userId = try? await TVSupabaseManager.shared.client.auth.session.user.id.uuidString else { return }
-        let deviceName = UIDevice.current.name
+        // Log the name we matched on, and whether it came from AirPlay or is
+        // still the model-name fallback — a mismatch is unreadable without it.
+        let deviceName = "\(TVSelfName.shared.name) (airplay=\(TVSelfName.shared.isResolved))"
         let payloadDict: [String: AnyJSON] = [
             "event": .string("play_command_received"),
             "user_id": .string(userId),
