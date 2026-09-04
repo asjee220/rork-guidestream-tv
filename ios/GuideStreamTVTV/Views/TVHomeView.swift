@@ -519,18 +519,32 @@ struct TVHomeView: View {
             .padding(.horizontal, 80)
 
             GeometryReader { proxy in
-                todaysPickCard(for: pick, width: proxy.size.width)
+                let size = Self.todaysPickSize(available: proxy.size.width)
+                todaysPickCard(for: pick, width: size.width, height: size.height)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .frame(height: Self.todaysPickHeight)
+            .frame(height: Self.todaysPickSize(available: Self.todaysPickMaxWidth).height)
             .padding(.horizontal, 80)
         }
         .task(id: pick.tmdbId) { await resolveTodaysPickBackdrop(for: pick) }
     }
 
-    /// Banner height. 270 was the shared TVWideCard default and left the
-    /// artwork squeezed; 420 gives a full-width 16:9 backdrop room to breathe
-    /// on a 1080-tall screen without pushing Top Picks off the fold.
-    private static let todaysPickHeight: CGFloat = 420
+    /// The banner is aspect-locked to 16:9, the shape of a TMDB backdrop.
+    ///
+    /// Stretching it to the full row width made it roughly 4:1, and a 16:9
+    /// image filled into a 4:1 box loses the top and bottom of every frame —
+    /// which is how the pick kept arriving with its subject beheaded. Fixing
+    /// the aspect is what stops the cropping; the height follows from it.
+    ///
+    /// Capped at 1200pt so the card stays a banner rather than swallowing the
+    /// screen: 1200 x 675 is a big, deliberate hero on a 1920 x 1080 panel and
+    /// still leaves Top Picks peeking above the fold.
+    private static let todaysPickMaxWidth: CGFloat = 1200
+
+    private static func todaysPickSize(available: CGFloat) -> CGSize {
+        let width = min(max(available, 1), todaysPickMaxWidth)
+        return CGSize(width: width, height: (width * 9 / 16).rounded())
+    }
 
     /// Resolves the pick's TMDB backdrop once per title. Failures are silent:
     /// the poster fallback renders whole, so there is nothing to report.
@@ -547,7 +561,7 @@ struct TVHomeView: View {
     /// source name, a Subscribed marker when the source is a subscribed
     /// service, and opens TVTitleSheet through the shared pendingDetail
     /// path.
-    private func todaysPickCard(for pick: TVStreamingRelease, width: CGFloat) -> some View {
+    private func todaysPickCard(for pick: TVStreamingRelease, width: CGFloat, height: CGFloat) -> some View {
         let posterUrl = pick.posterUrl?.isEmpty == false
             ? pick.posterUrl
             : TVTMDBImage.url(pick.posterPath, size: .poster500)
@@ -555,10 +569,10 @@ struct TVHomeView: View {
         let isSubscribed = pick.sourceName.map {
             AuthViewModel.shared.subscribesToService(named: $0)
         } ?? false
-        // A backdrop is 16:9 and fills the banner correctly. Without one the
-        // poster is shown whole — letterboxed on a blurred bed of its own
-        // colours — rather than cropped to its middle strip.
-        let hasBackdrop = todaysPickBackdropUrl != nil
+        // Always `.fit`: with the card locked to 16:9 a backdrop fills it
+        // exactly, and the poster fallback is shown whole — letterboxed on a
+        // blurred bed of its own colours — instead of cropped to a strip.
+        // Nothing here can crop the picture, whichever image it gets.
         return TVWideCard(
             title: pick.title,
             subtitle: pick.sourceName,
@@ -566,8 +580,8 @@ struct TVHomeView: View {
             accent: TVTheme.orange,
             isSaved: streams.contains(titleId: titleId),
             width: width,
-            height: Self.todaysPickHeight,
-            imageContentMode: hasBackdrop ? .fill : .fit
+            height: height,
+            imageContentMode: .fit
         ) {
             pendingDetail = TVTitleDetail(
                 titleId: titleId,
