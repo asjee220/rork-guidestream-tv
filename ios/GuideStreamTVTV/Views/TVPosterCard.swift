@@ -105,6 +105,23 @@ struct TVPosterCard: View {
 }
 
 /// Wide tile variant used for news (16:9 backdrop instead of 2:3 poster).
+/// Picks the button style for a wide card. Two styles cannot be applied
+/// conditionally inline — the branches have different types — so the choice
+/// lives in a modifier.
+private struct TVWideCardButtonStyle: ViewModifier {
+    let flat: Bool
+
+    func body(content: Content) -> some View {
+        if flat {
+            content
+                .buttonStyle(TVFlatButtonStyle())
+                .focusEffectDisabled()
+        } else {
+            content.buttonStyle(.card)
+        }
+    }
+}
+
 struct TVWideCard: View {
     let title: String
     let subtitle: String?
@@ -123,6 +140,16 @@ struct TVWideCard: View {
     /// of its middle — the Today's Pick banner was showing faces cut in half
     /// because a 2:3 poster was being filled into a wide box.
     let imageContentMode: ContentMode
+    /// Opt out of `.buttonStyle(.card)`.
+    ///
+    /// `.card` brings tvOS's own focus appearance with it, and on a banner the
+    /// size of Today's Pick that system treatment reads louder than the accent
+    /// stroke drawn underneath it — the card looked unselectable because the
+    /// orange never showed. With this set the card uses the house treatment
+    /// instead: no system effect, a thicker accent stroke and a stronger accent
+    /// glow, driven by the card's own focus state. Existing call sites keep
+    /// `.card` and are untouched.
+    let usesFlatFocus: Bool
     let action: () -> Void
 
     @FocusState private var isFocused: Bool
@@ -136,6 +163,7 @@ struct TVWideCard: View {
         width: CGFloat? = nil,
         height: CGFloat? = nil,
         imageContentMode: ContentMode = .fill,
+        usesFlatFocus: Bool = false,
         action: @escaping () -> Void
     ) {
         self.title = title
@@ -146,6 +174,7 @@ struct TVWideCard: View {
         self.width = width
         self.height = height
         self.imageContentMode = imageContentMode
+        self.usesFlatFocus = usesFlatFocus
         self.action = action
     }
 
@@ -214,16 +243,18 @@ struct TVWideCard: View {
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
                     .stroke(
                         isFocused ? accent.opacity(0.95) : Color.white.opacity(0.06),
-                        lineWidth: isFocused ? 4 : 1
+                        lineWidth: isFocused ? (usesFlatFocus ? 6 : 4) : 1
                     )
             }
         }
-        .buttonStyle(.card)
+        .modifier(TVWideCardButtonStyle(flat: usesFlatFocus))
         .focused($isFocused)
         .frame(width: width ?? 480, height: height ?? 270)
+        .scaleEffect(usesFlatFocus && isFocused ? 1.015 : 1.0)
+        .animation(.easeOut(duration: 0.18), value: isFocused)
         .shadow(
-            color: isFocused ? accent.opacity(0.55) : Color.black.opacity(0.45),
-            radius: isFocused ? 36 : 14,
+            color: isFocused ? accent.opacity(usesFlatFocus ? 0.75 : 0.55) : Color.black.opacity(0.45),
+            radius: isFocused ? (usesFlatFocus ? 48 : 36) : 14,
             y: isFocused ? 24 : 8
         )
         .animation(.spring(response: 0.35, dampingFraction: 0.75), value: isFocused)

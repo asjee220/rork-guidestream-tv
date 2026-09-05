@@ -523,27 +523,39 @@ struct TVHomeView: View {
                 todaysPickCard(for: pick, width: size.width, height: size.height)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .frame(height: Self.todaysPickSize(available: Self.todaysPickMaxWidth).height)
+            .frame(height: Self.todaysPickHeight)
             .padding(.horizontal, 80)
+            // A single card between two horizontal rails needs its own focus
+            // section, or up/down can step straight past it.
+            .focusSection()
         }
         .task(id: pick.tmdbId) { await resolveTodaysPickBackdrop(for: pick) }
     }
 
-    /// The banner is aspect-locked to 16:9, the shape of a TMDB backdrop.
+    /// The banner runs the full width of the row now, like every rail beside
+    /// it, at a 2.4:1 billboard aspect.
     ///
-    /// Stretching it to the full row width made it roughly 4:1, and a 16:9
-    /// image filled into a 4:1 box loses the top and bottom of every frame —
-    /// which is how the pick kept arriving with its subject beheaded. Fixing
-    /// the aspect is what stops the cropping; the height follows from it.
+    /// The history matters. It was once stretched to the full row at roughly
+    /// 4:1, which sheared the top and bottom off a 16:9 backdrop and kept
+    /// delivering the pick with its subject beheaded. The fix at the time was
+    /// to lock it to 16:9 and cap it at 1200pt — which stopped the cropping but
+    /// left the banner visibly narrower than the rails above and below it.
     ///
-    /// Capped at 1200pt so the card stays a banner rather than swallowing the
-    /// screen: 1200 x 675 is a big, deliberate hero on a 1920 x 1080 panel and
-    /// still leaves Top Picks peeking above the fold.
-    private static let todaysPickMaxWidth: CGFloat = 1200
+    /// 2.4:1 takes about a quarter off a 16:9 frame, an ordinary billboard crop
+    /// rather than a beheading, and only the resolved TMDB backdrop is ever
+    /// cropped at all: the poster fallback still renders whole on its blurred
+    /// bed, which is the case the `.fit` rule was written for. Height is capped
+    /// so Top Picks still peeks above the fold.
+    private static let todaysPickAspect: CGFloat = 2.4
+    private static let todaysPickMaxHeight: CGFloat = 700
+
+    /// Fixed row height, so the GeometryReader's container does not depend on
+    /// the width it is trying to measure.
+    private static let todaysPickHeight: CGFloat = todaysPickMaxHeight
 
     private static func todaysPickSize(available: CGFloat) -> CGSize {
-        let width = min(max(available, 1), todaysPickMaxWidth)
-        return CGSize(width: width, height: (width * 9 / 16).rounded())
+        let width = max(available, 1)
+        return CGSize(width: width, height: min((width / todaysPickAspect).rounded(), todaysPickMaxHeight))
     }
 
     /// Resolves the pick's TMDB backdrop once per title. Failures are silent:
@@ -569,10 +581,11 @@ struct TVHomeView: View {
         let isSubscribed = pick.sourceName.map {
             AuthViewModel.shared.subscribesToService(named: $0)
         } ?? false
-        // Always `.fit`: with the card locked to 16:9 a backdrop fills it
-        // exactly, and the poster fallback is shown whole — letterboxed on a
-        // blurred bed of its own colours — instead of cropped to a strip.
-        // Nothing here can crop the picture, whichever image it gets.
+        // `.fill` only once the 16:9 TMDB backdrop has resolved — landscape
+        // art survives a billboard crop. Until then the image is the 2:3
+        // poster, and filling a portrait poster into a wide box is precisely
+        // what cut faces in half, so that case stays `.fit` on its blurred bed.
+        let hasBackdrop = !(todaysPickBackdropUrl ?? "").isEmpty
         return TVWideCard(
             title: pick.title,
             subtitle: pick.sourceName,
@@ -581,7 +594,8 @@ struct TVHomeView: View {
             isSaved: streams.contains(titleId: titleId),
             width: width,
             height: height,
-            imageContentMode: .fit
+            imageContentMode: hasBackdrop ? .fill : .fit,
+            usesFlatFocus: true
         ) {
             pendingDetail = TVTitleDetail(
                 titleId: titleId,
