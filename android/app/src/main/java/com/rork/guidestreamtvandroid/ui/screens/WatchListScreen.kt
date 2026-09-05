@@ -27,6 +27,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.People
@@ -130,7 +131,7 @@ private enum class WatchListTab(
  * is the opt-in added for GUI-94.
  */
 private enum class WatchListSort(val label: String) {
-    RECENT_UPLOAD("Recent upload"),
+    RECENT_UPLOAD("Date"),
     ALPHABETICAL("A\u2013Z"),
     ;
 
@@ -364,7 +365,11 @@ fun WatchListScreen(
                 // week view of either would be a mostly-empty screen.
                 if (selectedTab == WatchListTab.SHOWS) {
                     Spacer(Modifier.weight(1f))
-                    WatchListActionChip(label = "Schedule", onTap = onOpenSchedule)
+                    WatchListActionChip(
+                        label = "Schedule",
+                        icon = Icons.Filled.DateRange,
+                        onTap = onOpenSchedule,
+                    )
                 }
             }
         }
@@ -792,6 +797,7 @@ private fun WatchListSortChip(
 @Composable
 private fun WatchListActionChip(
     label: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector? = null,
     onTap: () -> Unit,
 ) {
     Row(
@@ -808,8 +814,17 @@ private fun WatchListActionChip(
                 indication = null,
             ) { onTap() }
             .padding(horizontal = 12.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        icon?.let {
+            Icon(
+                imageVector = it,
+                contentDescription = null,
+                tint = Color.White.copy(alpha = 0.85f),
+                modifier = Modifier.size(15.dp),
+            )
+        }
         Text(
             text = label,
             fontSize = 13.sp,

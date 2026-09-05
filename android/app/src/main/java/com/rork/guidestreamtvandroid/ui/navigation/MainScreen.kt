@@ -412,35 +412,6 @@ fun MainScreen(
             }
         }
 
-        // Schedule week view (GUI-95) — Sports and Watch List share the screen.
-        scheduleSurface?.let { surface ->
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Navy)
-                    .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { },
-            ) {
-                ScheduleScreen(
-                    surface = surface,
-                    onBack = { scheduleSurface = null },
-                    onOpenGame = { game ->
-                        scheduleSurface = null
-                        selectedGame = game
-                    },
-                    onOpenTitle = { episode ->
-                        scheduleSurface = null
-                        detailSheetRoute = PendingTitleRoute(
-                            titleId = episode.titleId,
-                            titleName = episode.showTitle,
-                            posterUrl = episode.posterUrl,
-                            isTv = true,
-                        )
-                    },
-                    modifier = Modifier.fillMaxSize(),
-                )
-            }
-        }
-
         // Creators/Podcasts for You "See all" grid
         showCreatorsForYou?.let { (seed, followedIds) ->
             Box(
@@ -483,6 +454,41 @@ fun MainScreen(
                         } else {
                             detailSheetRoute = route
                         }
+                    },
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
+        }
+
+        // Schedule week view (GUI-95) — Sports and Watch List share the screen.
+        //
+        // Drawn AFTER the Watch List overlay on purpose. Both are siblings in
+        // the same Box, so the later one wins, and opening the Schedule from
+        // the Watch List left it painted underneath a full-screen cover that
+        // was still showing — the chip looked dead. Sitting on top also means
+        // Back reveals the Watch List again instead of the tab.
+        scheduleSurface?.let { surface ->
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Navy)
+                    .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { },
+            ) {
+                ScheduleScreen(
+                    surface = surface,
+                    onBack = { scheduleSurface = null },
+                    onOpenGame = { game ->
+                        scheduleSurface = null
+                        selectedGame = game
+                    },
+                    onOpenTitle = { episode ->
+                        scheduleSurface = null
+                        detailSheetRoute = PendingTitleRoute(
+                            titleId = episode.titleId,
+                            titleName = episode.showTitle,
+                            posterUrl = episode.posterUrl,
+                            isTv = true,
+                        )
                     },
                     modifier = Modifier.fillMaxSize(),
                 )
