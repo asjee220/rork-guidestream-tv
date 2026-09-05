@@ -1,16 +1,9 @@
 package com.rork.guidestreamtvandroid.data.repository
 
-import android.app.Activity
 import android.content.Context
-import android.content.ContextWrapper
-import android.content.Intent
-import android.net.Uri
 import android.util.Log
-import androidx.browser.customtabs.CustomTabsIntent
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.rork.guidestreamtvandroid.AppConfig
-import com.rork.guidestreamtvandroid.SupabaseConfig
 import com.rork.guidestreamtvandroid.data.local.DeviceIdentity
 import com.rork.guidestreamtvandroid.data.local.DeviceSessionService
 import com.rork.guidestreamtvandroid.data.remote.GoogleCredentialSignIn
@@ -571,10 +564,10 @@ class AuthViewModel private constructor(private val context: Context) : ViewMode
                 _isAuthenticating.value = false
             } catch (e: GoogleCredentialSignIn.UnavailableException) {
                 Log.w(TAG, "Credential Manager unavailable (${e.cause?.message}); using browser OAuth", e)
-                signInWithGoogleBrowser(context)
+                signInWithGoogleBrowser()
             } catch (e: Exception) {
                 Log.w(TAG, "Native Google sign-in failed; using browser OAuth", e)
-                signInWithGoogleBrowser(context)
+                signInWithGoogleBrowser()
             }
         }
     }
@@ -584,63 +577,18 @@ class AuthViewModel private constructor(private val context: Context) : ViewMode
      * imported when the `guidestream://auth-callback` deep link returns and
      * [handleOAuthCallback] runs, so completion is not signalled here.
      */
-    private fun signInWithGoogleBrowser(context: Context) {
+    private fun signInWithGoogleBrowser() {
         _isAuthenticating.value = true
         _lastError.value = null
-
-        // Launch the browser ourselves rather than calling
-        // `auth.signInWith(Google)`.
-        //
-        // The SDK's own launch goes through the application context it picks
-        // up from its startup initializer, which is one more thing that has to
-        // be right for a tap to produce anything at all — and when it isn't,
-        // it throws where the only visible result was `_lastError = e.message`.
-        // An exception with a null message rendered as nothing, so the button
-        // came back enabled and the screen never said a word. Building the
-        // GoTrue authorize URL and opening it from the Activity removes the
-        // guesswork: it is the same endpoint the SDK would have used, and the
-        // redirect still lands on `guidestream://auth-callback`, which
-        // MainActivity already feeds to `handleDeeplinks`.
-        val redirect = Uri.encode("${AppConfig.DEEP_LINK_SCHEME}://auth-callback")
-        val authorizeUrl =
-            "${SupabaseConfig.URL}/auth/v1/authorize?provider=google&redirect_to=$redirect"
-
-        try {
-            val activity = context.findActivity()
-            if (activity != null) {
-                CustomTabsIntent.Builder()
-                    .setShowTitle(true)
-                    .build()
-                    .launchUrl(activity, Uri.parse(authorizeUrl))
-            } else {
-                // No Activity in hand — a plain browser hop still returns
-                // through the deep link, so this is a working path rather than
-                // a failure. NEW_TASK is required from a non-Activity context.
-                context.startActivity(
-                    Intent(Intent.ACTION_VIEW, Uri.parse(authorizeUrl))
-                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                )
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                SupabaseManager.client.auth.signInWith(Google)
+                _isAuthenticating.value = false
+            } catch (e: Exception) {
+                _lastError.value = e.message
+                _isAuthenticating.value = false
             }
-            Log.i(TAG, "Opened browser OAuth for Google")
-        } catch (e: Exception) {
-            Log.e(TAG, "Could not open browser for Google OAuth", e)
-            // Never surface a blank message: an exception whose `message` is
-            // null used to leave the screen silent, which reads as the button
-            // doing nothing.
-            _lastError.value = e.message?.takeIf { it.isNotBlank() }
-                ?: "Couldn't open the browser for Google sign-in (${e::class.java.simpleName})."
         }
-        _isAuthenticating.value = false
-    }
-
-    /** Nearest Activity for launching UI, unwrapping ContextWrappers. */
-    private fun Context.findActivity(): Activity? {
-        var current: Context? = this
-        while (current is ContextWrapper) {
-            if (current is Activity) return current
-            current = current.baseContext
-        }
-        return null
     }
 
     /**
