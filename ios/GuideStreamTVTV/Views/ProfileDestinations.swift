@@ -393,7 +393,9 @@ struct ConnectedServicesView: View {
     @State private var selected: Set<String>
     @State private var saveFlash: Bool = false
     @State private var serviceQuery: String = ""
-    @FocusState private var isSearchFocused: Bool
+    /// Focus for the save button, so it can draw the house outline instead of
+    /// the white slab `.buttonStyle(.plain)` lays down.
+    @FocusState private var saveFocused: Bool
 
     // Three fixed columns is the phone's layout, and on a 1920 screen it made
     // each tile roughly 530pt — a wall of six enormous cards. Adaptive columns
@@ -413,42 +415,6 @@ struct ConnectedServicesView: View {
         return StreamingCatalog.all.filter { $0.name.localizedCaseInsensitiveContains(q) }
     }
 
-    /// Same field the phone has. On tvOS the focused text field hands off to
-    /// the system keyboard, so this is one focus stop that opens the full
-    /// typing surface — worth it once the catalogue is longer than a screen.
-    private var searchField: some View {
-        HStack(spacing: 14) {
-            Image(systemName: "magnifyingglass")
-                .scaledFont(size: 26, weight: .semibold)
-                .foregroundStyle(Color.textSecondary)
-            TextField(
-                "",
-                text: $serviceQuery,
-                prompt: Text("Search services").foregroundStyle(Color.textSecondary)
-            )
-            .scaledFont(size: 28)
-            .foregroundStyle(.white)
-            .focused($isSearchFocused)
-            // tvOS gives a focused TextField a filled white platter of its
-            // own, on top of whatever the field is drawn in. Same slab
-            // .buttonStyle(.plain) puts over a tile, and the same answer:
-            // turn it off and let the capsule's outline be the only cue.
-            .focusEffectDisabled()
-            .autocorrectionDisabled()
-            .textInputAutocapitalization(.never)
-        }
-        .padding(.horizontal, 26)
-        .frame(height: 76)
-        .background(Capsule().fill(Color.white.opacity(0.05)))
-        .overlay(
-            Capsule().stroke(
-                isSearchFocused ? Color.white : Color.white.opacity(0.10),
-                lineWidth: isSearchFocused ? 3 : 1
-            )
-        )
-        .animation(.easeOut(duration: 0.15), value: isSearchFocused)
-    }
-
     var body: some View {
         ZStack {
             Color.navy.ignoresSafeArea()
@@ -463,9 +429,6 @@ struct ConnectedServicesView: View {
                             .padding(.top, 4)
 
                         currentlySelectedSection
-
-                        searchField
-                            .padding(.top, 8)
 
                         if filteredServices.isEmpty {
                             Text("No services match")
@@ -490,11 +453,31 @@ struct ConnectedServicesView: View {
                     .padding(.horizontal, 80)
                     .padding(.top, 8)
                 }
+                // The grid and the save bar are separate focus sections. They
+                // were one, so a down-move from inside a long scrolling grid
+                // kept walking grid rows and the engine never stepped out to
+                // the bar — Save Changes could not be reached at all.
+                .focusSection()
 
                 bottomBar
+                    .focusSection()
             }
         }
         .navigationTitle("Connected Services")
+        // The same `.searchable` the Search tab uses, rather than a TextField
+        // dressed up to look like one.
+        //
+        // A raw tvOS TextField draws its own filled white platter on focus, and
+        // `.focusEffectDisabled()` does not remove it — the platter belongs to
+        // the field's tvOS style, not to the focus effect, which is why the
+        // slab survived the last attempt at this. `.searchable` also brings the
+        // system grid keyboard, Siri Remote dictation and recent queries: the
+        // same typing surface the Search tab has, instead of a lesser one.
+        .searchable(
+            text: $serviceQuery,
+            placement: .automatic,
+            prompt: "Search services"
+        )
     }
 
     @ViewBuilder
@@ -566,9 +549,20 @@ struct ConnectedServicesView: View {
                     )
                 )
                 .clipShape(Capsule())
-                .shadow(color: Color.orange.opacity(0.45), radius: 22, x: 0, y: 0)
+                .overlay(
+                    Capsule().stroke(saveFocused ? Color.white : Color.clear, lineWidth: 4)
+                )
+                .shadow(
+                    color: Color.orange.opacity(saveFocused ? 0.7 : 0.45),
+                    radius: saveFocused ? 30 : 22, x: 0, y: 0
+                )
+                .scaleEffect(saveFocused ? 1.04 : 1.0)
+                .animation(.easeOut(duration: 0.15), value: saveFocused)
             }
-            .buttonStyle(.plain)
+            // Never `.plain` on tvOS — it lays a white slab over the capsule.
+            .buttonStyle(TVFlatButtonStyle())
+            .focusEffectDisabled()
+            .focused($saveFocused)
         }
         .padding(.horizontal, 80)
         .padding(.top, 20)
