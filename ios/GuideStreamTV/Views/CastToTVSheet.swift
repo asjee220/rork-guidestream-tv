@@ -49,6 +49,9 @@ struct CastToTVSheet: View {
     /// lookup is in flight, when signed out, or when it failed — in all three
     /// the sheet says nothing rather than guessing.
     @State private var registeredTVNames: Set<String>? = nil
+    /// Which of those TVs are still heartbeating. An asleep TV stays listed —
+    /// it is a real Apple TV on this account — but cannot be sent to.
+    @State private var liveTVNames: Set<String> = []
     @State private var showAppleTVHelp: Bool = false
     @FocusState private var manualFieldFocused: Bool
 
@@ -125,6 +128,19 @@ struct CastToTVSheet: View {
         return names.contains(Self.castName(device.name).lowercased())
     }
 
+    /// True when this Apple TV's heartbeat is recent — the app is open on it
+    /// right now and subscribed to the play-command topic.
+    ///
+    /// Registration is what makes a TV *eligible*; this is what makes it
+    /// *reachable*. tvOS suspends the app the moment the viewer leaves it or
+    /// the TV sleeps, and the realtime socket dies with it, so a registered
+    /// TV is only a live target while its app is actually running. Roku needs
+    /// none of this — it is reached over the network directly.
+    private func isAwakeAppleTV(_ device: DiscoveredTVDevice) -> Bool {
+        guard device.kind == .appleTV else { return true }
+        return liveTVNames.contains(Self.castName(device.name).lowercased())
+    }
+
     /// The name the Apple TV will recognise as its own.
     ///
     /// An Apple TV answers on three Bonjour services and does not name itself
@@ -177,7 +193,11 @@ struct CastToTVSheet: View {
             .presentationSizing(.page)
             .sheetSurface(.raised)
             .onAppear { startScan(prewarm: true) }
-            .task { registeredTVNames = await TVReceiverDirectory.registeredNames() }
+            .task {
+                let registry = await TVReceiverDirectory.registry()
+                registeredTVNames = registry?.all
+                liveTVNames = registry?.live ?? []
+            }
             .sheet(isPresented: $showAppleTVHelp) { AppleTVSignInHelpSheet() }
             .onDisappear {
                 discovery.stop()
@@ -761,9 +781,13 @@ struct CastToTVSheet: View {
                         .scaledFont(size: 16, weight: .semibold)
                         .foregroundStyle(.white)
                         .lineLimit(1)
-                    Text(sendingDeviceId == device.id ? "Connecting…" : device.subtitle)
+                    Text(rowSubtitle(device))
                         .scaledFont(size: 12)
-                        .foregroundStyle(Color.white.opacity(0.55))
+                        .foregroundStyle(
+                            isAwakeAppleTV(device)
+                                ? Color.white.opacity(0.55)
+                                : Color(hex: "F5821F").opacity(0.9)
+                        )
                 }
 
                 Spacer(minLength: 0)
@@ -786,7 +810,17 @@ struct CastToTVSheet: View {
             )
         }
         .buttonStyle(.plain)
-        .disabled(sendingDeviceId != nil)
+        .disabled(sendingDeviceId != nil || !isAwakeAppleTV(device))
+        .opacity(isAwakeAppleTV(device) ? 1 : 0.55)
+    }
+
+    /// The row's second line. An asleep Apple TV says what to do about it
+    /// rather than showing its model name, because the alternative — sending
+    /// anyway and reporting success — is what made this look broken.
+    private func rowSubtitle(_ device: DiscoveredTVDevice) -> String {
+        if sendingDeviceId == device.id { return "Connecting…" }
+        if !isAwakeAppleTV(device) { return "Open GuideStream on this TV to send to it" }
+        return device.subtitle
     }
 
     // MARK: Toast

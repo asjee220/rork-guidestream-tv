@@ -33,6 +33,11 @@ final class TVPlayCommandListener {
     static let shared = TVPlayCommandListener()
 
     private var channel: RealtimeChannelV2?
+    private var heartbeatTask: Task<Void, Never>?
+
+    /// Five minutes: frequent enough that the phone's freshness window can be
+    /// short, rare enough to be one tiny upsert an hour per TV.
+    private static let heartbeatInterval: TimeInterval = 300
     private var listeningTask: Task<Void, Never>?
     /// Set by `wake()` so the supervisor retries immediately rather than
     /// serving out whatever backoff the last failure earned.
@@ -96,8 +101,29 @@ final class TVPlayCommandListener {
         }
     }
 
+    /// Re-registers every few minutes for as long as this channel is up.
+    ///
+    /// Without it, `tv_receivers.last_seen_at` records the moment the TV last
+    /// *connected*, which says nothing about whether it is listening now — a
+    /// TV that subscribed at 8pm and then slept still looked current at 10am
+    /// the next morning, so the phone listed it, published to a topic nobody
+    /// was on, and reported success. A heartbeat is what lets the phone tell
+    /// "listening" from "was listening last night".
+    private func startHeartbeat(userId: String) {
+        heartbeatTask?.cancel()
+        heartbeatTask = Task { @MainActor in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(Self.heartbeatInterval))
+                guard !Task.isCancelled else { return }
+                await TVReceiverRegistry.register(userId: userId)
+            }
+        }
+    }
+
     /// Tear down the subscription (e.g. on sign-out).
     func stop() {
+        heartbeatTask?.cancel()
+        heartbeatTask = nil
         listeningTask?.cancel()
         listeningTask = nil
         Task { @MainActor [channel] in
@@ -145,6 +171,7 @@ final class TVPlayCommandListener {
         // happening at all. Detached so a slow AirPlay name probe or a
         // failed write never delays the listening loop.
         Task { @MainActor in await TVReceiverRegistry.register(userId: userId) }
+        startHeartbeat(userId: userId)
 
         #if DEBUG
         // Subscribe tracing is a debug aid, not shipping behaviour — this
