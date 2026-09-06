@@ -263,6 +263,15 @@ enum TVServiceBrandCatalog {
               display: .text("Fawe\nsome", Color(red: 0x69/255, green: 0x45/255, blue: 0xEC/255), weight: .black, design: .rounded)),
         .init(id: "youtube", bg: .black,
               display: .symbol("play.rectangle.fill", Color(red: 0xFF/255, green: 0x00/255, blue: 0x00/255))),
+        // The creator platforms. Not streaming services, but the creator
+        // screen names its destination with a mark the same way the title
+        // screen does, and an initials disc there read as a bug.
+        .init(id: "twitch", bg: Color(red: 0x91/255, green: 0x46/255, blue: 0xFF/255),
+              display: .symbol("message.fill", Color.white)),
+        .init(id: "kick", bg: .black,
+              display: .text("K", Color(red: 0x53/255, green: 0xFC/255, blue: 0x18/255), weight: .black, design: .rounded)),
+        .init(id: "podcast", bg: Color(red: 0x7D/255, green: 0x2D/255, blue: 0xE0/255),
+              display: .symbol("mic.fill", Color.white)),
         .init(id: "bbciplayer", bg: .black,
               display: .text("iPlayer", Color(red: 0xFB/255, green: 0xB0/255, blue: 0x32/255), weight: .black, design: .default)),
         .init(id: "itvx", bg: .black,

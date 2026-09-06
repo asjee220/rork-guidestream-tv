@@ -75,6 +75,8 @@ nonisolated struct TVCreatorEpisode: Decodable, Identifiable, Sendable {
     let id: String
     let titleId: String
     let title: String?
+    /// The episode's own description, from `new_episodes.synopsis`.
+    let synopsis: String?
     let posterUrl: String?
     let thumbnailUrl: String?
     let deepLinkUrl: String?
@@ -85,6 +87,7 @@ nonisolated struct TVCreatorEpisode: Decodable, Identifiable, Sendable {
         case id
         case titleId = "title_id"
         case title
+        case synopsis
         case posterUrl = "poster_url"
         case thumbnailUrl = "thumbnail_url"
         case deepLinkUrl = "deep_link_url"
@@ -140,6 +143,10 @@ nonisolated struct TVChannelMetaResponse: Decodable, Sendable {
     nonisolated struct Upload: Decodable, Sendable, Identifiable, Hashable {
         let videoId: String
         let title: String
+        /// The video's own description, already trimmed to a synopsis by the
+        /// edge function. Null when the upload has no description — plenty
+        /// of Twitch archives do not.
+        let description: String?
         /// Kept as text so a format mismatch cannot fail the whole response;
         /// parsed for display in the view.
         let publishedAt: String?
@@ -153,6 +160,7 @@ nonisolated struct TVChannelMetaResponse: Decodable, Sendable {
         enum CodingKeys: String, CodingKey {
             case videoId = "video_id"
             case title
+            case description
             case publishedAt = "published_at"
             case thumbnail
             case views
@@ -164,6 +172,7 @@ nonisolated struct TVChannelMetaResponse: Decodable, Sendable {
             let c = try decoder.container(keyedBy: CodingKeys.self)
             videoId = (try? c.decode(String.self, forKey: .videoId)) ?? ""
             title = (try? c.decode(String.self, forKey: .title)) ?? ""
+            description = try? c.decode(String.self, forKey: .description)
             publishedAt = try? c.decode(String.self, forKey: .publishedAt)
             thumbnail = try? c.decode(String.self, forKey: .thumbnail)
             views = (try? c.decode(Int64.self, forKey: .views)) ?? 0
@@ -198,6 +207,18 @@ enum TVCreatorKind: String, Sendable {
     }
 
     var isLivestream: Bool { self == .twitch || self == .kick }
+
+    /// The id this platform's mark is filed under in TVServiceBrandCatalog.
+    /// Passed explicitly so the mark is an exact lookup rather than the name
+    /// heuristic built for TMDB's provider strings.
+    var brandCatalogId: String {
+        switch self {
+        case .youtube: return "youtube"
+        case .podcast: return "podcast"
+        case .twitch: return "twitch"
+        case .kick: return "kick"
+        }
+    }
 
     /// The id with its prefix stripped — the channel id, feed id or slug the
     /// deep links are built from.

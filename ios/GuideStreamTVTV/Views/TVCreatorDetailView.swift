@@ -164,6 +164,8 @@ struct TVCreatorDetailView: View {
 
                 socialCounterRow
 
+                latestDropBlock
+
                 actionsRow
                     .padding(.top, 8)
                     .focusSection()
@@ -270,19 +272,109 @@ struct TVCreatorDetailView: View {
         }
     }
 
-    /// The one orange pill: opens the channel in its own app. Every kind has
-    /// a chain — YouTube's is the existing channel opener, the rest are built
-    /// from the id's slug — so this button is never dead, which is what it
-    /// was for podcasts, Twitch and Kick on the old screen.
+    /// The newest thing this creator has published, normalised across the
+    /// three shapes this screen loads: a YouTube upload, a Twitch VOD, a
+    /// podcast episode. The watch button and the block above it both read it,
+    /// so neither can describe one thing and open another.
+    private struct LatestDrop {
+        let title: String
+        let synopsis: String?
+        /// "3 days ago · 1.4M views", already built by the card helpers.
+        let meta: String
+        let upload: TVChannelMetaResponse.Upload?
+        let episode: TVCreatorEpisode?
+    }
+
+    private var latestDrop: LatestDrop? {
+        if kind == .podcast {
+            guard let episode = episodes.first else { return nil }
+            let released = episode.releasedAt.map {
+                Self.relativeFormatter.localizedString(for: $0, relativeTo: Date())
+            }
+            return LatestDrop(
+                title: episode.title ?? "Episode",
+                synopsis: Self.synopsis(from: episode.synopsis),
+                meta: released ?? "",
+                upload: nil,
+                episode: episode
+            )
+        }
+        guard let upload = meta?.uploads.first else { return nil }
+        return LatestDrop(
+            title: upload.title.isEmpty ? "Video" : upload.title,
+            synopsis: Self.synopsis(from: upload.description),
+            meta: uploadMetaLine(upload),
+            upload: upload,
+            episode: nil
+        )
+    }
+
+    private var latestLabel: String {
+        switch kind {
+        case .podcast: return "LATEST EPISODE"
+        case .twitch: return "LATEST VOD"
+        case .kick, .youtube: return "LATEST UPLOAD"
+        }
+    }
+
+    /// What the watch button is about to open, said before it is pressed.
+    /// Without it the button was a promise with no subject — "Watch on
+    /// YouTube" could mean the channel page, the newest video or whatever the
+    /// app last had open.
+    @ViewBuilder
+    private var latestDropBlock: some View {
+        if let drop = latestDrop {
+            VStack(alignment: .leading, spacing: 10) {
+                Text(latestLabel)
+                    .font(.system(size: 18, weight: .heavy))
+                    .tracking(1.4)
+                    .foregroundStyle(TVTheme.textTertiary)
+
+                Text(drop.title)
+                    .font(.system(size: 30, weight: .bold))
+                    .foregroundStyle(.white)
+                    .lineLimit(2)
+
+                if let synopsis = drop.synopsis {
+                    Text(synopsis)
+                        .font(.system(size: 22))
+                        .foregroundStyle(TVTheme.textSecondary)
+                        .lineLimit(3)
+                }
+
+                if !drop.meta.isEmpty {
+                    Text(drop.meta)
+                        .font(.system(size: 20))
+                        .foregroundStyle(TVTheme.textTertiary)
+                        .lineLimit(1)
+                }
+            }
+            .frame(maxWidth: 900, alignment: .leading)
+            .padding(.top, 4)
+        }
+    }
+
+    /// The one orange pill. It opens the creator's newest upload — the thing
+    /// named directly above it — and falls back to the channel itself when
+    /// there is no upload to open, which is every Kick channel (no meta
+    /// function) and any channel whose feed has not resolved yet.
+    ///
+    /// The destination is named by the platform's mark rather than spelled
+    /// out, which is what the show and movie screens do; an initials disc is
+    /// what you get for a platform missing from the brand catalogue, so
+    /// YouTube, Twitch, Kick and Podcasts are all in it.
     private var watchButton: some View {
         Button {
-            openChannel()
+            launchWatch()
         } label: {
             HStack(spacing: 14) {
                 Image(systemName: isLive ? "dot.radiowaves.left.and.right" : "play.fill")
                     .font(.system(size: 26, weight: .bold))
-                Text(isLive ? "Watch live on \(kind.displayLabel)" : "Watch on \(kind.displayLabel)")
+                Text(isLive ? "Watch live on" : "Watch on")
                     .font(.system(size: 24, weight: .bold))
+                TVServiceBrandMark(providerName: kind.displayLabel,
+                                   size: 40,
+                                   catalogId: kind.brandCatalogId)
             }
             .foregroundStyle(focusedField == .watch ? Color.black : Color.white)
             .padding(.horizontal, 40)
@@ -296,6 +388,25 @@ struct TVCreatorDetailView: View {
         .buttonStyle(TVFlatButtonStyle())
         .focusEffectDisabled()
         .focused($focusedField, equals: .watch)
+    }
+
+    /// Live wins: a creator who is streaming right now is what the viewer
+    /// pressed the button for, and the newest VOD is last night. Otherwise
+    /// the newest upload, then the channel.
+    private func launchWatch() {
+        guard !isLive, let drop = latestDrop else {
+            openChannel()
+            return
+        }
+        if let upload = drop.upload {
+            openUpload(upload)
+        } else if let episode = drop.episode {
+            // Podcast audio plays here, the same as selecting the card —
+            // there is no podcast app on tvOS to hand off to.
+            playingEpisode = episode
+        } else {
+            openChannel()
+        }
     }
 
     private func circleAction(
@@ -687,6 +798,43 @@ struct TVCreatorDetailView: View {
             parts.append("\(formatStat(upload.views)) views")
         }
         return parts.joined(separator: " · ")
+    }
+
+    /// A readable first paragraph out of a creator's own description.
+    ///
+    /// YouTube descriptions open with sponsor links and discount codes far
+    /// more often than they open with the video, so a straight prefix of the
+    /// text reads as an ad rather than a synopsis. Lines carrying a URL, a
+    /// hashtag pile or a timestamp index are dropped, and what is left is
+    /// trimmed to three lines' worth. Nil when nothing survives — better no
+    /// synopsis than a link dump.
+    static func synopsis(from raw: String?) -> String? {
+        guard let raw else { return nil }
+        let kept = raw
+            .replacingOccurrences(of: "\r\n", with: "\n")
+            .split(separator: "\n", omittingEmptySubsequences: false)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { line in
+                guard !line.isEmpty else { return false }
+                let lower = line.lowercased()
+                if lower.contains("http://") || lower.contains("https://") || lower.contains("www.") {
+                    return false
+                }
+                // "00:00 Intro" — a chapter index, not prose.
+                if line.range(of: "^\\d{1,2}:\\d{2}", options: .regularExpression) != nil { return false }
+                // A line that is mostly hashtags or @handles.
+                if line.hasPrefix("#") || line.hasPrefix("@") { return false }
+                return true
+            }
+        guard !kept.isEmpty else { return nil }
+        let joined = kept.joined(separator: " ")
+        guard joined.count > 220 else { return joined }
+        let cut = joined.prefix(220)
+        // Break on the last space so the trim does not land mid-word.
+        if let space = cut.lastIndex(of: " ") {
+            return cut[..<space].trimmingCharacters(in: .whitespaces) + "…"
+        }
+        return String(cut) + "…"
     }
 
     private static let relativeFormatter: RelativeDateTimeFormatter = {
