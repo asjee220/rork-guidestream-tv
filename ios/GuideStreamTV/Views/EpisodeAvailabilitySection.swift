@@ -58,7 +58,7 @@ func gsShortName(for name: String) -> String {
  if k.contains("hbo") { return "HBO" }
  if k.contains("hulu") { return "HULU" }
  if k.contains("disney") { return "D+" }
- if k.contains("apple") { return "TV+" }
+ if k.contains("apple") { return "TV" }
  if k.contains("prime") || k.contains("amazon") { return "PRIME" }
  if k.contains("paramount") { return "P+" }
  if k.contains("peacock") { return "PCK" }

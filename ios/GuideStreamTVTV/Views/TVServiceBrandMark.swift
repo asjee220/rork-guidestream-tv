@@ -21,7 +21,7 @@ enum TVServiceBrandDisplay {
     case text(String, Color, weight: Font.Weight, design: Font.Design)
     /// A single SF Symbol.
     case symbol(String, Color)
-    /// SF Symbol plus trailing text — the Apple logo followed by "tv+".
+    /// SF Symbol plus trailing text — the Apple logo followed by "tv".
     case symbolText(String, String, Color)
     /// Solid star, for Starz.
     case star
@@ -52,7 +52,7 @@ enum TVServiceBrandCatalog {
         .init(id: "hbo", bg: Color(red: 0x00/255, green: 0x1E/255, blue: 0xE0/255),
               display: .text("max", Color.white, weight: .black, design: .default)),
         .init(id: "appletv", bg: .black,
-              display: .symbolText("applelogo", "tv+", Color.white)),
+              display: .symbolText("applelogo", "tv", Color.white)),
         .init(id: "paramount", bg: Color(red: 0x00/255, green: 0x64/255, blue: 0xFF/255),
               display: .text("P+", Color.white, weight: .black, design: .default)),
         .init(id: "hulu", bg: Color(red: 0x1C/255, green: 0xE7/255, blue: 0x83/255),
@@ -493,11 +493,15 @@ struct TVServiceBrandMark: View {
                 .font(.system(size: size * 0.5, weight: .bold))
                 .foregroundStyle(color)
         case .symbolText(let symbol, let suffix, let color):
+            // One line, always — see StreamingServiceViews for why.
             HStack(spacing: size * 0.03) {
                 Image(systemName: symbol)
                     .font(.system(size: size * 0.34, weight: .bold))
                 Text(suffix)
                     .font(.system(size: size * 0.28, weight: .bold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.5)
+                    .fixedSize(horizontal: true, vertical: false)
             }
             .foregroundStyle(color)
         case .star:

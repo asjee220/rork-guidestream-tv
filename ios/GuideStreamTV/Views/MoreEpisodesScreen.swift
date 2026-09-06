@@ -476,7 +476,7 @@ struct MoreEpisodesScreen: View {
         let key = name.lowercased()
         if key.contains("paramount") { return "P+" }
         if key.contains("disney") { return "D+" }
-        if key.contains("apple") { return "TV+" }
+        if key.contains("apple") { return "TV" }
         if key.contains("prime") || key.contains("amazon") { return "PRIME" }
         if key.contains("peacock") { return "PEACOCK" }
         if key.contains("netflix") { return "NETFLIX" }

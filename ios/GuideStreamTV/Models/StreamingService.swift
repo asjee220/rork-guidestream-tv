@@ -20,7 +20,7 @@ enum StreamingServiceDisplay {
     case text(String, Color, fontWeight: Font.Weight, design: Font.Design)
     /// Single SF Symbol (e.g. Apple TV+).
     case symbol(String, Color)
-    /// SF Symbol + trailing text (e.g. "tv+" after the Apple logo).
+    /// SF Symbol + trailing text (e.g. "tv" after the Apple logo).
     case symbolText(String, String, Color)
     /// Solid star fill (used for Starz).
     case star
@@ -88,7 +88,7 @@ enum StreamingCatalog {
               display: .text("max", Color.white, fontWeight: .black, design: .default)),
         .init(id: "appletv", name: "Apple TV+",
               bg: .black, glow: Color.white,
-              display: .symbolText("applelogo", "tv+", Color.white)),
+              display: .symbolText("applelogo", "tv", Color.white)),
         .init(id: "paramount", name: "Paramount+",
               bg: Color(red: 0x00/255, green: 0x64/255, blue: 0xFF/255),
               glow: Color(red: 0x00/255, green: 0x64/255, blue: 0xFF/255),

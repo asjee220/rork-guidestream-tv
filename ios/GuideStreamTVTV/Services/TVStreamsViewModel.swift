@@ -127,6 +127,17 @@ final class TVStreamsViewModel {
             saveLocalCache(self.userStreams)
         }
 
+        // The phones log both sides of this; tvOS logged neither, so a
+        // watchlist change made on the TV left no trace at all. That is how
+        // Lioness left a watchlist between two Sundays with nothing in
+        // watch_intent_events to say who removed it or when.
+        WatchIntentLogger.shared.log(
+            eventType: .streamAdded,
+            titleId: trimmed,
+            platformId: platform,
+            metadata: ["source": "tv_streams"]
+        )
+
         let didInsert = await insertUserStream(
             userId: currentUserId?.uuidString,
             deviceId: TVDeviceIdentity.shared.deviceId,
@@ -146,6 +157,12 @@ final class TVStreamsViewModel {
 
         self.userStreams.removeAll { $0.titleId == trimmed }
         saveLocalCache(self.userStreams)
+
+        WatchIntentLogger.shared.log(
+            eventType: .streamRemoved,
+            titleId: trimmed,
+            metadata: ["source": "tv_streams"]
+        )
 
         let deviceId = TVDeviceIdentity.shared.deviceId
         do {

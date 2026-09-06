@@ -175,6 +175,7 @@ internal fun ServiceBrandContent(
                 color = display.color,
                 textAlign = TextAlign.Center,
                 maxLines = 1,
+                softWrap = false,
                 modifier = modifier,
             )
         }

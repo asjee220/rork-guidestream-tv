@@ -37,7 +37,7 @@ object StreamingCatalog {
         StreamingService("hbo", "Max", Color(0xFF001EE0), Color(0xFF0055FF),
             StreamingService.Display.Text("max", white, FontWeight.Black)),
         StreamingService("appletv", "Apple TV+", black, white,
-            StreamingService.Display.SymbolText("apple", "tv+", white)),
+            StreamingService.Display.SymbolText("apple", "tv", white)),
         StreamingService("paramount", "Paramount+", Color(0xFF0064FF), Color(0xFF0064FF),
             StreamingService.Display.Text("P+", white, FontWeight.Black)),
         StreamingService("hulu", "Hulu", Color(0xFF1CE783), Color(0xFF1CE783),

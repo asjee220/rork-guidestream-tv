@@ -1036,11 +1036,14 @@ private fun ServiceMiniIcon(service: StreamingService, size: Dp) {
                 )
             }
             is StreamingService.Display.SymbolText -> {
+                // One line, always — the mark is one thing, not a stack.
                 Text(
                     text = display.text,
                     fontSize = textSize,
                     fontWeight = FontWeight.Black,
                     color = display.color,
+                    maxLines = 1,
+                    softWrap = false,
                 )
             }
             is StreamingService.Display.Star -> {

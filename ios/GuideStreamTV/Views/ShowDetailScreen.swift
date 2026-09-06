@@ -479,7 +479,7 @@ struct ShowDetailScreen: View {
         let key = name.lowercased()
         if key.contains("paramount") { return "P+" }
         if key.contains("disney") { return "D+" }
-        if key.contains("apple") { return "TV+" }
+        if key.contains("apple") { return "TV" }
         if key.contains("prime") || key.contains("amazon") { return "Prime" }
         if key.contains("peacock") { return "Peacock" }
         if key.contains("netflix") { return "Netflix" }

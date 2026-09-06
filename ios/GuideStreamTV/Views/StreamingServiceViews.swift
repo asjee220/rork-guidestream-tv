@@ -120,11 +120,16 @@ struct ServiceBrandContent: View {
                 .scaledFont(size: symbolSize, weight: .bold)
                 .foregroundStyle(color)
         case .symbolText(let symbol, let suffix, let color):
+            // One line, always. The glyph and its suffix are a single mark —
+            // "tv" dropping under the Apple logo reads as two things.
             HStack(spacing: 2) {
                 Image(systemName: symbol)
                     .scaledFont(size: symbolSize * 0.75, weight: .bold)
                 Text(suffix)
                     .scaledFont(size: symbolSize * 0.62, weight: .bold)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.5)
+                    .fixedSize(horizontal: true, vertical: false)
             }
             .foregroundStyle(color)
         case .star:
