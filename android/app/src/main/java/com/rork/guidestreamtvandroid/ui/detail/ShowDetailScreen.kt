@@ -913,9 +913,27 @@ internal fun WhereToWatchRow(
         }
         return
     }
+    // Lead with the resolver's chosen source, mirroring iOS ShowDetailScreen's
+    // `services` ("Move the resolver's chosen primary source to the front so the
+    // Where to Watch row, deeplink, and action-bar CTA all lead with the correct
+    // service"). Without this the row leads with whatever `us_sources` ranked
+    // first — a vMVPD carrier ahead of the title's own network — while the watch
+    // button targets `selectedSource`, so the chip the user reads first is not
+    // the service the button opens. Grouping preserves input order within the
+    // Subscription and Free groups, so hoisting here also leads the group.
+    val orderedSources = remember(sources, selectedSource) {
+        val sel = selectedSource
+        val idx = if (sel == null) {
+            -1
+        } else {
+            val byId = sources.indexOfFirst { it.sourceId == sel.sourceId }
+            if (byId >= 0) byId else sources.indexOfFirst { it.name == sel.name }
+        }
+        if (idx <= 0) sources else listOf(sources[idx]) + sources.filterIndexed { i, _ -> i != idx }
+    }
     if (grouped) {
         GroupedWhereToWatch(
-            sources = sources,
+            sources = orderedSources,
             selectedSource = selectedSource,
             isSourceSubscribed = isSourceSubscribed,
             onSelect = onSelect,
@@ -925,8 +943,8 @@ internal fun WhereToWatchRow(
             contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            items(sources.size) { index ->
-                val source = sources[index]
+            items(orderedSources.size) { index ->
+                val source = orderedSources[index]
                 WhereToWatchChip(
                     source = source,
                     selected = selectedSource?.sourceId == source.sourceId,
