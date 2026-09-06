@@ -68,129 +68,130 @@ struct ServicesBottomSheet: View {
         )
     }
 
+    // No NavigationStack. `sheetSurface` puts the drag handle and its hairline
+    // in a top safe-area inset, and a NavigationStack wrapped around the content
+    // does not pass that inset through — with the navigation bar hidden there
+    // was nothing left holding the content down, so "Which services do you
+    // have?" drew at the very top of the sheet and the handle's opaque
+    // background sliced its upper half off. WatchListBottomSheet hit exactly
+    // this and carries the same note (GUI-79): the eight other sheets in the
+    // app are a plain VStack for this reason, and this one only had the stack
+    // in order to host a navigation bar it no longer wants.
     var body: some View {
-        NavigationStack {
-            ZStack {
-                GeometryReader { geo in
-                    Circle()
-                        .fill(Color.blue.opacity(0.14))
-                        .frame(width: geo.size.width * 0.9)
-                        .blur(radius: 90)
-                        .offset(x: -geo.size.width * 0.35, y: -geo.size.height * 0.35)
-                    Circle()
-                        .fill(Color.orange.opacity(0.10))
-                        .frame(width: geo.size.width * 0.7)
-                        .blur(radius: 80)
-                        .offset(x: geo.size.width * 0.4, y: geo.size.height * 0.4)
-                }
-                .ignoresSafeArea()
-                .allowsHitTesting(false)
+        ZStack {
+            GeometryReader { geo in
+                Circle()
+                    .fill(Color.blue.opacity(0.14))
+                    .frame(width: geo.size.width * 0.9)
+                    .blur(radius: 90)
+                    .offset(x: -geo.size.width * 0.35, y: -geo.size.height * 0.35)
+                Circle()
+                    .fill(Color.orange.opacity(0.10))
+                    .frame(width: geo.size.width * 0.7)
+                    .blur(radius: 80)
+                    .offset(x: geo.size.width * 0.4, y: geo.size.height * 0.4)
+            }
+            .ignoresSafeArea()
+            .allowsHitTesting(false)
 
-                VStack(spacing: 0) {
-                    GsSheetHeader(
-                        title: "Which services do you have?",
-                        subtitle: "Edit to personalise what shows up on your feed"
-                    )
+            VStack(spacing: 0) {
+                GsSheetHeader(
+                    title: "Which services do you have?",
+                    subtitle: "Edit to personalise what shows up on your feed"
+                )
 
-                    ScrollView(showsIndicators: false) {
-                        VStack(alignment: .leading, spacing: 6) {
-                            searchField
-                                .padding(.bottom, 14)
+                ScrollView(showsIndicators: false) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        searchField
+                            .padding(.bottom, 14)
 
-                            if filteredPopular.isEmpty && filteredAll.isEmpty {
-                                Text("No services match")
-                                    .font(.custom("SF Pro Text", size: 14))
+                        if filteredPopular.isEmpty && filteredAll.isEmpty {
+                            Text("No services match")
+                                .font(.custom("SF Pro Text", size: 14))
+                                .foregroundStyle(Color.textSecondary)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 28)
+                        } else {
+                            if !filteredPopular.isEmpty {
+                                Text("Most popular")
+                                    .font(.custom("SF Pro Text", size: 13).weight(.semibold))
                                     .foregroundStyle(Color.textSecondary)
-                                    .frame(maxWidth: .infinity)
-                                    .padding(.vertical, 28)
-                            } else {
-                                if !filteredPopular.isEmpty {
-                                    Text("Most popular")
-                                        .font(.custom("SF Pro Text", size: 13).weight(.semibold))
-                                        .foregroundStyle(Color.textSecondary)
-                                        .padding(.bottom, 12)
+                                    .padding(.bottom, 12)
 
-                                    LazyVGrid(columns: columns, spacing: 22) {
-                                        ForEach(filteredPopular) { svc in
-                                            ServiceTile(
-                                                service: svc,
-                                                isSelected: selected.contains(svc.id),
-                                                onTap: { toggle(svc.id) }
-                                            )
+                                LazyVGrid(columns: columns, spacing: 22) {
+                                    ForEach(filteredPopular) { svc in
+                                        ServiceTile(
+                                            service: svc,
+                                            isSelected: selected.contains(svc.id),
+                                            onTap: { toggle(svc.id) }
+                                        )
+                                    }
+                                }
+                                .padding(.bottom, 24)
+                            }
+
+                            if !filteredAll.isEmpty {
+                                Text("All services · A–Z")
+                                    .font(.custom("SF Pro Text", size: 13).weight(.semibold))
+                                    .foregroundStyle(Color.textSecondary)
+                                    .padding(.bottom, 8)
+
+                                VStack(spacing: 0) {
+                                    ForEach(Array(filteredAll.enumerated()), id: \.element.id) { idx, svc in
+                                        serviceToggleRow(svc)
+                                        if idx < filteredAll.count - 1 {
+                                            Divider()
+                                                .background(Color.white.opacity(0.06))
                                         }
                                     }
-                                    .padding(.bottom, 24)
                                 }
-
-                                if !filteredAll.isEmpty {
-                                    Text("All services · A–Z")
-                                        .font(.custom("SF Pro Text", size: 13).weight(.semibold))
-                                        .foregroundStyle(Color.textSecondary)
-                                        .padding(.bottom, 8)
-
-                                    VStack(spacing: 0) {
-                                        ForEach(Array(filteredAll.enumerated()), id: \.element.id) { idx, svc in
-                                            serviceToggleRow(svc)
-                                            if idx < filteredAll.count - 1 {
-                                                Divider()
-                                                    .background(Color.white.opacity(0.06))
-                                            }
-                                        }
-                                    }
-                                    .background(
-                                        RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                            .fill(Color.white.opacity(0.04))
-                                    )
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                            .stroke(Color.white.opacity(0.08), lineWidth: 1)
-                                    )
-                                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                                    .padding(.bottom, 24)
-                                }
-                            }
-                        }
-                        .padding(.horizontal, 20)
-                        .padding(.top, 4)
-                    }
-                    .presentationContentInteraction(.scrolls)
-
-                    VStack(spacing: 12) {
-                        Text("\(DisplayFormatting.services(selected.count)) selected")
-                            .font(.custom("SF Pro Text", size: 13))
-                            .foregroundStyle(Color.textSecondary)
-
-                        Button(action: save) {
-                            HStack(spacing: 8) {
-                                Image(systemName: "checkmark")
-                                    .scaledFont(size: 14, weight: .bold)
-                                Text("Save")
-                                    .font(.custom("SF Pro Text", size: 16).weight(.bold))
-                            }
-                            .foregroundStyle(.white)
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 52)
-                            .background(
-                                LinearGradient(
-                                    colors: [Color.orange, Color.orange.opacity(0.85)],
-                                    startPoint: .top, endPoint: .bottom
+                                .background(
+                                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                        .fill(Color.white.opacity(0.04))
                                 )
-                            )
-                            .clipShape(Capsule())
-                            .shadow(color: Color.orange.opacity(0.45), radius: 22, x: 0, y: 0)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                        .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                                )
+                                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                                .padding(.bottom, 24)
+                            }
                         }
-                        .buttonStyle(.plain)
                     }
                     .padding(.horizontal, 20)
-                    .padding(.bottom, 12)
+                    .padding(.top, 4)
                 }
+                .presentationContentInteraction(.scrolls)
+
+                VStack(spacing: 12) {
+                    Text("\(DisplayFormatting.services(selected.count)) selected")
+                        .font(.custom("SF Pro Text", size: 13))
+                        .foregroundStyle(Color.textSecondary)
+
+                    Button(action: save) {
+                        HStack(spacing: 8) {
+                            Image(systemName: "checkmark")
+                                .scaledFont(size: 14, weight: .bold)
+                            Text("Save")
+                                .font(.custom("SF Pro Text", size: 16).weight(.bold))
+                        }
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 52)
+                        .background(
+                            LinearGradient(
+                                colors: [Color.orange, Color.orange.opacity(0.85)],
+                                startPoint: .top, endPoint: .bottom
+                            )
+                        )
+                        .clipShape(Capsule())
+                        .shadow(color: Color.orange.opacity(0.45), radius: 22, x: 0, y: 0)
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.horizontal, 20)
+                .padding(.bottom, 12)
             }
-            // No navigation bar. The sheet already titles itself with a
-            // GsSheetHeader ("Which services do you have?"), so the bar was a
-            // second, emptier header carrying a duplicate "My Services" title
-            // and a Close button — and Save already dismisses, as does the
-            // drag-to-dismiss every other sheet in the app uses.
-            .toolbar(.hidden, for: .navigationBar)
         }
         .preferredColorScheme(.dark)
         .sheetSurface(.base)

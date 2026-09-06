@@ -181,6 +181,22 @@ struct ContentView: View {
                             Task { await ReelsBadgeService.shared.markSeen() }
                         }
                         previousTab = newValue
+                        // Keep the router's idea of the current tab in step
+                        // with the real one.
+                        //
+                        // The router is write-only from the callers' side: the
+                        // header avatar sets `router.selectedTab = .profile`
+                        // and the onChange below mirrors that into `selection`.
+                        // But tapping a tab in the pill moves `selection`
+                        // WITHOUT touching the router, so the two drift — and
+                        // once they have, setting the router to a value it
+                        // already holds is not a change, onChange never fires,
+                        // and the avatar silently stops working. That is why
+                        // the avatar worked once on Home and then never again,
+                        // most visibly from the Watchlist tab.
+                        if router.selectedTab != newValue {
+                            router.selectedTab = newValue
+                        }
                         if newValue == .reels {
                             // Reels is a full-screen consumption surface — hide the floating tab bar.
                             tabBarVisibility.hide()
