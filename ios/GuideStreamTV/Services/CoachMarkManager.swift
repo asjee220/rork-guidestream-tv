@@ -51,9 +51,6 @@ struct CoachMark: Identifiable {
         CoachMark(id: "ask", key: "ask", title: "AI Enabled Ask Stream",
                   body: "Describe what you feel like and get picks you can actually watch tonight.",
                   targetKeys: ["ask"]),
-        CoachMark(id: "genre", key: "genre", title: "Browse by genre",
-                  body: "Pick a genre and the rail underneath refills with titles in it.",
-                  targetKeys: ["genre", "because_you_watch"]),
     ]
 
     /// Fires the first time a genre results grid loads (GUI-66). The browse
@@ -157,9 +154,9 @@ final class CoachMarkManager {
     private let storageKey = "gs.coachMarks"
 
     /// Bump to force a one-time clear of stored coach mark state on every
-    /// install. Version 3 replays the tour after the Browse-by-genre scroll
-    /// fix and the new completion toast.
-    private let coachMarkResetVersion = 3
+    /// install. Version 4 replays the tour after the Browse-by-genre step was
+    /// dropped and the profile spotlight was resized to the drawn ring.
+    private let coachMarkResetVersion = 4
     private let resetVersionKey = "gs.coachMarkResetVersion"
     /// Persisted so a launch where the user never signs in does not lose the
     /// pending authoritative remote clear.

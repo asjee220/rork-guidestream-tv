@@ -36,9 +36,11 @@ fun RowScope.ServicesPillWithAvatar(
     onProfileTap: () -> Unit,
     servicesPillModifier: Modifier = Modifier,
     /**
-     * Modifier applied to the avatar's hit target. Home passes the coach-mark
-     * measurement here so the tour can point at the profile in its new home;
-     * Sports and the Watchlist pass nothing, because only Home runs the tour.
+     * Modifier applied to the drawn 32dp ring — not to the 48dp hit target.
+     * Home passes the coach-mark measurement here so the tour can point at the
+     * profile in its new home; measuring the hit target instead drew a
+     * spotlight circle noticeably larger than the avatar. Sports and the
+     * Watchlist pass nothing, because only Home runs the tour.
      */
     avatarModifier: Modifier = Modifier,
 ) {
@@ -66,7 +68,7 @@ fun RowScope.ServicesPillWithAvatar(
     // the screen; hanging the click on the drawn circle alone made it fiddly
     // to hit. Nothing drawn changes — the ring is still 32.
     Box(
-        modifier = avatarModifier
+        modifier = Modifier
             .size(AVATAR_HIT_TARGET)
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
@@ -75,6 +77,7 @@ fun RowScope.ServicesPillWithAvatar(
         contentAlignment = Alignment.Center,
     ) {
         UserAvatar(
+            modifier = avatarModifier,
             initials = computeInitials(
                 firstName = firstName,
                 lastName = lastName,

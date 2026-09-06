@@ -63,9 +63,6 @@ data class CoachMark(
             CoachMark("ask", "AI Enabled Ask Stream",
                 "Describe what you feel like and get picks you can actually watch tonight.",
                 listOf("ask")),
-            CoachMark("genre", "Browse by genre",
-                "Pick a genre and the rail underneath refills with titles in it.",
-                listOf("genre", "because_you_watch")),
         )
 
         /**
@@ -127,7 +124,7 @@ class CoachMarkManager private constructor(private val context: Context) {
      * Bump to force a one-time clear of stored coach mark state on every
      * install. Matches the iOS reset version so both platforms replay once.
      */
-    private val coachMarkResetVersion = 3
+    private val coachMarkResetVersion = 4
     private val resetVersionKey = "coach_mark_reset_version"
     private val pendingRemoteResetKey = "coach_mark_pending_remote_reset"
 
