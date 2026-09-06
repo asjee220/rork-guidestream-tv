@@ -35,6 +35,13 @@ final class AuthViewModel {
     var lastName: String? = UserDefaults.standard.string(forKey: "gs.lastName")
     var hasCompletedOnboarding: Bool = UserDefaults.standard.bool(forKey: "gs.onboardingComplete")
     var selectedServices: Set<String> = Set(UserDefaults.standard.stringArray(forKey: "gs.selectedServices") ?? [])
+    /// Raw `users.avatar_url`: a public Storage URL, "preset:<id>", or nil for
+    /// the initials monogram. Cached locally so the header avatar draws on the
+    /// very first frame of a cold launch instead of popping in after the
+    /// session restore round trip.
+    var avatarUrl: String? = UserDefaults.standard.string(forKey: "gs.avatarUrl")
+    /// Parsed form of `avatarUrl`, which is what every view actually renders.
+    var avatar: UserAvatar? { UserAvatar.parse(avatarUrl) }
     var notifyPushEnabled: Bool = UserDefaults.standard.bool(forKey: "gs.notifyPush")
     var notifySMSEnabled: Bool = UserDefaults.standard.bool(forKey: "gs.notifySMS")
     /// Whether the user wants a push alert when a saved *movie* becomes
@@ -480,7 +487,7 @@ final class AuthViewModel {
         do {
             let rows: [OnboardingStateRow] = try await SupabaseManager.shared.client
                 .from("users")
-                .select("onboarding_complete, services")
+                .select("onboarding_complete, services, avatar_url")
                 .eq("id", value: uid)
                 .limit(1)
                 .execute()
@@ -497,6 +504,7 @@ final class AuthViewModel {
                 // on the same install.
                 self.selectedServices = Set(services)
                 UserDefaults.standard.set(Array(services), forKey: "gs.selectedServices")
+                self.applyAvatarUrl(row.avatar_url)
             }
         } catch {
             // Column may be missing on older projects — keep local defaults.
@@ -649,6 +657,84 @@ final class AuthViewModel {
         syncSelectedServices()
     }
 
+    // MARK: - Avatar
+
+    /// Applies a raw `users.avatar_url` locally and caches it.
+    private func applyAvatarUrl(_ raw: String?) {
+        self.avatarUrl = raw
+        if let raw, !raw.isEmpty {
+            UserDefaults.standard.set(raw, forKey: "gs.avatarUrl")
+        } else {
+            UserDefaults.standard.removeObject(forKey: "gs.avatarUrl")
+        }
+    }
+
+    /// Chooses a built-in preset, or clears back to initials with nil.
+    /// Applied locally first so the UI reacts immediately, then persisted.
+    @discardableResult
+    func setAvatar(_ value: String?) async -> Bool {
+        applyAvatarUrl(value)
+        guard let userId = currentUser?.id.uuidString else { return false }
+        do {
+            try await SupabaseManager.shared.client
+                .from("users")
+                .update(["avatar_url": value])
+                .eq("id", value: userId)
+                .execute()
+            return true
+        } catch {
+            print("[Auth ERROR] avatar save failed: \(error.localizedDescription)")
+            return false
+        }
+    }
+
+    /// Uploads image data to the `avatars` bucket and points the account at it.
+    ///
+    /// Uses the Storage REST endpoint rather than the SDK's storage helper
+    /// because that helper's `upload` signature changed inside supabase-swift 2.x
+    /// and this project pins `upToNextMajorVersion` from 2.0.0 — the raw
+    /// endpoint is stable across all of them.
+    ///
+    /// The path is always `<uid>/avatar.<ext>`, which is what the bucket's RLS
+    /// policies key on (`storage.foldername(name)[1] = auth.uid()`), and it
+    /// upserts so a viewer changing their picture replaces the old file instead
+    /// of accumulating one per change. A cache-busting query is appended to the
+    /// public URL for the same reason — the object URL is stable, so without it
+    /// the CDN would keep serving the previous image.
+    ///
+    /// - Returns: the public URL on success, nil on any failure.
+    func uploadAvatar(data: Data, fileExtension: String, contentType: String) async -> String? {
+        guard let userId = currentUser?.id.uuidString else { return nil }
+        guard let token = try? await SupabaseManager.shared.client.auth.session.accessToken else { return nil }
+
+        let base = SupabaseConfig.url.trimmingCharacters(in: .whitespaces)
+        let objectPath = "\(userId)/avatar.\(fileExtension)"
+        guard let uploadURL = URL(string: "\(base)/storage/v1/object/avatars/\(objectPath)") else { return nil }
+
+        var request = URLRequest(url: uploadURL)
+        request.httpMethod = "POST"
+        request.setValue(contentType, forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue(SupabaseConfig.anonKey, forHTTPHeaderField: "apikey")
+        request.setValue("true", forHTTPHeaderField: "x-upsert")
+        request.httpBody = data
+
+        do {
+            let (_, response) = try await URLSession.shared.upload(for: request, from: data)
+            guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
+                print("[Auth ERROR] avatar upload rejected")
+                return nil
+            }
+        } catch {
+            print("[Auth ERROR] avatar upload failed: \(error.localizedDescription)")
+            return nil
+        }
+
+        let publicURL = "\(base)/storage/v1/object/public/avatars/\(objectPath)?v=\(Int(Date().timeIntervalSince1970))"
+        await setAvatar(publicURL)
+        return publicURL
+    }
+
     /// Writes the current selection to `users.services` for signed-in accounts.
     ///
     /// Until this existed, `users.services` was written in exactly ONE place —
@@ -777,6 +863,7 @@ final class AuthViewModel {
         self.lastName = nil
         self.hasCompletedOnboarding = false
         self.selectedServices = []
+        self.avatarUrl = nil
         self.notifyPushEnabled = false
         self.notifySMSEnabled = false
         self.hasUsedEmailAuth = false
@@ -806,6 +893,7 @@ final class AuthViewModel {
             "gs.lastName",
             "gs.onboardingComplete",
             "gs.selectedServices",
+            "gs.avatarUrl",
             "gs.notifyPush",
             "gs.notifySMS",
             "gs.notifyNewEpisodes",

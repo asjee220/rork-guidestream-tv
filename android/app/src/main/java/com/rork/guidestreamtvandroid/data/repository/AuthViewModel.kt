@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import com.rork.guidestreamtvandroid.data.local.DeviceIdentity
 import com.rork.guidestreamtvandroid.data.local.DeviceSessionService
 import com.rork.guidestreamtvandroid.data.remote.GoogleCredentialSignIn
+import com.rork.guidestreamtvandroid.SupabaseConfig
 import com.rork.guidestreamtvandroid.data.remote.SupabaseManager
 import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.auth.providers.Google
@@ -15,6 +16,12 @@ import io.github.jan.supabase.auth.providers.builtin.IDToken
 import io.github.jan.supabase.auth.user.UserInfo
 import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.postgrest.query.Columns
+import io.ktor.client.HttpClient
+import io.ktor.client.request.header
+import io.ktor.client.request.post
+import io.ktor.client.request.setBody
+import io.ktor.client.statement.HttpResponse
+import io.ktor.http.HttpHeaders
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -24,6 +31,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -72,6 +81,8 @@ class AuthViewModel private constructor(private val context: Context) : ViewMode
     data class OnboardingStateRow(
         @SerialName("onboarding_complete") val onboardingComplete: Boolean? = null,
         val services: List<String>? = null,
+        /** Public Storage URL for an uploaded photo, or "preset:<id>". */
+        @SerialName("avatar_url") val accountAvatarUrl: String? = null,
         @SerialName("notify_push") val notifyPush: Boolean? = null,
         @SerialName("notify_sms") val notifySms: Boolean? = null,
         @SerialName("notify_new_episodes") val notifyNewEpisodes: Boolean? = null,
@@ -117,6 +128,15 @@ class AuthViewModel private constructor(private val context: Context) : ViewMode
         prefs.getStringSet("gs.selectedServices", emptySet()) ?: emptySet(),
     )
     val selectedServices: StateFlow<Set<String>> = _selectedServices.asStateFlow()
+
+    /**
+     * Raw `users.avatar_url`: a public Storage URL, "preset:<id>", or null for
+     * the initials monogram. Cached locally so the home top bar draws the
+     * avatar on the first frame of a cold launch instead of popping in after
+     * the session-restore round trip.
+     */
+    private val _accountAvatarUrl = MutableStateFlow(prefs.getString("gs.avatarUrl", null))
+    val accountAvatarUrl: StateFlow<String?> = _accountAvatarUrl.asStateFlow()
 
     private val _notifyPushEnabled = MutableStateFlow(prefs.getBoolean("gs.notifyPush", true))
     val notifyPushEnabled: StateFlow<Boolean> = _notifyPushEnabled.asStateFlow()
@@ -317,7 +337,7 @@ class AuthViewModel private constructor(private val context: Context) : ViewMode
                 .from("users")
                 .select(
                     columns = Columns.raw(
-                        "onboarding_complete, services, notify_push, notify_sms, " +
+                        "onboarding_complete, services, avatar_url, notify_push, notify_sms, " +
                             "notify_new_episodes, notify_watchlist, notify_live, " +
                             "notify_sports, notify_movie_releases",
                     ),
@@ -338,6 +358,7 @@ class AuthViewModel private constructor(private val context: Context) : ViewMode
             val serviceSet = services.toSet()
             _selectedServices.value = serviceSet
             prefs.edit().putStringSet("gs.selectedServices", serviceSet).apply()
+            applyAvatarUrl(row.accountAvatarUrl)
             row.notifyPush?.let {
                 _notifyPushEnabled.value = it
                 prefs.edit().putBoolean("gs.notifyPush", it).apply()
@@ -910,6 +931,112 @@ class AuthViewModel private constructor(private val context: Context) : ViewMode
         _selectedServices.value = services
         prefs.edit().putStringSet("gs.selectedServices", services).apply()
         DeviceSessionService.get().upsert("services_changed")
+        syncSelectedServices()
+    }
+
+    /**
+     * Writes the current selection to `users.services` for signed-in accounts.
+     *
+     * Until this existed, that column was written in exactly one place —
+     * onboarding — while [restoreOnboardingState] reads it back on every cold
+     * launch and assigns it unconditionally ("the fetched services value always
+     * wins"). A service added or removed from the services sheet after
+     * onboarding therefore survived only until the next launch, and never
+     * reached the account's other devices. iOS and tvOS carry the same fix.
+     *
+     * Guests are skipped: `users.id` FKs back to `auth.users`, so a guest row
+     * would fail. Their selection lives in `device_sessions` alone.
+     */
+    private fun syncSelectedServices() {
+        val uid = currentUserId ?: return
+        val services = _selectedServices.value.toList()
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                SupabaseManager.client.postgrest.from("users").update(
+                    buildJsonObject {
+                        put("services", JsonArray(services.map { JsonPrimitive(it) }))
+                    },
+                ) { filter { eq("id", uid) } }
+            } catch (e: Exception) {
+                android.util.Log.w("AuthViewModel", "services sync failed: ${e.message}")
+            }
+        }
+    }
+
+    // ── Avatar ───────────────────────────────────────────────────────
+
+    /** Applies a raw `users.avatar_url` locally and caches it. */
+    private fun applyAvatarUrl(raw: String?) {
+        _accountAvatarUrl.value = raw
+        if (raw.isNullOrBlank()) {
+            prefs.edit().remove("gs.avatarUrl").apply()
+        } else {
+            prefs.edit().putString("gs.avatarUrl", raw).apply()
+        }
+    }
+
+    /**
+     * Chooses a built-in preset, or clears back to initials with null.
+     * Applied locally first so the UI reacts immediately, then persisted.
+     */
+    fun setAvatar(value: String?) {
+        applyAvatarUrl(value)
+        val uid = currentUserId ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                SupabaseManager.client.postgrest.from("users").update(
+                    buildJsonObject {
+                        if (value == null) put("avatar_url", JsonNull) else put("avatar_url", JsonPrimitive(value))
+                    },
+                ) { filter { eq("id", uid) } }
+            } catch (e: Exception) {
+                android.util.Log.w("AuthViewModel", "avatar save failed: ${e.message}")
+            }
+        }
+    }
+
+    /**
+     * Uploads image bytes to the `avatars` bucket and points the account at
+     * them. Returns the public URL, or null on any failure.
+     *
+     * The path is always `<uid>/avatar.jpg`, which is what the bucket's RLS
+     * policies key on (`storage.foldername(name)[1] = auth.uid()`), and it
+     * upserts so changing the picture replaces the old file rather than
+     * accumulating one per change. A cache-busting query is appended for the
+     * same reason: the object URL is stable, so without it the CDN keeps
+     * serving the previous image.
+     */
+    suspend fun uploadAvatar(bytes: ByteArray): String? {
+        val uid = currentUserId ?: return null
+        val token = try {
+            SupabaseManager.client.auth.currentSessionOrNull()?.accessToken
+        } catch (_: Exception) {
+            null
+        } ?: return null
+
+        val objectPath = "$uid/avatar.jpg"
+        val ok = try {
+            val client = HttpClient()
+            val response: HttpResponse = client.post(
+                "${SupabaseConfig.URL.trim()}/storage/v1/object/avatars/$objectPath",
+            ) {
+                header(HttpHeaders.ContentType, "image/jpeg")
+                header(HttpHeaders.Authorization, "Bearer $token")
+                header("apikey", SupabaseConfig.ANON_KEY)
+                header("x-upsert", "true")
+                setBody(bytes)
+            }
+            response.status.value in 200..299
+        } catch (e: Exception) {
+            android.util.Log.w("AuthViewModel", "avatar upload failed: ${e.message}")
+            false
+        }
+        if (!ok) return null
+
+        val publicUrl = "${SupabaseConfig.URL.trim()}/storage/v1/object/public/avatars/" +
+            "$objectPath?v=${System.currentTimeMillis() / 1000}"
+        setAvatar(publicUrl)
+        return publicUrl
     }
 
     fun setNotificationPreferences(push: Boolean, sms: Boolean) {
@@ -1040,6 +1167,7 @@ class AuthViewModel private constructor(private val context: Context) : ViewMode
             _lastName.value = null
             _hasCompletedOnboarding.value = false
             _selectedServices.value = emptySet()
+            _accountAvatarUrl.value = null
             _notifyPushEnabled.value = false
             _notifySMSEnabled.value = false
             _hasUsedEmailAuth.value = false
@@ -1058,7 +1186,7 @@ class AuthViewModel private constructor(private val context: Context) : ViewMode
                 listOf(
                     "gs.isGuest", "gs.displayName", "gs.phoneNumber",
                     "gs.firstName", "gs.lastName", "gs.onboardingComplete",
-                    "gs.selectedServices", "gs.notifyPush", "gs.notifySMS",
+                    "gs.selectedServices", "gs.avatarUrl", "gs.notifyPush", "gs.notifySMS",
                     "gs.notifyNewEpisodes", "gs.notifyWatchlist", "gs.notifyLive",
                     "gs.notifySports", "gs.notifyMovieReleases", "gs.hasUsedEmailAuth",
                 ).forEach { remove(it) }

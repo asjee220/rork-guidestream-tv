@@ -53,4 +53,5 @@ enum class AppTab(val title: String, val icon: String) {
     ASK("Ask", "sparkles"),
     REELS("Reels", "reels"),
     PROFILE("Profile", "profile"),
+    WATCHLIST("Watch List", "watchlist"),
 }

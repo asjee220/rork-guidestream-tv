@@ -29,6 +29,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.material.icons.automirrored.outlined.List
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Person
@@ -113,7 +115,10 @@ fun FloatingTabBar(
             }) {
                 TabItem(AppTab.SPORTS, selected == AppTab.SPORTS) { onTabSelected(it) }
             }
-            TabItem(AppTab.PROFILE, selected == AppTab.PROFILE) { onTabSelected(it) }
+            // Profile left this pill for the far right of the home header;
+            // the freed slot carries the watch list. AppTab.PROFILE is still a
+            // real tab, so every existing route into the profile keeps working.
+            TabItem(AppTab.WATCHLIST, selected == AppTab.WATCHLIST) { onTabSelected(it) }
         }
 
         // Ask FAB
@@ -266,5 +271,6 @@ private fun tabIconPair(tab: AppTab): Pair<ImageVector, ImageVector> = when (tab
     AppTab.REELS -> Icons.Filled.PlayArrow to Icons.Outlined.PlayArrow
     AppTab.SPORTS -> Icons.Filled.SportsFootball to Icons.Outlined.SportsFootball
     AppTab.PROFILE -> Icons.Filled.Person to Icons.Outlined.Person
+    AppTab.WATCHLIST -> Icons.AutoMirrored.Filled.List to Icons.AutoMirrored.Outlined.List
     AppTab.ASK -> Icons.Filled.AutoAwesome to Icons.Filled.AutoAwesome
 }

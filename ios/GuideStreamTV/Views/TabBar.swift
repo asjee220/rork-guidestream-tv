@@ -8,7 +8,7 @@ import SwiftUI
 private let reelsBadgeRingColor = Color(red: 0x0A/255, green: 0x12/255, blue: 0x1B/255)
 
 enum AppTab: Int, CaseIterable, Hashable {
-    case home, sports, ask, reels, profile
+    case home, sports, ask, reels, profile, watchlist
 
     var symbol: String {
         switch self {
@@ -17,6 +17,7 @@ enum AppTab: Int, CaseIterable, Hashable {
         case .ask: return "sparkles"
         case .reels: return "play.square.stack.fill"
         case .profile: return "person.fill"
+        case .watchlist: return "list.bullet"
         }
     }
 
@@ -27,6 +28,7 @@ enum AppTab: Int, CaseIterable, Hashable {
         case .ask: return "Ask"
         case .reels: return "Reels"
         case .profile: return "Profile"
+        case .watchlist: return "Watch List"
         }
     }
 }
@@ -40,7 +42,11 @@ struct FloatingTabBar: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            // Glass pill with four tabs — Home, Reels, Sports, Profile
+            // Glass pill with four tabs — Home, Reels, Sports, Watch List.
+            // Profile left this pill and now lives as the avatar at the far
+            // right of the page header; `.profile` is still a real tab so every
+            // existing route into ProfileView keeps working, it simply has no
+            // slot here any more.
             HStack(spacing: 0) {
                 tabItem(.home)
                 tabItem(.reels)
@@ -51,7 +57,7 @@ struct FloatingTabBar: View {
                     .anchorPreference(key: CoachMarkAnchorKey.self, value: .bounds) {
                         ["sports": $0]
                     }
-                tabItem(.profile)
+                tabItem(.watchlist)
             }
             .padding(.horizontal, 6)
             .frame(height: 64)

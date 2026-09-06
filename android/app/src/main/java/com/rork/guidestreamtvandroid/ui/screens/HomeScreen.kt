@@ -109,6 +109,8 @@ import com.rork.guidestreamtvandroid.ui.components.PosterCard
 import com.rork.guidestreamtvandroid.ui.components.RemoteImage
 import com.rork.guidestreamtvandroid.ui.components.ServicesBottomSheet
 import com.rork.guidestreamtvandroid.ui.components.ServicesPill
+import com.rork.guidestreamtvandroid.ui.components.UserAvatar
+import com.rork.guidestreamtvandroid.ui.profile.computeInitials
 import com.rork.guidestreamtvandroid.ui.components.ShimmerHero
 import com.rork.guidestreamtvandroid.ui.components.ShimmerSection
 import com.rork.guidestreamtvandroid.ui.ads.InlineAdSlot
@@ -174,6 +176,8 @@ fun HomeScreen(
     onOpenWidgetSetup: () -> Unit = {},
     /** Opens the sports game detail for a hero rail game card. */
     onOpenGame: (SportsGame) -> Unit = {},
+    /** Opens the Profile tab from the avatar at the far right of the top bar. */
+    onOpenProfile: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val homeVm = HomeViewModel.get()
@@ -187,6 +191,18 @@ fun HomeScreen(
     val heroCreatorUploads by homeVm.heroCreatorUploads.collectAsStateWithLifecycle()
 
     val homeReady by homeVm.homeContentReady.collectAsStateWithLifecycle()
+    val recommendedTitles by homeVm.recommendedTitles.collectAsStateWithLifecycle()
+    val accountAvatarUrl by authVm.accountAvatarUrl.collectAsStateWithLifecycle()
+    val profileFirstName by authVm.firstName.collectAsStateWithLifecycle()
+    val profileLastName by authVm.lastName.collectAsStateWithLifecycle()
+    val profileDisplayName by authVm.displayName.collectAsStateWithLifecycle()
+    val profileInitials = computeInitials(
+        firstName = profileFirstName,
+        lastName = profileLastName,
+        displayName = profileDisplayName,
+        isGuest = authVm.isGuest.value,
+        isAuthenticated = authVm.isAuthenticated.value,
+    )
     val trending by homeVm.trending.collectAsStateWithLifecycle()
     val onAir by homeVm.onAir.collectAsStateWithLifecycle()
     val leavingSoon by homeVm.leavingSoon.collectAsStateWithLifecycle()
@@ -429,6 +445,47 @@ fun HomeScreen(
                     },
                 )
             }
+        }
+
+        // Recommended for You — the first rail on phones, by product decision.
+        // Sits directly under the hero and above the watch list. Hidden when
+        // empty rather than shown as a placeholder: a viewer with no services
+        // or no signals yet gets no rail, because an empty personalised rail
+        // reads worse than none at all. PosterSection is reused as-is so the
+        // match chip matches Creators for You.
+        if (recommendedTitles.isNotEmpty()) {
+            PosterSection(
+                title = "Recommended for You",
+                shows = recommendedTitles.map { rec ->
+                    TMDBResult(
+                        id = rec.tmdbId,
+                        mediaType = rec.mediaType,
+                        name = rec.title,
+                        posterPath = rec.posterPath,
+                        backdropPath = rec.backdropPath,
+                        voteAverage = rec.voteAverage,
+                    )
+                },
+                providerByTmdb = providerByTmdb,
+                badgeAsMatchChip = true,
+                badgeText = { show ->
+                    recommendedTitles.firstOrNull { it.tmdbId == show.id }
+                        ?.let { "${it.matchPercentage}% MATCH" }
+                },
+                onOpen = { show ->
+                    WatchIntentLogger.get().log(
+                        WatchIntentLogger.IntentEventType.CARD_TAPPED,
+                        titleId = show.id.toString(),
+                        metadata = mapOf("section" to "recommended_for_you"),
+                    )
+                    onOpenTitle(PendingTitleRoute(
+                        titleId = show.id.toString(),
+                        titleName = show.displayName,
+                        posterUrl = show.posterUrl,
+                        isTv = show.isTV,
+                    ))
+                },
+            )
         }
 
         // My Watch List
@@ -1046,6 +1103,19 @@ fun HomeScreen(
                     },
                 )
             }
+            Spacer(Modifier.width(10.dp))
+            // Profile, far right. It left the floating nav so the pill could
+            // carry the watch list instead; here it stays one tap away and
+            // gives the viewer's own picture somewhere to live.
+            UserAvatar(
+                initials = profileInitials,
+                avatarUrl = accountAvatarUrl,
+                size = 30.dp,
+                modifier = Modifier.clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                ) { onOpenProfile() },
+            )
         }
     }
 

@@ -43,6 +43,8 @@ struct ProfileView: View {
     @State private var showSignOutConfirm: Bool = false
     @State private var isSigningOut: Bool = false
     @State private var activeSheet: ProfileSheet?
+    /// Presents the avatar picker (upload + presets + clear).
+    @State private var showAvatarPicker = false
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -101,6 +103,9 @@ struct ProfileView: View {
             case .diagnostics:
                 SupabaseDiagnosticsView()
             }
+        }
+        .sheet(isPresented: $showAvatarPicker) {
+            AvatarPickerSheet(initials: initials)
         }
         .task {
             await stats.refresh()
@@ -205,8 +210,30 @@ struct ProfileView: View {
 
     private var avatarSection: some View {
         VStack(spacing: 14) {
-            AvatarRing(initials: initials, size: 112)
-                .accessibilityLabel("Profile avatar for \(displayName)")
+            Button {
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                showAvatarPicker = true
+            } label: {
+                ZStack(alignment: .bottomTrailing) {
+                    AvatarRing(initials: initials, size: 112, avatar: auth.avatar)
+                    // Small affordance so the avatar reads as editable — with
+                    // nothing here the tap target is invisible.
+                    Circle()
+                        .fill(Color.orange)
+                        .frame(width: 30, height: 30)
+                        .overlay(
+                            Image(systemName: "camera.fill")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundStyle(.white)
+                        )
+                        .overlay(
+                            Circle().stroke(Color.navy, lineWidth: 2)
+                        )
+                        .offset(x: -4, y: -4)
+                }
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Profile avatar for \(displayName). Double tap to change.")
 
             Text(displayName)
                 .scaledFont(size: 22, weight: .heavy)
@@ -509,13 +536,21 @@ struct ProfileView: View {
 
 // MARK: - AvatarRing
 
-/// Circular avatar with an angular blue→pink gradient stroke. Shows the
-/// user's initials inside on a dark navy fill — same treatment shown in
-/// the profile mockups.
+/// Circular avatar with an angular blue→pink gradient stroke. The ring, halo
+/// and dark fill are fixed; what sits inside is the viewer's choice — an
+/// uploaded photo, one of the built-in presets, or the initials monogram when
+/// they have not picked anything.
+///
+/// One view at every size. The profile header draws it at 112 and the page
+/// header at 30, which is what "a smaller version of the avatar in the profile
+/// section" means literally rather than by approximation: change the ring here
+/// and both move together.
 struct AvatarRing: View {
     let initials: String
     var size: CGFloat = 112
     var fontWeight: Font.Weight = .bold
+    /// Parsed `users.avatar_url`. nil renders the initials.
+    var avatar: UserAvatar? = nil
 
     var body: some View {
         ZStack {
@@ -555,11 +590,50 @@ struct AvatarRing: View {
                         .stroke(Color.white.opacity(0.06), lineWidth: 0.5)
                 )
 
-            // Initials
-            Text(initials)
-                .scaledFont(size: size * 0.34, weight: fontWeight)
-                .foregroundStyle(.white)
+            // Contents: photo, preset, or initials.
+            switch avatar {
+            case let .uploaded(url):
+                AsyncImage(url: url) { phase in
+                    switch phase {
+                    case let .success(image):
+                        image.resizable().scaledToFill()
+                    default:
+                        // Initials stand in while the photo loads and stay put
+                        // if it fails, so the ring is never a blank hole.
+                        Text(initials)
+                            .scaledFont(size: size * 0.34, weight: fontWeight)
+                            .foregroundStyle(.white)
+                    }
+                }
+                .frame(width: size - 10, height: size - 10)
+                .clipShape(Circle())
                 .accessibilityHidden(true)
+
+            case let .preset(id):
+                let preset = AvatarPreset.named(id)
+                ZStack {
+                    Circle()
+                        .fill(
+                            LinearGradient(
+                                colors: preset?.colors ?? [Color.blue, Color.navy],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                    Image(systemName: preset?.symbol ?? "person.fill")
+                        .font(.system(size: size * 0.36, weight: .semibold))
+                        .foregroundStyle(.white)
+                }
+                .frame(width: size - 10, height: size - 10)
+                .clipShape(Circle())
+                .accessibilityHidden(true)
+
+            case nil:
+                Text(initials)
+                    .scaledFont(size: size * 0.34, weight: fontWeight)
+                    .foregroundStyle(.white)
+                    .accessibilityHidden(true)
+            }
         }
         .frame(width: size + 14, height: size + 14)
     }

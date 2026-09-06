@@ -57,6 +57,12 @@ final class AuthViewModel {
 
     var hasCompletedOnboarding: Bool = UserDefaults.standard.bool(forKey: "gs.onboardingComplete")
     var selectedServices: Set<String> = Set(UserDefaults.standard.stringArray(forKey: "gs.selectedServices") ?? [])
+    /// Raw `users.avatar_url`: a public Storage URL uploaded from a phone,
+    /// "preset:<id>", or nil for the initials monogram. Cached locally so the
+    /// profile header draws immediately on launch.
+    var avatarUrl: String? = UserDefaults.standard.string(forKey: "gs.avatarUrl")
+    /// Parsed form of `avatarUrl`, which is what the views render.
+    var avatar: UserAvatar? { UserAvatar.parse(avatarUrl) }
     var notifyPushEnabled: Bool = UserDefaults.standard.bool(forKey: "gs.notifyPush")
     var notifySMSEnabled: Bool = UserDefaults.standard.bool(forKey: "gs.notifySMS")
     var hasUsedEmailAuth: Bool = UserDefaults.standard.bool(forKey: "gs.hasUsedEmailAuth")
@@ -129,12 +135,14 @@ final class AuthViewModel {
         do {
             let rows: [TVUserServicesRow] = try await SupabaseManager.shared.client
                 .from("users")
-                .select("services")
+                .select("services, avatar_url")
                 .eq("id", value: uid)
                 .limit(1)
                 .execute()
                 .value
-            guard let services = rows.first?.services, !services.isEmpty else { return }
+            guard let row = rows.first else { return }
+            applyAvatarUrl(row.avatar_url)
+            guard let services = row.services, !services.isEmpty else { return }
             selectedServices = Set(services)
             UserDefaults.standard.set(services, forKey: "gs.selectedServices")
             print("[AuthViewModel] restored services (\(services.count))")
@@ -302,6 +310,38 @@ final class AuthViewModel {
         syncSelectedServices()
     }
 
+    // MARK: - Avatar
+
+    /// Applies a raw `users.avatar_url` locally and caches it.
+    private func applyAvatarUrl(_ raw: String?) {
+        self.avatarUrl = raw
+        if let raw, !raw.isEmpty {
+            UserDefaults.standard.set(raw, forKey: "gs.avatarUrl")
+        } else {
+            UserDefaults.standard.removeObject(forKey: "gs.avatarUrl")
+        }
+    }
+
+    /// Chooses a built-in preset, or clears back to initials with nil. tvOS
+    /// cannot upload — there is no photo library on this platform — but it
+    /// writes the same column, so a preset picked here shows on the phone.
+    @discardableResult
+    func setAvatar(_ value: String?) async -> Bool {
+        applyAvatarUrl(value)
+        guard let userId = currentUser?.id.uuidString else { return false }
+        do {
+            try await SupabaseManager.shared.client
+                .from("users")
+                .update(["avatar_url": value])
+                .eq("id", value: userId)
+                .execute()
+            return true
+        } catch {
+            print("[AuthViewModel] avatar save failed: \(error.localizedDescription)")
+            return false
+        }
+    }
+
     /// Writes the current selection to `users.services` for signed-in accounts,
     /// mirroring the iOS target. Before this, tvOS neither read nor wrote that
     /// column: `selectedServices` was purely local UserDefaults seeded by tvOS
@@ -412,6 +452,9 @@ final class AuthViewModel {
 
 private struct TVUserServicesRow: Decodable {
     let services: [String]?
+    /// Public Storage URL for an uploaded photo, or "preset:<id>". Optional so
+    /// a project without the column still decodes.
+    let avatar_url: String?
 }
 
 private struct NotificationCategoryRow: Decodable {

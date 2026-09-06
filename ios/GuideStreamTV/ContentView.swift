@@ -156,6 +156,8 @@ struct ContentView: View {
                 case .ask: AskStreamView()
                 case .reels: ReelsScreen(onDismiss: dismissReels)
                 case .profile: ProfileView()
+                case .watchlist:
+                    NavigationStack { WatchListView() }
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)

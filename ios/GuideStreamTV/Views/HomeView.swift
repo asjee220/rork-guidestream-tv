@@ -434,6 +434,12 @@ struct HomeView: View {
     /// Recommended creators/podcasts based on followed creators' categories.
     /// Populated asynchronously; empty when the user has no followed creators.
     @State private var recommendedCreators: [RecommendedCreator] = []
+    /// "Recommended for You" — TMDB titles scored server-side by
+    /// `recommend_titles` from the viewer's own signals and filtered to the
+    /// services they subscribe to. Empty until the first fetch lands, and
+    /// empty for a viewer with no services, which is the honest answer rather
+    /// than a rail of things they cannot watch.
+    @State private var recommendedTitles: [RecommendedTitle] = []
     /// Drives the Home re-auth banner (GUI-41). Kept current by
     /// `pushReauthObserver()` applied to the scroll view below.
     @State private var pushReauthPrompt = PushReauthPrompt.shared
@@ -601,6 +607,52 @@ struct HomeView: View {
                             )
                             .opacity(heroRailReady ? 1 : 0)
                             .offset(y: heroRailReady ? 0 : 12)
+                        }
+
+                        // Recommended for You — the first rail on phones, by
+                        // product decision. Sits directly under the hero and
+                        // above the watch list. Hidden entirely when empty:
+                        // a viewer with no services or no signals yet gets no
+                        // placeholder, because an empty personalised rail reads
+                        // worse than no rail at all.
+                        if !recommendedTitles.isEmpty {
+                            SectionGlassCard(title: "Recommended for You") {
+                                ScrollView(.horizontal, showsIndicators: false) {
+                                    HStack(spacing: 10) {
+                                        ForEach(recommendedTitles) { rec in
+                                            let show = PosterShow(
+                                                title: rec.title,
+                                                meta: "",
+                                                posterColors: HomeFallback.posterColors,
+                                                symbol: "sparkles",
+                                                posterUrl: rec.posterUrl,
+                                                tmdbId: rec.tmdbId,
+                                                voteAverage: rec.voteAverage,
+                                                isTV: rec.isTV
+                                            )
+                                            PosterCard(
+                                                show: show,
+                                                tag: "\(rec.matchPercentage)% MATCH",
+                                                onTap: {
+                                                    WatchIntentLogger.shared.log(
+                                                        eventType: .cardTapped,
+                                                        titleId: String(rec.tmdbId),
+                                                        metadata: [
+                                                            "section": "recommended_for_you",
+                                                            "match": String(rec.matchPercentage)
+                                                        ]
+                                                    )
+                                                    prefetchResolve(tmdbId: rec.tmdbId, isTV: rec.isTV)
+                                                    detailSubject = .show(show)
+                                                }
+                                            )
+                                        }
+                                    }
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 6)
+                                }
+                            }
+                            .padding(.horizontal, homeWidthClass.homeHorizontalPadding)
                         }
 
                         if !homeContentReady {
@@ -1200,7 +1252,16 @@ struct HomeView: View {
                     VStack(spacing: 0) {
                         PageBar(
                             selectedServiceIds: orderedSelectedServiceIds,
-                            onServicesPill: { showServicesSheet = true }
+                            onServicesPill: { showServicesSheet = true },
+                            avatar: auth.avatar,
+                            initials: ProfileView.initials(
+                                firstName: auth.firstName,
+                                lastName: auth.lastName,
+                                fallbackName: auth.displayName ?? "",
+                                isGuest: auth.isGuest,
+                                isAuthenticated: auth.isAuthenticated
+                            ),
+                            onProfile: { router.selectedTab = .profile }
                         )
                         if let session = castPlayback.current {
                             PlayingOnBanner(
@@ -1254,6 +1315,19 @@ struct HomeView: View {
                     if newPhase == .active {
                         Task { await streams.refreshIfStale() }
                     }
+                }
+                // "Updating when the signals change" is enforced here on the two
+                // signals the client can see turn over immediately — the watch
+                // list and the service selection. Everything else (likes,
+                // trailer engagement, browse events) is picked up by the next
+                // load, because the server's fingerprint has already changed by
+                // then. A cached rail with an unchanged fingerprint costs one
+                // round trip and no TMDB calls, so this is cheap to fire.
+                .onChange(of: streams.userStreams.count) { _, _ in
+                    Task { await loadRecommendedTitles() }
+                }
+                .onChange(of: auth.selectedServices) { _, _ in
+                    Task { await loadRecommendedTitles() }
                 }
                 // GUI-41: keeps PushReauthPrompt.shared current for the
                 // banner at the top of this scroll view.
@@ -1491,6 +1565,7 @@ struct HomeView: View {
                 group.addTask { await subscribeToLiveStatus() }
                 group.addTask { await loadCreatorUploads() }
                 group.addTask { await loadRecommendedCreators() }
+                group.addTask { await loadRecommendedTitles() }
                 for await _ in group { }
             }
 
@@ -1659,6 +1734,29 @@ struct HomeView: View {
         }
         let uploads = (try? await ContentSourcesService.shared.fetchRecentUploads(forTitleIds: ids, limit: 12)) ?? []
         creatorUploads = uploads
+    }
+
+    /// Fetches the "Recommended for You" rail from the `recommend_titles` edge
+    /// function.
+    ///
+    /// Called on every Home load and again whenever the watch list or the
+    /// service selection changes. That is deliberately eager: the server keys
+    /// its cache on a fingerprint of the viewer's signals, so an unchanged
+    /// signal set costs one round trip and no TMDB calls, while a title saved
+    /// a second ago rebuilds the rail immediately. Polling on the client would
+    /// be the wrong place to solve this.
+    private func loadRecommendedTitles() async {
+        let services = Array(auth.selectedServices)
+        guard !services.isEmpty else {
+            recommendedTitles = []
+            return
+        }
+        let items = await RecommendedTitlesService.fetch(
+            userId: auth.currentUser?.id.uuidString,
+            deviceId: DeviceIdentity.shared.deviceId,
+            subscribedServices: services
+        )
+        recommendedTitles = items
     }
 
     /// Fetches recommended creators/podcasts based on the categories of creators
@@ -3011,6 +3109,11 @@ struct HomeView: View {
 private struct PageBar: View {
     let selectedServiceIds: [String]
     let onServicesPill: () -> Void
+    /// Parsed `users.avatar_url` for the header button — the same value the
+    /// profile header renders, drawn small.
+    let avatar: UserAvatar?
+    let initials: String
+    let onProfile: () -> Void
 
     var body: some View {
         HStack(spacing: 10) {
@@ -3022,6 +3125,14 @@ private struct PageBar: View {
                         ["services": $0]
                     }
             }
+            // Profile, far right. It left the floating nav so the pill could
+            // carry the watch list instead; putting it in the header keeps it
+            // one tap away and gives the viewer's own picture a home.
+            Button(action: onProfile) {
+                AvatarRing(initials: initials, size: 30, fontWeight: .semibold, avatar: avatar)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Profile")
         }
         .padding(.horizontal, 12)
         .frame(height: 55)

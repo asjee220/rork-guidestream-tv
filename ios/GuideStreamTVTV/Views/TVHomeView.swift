@@ -118,6 +118,11 @@ struct TVHomeView: View {
 
     // New rails
     @State private var everyonesWatching: [EveryonesWatchingItem] = []
+    /// "Recommended for You" — TMDB titles scored server-side by
+    /// `recommend_titles` from this viewer's signals, filtered to the services
+    /// they subscribe to. Second rail on tvOS by product decision: Continue
+    /// Watching stays first because a half-finished show beats any suggestion.
+    @State private var recommendedTitles: [TVRecommendedTitle] = []
     @State private var comingToStreaming: [ComingToStreamingItem] = []
     @State private var popularOnService: [String: [TVTMDBResult]] = [:]
     @State private var recommendedCreators: [TVRecommendedCreator] = []
@@ -243,6 +248,41 @@ struct TVHomeView: View {
                             // Coming down off the hero always means the first
                             // card, however the engine resolved the move.
                             if index != 0 { focusedContinueWatching = 0 }
+                        }
+                    }
+                }
+
+                // 1b. Recommended for You — the second rail, under Continue
+                // Watching. Hidden when empty: a viewer with no services or no
+                // signals yet gets no rail at all, because an empty
+                // personalised rail reads worse than none.
+                if !recommendedTitles.isEmpty {
+                    TVRail(
+                        title: "Recommended for You",
+                        accent: TVTheme.orange,
+                        count: recommendedTitles.count
+                    ) {
+                        ForEach(recommendedTitles) { rec in
+                            TVPosterCard(
+                                title: rec.title,
+                                subtitle: "\(rec.matchPercentage)% match",
+                                posterUrl: rec.posterUrl,
+                                accent: TVTheme.orange,
+                                isSaved: streams.contains(titleId: String(rec.tmdbId))
+                            ) {
+                                pendingDetail = TVTitleDetail(
+                                    titleId: String(rec.tmdbId),
+                                    title: rec.title,
+                                    overview: nil,
+                                    posterUrl: rec.posterUrl,
+                                    backdropUrl: rec.backdropUrl,
+                                    tag: rec.isTV ? "SERIES" : "MOVIE",
+                                    accent: TVTheme.orange,
+                                    year: nil,
+                                    platform: nil,
+                                    isTVHint: rec.isTV
+                                )
+                            }
                         }
                     }
                 }
@@ -1020,11 +1060,33 @@ struct TVHomeView: View {
         async let comingTask: Void = buildComingToStreaming()
         async let popularTask: Void = buildPopularOnService()
         async let creatorsTask: Void = buildRecommendedCreators()
+        async let recommendedTask: Void = buildRecommendedTitles()
         async let nowNextTask: Void = buildNowAndNext()
         async let todaysPickTask: Void = buildTodaysPick()
         async let affiliateTask: Void = TVAffiliateService.shared.fetchIfNeeded()
 
         _ = await (heroTask, everyoneTask, comingTask, popularTask, creatorsTask, nowNextTask, todaysPickTask, affiliateTask)
+        _ = await recommendedTask
+    }
+
+    /// Loads the "Recommended for You" rail from the `recommend_titles` edge
+    /// function.
+    ///
+    /// The server owns both the scoring and the freshness: it keys a cache on a
+    /// fingerprint of this viewer's signals, so calling it on every Home load
+    /// is one round trip and no TMDB calls when nothing has changed, and a
+    /// rebuild the moment something has. Nothing here polls.
+    private func buildRecommendedTitles() async {
+        let services = Array(AuthViewModel.shared.selectedServices)
+        guard !services.isEmpty else {
+            recommendedTitles = []
+            return
+        }
+        recommendedTitles = await TVRecommendedTitlesService.fetch(
+            userId: AuthViewModel.shared.currentUser?.id.uuidString,
+            deviceId: TVDeviceIdentity.shared.deviceId,
+            subscribedServices: services
+        )
     }
 
     // MARK: - Today's Pick resolution

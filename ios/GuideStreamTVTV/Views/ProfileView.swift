@@ -258,8 +258,39 @@ struct ProfileView: View {
 
     private var avatarSection: some View {
         VStack(spacing: 14) {
-            AvatarRing(initials: initials, size: 112)
+            AvatarRing(initials: initials, size: 112, avatar: auth.avatar)
                 .accessibilityLabel("Profile avatar for \(displayName)")
+
+            // Preset picker. tvOS has no photo library and no file picker, so
+            // presets are the whole story here — a photo uploaded from the
+            // phone still renders above, it just cannot be changed by remote.
+            HStack(spacing: 18) {
+                ForEach(AvatarPreset.all) { preset in
+                    Button {
+                        Task { await auth.setAvatar(preset.storageValue) }
+                    } label: {
+                        AvatarRing(initials: initials, size: 56, avatar: .preset(preset.id))
+                            .overlay {
+                                if auth.avatarUrl == preset.storageValue {
+                                    Circle()
+                                        .strokeBorder(TVTheme.orange, lineWidth: 3)
+                                        .frame(width: 62, height: 62)
+                                }
+                            }
+                    }
+                    .buttonStyle(TVFlatButtonStyle())
+                    .accessibilityLabel(preset.id)
+                }
+                Button {
+                    Task { await auth.setAvatar(nil) }
+                } label: {
+                    AvatarRing(initials: initials, size: 56, avatar: nil)
+                }
+                .buttonStyle(TVFlatButtonStyle())
+                .accessibilityLabel("Use my initials")
+            }
+            .focusSection()
+            .padding(.top, 4)
 
             Text(displayName)
                 .scaledFont(size: 33, weight: .heavy)
@@ -549,6 +580,8 @@ struct AvatarRing: View {
     let initials: String
     var size: CGFloat = 112
     var fontWeight: Font.Weight = .bold
+    /// Parsed `users.avatar_url`. nil renders the initials.
+    var avatar: UserAvatar? = nil
 
     var body: some View {
         ZStack {
@@ -589,10 +622,47 @@ struct AvatarRing: View {
                 )
 
             // Initials
-            Text(initials)
-                .scaledFont(size: size * 0.51, weight: fontWeight)
-                .foregroundStyle(.white)
+            switch avatar {
+            case let .uploaded(url):
+                AsyncImage(url: url) { phase in
+                    switch phase {
+                    case let .success(image):
+                        image.resizable().scaledToFill()
+                    default:
+                        Text(initials)
+                            .scaledFont(size: size * 0.51, weight: fontWeight)
+                            .foregroundStyle(.white)
+                    }
+                }
+                .frame(width: size - 10, height: size - 10)
+                .clipShape(Circle())
                 .accessibilityHidden(true)
+
+            case let .preset(id):
+                let preset = AvatarPreset.named(id)
+                ZStack {
+                    Circle()
+                        .fill(
+                            LinearGradient(
+                                colors: preset?.colors ?? [Color.blue, Color.black],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                    Image(systemName: preset?.symbol ?? "person.fill")
+                        .font(.system(size: size * 0.5, weight: .semibold))
+                        .foregroundStyle(.white)
+                }
+                .frame(width: size - 10, height: size - 10)
+                .clipShape(Circle())
+                .accessibilityHidden(true)
+
+            case nil:
+                Text(initials)
+                    .scaledFont(size: size * 0.51, weight: fontWeight)
+                    .foregroundStyle(.white)
+                    .accessibilityHidden(true)
+            }
         }
         .frame(width: size + 14, height: size + 14)
     }

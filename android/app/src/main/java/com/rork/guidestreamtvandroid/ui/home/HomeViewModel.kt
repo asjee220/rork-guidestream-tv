@@ -8,6 +8,7 @@ import com.rork.guidestreamtvandroid.data.models.BrowseCatalog
 import com.rork.guidestreamtvandroid.data.models.Platform
 import com.rork.guidestreamtvandroid.data.models.NewEpisodeRow
 import com.rork.guidestreamtvandroid.data.models.SourceKind
+import com.rork.guidestreamtvandroid.data.local.DeviceIdentity
 import com.rork.guidestreamtvandroid.data.models.StreamingCatalog
 import com.rork.guidestreamtvandroid.data.models.TitleId
 import com.rork.guidestreamtvandroid.data.models.TMDBResult
@@ -15,11 +16,14 @@ import com.rork.guidestreamtvandroid.data.remote.ExpiringTitlesService
 import com.rork.guidestreamtvandroid.data.remote.ProviderBrandMapService
 import com.rork.guidestreamtvandroid.data.remote.RecommendedCreator
 import com.rork.guidestreamtvandroid.data.remote.RecommendedCreatorsService
+import com.rork.guidestreamtvandroid.data.remote.RecommendedTitle
+import com.rork.guidestreamtvandroid.data.remote.RecommendedTitlesService
 import com.rork.guidestreamtvandroid.data.models.StreamingService
 import com.rork.guidestreamtvandroid.data.remote.StreamingReleasesService
 import com.rork.guidestreamtvandroid.data.remote.StreamingUpcomingService
 import com.rork.guidestreamtvandroid.data.remote.TMDBService
 import com.rork.guidestreamtvandroid.data.remote.toTMDBResult
+import com.rork.guidestreamtvandroid.data.repository.AuthViewModel
 import com.rork.guidestreamtvandroid.data.repository.StreamsViewModel
 import com.rork.guidestreamtvandroid.ui.sports.SportsViewModel
 import com.rork.guidestreamtvandroid.widget.WidgetDataService
@@ -127,6 +131,13 @@ class HomeViewModel : ViewModel() {
 
     private val _recommendedCreators = MutableStateFlow<List<RecommendedCreator>>(emptyList())
     val recommendedCreators: StateFlow<List<RecommendedCreator>> = _recommendedCreators.asStateFlow()
+
+    /** "Recommended for You" — TMDB titles scored server-side by
+     *  `recommend_titles` from this viewer's own signals and filtered to the
+     *  services they subscribe to. Empty for a viewer with no services, which
+     *  is the honest answer rather than a rail of unwatchable titles. */
+    private val _recommendedTitles = MutableStateFlow<List<RecommendedTitle>>(emptyList())
+    val recommendedTitles: StateFlow<List<RecommendedTitle>> = _recommendedTitles.asStateFlow()
 
     // Hero rail inputs beyond trending media. Live games are not duplicated
     // here — the hero reads SportsViewModel directly so Home and the Sports
@@ -319,6 +330,7 @@ class HomeViewModel : ViewModel() {
             // Resolve creator/podcast recommendations in the background. Additive
             // and best-effort — never blocks the feed from rendering.
             loadRecommendedCreators()
+            loadRecommendedTitles()
         }
     }
 
@@ -639,6 +651,33 @@ class HomeViewModel : ViewModel() {
                 return@launch
             }
             _recommendedCreators.value = RecommendedCreatorsService.recommend(followedIds)
+        }
+    }
+
+    /**
+     * Loads the "Recommended for You" rail from the `recommend_titles` edge
+     * function.
+     *
+     * Called on every home load and again whenever the watch list or the
+     * service selection changes. Deliberately eager: the server keys its cache
+     * on a fingerprint of the viewer's signals, so an unchanged signal set is
+     * one round trip and no TMDB calls, while a title saved a moment ago
+     * rebuilds the rail immediately. Polling from the client would be solving
+     * this in the wrong place. Never blocks the feed.
+     */
+    fun loadRecommendedTitles() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val auth = AuthViewModel.get()
+            val services = StreamingCatalog.ordered(auth.selectedServices.value).map { it.name }
+            if (services.isEmpty()) {
+                _recommendedTitles.value = emptyList()
+                return@launch
+            }
+            _recommendedTitles.value = RecommendedTitlesService.recommend(
+                userId = auth.currentUserId,
+                deviceId = DeviceIdentity.get().deviceId,
+                subscribedServices = services,
+            )
         }
     }
 
@@ -998,6 +1037,7 @@ class HomeViewModel : ViewModel() {
             launchDeferred { _bingeReady.value = tmdb.getDiscoverEnded() }
             launchDeferred { ProviderBrandMapService.get().refresh() }
             launchDeferred { loadRecommendedCreators() }
+            launchDeferred { loadRecommendedTitles() }
 
             // Refresh the watchlist / watched / badges / new-episode counts.
             try { StreamsViewModel.get().refreshAllNow() }

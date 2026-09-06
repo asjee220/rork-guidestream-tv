@@ -154,6 +154,9 @@ nonisolated struct OnboardingPrefsUpsert: Encodable, Sendable {
 nonisolated struct OnboardingStateRow: Decodable, Sendable {
     let onboarding_complete: Bool?
     let services: [String]?
+    /// Either a public Storage URL for an uploaded photo or "preset:<id>".
+    /// Optional so a project without the column still decodes.
+    let avatar_url: String?
 }
 
 /// Lightweight decode helper for fetching display_name + first_name + last_name

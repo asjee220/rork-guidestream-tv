@@ -194,6 +194,10 @@ fun MainScreen(
                         showCreatorsForYou = creators to followedIds
                     },
                     onOpenWatchList = { showWatchList = true },
+                    onOpenProfile = {
+                        tabBeforeProfile = selectedTab
+                        selectedTab = AppTab.PROFILE
+                    },
                     onOpenNewEpisodes = { showNewEpisodes = true },
                     onOpenWidgetSetup = { showWidgetSetup = true },
                     // Hero rail game cards open the same detail the Sports tab
@@ -227,6 +231,22 @@ fun MainScreen(
                     onReplayTour = {
                         coachMark.resetTours()
                         selectedTab = AppTab.HOME
+                    },
+                )
+                // The watch list is now a tab of its own. It is the same
+                // WatchListScreen the `showWatchList` overlay presents, so the
+                // two entry points can never drift; back from the tab returns
+                // Home rather than dismissing an overlay that was never opened.
+                AppTab.WATCHLIST -> WatchListScreen(
+                    onBack = { selectedTab = AppTab.HOME },
+                    onOpenSchedule = { scheduleSurface = ScheduleViewModel.Surface.WATCHLIST },
+                    onOpenTitle = { route ->
+                        val kind = SourceKind.from(route.titleId)
+                        if (kind.isNonTMDB) {
+                            showCreatorDetail = route.titleId
+                        } else {
+                            detailSheetRoute = route
+                        }
                     },
                 )
             }

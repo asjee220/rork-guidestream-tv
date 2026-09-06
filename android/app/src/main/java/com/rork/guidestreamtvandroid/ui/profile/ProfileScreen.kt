@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Devices
 import androidx.compose.material.icons.filled.Help
 import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
@@ -56,7 +57,10 @@ import com.rork.guidestreamtvandroid.BuildConfig
 import com.rork.guidestreamtvandroid.data.repository.AuthViewModel
 import com.rork.guidestreamtvandroid.data.repository.StreamsViewModel
 import com.rork.guidestreamtvandroid.ui.components.glassCard
+import com.rork.guidestreamtvandroid.ui.components.AvatarPickerSheet
+import com.rork.guidestreamtvandroid.ui.components.UserAvatar
 import com.rork.guidestreamtvandroid.ui.theme.BottomSafeSpacer
+import com.rork.guidestreamtvandroid.ui.theme.Navy
 import com.rork.guidestreamtvandroid.ui.theme.BrandOrange
 import com.rork.guidestreamtvandroid.ui.theme.GlassFill
 import com.rork.guidestreamtvandroid.ui.theme.GlassStroke
@@ -105,6 +109,8 @@ fun ProfileScreen(
     var showDevices by remember { mutableStateOf(false) }
     var showHelp by remember { mutableStateOf(false) }
     var showSignOutConfirm by remember { mutableStateOf(false) }
+    var showAvatarPicker by remember { mutableStateOf(false) }
+    val accountAvatarUrl by authVm.accountAvatarUrl.collectAsStateWithLifecycle()
 
     val initials = remember(firstName, lastName, displayName, isGuest, isAuthenticated) {
         computeInitials(firstName, lastName, displayName, isGuest, isAuthenticated)
@@ -157,21 +163,34 @@ fun ProfileScreen(
             modifier = Modifier.fillMaxWidth(),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            // Avatar
-            Box(
-                modifier = Modifier
-                    .size(88.dp)
-                    .clip(CircleShape)
-                    .background(BrandOrange.copy(alpha = 0.2f))
-                    .border(2.dp, BrandOrange, CircleShape),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    text = initials,
-                    fontSize = 32.sp,
-                    fontWeight = FontWeight.Black,
-                    color = BrandOrange,
+            // Avatar — tappable, opens the picker (upload / presets / clear).
+            Box(contentAlignment = Alignment.BottomEnd) {
+                UserAvatar(
+                    initials = initials,
+                    avatarUrl = accountAvatarUrl,
+                    size = 88.dp,
+                    modifier = Modifier.clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                    ) { showAvatarPicker = true },
                 )
+                // Small affordance so the avatar reads as editable — without
+                // it the tap target is invisible.
+                Box(
+                    modifier = Modifier
+                        .size(26.dp)
+                        .clip(CircleShape)
+                        .background(BrandOrange)
+                        .border(2.dp, Navy, CircleShape),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.PhotoCamera,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(14.dp),
+                    )
+                }
             }
             Spacer(Modifier.height(12.dp))
             Text(
@@ -319,6 +338,13 @@ fun ProfileScreen(
     if (showHelp) {
         HelpScreen(onClose = { showHelp = false })
     }
+    if (showAvatarPicker) {
+        AvatarPickerSheet(
+            initials = initials,
+            onDismiss = { showAvatarPicker = false },
+        )
+    }
+
     if (showSignOutConfirm) {
         SignOutConfirm(
             isGuest = isGuest,
@@ -332,7 +358,7 @@ fun ProfileScreen(
     }
 }
 
-private fun computeInitials(
+fun computeInitials(
     firstName: String?,
     lastName: String?,
     displayName: String?,
