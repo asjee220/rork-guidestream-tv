@@ -37,13 +37,17 @@ data class CoachMark(
     val body: String,
     val targetKeys: List<String>,
 ) {
-    val isCircular: Boolean get() = key == "ask" || key == "watchlist_add" || key == "sheet_watchlist"
+    val isCircular: Boolean
+        get() = key == "ask" || key == "watchlist_add" || key == "sheet_watchlist" || key == "profile"
 
     companion object {
         val homeTour = listOf(
             CoachMark("services", "Your services",
                 "The services you subscribe to. Everything below is filtered to what you can actually watch.",
                 listOf("services")),
+            CoachMark("profile", "Your profile",
+                "Your account lives up here now — tap your picture for devices, notifications and settings.",
+                listOf("profile")),
             CoachMark("search", "Find anything, fast",
                 "Search by name across every service — or open it and start from a genre tile.",
                 listOf("search")),
@@ -53,6 +57,9 @@ data class CoachMark(
             CoachMark("sports", "Sports",
                 "Live games, scores and the channel carrying them. Star a team to follow it.",
                 listOf("sports")),
+            CoachMark("watchlist", "Your Watchlist",
+                "Everything you save lands here — shows, movies and the creators you follow.",
+                listOf("watchlist")),
             CoachMark("ask", "AI Enabled Ask Stream",
                 "Describe what you feel like and get picks you can actually watch tonight.",
                 listOf("ask")),

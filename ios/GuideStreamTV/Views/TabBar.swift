@@ -58,6 +58,9 @@ struct FloatingTabBar: View {
                         ["sports": $0]
                     }
                 tabItem(.watchlist)
+                    .anchorPreference(key: CoachMarkAnchorKey.self, value: .bounds) {
+                        ["watchlist": $0]
+                    }
             }
             .padding(.horizontal, 6)
             .frame(height: 64)

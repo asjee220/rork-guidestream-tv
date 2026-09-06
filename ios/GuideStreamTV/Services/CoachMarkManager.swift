@@ -25,12 +25,17 @@ struct CoachMark: Identifiable {
     let targetKeys: [String]
     /// `true` for the Ask FAB and the watchlist circle button — use a
     /// fully circular hole instead of a rounded rect.
-    var isCircular: Bool { key == "ask" || key == "watchlist_add" || key == "sheet_watchlist" }
+    var isCircular: Bool {
+        key == "ask" || key == "watchlist_add" || key == "sheet_watchlist" || key == "profile"
+    }
 
     static let homeTour: [CoachMark] = [
         CoachMark(id: "services", key: "services", title: "Your services",
                   body: "The services you subscribe to. Everything below is filtered to what you can actually watch.",
                   targetKeys: ["services"]),
+        CoachMark(id: "profile", key: "profile", title: "Your profile",
+                  body: "Your account lives up here now — tap your picture for devices, notifications and settings.",
+                  targetKeys: ["profile"]),
         CoachMark(id: "search", key: "search", title: "Find anything, fast",
                   body: "Search by name across every service — or open it and start from a genre tile.",
                   targetKeys: ["search"]),
@@ -40,6 +45,9 @@ struct CoachMark: Identifiable {
         CoachMark(id: "sports", key: "sports", title: "Sports",
                   body: "Live games, scores and the channel carrying them. Star a team to follow it.",
                   targetKeys: ["sports"]),
+        CoachMark(id: "watchlist", key: "watchlist", title: "Your Watchlist",
+                  body: "Everything you save lands here — shows, movies and the creators you follow.",
+                  targetKeys: ["watchlist"]),
         CoachMark(id: "ask", key: "ask", title: "AI Enabled Ask Stream",
                   body: "Describe what you feel like and get picks you can actually watch tonight.",
                   targetKeys: ["ask"]),

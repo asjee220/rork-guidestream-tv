@@ -53,27 +53,47 @@ struct PageBar: View {
                 servicesPill
             }
 
-            Button(action: onProfile) {
-                AvatarRing(
-                    initials: initials,
-                    size: avatarDiameter,
-                    fontWeight: .semibold,
-                    avatar: auth.avatar
-                )
-                // The ring draws at 32 with a soft blurred halo around it, and
-                // a blurred shape is not a reliable hit target. An explicit
-                // frame plus a rectangular content shape gives the button a
-                // solid 48pt target — above the 44pt minimum — without
-                // changing anything that is drawn.
-                .frame(width: avatarHitTarget, height: avatarHitTarget)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .padding(.leading, avatarLeadingGap)
-            .accessibilityLabel("Profile")
+            profileButton
         }
         .padding(.horizontal, 12)
         .frame(height: 55)
+    }
+
+    /// The avatar, plus the coach-mark anchor when Home is running the tour.
+    /// Split out for the same reason `servicesPill` is: `anchorPreference` has
+    /// to be applied conditionally, and a `@ViewBuilder` is the only clean way
+    /// to do that without duplicating the button.
+    @ViewBuilder
+    private var profileButton: some View {
+        if publishesCoachAnchor {
+            avatarButton
+                .anchorPreference(key: CoachMarkAnchorKey.self, value: .bounds) {
+                    ["profile": $0]
+                }
+        } else {
+            avatarButton
+        }
+    }
+
+    private var avatarButton: some View {
+        Button(action: onProfile) {
+            AvatarRing(
+                initials: initials,
+                size: avatarDiameter,
+                fontWeight: .semibold,
+                avatar: auth.avatar
+            )
+            // The ring draws at 32 with a soft blurred halo around it, and a
+            // blurred shape is not a reliable hit target. An explicit frame
+            // plus a rectangular content shape gives the button a solid 48pt
+            // target — above the 44pt minimum — without changing anything
+            // that is drawn.
+            .frame(width: avatarHitTarget, height: avatarHitTarget)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .padding(.leading, avatarLeadingGap)
+        .accessibilityLabel("Profile")
     }
 
     @ViewBuilder

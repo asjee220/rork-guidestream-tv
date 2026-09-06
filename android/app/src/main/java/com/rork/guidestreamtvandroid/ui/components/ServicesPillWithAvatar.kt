@@ -35,6 +35,12 @@ fun RowScope.ServicesPillWithAvatar(
     onServicesTap: () -> Unit,
     onProfileTap: () -> Unit,
     servicesPillModifier: Modifier = Modifier,
+    /**
+     * Modifier applied to the avatar's hit target. Home passes the coach-mark
+     * measurement here so the tour can point at the profile in its new home;
+     * Sports and the Watchlist pass nothing, because only Home runs the tour.
+     */
+    avatarModifier: Modifier = Modifier,
 ) {
     val authVm = AuthViewModel.get()
     val selectedServices by authVm.selectedServices.collectAsStateWithLifecycle()
@@ -60,7 +66,7 @@ fun RowScope.ServicesPillWithAvatar(
     // the screen; hanging the click on the drawn circle alone made it fiddly
     // to hit. Nothing drawn changes — the ring is still 32.
     Box(
-        modifier = Modifier
+        modifier = avatarModifier
             .size(AVATAR_HIT_TARGET)
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },

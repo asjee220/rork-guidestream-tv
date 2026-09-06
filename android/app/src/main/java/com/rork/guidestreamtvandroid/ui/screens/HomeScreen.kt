@@ -1059,6 +1059,9 @@ fun HomeScreen(
                 servicesPillModifier = Modifier.onGloballyPositioned { coords ->
                     coachMark.setMeasuredRect("services", coords.boundsInRoot())
                 },
+                avatarModifier = Modifier.onGloballyPositioned { coords ->
+                    coachMark.setMeasuredRect("profile", coords.boundsInRoot())
+                },
             )
         }
     }
