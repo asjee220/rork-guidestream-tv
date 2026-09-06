@@ -16,8 +16,6 @@ import Auth
 /// Type-safe routes the Profile stack can push onto.
 enum ProfileRoute: Hashable {
     case account
-    case watchList
-    case connectedServices
     case devices
     case widget
     case notifications
@@ -87,8 +85,6 @@ struct ProfileView: View {
             .navigationDestination(for: ProfileRoute.self) { route in
                 switch route {
                 case .account: AccountView()
-                case .watchList: WatchListView()
-                case .connectedServices: ConnectedServicesView()
                 case .devices: DevicesView()
                 case .widget: WidgetSetupView()
                 case .notifications: NotificationsSettingsView()
@@ -256,18 +252,25 @@ struct ProfileView: View {
     private var statsRow: some View {
         HStack(spacing: 10) {
             StatPill(value: "\(stats.servicesCount)", label: stats.servicesCount == 1 ? "Service" : "Services")
-            StatPill(value: "\(stats.showsCount)", label: stats.showsCount == 1 ? "Show" : "Shows")
-            StatPill(value: hoursLabel, label: "Watched")
+            StatPill(value: "\(savedShowCount)", label: savedShowCount == 1 ? "Show" : "Shows")
+            StatPill(value: "\(followedCreatorCount)", label: "Following")
         }
         .frame(maxWidth: .infinity)
     }
 
-    private var hoursLabel: String {
-        let hours = stats.hoursWatched
-        if hours >= 100 { return "\(Int(hours.rounded()))h" }
-        if hours >= 10 { return "\(Int(hours.rounded()))h" }
-        if hours <= 0 { return "0h" }
-        return String(format: "%.1fh", hours)
+    /// TMDB shows and movies saved to the Watchlist. Counted from the live
+    /// `StreamsViewModel` rather than the server RPC so it always agrees with
+    /// what the Watchlist tab is showing this second — the old "Shows" pill
+    /// read a separate server-computed number and could disagree with the list
+    /// the user was looking at.
+    private var savedShowCount: Int {
+        streams.userStreams.filter { !SourceKind.from(titleId: $0.titleId).isNonTMDB }.count
+    }
+
+    /// Creators and podcasts followed — the non-TMDB half of the same list.
+    /// Together the two pills account for every row in the Watchlist.
+    private var followedCreatorCount: Int {
+        streams.userStreams.filter { SourceKind.from(titleId: $0.titleId).isNonTMDB }.count
     }
 
     // MARK: - Cards
@@ -281,22 +284,11 @@ struct ProfileView: View {
                 subtitle: accountSubtitle,
                 onTap: { path.append(.account) }
             )
-            ProfileRowDivider()
-            ProfileRow(
-                icon: "bookmark.fill",
-                iconTint: Color.orange,
-                title: "Watchlist",
-                subtitle: watchListSubtitle,
-                onTap: { path.append(.watchList) }
-            )
-            ProfileRowDivider()
-            ProfileRow(
-                icon: "tv.fill",
-                iconTint: Color(red: 0.95, green: 0.55, blue: 0.20),
-                title: "Connected Services",
-                subtitle: "\(DisplayFormatting.services(stats.servicesCount)) connected",
-                onTap: { path.append(.connectedServices) }
-            )
+            // Watchlist and Connected Services left this menu. Both are one
+            // tap away from anywhere now — the Watchlist is its own tab in the
+            // floating nav, and the services pill sits in the header of every
+            // screen that has one. A menu row that duplicates a permanent
+            // control is just a longer menu.
             ProfileRowDivider()
             ProfileRow(
                 icon: "iphone",
@@ -322,17 +314,6 @@ struct ProfileView: View {
                 onTap: { path.append(.notifications) }
             )
         }
-    }
-
-    /// Subtitle for the Watchlist row. Differs by auth state so guests get a
-    /// nudge to sign in while signed-in users see a live count of saved items.
-    private var watchListSubtitle: String {
-        if !auth.isAuthenticated {
-            return "Sign in to save shows, movies & games"
-        }
-        let count = streams.userStreams.count
-        if count == 0 { return "Save shows, movies & games for tonight" }
-        return "\(count) saved · shows, movies & games"
     }
 
     private var secondaryCard: some View {

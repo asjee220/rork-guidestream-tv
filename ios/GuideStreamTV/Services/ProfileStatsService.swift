@@ -140,10 +140,19 @@ final class ProfileStatsService {
             return
         }
         do {
+            // Match DevicesView exactly: active sessions in the last 30 days,
+            // not every row the account has ever written. `device_sessions` is
+            // one row per INSTALL, and pre-Keychain builds minted a fresh
+            // device id on every reinstall, so the unfiltered count reads as
+            // hundreds of devices for a user who owns two.
+            let cutoff = ISO8601DateFormatter().string(
+                from: Date().addingTimeInterval(-30 * 86_400)
+            )
             let rows: [DeviceCountRow] = try await SupabaseManager.shared.client
                 .from("device_sessions")
                 .select("device_id")
                 .eq("user_id", value: uid)
+                .gte("last_seen_at", value: cutoff)
                 .execute()
                 .value
             let count = max(1, rows.count)

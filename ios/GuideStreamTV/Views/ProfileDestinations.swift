@@ -425,210 +425,6 @@ struct ProfileInfoRow: View {
 
 // MARK: - ConnectedServices
 
-struct ConnectedServicesView: View {
-    @Environment(\.dismiss) private var dismiss
-    @State private var auth = AuthViewModel.shared
-    @State private var selected: Set<String>
-    @State private var saveFlash: Bool = false
-    @State private var serviceQuery: String = ""
-    @FocusState private var isSearchFocused: Bool
-
-    private let columns = [
-        GridItem(.flexible(), spacing: 14),
-        GridItem(.flexible(), spacing: 14),
-        GridItem(.flexible(), spacing: 14)
-    ]
-
-    init() {
-        _selected = State(initialValue: AuthViewModel.shared.selectedServices)
-    }
-
-    private var filteredServices: [StreamingService] {
-        let q = serviceQuery.trimmingCharacters(in: .whitespaces)
-        guard !q.isEmpty else { return StreamingCatalog.all }
-        return StreamingCatalog.all.filter { $0.name.localizedCaseInsensitiveContains(q) }
-    }
-
-    private var searchField: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "magnifyingglass")
-                .scaledFont(size: 14, weight: .semibold)
-                .foregroundStyle(Color.textSecondary)
-            TextField(
-                "",
-                text: $serviceQuery,
-                prompt: Text("Search services").foregroundStyle(Color.textSecondary)
-            )
-            .font(.custom("SF Pro Text", size: 15))
-            .foregroundStyle(.white)
-            .focused($isSearchFocused)
-            .autocorrectionDisabled()
-            .textInputAutocapitalization(.never)
-        }
-        .padding(.horizontal, 14)
-        .frame(height: 44)
-        .background(Capsule().fill(Color.white.opacity(0.05)))
-        .overlay(
-            Capsule().stroke(
-                isSearchFocused ? Color.orange : Color.white.opacity(0.10),
-                lineWidth: 1
-            )
-        )
-    }
-
-    var body: some View {
-        ZStack {
-            BrandBackground()
-
-            VStack(spacing: 0) {
-                ScrollView(showsIndicators: false) {
-                    VStack(alignment: .leading, spacing: 14) {
-                        Text("Pick every service you have so your home feed only shows shows and movies you can actually watch.")
-                            .scaledFont(size: 13)
-                            .foregroundStyle(Color.textSecondary)
-                            .padding(.top, 4)
-
-                        currentlySelectedSection
-
-                        searchField
-
-                        if filteredServices.isEmpty {
-                            Text("No services match")
-                                .scaledFont(size: 14)
-                                .foregroundStyle(Color.textSecondary)
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 28)
-                        } else {
-                            LazyVGrid(columns: columns, spacing: 22) {
-                                ForEach(filteredServices) { svc in
-                                    ServiceTile(
-                                        service: svc,
-                                        isSelected: selected.contains(svc.id),
-                                        onTap: { toggle(svc.id) }
-                                    )
-                                }
-                            }
-                            .padding(.top, 8)
-                            .padding(.bottom, 24)
-                        }
-                    }
-                    .padding(.horizontal, 20)
-                    .padding(.top, 8)
-                }
-
-                bottomBar
-            }
-        }
-        .navigationTitle("Connected Services")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbarBackground(Color.navy, for: .navigationBar)
-        .toolbarColorScheme(.dark, for: .navigationBar)
-        // Re-seed the local selection whenever the authoritative value
-        // changes (e.g. after an account switch) so the Save button always
-        // writes the current account's set, not a stale snapshot from init.
-        .onChange(of: auth.selectedServices) { _, newValue in
-            selected = newValue
-        }
-    }
-
-    @ViewBuilder
-    private var currentlySelectedSection: some View {
-        let services = StreamingCatalog.ordered(from: selected).prefix(8)
-        if !services.isEmpty {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("CONNECTED")
-                    .scaledFont(size: 11, weight: .semibold)
-                    .tracking(0.8)
-                    .foregroundStyle(Color.textTertiary)
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        ForEach(Array(services), id: \.id) { svc in
-                            HStack(spacing: 6) {
-                                ServiceMiniIcon(service: svc, size: 18)
-                                Text(svc.name)
-                                    .scaledFont(size: 12, weight: .semibold)
-                                    .foregroundStyle(.white)
-                            }
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 6)
-                            .background(
-                                Capsule().fill(Color.white.opacity(0.06))
-                            )
-                            .overlay(
-                                Capsule().stroke(Color.white.opacity(0.10), lineWidth: 1)
-                            )
-                        }
-                    }
-                }
-            }
-            .padding(.top, 4)
-        }
-    }
-
-    private var bottomBar: some View {
-        VStack(spacing: 10) {
-            Text("\(DisplayFormatting.services(selected.count)) selected")
-                .scaledFont(size: 12)
-                .foregroundStyle(Color.textSecondary)
-
-            Button(action: save) {
-                HStack(spacing: 8) {
-                    if saveFlash {
-                        Image(systemName: "checkmark")
-                            .scaledFont(size: 14, weight: .bold)
-                        Text("Saved")
-                            .scaledFont(size: 16, weight: .bold)
-                    } else {
-                        Image(systemName: "tray.and.arrow.down.fill")
-                            .scaledFont(size: 14, weight: .bold)
-                        Text("Save Changes")
-                            .scaledFont(size: 16, weight: .bold)
-                    }
-                }
-                .foregroundStyle(.white)
-                .frame(maxWidth: .infinity)
-                .frame(height: 52)
-                .background(
-                    LinearGradient(
-                        colors: [Color.orange, Color.orange.opacity(0.85)],
-                        startPoint: .top, endPoint: .bottom
-                    )
-                )
-                .clipShape(Capsule())
-                .shadow(color: Color.orange.opacity(0.45), radius: 22, x: 0, y: 0)
-            }
-            .buttonStyle(.plain)
-        }
-        .padding(.horizontal, 20)
-        .padding(.top, 8)
-        .padding(.bottom, 16)
-        .background(
-            Color.navy
-                .background(.ultraThinMaterial)
-                .ignoresSafeArea(edges: .bottom)
-        )
-    }
-
-    private func toggle(_ id: String) {
-        UIImpactFeedbackGenerator(style: .light).impactOccurred()
-        withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
-            if selected.contains(id) { selected.remove(id) } else { selected.insert(id) }
-        }
-    }
-
-    private func save() {
-        UINotificationFeedbackGenerator().notificationOccurred(.success)
-        auth.setSelectedServices(selected)
-        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) { saveFlash = true }
-        Task {
-            try? await Task.sleep(for: .seconds(1.2))
-            await MainActor.run {
-                withAnimation(.easeOut(duration: 0.25)) { saveFlash = false }
-            }
-        }
-    }
-}
-
 // MARK: - Devices
 
 struct DevicesView: View {
@@ -641,6 +437,11 @@ struct DevicesView: View {
     @State private var showRemoveConfirm: String?
 
     private var currentDeviceId: String { DeviceIdentity.shared.deviceId }
+
+    /// How recently a session must have been seen to count as active. Thirty
+    /// days is the usual window for "where am I signed in", and it is what
+    /// turns this account's 127 historical rows into the dozen that are real.
+    private static let activeWindowDays: Double = 30
 
     var body: some View {
         ZStack {
@@ -751,10 +552,23 @@ struct DevicesView: View {
 
         if let uid = auth.currentUser?.id.uuidString {
             do {
+                // ACTIVE sessions only, not every row this account has ever
+                // written. `device_sessions` is one row per INSTALL, not per
+                // physical device: before the device id moved into the Keychain
+                // (it now survives an uninstall), every reinstall minted a new
+                // id, so a single iPhone can be sitting behind a hundred rows.
+                // Showing all of them turned this screen into a changelog of
+                // old builds rather than a list of places the account is signed
+                // in — and the old ones are not signed in anywhere, because the
+                // install they belonged to is gone.
+                let cutoff = ISO8601DateFormatter().string(
+                    from: Date().addingTimeInterval(-Self.activeWindowDays * 86_400)
+                )
                 let fetched: [DeviceSessionRow] = try await SupabaseManager.shared.client
                     .from("device_sessions")
                     .select("device_id, device_model, os_version, app_version, build_number, last_seen_at, first_seen_at, is_authenticated, is_guest, session_count")
                     .eq("user_id", value: uid)
+                    .gte("last_seen_at", value: cutoff)
                     .order("last_seen_at", ascending: false)
                     .execute()
                     .value

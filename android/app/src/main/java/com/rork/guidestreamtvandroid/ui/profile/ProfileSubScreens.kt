@@ -28,6 +28,17 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberCoroutineScope
+import com.rork.guidestreamtvandroid.data.local.DeviceIdentity
+import com.rork.guidestreamtvandroid.data.models.DeviceSessionRow
+import com.rork.guidestreamtvandroid.data.remote.SupabaseManager
+import io.github.jan.supabase.postgrest.postgrest
+import io.github.jan.supabase.postgrest.query.Columns
+import io.github.jan.supabase.postgrest.query.Order
+import kotlinx.coroutines.launch
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
@@ -72,116 +83,6 @@ import com.rork.guidestreamtvandroid.ui.theme.GlassStroke
 import com.rork.guidestreamtvandroid.ui.theme.TextPrimary
 import com.rork.guidestreamtvandroid.ui.theme.TextSecondary
 import com.rork.guidestreamtvandroid.ui.theme.TextTertiary
-
-/**
- * Connected Services screen — mirrors iOS ConnectedServicesView.swift.
- * Toggle which streaming services the user subscribes to.
- */
-@Composable
-fun ConnectedServicesScreen(
-    onClose: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val authVm = AuthViewModel.get()
-    val selectedServices by authVm.selectedServices.collectAsStateWithLifecycle()
-    var serviceQuery by remember { mutableStateOf("") }
-    val filteredServices = remember(serviceQuery) {
-        if (serviceQuery.isBlank()) StreamingCatalog.all
-        else StreamingCatalog.all.filter { it.name.contains(serviceQuery, ignoreCase = true) }
-    }
-
-    Column(
-        modifier = modifier.fillMaxSize().background(Color(red = 0x04, green = 0x09, blue = 0x0F))
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 20.dp),
-    ) {
-        Spacer(Modifier.height(48.dp))
-        // Back
-        Box(
-            modifier = Modifier
-                .size(40.dp)
-                .clip(CircleShape)
-                .background(GlassFill)
-                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onClose() },
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(Icons.Filled.ArrowBack, "Back", tint = TextPrimary, modifier = Modifier.size(22.dp))
-        }
-        Spacer(Modifier.height(16.dp))
-        Text("Connected Services", fontSize = 24.sp, fontWeight = FontWeight.Black, color = TextPrimary)
-        Spacer(Modifier.height(6.dp))
-        Text("Toggle the services you subscribe to. We'll personalise your feed.", fontSize = 13.sp, color = TextSecondary)
-        Spacer(Modifier.height(20.dp))
-
-        ServiceSearchField(
-            query = serviceQuery,
-            onQueryChange = { serviceQuery = it },
-        )
-        Spacer(Modifier.height(12.dp))
-
-        if (filteredServices.isEmpty()) {
-            Box(
-                modifier = Modifier.fillMaxWidth().padding(vertical = 28.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text("No services match", fontSize = 14.sp, color = TextSecondary)
-            }
-        }
-        filteredServices.forEach { service ->
-            val isSelected = service.id in selectedServices
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 3.dp)
-                    .glassCard(10)
-                    .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
-                        val updated = if (isSelected) selectedServices - service.id else selectedServices + service.id
-                        authVm.setSelectedServices(updated)
-                    }
-                    .padding(12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                // Service icon tile
-                Box(
-                    modifier = Modifier
-                        .size(40.dp)
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(service.bg),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        text = service.name.take(2),
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Black,
-                        color = service.glow,
-                    )
-                }
-                Spacer(Modifier.width(12.dp))
-                Text(
-                    text = service.name,
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = TextPrimary,
-                    modifier = Modifier.weight(1f),
-                )
-                Switch(
-                    checked = isSelected,
-                    onCheckedChange = {
-                        val updated = if (isSelected) selectedServices - service.id else selectedServices + service.id
-                        authVm.setSelectedServices(updated)
-                    },
-                    colors = SwitchDefaults.colors(
-                        checkedThumbColor = BrandOrange,
-                        checkedTrackColor = BrandOrange.copy(alpha = 0.3f),
-                        uncheckedThumbColor = TextTertiary,
-                        uncheckedTrackColor = GlassFill,
-                    ),
-                )
-            }
-        }
-        Spacer(Modifier.height(40.dp))
-    }
-}
 
 @Composable
 private fun ServiceSearchField(
@@ -472,6 +373,79 @@ fun DevicesScreen(
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val authVm = AuthViewModel.get()
+    val currentUser by authVm.currentUser.collectAsStateWithLifecycle()
+    val isAuthenticated = authVm.isAuthenticated.value
+    val currentDeviceId = remember { DeviceIdentity.get().deviceId }
+    val scope = rememberCoroutineScope()
+
+    var rows by remember { mutableStateOf<List<DeviceSessionRow>>(emptyList()) }
+    var isLoading by remember { mutableStateOf(true) }
+    var loadError by remember { mutableStateOf<String?>(null) }
+    var removingId by remember { mutableStateOf<String?>(null) }
+    var confirmRemoveId by remember { mutableStateOf<String?>(null) }
+
+    // ACTIVE sessions only. `device_sessions` holds one row per INSTALL, not
+    // per physical device, and builds from before the device id was persisted
+    // across reinstalls minted a fresh id every time — one phone can sit behind
+    // a hundred rows. Listing all of them would make this a changelog of old
+    // installs rather than a list of places the account is signed in.
+    suspend fun load() {
+        val uid = currentUser?.id ?: run {
+            rows = emptyList(); isLoading = false; return
+        }
+        isLoading = true
+        try {
+            val cutoff = java.time.Instant.now()
+                .minus(java.time.Duration.ofDays(ACTIVE_WINDOW_DAYS))
+                .toString()
+            rows = SupabaseManager.client.postgrest
+                .from("device_sessions")
+                .select(
+                    Columns.raw(
+                        "device_id, device_model, os_version, app_version, " +
+                            "build_number, last_seen_at, first_seen_at, " +
+                            "is_authenticated, is_guest, session_count",
+                    ),
+                ) {
+                    filter {
+                        eq("user_id", uid)
+                        gte("last_seen_at", cutoff)
+                    }
+                    order("last_seen_at", Order.DESCENDING)
+                }
+                .decodeList<DeviceSessionRow>()
+            loadError = null
+        } catch (e: Exception) {
+            loadError = e.message
+        } finally {
+            isLoading = false
+        }
+    }
+
+    suspend fun removeDevice(deviceId: String) {
+        removingId = deviceId
+        try {
+            // Signing out the CURRENT device is a local sign-out, not a row
+            // delete — deleting our own row would just be re-created by the
+            // next session upsert.
+            if (deviceId == currentDeviceId) {
+                authVm.signOut()
+                return
+            }
+            SupabaseManager.client.postgrest
+                .from("device_sessions")
+                .delete { filter { eq("device_id", deviceId) } }
+            load()
+        } catch (e: Exception) {
+            loadError = e.message
+        } finally {
+            removingId = null
+        }
+    }
+
+    LaunchedEffect(currentUser?.id) { load() }
+
     Column(
         modifier = modifier.fillMaxSize().background(Color(red = 0x04, green = 0x09, blue = 0x0F))
             .verticalScroll(rememberScrollState())
@@ -494,16 +468,188 @@ fun DevicesScreen(
         Text("Active sessions on your account.", fontSize = 13.sp, color = TextSecondary)
         Spacer(Modifier.height(20.dp))
 
-        // Placeholder — real data fetched from device_sessions
-        Row(
-            modifier = Modifier.fillMaxWidth().glassCard(10).padding(14.dp),
-        ) {
-            Column {
-                Text("This device", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
-                Text("Active now", fontSize = 12.sp, color = TextTertiary)
+        when {
+            !isAuthenticated -> {
+                Text(
+                    "Sign in to see the devices your account is signed in on.",
+                    fontSize = 13.sp,
+                    color = TextTertiary,
+                    modifier = Modifier.fillMaxWidth().glassCard(10).padding(14.dp),
+                )
+            }
+            isLoading && rows.isEmpty() -> {
+                Box(Modifier.fillMaxWidth().height(80.dp), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(color = BrandOrange, modifier = Modifier.size(28.dp))
+                }
+            }
+            rows.isEmpty() -> {
+                Text(
+                    "No active sessions in the last 30 days.",
+                    fontSize = 13.sp,
+                    color = TextTertiary,
+                    modifier = Modifier.fillMaxWidth().glassCard(10).padding(14.dp),
+                )
+            }
+            else -> {
+                Column(Modifier.fillMaxWidth().glassCard(10)) {
+                    rows.forEachIndexed { index, row ->
+                        if (index > 0) {
+                            Box(
+                                Modifier.fillMaxWidth().height(1.dp)
+                                    .background(Color.White.copy(alpha = 0.06f)),
+                            )
+                        }
+                        DeviceSessionCell(
+                            row = row,
+                            isCurrent = row.deviceId == currentDeviceId,
+                            isRemoving = removingId == row.deviceId,
+                            onRemove = { confirmRemoveId = row.deviceId },
+                        )
+                    }
+                }
             }
         }
+
+        loadError?.let {
+            Spacer(Modifier.height(10.dp))
+            Text(it, fontSize = 12.sp, color = Color(0xFFEF4444))
+        }
+
         Spacer(Modifier.height(40.dp))
+    }
+
+    confirmRemoveId?.let { target ->
+        val isCurrent = target == currentDeviceId
+        AlertDialog(
+            onDismissRequest = { confirmRemoveId = null },
+            title = { Text(if (isCurrent) "Sign out of this device?" else "Sign this device out?") },
+            text = {
+                Text(
+                    if (isCurrent) {
+                        "You'll be signed out here and returned to browsing as a guest."
+                    } else {
+                        "That device will be signed out of your account the next time it opens the app."
+                    },
+                )
+            },
+            confirmButton = {
+                Text(
+                    text = "Sign out",
+                    color = BrandOrange,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                        ) {
+                            val id = target
+                            confirmRemoveId = null
+                            scope.launch { removeDevice(id) }
+                        }
+                        .padding(12.dp),
+                )
+            },
+            dismissButton = {
+                Text(
+                    text = "Cancel",
+                    color = TextSecondary,
+                    modifier = Modifier
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                        ) { confirmRemoveId = null }
+                        .padding(12.dp),
+                )
+            },
+        )
+    }
+}
+
+/** One row in [DevicesScreen]. Mirrors the iOS DeviceCellView. */
+@Composable
+private fun DeviceSessionCell(
+    row: DeviceSessionRow,
+    isCurrent: Boolean,
+    isRemoving: Boolean,
+    onRemove: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = row.deviceModel?.takeIf { it.isNotBlank() } ?: "Unknown device",
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = TextPrimary,
+                )
+                if (isCurrent) {
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = "This device",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = BrandOrange,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(BrandOrange.copy(alpha = 0.15f))
+                            .padding(horizontal = 6.dp, vertical = 2.dp),
+                    )
+                }
+            }
+            Spacer(Modifier.height(2.dp))
+            Text(
+                text = listOfNotNull(
+                    row.osVersion?.takeIf { it.isNotBlank() }?.let { "Android $it" },
+                    row.appVersion?.takeIf { it.isNotBlank() }?.let { "v$it" },
+                    relativeLastSeen(row.lastSeenAt),
+                ).joinToString(" · "),
+                fontSize = 12.sp,
+                color = TextTertiary,
+            )
+        }
+        if (isRemoving) {
+            CircularProgressIndicator(color = BrandOrange, modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+        } else {
+            Text(
+                text = "Sign out",
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = BrandOrange,
+                modifier = Modifier
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                    ) { onRemove() }
+                    .padding(6.dp),
+            )
+        }
+    }
+}
+
+/**
+ * "Active now" / "2h ago" / "3d ago" from an ISO-8601 timestamp. Anything
+ * unparseable renders as nothing rather than a wrong claim about when the
+ * device was last seen.
+ */
+private fun relativeLastSeen(iso: String?): String? {
+    val text = iso?.takeIf { it.isNotBlank() } ?: return null
+    val millis = runCatching {
+        java.time.Instant.parse(
+            if (text.endsWith("Z") || text.contains("+")) text else text + "Z",
+        ).toEpochMilli()
+    }.getOrNull() ?: runCatching {
+        java.time.OffsetDateTime.parse(text.replace(" ", "T")).toInstant().toEpochMilli()
+    }.getOrNull() ?: return null
+
+    val delta = System.currentTimeMillis() - millis
+    return when {
+        delta < 5 * 60_000L -> "Active now"
+        delta < 60 * 60_000L -> "${delta / 60_000L}m ago"
+        delta < 24 * 60 * 60_000L -> "${delta / (60 * 60_000L)}h ago"
+        else -> "${delta / (24 * 60 * 60_000L)}d ago"
     }
 }
 
@@ -635,3 +781,6 @@ private fun HelpRow(title: String, subtitle: String, onClick: (() -> Unit)? = nu
         }
     }
 }
+
+/** How recently a session must have been seen to count as active. */
+private const val ACTIVE_WINDOW_DAYS = 30L

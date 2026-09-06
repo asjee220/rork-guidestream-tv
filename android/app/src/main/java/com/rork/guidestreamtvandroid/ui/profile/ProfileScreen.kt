@@ -57,6 +57,7 @@ import com.rork.guidestreamtvandroid.BuildConfig
 import com.rork.guidestreamtvandroid.data.repository.AuthViewModel
 import com.rork.guidestreamtvandroid.data.repository.StreamsViewModel
 import com.rork.guidestreamtvandroid.ui.components.glassCard
+import com.rork.guidestreamtvandroid.data.models.SourceKind
 import com.rork.guidestreamtvandroid.ui.components.AvatarPickerSheet
 import com.rork.guidestreamtvandroid.ui.components.UserAvatar
 import com.rork.guidestreamtvandroid.ui.theme.BottomSafeSpacer
@@ -102,9 +103,9 @@ fun ProfileScreen(
     val isGuest by authVm.isGuest.collectAsStateWithLifecycle()
     val userStreams by streamsVm.userStreams.collectAsStateWithLifecycle()
     val newEpisodes by streamsVm.newEpisodes.collectAsStateWithLifecycle()
+    val selectedServices by authVm.selectedServices.collectAsStateWithLifecycle()
 
     var showAccount by remember { mutableStateOf(false) }
-    var showConnected by remember { mutableStateOf(false) }
     var showNotifications by remember { mutableStateOf(false) }
     var showDevices by remember { mutableStateOf(false) }
     var showHelp by remember { mutableStateOf(false) }
@@ -216,9 +217,14 @@ fun ProfileScreen(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceEvenly,
         ) {
-            StatTile(count = userStreams.size, label = "Watching")
-            StatTile(count = newEpisodes.size, label = "New Episodes")
-            StatTile(count = userStreams.count { it.titleId.startsWith("yt:") || it.titleId.startsWith("tw:") || it.titleId.startsWith("pod:") }, label = "Following")
+            // Same three pills as iOS: what you pay for, what you saved, who
+            // you follow. "New Episodes" left because it is a feed state
+            // rather than a fact about the account, and it moved on its own
+            // without the user doing anything.
+            val followedCreators = userStreams.count { SourceKind.from(it.titleId).isNonTMDB }
+            StatTile(count = selectedServices.size, label = if (selectedServices.size == 1) "Service" else "Services")
+            StatTile(count = userStreams.size - followedCreators, label = if (userStreams.size - followedCreators == 1) "Show" else "Shows")
+            StatTile(count = followedCreators, label = "Following")
         }
 
         Spacer(Modifier.height(24.dp))
@@ -234,13 +240,9 @@ fun ProfileScreen(
             )
         }
 
-        ProfileRow(
-            icon = Icons.Filled.Subscriptions,
-            iconTint = BrandOrange,
-            title = "Connected Services",
-            subtitle = "Manage streaming subscriptions",
-            onClick = { showConnected = true },
-        )
+        // Connected Services left this menu — the services pill in the header
+        // of Home, Sports and the Watchlist opens the same editor, and a menu
+        // row that duplicates a permanent control is just a longer menu.
 
         ProfileRow(
             icon = Icons.Filled.Notifications,
@@ -325,9 +327,6 @@ fun ProfileScreen(
     // Sub-screens as overlays
     if (showAccount) {
         AccountScreen(onClose = { showAccount = false })
-    }
-    if (showConnected) {
-        ConnectedServicesScreen(onClose = { showConnected = false })
     }
     if (showNotifications) {
         NotificationsSettingsScreen(onClose = { showNotifications = false })
