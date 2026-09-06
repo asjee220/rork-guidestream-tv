@@ -60,6 +60,8 @@ import com.rork.guidestreamtvandroid.data.repository.AuthViewModel
 import com.rork.guidestreamtvandroid.data.repository.ReleaseReminderService
 import com.rork.guidestreamtvandroid.data.repository.StreamsViewModel
 import com.rork.guidestreamtvandroid.ui.components.RemoteImage
+import com.rork.guidestreamtvandroid.ui.components.ServicesBottomSheet
+import com.rork.guidestreamtvandroid.ui.components.ServicesPillWithAvatar
 import com.rork.guidestreamtvandroid.ui.navigation.PendingTitleRoute
 import com.rork.guidestreamtvandroid.ui.theme.BrandBlue
 import com.rork.guidestreamtvandroid.ui.theme.Navy
@@ -152,6 +154,8 @@ fun WatchListScreen(
     onBack: () -> Unit,
     onOpenTitle: (PendingTitleRoute) -> Unit,
     onOpenSchedule: () -> Unit,
+    /** Opens the Profile tab from the avatar in the header. */
+    onOpenProfile: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     BackHandler { onBack() }
@@ -171,6 +175,7 @@ fun WatchListScreen(
     // Watch-list filters — both default off, and both operate only on data
     // already in hand (selected services + the expiring-titles cache the
     // Home rail already fetched).
+    var showServicesSheet by remember { mutableStateOf(false) }
     var filterOnMyServices by remember { mutableStateOf(false) }
     var filterLeavingSoon by remember { mutableStateOf(false) }
 
@@ -308,6 +313,14 @@ fun WatchListScreen(
                 fontSize = 22.sp,
                 fontWeight = FontWeight.Bold,
                 color = TextPrimary,
+            )
+            Spacer(Modifier.weight(1f))
+            // Same services pill + profile avatar as Home and Sports. This
+            // screen keeps its own title row rather than a GsTopBar, so the
+            // pair rides along on the right of it.
+            ServicesPillWithAvatar(
+                onServicesTap = { showServicesSheet = true },
+                onProfileTap = onOpenProfile,
             )
         }
 
@@ -506,6 +519,17 @@ fun WatchListScreen(
             }
         }
         }
+    }
+
+    if (showServicesSheet) {
+        ServicesBottomSheet(
+            selected = selectedServices,
+            onToggle = { id ->
+                val next = if (id in selectedServices) selectedServices - id else selectedServices + id
+                authVm.setSelectedServices(next)
+            },
+            onDismiss = { showServicesSheet = false },
+        )
     }
 }
 

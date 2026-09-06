@@ -207,6 +207,10 @@ fun MainScreen(
                 AppTab.SPORTS -> SportsScreen(
                     onOpenGameDetail = { game -> selectedGame = game },
                     onOpenSchedule = { scheduleSurface = ScheduleViewModel.Surface.SPORTS },
+                    onOpenProfile = {
+                        tabBeforeProfile = selectedTab
+                        selectedTab = AppTab.PROFILE
+                    },
                 )
                 AppTab.ASK -> { /* Intercepted — opens sheet via onOpenAsk */ }
                 AppTab.REELS -> ReelsScreen(
@@ -240,6 +244,10 @@ fun MainScreen(
                 AppTab.WATCHLIST -> WatchListScreen(
                     onBack = { selectedTab = AppTab.HOME },
                     onOpenSchedule = { scheduleSurface = ScheduleViewModel.Surface.WATCHLIST },
+                    onOpenProfile = {
+                        tabBeforeProfile = selectedTab
+                        selectedTab = AppTab.PROFILE
+                    },
                     onOpenTitle = { route ->
                         val kind = SourceKind.from(route.titleId)
                         if (kind.isNonTMDB) {

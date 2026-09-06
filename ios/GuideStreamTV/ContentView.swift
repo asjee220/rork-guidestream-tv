@@ -157,7 +157,7 @@ struct ContentView: View {
                 case .reels: ReelsScreen(onDismiss: dismissReels)
                 case .profile: ProfileView()
                 case .watchlist:
-                    NavigationStack { WatchListView() }
+                    NavigationStack { WatchListView(showsPageBar: true) }
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)

@@ -19,9 +19,10 @@
 //  contract between platforms: change one here and it must change in the iOS
 //  copy and Android's UserAvatar.kt in the same commit.
 //
-//  tvOS reads uploads but cannot create them. There is no photo library and no
-//  file picker on this platform, so the picker below offers presets only; a
-//  photo set on the phone renders here exactly as it does there.
+//  tvOS is READ-ONLY. There is no photo library and no file picker on this
+//  platform, so the avatar is always whatever the viewer chose on their phone —
+//  an uploaded photo or a preset — and this target only needs the catalog in
+//  order to render "preset:<id>". Nothing here writes the column.
 //
 
 import SwiftUI

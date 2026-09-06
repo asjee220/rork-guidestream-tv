@@ -44,16 +44,60 @@ struct WatchListBottomSheet: View {
     }
 }
 
-// MARK: - Pushable destination (Profile tab)
+// MARK: - Full-screen destination
 
+/// Two callers, two chromes.
+///
+/// Pushed from Profile it keeps the navigation bar, because the viewer needs
+/// the back button that came with the push. As the Watch List *tab* there is
+/// nothing to go back to, so it wears the same PageBar as Home and Sports —
+/// wordmark, services pill, profile avatar — and hides the navigation bar that
+/// would otherwise sit above it as a second, emptier header.
 struct WatchListView: View {
+    var showsPageBar: Bool = false
+
+    @Environment(AppRouter.self) private var router
+    @State private var auth = AuthViewModel.shared
+    @State private var showServicesSheet = false
+
     var body: some View {
-        WatchListContent()
-            .navigationTitle("My Watch List")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(Color.navy, for: .navigationBar)
-            .toolbarColorScheme(.dark, for: .navigationBar)
-            .background(BrandBackground())
+        Group {
+            if showsPageBar {
+                WatchListContent()
+                    .safeAreaInset(edge: .top, spacing: 0) {
+                        PageBar(
+                            selectedServiceIds: orderedSelectedServiceIds,
+                            onServicesPill: { showServicesSheet = true },
+                            onProfile: { router.selectedTab = .profile }
+                        )
+                        .background {
+                            ZStack {
+                                Rectangle().fill(.ultraThinMaterial).opacity(0.61)
+                                Rectangle()
+                                    .fill(Color(red: 8/255, green: 14/255, blue: 24/255).opacity(0.18))
+                            }
+                            .ignoresSafeArea(edges: .top)
+                        }
+                    }
+                    .toolbar(.hidden, for: .navigationBar)
+            } else {
+                WatchListContent()
+                    .navigationTitle("My Watch List")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbarBackground(Color.navy, for: .navigationBar)
+                    .toolbarColorScheme(.dark, for: .navigationBar)
+            }
+        }
+        .background(BrandBackground())
+        .sheet(isPresented: $showServicesSheet) {
+            ServicesBottomSheet()
+        }
+    }
+
+    /// Same ordering the other two bars use, so the pill's icons don't shuffle
+    /// as the viewer moves between tabs.
+    private var orderedSelectedServiceIds: [String] {
+        StreamingCatalog.ordered(from: auth.selectedServices).map { $0.id }
     }
 }
 

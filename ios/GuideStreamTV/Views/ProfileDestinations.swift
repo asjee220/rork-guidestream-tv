@@ -93,7 +93,7 @@ struct AccountView: View {
 
     private var avatarHeader: some View {
         VStack(spacing: 12) {
-            AvatarRing(initials: initials, size: 96)
+            AvatarRing(initials: initials, size: 96, avatar: auth.avatar)
             Text(currentDisplayName)
                 .scaledFont(size: 18, weight: .bold)
                 .foregroundStyle(.white)

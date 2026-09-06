@@ -169,6 +169,11 @@ struct ProfileView: View {
             await streams.fetchUserStreams()
             if auth.isAuthenticated {
                 await auth.loadDisplayName()
+                // Pick up an avatar the viewer changed on their phone since
+                // this Apple TV last launched. Without this the header would
+                // only ever be as fresh as the last cold start, which on a
+                // TV can be days.
+                await auth.refreshAccountAvatar()
             }
             if probe.lastProbedAt == nil {
                 await probe.probeAll()
@@ -258,39 +263,13 @@ struct ProfileView: View {
 
     private var avatarSection: some View {
         VStack(spacing: 14) {
+            // Display only. The picker that briefly lived here was wrong for
+            // this screen: a focusable row of nine circles under the avatar
+            // took over the profile's focus order and read as a control strip
+            // rather than a header. tvOS shows what the viewer chose on their
+            // phone — uploaded photo or preset — and nothing else.
             AvatarRing(initials: initials, size: 112, avatar: auth.avatar)
                 .accessibilityLabel("Profile avatar for \(displayName)")
-
-            // Preset picker. tvOS has no photo library and no file picker, so
-            // presets are the whole story here — a photo uploaded from the
-            // phone still renders above, it just cannot be changed by remote.
-            HStack(spacing: 18) {
-                ForEach(AvatarPreset.all) { preset in
-                    Button {
-                        Task { await auth.setAvatar(preset.storageValue) }
-                    } label: {
-                        AvatarRing(initials: initials, size: 56, avatar: .preset(preset.id))
-                            .overlay {
-                                if auth.avatarUrl == preset.storageValue {
-                                    Circle()
-                                        .strokeBorder(TVTheme.orange, lineWidth: 3)
-                                        .frame(width: 62, height: 62)
-                                }
-                            }
-                    }
-                    .buttonStyle(TVFlatButtonStyle())
-                    .accessibilityLabel(preset.id)
-                }
-                Button {
-                    Task { await auth.setAvatar(nil) }
-                } label: {
-                    AvatarRing(initials: initials, size: 56, avatar: nil)
-                }
-                .buttonStyle(TVFlatButtonStyle())
-                .accessibilityLabel("Use my initials")
-            }
-            .focusSection()
-            .padding(.top, 4)
 
             Text(displayName)
                 .scaledFont(size: 33, weight: .heavy)

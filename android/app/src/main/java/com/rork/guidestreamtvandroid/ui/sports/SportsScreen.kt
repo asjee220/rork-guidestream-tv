@@ -78,6 +78,7 @@ import com.rork.guidestreamtvandroid.data.repository.WatchIntentLogger
 import com.rork.guidestreamtvandroid.ui.components.GsTopBar
 import com.rork.guidestreamtvandroid.ui.components.ServicesBottomSheet
 import com.rork.guidestreamtvandroid.ui.components.ServicesPill
+import com.rork.guidestreamtvandroid.ui.components.ServicesPillWithAvatar
 import com.rork.guidestreamtvandroid.ui.theme.BrandBlue
 import com.rork.guidestreamtvandroid.ui.theme.BottomSafeSpacer
 import com.rork.guidestreamtvandroid.ui.theme.BrandOrange
@@ -115,6 +116,8 @@ private const val TEAM_PICKER_SEEN_KEY = "gs.sportsTeamPickerSeen.v1"
 fun SportsScreen(
     onOpenGameDetail: (SportsGame) -> Unit,
     onOpenSchedule: () -> Unit,
+    /** Opens the Profile tab from the avatar in the top bar. */
+    onOpenProfile: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val vm = SportsViewModel.get()
@@ -304,10 +307,10 @@ fun SportsScreen(
                 CircularProgressIndicator(color = BrandOrange, modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
                 Spacer(Modifier.width(10.dp))
             }
-            val serviceIds = StreamingCatalog.ordered(selectedServices).map { it.id }
-            if (serviceIds.isNotEmpty()) {
-                ServicesPill(serviceIds = serviceIds, onTap = { showServices = true })
-            }
+            ServicesPillWithAvatar(
+                onServicesTap = { showServices = true },
+                onProfileTap = onOpenProfile,
+            )
         }
     }
 

@@ -1253,15 +1253,8 @@ struct HomeView: View {
                         PageBar(
                             selectedServiceIds: orderedSelectedServiceIds,
                             onServicesPill: { showServicesSheet = true },
-                            avatar: auth.avatar,
-                            initials: ProfileView.initials(
-                                firstName: auth.firstName,
-                                lastName: auth.lastName,
-                                fallbackName: auth.displayName ?? "",
-                                isGuest: auth.isGuest,
-                                isAuthenticated: auth.isAuthenticated
-                            ),
-                            onProfile: { router.selectedTab = .profile }
+                            onProfile: { router.selectedTab = .profile },
+                            publishesCoachAnchor: true
                         )
                         if let session = castPlayback.current {
                             PlayingOnBanner(
@@ -3101,41 +3094,6 @@ struct HomeView: View {
             .filter { savedIds.contains($0.id) }
             .prefix(8)
             .map { $0 }
-    }
-}
-
-// MARK: - PageBar
-
-private struct PageBar: View {
-    let selectedServiceIds: [String]
-    let onServicesPill: () -> Void
-    /// Parsed `users.avatar_url` for the header button — the same value the
-    /// profile header renders, drawn small.
-    let avatar: UserAvatar?
-    let initials: String
-    let onProfile: () -> Void
-
-    var body: some View {
-        HStack(spacing: 10) {
-            BrandWordmark(wordmarkSize: .nav)
-            Spacer()
-            if !selectedServiceIds.isEmpty {
-                ServicesPill(serviceIds: selectedServiceIds, onTap: onServicesPill)
-                    .anchorPreference(key: CoachMarkAnchorKey.self, value: .bounds) {
-                        ["services": $0]
-                    }
-            }
-            // Profile, far right. It left the floating nav so the pill could
-            // carry the watch list instead; putting it in the header keeps it
-            // one tap away and gives the viewer's own picture a home.
-            Button(action: onProfile) {
-                AvatarRing(initials: initials, size: 30, fontWeight: .semibold, avatar: avatar)
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Profile")
-        }
-        .padding(.horizontal, 12)
-        .frame(height: 55)
     }
 }
 

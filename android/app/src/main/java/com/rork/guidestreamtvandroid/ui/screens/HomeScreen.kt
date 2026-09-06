@@ -109,8 +109,7 @@ import com.rork.guidestreamtvandroid.ui.components.PosterCard
 import com.rork.guidestreamtvandroid.ui.components.RemoteImage
 import com.rork.guidestreamtvandroid.ui.components.ServicesBottomSheet
 import com.rork.guidestreamtvandroid.ui.components.ServicesPill
-import com.rork.guidestreamtvandroid.ui.components.UserAvatar
-import com.rork.guidestreamtvandroid.ui.profile.computeInitials
+import com.rork.guidestreamtvandroid.ui.components.ServicesPillWithAvatar
 import com.rork.guidestreamtvandroid.ui.components.ShimmerHero
 import com.rork.guidestreamtvandroid.ui.components.ShimmerSection
 import com.rork.guidestreamtvandroid.ui.ads.InlineAdSlot
@@ -192,17 +191,6 @@ fun HomeScreen(
 
     val homeReady by homeVm.homeContentReady.collectAsStateWithLifecycle()
     val recommendedTitles by homeVm.recommendedTitles.collectAsStateWithLifecycle()
-    val accountAvatarUrl by authVm.accountAvatarUrl.collectAsStateWithLifecycle()
-    val profileFirstName by authVm.firstName.collectAsStateWithLifecycle()
-    val profileLastName by authVm.lastName.collectAsStateWithLifecycle()
-    val profileDisplayName by authVm.displayName.collectAsStateWithLifecycle()
-    val profileInitials = computeInitials(
-        firstName = profileFirstName,
-        lastName = profileLastName,
-        displayName = profileDisplayName,
-        isGuest = authVm.isGuest.value,
-        isAuthenticated = authVm.isAuthenticated.value,
-    )
     val trending by homeVm.trending.collectAsStateWithLifecycle()
     val onAir by homeVm.onAir.collectAsStateWithLifecycle()
     val leavingSoon by homeVm.leavingSoon.collectAsStateWithLifecycle()
@@ -1093,28 +1081,16 @@ fun HomeScreen(
             elevated = isBarElevated,
             modifier = Modifier.align(Alignment.TopStart),
         ) {
-            val serviceIds = StreamingCatalog.ordered(selectedServices).map { it.id }
-            if (serviceIds.isNotEmpty()) {
-                ServicesPill(
-                    serviceIds = serviceIds,
-                    onTap = { showServicesSheet = true },
-                    modifier = Modifier.onGloballyPositioned { coords ->
-                        coachMark.setMeasuredRect("services", coords.boundsInRoot())
-                    },
-                )
-            }
-            Spacer(Modifier.width(10.dp))
-            // Profile, far right. It left the floating nav so the pill could
-            // carry the watch list instead; here it stays one tap away and
-            // gives the viewer's own picture somewhere to live.
-            UserAvatar(
-                initials = profileInitials,
-                avatarUrl = accountAvatarUrl,
-                size = 30.dp,
-                modifier = Modifier.clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null,
-                ) { onOpenProfile() },
+            // Profile left the floating nav so the pill could carry the watch
+            // list instead; here it stays one tap away and gives the viewer's
+            // own picture somewhere to live. Shared with Sports and the Watch
+            // List so the pair cannot drift between the three.
+            ServicesPillWithAvatar(
+                onServicesTap = { showServicesSheet = true },
+                onProfileTap = onOpenProfile,
+                servicesPillModifier = Modifier.onGloballyPositioned { coords ->
+                    coachMark.setMeasuredRect("services", coords.boundsInRoot())
+                },
             )
         }
     }

@@ -322,23 +322,27 @@ final class AuthViewModel {
         }
     }
 
-    /// Chooses a built-in preset, or clears back to initials with nil. tvOS
-    /// cannot upload — there is no photo library on this platform — but it
-    /// writes the same column, so a preset picked here shows on the phone.
-    @discardableResult
-    func setAvatar(_ value: String?) async -> Bool {
-        applyAvatarUrl(value)
-        guard let userId = currentUser?.id.uuidString else { return false }
+    /// Re-reads `users.avatar_url`.
+    ///
+    /// tvOS is read-only here by design: there is no photo library and no file
+    /// picker on this platform, so the avatar is whatever the viewer chose on
+    /// their phone. This is how a change made there reaches the TV without
+    /// waiting for the next cold launch — `restoreSession` covers launch, this
+    /// covers the profile screen being opened.
+    func refreshAccountAvatar() async {
+        guard let uid = currentUser?.id.uuidString else { return }
         do {
-            try await SupabaseManager.shared.client
+            let rows: [TVUserServicesRow] = try await SupabaseManager.shared.client
                 .from("users")
-                .update(["avatar_url": value])
-                .eq("id", value: userId)
+                .select("services, avatar_url")
+                .eq("id", value: uid)
+                .limit(1)
                 .execute()
-            return true
+                .value
+            guard let row = rows.first else { return }
+            applyAvatarUrl(row.avatar_url)
         } catch {
-            print("[AuthViewModel] avatar save failed: \(error.localizedDescription)")
-            return false
+            print("[AuthViewModel] refreshAccountAvatar failed: \(error.localizedDescription)")
         }
     }
 

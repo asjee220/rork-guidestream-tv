@@ -207,25 +207,16 @@ struct SportsView: View {
                 .refreshable { await load() }
                 .tracksTabBarVisibility()
 
-                // Pinned glass header — mirrors the home screen's PageBar
+                // Pinned glass header — the shared PageBar, so Sports carries
+                // the same services pill and profile avatar as Home.
                 VStack(spacing: 0) {
-                    HStack(spacing: 10) {
-                        BrandWordmark(wordmarkSize: .nav)
-                        Spacer()
-                        if isLoading && !games.isEmpty {
-                            ProgressView()
-                                .tint(Color(hex: "F5821F"))
-                                .scaleEffect(0.8)
-                        }
-                        if !orderedSelectedServiceIds.isEmpty {
-                            ServicesPill(
-                                serviceIds: orderedSelectedServiceIds,
-                                onTap: { showServicesSheet = true }
-                            )
-                        }
-                    }
-                    .frame(height: 56)
-                    .padding(.horizontal, 20)
+                    PageBar(
+                        selectedServiceIds: orderedSelectedServiceIds,
+                        onServicesPill: { showServicesSheet = true },
+                        onProfile: { router.selectedTab = .profile },
+                        isRefreshing: isLoading && !games.isEmpty
+                    )
+                    .padding(.horizontal, 8)
                 }
                 .background {
                     ZStack {
@@ -315,32 +306,6 @@ struct SportsView: View {
             self.isLoading = false
             self.loadError = fetched.isEmpty ? "No games available right now." : nil
         }
-    }
-
-    // MARK: - Header
-
-    /// Mirrors the home screen's PageBar — same BrandWordmark, same
-    /// ServicesPill with the same tap-to-edit-services behaviour, and
-    /// a trailing ProgressView when a background refresh is in flight.
-    private var header: some View {
-        HStack(spacing: 10) {
-            BrandWordmark(wordmarkSize: .nav)
-            if !orderedSelectedServiceIds.isEmpty {
-                ServicesPill(
-                    serviceIds: orderedSelectedServiceIds,
-                    onTap: { showServicesSheet = true }
-                )
-                .padding(.leading, 4)
-            }
-            Spacer()
-            if isLoading && !games.isEmpty {
-                ProgressView()
-                    .tint(Color(hex: "F5821F"))
-                    .scaleEffect(0.8)
-            }
-        }
-        .padding(.horizontal, 4)
-        .padding(.top, 4)
     }
 
     // MARK: - Sport pills
