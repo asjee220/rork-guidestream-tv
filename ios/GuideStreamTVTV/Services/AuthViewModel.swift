@@ -110,6 +110,37 @@ final class AuthViewModel {
 
     func restoreSession() async {
         await TVAuthViewModel.shared.restoreSession()
+        await restoreSelectedServices()
+    }
+
+    /// Re-hydrates `selectedServices` from `users.services` on cold launch, so
+    /// the Apple TV shows the same subscriptions the phone does. Safe only
+    /// because `setSelectedServices` now writes that column too — a read
+    /// against a column nothing keeps current would revert local picks.
+    ///
+    /// This is what `subscribedServices` in every `watchmode_resolve` call is
+    /// built from (TVTitleSheet), so a stale set here silently sends the wrong
+    /// personalisation to the server and the Watch button opens the wrong app.
+    ///
+    /// An empty or missing row is left alone: a first launch on this Apple TV
+    /// before the account has ever saved services must not wipe a local pick.
+    func restoreSelectedServices() async {
+        guard let uid = currentUser?.id.uuidString else { return }
+        do {
+            let rows: [TVUserServicesRow] = try await SupabaseManager.shared.client
+                .from("users")
+                .select("services")
+                .eq("id", value: uid)
+                .limit(1)
+                .execute()
+                .value
+            guard let services = rows.first?.services, !services.isEmpty else { return }
+            selectedServices = Set(services)
+            UserDefaults.standard.set(services, forKey: "gs.selectedServices")
+            print("[AuthViewModel] restored services (\(services.count))")
+        } catch {
+            print("[AuthViewModel] restoreSelectedServices failed: \(error.localizedDescription)")
+        }
     }
 
     func loadDisplayName() async {
@@ -268,6 +299,30 @@ final class AuthViewModel {
     func setSelectedServices(_ services: Set<String>) {
         self.selectedServices = services
         UserDefaults.standard.set(Array(services), forKey: "gs.selectedServices")
+        syncSelectedServices()
+    }
+
+    /// Writes the current selection to `users.services` for signed-in accounts,
+    /// mirroring the iOS target. Before this, tvOS neither read nor wrote that
+    /// column: `selectedServices` was purely local UserDefaults seeded by tvOS
+    /// onboarding, so the Apple TV never learned about a service added on the
+    /// phone and never told the phone about one added here. Guests are skipped
+    /// (`users.id` FKs back to `auth.users`).
+    private func syncSelectedServices() {
+        guard let userId = currentUser?.id.uuidString else { return }
+        let services = Array(selectedServices)
+        Task {
+            do {
+                try await SupabaseManager.shared.client
+                    .from("users")
+                    .update(["services": services])
+                    .eq("id", value: userId)
+                    .execute()
+                print("[AuthViewModel] synced services (\(services.count))")
+            } catch {
+                print("[AuthViewModel] sync services failed: \(error.localizedDescription)")
+            }
+        }
     }
 
     func setNotificationPreferences(push: Bool, sms: Bool) {
@@ -354,6 +409,10 @@ final class AuthViewModel {
 }
 
 // MARK: - NotificationCategoryRow
+
+private struct TVUserServicesRow: Decodable {
+    let services: [String]?
+}
 
 private struct NotificationCategoryRow: Decodable {
     let notify_push: Bool?

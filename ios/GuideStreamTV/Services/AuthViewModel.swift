@@ -646,6 +646,36 @@ final class AuthViewModel {
         // Mirror the latest selection into device_sessions so the guest "profile"
         // stays in sync as the user toggles services during onboarding.
         DeviceSessionService.shared.upsert(reason: "services_changed")
+        syncSelectedServices()
+    }
+
+    /// Writes the current selection to `users.services` for signed-in accounts.
+    ///
+    /// Until this existed, `users.services` was written in exactly ONE place —
+    /// `completeOnboarding()` — while `restoreOnboardingState()` reads it back
+    /// on every cold launch and assigns it unconditionally ("the fetched
+    /// services value always wins"). So a service added or removed from the
+    /// services sheet after onboarding survived only until the next launch, and
+    /// never reached the account's other devices. The read side is correct; the
+    /// write side was missing.
+    ///
+    /// Guests are skipped: most schemas FK `users.id` back to `auth.users`, so
+    /// a guest row would fail. Their selection lives in `device_sessions` alone.
+    private func syncSelectedServices() {
+        guard let userId = currentUser?.id.uuidString else { return }
+        let services = Array(selectedServices)
+        Task {
+            do {
+                try await SupabaseManager.shared.client
+                    .from("users")
+                    .update(["services": services])
+                    .eq("id", value: userId)
+                    .execute()
+                print("[Auth] synced services (\(services.count)) for user \(userId)")
+            } catch {
+                print("[Auth ERROR] services sync failed: \(error.localizedDescription)")
+            }
+        }
     }
 
     func setNotificationPreferences(push: Bool, sms: Bool) {
