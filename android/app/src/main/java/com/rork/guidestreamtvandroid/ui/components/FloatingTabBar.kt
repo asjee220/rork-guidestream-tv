@@ -116,7 +116,7 @@ fun FloatingTabBar(
                 TabItem(AppTab.SPORTS, selected == AppTab.SPORTS) { onTabSelected(it) }
             }
             // Profile left this pill for the far right of the home header;
-            // the freed slot carries the watch list. AppTab.PROFILE is still a
+            // the freed slot carries the watchlist. AppTab.PROFILE is still a
             // real tab, so every existing route into the profile keeps working.
             TabItem(AppTab.WATCHLIST, selected == AppTab.WATCHLIST) { onTabSelected(it) }
         }

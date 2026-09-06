@@ -129,7 +129,7 @@ private enum class WatchListTab(
 
 /**
  * How the Creators tab orders its rows. RECENT_UPLOAD is the default and
- * matches the phone and TV watch lists — newest content first; ALPHABETICAL
+ * matches the phone and TV watchlists — newest content first; ALPHABETICAL
  * is the opt-in added for GUI-94.
  */
 private enum class WatchListSort(val label: String) {
@@ -142,7 +142,7 @@ private enum class WatchListSort(val label: String) {
 }
 
 /**
- * Full "My Watch List" destination reached from the home feed's Watch List
+ * Full "My Watchlist" destination reached from the home feed's Watchlist
  * "See all" link. Android-native mirror of iOS WatchListBottomSheet: a back
  * arrow, title, and a two-column poster grid of every saved title with a
  * watched badge and an inline remove control. No take limit. Live status and
@@ -176,7 +176,6 @@ fun WatchListScreen(
     // already in hand (selected services + the expiring-titles cache the
     // Home rail already fetched).
     var showServicesSheet by remember { mutableStateOf(false) }
-    var filterOnMyServices by remember { mutableStateOf(false) }
     var filterLeavingSoon by remember { mutableStateOf(false) }
 
     // Which category tab is showing. Seeded once from the data so a user
@@ -211,21 +210,7 @@ fun WatchListScreen(
         }
     }
 
-    val isOnMyServices: (UserStream) -> Boolean = { stream ->
-        val platform = stream.platform
-        if (platform.isNullOrEmpty()) {
-            false
-        } else {
-            val n = platform.lowercase().filter { it.isLetterOrDigit() }
-            StreamingCatalog.ordered(selectedServices).any { svc ->
-                val s = svc.name.lowercase().filter { it.isLetterOrDigit() }
-                s.isNotEmpty() && (n.contains(s) || s.contains(n))
-            }
-        }
-    }
-
-    // The tab scopes the list first; the chips then filter within it. Both
-    // filters on intersect; neither on leaves the tab's order untouched.
+    // The tab scopes the list first; the chip then filters within it.
     val inTabRaw = userStreams.filter { WatchListTab.of(it) == selectedTab }
     // Creators-only sort. Titles with no title_recency row sink below those
     // that have one, alphabetical among themselves, so an unknown upload date
@@ -241,14 +226,11 @@ fun WatchListScreen(
                     .thenBy { (it.title ?: it.titleId).lowercase() }
             )
     }
-    val filteredStreams = if (!filterOnMyServices && !filterLeavingSoon) {
+    val filteredStreams = if (!filterLeavingSoon) {
         inTab
     } else {
         inTab.filter { stream ->
-            val onServicesOk = !filterOnMyServices || isOnMyServices(stream)
-            val leavingOk = !filterLeavingSoon ||
-                (TitleId.tmdbId(stream.titleId)?.let { expiryByTmdbId.containsKey(it) } == true)
-            onServicesOk && leavingOk
+            TitleId.tmdbId(stream.titleId)?.let { expiryByTmdbId.containsKey(it) } == true
         }
     }
 
@@ -309,7 +291,7 @@ fun WatchListScreen(
             }
             Spacer(Modifier.width(4.dp))
             Text(
-                text = "My Watch List",
+                text = "My Watchlist",
                 fontSize = 22.sp,
                 fontWeight = FontWeight.Bold,
                 color = TextPrimary,
@@ -356,11 +338,6 @@ fun WatchListScreen(
                     .padding(horizontal = 20.dp),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                WatchListFilterChip(
-                    label = "On my services",
-                    isOn = filterOnMyServices,
-                    onToggle = { filterOnMyServices = !filterOnMyServices },
-                )
                 WatchListFilterChip(
                     label = "Leaving soon",
                     isOn = filterLeavingSoon,
@@ -422,7 +399,7 @@ fun WatchListScreen(
                 verticalArrangement = Arrangement.Center,
             ) {
                 Text(
-                    text = "Your watch list is empty",
+                    text = "Your watchlist is empty",
                     fontSize = 17.sp,
                     fontWeight = FontWeight.Bold,
                     color = Color.White,
@@ -550,7 +527,7 @@ private fun WatchListGridCell(
         if (!p.isNullOrEmpty() && p.uppercase() != "STREAM" && p.lowercase() != "streaming") {
             p.replaceFirstChar { it.uppercase() }
         } else {
-            "Watch list"
+            "Watchlist"
         }
     }
     Column(
@@ -620,7 +597,7 @@ private fun WatchListGridCell(
             ) {
                 Icon(
                     imageVector = Icons.Filled.Close,
-                    contentDescription = "Remove from watch list",
+                    contentDescription = "Remove from watchlist",
                     tint = Color.White,
                     modifier = Modifier.size(15.dp),
                 )

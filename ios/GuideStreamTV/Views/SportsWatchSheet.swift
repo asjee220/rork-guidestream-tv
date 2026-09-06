@@ -796,12 +796,12 @@ struct SportsWatchSheet: View {
         .disabled(!canWatch)
     }
 
-    /// Stable id used to identify the game in the user's watch list.
+    /// Stable id used to identify the game in the user's watchlist.
     private var gameSaveId: String {
         WatchIntentLogger.titleSlug("\(game.away.abbreviation)-\(game.home.abbreviation)-\(game.sport)")
     }
 
-    /// True when the user has already saved this game to their watch list.
+    /// True when the user has already saved this game to their watchlist.
     private var isSaved: Bool {
         streams.userStreams.contains { $0.titleId == gameSaveId }
     }
@@ -810,7 +810,7 @@ struct SportsWatchSheet: View {
     /// next to the main "Watch on \(broadcaster)" CTA so users can park a game
     /// in their list with one tap without leaving the sheet.
     ///
-    /// * **Not saved** — solid orange circle with a `plus` glyph + "Watch List"
+    /// * **Not saved** — solid orange circle with a `plus` glyph + "Watchlist"
     ///   label below.
     /// * **Saved** — transparent circle with a white stroke (outlined) + a
     ///   checkmark glyph and "Saved" label below.
@@ -843,7 +843,7 @@ struct SportsWatchSheet: View {
                 }
                 .frame(width: 56, height: 56)
 
-                Text(isSaved ? "Saved" : "Watch List")
+                Text(isSaved ? "Saved" : "Watchlist")
                     .scaledFont(size: 11, weight: .semibold)
                     .foregroundStyle(.white)
                     .lineLimit(1)
@@ -851,7 +851,7 @@ struct SportsWatchSheet: View {
         }
         .buttonStyle(.plain)
         .disabled(isToggleSaving)
-        .accessibilityLabel(isSaved ? "Saved to watch list. Tap to remove." : "Add game to watch list")
+        .accessibilityLabel(isSaved ? "Saved to watchlist. Tap to remove." : "Add game to watchlist")
     }
 
     private func toggleWatchList() {

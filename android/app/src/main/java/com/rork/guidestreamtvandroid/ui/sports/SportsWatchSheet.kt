@@ -85,7 +85,7 @@ import java.util.TimeZone
 /**
  * Bottom sheet presented when a user taps a game card in the Sports tab.
  * Mirrors iOS SportsWatchSheet.swift — header, actions row, watch context,
- * Where to Watch chips, watch CTA + watch list, secondary pills, About, close.
+ * Where to Watch chips, watch CTA + watchlist, secondary pills, About, close.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -255,7 +255,7 @@ fun SportsWatchSheet(
                 onSelect = { selectedBroadcast = it },
             )
 
-            // Watch CTA + watch list
+            // Watch CTA + watchlist
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -313,7 +313,7 @@ fun SportsWatchSheet(
                     }
                 }
 
-                // Watch list circle
+                // Watchlist circle
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Box(
                         modifier = Modifier
@@ -344,7 +344,7 @@ fun SportsWatchSheet(
                     }
                     Spacer(Modifier.height(6.dp))
                     Text(
-                        text = if (isSaved) "Saved" else "Watch List",
+                        text = if (isSaved) "Saved" else "Watchlist",
                         fontSize = 11.sp,
                         fontWeight = FontWeight.SemiBold,
                         color = Color.White,

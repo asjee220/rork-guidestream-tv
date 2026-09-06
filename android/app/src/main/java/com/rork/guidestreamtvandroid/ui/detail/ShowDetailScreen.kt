@@ -592,7 +592,7 @@ fun ShowDetailScreen(
                         }
                         Spacer(Modifier.height(6.dp))
                         Text(
-                            text = if (isSaved) "Saved" else "Watch List",
+                            text = if (isSaved) "Saved" else "Watchlist",
                             fontSize = 11.sp,
                             fontWeight = FontWeight.SemiBold,
                             color = TextPrimary,

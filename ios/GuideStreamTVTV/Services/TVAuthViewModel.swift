@@ -5,7 +5,7 @@
 //  Auth gate for the Apple TV experience. Supports:
 //   * Sign in with Apple (native on tvOS via AuthenticationServices)
 //   * "Continue as guest" — falls back to device_id ownership for the
-//     watch list, matching the phone app.
+//     watchlist, matching the phone app.
 //
 //  Sessions are persisted by the Supabase SDK (Keychain), so the user
 //  doesn't need to sign in again on cold launch.
@@ -74,7 +74,7 @@ final class TVAuthViewModel {
             let session = try await TVSupabaseManager.shared.client.auth.session
             self.currentUser = session.user
             await loadDisplayName()
-            // Refresh the watch list using the real user_id.
+            // Refresh the watchlist using the real user_id.
             Task { await TVStreamsViewModel.shared.fetchUserStreams() }
         } catch {
             self.currentUser = nil

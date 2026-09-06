@@ -18,7 +18,7 @@ final class ExpiringTitlesService {
 
     private init() {}
 
-    /// Rows from the most recent successful fetch — reused by the watch list
+    /// Rows from the most recent successful fetch — reused by the watchlist
     /// cross-reference so it never issues its own network call for expiry
     /// data the Home rail already fetched.
     private(set) var cachedRows: [ExpiringTitle] = []

@@ -2,7 +2,7 @@
 //  StreamsViewModel.swift
 //  GuideStreamTV
 //
-//  Watch list store with a **local-first** persistence strategy:
+//  Watchlist store with a **local-first** persistence strategy:
 //
 //  1. Every add/remove updates the in-memory `userStreams` array immediately
 //     and writes through to a UserDefaults cache, so the UI feels instant and
@@ -50,7 +50,7 @@ final class StreamsViewModel {
     /// the app returns to the foreground within `minimumInterval` seconds.
     private var lastFullRefreshAt: Date?
 
-    /// UserDefaults key for the local cache of watch list rows. Encoded as
+    /// UserDefaults key for the local cache of watchlist rows. Encoded as
     /// JSON `[UserStream]`. Survives sign-out so a returning user doesn't
     /// lose their guest list.
     private let localCacheKey = "gs.watchList.localCache.v1"
@@ -93,7 +93,7 @@ final class StreamsViewModel {
     /// Re-runs `refreshAll()` only when the previous full refresh is older
     /// than `minimumInterval` seconds. Used by the Home screen's scenePhase
     /// observer so backgrounding the app and returning after >60s re-sorts
-    /// the My Watch List rail without a manual pull-to-refresh.
+    /// the My Watchlist rail without a manual pull-to-refresh.
     func refreshIfStale(minimumInterval: TimeInterval = 60) async {
         if let lastFullRefreshAt, Date().timeIntervalSince(lastFullRefreshAt) < minimumInterval {
             return
@@ -103,7 +103,7 @@ final class StreamsViewModel {
     }
 
     /// Loads the canonical list. Fetches by user_id (signed-in) OR
-    /// device_id (guests + cross-device sync) so the watch list works for
+    /// device_id (guests + cross-device sync) so the watchlist works for
     /// every user state. On failure we keep showing the local cache.
     func fetchUserStreams() async {
         isLoadingStreams = true
@@ -337,7 +337,7 @@ final class StreamsViewModel {
     }
 
     /// Clears the watch-list badge only when the title is actually saved in
-    /// the user's watch list. No-ops otherwise — e.g. for a deep-link id that
+    /// the user's watchlist. No-ops otherwise — e.g. for a deep-link id that
     /// isn't a watch-list row, or a title slug that doesn't match any row.
     func markWatchlistSeenIfSaved(titleId: String) async {
         let trimmed = titleId.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -375,7 +375,7 @@ final class StreamsViewModel {
 
     // MARK: - Write
 
-    /// Add a title to the user's watch list. Optimistic — the local state
+    /// Add a title to the user's watchlist. Optimistic — the local state
     /// (and persisted cache) updates immediately so every consumer sees the
     /// change on the next frame, regardless of whether Supabase eventually
     /// succeeds. Writes through to Supabase for BOTH guests and signed-in
@@ -507,7 +507,7 @@ final class StreamsViewModel {
         return false
     }
 
-    /// Remove a title from the watch list. Mirrors `addToMyStreams`:
+    /// Remove a title from the watchlist. Mirrors `addToMyStreams`:
     /// local state is updated immediately, Supabase is best-effort.
     /// Deletes by user_id (when signed in) OR device_id so guest rows are
     /// also removed.
@@ -611,7 +611,7 @@ final class StreamsViewModel {
 
     // MARK: - Sign-out cleanup
 
-    /// Clears all in-memory watch list state and removes the local UserDefaults
+    /// Clears all in-memory watchlist state and removes the local UserDefaults
     /// cache. Called from `AuthViewModel.signOut()` so the next user starts
     /// with a clean slate instead of inheriting the previous user's saved titles.
     func clearLocalCache() {

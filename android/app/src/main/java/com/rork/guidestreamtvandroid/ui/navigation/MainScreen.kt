@@ -109,7 +109,6 @@ fun MainScreen(
     // GUI-95 — the Schedule week view, one state per surface so the two entry
     // points stay independent.
     var scheduleSurface by remember { mutableStateOf<ScheduleViewModel.Surface?>(null) }
-    var showWatchList by remember { mutableStateOf(false) }
     var showWidgetSetup by remember { mutableStateOf(false) }
     val coachMark = CoachMarkManager.get()
     val updateGate = AppUpdateGate.get()
@@ -193,7 +192,6 @@ fun MainScreen(
                     onSeeAllCreators = { creators, followedIds ->
                         showCreatorsForYou = creators to followedIds
                     },
-                    onOpenWatchList = { showWatchList = true },
                     onOpenProfile = {
                         tabBeforeProfile = selectedTab
                         selectedTab = AppTab.PROFILE
@@ -237,10 +235,10 @@ fun MainScreen(
                         selectedTab = AppTab.HOME
                     },
                 )
-                // The watch list is now a tab of its own. It is the same
-                // WatchListScreen the `showWatchList` overlay presents, so the
-                // two entry points can never drift; back from the tab returns
-                // Home rather than dismissing an overlay that was never opened.
+                // The Watchlist is a tab of its own now. The full-screen
+                // overlay that used to present the same WatchListScreen from
+                // the Home rail went with the rail, so this is the single
+                // entry point; back returns Home.
                 AppTab.WATCHLIST -> WatchListScreen(
                     onBack = { selectedTab = AppTab.HOME },
                     onOpenSchedule = { scheduleSurface = ScheduleViewModel.Surface.WATCHLIST },
@@ -261,7 +259,7 @@ fun MainScreen(
         }
 
         // Full-screen overlay open flag — hides the floating tab bar behind opaque covers
-        val overlayOpen = showDetail != null || showCreatorDetail != null || showSearch || selectedGame != null || showPopularCategories != null || showAroundTheWorld != null || showHomeList != null || showCreatorsForYou != null || showNewEpisodes || scheduleSurface != null || showWatchList || showWidgetSetup || showAskSheet
+        val overlayOpen = showDetail != null || showCreatorDetail != null || showSearch || selectedGame != null || showPopularCategories != null || showAroundTheWorld != null || showHomeList != null || showCreatorsForYou != null || showNewEpisodes || scheduleSurface != null || showWidgetSetup || showAskSheet
 
         // Show detail (full-screen cover equivalent)
         showDetail?.let { route ->
@@ -463,38 +461,13 @@ fun MainScreen(
             }
         }
 
-        // Full Watch List destination
-        if (showWatchList) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Navy)
-                    .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { },
-            ) {
-                WatchListScreen(
-                    onBack = { showWatchList = false },
-                    onOpenSchedule = { scheduleSurface = ScheduleViewModel.Surface.WATCHLIST },
-                    onOpenTitle = { route ->
-                        showWatchList = false
-                        val kind = SourceKind.from(route.titleId)
-                        if (kind.isNonTMDB) {
-                            showCreatorDetail = route.titleId
-                        } else {
-                            detailSheetRoute = route
-                        }
-                    },
-                    modifier = Modifier.fillMaxSize(),
-                )
-            }
-        }
-
-        // Schedule week view (GUI-95) — Sports and Watch List share the screen.
+        // Schedule week view (GUI-95) — Sports and Watchlist share the screen.
         //
-        // Drawn AFTER the Watch List overlay on purpose. Both are siblings in
+        // Drawn AFTER the Watchlist overlay on purpose. Both are siblings in
         // the same Box, so the later one wins, and opening the Schedule from
-        // the Watch List left it painted underneath a full-screen cover that
+        // the Watchlist left it painted underneath a full-screen cover that
         // was still showing — the chip looked dead. Sitting on top also means
-        // Back reveals the Watch List again instead of the tab.
+        // Back reveals the Watchlist again instead of the tab.
         scheduleSurface?.let { surface ->
             Box(
                 modifier = Modifier

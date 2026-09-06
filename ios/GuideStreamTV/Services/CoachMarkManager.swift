@@ -68,7 +68,7 @@ struct CoachMark: Identifiable {
         CoachMark(id: "sheet_where_to_watch", key: "sheet_where_to_watch", title: "Pick your service",
                   body: "Tap a service to switch where this plays. The Watch button follows your choice.",
                   targetKeys: ["sheet_where_to_watch", "sheet_watch_button"]),
-        CoachMark(id: "sheet_watchlist", key: "sheet_watchlist", title: "Add to watch list",
+        CoachMark(id: "sheet_watchlist", key: "sheet_watchlist", title: "Add to watchlist",
                   body: "Save it and we will notify you the moment a new episode drops.",
                   targetKeys: ["sheet_watchlist"]),
     ]

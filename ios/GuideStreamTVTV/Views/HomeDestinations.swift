@@ -563,7 +563,7 @@ struct EpisodeDetailSheet: View {
     /// rules mirror the Reels rail button so users get a consistent
     /// "save to my list" affordance everywhere a title is shown:
     ///
-    /// * **Not saved** — solid orange circle with a `plus` glyph + "Watch List"
+    /// * **Not saved** — solid orange circle with a `plus` glyph + "Watchlist"
     ///   label below.
     /// * **Saved** — transparent circle with a white stroke (outlined) + a
     ///   checkmark glyph and "Saved" label below.
@@ -595,7 +595,7 @@ struct EpisodeDetailSheet: View {
                 }
                 .frame(width: 56, height: 56)
 
-                Text(isSaved ? "Saved" : "Watch List")
+                Text(isSaved ? "Saved" : "Watchlist")
                     .scaledFont(size: 11, weight: .semibold)
                     .foregroundStyle(.white)
                     .lineLimit(1)
@@ -603,7 +603,7 @@ struct EpisodeDetailSheet: View {
         }
         .buttonStyle(.plain)
         .disabled(tmdbId == nil || isToggleSaving)
-        .accessibilityLabel(isSaved ? "Saved to watch list. Tap to remove." : "Add to watch list")
+        .accessibilityLabel(isSaved ? "Saved to watchlist. Tap to remove." : "Add to watchlist")
     }
 
     /// True when this title's id is already present in the Supabase-backed

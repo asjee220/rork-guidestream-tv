@@ -25,7 +25,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
 /**
- * Watch list store with a local-first persistence strategy.
+ * Watchlist store with a local-first persistence strategy.
  * Mirrors iOS StreamsViewModel.swift.
  */
 class StreamsViewModel private constructor(context: Context) {

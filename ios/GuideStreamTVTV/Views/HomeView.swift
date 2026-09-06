@@ -229,7 +229,7 @@ struct PosterShow: Identifiable, Hashable {
     var tmdbId: Int? = nil
     /// nil when the source row does not say. GUI-70's glyph is simply omitted
     /// then — an unknown draws nothing rather than guessing, which is how the
-    /// watch list ended up labelling saved movies as series.
+    /// watchlist ended up labelling saved movies as series.
     var isTV: Bool? = nil
 }
 
@@ -679,7 +679,7 @@ struct HomeView: View {
             }
     }
 
-    /// Episode cards built from the user's saved watch list. Falls back to a
+    /// Episode cards built from the user's saved watchlist. Falls back to a
     /// neutral platform when the saved row didn't capture one.
     var watchListEpisodes: [Episode] {
         streams.userStreams.map { row in
@@ -700,7 +700,7 @@ struct HomeView: View {
             }
             return Episode(
                 title: row.title ?? "Untitled",
-                season: "Watch List",
+                season: "Watchlist",
                 duration: "",
                 platform: platform,
                 isNew: false,
@@ -944,7 +944,7 @@ private struct BingeReadySection: View {
     }
 }
 
-// MARK: - Watch List section
+// MARK: - Watchlist section
 
 private struct WatchListSection: View {
     let items: [Episode]
@@ -954,7 +954,7 @@ private struct WatchListSection: View {
 
     var body: some View {
         SectionGlassCard(
-            title: "My Watch List",
+            title: "My Watchlist",
             onSeeAll: items.isEmpty ? nil : onSeeAll
         ) {
             if items.isEmpty {

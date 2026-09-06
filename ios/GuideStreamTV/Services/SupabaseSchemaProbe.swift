@@ -12,7 +12,7 @@
 //  - `.error(message)`  — anything else (network, auth, etc).
 //
 //  Probe rows that *do* land in Supabase are cleaned up after the write
-//  succeeds so we don't pollute the user's analytics or watch list.
+//  succeeds so we don't pollute the user's analytics or watchlist.
 //
 //  Used by `SupabaseDiagnosticsView` to give the user a precise picture of
 //  what's wrong with their schema/policies and a one-tap copy of the SQL
@@ -61,7 +61,7 @@ final class SupabaseSchemaProbe {
     static let tableCatalog: [(name: String, purpose: String, writeProbe: Bool)] = [
         ("watch_intent_events", "Analytics events for every tap, watch, and open", true),
         ("device_sessions", "One row per device install (the guest profile)", true),
-        ("user_streams", "Your saved watch list", true),
+        ("user_streams", "Your saved watchlist", true),
         ("title_likes", "Likes per title (episodes, shows, sports games)", true),
         ("title_comments", "Comments per title", true),
         ("users", "Your profile (name, email, services)", false),

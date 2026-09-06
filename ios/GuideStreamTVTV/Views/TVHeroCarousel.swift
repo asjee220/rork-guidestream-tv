@@ -166,7 +166,7 @@ struct TVHeroCarousel: View {
         .clipped()
         // The art is deliberately not focusable. It used to be, which put a
         // focus stop on the hero region *containing* the CTA — focus landed
-        // there instead of on Add to Watch List, and the button was awkward
+        // there instead of on Add to Watchlist, and the button was awkward
         // to reach. The CTA is now the hero's only stop.
         .focusScope(heroNamespace)
         .focusEffectDisabled()
@@ -285,7 +285,7 @@ struct TVHeroCarousel: View {
 
                 // The CTA reads the viewer's own history: a title they have
                 // started resumes on the service they started it on, and one
-                // they have not opens the title screen. Add to Watch List
+                // they have not opens the title screen. Add to Watchlist
                 // moved off the hero with this — it is on the title screen,
                 // and asking someone to file a title they are mid-way
                 // through was the wrong offer on the app's front page.

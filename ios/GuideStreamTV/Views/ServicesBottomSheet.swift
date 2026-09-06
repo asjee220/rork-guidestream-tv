@@ -185,15 +185,12 @@ struct ServicesBottomSheet: View {
                     .padding(.bottom, 12)
                 }
             }
-            .navigationTitle("My Services")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button("Close") { dismiss() }
-                        .foregroundStyle(Color.textSecondary)
-                }
-            }
-            .toolbarBackground(.hidden, for: .navigationBar)
+            // No navigation bar. The sheet already titles itself with a
+            // GsSheetHeader ("Which services do you have?"), so the bar was a
+            // second, emptier header carrying a duplicate "My Services" title
+            // and a Close button — and Save already dismisses, as does the
+            // drag-to-dismiss every other sheet in the app uses.
+            .toolbar(.hidden, for: .navigationBar)
         }
         .preferredColorScheme(.dark)
         .sheetSurface(.base)

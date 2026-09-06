@@ -3,7 +3,7 @@
 //  GuideStreamTVTV
 //
 //  Stable per-device identifier for the Apple TV install. Persisted in
-//  UserDefaults so guest watch list rows keep working across launches.
+//  UserDefaults so guest watchlist rows keep working across launches.
 //  `identifierForVendor` is used as the seed on first launch — that lets
 //  the tvOS install pair with the same vendor namespace as the phone
 //  app when they are signed into the same Apple TV account.

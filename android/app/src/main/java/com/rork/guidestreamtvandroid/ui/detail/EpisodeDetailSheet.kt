@@ -753,14 +753,14 @@ fun EpisodeDetailSheet(
                         ) {
                             Icon(
                                 imageVector = if (isSaved) Icons.Filled.Check else Icons.Filled.Add,
-                                contentDescription = if (isSaved) "In watch list" else "Add to watch list",
+                                contentDescription = if (isSaved) "In watchlist" else "Add to watchlist",
                                 tint = Color.White,
                                 modifier = Modifier.size(22.dp),
                             )
                         }
                         Spacer(Modifier.height(6.dp))
                         Text(
-                            text = if (isSaved) "Saved" else "Watch List",
+                            text = if (isSaved) "Saved" else "Watchlist",
                             fontSize = 11.sp,
                             fontWeight = FontWeight.SemiBold,
                             color = TextPrimary,

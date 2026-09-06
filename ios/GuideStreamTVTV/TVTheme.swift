@@ -82,7 +82,7 @@ enum TVTheme {
     /// More-elevated surface for focused tiles.
     static let surfaceElevated = Color(red: 0x12 / 255, green: 0x1B / 255, blue: 0x2A / 255)
 
-    /// Primary brand orange — used on the watch list pill and trending rail.
+    /// Primary brand orange — used on the watchlist pill and trending rail.
     static let orange = Color(red: 0xF5 / 255, green: 0x82 / 255, blue: 0x1F / 255)
     /// Cool brand blue — sports rail accent.
     static let blue = Color(red: 0x1A / 255, green: 0x6F / 255, blue: 0xE8 / 255)

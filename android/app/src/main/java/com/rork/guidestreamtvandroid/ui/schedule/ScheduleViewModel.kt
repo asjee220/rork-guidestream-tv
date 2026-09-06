@@ -18,7 +18,7 @@ import java.util.Locale
 
 /**
  * Android half of GUI-95 — the Schedule week view, on both of its surfaces:
- * Sports -> Schedule (games for followed teams) and Watch List -> Schedule
+ * Sports -> Schedule (games for followed teams) and Watchlist -> Schedule
  * (episodes for saved shows).
  *
  * Mirrors iOS `ScheduleService`. The week math lives here rather than in the
@@ -205,7 +205,7 @@ class ScheduleViewModel private constructor() {
 
         /**
          * Ceiling on saved shows resolved against TMDB. Each costs a detail
-         * call plus a season call, so an unbounded watch list would open the
+         * call plus a season call, so an unbounded watchlist would open the
          * screen with a hundred requests in flight.
          */
         private const val MAX_SHOWS = 30

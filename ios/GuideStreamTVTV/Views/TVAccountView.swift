@@ -34,7 +34,7 @@ struct TVAccountView: View {
         if auth.isAuthenticated {
             return auth.currentUser?.email ?? "Apple account"
         } else if auth.isGuest {
-            return "Your watch list is saved to this Apple TV"
+            return "Your watchlist is saved to this Apple TV"
         }
         return ""
     }

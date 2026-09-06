@@ -358,7 +358,6 @@ struct HomeView: View {
     @State private var showSearch: Bool = false
 
     @State private var showServicesSheet: Bool = false
-    @State private var showWatchListSheet: Bool = false
     @State private var showEmailAuth: Bool = false
     @State private var auth = AuthViewModel.shared
     @State private var streams = StreamsViewModel.shared
@@ -611,7 +610,7 @@ struct HomeView: View {
 
                         // Recommended for You — the first rail on phones, by
                         // product decision. Sits directly under the hero and
-                        // above the watch list. Hidden entirely when empty:
+                        // above the watchlist. Hidden entirely when empty:
                         // a viewer with no services or no signals yet gets no
                         // placeholder, because an empty personalised rail reads
                         // worse than no rail at all.
@@ -655,28 +654,11 @@ struct HomeView: View {
                             .padding(.horizontal, homeWidthClass.homeHorizontalPadding)
                         }
 
-                        if !homeContentReady {
-                            HomeShimmerSection(title: "My Watch List")
-                                .padding(.horizontal, homeWidthClass.homeHorizontalPadding)
-                        } else {
-                            WatchListSection(
-                                items: watchListEpisodes,
-                                isAuthenticated: auth.isAuthenticated,
-                                liveStatusMap: liveStatusMap,
-                                latestContentMap: streams.latestContentAt,
-                                badgeTextByTitleId: watchListBadgeText,
-                                onSeeAll: { showWatchListSheet = true },
-                                onOpen: { ep in
-                                    if let tid = ep.titleId, SourceKind.from(titleId: tid).isNonTMDB {
-                                        creatorDetailTarget = CreatorDetailTarget(titleId: tid, initialEpisode: nil)
-                                    } else {
-                                        detailSubject = .episode(ep)
-                                    }
-                                },
-                                onSignIn: { showEmailAuth = true }
-                            )
-                            .padding(.horizontal, homeWidthClass.homeHorizontalPadding)
-                        }
+                        // The Watchlist rail lived here. It is gone now that
+                        // the Watchlist is a tab of its own in the floating
+                        // nav — the saved list was the one thing on Home you
+                        // could already reach in one tap, and Recommended for
+                        // You has taken the slot directly under the hero.
 
                         if !homeContentReady {
                             HomeShimmerSection(title: "Today's Pick")
@@ -1498,9 +1480,6 @@ struct HomeView: View {
             .sheet(isPresented: $showServicesSheet) {
                 ServicesBottomSheet()
             }
-            .sheet(isPresented: $showWatchListSheet) {
-                WatchListBottomSheet()
-            }
             .sheet(isPresented: $showEmailAuth) {
                 EmailAuthView(
                     onAuthenticated: { showEmailAuth = false },
@@ -1732,7 +1711,7 @@ struct HomeView: View {
     /// Fetches the "Recommended for You" rail from the `recommend_titles` edge
     /// function.
     ///
-    /// Called on every Home load and again whenever the watch list or the
+    /// Called on every Home load and again whenever the watchlist or the
     /// service selection changes. That is deliberately eager: the server keys
     /// its cache on a fingerprint of the viewer's signals, so an unchanged
     /// signal set costs one round trip and no TMDB calls, while a title saved
@@ -2808,70 +2787,6 @@ struct HomeView: View {
             }
     }
 
-    /// Episode cards built from the user's saved watch list. Skips the
-    /// platform badge entirely (empty string) when the saved row's platform
-    /// is missing or a generic placeholder — the detail sheet's Watchmode
-    /// lookup will fill in the real service when the user taps in.
-    /// Creator/streamer items (prefixed title_ids) are rendered with their
-    /// source-type styling and sorted to the front when live.
-    var watchListEpisodes: [Episode] {
-        streams.userStreams.map { row in
-            let kind = SourceKind.from(titleId: row.titleId)
-            let raw = (row.platform ?? "").trimmingCharacters(in: .whitespaces)
-            let platformName = raw.uppercased()
-            let lowerRaw = raw.lowercased()
-            let isGenericPlaceholder = raw.isEmpty
-                || platformName == "STREAM"
-                || lowerRaw == "streaming"
-                || lowerRaw == "streaming services"
-            let platform: Platform
-            if kind.isNonTMDB {
-                platform = Platform(name: kind.displayLabel.uppercased(), color: sourceKindColor(kind))
-            } else if isGenericPlaceholder {
-                platform = Platform(name: "", color: Color.orange)
-            } else if let resolved = Platform.from(providerName: raw) {
-                platform = resolved
-            } else {
-                platform = Platform(name: "", color: Color.orange)
-            }
-            return Episode(
-                title: row.title ?? "Untitled",
-                season: kind.isNonTMDB ? kind.displayLabel : "Watch List",
-                duration: "",
-                platform: platform,
-                isNew: false,
-                posterColors: kind.isNonTMDB ? [sourceKindColor(kind), sourceKindColor(kind).opacity(0.5)] : HomeFallback.posterColors,
-                symbol: kind == .podcast ? "mic.fill" : "bookmark.fill",
-                // Non-TMDB creators: prefer the canonical content_sources profile
-                // image (a portrait/square avatar — the same one shown on Follow
-                // Creators) so the 2:3 poster crop reads as a clean portrait,
-                // identical in look to movie/show posters. Fall back to any
-                // stored poster_url only when no profile image exists.
-                posterUrl: CreatorImageOverrides.resolve(
-                    titleId: row.titleId,
-                    stored: kind.isNonTMDB
-                        ? (sourceImageMap[row.titleId] ?? row.posterUrl)
-                        : (row.posterUrl ?? sourceImageMap[row.titleId])
-                ),
-                tmdbId: kind == .tmdb ? Int(row.titleId) : nil,
-                titleId: row.titleId
-            )
-        }
-    }
-
-    /// New-content badge text per saved title_id, built from the shared
-    /// `StreamsViewModel` rules so the Home rail badge always agrees with the
-    /// full My Watch List sheet. Titles with no badge are simply absent.
-    private var watchListBadgeText: [String: String] {
-        var map: [String: String] = [:]
-        for row in streams.userStreams {
-            if let text = streams.newBadgeText(titleId: row.titleId) {
-                map[row.titleId] = text
-            }
-        }
-        return map
-    }
-
     /// Color for a SourceKind badge — used in watchlist cards for creator items.
     private func sourceKindColor(_ kind: SourceKind) -> Color {
         switch kind {
@@ -3703,202 +3618,6 @@ private struct CreatorsForYouEmptyState: View {
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 16)
-        }
-    }
-}
-
-// MARK: - Watch List section
-
-private struct WatchListSection: View {
-    let items: [Episode]
-    let isAuthenticated: Bool
-    let liveStatusMap: [String: LiveStatus]
-    let latestContentMap: [String: Date]
-    let badgeTextByTitleId: [String: String]
-    let onSeeAll: () -> Void
-    let onOpen: (Episode) -> Void
-    var onSignIn: () -> Void = {}
-
-    /// Count of live items in this section.
-    private var liveCount: Int {
-        items.filter { ep in
-            guard let tid = ep.titleId else { return false }
-            return liveStatusMap[tid]?.isLive ?? false
-        }.count
-    }
-
-    /// Items sorted live-first, then by recency (newest content first),
-    /// then preserving incoming order for titles without a recency row.
-    private var sortedItems: [Episode] {
-        // Precompute each title's position in the incoming array so ties
-        // fall back to the caller's order (which is already added_at desc).
-        let indexByTitleId: [String: Int] = {
-            var m: [String: Int] = [:]
-            for (i, ep) in items.enumerated() {
-                if let tid = ep.titleId { m[tid] = i }
-            }
-            return m
-        }()
-        return items.sorted { a, b in
-            let aLive: Bool = {
-                guard let tid = a.titleId else { return false }
-                return liveStatusMap[tid]?.isLive ?? false
-            }()
-            let bLive: Bool = {
-                guard let tid = b.titleId else { return false }
-                return liveStatusMap[tid]?.isLive ?? false
-            }()
-            if aLive != bLive { return aLive }
-            let aDate: Date? = a.titleId.flatMap { latestContentMap[$0] }
-            let bDate: Date? = b.titleId.flatMap { latestContentMap[$0] }
-            if let aD = aDate, let bD = bDate, aD != bD {
-                return aD > bD
-            }
-            if aDate != nil && bDate == nil { return true }
-            if aDate == nil && bDate != nil { return false }
-            let aIdx: Int = a.titleId.flatMap { indexByTitleId[$0] } ?? items.count
-            let bIdx: Int = b.titleId.flatMap { indexByTitleId[$0] } ?? items.count
-            return aIdx < bIdx
-        }
-    }
-
-    var body: some View {
-        SectionGlassCard(
-            title: "My Watch List",
-            onSeeAll: items.isEmpty ? nil : onSeeAll
-        ) {
-            HStack(spacing: 4) {
-                if liveCount > 0 {
-                    HStack(spacing: 4) {
-                        Circle()
-                            .fill(Color.red)
-                            .frame(width: 6, height: 6)
-                            .scaleEffect(pulseLive ? 1.3 : 0.7)
-                            .opacity(pulseLive ? 1.0 : 0.4)
-                        Text("\(liveCount) LIVE")
-                            .scaledFont(size: 12, weight: .bold)
-                            .foregroundStyle(.white)
-                    }
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(Capsule().fill(Color.red.opacity(0.85)))
-                }
-            }
-            .padding(.horizontal, 16)
-            .padding(.bottom, 4)
-            if items.isEmpty {
-                emptyState
-            } else {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 10) {
-                        ForEach(sortedItems) { ep in
-                            EpisodeThumbCard(
-                                episode: ep,
-                                isLive: {
-                                    guard let tid = ep.titleId else { return false }
-                                    return liveStatusMap[tid]?.isLive ?? false
-                                }(),
-                                badgeText: ep.titleId.flatMap { badgeTextByTitleId[$0] },
-                                onTap: { onOpen(ep) }
-                            )
-                        }
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                }
-                // Quiet sync footer for guests with items — not a sign-in wall.
-                if !isAuthenticated {
-                    HStack(spacing: 4) {
-                        Text("\(items.count) saved on this device.")
-                            .scaledFont(size: 11)
-                            .foregroundStyle(Color.textSecondary)
-                        Text("Sign in")
-                            .scaledFont(size: 11, weight: .semibold)
-                            .foregroundStyle(Color.orange)
-                            .onTapGesture { onSignIn() }
-                        Text("to keep them across devices.")
-                            .scaledFont(size: 11)
-                            .foregroundStyle(Color.textSecondary)
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 4)
-                }
-            }
-        }
-        .overlay(liveCount > 0 ? redGlowOverlay : nil)
-    }
-
-    @State private var pulseLive: Bool = false
-
-    @ViewBuilder
-    private var redGlowOverlay: some View {
-        RoundedRectangle(cornerRadius: 14, style: .continuous)
-            .stroke(Color.red.opacity(0.25), lineWidth: 1.5)
-            .shadow(color: Color.red.opacity(0.15), radius: 8)
-            .allowsHitTesting(false)
-            .onAppear {
-                withAnimation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true)) {
-                    pulseLive = true
-                }
-            }
-    }
-
-    @ViewBuilder
-    private var emptyState: some View {
-        if isAuthenticated {
-            // Signed-in user with no items — original empty state.
-            HStack(alignment: .top, spacing: 12) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(Color.orange.opacity(0.14))
-                        .frame(width: 52, height: 52)
-                    Image(systemName: "bookmark.fill")
-                        .scaledFont(size: 22, weight: .semibold)
-                        .foregroundStyle(Color.orange)
-                }
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Nothing saved yet")
-                        .scaledFont(size: 14, weight: .semibold)
-                        .foregroundStyle(.white)
-                    Text("Tap the + on any show, movie, or game to save it here for tonight.")
-                        .scaledFont(size: 12)
-                        .foregroundStyle(Color.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                Spacer(minLength: 0)
-            }
-            .padding(.horizontal, 16)
-            .padding(.bottom, 4)
-        } else {
-            // Guest with no items — invitation, not a sign-in wall.
-            HStack(alignment: .top, spacing: 12) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(Color.orange.opacity(0.14))
-                        .frame(width: 52, height: 52)
-                    Image(systemName: "sparkles")
-                        .scaledFont(size: 22, weight: .semibold)
-                        .foregroundStyle(Color.orange)
-                }
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Nothing here yet")
-                        .scaledFont(size: 14, weight: .semibold)
-                        .foregroundStyle(.white)
-                    Text("Add a show and we'll tell you the moment a new episode lands on one of your services.")
-                        .scaledFont(size: 12)
-                        .foregroundStyle(Color.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Button("Browse shows") {
-                        onSeeAll()
-                    }
-                    .scaledFont(size: 12, weight: .semibold)
-                    .foregroundStyle(Color.orange)
-                    .padding(.top, 2)
-                }
-                Spacer(minLength: 0)
-            }
-            .padding(.horizontal, 16)
-            .padding(.bottom, 4)
         }
     }
 }

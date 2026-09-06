@@ -289,7 +289,7 @@ class AuthViewModel private constructor(private val context: Context) : ViewMode
                         }
                     )
                     jobs.awaitAll()
-                    // Pick up any guest-era watch list rows and refresh from
+                    // Pick up any guest-era watchlist rows and refresh from
                     // Supabase so the list is in sync on cold launch. Fires
                     // only after awaitAll() returns so it still follows
                     // claimDeviceRows.

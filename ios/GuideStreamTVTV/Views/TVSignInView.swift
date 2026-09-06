@@ -4,7 +4,7 @@
 //
 //  Sign-in landing screen. Mirrors the phone app's auth gate:
 //   * "Sign in with Apple" — same Supabase auth, same identity
-//   * "Continue as Guest" — backs the watch list with a device id
+//   * "Continue as Guest" — backs the watchlist with a device id
 //      (now a smaller text link with a confirmation sheet)
 //
 //  After successful Apple sign-in the user is asked to name the room
@@ -68,7 +68,7 @@ struct TVSignInView: View {
                         .foregroundStyle(.white)
                         .lineLimit(4)
                         .multilineTextAlignment(.leading)
-                    Text("Sign in to sync your watch list with your phone, or start browsing right away.")
+                    Text("Sign in to sync your watchlist with your phone, or start browsing right away.")
                         .font(.system(size: 24))
                         .foregroundStyle(TVTheme.textSecondary)
                         .frame(maxWidth: 620, alignment: .leading)
@@ -123,7 +123,7 @@ struct TVSignInView: View {
                             .padding(.top, 8)
                     }
 
-                    Text("Tap Sign in with Apple to enable Play on TV and sync your watch list.")
+                    Text("Tap Sign in with Apple to enable Play on TV and sync your watchlist.")
                         .font(.system(size: 16))
                         .foregroundStyle(TVTheme.textTertiary)
                         .multilineTextAlignment(.center)

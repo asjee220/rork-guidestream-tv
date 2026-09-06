@@ -48,7 +48,7 @@ enum SupabaseSetupSQL {
     create policy "users_insert_own" on public.users for insert with check (auth.uid() = id);
     create policy "users_update_own" on public.users for update using (auth.uid() = id);
 
-    -- USER STREAMS (Watch List)
+    -- USER STREAMS (Watchlist)
     --
     -- Designed to work for BOTH signed-in users and guests:
     --   * `user_id`   — set for signed-in users (nullable, no FK so guests
@@ -72,7 +72,7 @@ enum SupabaseSetupSQL {
 
     -- Drop the FK to auth.users so guests (no auth row) and any other
     -- non-Supabase-auth id can write. We intentionally leave `user_id`
-    -- nullable + un-referenced so the watch list works offline / pre-signin.
+    -- nullable + un-referenced so the watchlist works offline / pre-signin.
     alter table public.user_streams drop constraint if exists user_streams_user_id_fkey;
     alter table public.user_streams alter column user_id drop not null;
 

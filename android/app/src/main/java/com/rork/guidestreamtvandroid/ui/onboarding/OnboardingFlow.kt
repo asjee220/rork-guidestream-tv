@@ -1556,7 +1556,7 @@ private fun notifySubtitle(showCount: Int, creatorCount: Int): String {
 
 private fun benefitTitle(i: Int): String = when (i) {
     0 -> "New episode alerts"
-    1 -> "Watch list updates"
+    1 -> "Watchlist updates"
     else -> "Deep links"
 }
 
@@ -1638,7 +1638,7 @@ private fun NotifyBenefitRow(
             ) {
                 Icon(
                     imageVector = if (title == "New episode alerts") Icons.Filled.PlayArrow
-                        else if (title == "Watch list updates") Icons.Filled.Check
+                        else if (title == "Watchlist updates") Icons.Filled.Check
                         else Icons.Filled.ArrowForward,
                     contentDescription = null,
                     tint = Color.White.copy(alpha = 0.25f),

@@ -1055,7 +1055,7 @@ struct EpisodeDetailSheet: View {
         return WatchIntentLogger.titleSlug(title)
     }
 
-    /// Every `title_id` this subject could be saved under, in the watch list's
+    /// Every `title_id` this subject could be saved under, in the watchlist's
     /// own keying: the prefixed non-TMDB id for creator content, the TMDB id as
     /// a string, and the title slug deep links use. Mirrors how
     /// `StreamingDeepLinker` clears the chip against both an id and a slug —
@@ -1951,7 +1951,7 @@ struct EpisodeDetailSheet: View {
     /// rules mirror the Reels rail button so users get a consistent
     /// "save to my list" affordance everywhere a title is shown:
     ///
-    /// * **Not saved** — solid orange circle with a `plus` glyph + "Watch List"
+    /// * **Not saved** — solid orange circle with a `plus` glyph + "Watchlist"
     ///   label below.
     /// * **Saved** — transparent circle with a white stroke (outlined) + a
     ///   checkmark glyph and "Saved" label below.
@@ -1987,7 +1987,7 @@ struct EpisodeDetailSheet: View {
                     ["sheet_watchlist": $0]
                 }
 
-                Text(isSaved ? "Saved" : "Watch List")
+                Text(isSaved ? "Saved" : "Watchlist")
                     .scaledFont(size: 11, weight: .semibold)
                     .foregroundStyle(.white)
                     .lineLimit(1)
@@ -1995,7 +1995,7 @@ struct EpisodeDetailSheet: View {
         }
         .buttonStyle(.plain)
         .disabled(tmdbId == nil || isToggleSaving)
-        .accessibilityLabel(isSaved ? "Saved to watch list. Tap to remove." : "Add to watch list")
+        .accessibilityLabel(isSaved ? "Saved to watchlist. Tap to remove." : "Add to watchlist")
     }
 
     // MARK: - Debug probe (temporary)

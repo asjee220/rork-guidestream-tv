@@ -26,7 +26,7 @@ enum TVScheduleSurface: Hashable {
     var kicker: String {
         switch self {
         case .sports: return "My Teams"
-        case .watchlist: return "Watch List"
+        case .watchlist: return "Watchlist"
         }
     }
 
@@ -401,7 +401,7 @@ struct TVScheduleView: View {
 
 // MARK: - Entry chip
 
-/// The control that opens the Schedule, shared by Sports and the Watch List so
+/// The control that opens the Schedule, shared by Sports and the Watchlist so
 /// the two entry points are visibly the same thing.
 ///
 /// Orange outline, orange text, calendar glyph — an action, not a category.

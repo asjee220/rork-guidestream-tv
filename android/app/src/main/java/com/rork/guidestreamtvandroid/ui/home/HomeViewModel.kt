@@ -369,7 +369,7 @@ class HomeViewModel : ViewModel() {
             .sortedByDescending { it.startedAtEpoch ?: Long.MAX_VALUE }
 
         // Uploads from followed creators only — a new episode of a saved TMDB
-        // series belongs in the watch list rail, not the hero.
+        // series belongs in the watchlist rail, not the hero.
         val cutoff = System.currentTimeMillis() - 72L * 60L * 60L * 1000L
         _heroCreatorUploads.value = streams.newEpisodes.value
             .filter { SourceKind.from(it.titleId).isNonTMDB }
@@ -658,7 +658,7 @@ class HomeViewModel : ViewModel() {
      * Loads the "Recommended for You" rail from the `recommend_titles` edge
      * function.
      *
-     * Called on every home load and again whenever the watch list or the
+     * Called on every home load and again whenever the watchlist or the
      * service selection changes. Deliberately eager: the server keys its cache
      * on a fingerprint of the viewer's signals, so an unchanged signal set is
      * one round trip and no TMDB calls, while a title saved a moment ago

@@ -2,12 +2,15 @@ package com.rork.guidestreamtvandroid.ui.components
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -19,7 +22,7 @@ import com.rork.guidestreamtvandroid.ui.profile.computeInitials
  * The trailing half of the top bar: the services pill and the profile avatar,
  * in that order, as one unit.
  *
- * Home, Sports and the Watch List all use it, so the pair cannot drift between
+ * Home, Sports and the Watchlist all use it, so the pair cannot drift between
  * them the way it did when Sports kept its own copy of the pill and never got
  * the avatar.
  *
@@ -52,21 +55,31 @@ fun RowScope.ServicesPillWithAvatar(
     // The pill and the avatar are different controls and shouldn't look joined.
     Spacer(Modifier.width(AVATAR_GAP))
 
-    UserAvatar(
-        initials = computeInitials(
-            firstName = firstName,
-            lastName = lastName,
-            displayName = displayName,
-            isGuest = authVm.isGuest.value,
-            isAuthenticated = authVm.isAuthenticated.value,
-        ),
-        avatarUrl = avatarUrl,
-        size = AVATAR_DIAMETER,
-        modifier = Modifier.clickable(
-            interactionSource = remember { MutableInteractionSource() },
-            indication = null,
-        ) { onProfileTap() },
-    )
+    // The clickable goes on a 48dp box, not on the 32dp avatar. Material's
+    // minimum touch target is 48dp and the avatar sits at the very corner of
+    // the screen; hanging the click on the drawn circle alone made it fiddly
+    // to hit. Nothing drawn changes — the ring is still 32.
+    Box(
+        modifier = Modifier
+            .size(AVATAR_HIT_TARGET)
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+            ) { onProfileTap() },
+        contentAlignment = Alignment.Center,
+    ) {
+        UserAvatar(
+            initials = computeInitials(
+                firstName = firstName,
+                lastName = lastName,
+                displayName = displayName,
+                isGuest = authVm.isGuest.value,
+                isAuthenticated = authVm.isAuthenticated.value,
+            ),
+            avatarUrl = avatarUrl,
+            size = AVATAR_DIAMETER,
+        )
+    }
 }
 
 /**
@@ -78,3 +91,6 @@ private val AVATAR_DIAMETER = 32.dp
 
 /** Breathing room between the pill and the avatar. */
 private val AVATAR_GAP = 18.dp
+
+/** Material's minimum touch target, applied around the smaller drawn ring. */
+private val AVATAR_HIT_TARGET = 48.dp

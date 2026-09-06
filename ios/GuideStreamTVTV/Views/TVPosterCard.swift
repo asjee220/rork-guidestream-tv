@@ -15,7 +15,7 @@ struct TVPosterCard: View {
     let subtitle: String?
     let posterUrl: String?
     let accent: Color
-    /// True when this title is already saved in the watch list — shows
+    /// True when this title is already saved in the watchlist — shows
     /// the saved checkmark and dims the call-to-action.
     let isSaved: Bool
     let action: () -> Void

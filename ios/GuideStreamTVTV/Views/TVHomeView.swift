@@ -103,7 +103,7 @@ struct TVHomeView: View {
     @State private var todaysPickBackdropUrl: String? = nil
     @State private var todaysPickBackdropTmdbId: Int? = nil
 
-    /// Drives the hero's Add to Watch List button as the default focus for
+    /// Drives the hero's Add to Watchlist button as the default focus for
     /// the Home scene, so the app opens with the hero fully visible.
     @FocusState private var heroCTAFocused: Bool
     /// One-shot guard so the hero CTA is claimed as focus exactly once,

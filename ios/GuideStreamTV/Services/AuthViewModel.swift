@@ -151,7 +151,7 @@ final class AuthViewModel {
                 group.addTask { await CoachMarkManager.shared.hydrateFromSupabase(userId: userId) }
                 for await _ in group { }
             }
-            // Pick up any guest-era watch list rows and refresh from Supabase
+            // Pick up any guest-era watchlist rows and refresh from Supabase
             // so the list is in sync on cold launch. Fires only after the
             // group returns so it still follows claimDeviceRows.
             Task { await StreamsViewModel.shared.syncLocalToSupabase() }
@@ -634,7 +634,7 @@ final class AuthViewModel {
                 // Claim any guest-era rows on this device before the first
                 // fetch so they are attributed to this account.
                 await StreamsViewModel.shared.claimDeviceRows()
-                // Promote any guest-era watch list rows and push token to the new user.
+                // Promote any guest-era watchlist rows and push token to the new user.
                 Task { await StreamsViewModel.shared.syncLocalToSupabase() }
                 Task { await PushTokenManager.shared.resaveCachedToken() }
                 await PushTokenManager.shared.flushPendingToken()

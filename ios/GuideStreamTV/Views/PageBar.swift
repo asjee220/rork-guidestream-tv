@@ -8,7 +8,7 @@
 //  It used to be a private struct inside HomeView, with Sports keeping its own
 //  hand-rolled copy of the same HStack. That is how the two drifted — Sports
 //  never got the avatar. One internal view now serves Home, Sports and the
-//  Watch List, so a change to the bar reaches all three.
+//  Watchlist, so a change to the bar reaches all three.
 //
 
 import SwiftUI
@@ -34,6 +34,10 @@ struct PageBar: View {
     /// own 10pt. They are different controls and shouldn't look joined.
     private let avatarLeadingGap: CGFloat = 8
 
+    /// Tappable area around the avatar. Larger than the ring it contains, on
+    /// purpose: 32pt is a small thing to hit at the corner of the screen.
+    private let avatarHitTarget: CGFloat = 48
+
     var body: some View {
         HStack(spacing: 10) {
             BrandWordmark(wordmarkSize: .nav)
@@ -56,6 +60,13 @@ struct PageBar: View {
                     fontWeight: .semibold,
                     avatar: auth.avatar
                 )
+                // The ring draws at 32 with a soft blurred halo around it, and
+                // a blurred shape is not a reliable hit target. An explicit
+                // frame plus a rectangular content shape gives the button a
+                // solid 48pt target — above the 44pt minimum — without
+                // changing anything that is drawn.
+                .frame(width: avatarHitTarget, height: avatarHitTarget)
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .padding(.leading, avatarLeadingGap)

@@ -91,7 +91,7 @@ final class ScheduleService {
     private init() {}
 
     /// Ceiling on how many saved shows are resolved against TMDB. Each one
-    /// costs a detail call plus a season call, so an unbounded watch list
+    /// costs a detail call plus a season call, so an unbounded watchlist
     /// would open the screen with a hundred requests in flight.
     private static let maxShows = 30
 

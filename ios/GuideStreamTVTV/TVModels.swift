@@ -10,7 +10,7 @@
 
 import Foundation
 
-// MARK: - Watch list rows (Supabase `user_streams`)
+// MARK: - Watchlist rows (Supabase `user_streams`)
 
 nonisolated struct TVUserStream: Codable, Identifiable, Hashable, Sendable {
     let id: String

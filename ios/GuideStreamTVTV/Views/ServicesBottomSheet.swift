@@ -173,7 +173,7 @@ struct WatchListBottomSheet: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Watch List")
+            Text("Watchlist")
                 .scaledFont(size: 40, weight: .heavy)
                 .foregroundStyle(.white)
             Text("Everything you've saved to come back to later.")
@@ -203,12 +203,12 @@ struct WatchListBottomSheet: View {
     private func rowAsPoster(_ row: UserStream) -> PosterShow {
         PosterShow(
             title: row.title ?? "Untitled",
-            meta: row.platform ?? "Watch List",
+            meta: row.platform ?? "Watchlist",
             posterColors: HomeFallback.posterColors,
             symbol: "bookmark.fill",
             posterUrl: row.posterUrl,
             tmdbId: Int(row.titleId),
-            // is_tv is null on legacy watch list rows; the title id still says
+            // is_tv is null on legacy watchlist rows; the title id still says
             // which it is. Nil only for ids that carry no media type at all.
             isTV: row.isTv ?? TitleID.isTV(from: row.titleId)
         )

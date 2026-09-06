@@ -28,7 +28,7 @@ enum AppTab: Int, CaseIterable, Hashable {
         case .ask: return "Ask"
         case .reels: return "Reels"
         case .profile: return "Profile"
-        case .watchlist: return "Watch List"
+        case .watchlist: return "Watchlist"
         }
     }
 }
@@ -42,7 +42,7 @@ struct FloatingTabBar: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            // Glass pill with four tabs — Home, Reels, Sports, Watch List.
+            // Glass pill with four tabs — Home, Reels, Sports, Watchlist.
             // Profile left this pill and now lives as the avatar at the far
             // right of the page header; `.profile` is still a real tab so every
             // existing route into ProfileView keeps working, it simply has no

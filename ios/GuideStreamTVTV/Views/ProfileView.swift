@@ -321,7 +321,7 @@ struct ProfileView: View {
             ProfileRow(
                 icon: "bookmark.fill",
                 iconTint: Color.orange,
-                title: "Watch List",
+                title: "Watchlist",
                 subtitle: watchListSubtitle,
                 onTap: { path.append(.watchList) }
             )
@@ -352,7 +352,7 @@ struct ProfileView: View {
         }
     }
 
-    /// Subtitle for the Watch List row. Differs by auth state so guests get a
+    /// Subtitle for the Watchlist row. Differs by auth state so guests get a
     /// nudge to sign in while signed-in users see a live count of saved items.
     private var watchListSubtitle: String {
         if !auth.isAuthenticated {

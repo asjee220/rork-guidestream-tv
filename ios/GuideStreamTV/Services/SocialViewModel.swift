@@ -241,7 +241,7 @@ final class SocialViewModel {
 
     /// Loads every `title_watched` row owned by the current user/device in a
     /// single query and replaces `watchedByMe` with that set. Display-only:
-    /// used by the Watch List to show the eye badge on saved titles that are
+    /// used by the Watchlist to show the eye badge on saved titles that are
     /// already marked watched. Never writes to `title_watched`.
     func loadAllWatched() async {
         let deviceId = DeviceIdentity.shared.deviceId

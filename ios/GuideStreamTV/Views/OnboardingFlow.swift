@@ -1195,7 +1195,7 @@ struct StayNotifiedView: View {
     private func benefitTitle(_ i: Int) -> String {
         switch i {
         case 0: return "New episode alerts"
-        case 1: return "Watch list updates"
+        case 1: return "Watchlist updates"
         default: return "Deep links"
         }
     }
@@ -1281,7 +1281,7 @@ private struct NotifyBenefitRow: View {
                     .fill(Color.white.opacity(0.06))
                     .frame(width: 36, height: 54)
                     .overlay(
-                        Image(systemName: title == "New episode alerts" ? "tv.fill" : title == "Watch list updates" ? "list.bullet.rectangle.fill" : "link")
+                        Image(systemName: title == "New episode alerts" ? "tv.fill" : title == "Watchlist updates" ? "list.bullet.rectangle.fill" : "link")
                             .scaledFont(size: 16, weight: .regular)
                             .foregroundStyle(Color.white.opacity(0.25))
                     )

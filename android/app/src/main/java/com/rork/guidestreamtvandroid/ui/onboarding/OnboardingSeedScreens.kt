@@ -86,7 +86,7 @@ import kotlinx.serialization.Serializable
 
 /**
  * A show or creator the user picks during onboarding, committed to the
- * watch list once the step completes. Mirrors the iOS seed-onboarding flow.
+ * watchlist once the step completes. Mirrors the iOS seed-onboarding flow.
  */
 data class StreamSeed(
     val titleId: String,
@@ -505,7 +505,7 @@ fun FollowCreatorsOnboardingScreen(
 
 @Composable
 private fun PromisesLine(modifier: Modifier = Modifier) {
-    val items = listOf("Lands in My Watch List", "Instant episode alerts", "One-tap deep links")
+    val items = listOf("Lands in My Watchlist", "Instant episode alerts", "One-tap deep links")
     Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
         items.forEachIndexed { i, item ->
             if (i > 0) {

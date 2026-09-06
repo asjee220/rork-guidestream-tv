@@ -83,7 +83,7 @@ data class CoachMark(
             CoachMark("sheet_where_to_watch", "Pick your service",
                 "Tap a service to switch where this plays. The Watch button follows your choice.",
                 listOf("sheet_where_to_watch", "sheet_watch_button")),
-            CoachMark("sheet_watchlist", "Add to watch list",
+            CoachMark("sheet_watchlist", "Add to watchlist",
                 "Save it and we will notify you the moment a new episode drops.",
                 listOf("sheet_watchlist")),
         )

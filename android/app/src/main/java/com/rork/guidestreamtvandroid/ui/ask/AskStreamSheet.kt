@@ -705,7 +705,7 @@ private fun AgentMatchCard(
             ) {
                 Icon(
                     imageVector = Icons.Filled.Bookmark,
-                    contentDescription = if (isSaved) "Remove from watch list" else "Save to watch list",
+                    contentDescription = if (isSaved) "Remove from watchlist" else "Save to watchlist",
                     tint = if (isSaved) BrandOrange else Color.White.copy(alpha = 0.7f),
                     modifier = Modifier.size(16.dp),
                 )

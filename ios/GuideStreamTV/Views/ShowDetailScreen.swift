@@ -1660,7 +1660,7 @@ struct ShowDetailScreen: View {
                     )
                 }
 
-                // Primary watch button + Watch List circle (side by side,
+                // Primary watch button + Watchlist circle (side by side,
                 // same layout as before — circle button preserved exactly)
                 HStack(spacing: 8) {
                     Button(action: {

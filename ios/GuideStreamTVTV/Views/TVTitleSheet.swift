@@ -10,7 +10,7 @@
 import SwiftUI
 
 /// Lightweight payload describing a title that can be saved. Built from
-/// either a TMDB result, news item, or watch list row.
+/// either a TMDB result, news item, or watchlist row.
 struct TVTitleDetail: Identifiable, Hashable {
     let titleId: String
     let title: String
@@ -546,7 +546,7 @@ struct TVTitleSheet: View {
                     .foregroundStyle(.white.opacity(0.72))
             }
 
-            // Mock's action row: the primary watch pill, then Watch List,
+            // Mock's action row: the primary watch pill, then Watchlist,
             // Watched and Like as round buttons. The season/episode stepper
             // and the on-screen Close button are gone — Close is now the
             // remote's Menu button via .onExitCommand, which is what Apple's
@@ -1300,7 +1300,7 @@ struct TVTitleSheet: View {
         }
     }
 
-    // MARK: - Watch List button
+    // MARK: - Watchlist button
 
     private var watchListButton: some View {
         circleAction(

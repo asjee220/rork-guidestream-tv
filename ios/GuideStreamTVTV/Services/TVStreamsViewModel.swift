@@ -2,10 +2,10 @@
 //  TVStreamsViewModel.swift
 //  GuideStreamTVTV
 //
-//  Watch list store for the Apple TV app. Mirrors the phone app's
+//  Watchlist store for the Apple TV app. Mirrors the phone app's
 //  `StreamsViewModel`:
 //
-//   1. Local cache in UserDefaults so the watch list renders instantly
+//   1. Local cache in UserDefaults so the watchlist renders instantly
 //      on cold launch and survives offline restarts.
 //   2. Supabase `user_streams` is the durable source of truth — every
 //      change is written through with the same ownership rules
@@ -60,7 +60,7 @@ final class TVStreamsViewModel {
     }
 
     /// Pulls the canonical list. Falls back to the local cache on any
-    /// network/RLS failure so the watch list never appears to vanish.
+    /// network/RLS failure so the watchlist never appears to vanish.
     func fetchUserStreams() async {
         isLoading = true
         defer { isLoading = false }
@@ -88,12 +88,12 @@ final class TVStreamsViewModel {
         }
     }
 
-    /// Returns true when the given titleId is currently in the watch list.
+    /// Returns true when the given titleId is currently in the watchlist.
     func contains(titleId: String) -> Bool {
         userStreams.contains { $0.titleId == titleId }
     }
 
-    /// Toggle a title in/out of the watch list. Used by the focus
+    /// Toggle a title in/out of the watchlist. Used by the focus
     /// poster cards on Home — one click is the whole interaction.
     func toggle(
         titleId: String,
@@ -218,7 +218,7 @@ final class TVStreamsViewModel {
 
     // MARK: - iOS-compat stub methods
 
-    /// Refreshes both watch list + new-episodes feed. The episode feed is a
+    /// Refreshes both watchlist + new-episodes feed. The episode feed is a
     /// no-op on tvOS so this just delegates to `fetchUserStreams`.
     func refreshAll() async {
         await fetchUserStreams()

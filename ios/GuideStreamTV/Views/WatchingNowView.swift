@@ -449,7 +449,7 @@ private struct SkeletonCard: View {
 }
 
 private var promisesLine: some View {
-        let items = ["Lands in My Watch List", "Instant episode alerts", "One-tap deep links"]
+        let items = ["Lands in My Watchlist", "Instant episode alerts", "One-tap deep links"]
         var parts: [Text] = []
         for (i, item) in items.enumerated() {
             if i > 0 {

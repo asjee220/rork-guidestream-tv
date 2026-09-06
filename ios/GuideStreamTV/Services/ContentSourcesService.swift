@@ -105,7 +105,7 @@ final class ContentSourcesService {
     }
 
     /// Maps the given title_ids to their most-recent upload timestamp from
-    /// `title_recency` — the same table the watch list sorts by. Only ids the
+    /// `title_recency` — the same table the watchlist sorts by. Only ids the
     /// ingest has seen have a row, so the result is deliberately sparse and
     /// callers must decide where the unknowns land.
     func fetchLatestUploadDates(for titleIds: [String]) async -> [String: Date] {

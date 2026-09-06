@@ -9,7 +9,7 @@
 
 import SwiftUI
 
-/// The watch list's three categories, kept byte-compatible with the phone's
+/// The watchlist's three categories, kept byte-compatible with the phone's
 /// WatchListTab in Views/WatchListBottomSheet.swift — same cases, same order,
 /// same filing rule — so a list looks the same on both. Duplicated rather
 /// than shared, per the convention the rest of the tvOS target follows.
@@ -351,7 +351,7 @@ struct TVWatchListView: View {
 
     private var header: some View {
         HStack(alignment: .firstTextBaseline, spacing: 16) {
-            Text("Watch List")
+            Text("Watchlist")
                 .font(.system(size: 48, weight: .black))
                 .foregroundStyle(.white)
             Text("\(visibleStreams.count)")
@@ -369,7 +369,7 @@ struct TVWatchListView: View {
 
     // MARK: - Sponsored chip
 
-    /// Resolves a sponsored chip for the Watch List: walks the sorted
+    /// Resolves a sponsored chip for the Watchlist: walks the sorted
     /// streams, finds the first whose `platform` resolves to a gap-service
     /// advertiser with a non-nil `appStoreURL`. Maximum one chip on this
     /// screen.
@@ -411,7 +411,7 @@ struct TVWatchListView: View {
             Image(systemName: "popcorn.fill")
                 .font(.system(size: 96, weight: .bold))
                 .foregroundStyle(TVTheme.orange)
-            Text("Your Watch List is empty")
+            Text("Your Watchlist is empty")
                 .font(.system(size: 38, weight: .black))
                 .foregroundStyle(.white)
             Text("Open Home and click any title to add it. Saved shows appear here for everyone signed in to your account.")

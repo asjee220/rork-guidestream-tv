@@ -154,7 +154,7 @@ import kotlinx.coroutines.launch
 
 /**
  * Home feed — mirrors iOS HomeView.swift.
- * Search bar, hero carousel, watch list, trending, top rated, genre discovery,
+ * Search bar, hero carousel, watchlist, trending, top rated, genre discovery,
  * platform rows, coming to streaming, what's new, top picks, leaving soon,
  * binge worthy, widget promo banner.
  */
@@ -169,7 +169,6 @@ fun HomeScreen(
     /** Creators/Podcasts for You See all — the rail's filtered recommendations
      *  and the followed non-TMDB ids the recommender scores against. */
     onSeeAllCreators: (creators: List<RecommendedCreator>, followedIds: List<String>) -> Unit = { _, _ -> },
-    onOpenWatchList: () -> Unit = {},
     /** New Episodes See all — opens the full list of everything new. */
     onOpenNewEpisodes: () -> Unit = {},
     onOpenWidgetSetup: () -> Unit = {},
@@ -436,7 +435,7 @@ fun HomeScreen(
         }
 
         // Recommended for You — the first rail on phones, by product decision.
-        // Sits directly under the hero and above the watch list. Hidden when
+        // Sits directly under the hero and above the watchlist. Hidden when
         // empty rather than shown as a placeholder: a viewer with no services
         // or no signals yet gets no rail, because an empty personalised rail
         // reads worse than none at all. PosterSection is reused as-is so the
@@ -476,41 +475,10 @@ fun HomeScreen(
             )
         }
 
-        // My Watch List
-        if (!homeReady) {
-            ShimmerSection("My Watch List", Modifier.padding(horizontal = widthClass.homeHorizontalPadding, vertical = 8.dp))
-        } else {
-            WatchListSection(
-                streams = userStreams,
-                watchedIds = watchedIds,
-                latestContentAt = latestContentAt,
-                latestContentKind = latestContentKind,
-                seenContentAt = seenContentAt,
-                isAuthenticated = authVm.isAuthenticated.value,
-                onOpen = { stream ->
-                    WatchIntentLogger.get().log(
-                        WatchIntentLogger.IntentEventType.CARD_TAPPED,
-                        titleId = stream.titleId,
-                        platformId = stream.platform?.lowercase() ?: "tmdb",
-                        metadata = mapOf("section" to "watch_list"),
-                    )
-                    onOpenTitle(PendingTitleRoute(
-                        titleId = stream.titleId,
-                        titleName = stream.title ?: stream.titleName,
-                        posterUrl = stream.posterUrl,
-                        isTv = stream.isTv ?: TitleId.isTv(stream.titleId) ?: true,
-                    ))
-                },
-                onSeeAll = {
-                    WatchIntentLogger.get().log(
-                        WatchIntentLogger.IntentEventType.CARD_TAPPED,
-                        metadata = mapOf("section" to "watch_list_see_all"),
-                    )
-                    onOpenWatchList()
-                },
-                onSignIn = { onOpenSearch() },
-            )
-        }
+        // The Watchlist rail lived here. It is gone now that the Watchlist
+        // is a tab of its own in the floating nav — the saved list was the
+        // one thing on Home already reachable in a single tap, and
+        // Recommended for You has taken the slot under the hero.
 
         // Today's Pick — daily spotlight from streaming_releases
         if (!homeReady) {
@@ -996,7 +964,7 @@ fun HomeScreen(
             dismissed = dismissedAdSlots,
         )
 
-        // New seasons — shows you follow (on-air titles from the user's watch list)
+        // New seasons — shows you follow (on-air titles from the user's watchlist)
         if (!homeReady) {
             ShimmerSection("New seasons — shows you follow", Modifier.padding(horizontal = widthClass.homeHorizontalPadding, vertical = 8.dp))
         } else {
@@ -1829,289 +1797,6 @@ private fun NewEpisodesSection(
             items(episodes.take(12)) { row ->
                 NewEpisodeCard(row = row, onClick = { onOpen(row) })
             }
-        }
-    }
-}
-
-// ── Watch List Section ───────────────────────────────────────────────────────
-
-@Composable
-private fun WatchListSection(
-    streams: List<com.rork.guidestreamtvandroid.data.models.UserStream>,
-    watchedIds: Set<String>,
-    latestContentAt: Map<String, Long>,
-    latestContentKind: Map<String, String>,
-    seenContentAt: Map<String, Long>,
-    isAuthenticated: Boolean,
-    onOpen: (com.rork.guidestreamtvandroid.data.models.UserStream) -> Unit,
-    onSeeAll: (() -> Unit)? = null,
-    onSignIn: () -> Unit = {},
-) {
-    if (streams.isEmpty()) {
-        if (isAuthenticated) {
-            EmptyStateRow(
-                title = "My Watch List",
-                message = "Tap the + on any show to add it here.",
-                onSeeAll = onSeeAll,
-            )
-        } else {
-            // Guest with no items — invitation, not a sign-in wall.
-            Column(Modifier.padding(horizontal = rememberWidthClass().homeHorizontalPadding, vertical = 8.dp)) {
-                Row(verticalAlignment = Alignment.Bottom) {
-                    Text(
-                        text = "My Watch List",
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = TextPrimary,
-                    )
-                }
-                Spacer(Modifier.height(10.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.Start,
-                    verticalAlignment = Alignment.Top,
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(52.dp)
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(BrandOrange.copy(alpha = 0.14f)),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(
-                            imageVector = Icons.Filled.Star,
-                            contentDescription = null,
-                            tint = BrandOrange,
-                            modifier = Modifier.size(22.dp),
-                        )
-                    }
-                    Spacer(Modifier.width(12.dp))
-                    Column {
-                        Text(
-                            text = "Nothing here yet",
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = TextPrimary,
-                        )
-                        Spacer(Modifier.height(2.dp))
-                        Text(
-                            text = "Add a show and we'll tell you the moment a new episode lands on one of your services.",
-                            fontSize = 12.sp,
-                            color = TextSecondary,
-                        )
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            text = "Browse shows",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = BrandOrange,
-                            modifier = Modifier.clickable(
-                                interactionSource = remember { MutableInteractionSource() },
-                                indication = null,
-                            ) { onSeeAll?.invoke() },
-                        )
-                    }
-                }
-            }
-        }
-        return
-    }
-    // Sort newest-content-first, preserving incoming index as a tiebreaker.
-    // Titles with a recency entry sort ahead of those without; ties fall back
-    // to the original added_at-desc order.
-    val indexByTitleId = remember(streams) {
-        val m = HashMap<String, Int>()
-        for ((i, s) in streams.withIndex()) {
-            if (s.titleId !in m) m[s.titleId] = i
-        }
-        m
-    }
-    // Reuses the shared badge rules so the Home rail always agrees with the
-    // full My Watch List screen — no extra query, every input is already in memory.
-    val streamsVm = StreamsViewModel.get()
-    val sortedStreams = remember(streams, latestContentAt) {
-        streams.sortedWith(
-            compareByDescending<com.rork.guidestreamtvandroid.data.models.UserStream> { stream ->
-                latestContentAt.containsKey(stream.titleId)
-            }.thenByDescending { stream ->
-                latestContentAt[stream.titleId] ?: Long.MIN_VALUE
-            }.thenBy { stream ->
-                indexByTitleId[stream.titleId] ?: streams.size
-            },
-        )
-    }
-    Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
-        Row(verticalAlignment = Alignment.Bottom) {
-            Text(
-                text = "My Watch List",
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Bold,
-                color = TextPrimary,
-            )
-            if (onSeeAll != null) {
-                Spacer(Modifier.weight(1f))
-                Text(
-                    text = "See all",
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = BrandOrange,
-                    modifier = Modifier
-                        .clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null,
-                        ) { onSeeAll() },
-                )
-            }
-        }
-        Spacer(Modifier.height(10.dp))
-        LazyRow(
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            items(sortedStreams.take(15)) { stream ->
-                WatchListCard(
-                    stream = stream,
-                    isWatched = watchedIds.contains(stream.titleId),
-                    badgeText = streamsVm.newBadgeText(
-                        stream,
-                        latestContentAt,
-                        latestContentKind,
-                        seenContentAt,
-                    ),
-                    onClick = { onOpen(stream) },
-                )
-            }
-        }
-        // Quiet sync footer for guests with items — not a sign-in wall.
-        if (!isAuthenticated) {
-            Row(
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-                horizontalArrangement = Arrangement.Start,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = "${streams.size} saved on this device. ",
-                    fontSize = 11.sp,
-                    color = TextSecondary,
-                )
-                Text(
-                    text = "Sign in",
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = BrandOrange,
-                    modifier = Modifier.clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                    ) { onSignIn() },
-                )
-                Text(
-                    text = " to keep them across devices.",
-                    fontSize = 11.sp,
-                    color = TextSecondary,
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun WatchListCard(
-    stream: com.rork.guidestreamtvandroid.data.models.UserStream,
-    isWatched: Boolean = false,
-    /** "NEW EPISODE" / "NEW UPLOAD", or null when the title should not badge. */
-    badgeText: String? = null,
-    onClick: () -> Unit,
-) {
-    Column(
-        modifier = Modifier
-            .width(164.dp)
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-            ) { onClick() },
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .aspectRatio(0.6667f)
-                .clip(RoundedCornerShape(10.dp)),
-        ) {
-            RemoteImage(
-                url = stream.posterUrl,
-                contentDescription = stream.title ?: stream.titleName,
-                modifier = Modifier.fillMaxSize(),
-                cornerRadius = 10,
-                placeholderText = (stream.title ?: stream.titleName ?: stream.titleId).take(2).uppercase(),
-                placeholderFontSize = 20.sp,
-            )
-            // Platform color bar
-            val platform = Platform.from(stream.platform)
-            if (platform != null) {
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .fillMaxWidth()
-                        .height(3.dp)
-                        .background(platform.color),
-                )
-            }
-            // New-content badge, top-left so it never collides with the
-            // BottomEnd watched eye or the bottom platform color bar.
-            if (badgeText != null) {
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.TopStart)
-                        .padding(8.dp)
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(Color.Black)
-                        .padding(horizontal = 8.dp, vertical = 4.dp),
-                ) {
-                    Text(
-                        text = badgeText,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White,
-                        maxLines = 1,
-                    )
-                }
-            }
-            // Display-only watched badge — never mutates any saved title.
-            if (isWatched) {
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .padding(4.dp)
-                        .size(20.dp)
-                        .clip(CircleShape)
-                        .background(BrandBlue),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.Visibility,
-                        contentDescription = "Watched",
-                        tint = Color.White,
-                        modifier = Modifier.size(12.dp),
-                    )
-                }
-            }
-        }
-        Spacer(Modifier.height(6.dp))
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-            // GUI-70: movie vs series at a glance. A saved row whose media
-            // type never resolves (legacy row, creator, podcast, game) gets no
-            // glyph rather than a guessed one.
-            val savedIsTv = stream.isTv ?: TitleId.isTv(stream.titleId)
-            if (savedIsTv != null) MediaTypeGlyph(isTV = savedIsTv, size = 11.dp)
-            Text(
-                text = stream.title ?: stream.titleName ?: "Untitled",
-                fontSize = 11.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = TextPrimary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
         }
     }
 }

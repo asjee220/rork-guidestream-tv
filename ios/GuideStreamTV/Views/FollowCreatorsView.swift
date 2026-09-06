@@ -3,7 +3,7 @@
 //  GuideStreamTV
 //
 //  Discovery surface for YouTube channels, podcasts, Twitch, and Kick.
-//  Launched from the watch list entry card and from the Home search.
+//  Launched from the watchlist entry card and from the Home search.
 //
 
 import SwiftUI

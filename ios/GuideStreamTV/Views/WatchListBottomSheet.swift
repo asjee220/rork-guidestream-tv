@@ -5,7 +5,7 @@
 //  Two surfaces that share the same content view (`WatchListContent`):
 //
 //  * `WatchListBottomSheet` — modal sheet presented from the home feed's
-//    "See all" link on the Watch List section.
+//    "See all" link on the Watchlist section.
 //  * `WatchListView` — pushed onto the Profile stack so users can manage
 //    their saved titles from the Profile tab as well.
 //
@@ -33,7 +33,7 @@ struct WatchListBottomSheet: View {
     // bar the stack itself introduced. (GUI-79)
     var body: some View {
         VStack(spacing: 0) {
-            GsSheetHeader(title: "My Watch List") {
+            GsSheetHeader(title: "My Watchlist") {
                 Button("Close") { dismiss() }
                     .foregroundStyle(Color.textSecondary)
             }
@@ -49,7 +49,7 @@ struct WatchListBottomSheet: View {
 /// Two callers, two chromes.
 ///
 /// Pushed from Profile it keeps the navigation bar, because the viewer needs
-/// the back button that came with the push. As the Watch List *tab* there is
+/// the back button that came with the push. As the Watchlist *tab* there is
 /// nothing to go back to, so it wears the same PageBar as Home and Sports —
 /// wordmark, services pill, profile avatar — and hides the navigation bar that
 /// would otherwise sit above it as a second, emptier header.
@@ -82,7 +82,7 @@ struct WatchListView: View {
                     .toolbar(.hidden, for: .navigationBar)
             } else {
                 WatchListContent()
-                    .navigationTitle("My Watch List")
+                    .navigationTitle("My Watchlist")
                     .navigationBarTitleDisplayMode(.inline)
                     .toolbarBackground(Color.navy, for: .navigationBar)
                     .toolbarColorScheme(.dark, for: .navigationBar)
@@ -169,7 +169,7 @@ private enum WatchListSort: String, CaseIterable, Identifiable {
 
 // MARK: - Shared content
 
-/// Renders the watch list itself — list, empty state, or guest prompt — plus
+/// Renders the watchlist itself — list, empty state, or guest prompt — plus
 /// background atmosphere and the detail-sheet plumbing. Wrap this view in
 /// whatever navigation chrome the surface needs (sheet vs. push).
 private struct WatchListContent: View {
@@ -184,9 +184,8 @@ private struct WatchListContent: View {
     /// Maps prefixed title_ids to their content_sources.image_url, used as a
     /// poster fallback so every creator/podcast/streamer always shows an image.
     @State private var sourceImageMap: [String: String] = [:]
-    /// Watch-list filter toggles — both default off, and both operate only on
-    /// data already in hand (subscriptions + the expiring-titles cache).
-    @State private var filterOnMyServices: Bool = false
+    /// Watchlist filter toggle. Defaults off and operates only on data already
+    /// in hand (the expiring-titles cache the Home rail already fetched).
     @State private var filterLeavingSoon: Bool = false
     /// Which category tab is showing. Seeded once from the data so a user
     /// whose list happens to be all movies does not land on an empty Shows
@@ -386,7 +385,7 @@ private struct WatchListContent: View {
                     .scaledFont(size: 32, weight: .semibold)
                     .foregroundStyle(Color.orange)
             }
-            Text("Your watch list is empty")
+            Text("Your watchlist is empty")
                 .scaledFont(size: 17, weight: .bold)
                 .foregroundStyle(.white)
             Text("Tap the + on any show, movie, or creator to save it here. We'll keep them ready for tonight.")
@@ -398,7 +397,7 @@ private struct WatchListContent: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    /// Small inline banner shown above a guest's watch list so they know the
+    /// Small inline banner shown above a guest's watchlist so they know the
     /// list lives on this device until they sign in. We deliberately do NOT
     /// gate the list behind a sign-in wall — guests can save and manage
     /// items locally; signing in later syncs everything up to Supabase.
@@ -412,7 +411,7 @@ private struct WatchListContent: View {
                 Text("Saved on this device")
                     .scaledFont(size: 13, weight: .semibold)
                     .foregroundStyle(.white)
-                Text("Sign in to sync your watch list across devices.")
+                Text("Sign in to sync your watchlist across devices.")
                     .scaledFont(size: 12)
                     .foregroundStyle(Color.textSecondary)
             }
@@ -451,13 +450,9 @@ private struct WatchListContent: View {
         }
     }
 
-    /// Two toggle chips above the saved list.
+    /// Toggle chip above the saved list.
     private var filterBar: some View {
         HStack(spacing: 10) {
-            WatchListFilterChip(label: "On my services", isOn: filterOnMyServices) {
-                UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                filterOnMyServices.toggle()
-            }
             WatchListFilterChip(label: "Leaving soon", isOn: filterLeavingSoon) {
                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
                 filterLeavingSoon.toggle()
@@ -591,13 +586,7 @@ private struct WatchListContent: View {
         return expiryByTmdbId[id]
     }
 
-    private func isOnMyServices(_ item: UserStream) -> Bool {
-        guard let platform = item.platform, !platform.isEmpty else { return false }
-        return AuthViewModel.shared.subscribesToService(named: platform)
-    }
-
-    /// Saved titles in the selected tab, after the active filters. Both
-    /// filters on intersect; neither on returns the tab's own sort order.
+    /// Saved titles in the selected tab, after the active filter.
     private var filteredStreams: [UserStream] {
         var inTab = sortedStreams.filter { WatchListTab.of($0) == selectedTab }
         if selectedTab == .creators, creatorSort == .alphabetical {
@@ -605,12 +594,8 @@ private struct WatchListContent: View {
                 ($0.title ?? $0.titleId).localizedStandardCompare($1.title ?? $1.titleId) == .orderedAscending
             }
         }
-        guard filterOnMyServices || filterLeavingSoon else { return inTab }
-        return inTab.filter { item in
-            let onServicesOK = !filterOnMyServices || isOnMyServices(item)
-            let leavingOK = !filterLeavingSoon || expiryInfo(for: item) != nil
-            return onServicesOK && leavingOK
-        }
+        guard filterLeavingSoon else { return inTab }
+        return inTab.filter { expiryInfo(for: $0) != nil }
     }
 
     private func expiryBadgeText(for item: UserStream) -> String? {
@@ -748,10 +733,10 @@ private struct WatchListContent: View {
                !resolved.name.isEmpty {
                 return resolved.name
             }
-            return "Watch list"
+            return "Watchlist"
         }()
         return PosterShow(
-            title: item.title ?? "Watch List Item",
+            title: item.title ?? "Watchlist Item",
             meta: platformMeta,
             posterColors: HomeFallback.posterColors,
             symbol: "play.tv.fill",
@@ -827,7 +812,7 @@ private struct WatchListGridCell: View {
             Button(role: .destructive) {
                 onRemove()
             } label: {
-                Label("Remove from watch list", systemImage: "trash")
+                Label("Remove from watchlist", systemImage: "trash")
             }
         }
     }
@@ -904,7 +889,7 @@ private struct WatchListGridCell: View {
         }
         .buttonStyle(.plain)
         .padding(6)
-        .accessibilityLabel("Remove from watch list")
+        .accessibilityLabel("Remove from watchlist")
     }
 
     @ViewBuilder

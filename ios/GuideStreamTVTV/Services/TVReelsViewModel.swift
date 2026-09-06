@@ -173,7 +173,7 @@ final class TVReelsViewModel {
         }
     }
 
-    /// The viewer's own watch list, plus popular movies on the services they
+    /// The viewer's own watchlist, plus popular movies on the services they
     /// actually subscribe to — the phone's For You shape.
     private func forYouResults() async -> [TVTMDBResult] {
         var out = (try? await TVTMDBService.shared.getPopularTV()) ?? []
