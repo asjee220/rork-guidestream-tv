@@ -194,9 +194,19 @@ struct CastToTVSheet: View {
             .sheetSurface(.raised)
             .onAppear { startScan(prewarm: true) }
             .task {
-                let registry = await TVReceiverDirectory.registry()
-                registeredTVNames = registry?.all
-                liveTVNames = registry?.live ?? []
+                await refreshRegistry()
+                // Registry freshness has its own cadence. Bonjour says a TV
+                // exists; `tv_receivers.last_seen_at` says it is listening, and
+                // only the second one changes while the sheet sits open. Read
+                // once and the sheet is frozen on whatever was true the instant
+                // it appeared — a TV woken since then stays greyed out no matter
+                // how many times Rescan re-sweeps the LAN, which is exactly what
+                // "it said sleeping and rescan did nothing" looked like.
+                while !Task.isCancelled {
+                    try? await Task.sleep(for: .seconds(Self.registryPollInterval))
+                    guard !Task.isCancelled else { return }
+                    await refreshRegistry()
+                }
             }
             .sheet(isPresented: $showAppleTVHelp) { AppleTVSignInHelpSheet() }
             .onDisappear {
@@ -557,7 +567,11 @@ struct CastToTVSheet: View {
     private var rescanButton: some View {
         Button {
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            // Rescan means re-check everything, not just the network. Sweeping
+            // Bonjour without re-reading the heartbeat leaves an awake TV
+            // greyed out and gives the button nothing to do.
             startScan()
+            Task { await refreshRegistry() }
         } label: {
             HStack(spacing: 6) {
                 Image(systemName: "arrow.clockwise")
@@ -846,6 +860,20 @@ struct CastToTVSheet: View {
     }
 
     // MARK: Scan lifecycle
+
+    /// How often the sheet re-reads which Apple TVs are still heartbeating.
+    /// Far inside `TVReceiverDirectory`'s 15-minute live window, and one small
+    /// query — the point is that a TV woken while the sheet is open becomes
+    /// selectable without closing and reopening it.
+    private static let registryPollInterval: TimeInterval = 20
+
+    /// Re-reads the account's registered Apple TVs and which of them are live.
+    /// Called on appear, on every Rescan, and on a timer while the sheet is up.
+    private func refreshRegistry() async {
+        let registry = await TVReceiverDirectory.registry()
+        registeredTVNames = registry?.all
+        liveTVNames = registry?.live ?? []
+    }
 
     /// Starts a discovery scan and schedules a permission-prompt check. If no
     /// devices appear after a short window, iOS has either denied Local Network
