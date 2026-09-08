@@ -92,6 +92,19 @@ final class TeamFavoritesService {
 
         let wasFavorited = favoritedUids.contains(uid)
 
+        // Logged here rather than at the call sites: toggle() is the only place
+        // that knows the direction, and it is reached from SportsGameDetailView,
+        // SportsWatchSheet and TeamPickerSheet alike.
+        WatchIntentLogger.shared.log(
+            eventType: wasFavorited ? .teamUnfavorited : .teamFavorited,
+            metadata: [
+                "team_uid": uid,
+                "team_name": team.shortName,
+                "league": league ?? "",
+                "sport": sport ?? ""
+            ]
+        )
+
         // Optimistic local update
         if wasFavorited {
             favoritedUids.remove(uid)

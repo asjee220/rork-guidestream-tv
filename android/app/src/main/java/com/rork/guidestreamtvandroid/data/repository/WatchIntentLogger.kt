@@ -60,6 +60,11 @@ class WatchIntentLogger private constructor(context: Context) {
         WATCHED_TOGGLED("watched_toggled"),
         SHARE_TAPPED("share_tapped"),
         REVIEW_PROMPT_REQUESTED("review_prompt_requested"),
+
+        // Sports - see the note in the iOS enum. Keep the two lists in sync.
+        SPORTS_TAB_OPENED("sports_tab_opened"),
+        TEAM_FAVORITED("team_favorited"),
+        TEAM_UNFAVORITED("team_unfavorited"),
     }
 
     data class LoggerError(

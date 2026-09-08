@@ -127,6 +127,20 @@ class TeamFavoritesService private constructor(context: Context) {
     fun toggle(team: SportsGame.TeamSummary, league: String?, sport: String?) {
         val uid = team.uid ?: return
         val wasFavorited = _rows.value.containsKey(uid)
+
+        // Mirrors iOS: logged in the service because it is the only place that
+        // knows the direction.
+        WatchIntentLogger.get().log(
+            if (wasFavorited) WatchIntentLogger.IntentEventType.TEAM_UNFAVORITED
+            else WatchIntentLogger.IntentEventType.TEAM_FAVORITED,
+            metadata = mapOf(
+                "team_uid" to uid,
+                "team_name" to team.shortName.ifEmpty { team.displayName.ifEmpty { team.name } },
+                "league" to league,
+                "sport" to sport,
+            ),
+        )
+
         val current = _rows.value.toMutableMap()
 
         if (wasFavorited) {

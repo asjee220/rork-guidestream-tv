@@ -35,6 +35,13 @@ enum IntentEventType: String {
     case watchedToggled = "watched_toggled"
     case shareTapped = "share_tapped"
 
+    // Sports. Distinct names on purpose: the sports surface reused
+    // card_tapped / episode_detail_viewed / deeplink_fired, which made it
+    // invisible in the event catalogue and left tab entry unmeasured.
+    case sportsTabOpened = "sports_tab_opened"
+    case teamFavorited = "team_favorited"
+    case teamUnfavorited = "team_unfavorited"
+
     // Lifecycle events — fire whether signed in or not so we capture every device.
     case sessionStarted = "session_started"
     case authSignedIn = "auth_signed_in"

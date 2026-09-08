@@ -140,6 +140,7 @@ fun SportsScreen(
     val context = LocalContext.current
 
     LaunchedEffect(Unit) {
+        WatchIntentLogger.get().log(WatchIntentLogger.IntentEventType.SPORTS_TAB_OPENED)
         favorites.load()
         // First open of the Sports tab: offer the team picker once. Skipped
         // when the user already has favorites (e.g. from another install of
@@ -360,7 +361,7 @@ fun SportsScreen(
                 section = section,
                 sportFilter = activeSport,
                 onBack = { seeAll = null },
-                onOpenGame = { game -> watchGame = game },
+                onOpenGame = { game -> openCard(game) { watchGame = it } },
             )
         }
     }

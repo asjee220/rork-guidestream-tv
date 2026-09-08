@@ -264,6 +264,7 @@ struct SportsView: View {
             }
         }
         .task {
+            WatchIntentLogger.shared.log(eventType: .sportsTabOpened)
             await favorites.load()
             // First open of the Sports tab: offer the team picker once. Skipped
             // when the user already has favorites (e.g. from another install of

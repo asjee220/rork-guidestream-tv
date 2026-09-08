@@ -261,6 +261,17 @@ class MainActivity : ComponentActivity() {
 
         val gameId = extras?.getString("game_id")?.takeIf { it.isNotBlank() }
         if (gameId != null) {
+            // This branch used to return before the NOTIFICATION_OPENED log
+            // below, so every sports push tap was silently dropped.
+            WatchIntentLogger.get().log(
+                WatchIntentLogger.IntentEventType.NOTIFICATION_OPENED,
+                titleId = gameId,
+                metadata = mapOf(
+                    "source" to "push_notification",
+                    "section" to "sports",
+                    "notification_type" to (extras.getString("notification_type") ?: ""),
+                ),
+            )
             router.showSportsGame(gameId)
             return
         }
