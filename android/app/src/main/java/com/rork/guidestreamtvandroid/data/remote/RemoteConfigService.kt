@@ -79,6 +79,14 @@ object RemoteConfigService {
         val latest: String? = null,
         /** Store URL the update buttons open. */
         val url: String? = null,
+        /**
+         * Release notes for THIS platform. Falls back to the shared top-level
+         * `notes` when absent, so the existing single-list config keeps working
+         * untouched. iOS and Android are on separate version trains and ship on
+         * different days, so one shared list means whatever is written for an
+         * Android release is also shown to the next iOS user who updates.
+         */
+        val notes: RemoteAppUpdateNotes? = null,
     )
 
     /** Release notes shown after the user has updated. */

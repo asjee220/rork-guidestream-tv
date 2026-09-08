@@ -25,6 +25,11 @@ import com.rork.guidestreamtvandroid.data.remote.RemoteConfigService
  * platforms already read and cache on launch, so shipping a floor is an edit
  * to one row rather than a release.
  *
+ * Release notes are read from `android.notes` when present and fall back to the
+ * shared top-level `notes`. The two platforms are on separate version trains
+ * and ship on different days, so a single shared list would show Android's
+ * release copy to the next iOS user who updated.
+ *
  * A first-ever install records its version and shows nothing: there is no
  * "what's new" for someone who has not been here before.
  */
@@ -115,7 +120,10 @@ class AppUpdateGate private constructor(private val context: Context) {
 
         val platform = config?.android ?: return
         val storeUrl = platform.url?.takeIf { it.isNotBlank() }
-        val notes = config.notes?.items.orEmpty()
+        // Per-platform notes win; the shared list is the fallback for configs
+        // written before `android.notes` existed.
+        val resolvedNotes = platform.notes ?: config.notes
+        val notes = resolvedNotes?.items.orEmpty()
 
         // 1. Hard floor.
         val min = platform.min
@@ -143,7 +151,7 @@ class AppUpdateGate private constructor(private val context: Context) {
             markNotesShown(current)
             prompt = AppUpdatePrompt.WhatsNew(
                 version = current,
-                title = config.notes?.title?.takeIf { it.isNotBlank() } ?: "What's new",
+                title = resolvedNotes?.title?.takeIf { it.isNotBlank() } ?: "What's new",
                 notes = notes,
             )
         }
