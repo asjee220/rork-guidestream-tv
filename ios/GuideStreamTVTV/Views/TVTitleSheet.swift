@@ -1308,6 +1308,13 @@ struct TVTitleSheet: View {
             icon: isSaved ? "checkmark.circle.fill" : "plus.circle.fill",
             tint: .white
         ) {
+            // GUI-100: this used to call `onDismiss` after the toggle, which
+            // is the shell's close signal — so saving a title closed the
+            // screen out from under the viewer. It is a leftover from when
+            // this was a `.sheet` and the presenter needed the new saved
+            // state handed back to refresh its card. Nothing needs handing
+            // back now: `isSaved` reads `TVStreamsViewModel.shared`, so the
+            // icon flips to the checkmark on its own and the screen stays.
             Task {
                 await streams.toggle(
                     titleId: detail.titleId,
@@ -1315,7 +1322,6 @@ struct TVTitleSheet: View {
                     posterUrl: detail.posterUrl,
                     platform: detail.platform
                 )
-                onDismiss(streams.contains(titleId: detail.titleId))
             }
         }
     }
