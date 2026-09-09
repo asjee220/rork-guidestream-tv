@@ -1038,6 +1038,14 @@ class HomeViewModel : ViewModel() {
             launchDeferred { ProviderBrandMapService.get().refresh() }
             launchDeferred { loadRecommendedCreators() }
             launchDeferred { loadRecommendedTitles() }
+            // GUI-98: these three run in loadAll() but had never been part of
+            // refreshFeed(), so the hero rail's live sports and creator uploads
+            // and the Around the World rail could not be moved by a pull —
+            // the rails that change most often were the ones that never did.
+            launchDeferred { loadAroundTheWorldRail() }
+            launchDeferred { loadHeroCreatorItems() }
+            launchDeferred { SportsViewModel.get().refreshGamesNow() }
+            resolvePreferredGenres()
 
             // Refresh the watchlist / watched / badges / new-episode counts.
             try { StreamsViewModel.get().refreshAllNow() }

@@ -116,6 +116,12 @@ struct ProfileView: View {
         .refreshable {
             await stats.refresh()
             await streams.fetchUserStreams()
+            // GUI-98: the display name was loaded on first appearance only, so
+            // a rename made on another device never arrived on a pull.
+            // Android's Profile refresh already did this.
+            if auth.isAuthenticated {
+                await auth.loadDisplayName()
+            }
             await probe.probeAll()
         }
         .confirmationDialog(

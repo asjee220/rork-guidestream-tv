@@ -1274,18 +1274,7 @@ struct HomeView: View {
                     .animation(.spring(response: 0.4, dampingFraction: 0.82), value: castPlayback.current?.id)
                 }
                 .tracksTabBarVisibility()
-                .refreshable {
-                    await streams.refreshAll()
-                    await loadTrendingIfNeeded()
-                    await loadComingToStreaming()
-                    buildLiveCreators()
-                    await loadCreatorUploads()
-                    await loadRecommendedCreators()
-                    rebuildHeroRail()
-                    await hydrateSourceImages()
-                    // Push updated widget feed on pull-to-refresh.
-                    await pushWidgetFeed()
-                }
+                .refreshable { await refreshHomeRails() }
                 .onChange(of: scenePhase) { _, newPhase in
                     if newPhase == .active {
                         Task { await streams.refreshIfStale() }
@@ -1696,6 +1685,46 @@ struct HomeView: View {
     /// Fetches recent YouTube uploads for only the YouTube creators the current
     /// customer follows. Returns early with an empty array when there are no
     /// followed YouTube ids, so an unfollowed user sees no creator content.
+    /// Everything a pull-to-refresh has to re-run.
+    ///
+    /// GUI-98: this was an inline list inside `.refreshable` and it had drifted
+    /// from the `.task` that loads Home on first appearance.
+    /// `loadRecommendedTitles()` — which fills **Recommended for You**, the
+    /// first rail under the hero — was missing, along with
+    /// `loadAroundTheWorldRail()` and `hydrateProviders()`. The rails a viewer
+    /// is most likely to pull for were exactly the ones a pull could not move,
+    /// and the ones that did re-run (TMDB trending, on-air, top-rated) rarely
+    /// change inside a day, so the whole screen read as frozen.
+    ///
+    /// **Anything added to the `.task` load belongs here too.**
+    private func refreshHomeRails() async {
+        // Sequential on purpose: `loadTrendingIfNeeded(deferNonCritical: false)`
+        // ends in `loadWatchlistDerivedSections()`, which needs a populated
+        // `userStreams` to resolve the Top Picks genre. It also re-runs
+        // loadPopularOnServices, loadNowAndNext, refreshExpiringFromServer
+        // and pushWidgetFeed, so none of those are repeated here.
+        await streams.refreshAll()
+        await loadTrendingIfNeeded()
+
+        await withTaskGroup(of: Void.self) { group in
+            group.addTask { await loadCreatorUploads() }
+            group.addTask { await loadRecommendedCreators() }
+            group.addTask { await loadRecommendedTitles() }
+            group.addTask { await loadAroundTheWorldRail() }
+            for await _ in group { }
+        }
+
+        buildLiveCreators()
+        rebuildHeroRail()
+
+        // Fire-and-forget, as on first load — the rails are already correct
+        // without it and it only fills in provider logos.
+        Task { await hydrateProviders() }
+
+        await loadComingToStreaming()
+        await hydrateSourceImages()
+    }
+
     private func loadCreatorUploads() async {
         let ids = streams.userStreams
             .filter { SourceKind.from(titleId: $0.titleId) == .youtube }
