@@ -42,12 +42,17 @@ final class TVAppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCe
 
     // MARK: - Notification handling
 
-    /// Show banners when a push arrives while the app is in the foreground.
+    /// GUI-96: badge only. tvOS has `UNUserNotificationCenter`, but
+    /// `UNNotificationContent.title` and `.body` are not available on the
+    /// platform — a tvOS notification carries a badge count and nothing else,
+    /// so there is no text for a banner to draw. Asking for `.banner`,
+    /// `.sound` and `.list` here described an alert the system was never going
+    /// to render.
     func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         willPresent notification: UNNotification
     ) async -> UNNotificationPresentationOptions {
-        return [.banner, .badge, .sound, .list]
+        return [.badge]
     }
 
 #if !os(tvOS)

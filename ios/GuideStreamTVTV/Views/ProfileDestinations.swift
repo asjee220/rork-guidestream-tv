@@ -947,12 +947,12 @@ struct NotificationsSettingsView: View {
                     if systemDenied {
                         statusBanner(
                             title: "Notifications are off in Settings",
-                            message: "Tap Open iOS Settings below to turn them back on."
+                            message: "Open Settings below to turn them back on."
                         )
                     } else if needsReauth {
                         statusBanner(
                             title: "Turn notifications back on",
-                            message: "tvOS clears notification permission when an app is deleted. Flip the switch below to allow alerts again — your alert types are still saved."
+                            message: "tvOS clears notification permission when an app is deleted. Flip the switch below to allow notifications again — your choices below are still saved."
                         )
                     }
 
@@ -961,7 +961,7 @@ struct NotificationsSettingsView: View {
                             icon: "bell.badge.fill",
                             iconTint: Color.orange,
                             title: "Push notifications",
-                            subtitle: "Allow GuideStream to send you alerts",
+                            subtitle: "Alerts arrive on your phone. Apple TV only badges the icon.",
                             isOn: Binding(
                                 get: { pushOn },
                                 set: { handlePushToggle($0) }
@@ -1049,13 +1049,19 @@ struct NotificationsSettingsView: View {
                         ProfileRow(
                             icon: "gearshape.fill",
                             iconTint: Color.textSecondary,
-                            title: "Open iOS Settings",
-                            subtitle: "Fine-tune badges, banners, and sound",
+                            title: "Open Settings",
+                            subtitle: "Manage notification permission for GuideStream",
                             onTap: openSystemSettings
                         )
                     }
 
-                    Text("We only send notifications about shows on services you actually have. Update your services in Connected Services to fine-tune what you hear about.")
+                    // GUI-96: these switches are worth having on the TV even
+                    // though the TV cannot show an alert — they are written to
+                    // `users` on the server, so they decide what the account is
+                    // notified about and the notification lands on the phone.
+                    // Saying so keeps the screen from reading like a promise
+                    // Apple TV cannot keep.
+                    Text("Apple TV does not show on-screen alerts, so these choices apply to your account and the notifications arrive on your phone. We only send them for shows on services you actually have — update those in Connected Services.")
                         .scaledFont(size: 12)
                         .foregroundStyle(Color.textTertiary)
                         .multilineTextAlignment(.center)
@@ -1130,8 +1136,10 @@ struct NotificationsSettingsView: View {
                 return
             }
             do {
+                // GUI-96: `.badge` only — see TVAppDelegate. tvOS has no
+                // notification title or body, so there is no alert to ask for.
                 let granted = try await UNUserNotificationCenter.current()
-                    .requestAuthorization(options: [.alert, .badge, .sound])
+                    .requestAuthorization(options: [.badge])
                 if granted {
                     UIApplication.shared.registerForRemoteNotifications()
                     pushOn = true

@@ -475,8 +475,14 @@ struct StayNotifiedView: View {
         guard newValue else { return }
         Task { @MainActor in
             do {
+                // GUI-96: `.badge` only. tvOS cannot display an alert — the
+                // notification content has no title or body on this platform —
+                // so asking for `.alert` and `.sound` claimed capabilities the
+                // system does not have. The toggle still matters: it is the
+                // account's push intent, and the alerts themselves arrive on
+                // the viewer's phone.
                 let granted = try await UNUserNotificationCenter.current()
-                    .requestAuthorization(options: [.alert, .badge, .sound])
+                    .requestAuthorization(options: [.badge])
                 if granted {
                     UIApplication.shared.registerForRemoteNotifications()
                 } else {
@@ -536,7 +542,7 @@ struct StayNotifiedView: View {
                     iconBg: Color.orange.opacity(0.18),
                     iconTint: Color.orange,
                     title: "New episode alerts",
-                    subtitle: "Push notification",
+                    subtitle: "Delivered to your phone",
                     trailing: .toggle($pushOn, tint: Color.orange)
                 )
                 .onChange(of: pushOn) { _, newValue in
