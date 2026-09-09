@@ -131,6 +131,66 @@ struct TVSportsGame: Identifiable, Hashable {
     let broadcasts: [String]
 }
 
+// MARK: - Schedule clock (GUI-99)
+
+/// Day bucketing and labelling for scheduled games — the tvOS twin of the
+/// phone app's `SportsClock`.
+///
+/// Every game time the app prints is Eastern ("8:20 PM ET"), so "today" and
+/// "tomorrow" are bucketed in Eastern too — otherwise the weekday and the
+/// clock beside it could disagree for a late game.
+nonisolated enum TVSportsClock {
+
+    static let zone: TimeZone = TimeZone(identifier: "America/New_York") ?? .current
+
+    static let calendar: Calendar = {
+        var c = Calendar(identifier: .gregorian)
+        c.timeZone = zone
+        return c
+    }()
+
+    static func isToday(_ date: Date?) -> Bool {
+        guard let date else { return false }
+        return calendar.isDateInToday(date)
+    }
+
+    private static func formatter(_ pattern: String) -> DateFormatter {
+        let f = DateFormatter()
+        f.timeZone = zone
+        f.dateFormat = pattern
+        return f
+    }
+
+    /// "8:20 PM ET" today, "Tomorrow · 8:20 PM ET", "Sat · 1:00 PM ET" inside
+    /// a week, "Sep 20 · 1:00 PM ET" beyond it.
+    static func label(for date: Date?) -> String? {
+        guard let date, date.timeIntervalSince1970 > 0 else { return nil }
+        let clock = "\(formatter("h:mm a").string(from: date)) ET"
+        if calendar.isDateInToday(date) { return clock }
+        if calendar.isDateInTomorrow(date) { return "Tomorrow · \(clock)" }
+        let days = calendar.dateComponents(
+            [.day],
+            from: calendar.startOfDay(for: Date()),
+            to: calendar.startOfDay(for: date)
+        ).day ?? 0
+        let pattern = (days > 0 && days < 7) ? "EEE" : "MMM d"
+        return "\(formatter(pattern).string(from: date)) · \(clock)"
+    }
+}
+
+extension TVSportsGame {
+    /// What every card shows on its status line. `statusDetail` for a `pre`
+    /// game is a bare clock time, so a game two days out read exactly like one
+    /// starting tonight (GUI-99). Live and final games are unchanged.
+    var scheduleLabel: String {
+        guard state == .pre else { return statusDetail }
+        return TVSportsClock.label(for: startDate) ?? statusDetail
+    }
+
+    /// True when the game starts today in Eastern time.
+    var startsToday: Bool { TVSportsClock.isToday(startDate) }
+}
+
 enum TVGameState: String {
     case pre, live, post
     var isLive: Bool { self == .live }

@@ -166,13 +166,46 @@ internal fun teamStatusLabel(game: SportsGame?): String {
     }
 }
 
-/** Is the game start today (used for the "Tonight" section title). */
+/**
+ * GUI-99 schedule clock. Every game time the app prints is Eastern
+ * ("8:20 PM ET"), so "today" and "tomorrow" are bucketed in Eastern too —
+ * otherwise the weekday and the clock beside it could disagree for a late
+ * game. Mirrors iOS `SportsClock`.
+ */
+private val EASTERN: java.time.ZoneId = java.time.ZoneId.of("America/New_York")
+
+private fun startDateEastern(timestamp: String?): java.time.ZonedDateTime? =
+    parseStart(timestamp)?.toInstant()?.atZone(EASTERN)
+
+/** Is the game start today in Eastern time (drives the "Tonight" section). */
 internal fun isStartToday(timestamp: String?): Boolean {
-    val date = parseStart(timestamp) ?: return false
-    val now = java.util.Calendar.getInstance()
-    val cal = java.util.Calendar.getInstance().apply { time = date }
-    return now.get(java.util.Calendar.YEAR) == cal.get(java.util.Calendar.YEAR) &&
-        now.get(java.util.Calendar.DAY_OF_YEAR) == cal.get(java.util.Calendar.DAY_OF_YEAR)
+    val start = startDateEastern(timestamp) ?: return false
+    return start.toLocalDate() == java.time.LocalDate.now(EASTERN)
+}
+
+/** Hour of day (Eastern) the game starts, or null when the start is unknown. */
+internal fun startHourEastern(timestamp: String?): Int? = startDateEastern(timestamp)?.hour
+
+/**
+ * What every card shows on its status line. `statusDetail` for a `pre` game is
+ * a bare clock time, so a game two days out read exactly like one starting
+ * tonight (GUI-99). Live and final games are unchanged.
+ *
+ * "8:20 PM ET" today, "Tomorrow · 8:20 PM ET", "Sat · 1:00 PM ET" inside a
+ * week, "Sep 20 · 1:00 PM ET" beyond it.
+ */
+internal fun scheduleLabel(game: SportsGame): String {
+    if (game.state != "pre") return game.statusDetail
+    val start = startDateEastern(game.startTime) ?: return game.statusDetail
+    val clock = java.time.format.DateTimeFormatter.ofPattern("h:mm a", Locale.US).format(start) + " ET"
+    val today = java.time.LocalDate.now(EASTERN)
+    val days = java.time.temporal.ChronoUnit.DAYS.between(today, start.toLocalDate())
+    return when {
+        days == 0L -> clock
+        days == 1L -> "Tomorrow · $clock"
+        days in 2..6 -> java.time.format.DateTimeFormatter.ofPattern("EEE", Locale.US).format(start) + " · " + clock
+        else -> java.time.format.DateTimeFormatter.ofPattern("MMM d", Locale.US).format(start) + " · " + clock
+    }
 }
 
 /** Sorting helper: soonest start first. */

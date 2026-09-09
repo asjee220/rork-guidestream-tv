@@ -189,7 +189,7 @@ struct SportsListView: View {
                     Text("LIVE")
                         .scaledFont(size: 9, weight: .black)
                         .foregroundStyle(Color(hex: "E50914"))
-                    Text("\(game.sport) · \(game.statusDetail)")
+                    Text("\(game.sport) · \(game.scheduleLabel)")
                         .scaledFont(size: 9, weight: .semibold)
                         .foregroundStyle(Color.white.opacity(0.5))
                         .lineLimit(1)
@@ -252,7 +252,7 @@ struct SportsListView: View {
                         .scaledFont(size: 13, weight: .bold)
                         .foregroundStyle(.white)
                         .lineLimit(1)
-                    Text("\(game.sport) · \(game.statusDetail)")
+                    Text("\(game.sport) · \(game.scheduleLabel)")
                         .scaledFont(size: 10)
                         .foregroundStyle(Color.white.opacity(0.4))
                         .lineLimit(1)
@@ -301,7 +301,7 @@ struct SportsListView: View {
             Rectangle().fill(Color.white.opacity(0.06)).frame(width: 1, height: 36)
 
             VStack(alignment: .leading, spacing: 3) {
-                Text(game.statusDetail)
+                Text(game.scheduleLabel)
                     .scaledFont(size: 10, weight: .bold)
                     .foregroundStyle(Color.white.opacity(0.55))
                 Text(game.sport)

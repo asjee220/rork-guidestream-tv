@@ -117,7 +117,7 @@ struct SportsWatchSheet: View {
     }
 
     private var metaText: String {
-        let parts = [game.sport, game.statusDetail].filter { !$0.isEmpty }
+        let parts = [game.sport, game.scheduleLabel].filter { !$0.isEmpty }
         return parts.joined(separator: " · ")
     }
 

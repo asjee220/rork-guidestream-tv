@@ -90,6 +90,14 @@ struct SportsView: View {
 
     private var liveGames: [SportsGame] { filteredGames.filter { $0.state == .live } }
     private var upcomingGames: [SportsGame] { filteredGames.filter { $0.state == .pre } }
+
+    /// GUI-99: "Tonight" used to be decided by the first upcoming game alone
+    /// while the section listed the next eight regardless of day, so
+    /// tomorrow's NFL game sat under a header that said tonight. Today's
+    /// games and later ones are separate sections now. Bucketed in Eastern,
+    /// matching the clock every card prints.
+    private var todayGames: [SportsGame] { upcomingGames.filter { $0.startsToday } }
+    private var laterGames: [SportsGame] { upcomingGames.filter { !$0.startsToday } }
     private var finalGames: [SportsGame] { filteredGames.filter { $0.state == .post } }
 
     /// Real "My Teams" built from the user's persisted favorites via
@@ -192,8 +200,11 @@ struct SportsView: View {
                             if !liveGames.isEmpty {
                                 liveNowSection
                             }
-                            if !upcomingGames.isEmpty {
-                                upcomingSection
+                            if !todayGames.isEmpty {
+                                upcomingSection(title: todayTitle, games: todayGames)
+                            }
+                            if !laterGames.isEmpty {
+                                upcomingSection(title: "Upcoming", games: laterGames)
                             }
                             if !finalGames.isEmpty {
                                 finalSection
@@ -532,7 +543,7 @@ struct SportsView: View {
                     Text("LIVE")
                         .scaledFont(size: 9, weight: .black)
                         .foregroundStyle(Color(hex: "E50914"))
-                    Text("\(game.sport) · \(game.statusDetail)")
+                    Text("\(game.sport) · \(game.scheduleLabel)")
                         .scaledFont(size: 9, weight: .semibold)
                         .foregroundStyle(Color.white.opacity(0.5))
                         .lineLimit(1)
@@ -589,12 +600,12 @@ struct SportsView: View {
 
     // MARK: - Upcoming
 
-    private var upcomingSection: some View {
+    private func upcomingSection(title: String, games: [SportsGame]) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            sectionHeader(title: upcomingTitle, count: upcomingGames.count) {
+            sectionHeader(title: title, count: games.count) {
                 path.append(.allUpcoming)
             }
-            ForEach(upcomingGames.prefix(8)) { game in
+            ForEach(games.prefix(8)) { game in
                 tappableCard(game) {
                     upcomingGameCard(game)
                 }
@@ -602,12 +613,12 @@ struct SportsView: View {
         }
     }
 
-    private var upcomingTitle: String {
-        let cal = Calendar.current
-        if let first = upcomingGames.first, cal.isDateInToday(first.startDate) {
-            return "Tonight"
-        }
-        return "Upcoming"
+    /// "Tonight" only when today's remaining games are actually evening ones —
+    /// a 1pm Sunday slate read at 11am is "Today".
+    private var todayTitle: String {
+        guard let first = todayGames.first else { return "Today" }
+        let hour = SportsClock.calendar.component(.hour, from: first.startDate)
+        return hour >= 17 ? "Tonight" : "Today"
     }
 
     private func upcomingGameCard(_ game: SportsGame) -> some View {
@@ -623,7 +634,7 @@ struct SportsView: View {
                         .scaledFont(size: 13, weight: .bold)
                         .foregroundStyle(.white)
                         .lineLimit(1)
-                    Text("\(game.sport) · \(game.statusDetail)")
+                    Text("\(game.sport) · \(game.scheduleLabel)")
                         .scaledFont(size: 10)
                         .foregroundStyle(Color.white.opacity(0.4))
                         .lineLimit(1)

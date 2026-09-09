@@ -280,10 +280,27 @@ fun SportsScreen(
                         LiveGameRow(game) { openCard(game, watchGameSetter = { watchGame = it }) }
                     }
                 }
-                if (upcoming.isNotEmpty()) {
-                    val upcomingTitle = if (upcoming.firstOrNull()?.let { isStartToday(it.startTime) } == true) "Tonight" else "Upcoming"
-                    item { SectionHeader(upcomingTitle, upcoming.size) { seeAll = SportsSection.UPCOMING } }
-                    items(upcoming.take(8), key = { "up-${it.id}" }) { game ->
+                // GUI-99: "Tonight" used to be decided by the first upcoming
+                // game alone while the section listed the next eight
+                // regardless of day, so tomorrow's NFL game sat under a header
+                // that said tonight. Today's games and later ones are separate
+                // sections now, bucketed in Eastern to match the clock every
+                // card prints.
+                val todayGames = upcoming.filter { isStartToday(it.startTime) }
+                val laterGames = upcoming.filter { !isStartToday(it.startTime) }
+                if (todayGames.isNotEmpty()) {
+                    // "Tonight" only when today's remaining games are actually
+                    // evening ones — a 1pm Sunday slate read at 11am is "Today".
+                    val todayTitle =
+                        if ((startHourEastern(todayGames.first().startTime) ?: 0) >= 17) "Tonight" else "Today"
+                    item { SectionHeader(todayTitle, todayGames.size) { seeAll = SportsSection.UPCOMING } }
+                    items(todayGames.take(8), key = { "up-${it.id}" }) { game ->
+                        UpcomingGameRow(game) { openCard(game, watchGameSetter = { watchGame = it }) }
+                    }
+                }
+                if (laterGames.isNotEmpty()) {
+                    item { SectionHeader("Upcoming", laterGames.size) { seeAll = SportsSection.UPCOMING } }
+                    items(laterGames.take(8), key = { "later-${it.id}" }) { game ->
                         UpcomingGameRow(game) { openCard(game, watchGameSetter = { watchGame = it }) }
                     }
                 }
@@ -701,7 +718,7 @@ fun UpcomingGameRow(game: SportsGame, onClick: () -> Unit) {
             TeamBadge(game.home)
             Column(Modifier.weight(1f)) {
                 Text("${game.away.shortName.ifEmpty { game.away.abbreviation }} vs ${game.home.shortName.ifEmpty { game.home.abbreviation }}", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.White, maxLines = 1)
-                Text("${game.sport} · ${game.statusDetail}", fontSize = 10.sp, color = Color.White.copy(alpha = 0.4f), maxLines = 1)
+                Text("${game.sport} · ${scheduleLabel(game)}", fontSize = 10.sp, color = Color.White.copy(alpha = 0.4f), maxLines = 1)
             }
             Icon(Icons.Outlined.ChevronRight, contentDescription = null, tint = Color.White.copy(alpha = 0.35f), modifier = Modifier.size(16.dp))
         }

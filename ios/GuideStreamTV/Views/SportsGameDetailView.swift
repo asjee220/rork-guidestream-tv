@@ -93,7 +93,7 @@ struct SportsGameDetailView: View {
                 // Status + date (+ refresh stamp for live games)
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(spacing: 6) {
-                        Text(current.statusDetail)
+                        Text(current.scheduleLabel)
                             .scaledFont(size: 15, weight: .semibold)
                             .foregroundStyle(.white)
                         if let stamp = updatedStamp {

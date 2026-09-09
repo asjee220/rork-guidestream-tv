@@ -171,7 +171,7 @@ fun SportsWatchSheet(
             // Header
             GsSheetHeader(
                 title = gameTitle,
-                subtitle = listOf(game.sport, game.statusDetail)
+                subtitle = listOf(game.sport, scheduleLabel(game))
                     .filter { it.isNotEmpty() }
                     .joinToString(" · "),
             )
