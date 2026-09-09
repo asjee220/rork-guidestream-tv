@@ -165,6 +165,13 @@ enum Theme {
     enum SheetLevel: Hashable {
         case base
         case raised
+
+        /// The fill `sheetSurface(_:)` paints for this level. Exposed so a
+        /// sheet whose own content has to paint the same colour reads it from
+        /// here instead of hard-coding a hex that can drift (GUI-97).
+        var fill: Color {
+            self == .raised ? Theme.sheetSurfaceRaised : Theme.sheetSurface
+        }
     }
 }
 
@@ -179,9 +186,7 @@ struct SheetSurfaceModifier: ViewModifier {
 
     private var isHighContrast: Bool { colorSchemeContrast == .increased }
 
-    private var surfaceColor: Color {
-        level == .raised ? Theme.sheetSurfaceRaised : Theme.sheetSurface
-    }
+    private var surfaceColor: Color { level.fill }
 
     private var handleOpacity: Double { isHighContrast ? 0.75 : 0.60 }
     private var hairlineOpacity: Double { isHighContrast ? 0.55 : 0.40 }

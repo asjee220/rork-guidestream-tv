@@ -44,6 +44,27 @@ enum ScheduleSurface: Hashable {
 struct ScheduleView: View {
     let surface: ScheduleSurface
 
+    /// The sheet fill this view is sitting on, when it is presented in a sheet.
+    ///
+    /// GUI-97: pushed onto a navigation stack this screen paints the app
+    /// background (#04090F) and that is correct. Presented inside
+    /// `ScheduleSheet` it was painting the same near-black over the sheet's own
+    /// navy surface, so the body went black under a navy header. Passing the
+    /// sheet's fill in makes the two the same colour by construction — and the
+    /// rows lift off it with a white overlay instead of punching a darker hole
+    /// in it.
+    var presentedSurface: Color? = nil
+
+    /// Page fill: the sheet's surface when there is one, the app background
+    /// otherwise.
+    private var pageFill: Color { presentedSurface ?? Color(hex: "04090F") }
+
+    /// Row card fill. Fixed dark card on the page; a white overlay on a sheet,
+    /// so a row stays lighter than whatever surface level the sheet is at.
+    private var rowFill: Color {
+        presentedSurface == nil ? Color(hex: "12161F") : Color.white.opacity(0.07)
+    }
+
     @State private var schedule = ScheduleService.shared
     @State private var weekOffset: Int = 0
     @State private var selectedGame: SportsGame?
@@ -73,7 +94,7 @@ struct ScheduleView: View {
 
     var body: some View {
         ZStack {
-            Color(hex: "04090F").ignoresSafeArea()
+            pageFill.ignoresSafeArea()
 
             VStack(spacing: 0) {
                 weekNav
@@ -84,7 +105,7 @@ struct ScheduleView: View {
         }
         .navigationTitle("Schedule")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbarBackground(Color(hex: "04090F"), for: .navigationBar)
+        .toolbarBackground(pageFill, for: .navigationBar)
         .toolbarColorScheme(.dark, for: .navigationBar)
         .preferredColorScheme(.dark)
         .task(id: weekStart) { await load() }
@@ -245,7 +266,7 @@ struct ScheduleView: View {
         .padding(.horizontal, 16)
         .padding(.top, 16)
         .padding(.bottom, 8)
-        .background(Color(hex: "04090F"))
+        .background(pageFill)
     }
 
     @ViewBuilder
@@ -318,7 +339,7 @@ struct ScheduleView: View {
             gameTrailing(game)
         }
         .padding(11)
-        .background(RoundedRectangle(cornerRadius: 14).fill(Color(hex: "12161F")))
+        .background(RoundedRectangle(cornerRadius: 14).fill(rowFill))
         .overlay(
             RoundedRectangle(cornerRadius: 14).stroke(Color.white.opacity(0.06), lineWidth: 1)
         )
@@ -407,7 +428,7 @@ struct ScheduleView: View {
                 .foregroundStyle(Color.white.opacity(0.25))
         }
         .padding(11)
-        .background(RoundedRectangle(cornerRadius: 14).fill(Color(hex: "12161F")))
+        .background(RoundedRectangle(cornerRadius: 14).fill(rowFill))
         .overlay(
             RoundedRectangle(cornerRadius: 14).stroke(Color.white.opacity(0.06), lineWidth: 1)
         )
@@ -536,15 +557,20 @@ struct ScheduleSheet: View {
     let surface: ScheduleSurface
     @Environment(\.dismiss) private var dismiss
 
+    /// Declared once and used twice — for the sheet's own fill and for the
+    /// colour handed to `ScheduleView` — so the header and the body cannot
+    /// drift apart again (GUI-97).
+    private let level: Theme.SheetLevel = .raised
+
     var body: some View {
         VStack(spacing: 0) {
             GsSheetHeader(title: "Schedule", subtitle: surface.kicker) {
                 Button("Close") { dismiss() }
                     .foregroundStyle(Color.textSecondary)
             }
-            ScheduleView(surface: surface)
+            ScheduleView(surface: surface, presentedSurface: level.fill)
         }
         .preferredColorScheme(.dark)
-        .sheetSurface(.raised)
+        .sheetSurface(level)
     }
 }
