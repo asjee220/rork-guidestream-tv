@@ -1733,7 +1733,9 @@ struct HomeView: View {
             creatorUploads = []
             return
         }
-        let uploads = (try? await ContentSourcesService.shared.fetchRecentUploads(forTitleIds: ids, limit: 12)) ?? []
+        // GUI-98 follow-up: a thrown or cancelled fetch used to land here as [] and blank
+        // the rail. Keep what is on screen instead.
+        guard let uploads = try? await ContentSourcesService.shared.fetchRecentUploads(forTitleIds: ids, limit: 12) else { return }
         creatorUploads = uploads
     }
 
@@ -1752,11 +1754,14 @@ struct HomeView: View {
             recommendedTitles = []
             return
         }
-        let items = await RecommendedTitlesService.fetch(
+        // GUI-98 follow-up: `nil` means the call failed or was cancelled — keep the rail
+        // that is already on screen. Only a real answer, empty or not, replaces
+        // it.
+        guard let items = await RecommendedTitlesService.fetch(
             userId: auth.currentUser?.id.uuidString,
             deviceId: DeviceIdentity.shared.deviceId,
             subscribedServices: services
-        )
+        ) else { return }
         recommendedTitles = items
     }
 
@@ -1772,9 +1777,10 @@ struct HomeView: View {
             recommendedCreators = []
             return
         }
+        // GUI-98 follow-up: a throw here is a failed or cancelled request, not "no
+        // recommendations" — leave the rail alone rather than emptying it.
         guard let recs = try? await ContentSourcesService.shared.fetchRecommendedCreators(forFollowedIds: followedIds) else {
-            print("[HomeView] loadRecommendedCreators: fetchRecommendedCreators threw, setting empty")
-            recommendedCreators = []
+            print("[HomeView] loadRecommendedCreators: fetchRecommendedCreators threw, keeping existing rail")
             return
         }
         print("[HomeView] loadRecommendedCreators: got \(recs.count) recommendations")
@@ -1902,6 +1908,13 @@ struct HomeView: View {
         combinedTrending += (t2 ?? [])
         combinedTrending += (t3 ?? [])
         combinedTrending += (t4 ?? [])
+        // GUI-98 follow-up: every fetch above degrades to nil / [] when its URLSession
+        // task is cancelled, and a pull-to-refresh is cancellable. Writing that
+        // back empties rails that are already on screen — most visibly the
+        // sports hero, which assigns unconditionally. Nothing from a cancelled
+        // pass is worth keeping, so write nothing.
+        if Task.isCancelled { return }
+
         if !combinedTrending.isEmpty {
             var seenTrendingIds = Set<Int>()
             trending = combinedTrending.filter { seenTrendingIds.insert($0.id).inserted }
@@ -2148,6 +2161,9 @@ struct HomeView: View {
         for (id, items) in collected where !items.isEmpty {
             dict[id] = items
         }
+        // GUI-98 follow-up: as above — a cancelled pass builds an empty dict and would
+        // take every "Popular on …" rail down with it.
+        if Task.isCancelled { return }
         popularOnServiceResults = dict
     }
 
@@ -2292,6 +2308,9 @@ struct HomeView: View {
             for await pair in group { out.append(pair) }
             return out
         }
+        // GUI-98 follow-up: a cancelled backfill returns a partial `collected`, and
+        // writing it back is how a rail comes back with half its entries.
+        if Task.isCancelled { return }
         var next: [String: [NowNextEntry]] = [:]
         for (id, entries) in collected { next[id] = entries }
         nowNextByService = next

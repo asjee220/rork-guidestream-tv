@@ -74,18 +74,24 @@ nonisolated enum RecommendedTitlesService {
     ///     every recommendation to these, so an empty set legitimately returns
     ///     an empty rail rather than titles the viewer cannot watch.
     ///   - limit: Maximum rail length.
-    /// - Returns: The ranked titles, or an empty array on any failure — the
-    ///   rail is additive and must never be able to break Home.
+    /// - Returns: The ranked titles, `[]` when the server genuinely has no
+    ///   recommendations, and **`nil` when the call failed** — a non-200, a
+    ///   decode error, or a cancelled request.
+    ///
+    ///   The two used to be the same value, and the caller assigned it either
+    ///   way. A pull-to-refresh that got cancelled mid-flight therefore wiped
+    ///   a rail that was already on screen (GUI-98 follow-up). Failure has to be
+    ///   distinguishable from emptiness for the caller to keep what it has.
     static func fetch(
         userId: String?,
         deviceId: String,
         subscribedServices: [String],
         limit: Int = 20
-    ) async -> [RecommendedTitle] {
+    ) async -> [RecommendedTitle]? {
         guard !subscribedServices.isEmpty else { return [] }
 
         let base = SupabaseConfig.url.trimmingCharacters(in: .whitespaces)
-        guard let url = URL(string: "\(base)/functions/v1/recommend_titles") else { return [] }
+        guard let url = URL(string: "\(base)/functions/v1/recommend_titles") else { return nil }
 
         var body: [String: Any] = [
             "subscribedServices": subscribedServices,
@@ -96,7 +102,7 @@ nonisolated enum RecommendedTitlesService {
         } else {
             body["deviceId"] = deviceId
         }
-        guard let httpBody = try? JSONSerialization.data(withJSONObject: body) else { return [] }
+        guard let httpBody = try? JSONSerialization.data(withJSONObject: body) else { return nil }
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -107,11 +113,11 @@ nonisolated enum RecommendedTitlesService {
 
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
-            guard let http = response as? HTTPURLResponse, http.statusCode == 200 else { return [] }
+            guard let http = response as? HTTPURLResponse, http.statusCode == 200 else { return nil }
             let decoded = try JSONDecoder().decode(Response.self, from: data)
             return decoded.items
         } catch {
-            return []
+            return nil
         }
     }
 }
