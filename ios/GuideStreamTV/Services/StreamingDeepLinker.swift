@@ -172,17 +172,29 @@ enum StreamingDeepLinker {
     private static func openHomeOrSafariFallback(platform: String, title: String, originalURL: URL) {
         let target = resolve(platform: platform, title: title)
 
+        // The last resort has to be a web page. `originalURL` is only safe to
+        // reuse here when it is already http(s): if it is a custom scheme —
+        // a Watchmode `ios_url` such as `aiv://play?gti=…` — then re-opening
+        // it is opening, for the third time, the exact scheme that just
+        // failed, and the viewer sees nothing at all. That is what a user hit
+        // on 9 Sep 2026 with Reacher and The Gentlemen: three dead opens and a
+        // button that looked broken. `target.webURL` is always http(s).
+        let lastResort: URL = {
+            let scheme = originalURL.scheme?.lowercased() ?? ""
+            return (scheme == "https" || scheme == "http") ? originalURL : target.webURL
+        }()
+
         if let appURL = target.appURL {
             UIApplication.shared.open(appURL, options: [:]) { ok in
                 if ok {
                     print("[Deeplink] ✓ opened app home via native scheme: \(appURL.absoluteString)")
                 } else {
-                    print("[Deeplink] native scheme home failed too; opening in Safari")
-                    UIApplication.shared.open(originalURL, options: [:])
+                    print("[Deeplink] native scheme home failed too; opening \(lastResort.absoluteString) in Safari")
+                    UIApplication.shared.open(lastResort, options: [:])
                 }
             }
         } else {
-            UIApplication.shared.open(originalURL, options: [:])
+            UIApplication.shared.open(lastResort, options: [:])
         }
     }
 

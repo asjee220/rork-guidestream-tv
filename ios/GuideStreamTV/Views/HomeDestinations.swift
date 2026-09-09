@@ -2075,14 +2075,21 @@ struct EpisodeDetailSheet: View {
     }
 
     /// Title-specific URL from the already-resolved Watchmode source.
-    /// Prefers `ios_url` (real deep link when Watchmode is on a paid plan);
-    /// otherwise the canonical `web_url`, which iOS routes into the
-    /// streaming app via universal links. `nil` if no source has resolved
-    /// yet — caller falls back to the async lookup.
+    /// Prefers the canonical `web_url`, which iOS routes into the streaming
+    /// app via universal links; `ios_url` is the fallback. `nil` if no source
+    /// has resolved yet — caller falls back to the async lookup.
+        // A real user reported Reacher and The Gentlemen doing nothing when
+        // tapped (9 Sep 2026). Both fired a Watchmode `ios_url` custom scheme.
+        // `StreamingDeepLinker`'s own header explains why the HTTPS `web_url`
+        // has to lead: iOS routes it into the installed app through its
+        // `applinks:` entitlement and it lands on the title, whereas a custom
+        // scheme usually drops the path — and when the app is not installed a
+        // custom scheme has nowhere to fall back to. Scheme second, so a
+        // platform whose AASA does not claim the URL still opens its app.
     private var preResolvedDeepLinkURL: URL? {
         guard let src = resolvedSource else { return nil }
-        if let s = src.iosUrl, Self.isRealDeepLinkURL(s), let u = URL(string: s) { return u }
         if let s = src.webUrl, Self.isRealDeepLinkURL(s), let u = URL(string: s) { return u }
+        if let s = src.iosUrl, Self.isRealDeepLinkURL(s), let u = URL(string: s) { return u }
         return nil
     }
 
@@ -2135,7 +2142,7 @@ struct EpisodeDetailSheet: View {
 
     /// Picks the best URL from a set of episode-level Watchmode sources
     /// that matches the (possibly re-picked) resolved source by `sourceId`.
-    /// Prefers `ios_url` when it's a real deep link; falls back to `web_url`.
+    /// Prefers `web_url` (universal link); `ios_url` is the fallback.
     /// Returns `nil` when no matching source is found or all URLs are
     /// free-tier placeholders.
     private static func episodeSourceURL(
@@ -2144,8 +2151,8 @@ struct EpisodeDetailSheet: View {
     ) -> URL? {
         guard let rs = resolvedSource,
               let src = episodeSources.first(where: { $0.sourceId == rs.sourceId }) else { return nil }
-        if let s = src.iosUrl, Self.isRealDeepLinkURL(s), let u = URL(string: s) { return u }
         if let s = src.webUrl, Self.isRealDeepLinkURL(s), let u = URL(string: s) { return u }
+        if let s = src.iosUrl, Self.isRealDeepLinkURL(s), let u = URL(string: s) { return u }
         return nil
     }
 

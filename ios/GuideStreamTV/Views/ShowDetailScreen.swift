@@ -943,8 +943,16 @@ struct ShowDetailScreen: View {
         } ?? services.first
 
         guard let svc = match else { return nil }
-        if let s = svc.iosUrl, Self.isRealDeepLinkURL(s), let u = URL(string: s) { return u }
+        // A real user reported Reacher and The Gentlemen doing nothing when
+        // tapped (9 Sep 2026). Both fired a Watchmode `ios_url` custom scheme.
+        // `StreamingDeepLinker`'s own header explains why the HTTPS `web_url`
+        // has to lead: iOS routes it into the installed app through its
+        // `applinks:` entitlement and it lands on the title, whereas a custom
+        // scheme usually drops the path — and when the app is not installed a
+        // custom scheme has nowhere to fall back to. Scheme second, so a
+        // platform whose AASA does not claim the URL still opens its app.
         if let s = svc.webUrl, Self.isRealDeepLinkURL(s), let u = URL(string: s) { return u }
+        if let s = svc.iosUrl, Self.isRealDeepLinkURL(s), let u = URL(string: s) { return u }
         return nil
     }
 
