@@ -37,6 +37,10 @@ struct SponsoredSlotView: View {
     /// Logging source label passed through to WatchIntentLogger so each
     /// surface can distinguish its own native impressions.
     var adSource: String = "sponsored_slot"
+    /// Slot-unique string used to pick this slot's house offer. Inline feed
+    /// slots pass "<sectionKey>_<slotIndex>"; everything else can leave it and
+    /// fall back to adSource, which is unique enough for a single-slot screen.
+    var houseSeed: String = ""
     var compact: Bool = false
 
     /// Whether this slot prefers a native AdMob unit or the Rakuten card.
@@ -84,9 +88,23 @@ struct SponsoredSlotView: View {
     /// Rakuten fallback to a native card.
     @ObservedObject private var adManager = AdManager.shared
 
-    /// Stable per-slot seed so a given slot always shows the same house offer
-    /// instead of shuffling as the view re-renders.
-    private var sectionSeed: Int { abs(adSource.hashValue) }
+    /// Stable per-slot seed for the house card. Seeded on `houseSeed`, NOT on
+    /// `adSource`: every inline slot on Home shares the same adSource
+    /// ("home_inline"), so seeding on it gave two adjacent slots the identical
+    /// house offer — two "Watch on the big screen" cards stacked. Callers pass
+    /// something slot-unique; the default keeps behaviour sane for the
+    /// single-slot detail sheets.
+    private var sectionSeed: Int { abs((houseSeed.isEmpty ? adSource : houseSeed).hashValue) }
+
+    /// The house card is the LAST resort, not the first thing drawn. AdMob has
+    /// to be given a real chance to fill before it appears: the pool is empty
+    /// on first render and fills asynchronously, so rendering the house card
+    /// immediately meant it won every race and the viewer effectively never
+    /// saw an ad. The slot holds zero height until this arms.
+    @State private var houseFallbackArmed = false
+
+    /// How long AdMob gets before the house card takes the slot.
+    private let houseFallbackDelay: Duration = .seconds(4)
 
     /// Inline feed slots (compactNative + feedStyle) pin the 96pt chip row;
     /// every other combination keeps the full-height card.
@@ -110,24 +128,36 @@ struct SponsoredSlotView: View {
                     compact: compact,
                     feedStyle: feedStyle
                 )
-            } else {
-                // No eligible Rakuten offer and no native fill. Rather than
-                // collapse to nothing — which is what a viewer who subscribes
-                // to every affiliate service used to see across the whole app
-                // — show a house card. It still never advertises a service
-                // they already own, and the slot stays a live view node so a
-                // late pool fill upgrades it to a native ad.
+            } else if houseFallbackArmed {
+                // No eligible Rakuten offer and AdMob has had its chance and
+                // not filled. Show a house card rather than collapse to
+                // nothing — which is what a viewer who subscribes to every
+                // affiliate service used to see across the whole app. Still
+                // never advertises a service they already own, and a late pool
+                // fill still upgrades this slot to a native ad.
                 HouseSlotCard(
                     offer: HouseSlotCard.offer(for: sectionSeed),
                     compact: compact,
                     feedStyle: feedStyle,
                     onDismiss: onDismiss
                 )
+            } else {
+                // Still waiting on AdMob. Color.clear (not EmptyView) keeps the
+                // slot a live view node so onAppear and the pool tick keep
+                // firing.
+                Color.clear
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 0)
             }
         }
         .onAppear { fetchNativeAd() }
         .onChange(of: adManager.nativePoolTick) { _, _ in
             fetchNativeAd()
+        }
+        .task {
+            guard !allowRakutenFallback, !houseFallbackArmed else { return }
+            try? await Task.sleep(for: houseFallbackDelay)
+            if currentNativeAd == nil { houseFallbackArmed = true }
         }
     }
 

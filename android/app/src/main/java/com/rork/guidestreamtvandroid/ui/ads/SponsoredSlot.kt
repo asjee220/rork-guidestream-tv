@@ -107,8 +107,11 @@ fun SponsoredSlot(
     // app. Show a house card instead — it still never advertises a service
     // they already own.
     if (!allowRakutenFallback && adMobFailed) {
+        // Seeded on sectionKey, NOT adSource: every inline slot on Home shares
+        // the same adSource ("home_inline"), so seeding on it gave two adjacent
+        // slots the identical house offer.
         HouseSlotCard(
-            offer = houseOfferFor(adSource),
+            offer = houseOfferFor(sectionKey),
             onDismiss = onDismiss,
             modifier = modifier,
             feedStyle = feedStyle,
