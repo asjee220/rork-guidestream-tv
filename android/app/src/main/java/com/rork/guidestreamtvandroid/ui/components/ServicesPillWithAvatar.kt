@@ -52,13 +52,14 @@ fun RowScope.ServicesPillWithAvatar(
     val displayName by authVm.displayName.collectAsStateWithLifecycle()
 
     val serviceIds = StreamingCatalog.ordered(selectedServices).map { it.id }
-    if (serviceIds.isNotEmpty()) {
-        ServicesPill(
-            serviceIds = serviceIds,
-            onTap = onServicesTap,
-            modifier = servicesPillModifier,
-        )
-    }
+    // GUI-101: shown even with nothing selected. The pill has its own empty
+    // state; hiding it here was what left a viewer who skipped the onboarding
+    // step with no route to the services editor.
+    ServicesPill(
+        serviceIds = serviceIds,
+        onTap = onServicesTap,
+        modifier = servicesPillModifier,
+    )
 
     // The pill and the avatar are different controls and shouldn't look joined.
     Spacer(Modifier.width(AVATAR_GAP))

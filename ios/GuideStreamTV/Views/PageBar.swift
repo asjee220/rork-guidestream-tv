@@ -49,9 +49,10 @@ struct PageBar: View {
                     .scaleEffect(0.8)
             }
 
-            if !selectedServiceIds.isEmpty {
-                servicesPill
-            }
+            // GUI-101: shown even with nothing selected. The pill has its own
+            // empty state; hiding it here was what left a viewer who skipped
+            // the onboarding step with no route to the services editor.
+            servicesPill
 
             profileButton
         }
