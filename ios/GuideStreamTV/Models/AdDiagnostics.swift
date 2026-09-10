@@ -43,7 +43,6 @@ nonisolated struct AdDiagnostics: Equatable {
     let nativeLoadAttempts: Int
     /// Native ads successfully received this session.
     let nativeAdsReceived: Int
-    let nativeAdsDiscarded: Int
     /// Whether an interstitial is loaded and ready.
     let hasInterstitial: Bool
     /// Last native load failure, or nil.
@@ -100,7 +99,6 @@ nonisolated struct AdDiagnostics: Equatable {
         Native pool count: \(nativePoolCount)
         Native load attempts: \(nativeLoadAttempts)
         Native ads received: \(nativeAdsReceived)
-        Fills discarded (no creative): \(nativeAdsDiscarded)
         Interstitial ready: \(hasInterstitial)
 
         Last native error: \(lastNativeError ?? "none")

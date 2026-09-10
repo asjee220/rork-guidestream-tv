@@ -56,9 +56,7 @@ fun InlineAdSlot(
             subtitle = offer?.third ?: "",
             onDismiss = onDismiss,
             adSource = adSource,
-            // Slot-unique so adjacent slots never draw the same house offer —
-            // every inline slot on Home passes the same sectionKey.
-            sectionKey = "${sectionKey}_$slotIndex",
+            sectionKey = sectionKey,
             allowRakutenFallback = offer != null,
         )
     }

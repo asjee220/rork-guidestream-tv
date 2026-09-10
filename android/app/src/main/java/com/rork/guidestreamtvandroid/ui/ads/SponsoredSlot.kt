@@ -101,23 +101,9 @@ fun SponsoredSlot(
     val showRakuten = allowRakutenFallback &&
         (preferredSource == PooledAdSource.RAKUTEN_FIRST || adMobFailed)
 
-    // No eligible Rakuten offer and the native unit failed to fill. This used
-    // to `return` and render nothing at all, which is what a viewer who
-    // subscribes to every affiliate service saw in every slot across the whole
-    // app. Show a house card instead — it still never advertises a service
-    // they already own.
-    if (!allowRakutenFallback && adMobFailed) {
-        // Seeded on sectionKey, NOT adSource: every inline slot on Home shares
-        // the same adSource ("home_inline"), so seeding on it gave two adjacent
-        // slots the identical house offer.
-        HouseSlotCard(
-            offer = houseOfferFor(sectionKey),
-            onDismiss = onDismiss,
-            modifier = modifier,
-            feedStyle = feedStyle,
-        )
-        return
-    }
+    // No eligible Rakuten offer and the native unit failed to fill — render
+    // nothing at all: no card container, no Sponsored header, no impression.
+    if (!allowRakutenFallback && adMobFailed) return
 
     // Log a single ad impression once the slot actually renders something.
     // Fallback-free slots log only after the native ad has loaded, so a

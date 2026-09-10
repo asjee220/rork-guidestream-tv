@@ -102,7 +102,6 @@ struct InlineAdSlotView: View {
                 },
                 onDismiss: dismiss,
                 adSource: adSource,
-                houseSeed: dismissKey,
                 compact: true,
                 preferredSource: slotIndex % 2 == 0 ? .adMobFirst : .rakutenFirst,
                 compactNative: true
@@ -121,7 +120,6 @@ struct InlineAdSlotView: View {
                 onTap: {},
                 onDismiss: dismiss,
                 adSource: adSource,
-                houseSeed: dismissKey,
                 compact: true,
                 preferredSource: slotIndex % 2 == 0 ? .adMobFirst : .rakutenFirst,
                 allowRakutenFallback: false,

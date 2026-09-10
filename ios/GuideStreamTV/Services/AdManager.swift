@@ -55,11 +55,6 @@ final class AdManager: NSObject, ObservableObject, FullScreenContentDelegate, Na
     /// Native ads successfully received this session.
     @Published private(set) var nativeAdsReceived: Int = 0
 
-    /// Fills dropped because they carried no drawable creative. A high number
-    /// here against a healthy match rate means the unit is returning creatives
-    /// this card cannot render, not that AdMob is failing to fill.
-    @Published private(set) var nativeAdsDiscarded: Int = 0
-
     /// Live snapshot of the whole ad stack for the diagnostics sheet.
     var diagnosticsSnapshot: AdDiagnostics {
         AdDiagnostics(
@@ -76,7 +71,6 @@ final class AdManager: NSObject, ObservableObject, FullScreenContentDelegate, Na
             nativePoolCount: nativePool.count,
             nativeLoadAttempts: nativeLoadAttempts,
             nativeAdsReceived: nativeAdsReceived,
-            nativeAdsDiscarded: nativeAdsDiscarded,
             hasInterstitial: hasInterstitial,
             lastNativeError: lastNativeError,
             lastInterstitialError: lastInterstitialError
@@ -337,17 +331,17 @@ final class AdManager: NSObject, ObservableObject, FullScreenContentDelegate, Na
 
     private let nativePoolTarget: Int = 5
 
-    /// Backoff schedule for a FAILED native load. Without this, one transient
-    /// failure ends ad serving for the whole session: `loadNativePool()` is
-    /// only called by a slot appearing or by `nativePoolTick`, and the tick
-    /// only fires when an ad is RECEIVED. So a single network blip at launch
-    /// left `nativeLoadAttempts: 1`, `nativeAdsReceived: 0`, an empty pool and
-    /// nothing anywhere that would ever ask again. Seen on a real device.
+    /// Backoff for a FAILED native load. Without this, one transient failure
+    /// ends ad serving for the rest of the session: the failure handler
+    /// cleared `nativeAdLoader` and returned, and nothing re-asks —
+    /// `loadNativePool()` is reached only from a slot appearing or from
+    /// `nativePoolTick`, and the tick is bumped only when an ad is RECEIVED.
+    /// A real device on 1.0.12 (26) showed exactly this: attempts 1, received
+    /// 0, pool 0, "Request Error: A network error occurred", ad-free until
+    /// force-quit.
     private static let nativeRetryDelays: [Double] = [2, 5, 12, 30, 60]
     private var nativeRetryAttempt: Int = 0
     private var nativeRetryTask: Task<Void, Never>?
-
-    /// True once the foreground observer is installed.
     private var didObserveForeground = false
     private var nativePool: [NativeAd] = []
     private var nativeAdLoader: AdLoader?
@@ -357,44 +351,16 @@ final class AdManager: NSObject, ObservableObject, FullScreenContentDelegate, Na
     /// ad from the pool once the async load completes.
     @Published private(set) var nativePoolTick: Int = 0
 
-    /// Low-water mark for refilling. Each load requests FIVE ads, so refilling
-    /// whenever the pool sat below `nativePoolTarget` meant claiming a single
-    /// ad triggered another five-ad request. With several slots on screen that
-    /// is a request amplifier: AdMob showed 2.99K requests against 202
-    /// impressions at a 98% match rate — Google was filling almost everything
-    /// and we were requesting far more than we could ever display. Refill only
-    /// once the pool is genuinely low.
-    private let nativePoolLowWater: Int = 2
-
     /// Returns a native ad from the pool (or nil if empty), and kicks off a
-    /// background refill when the pool runs low.
+    /// background refill so the pool stays topped up.
     func nextNativeAd() -> NativeAd? {
         guard !nativePool.isEmpty else { return nil }
         let ad = nativePool.removeFirst()
-        if nativePool.count <= nativePoolLowWater {
+        if nativePool.count < nativePoolTarget {
             loadNativePool()
         }
         return ad
     }
-
-    /// Puts an unused ad back so it can be claimed by another slot.
-    ///
-    /// `nextNativeAd()` removes from the pool, so a caller that claims an ad
-    /// and then declines it was silently destroying a paid fill. Callers that
-    /// reject an ad must hand it back through here.
-    /// Deliberately does NOT bump `nativePoolTick`. The tick wakes every
-    /// mounted slot to re-attempt a claim; bumping it here would have the
-    /// rejecting slot immediately re-claim the same ad, reject it and return
-    /// it again — a tight loop. `append` puts the ad at the back of the pool
-    /// and claims come off the front, so a different consumer gets it next.
-    func returnNativeAd(_ ad: NativeAd) {
-        nativePool.append(ad)
-    }
-
-    /// Counts fills the compact chip could not draw. High against a healthy
-    /// match rate means the unit's creative mix and the chip's asset
-    /// requirements disagree — not that AdMob is failing to fill.
-    func noteDiscardedForChip() { nativeAdsDiscarded += 1 }
 
     /// Loads one or more native ads into the pool via GADAdLoader.
     ///
@@ -425,15 +391,6 @@ final class AdManager: NSObject, ObservableObject, FullScreenContentDelegate, Na
 
     nonisolated func adLoader(_ adLoader: AdLoader, didReceive nativeAd: NativeAd) {
         Task { @MainActor in
-            // NOTE: do NOT filter creatives here. GUI-67's icon/media check
-            // exists for the compact SponsoredSlotView chip, which needs a
-            // drawable asset. Other consumers do not: the Reels carousel
-            // renders NativeAdCardView in feedGlass style, which is happy with
-            // headline + body + advertiser alone. Filtering at load applied
-            // the chip's requirement to the whole pool and starved Reels of
-            // ads it could have shown. The check stays where it belongs — at
-            // the chip's claim site, which now hands the ad back instead of
-            // destroying it.
             nativeAd.delegate = self
             nativePool.append(nativeAd)
             nativeAdsReceived += 1
@@ -442,14 +399,6 @@ final class AdManager: NSObject, ObservableObject, FullScreenContentDelegate, Na
             nativeRetryTask?.cancel()
             nativePoolTick += 1
         }
-    }
-
-    /// True when the ad carries an icon or main media asset — the two things
-    /// the card can actually draw.
-    static func hasRenderableCreative(_ ad: NativeAd) -> Bool {
-        if ad.icon?.image != nil { return true }
-        let media = ad.mediaContent
-        return media.hasVideoContent || media.mainImage != nil
     }
 
     nonisolated func adLoader(_ adLoader: AdLoader, didFailToReceiveAdWithError error: Error) {
@@ -461,7 +410,7 @@ final class AdManager: NSObject, ObservableObject, FullScreenContentDelegate, Na
         }
     }
 
-    /// Retries a failed native load on a backoff. Cancelled and reset the
+    /// Retries a failed native load on a backoff; cancelled and reset the
     /// moment an ad is received.
     private func scheduleNativeRetry() {
         nativeRetryTask?.cancel()
@@ -475,9 +424,8 @@ final class AdManager: NSObject, ObservableObject, FullScreenContentDelegate, Na
         }
     }
 
-    /// Re-arms the ad stack when the app comes back to the foreground. A
-    /// viewer who launched with no signal and then got some had no other way
-    /// to recover for the rest of the process lifetime.
+    /// Re-arms the stack on foreground. Someone who launched with no signal
+    /// had no other way to recover for the rest of the process lifetime.
     private func observeForegroundIfNeeded() {
         guard !didObserveForeground else { return }
         didObserveForeground = true
@@ -492,7 +440,6 @@ final class AdManager: NSObject, ObservableObject, FullScreenContentDelegate, Na
                 if manager.didInitializeSDK {
                     if manager.nativePool.isEmpty { manager.loadNativePool() }
                 } else {
-                    // A consent or init failure also strands the session.
                     manager.startInFlight = false
                     manager.start()
                 }
@@ -537,7 +484,6 @@ final class AdManager: NSObject, ObservableObject {
     @Published private(set) var lastInterstitialError: String?
     @Published private(set) var nativeLoadAttempts: Int = 0
     @Published private(set) var nativeAdsReceived: Int = 0
-    @Published private(set) var nativeAdsDiscarded: Int = 0
 
     /// Snapshot reporting that no SDK is linked, so the diagnostics sheet
     /// explains the simulator case instead of showing a misleading failure.
@@ -556,7 +502,6 @@ final class AdManager: NSObject, ObservableObject {
             nativePoolCount: 0,
             nativeLoadAttempts: 0,
             nativeAdsReceived: 0,
-            nativeAdsDiscarded: 0,
             hasInterstitial: false,
             lastNativeError: nil,
             lastInterstitialError: nil
@@ -617,8 +562,6 @@ final class AdManager: NSObject, ObservableObject {
     @Published private(set) var nativePoolTick: Int = 0
 
     func nextNativeAd() -> AnyObject? { nil }
-    func returnNativeAd(_ ad: AnyObject) {}
-    func noteDiscardedForChip() {}
     func loadNativePool() {}
 }
 
