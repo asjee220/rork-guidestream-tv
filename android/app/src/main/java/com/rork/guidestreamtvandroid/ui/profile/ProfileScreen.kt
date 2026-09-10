@@ -59,6 +59,7 @@ import com.rork.guidestreamtvandroid.data.repository.StreamsViewModel
 import com.rork.guidestreamtvandroid.ui.components.glassCard
 import com.rork.guidestreamtvandroid.data.models.SourceKind
 import com.rork.guidestreamtvandroid.ui.components.AvatarPickerSheet
+import com.rork.guidestreamtvandroid.ui.components.ServicesBottomSheet
 import com.rork.guidestreamtvandroid.ui.components.UserAvatar
 import com.rork.guidestreamtvandroid.ui.theme.BottomSafeSpacer
 import com.rork.guidestreamtvandroid.ui.theme.Navy
@@ -106,6 +107,8 @@ fun ProfileScreen(
     val selectedServices by authVm.selectedServices.collectAsStateWithLifecycle()
 
     var showAccount by remember { mutableStateOf(false) }
+    // GUI-101: the same services editor the top-bar pill opens.
+    var showServicesSheet by remember { mutableStateOf(false) }
     var showNotifications by remember { mutableStateOf(false) }
     var showDevices by remember { mutableStateOf(false) }
     var showHelp by remember { mutableStateOf(false) }
@@ -240,9 +243,20 @@ fun ProfileScreen(
             )
         }
 
-        // Connected Services left this menu — the services pill in the header
-        // of Home, Sports and the Watchlist opens the same editor, and a menu
-        // row that duplicates a permanent control is just a longer menu.
+        // Connected Services came back (GUI-101). The argument for removing it
+        // was that the top-bar pill is always there, which holds only once you
+        // have services: a viewer who skipped the onboarding step had a pill
+        // with nothing in it and no named route to the editor anywhere in the
+        // app. The pill's empty state fixes the first half of that; this row is
+        // the second. It opens the same ServicesBottomSheet the pill does.
+        ProfileRow(
+            icon = Icons.Filled.Subscriptions,
+            iconTint = BrandOrange,
+            title = "Connected Services",
+            subtitle = if (selectedServices.isEmpty()) "Pick the services you have"
+                       else "${selectedServices.size} selected",
+            onClick = { showServicesSheet = true },
+        )
 
         ProfileRow(
             icon = Icons.Filled.Notifications,
@@ -325,6 +339,16 @@ fun ProfileScreen(
     }
 
     // Sub-screens as overlays
+    if (showServicesSheet) {
+        ServicesBottomSheet(
+            selected = selectedServices,
+            onToggle = { id ->
+                val next = if (id in selectedServices) selectedServices - id else selectedServices + id
+                authVm.setSelectedServices(next)
+            },
+            onDismiss = { showServicesSheet = false },
+        )
+    }
     if (showAccount) {
         AccountScreen(onClose = { showAccount = false })
     }

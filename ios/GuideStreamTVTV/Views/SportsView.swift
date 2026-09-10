@@ -303,13 +303,13 @@ struct SportsView: View {
                     .scaledFont(size: 24, weight: .regular)
                     .foregroundStyle(Color.white.opacity(0.45))
             }
-            if !orderedSelectedServiceIds.isEmpty {
-                ServicesPill(
-                    serviceIds: orderedSelectedServiceIds,
-                    onTap: { showServicesSheet = true }
-                )
-                .padding(.leading, 4)
-            }
+            // GUI-101: shown even with nothing selected — see the note in
+            // ServicesPill.swift.
+            ServicesPill(
+                serviceIds: orderedSelectedServiceIds,
+                onTap: { showServicesSheet = true }
+            )
+            .padding(.leading, 4)
             Spacer()
             if isLoading && !games.isEmpty {
                 ProgressView()

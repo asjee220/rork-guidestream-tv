@@ -43,6 +43,8 @@ struct ProfileView: View {
     @State private var activeSheet: ProfileSheet?
     /// Presents the avatar picker (upload + presets + clear).
     @State private var showAvatarPicker = false
+    /// Presents the same services editor the top-bar pill opens (GUI-101).
+    @State private var showServicesSheet = false
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -102,6 +104,9 @@ struct ProfileView: View {
         }
         .sheet(isPresented: $showAvatarPicker) {
             AvatarPickerSheet(initials: initials)
+        }
+        .sheet(isPresented: $showServicesSheet) {
+            ServicesBottomSheet()
         }
         .task {
             await stats.refresh()
@@ -279,6 +284,14 @@ struct ProfileView: View {
         streams.userStreams.filter { SourceKind.from(titleId: $0.titleId).isNonTMDB }.count
     }
 
+    /// Reads the live selection rather than `stats`, so the row updates the
+    /// moment the sheet saves instead of waiting for the next stats refresh.
+    private var servicesSubtitle: String {
+        let count = auth.selectedServices.count
+        guard count > 0 else { return "Pick the services you have" }
+        return "\(count) selected"
+    }
+
     // MARK: - Cards
 
     private var primaryCard: some View {
@@ -290,11 +303,26 @@ struct ProfileView: View {
                 subtitle: accountSubtitle,
                 onTap: { path.append(.account) }
             )
-            // Watchlist and Connected Services left this menu. Both are one
-            // tap away from anywhere now — the Watchlist is its own tab in the
-            // floating nav, and the services pill sits in the header of every
-            // screen that has one. A menu row that duplicates a permanent
-            // control is just a longer menu.
+            // Watchlist left this menu — it is its own tab in the floating
+            // nav now, and a menu row that duplicates a permanent control is
+            // just a longer menu.
+            //
+            // Connected Services came back (GUI-101). The argument for
+            // removing it was that the top-bar pill is always there, which
+            // holds only once you have services: a viewer who skipped the
+            // onboarding step had a pill with nothing in it and no named
+            // route to the editor anywhere in the app. The pill's empty state
+            // fixes the first half of that; this row is the second. It opens
+            // the same `ServicesBottomSheet` the pill does — one editor, two
+            // ways in — rather than a parallel pushed screen.
+            ProfileRowDivider()
+            ProfileRow(
+                icon: "rectangle.stack.fill",
+                iconTint: Color.orange,
+                title: "Connected Services",
+                subtitle: servicesSubtitle,
+                onTap: { showServicesSheet = true }
+            )
             ProfileRowDivider()
             ProfileRow(
                 icon: "iphone",

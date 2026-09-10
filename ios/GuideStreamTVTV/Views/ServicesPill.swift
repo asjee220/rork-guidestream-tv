@@ -8,6 +8,12 @@
 //  so users can edit their list. The iOS file lives at:
 //  ios/GuideStreamTV/Views/ServicesPill.swift
 //
+//  GUI-101: the empty state is a pill, not an absence. Home and Sports used to
+//  hide this control entirely when nothing was selected, which left a TV viewer
+//  who skipped the services step with no route to the editor on either screen.
+//  It now draws three dashed placeholder rings and the word "Add" in the same
+//  place and silhouette as the filled pill.
+//
 
 import SwiftUI
 
@@ -24,10 +30,20 @@ struct ServicesPill: View {
     private let iconDiameter: CGFloat = 22
     private let stride: CGFloat = 13
 
+    /// No services chosen yet — the pill switches to its invitation state.
+    private var isEmpty: Bool { serviceIds.isEmpty }
+
     var body: some View {
         Button(action: onTap) {
             HStack(spacing: 8) {
-                stackedIcons
+                if isEmpty {
+                    ghostIcons
+                    Text("Add")
+                        .scaledFont(size: 11, weight: .heavy)
+                        .foregroundStyle(Color.orange)
+                } else {
+                    stackedIcons
+                }
                 Image(systemName: "chevron.down")
                     .scaledFont(size: 9, weight: .bold)
                     .foregroundStyle(Color.orange.opacity(0.75))
@@ -42,11 +58,43 @@ struct ServicesPill: View {
                 Capsule().stroke(Color.orange, lineWidth: 1.4)
             )
             .overlay(alignment: .topTrailing) {
-                counterBadge.offset(x: 6, y: -7)
+                // No badge in the empty state — a "0" reads as a broken
+                // counter, and the dashed rings already say "nothing here".
+                if !isEmpty {
+                    counterBadge.offset(x: 6, y: -7)
+                }
             }
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("My services. \(serviceIds.count) selected. Press to edit.")
+        .accessibilityLabel(
+            isEmpty
+                ? "Add your services. None selected yet. Press to choose."
+                : "My services. \(serviceIds.count) selected. Press to edit."
+        )
+    }
+
+    /// Three dashed rings occupying exactly the space the real icons would,
+    /// filled with the bar's own navy so they overlap the way the real stack
+    /// does.
+    private var ghostIcons: some View {
+        let count = 3
+        let width = stride * CGFloat(count - 1) + iconDiameter
+        return ZStack(alignment: .leading) {
+            ForEach(0..<count, id: \.self) { index in
+                Circle()
+                    .fill(Color.navy)
+                    .frame(width: iconDiameter, height: iconDiameter)
+                    .overlay(
+                        Circle().strokeBorder(
+                            Color.orange.opacity(0.55),
+                            style: StrokeStyle(lineWidth: 1.2, dash: [3, 2.5])
+                        )
+                    )
+                    .offset(x: stride * CGFloat(index))
+                    .zIndex(Double(count - index))
+            }
+        }
+        .frame(width: width, height: iconDiameter, alignment: .leading)
     }
 
     private var stackedIcons: some View {

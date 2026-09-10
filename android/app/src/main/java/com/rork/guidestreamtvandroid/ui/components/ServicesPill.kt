@@ -23,8 +23,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -40,6 +43,11 @@ import com.rork.guidestreamtvandroid.ui.theme.Navy
  * in the top bar on Home. Shows the user's first three selected services as
  * overlapping mini-icons with a small counter badge. Tapping opens the
  * services editor sheet. Mirrors iOS ServicesPill.swift.
+ *
+ * GUI-101: with nothing selected the pill keeps its silhouette and position
+ * and shows three dashed placeholder rings plus the word "Add" — rather than
+ * an empty capsule with a "0" badge, which read as a broken control to anyone
+ * who skipped the services step during onboarding.
  */
 @Composable
 fun ServicesPill(
@@ -50,6 +58,7 @@ fun ServicesPill(
     val topServices = serviceIds.mapNotNull { StreamingCatalog.service(it) }.take(3)
     val iconDiameter = 22.dp
     val stride = 13.dp
+    val isEmpty = serviceIds.isEmpty()
 
     Box(modifier = modifier) {
         Row(
@@ -66,19 +75,40 @@ fun ServicesPill(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            // Overlapping stacked mini-icons
-            val stackWidth = stride * (maxOf(topServices.size, 1) - 1) + iconDiameter
+            // Overlapping stacked mini-icons, or three dashed rings holding
+            // exactly that space when nothing is selected.
+            val ghostCount = 3
+            val stackWidth =
+                if (isEmpty) stride * (ghostCount - 1) + iconDiameter
+                else stride * (maxOf(topServices.size, 1) - 1) + iconDiameter
             Box(
                 modifier = Modifier.width(stackWidth),
                 contentAlignment = Alignment.CenterStart,
             ) {
-                topServices.forEachIndexed { index, service ->
-                    ServiceMiniIcon(
-                        service = service,
-                        size = iconDiameter,
-                        modifier = Modifier.offset(x = stride * index),
-                    )
+                if (isEmpty) {
+                    repeat(ghostCount) { index ->
+                        GhostServiceRing(
+                            size = iconDiameter,
+                            modifier = Modifier.offset(x = stride * index),
+                        )
+                    }
+                } else {
+                    topServices.forEachIndexed { index, service ->
+                        ServiceMiniIcon(
+                            service = service,
+                            size = iconDiameter,
+                            modifier = Modifier.offset(x = stride * index),
+                        )
+                    }
                 }
+            }
+            if (isEmpty) {
+                Text(
+                    text = "Add",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Black,
+                    color = BrandOrange,
+                )
             }
             Icon(
                 imageVector = Icons.Filled.KeyboardArrowDown,
@@ -88,7 +118,10 @@ fun ServicesPill(
             )
         }
 
-        // Counter badge, top-right
+        // Counter badge, top-right. Suppressed in the empty state — a "0"
+        // reads as a broken counter, and the dashed rings already say
+        // "nothing here".
+        if (!isEmpty) {
         Box(
             modifier = Modifier
                 .align(Alignment.TopEnd)
@@ -106,7 +139,39 @@ fun ServicesPill(
                 color = Color.White,
             )
         }
+        }
     }
+}
+
+/**
+ * Dashed placeholder ring standing in for a service icon that has not been
+ * chosen yet. Filled with the bar's own navy so the rings occlude each other
+ * the way the real stack does, where each icon carries a navy border.
+ */
+@Composable
+private fun GhostServiceRing(
+    size: androidx.compose.ui.unit.Dp,
+    modifier: Modifier = Modifier,
+) {
+    Box(
+        modifier = modifier
+            .size(size)
+            .clip(CircleShape)
+            .background(Navy)
+            .drawBehind {
+                drawCircle(
+                    color = BrandOrange.copy(alpha = 0.55f),
+                    radius = this.size.minDimension / 2f - 0.6.dp.toPx(),
+                    style = Stroke(
+                        width = 1.2.dp.toPx(),
+                        pathEffect = PathEffect.dashPathEffect(
+                            floatArrayOf(3.dp.toPx(), 2.5.dp.toPx()),
+                            0f,
+                        ),
+                    ),
+                )
+            },
+    )
 }
 
 @Composable

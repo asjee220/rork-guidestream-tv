@@ -796,9 +796,10 @@ private struct PageBar: View {
                     .foregroundStyle(Color.white.opacity(0.45))
             }
             Spacer()
-            if !selectedServiceIds.isEmpty {
-                ServicesPill(serviceIds: selectedServiceIds, onTap: onServicesPill)
-            }
+            // GUI-101: shown even with nothing selected — the pill has its own
+            // empty state now, and hiding it was what left a TV viewer who
+            // skipped onboarding with no way to reach the services editor.
+            ServicesPill(serviceIds: selectedServiceIds, onTap: onServicesPill)
         }
         .padding(.horizontal, 20)
         .frame(height: 56)
