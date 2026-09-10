@@ -24,6 +24,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Assessment
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Devices
 import androidx.compose.material.icons.filled.Help
@@ -58,6 +59,7 @@ import com.rork.guidestreamtvandroid.data.repository.AuthViewModel
 import com.rork.guidestreamtvandroid.data.repository.StreamsViewModel
 import com.rork.guidestreamtvandroid.ui.components.glassCard
 import com.rork.guidestreamtvandroid.data.models.SourceKind
+import com.rork.guidestreamtvandroid.ui.ads.AdDiagnosticsDialog
 import com.rork.guidestreamtvandroid.ui.components.AvatarPickerSheet
 import com.rork.guidestreamtvandroid.ui.components.ServicesBottomSheet
 import com.rork.guidestreamtvandroid.ui.components.UserAvatar
@@ -112,6 +114,7 @@ fun ProfileScreen(
     var showNotifications by remember { mutableStateOf(false) }
     var showDevices by remember { mutableStateOf(false) }
     var showHelp by remember { mutableStateOf(false) }
+    var showAdDiagnostics by remember { mutableStateOf(false) }
     var showSignOutConfirm by remember { mutableStateOf(false) }
     var showAvatarPicker by remember { mutableStateOf(false) }
     val accountAvatarUrl by authVm.accountAvatarUrl.collectAsStateWithLifecycle()
@@ -282,6 +285,18 @@ fun ProfileScreen(
             onClick = { showHelp = true },
         )
 
+        // AdDiagnosticsDialog existed, fully built, with nothing presenting it
+        // — so "why am I seeing no ads?" could only be answered from the
+        // database. It reports consent state, canRequestAds, the live unit ids
+        // and the last load error, none of which leave the device otherwise.
+        ProfileRow(
+            icon = Icons.Filled.Assessment,
+            iconTint = BrandOrange,
+            title = "Ad Diagnostics",
+            subtitle = "Why ads are or aren't showing on this device",
+            onClick = { showAdDiagnostics = true },
+        )
+
         ProfileRow(
             icon = Icons.Filled.Refresh,
             iconTint = BrandOrange,
@@ -357,6 +372,9 @@ fun ProfileScreen(
     }
     if (showDevices) {
         DevicesScreen(onClose = { showDevices = false })
+    }
+    if (showAdDiagnostics) {
+        AdDiagnosticsDialog(onDismiss = { showAdDiagnostics = false })
     }
     if (showHelp) {
         HelpScreen(onClose = { showHelp = false })

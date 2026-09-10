@@ -84,6 +84,10 @@ struct SponsoredSlotView: View {
     /// Rakuten fallback to a native card.
     @ObservedObject private var adManager = AdManager.shared
 
+    /// Stable per-slot seed so a given slot always shows the same house offer
+    /// instead of shuffling as the view re-renders.
+    private var sectionSeed: Int { abs(adSource.hashValue) }
+
     /// Inline feed slots (compactNative + feedStyle) pin the 96pt chip row;
     /// every other combination keeps the full-height card.
     private var effectiveNativeCardHeight: CGFloat {
@@ -107,14 +111,18 @@ struct SponsoredSlotView: View {
                     feedStyle: feedStyle
                 )
             } else {
-                // No eligible Rakuten offer and no native fill — occupy zero
-                // height rather than advertise an owned service. Color.clear
-                // (not EmptyView) keeps the slot a live view node so
-                // onAppear and onChange(nativePoolTick) keep firing and a
-                // late pool fill can still upgrade this slot to a native ad.
-                Color.clear
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 0)
+                // No eligible Rakuten offer and no native fill. Rather than
+                // collapse to nothing — which is what a viewer who subscribes
+                // to every affiliate service used to see across the whole app
+                // — show a house card. It still never advertises a service
+                // they already own, and the slot stays a live view node so a
+                // late pool fill upgrades it to a native ad.
+                HouseSlotCard(
+                    offer: HouseSlotCard.offer(for: sectionSeed),
+                    compact: compact,
+                    feedStyle: feedStyle,
+                    onDismiss: onDismiss
+                )
             }
         }
         .onAppear { fetchNativeAd() }
@@ -160,10 +168,13 @@ struct SponsoredSlotView: View {
                 feedStyle: feedStyle
             )
         } else {
-            // Zero-height live node — see the matching branch in `body`.
-            Color.clear
-                .frame(maxWidth: .infinity)
-                .frame(height: 0)
+            // See the matching branch in `body`.
+            HouseSlotCard(
+                offer: HouseSlotCard.offer(for: sectionSeed),
+                compact: compact,
+                feedStyle: feedStyle,
+                onDismiss: onDismiss
+            )
         }
         #else
         // Simulator: never reached because nextNativeAd() returns nil.
@@ -199,7 +210,15 @@ struct SponsoredSlotView: View {
             // than render a hollow chip. Dropping it leaves the slot on its
             // Rakuten backfill (or collapsed) and lets a later pool tick claim
             // a different ad.
-            guard Self.hasRenderableCreative(ad) else { return }
+            // Unusable creatives are now filtered as they enter the pool
+            // (AdManager.adLoader(_:didReceive:)), so this should not trigger.
+            // If it ever does, hand the ad BACK rather than dropping it —
+            // nextNativeAd() already removed it from the pool, and silently
+            // destroying a paid fill here is what burned ~93% of our fills.
+            guard Self.hasRenderableCreative(ad) else {
+                AdManager.shared.returnNativeAd(ad)
+                return
+            }
             currentNativeAd = ad
         }
     }

@@ -1678,6 +1678,8 @@ struct HelpFeedbackView: View {
     /// Help & Feedback never task-switches out to Safari or Mail.
     @State private var browserLink: InAppBrowserLink?
     @State private var supportRequest: SupportTopicRequest?
+    /// Presents the ad diagnostics sheet (GUI: ads invisible on device).
+    @State private var showAdDiagnostics = false
 
     /// Shared ad manager — observed so the Ad Privacy Options row appears
     /// as soon as UMP says a privacy options entry point is required.
@@ -1739,9 +1741,25 @@ struct HelpFeedbackView: View {
                 subtitle: "Something not working? Let us know.",
                 onTap: reportBug
             )
+            ProfileRowDivider()
+            // AdDiagnosticsView existed, fully built, with nothing in the app
+            // presenting it — so "why am I seeing no ads?" could only ever be
+            // answered from the database. It reports consent state,
+            // canRequestAds, ATT status, the live unit ids, pool count and the
+            // last load error, all of which live only on the device.
+            ProfileRow(
+                icon: "chart.bar.doc.horizontal.fill",
+                iconTint: Color.textSecondary,
+                title: "Ad Diagnostics",
+                subtitle: "Why ads are or aren't showing on this device",
+                onTap: { showAdDiagnostics = true }
+            )
         }
         .sheet(item: $supportRequest) { request in
             SupportFormView(presetTopic: request.topic)
+        }
+        .sheet(isPresented: $showAdDiagnostics) {
+            AdDiagnosticsView()
         }
     }
 
