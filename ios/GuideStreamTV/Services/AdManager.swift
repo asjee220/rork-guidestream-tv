@@ -203,6 +203,7 @@ final class AdManager: NSObject, ObservableObject, FullScreenContentDelegate, Na
                 guard let self else { return }
                 self.didInitializeSDK = true
                 self.startInFlight = false
+                self.observeForegroundIfNeeded()
                 print("[AdManager] SDK initialized — preloading ads")
                 self.loadInterstitial()
                 self.loadNativePool()
@@ -335,6 +336,19 @@ final class AdManager: NSObject, ObservableObject, FullScreenContentDelegate, Na
     // MARK: - Native ad pool
 
     private let nativePoolTarget: Int = 5
+
+    /// Backoff schedule for a FAILED native load. Without this, one transient
+    /// failure ends ad serving for the whole session: `loadNativePool()` is
+    /// only called by a slot appearing or by `nativePoolTick`, and the tick
+    /// only fires when an ad is RECEIVED. So a single network blip at launch
+    /// left `nativeLoadAttempts: 1`, `nativeAdsReceived: 0`, an empty pool and
+    /// nothing anywhere that would ever ask again. Seen on a real device.
+    private static let nativeRetryDelays: [Double] = [2, 5, 12, 30, 60]
+    private var nativeRetryAttempt: Int = 0
+    private var nativeRetryTask: Task<Void, Never>?
+
+    /// True once the foreground observer is installed.
+    private var didObserveForeground = false
     private var nativePool: [NativeAd] = []
     private var nativeAdLoader: AdLoader?
 
@@ -424,6 +438,8 @@ final class AdManager: NSObject, ObservableObject, FullScreenContentDelegate, Na
             nativePool.append(nativeAd)
             nativeAdsReceived += 1
             lastNativeError = nil
+            nativeRetryAttempt = 0
+            nativeRetryTask?.cancel()
             nativePoolTick += 1
         }
     }
@@ -441,6 +457,46 @@ final class AdManager: NSObject, ObservableObject, FullScreenContentDelegate, Na
             print("[AdManager] Native load failed (unit \(self.nativeAdUnitID)): \(error.localizedDescription)")
             self.lastNativeError = error.localizedDescription
             self.nativeAdLoader = nil
+            self.scheduleNativeRetry()
+        }
+    }
+
+    /// Retries a failed native load on a backoff. Cancelled and reset the
+    /// moment an ad is received.
+    private func scheduleNativeRetry() {
+        nativeRetryTask?.cancel()
+        let index = min(nativeRetryAttempt, Self.nativeRetryDelays.count - 1)
+        let delay = Self.nativeRetryDelays[index]
+        nativeRetryAttempt += 1
+        nativeRetryTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(delay))
+            guard let self, !Task.isCancelled else { return }
+            self.loadNativePool()
+        }
+    }
+
+    /// Re-arms the ad stack when the app comes back to the foreground. A
+    /// viewer who launched with no signal and then got some had no other way
+    /// to recover for the rest of the process lifetime.
+    private func observeForegroundIfNeeded() {
+        guard !didObserveForeground else { return }
+        didObserveForeground = true
+        NotificationCenter.default.addObserver(
+            forName: UIApplication.willEnterForegroundNotification,
+            object: nil,
+            queue: .main
+        ) { _ in
+            Task { @MainActor in
+                let manager = AdManager.shared
+                manager.nativeRetryAttempt = 0
+                if manager.didInitializeSDK {
+                    if manager.nativePool.isEmpty { manager.loadNativePool() }
+                } else {
+                    // A consent or init failure also strands the session.
+                    manager.startInFlight = false
+                    manager.start()
+                }
+            }
         }
     }
 
