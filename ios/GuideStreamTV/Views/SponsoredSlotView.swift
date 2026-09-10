@@ -245,8 +245,13 @@ struct SponsoredSlotView: View {
             // If it ever does, hand the ad BACK rather than dropping it —
             // nextNativeAd() already removed it from the pool, and silently
             // destroying a paid fill here is what burned ~93% of our fills.
+            // GUI-67: this chip needs a drawable icon or media asset. An ad
+            // without one goes BACK to the pool — another consumer (the Reels
+            // carousel, say) can render it fine. Returning it does not tick,
+            // so this slot will not immediately re-claim the same ad.
             guard Self.hasRenderableCreative(ad) else {
                 AdManager.shared.returnNativeAd(ad)
+                AdManager.shared.noteDiscardedForChip()
                 return
             }
             currentNativeAd = ad

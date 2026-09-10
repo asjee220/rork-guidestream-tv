@@ -368,10 +368,19 @@ final class AdManager: NSObject, ObservableObject, FullScreenContentDelegate, Na
     /// `nextNativeAd()` removes from the pool, so a caller that claims an ad
     /// and then declines it was silently destroying a paid fill. Callers that
     /// reject an ad must hand it back through here.
+    /// Deliberately does NOT bump `nativePoolTick`. The tick wakes every
+    /// mounted slot to re-attempt a claim; bumping it here would have the
+    /// rejecting slot immediately re-claim the same ad, reject it and return
+    /// it again — a tight loop. `append` puts the ad at the back of the pool
+    /// and claims come off the front, so a different consumer gets it next.
     func returnNativeAd(_ ad: NativeAd) {
         nativePool.append(ad)
-        nativePoolTick += 1
     }
+
+    /// Counts fills the compact chip could not draw. High against a healthy
+    /// match rate means the unit's creative mix and the chip's asset
+    /// requirements disagree — not that AdMob is failing to fill.
+    func noteDiscardedForChip() { nativeAdsDiscarded += 1 }
 
     /// Loads one or more native ads into the pool via GADAdLoader.
     ///
@@ -402,15 +411,15 @@ final class AdManager: NSObject, ObservableObject, FullScreenContentDelegate, Na
 
     nonisolated func adLoader(_ adLoader: AdLoader, didReceive nativeAd: NativeAd) {
         Task { @MainActor in
-            // GUI-67 used to be enforced at claim time, in SponsoredSlotView:
-            // the slot took an ad off the pool, found it had no drawable
-            // creative, and returned — destroying the fill. Enforce it here
-            // instead, so an unusable creative never enters the pool at all
-            // and every ad a slot claims is one it can actually draw.
-            guard Self.hasRenderableCreative(nativeAd) else {
-                nativeAdsDiscarded += 1
-                return
-            }
+            // NOTE: do NOT filter creatives here. GUI-67's icon/media check
+            // exists for the compact SponsoredSlotView chip, which needs a
+            // drawable asset. Other consumers do not: the Reels carousel
+            // renders NativeAdCardView in feedGlass style, which is happy with
+            // headline + body + advertiser alone. Filtering at load applied
+            // the chip's requirement to the whole pool and starved Reels of
+            // ads it could have shown. The check stays where it belongs — at
+            // the chip's claim site, which now hands the ad back instead of
+            // destroying it.
             nativeAd.delegate = self
             nativePool.append(nativeAd)
             nativeAdsReceived += 1
@@ -553,6 +562,7 @@ final class AdManager: NSObject, ObservableObject {
 
     func nextNativeAd() -> AnyObject? { nil }
     func returnNativeAd(_ ad: AnyObject) {}
+    func noteDiscardedForChip() {}
     func loadNativePool() {}
 }
 
