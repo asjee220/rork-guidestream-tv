@@ -173,6 +173,7 @@ class SearchViewModel : ViewModel() {
                 .from("content_sources")
                 .select {
                     filter {
+                        isIn("source_type", SourceKind.creatorSourceTypes)
                         or {
                             ilike("display_name", "%$q%")
                             ilike("category", "%$q%")

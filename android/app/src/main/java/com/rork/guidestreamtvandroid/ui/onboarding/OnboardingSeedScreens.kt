@@ -83,6 +83,8 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import io.github.jan.supabase.postgrest.query.Order
+import com.rork.guidestreamtvandroid.data.models.SourceKind
 
 /**
  * A show or creator the user picks during onboarding, committed to the
@@ -352,7 +354,15 @@ fun FollowCreatorsOnboardingScreen(
         val allContent = try {
             SupabaseManager.client.postgrest
                 .from("content_sources")
-                .select { limit(60) }
+                .select {
+                    // Without the filter this took whatever 60 of the 137 rows Postgres
+                    // returned, in no order — so which creators onboarding offered shifted
+                    // any time a row was added. Filter to the kinds these lanes can render
+                    // and order by reach so the 60 are the 60 worth showing.
+                    filter { isIn("source_type", SourceKind.creatorSourceTypes) }
+                    order("subscriber_count", Order.DESCENDING, nullsFirst = false)
+                    limit(60)
+                }
                 .decodeList<OnboardingCreatorRow>()
                 .filter { it.titleId.isNotBlank() && !it.displayName.isNullOrBlank() }
         } catch (_: Exception) {
