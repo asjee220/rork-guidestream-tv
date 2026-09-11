@@ -186,8 +186,14 @@ nonisolated struct TVChannelMetaResponse: Decodable, Sendable {
 
 /// Which platform a saved id belongs to. tvOS has no SourceKind; this is the
 /// same prefix table, and has to track ios/GuideStreamTV/Models/SourceKind.swift.
-enum TVCreatorKind: String, Sendable {
+enum TVCreatorKind: String, CaseIterable, Sendable {
     case youtube, podcast, twitch, kick
+
+    /// The `source_type` values content_sources holds for followable creators.
+    /// The raw values are those strings, so this stays correct if a kind is added.
+    /// An inclusion list, not `neq("tmdb")`: content_sources also carries creator
+    /// endpoints tvOS cannot draw, and excluding one kind by name lets the rest in.
+    static let sourceTypes: [String] = TVCreatorKind.allCases.map { $0.rawValue }
 
     static func from(titleId: String) -> TVCreatorKind? {
         if titleId.hasPrefix("yt:") { return .youtube }

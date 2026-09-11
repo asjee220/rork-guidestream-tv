@@ -24,6 +24,10 @@ final class ContentSourcesService {
         var query = client.from("content_sources").select()
         if let type = sourceType {
             query = query.eq("source_type", value: type)
+        } else {
+            // content_sources also holds creator endpoints these surfaces cannot
+            // render, so an unfiltered fetch must still exclude them.
+            query = query.in("source_type", values: SourceKind.creatorSourceTypes)
         }
         let rows: [ContentSource] = try await query
             .order("created_at", ascending: false)
@@ -41,6 +45,8 @@ final class ContentSourcesService {
             .ilike("display_name", value: "%\(trimmed)%")
         if let type = sourceType {
             dbQuery = dbQuery.eq("source_type", value: type)
+        } else {
+            dbQuery = dbQuery.in("source_type", values: SourceKind.creatorSourceTypes)
         }
         let rows: [ContentSource] = try await dbQuery
             .order("created_at", ascending: false)
@@ -391,10 +397,12 @@ final class ContentSourcesService {
         print("[ContentSources] followedSourceTypes=\(followedSourceTypes)")
 
         // Fetch all creators (all source types — YouTube, podcast, Twitch, Kick).
+        // Inclusion list rather than neq("tmdb"): content_sources will carry
+        // other endpoint kinds, and excluding one by name lets the rest through.
         let allSources: [ContentSource] = try await client
             .from("content_sources")
             .select()
-            .neq("source_type", value: "tmdb")
+            .in("source_type", values: SourceKind.creatorSourceTypes)
             .order("created_at", ascending: false)
             .limit(max(200, limit * 4))
             .execute()

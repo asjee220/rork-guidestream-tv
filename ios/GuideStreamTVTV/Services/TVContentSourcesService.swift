@@ -51,13 +51,13 @@ enum TVContentSourcesService {
         let followedTags = buildTagSet(from: followedRows)
         guard !followedTags.isEmpty else { return [] }
 
-        // Fetch candidate rows (non-TMDB sources, most recent first).
+        // Fetch candidate rows (followable creator kinds, most recent first).
         let candidates: [TVContentSource]
         do {
             candidates = try await client
                 .from("content_sources")
                 .select()
-                .neq("source_type", value: "tmdb")
+                .in("source_type", values: TVCreatorKind.sourceTypes)
                 .order("created_at", ascending: false)
                 .range(from: 0, to: 199)
                 .execute()

@@ -90,6 +90,14 @@ enum SourceKind: String, CaseIterable, Sendable {
         }
     }
 
+    /// The `source_type` values content_sources holds for followable creators —
+    /// every kind except `.tmdb`. content_sources also carries creator endpoints
+    /// the creator surfaces cannot draw (a show on a streaming service, a
+    /// members-only feed), so queries feeding those surfaces filter on this.
+    /// An inclusion list, not `neq("tmdb")`: a new endpoint kind must opt in.
+    static let creatorSourceTypes: [String] =
+        SourceKind.allCases.filter { $0 != .tmdb }.map { $0.sourceType }
+
     /// Human-readable display label used in filter chips and badges.
     var displayLabel: String {
         switch self {
