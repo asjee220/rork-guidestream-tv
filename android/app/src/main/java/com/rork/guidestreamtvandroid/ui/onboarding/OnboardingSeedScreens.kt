@@ -359,7 +359,12 @@ fun FollowCreatorsOnboardingScreen(
                     // returned, in no order — so which creators onboarding offered shifted
                     // any time a row was added. Filter to the kinds these lanes can render
                     // and order by reach so the 60 are the 60 worth showing.
-                    filter { isIn("source_type", SourceKind.creatorSourceTypes) }
+                    filter {
+                        isIn("source_type", SourceKind.creatorSourceTypes)
+                        // Live search writes its hits into content_sources; those are
+                        // stamped discovered_at and must not appear in the picker.
+                        exact("discovered_at", null)
+                    }
                     order("subscriber_count", Order.DESCENDING, nullsFirst = false)
                     limit(60)
                 }

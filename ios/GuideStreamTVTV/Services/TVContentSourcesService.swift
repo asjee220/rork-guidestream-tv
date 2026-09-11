@@ -58,6 +58,7 @@ enum TVContentSourcesService {
                 .from("content_sources")
                 .select()
                 .in("source_type", values: TVCreatorKind.sourceTypes)
+                .is("discovered_at", value: nil)
                 .order("created_at", ascending: false)
                 .range(from: 0, to: 199)
                 .execute()

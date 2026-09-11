@@ -64,32 +64,29 @@ final class ContentSourcesService {
         let results: [ContentSource]
     }
 
-    /// Searches YouTube and/or Twitch live via the backend worker, which also
-    /// persists discovered creators into content_sources. Returns normalized
-    /// ContentSource rows. Returns [] (never throws) when the functions URL is
-    /// unconfigured or the request fails, so the UI degrades to local results.
-    /// - Parameter type: "all", "youtube", or "twitch".
+    /// Searches YouTube, Twitch and podcasts live via the `search_creators` edge
+    /// function, which also persists what it finds into content_sources (stamped
+    /// `discovered_at`) so following a result and opening its detail work at once.
+    /// Returns normalized ContentSource rows, or [] when the call fails, so the UI
+    /// degrades to local results.
+    ///
+    /// This used to call a Cloudflare Worker at
+    /// `Config.EXPO_PUBLIC_RORK_FUNCTIONS_URL + "/search/creators"`. That worker went
+    /// away with Rork and the constant resolves to "" — no Info.plist key, no build
+    /// setting — so the old implementation returned [] on its first guard, silently,
+    /// and creator search could only ever match seeded rows. Searching "joe budden"
+    /// found nothing. Ported to Supabase 11 Sep 2026.
+    /// - Parameter type: "all", "youtube", "twitch", or "podcast".
     func searchCreatorsLive(query: String, type: String = "all") async -> [ContentSource] {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return [] }
-
-        let base = Config.EXPO_PUBLIC_RORK_FUNCTIONS_URL.trimmingCharacters(in: .whitespaces)
-        guard !base.isEmpty,
-              var components = URLComponents(string: base.hasSuffix("/") ? base + "search/creators" : base + "/search/creators")
-        else { return [] }
-        components.queryItems = [
-            URLQueryItem(name: "q", value: trimmed),
-            URLQueryItem(name: "type", value: type)
-        ]
-        guard let url = components.url else { return [] }
-
         do {
-            var request = URLRequest(url: url)
-            request.timeoutInterval = 12
-            let (data, response) = try await URLSession.shared.data(for: request)
-            guard let http = response as? HTTPURLResponse, http.statusCode == 200 else { return [] }
-            let decoded = try JSONDecoder().decode(CreatorSearchResponse.self, from: data)
-            return decoded.results
+            let response: CreatorSearchResponse = try await client.functions.invoke(
+                "search_creators",
+                options: FunctionInvokeOptions(body: ["q": trimmed, "type": type])
+            )
+            guard response.ok else { return [] }
+            return response.results
         } catch {
             print("[ContentSources] live search failed: \(error.localizedDescription)")
             return []
@@ -158,6 +155,7 @@ final class ContentSourcesService {
             .from("content_sources")
             .select()
             .in("source_type", values: ["youtube", "twitch", "kick"])
+            .is("discovered_at", value: nil)
             .or("format.is.null,format.neq.podcast")
             .order("created_at", ascending: false)
             .execute()
@@ -172,6 +170,7 @@ final class ContentSourcesService {
         let rows: [ContentSource] = try await client
             .from("content_sources")
             .select()
+            .is("discovered_at", value: nil)
             .or("format.eq.podcast,source_type.eq.podcast")
             .order("created_at", ascending: false)
             .execute()
@@ -403,6 +402,7 @@ final class ContentSourcesService {
             .from("content_sources")
             .select()
             .in("source_type", values: SourceKind.creatorSourceTypes)
+            .is("discovered_at", value: nil)
             .order("created_at", ascending: false)
             .limit(max(200, limit * 4))
             .execute()

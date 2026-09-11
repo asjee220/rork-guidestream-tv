@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import com.rork.guidestreamtvandroid.data.remote.CreatorSearchService
 
 /**
  * Search view model — mirrors iOS SearchViewModel.swift.
@@ -208,6 +209,28 @@ class SearchViewModel : ViewModel() {
                     liveCategory = liveRow?.category,
                     viewerCount = liveRow?.viewerCount,
                     handle = row.handle,
+                )
+            }
+
+            // Merge in live results from the search_creators edge function. Local rows
+            // win on title_id — they carry curated art, categories and follow state the
+            // search API does not know about. Without this the catalogue is the whole
+            // search index and anyone not already seeded returns nothing.
+            val seen = creators.map { it.titleId }.toMutableSet()
+            for (live in CreatorSearchService.search(q)) {
+                if (live.titleId.isBlank() || live.displayName.isBlank()) continue
+                if (!seen.add(live.titleId)) continue
+                creators = creators + CreatorResult(
+                    titleId = live.titleId,
+                    displayName = live.displayName,
+                    imageUrl = live.imageUrl,
+                    sourceType = live.sourceType,
+                    category = live.category,
+                    isLive = live.isLive,
+                    streamTitle = live.streamTitle,
+                    liveCategory = null,
+                    viewerCount = null,
+                    handle = live.handle,
                 )
             }
 
