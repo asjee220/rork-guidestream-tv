@@ -830,6 +830,7 @@
 				INFOPLIST_KEY_CFBundleURLTypes = "{\n    CFBundleTypeRole = Editor;\n    CFBundleURLName = \"com.guidestream.tv\";\n    CFBundleURLSchemes =     (\n        guidestream\n    );\n}";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationQueriesSchemes = "nflx hulu disneyplus hbomax aiv videos paramountplus peacock youtube crunchyroll";
+				INFOPLIST_KEY_NSUserTrackingUsageDescription = "GuideStream uses this to keep your tracking choice consistent with the GuideStream app on iPhone, where ads help keep the app free. The Apple TV app does not track you.";
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UIUserInterfaceStyle = Automatic;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -866,6 +867,7 @@
 				INFOPLIST_KEY_CFBundleURLTypes = "{\n    CFBundleTypeRole = Editor;\n    CFBundleURLName = \"com.guidestream.tv\";\n    CFBundleURLSchemes =     (\n        guidestream\n    );\n}";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationQueriesSchemes = "nflx hulu disneyplus hbomax aiv videos paramountplus peacock youtube crunchyroll";
+				INFOPLIST_KEY_NSUserTrackingUsageDescription = "GuideStream uses this to keep your tracking choice consistent with the GuideStream app on iPhone, where ads help keep the app free. The Apple TV app does not track you.";
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UIUserInterfaceStyle = Automatic;
 				LD_RUNPATH_SEARCH_PATHS = (
