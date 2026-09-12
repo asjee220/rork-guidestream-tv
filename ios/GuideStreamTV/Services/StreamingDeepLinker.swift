@@ -130,6 +130,44 @@ enum StreamingDeepLinker {
         }
     }
 
+    // MARK: - Is the app there?
+
+    /// Schemes declared in `LSApplicationQueriesSchemes`. `canOpenURL` answers
+    /// false for anything absent from that list whether or not the app is
+    /// installed, so the list is the difference between a real answer and a
+    /// meaningless one.
+    private static let queryableSchemes: Set<String> = {
+        let raw = Bundle.main.object(forInfoDictionaryKey: "LSApplicationQueriesSchemes") as? [String] ?? []
+        return Set(raw.map { $0.lowercased() })
+    }()
+
+    /// `true` / `false` when we can actually tell, and **nil when we cannot** —
+    /// the platform has no native scheme, or its scheme is not declared in
+    /// Info.plist. Callers must treat nil as "unknown" and keep the full
+    /// try-and-see chain rather than assuming the app is missing; several
+    /// sports platforms resolve to schemes that are not in the queries list.
+    @MainActor
+    static func appIsInstalled(platform: String) -> Bool? {
+        guard let appURL = resolve(platform: platform, title: "").appURL,
+              let scheme = appURL.scheme?.lowercased(),
+              queryableSchemes.contains(scheme) else { return nil }
+        return UIApplication.shared.canOpenURL(appURL)
+    }
+
+    /// Bare host of the service's own site — `netflix.com` — for a CTA that
+    /// promises the web rather than the app. Prefers the advertiser
+    /// catalogue's front door over the search fallback's host, so Max reads
+    /// `max.com` and not `play.max.com`.
+    @MainActor
+    static func webHost(platform: String) -> String? {
+        let key = RakutenManager.shared.affiliateKey(forServiceNamed: platform) ?? platform.lowercased()
+        let candidate = RakutenManager.shared.signupURL(for: key)
+            ?? resolve(platform: platform, title: "").webURL
+        guard var host = candidate.host?.lowercased() else { return nil }
+        if host.hasPrefix("www.") { host.removeFirst(4) }
+        return host.isEmpty ? nil : host
+    }
+
     // MARK: - Open chain
 
     /// Three-step open chain:
@@ -139,9 +177,26 @@ enum StreamingDeepLinker {
     ///      Returns false if no installed app claims the URL.
     ///   2. **Native scheme home** (e.g. `nflx://`, `disneyplus://`) — at least
     ///      opens the app so the user can search manually.
-    ///   3. **Open in Safari** — last resort if the app isn't installed at all.
+    ///   3. **The service's site, in-app** — an SFSafariViewController sheet
+    ///      over GuideStream, affiliate-wrapped where possible, when the app
+    ///      isn't installed at all. Step 1 is skipped outright when
+    ///      `appIsInstalled` already says it is not.
     @MainActor
     private static func openWithFallback(_ url: URL, platform: String, title: String) {
+        // Known-absent app: every step below would fail in turn and arrive at
+        // the web anyway, each failed `open` costing a visible beat and, on
+        // 9 Sep 2026, ending in nothing at all. Go straight to the service's
+        // site, inside the app. `nil` means we cannot tell, and an unknown
+        // keeps the full chain.
+        if appIsInstalled(platform: platform) == false {
+            print("[Deeplink] \(platform) app not installed; opening the web destination in-app")
+            let target = resolve(platform: platform, title: title)
+            let scheme = url.scheme?.lowercased() ?? ""
+            let destination = (scheme == "https" || scheme == "http") ? url : target.webURL
+            presentWeb(destination, platform: platform)
+            return
+        }
+
         let scheme = url.scheme?.lowercased() ?? ""
         if scheme == "https" || scheme == "http" {
             UIApplication.shared.open(url, options: [.universalLinksOnly: true]) { universalOk in
@@ -149,7 +204,7 @@ enum StreamingDeepLinker {
                     print("[Deeplink] ✓ universal link opened in app: \(url.absoluteString)")
                 } else {
                     print("[Deeplink] universal link not claimed by any app; trying native scheme home")
-                    openHomeOrSafariFallback(platform: platform, title: title, originalURL: url)
+                    openHomeOrWebFallback(platform: platform, title: title, originalURL: url)
                 }
             }
         } else {
@@ -160,7 +215,7 @@ enum StreamingDeepLinker {
                     print("[Deeplink] ✓ native scheme opened: \(url.absoluteString)")
                 } else {
                     print("[Deeplink] native scheme failed; trying platform fallback")
-                    openHomeOrSafariFallback(platform: platform, title: title, originalURL: url)
+                    openHomeOrWebFallback(platform: platform, title: title, originalURL: url)
                 }
             }
         }
@@ -169,7 +224,7 @@ enum StreamingDeepLinker {
     /// Tries the platform's native-scheme app home; if that also fails (app
     /// not installed), opens the URL in Safari as the last-resort path.
     @MainActor
-    private static func openHomeOrSafariFallback(platform: String, title: String, originalURL: URL) {
+    private static func openHomeOrWebFallback(platform: String, title: String, originalURL: URL) {
         let target = resolve(platform: platform, title: title)
 
         // The last resort has to be a web page. `originalURL` is only safe to
@@ -189,12 +244,36 @@ enum StreamingDeepLinker {
                 if ok {
                     print("[Deeplink] ✓ opened app home via native scheme: \(appURL.absoluteString)")
                 } else {
-                    print("[Deeplink] native scheme home failed too; opening \(lastResort.absoluteString) in Safari")
-                    UIApplication.shared.open(lastResort, options: [:])
+                    print("[Deeplink] native scheme home failed too; opening \(lastResort.absoluteString) in-app")
+                    presentWeb(lastResort, platform: platform)
                 }
             }
         } else {
-            UIApplication.shared.open(lastResort, options: [:])
+            presentWeb(lastResort, platform: platform)
+        }
+    }
+
+    /// The web destination, opened **inside GuideStream** in an
+    /// SFSafariViewController sheet rather than by task-switching to Safari,
+    /// and wrapped in the affiliate network's deeplink when the service has a
+    /// merchant id.
+    ///
+    /// The wrap is what makes this destination monetisable: Rakuten's `murl`
+    /// parameter carries the title URL, so the viewer lands on the title page
+    /// and the click is still attributed. No merchant id exists on any row
+    /// today, so `trackingURL` returns nil and the raw title URL opens — the
+    /// tracking switches itself on from Supabase, with no client release.
+    @MainActor
+    private static func presentWeb(_ destination: URL, platform: String) {
+        let key = RakutenManager.shared.affiliateKey(forServiceNamed: platform) ?? platform.lowercased()
+        let tracked = RakutenManager.shared.trackingURL(for: key, destination: destination)
+        let target = tracked ?? destination
+        print("[Deeplink] web destination \(target.absoluteString) tracked=\(tracked != nil)")
+
+        if !InAppBrowserPresenter.present(target) {
+            // No window, or a scheme the sheet cannot take. Safari beats
+            // nothing at all, which is the failure this path exists to end.
+            UIApplication.shared.open(target)
         }
     }
 

@@ -60,6 +60,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.rork.guidestreamtvandroid.data.ShareLinks
+import com.rork.guidestreamtvandroid.data.openWatchLink
 import com.rork.guidestreamtvandroid.data.models.DeepDiveCreator
 import com.rork.guidestreamtvandroid.data.models.Platform
 import com.rork.guidestreamtvandroid.ui.components.rememberLockOn
@@ -508,16 +509,17 @@ fun ShowDetailScreen(
                                         epSrc?.androidUrl, epSrc?.androidTvUrl, epSrc?.webUrl,
                                         selectedSource?.androidUrl, selectedSource?.androidTvUrl, selectedSource?.webUrl,
                                     ).firstOrNull { isUsableStreamUrl(it) } ?: fallback
-                                    try {
-                                        val intent = if (target.startsWith("intent:")) {
-                                            Intent.parseUri(target, Intent.URI_INTENT_SCHEME)
-                                        } else {
-                                            Intent(Intent.ACTION_VIEW, Uri.parse(target))
-                                        }
-                                        context.startActivity(intent)
-                                    } catch (_: Exception) {
-                                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(fallback)))
-                                    }
+                                    // The app when it is installed; otherwise the
+                                    // title on the service's own site, in a Custom
+                                    // Tab wearing GuideStream's chrome, rather than
+                                    // dropping the viewer into Chrome.
+                                    openWatchLink(
+                                        context = context,
+                                        target = target,
+                                        serviceName = selectedSource?.name,
+                                        webFallback = listOf(epSrc?.webUrl, selectedSource?.webUrl)
+                                            .firstOrNull { isUsableStreamUrl(it) } ?: fallback,
+                                    )
                                     streamsVm.markWatchlistSeenIfSaved(titleId)
                                 },
                             contentAlignment = Alignment.Center,

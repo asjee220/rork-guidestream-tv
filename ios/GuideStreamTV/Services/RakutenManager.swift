@@ -198,6 +198,40 @@ final class RakutenManager {
         return URL(string: urlString)
     }
 
+    /// The advertiser's own front door, from the effective catalogue. Used
+    /// for CTA labels that name the destination — `max.com` reads better than
+    /// the search fallback's `play.max.com`.
+    func signupURL(for serviceId: String) -> URL? {
+        let normalized = serviceId.lowercased()
+        guard let entry = effectiveCatalog().first(where: { $0.key == normalized }),
+              !entry.signupUrl.isEmpty else { return nil }
+        return URL(string: entry.signupUrl)
+    }
+
+    /// Wraps an arbitrary destination — a *title* page, not just the signup
+    /// page — in the network's deeplink, so a Watch tap can carry tracking.
+    ///
+    /// Rakuten's `murl` parameter takes any URL on the advertiser's domain,
+    /// which is what makes a monetised deep link possible at all. Returns nil
+    /// when the service has no merchant id, which is every row today: the
+    /// 6 Sep 2026 audit found Rakuten carries none of the streaming programs,
+    /// so `affiliate_advertisers.merchant_id` is null across the board.
+    /// Callers open the unwrapped destination in that case, and the moment a
+    /// merchant id lands in Supabase the same taps start carrying tracking
+    /// with no client release.
+    func trackingURL(for serviceId: String, destination: URL) -> URL? {
+        let normalized = serviceId.lowercased()
+        guard let entry = effectiveCatalog().first(where: { $0.key == normalized }),
+              let merchantId = entry.merchantId, !merchantId.isEmpty else { return nil }
+        let resolvedPublisher = RemoteConfigService.shared.rakutenPublisherId ?? publisherId
+        guard let encoded = destination.absoluteString.addingPercentEncoding(
+            withAllowedCharacters: .alphanumerics
+        ) else { return nil }
+        return URL(
+            string: "https://click.linksynergy.com/deeplink?id=\(resolvedPublisher)&mid=\(merchantId)&murl=\(encoded)"
+        )
+    }
+
     func fallbackURL(for serviceId: String) -> URL? {
         let normalized = serviceId.lowercased()
         if let entry = effectiveCatalog().first(where: { $0.key == normalized }),

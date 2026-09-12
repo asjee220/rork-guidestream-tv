@@ -3277,9 +3277,20 @@ private struct TodaysPickSection: View {
 
     /// CTA reads "Watch on <source>" when subscribed, "Get on <source>" when
     /// not, or "Watch now" when sourceName is nil.
+    ///
+    /// When the service's app is known to be missing, the label names the
+    /// destination instead — "Watch on netflix.com" — because that is where
+    /// the tap actually lands: the title page on the service's own site, in
+    /// an in-app browser. `appIsInstalled` returns nil when it cannot tell,
+    /// and an unknown keeps the app-shaped label.
     private var ctaText: String {
         if let src = pick.sourceName, !src.isEmpty {
-            return isSubscribed ? "Watch on \(src)" : "Get on \(src)"
+            guard isSubscribed else { return "Get on \(src)" }
+            if StreamingDeepLinker.appIsInstalled(platform: src) == false,
+               let host = StreamingDeepLinker.webHost(platform: src) {
+                return "Watch on \(host)"
+            }
+            return "Watch on \(src)"
         }
         return "Watch now"
     }

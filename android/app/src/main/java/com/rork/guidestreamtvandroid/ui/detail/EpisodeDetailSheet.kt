@@ -68,6 +68,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.rork.guidestreamtvandroid.data.ShareLinks
+import com.rork.guidestreamtvandroid.data.openWatchLink
 import com.rork.guidestreamtvandroid.data.models.Platform
 import com.rork.guidestreamtvandroid.data.models.StreamingCatalog
 import com.rork.guidestreamtvandroid.data.models.TitleId
@@ -1030,20 +1031,15 @@ private fun openWatchTarget(
         epSrc?.androidUrl, epSrc?.androidTvUrl, epSrc?.webUrl,
         selectedSource?.androidUrl, selectedSource?.androidTvUrl, selectedSource?.webUrl,
     ).firstOrNull { isOpenableStreamUrl(it) } ?: fallback
-    try {
-        val intent = if (target.startsWith("intent:")) {
-            Intent.parseUri(target, Intent.URI_INTENT_SCHEME)
-        } else {
-            Intent(Intent.ACTION_VIEW, Uri.parse(target))
-        }
-        context.startActivity(intent)
-    } catch (_: Exception) {
-        try {
-            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(fallback)))
-        } catch (_: Exception) {
-            // No browser installed — nothing further to try.
-        }
-    }
+    // The app when it is installed; otherwise the title on the service's own
+    // site, in a Custom Tab wearing GuideStream's chrome.
+    openWatchLink(
+        context = context,
+        target = target,
+        serviceName = selectedSource?.name,
+        webFallback = listOf(epSrc?.webUrl, selectedSource?.webUrl)
+            .firstOrNull { isOpenableStreamUrl(it) } ?: fallback,
+    )
 }
 
 /**

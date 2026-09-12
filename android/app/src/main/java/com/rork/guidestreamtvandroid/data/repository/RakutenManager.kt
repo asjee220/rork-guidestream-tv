@@ -197,6 +197,29 @@ class RakutenManager private constructor() {
         return "https://click.linksynergy.com/deeplink?id=$resolvedPublisher&mid=$merchantId&murl=$encoded"
     }
 
+    /**
+     * Wraps an arbitrary destination - a *title* page, not just the sign-up
+     * page - in the network's deeplink, so a Watch tap can carry tracking.
+     *
+     * Rakuten's `murl` parameter takes any URL on the advertiser's domain,
+     * which is what makes a monetised deep link possible at all. Returns null
+     * when the service has no merchant id, which is every row today: the
+     * 6 Sep 2026 audit found Rakuten carries none of the streaming programs,
+     * so affiliate_advertisers.merchant_id is null across the board. Callers
+     * open the unwrapped destination in that case, and the moment a merchant
+     * id lands in Supabase the same taps start carrying tracking with no
+     * client release.
+     */
+    fun trackingUrl(serviceId: String, destination: String): String? {
+        val normalized = serviceId.lowercase()
+        val entry = effectiveCatalog().firstOrNull { it.key == normalized } ?: return null
+        val merchantId = entry.merchantId
+        if (merchantId.isNullOrBlank()) return null
+        val resolvedPublisher = RemoteConfigService.rakutenPublisherId() ?: PUBLISHER_ID
+        val encoded = URLEncoder.encode(destination, "UTF-8")
+        return "https://click.linksynergy.com/deeplink?id=$resolvedPublisher&mid=$merchantId&murl=$encoded"
+    }
+
     private fun fallbackURL(serviceId: String): String? {
         val normalized = serviceId.lowercase()
         val entry = effectiveCatalog().firstOrNull { it.key == normalized } ?: return null
