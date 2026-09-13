@@ -424,6 +424,12 @@ enum StreamingDeepLinker {
                 webURL: URL(string: "https://www.crunchyroll.com/search?q=\(q)")!
             )
         }
+        if key.contains("patreon") {
+            return Target(
+                appURL: URL(string: "patreon://"),
+                webURL: URL(string: "https://www.patreon.com/search?q=\(q)")!
+            )
+        }
 
         // MARK: Sports broadcasters
         // Note: live sports broadcasters don't expose game-specific deep

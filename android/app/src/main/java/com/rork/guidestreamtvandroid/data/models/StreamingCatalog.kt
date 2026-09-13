@@ -248,6 +248,8 @@ object StreamingCatalog {
             StreamingService.Display.Text("Fawe\nsome", Color(0xFF6945EC), FontWeight.Black)),
         StreamingService("youtube", "YouTube", black, Color(0xFFFF0000),
             StreamingService.Display.Text("YT", Color(0xFFFF0000), FontWeight.Black)),
+        StreamingService("patreon", "Patreon", Color(0xFF0A0A0A), Color(0xFFFF424D),
+            StreamingService.Display.Text("patreon", Color(0xFFFF424D), FontWeight.Black)),
         StreamingService("bbciplayer", "BBC iPlayer", black, Color(0xFFFBB032),
             StreamingService.Display.Text("iPlayer", Color(0xFFFBB032), FontWeight.Black)),
         StreamingService("itvx", "ITVX", black, Color(0xFFFFC000),

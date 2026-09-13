@@ -519,6 +519,7 @@ enum StreamingCatalog {
         StreamingService(id: "mercado", name: "Mercado Play", color: Color(red: 0xFF/255, green: 0xE6/255, blue: 0x00/255)),
         StreamingService(id: "fawesome", name: "Fawesome", color: Color(red: 0x69/255, green: 0x45/255, blue: 0xEC/255)),
         StreamingService(id: "youtube", name: "YouTube", color: Color(red: 0xFF/255, green: 0x00/255, blue: 0x00/255)),
+        StreamingService(id: "patreon", name: "Patreon", color: Color(red: 0xFF/255, green: 0x42/255, blue: 0x4D/255)),
         StreamingService(id: "bbciplayer", name: "BBC iPlayer", color: Color(red: 0xFB/255, green: 0xB0/255, blue: 0x32/255)),
         StreamingService(id: "itvx", name: "ITVX", color: Color(red: 0xFF/255, green: 0xC0/255, blue: 0x00/255)),
         StreamingService(id: "channel4", name: "Channel 4", color: Color(red: 0xAA/255, green: 0xFF/255, blue: 0x00/255)),
