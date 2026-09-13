@@ -66,6 +66,27 @@ class DeviceSessionService private constructor(private val context: Context) {
         val next = sessionCount + 1
         prefs.edit().putInt(sessionCountKey, next).apply()
         upsert("session_started")
+        // `upsert` writes a device_sessions row; it is NOT a logger event.
+        // Nothing on Android ever logged SESSION_STARTED through
+        // WatchIntentLogger, so ReviewPromptManager.noteSessionStarted() was
+        // never called, its session counter sat at 0 on every install, and the
+        // in-app review gate could never open (GUI-90, found 13 Sep 2026:
+        // 0 session_started events and 0 review prompts from Android, against
+        // 238 and 1 from iOS). iOS logs this from ContentView on launch;
+        // this is the Android equivalent.
+        logSessionStarted(mapOf("first_launch" to (next == 1)))
+    }
+
+    /** Fire-and-forget; the logger is initialized before this service in
+     *  GuideStreamTVApp.onCreate, but never let a logging failure break a
+     *  session upsert. */
+    private fun logSessionStarted(metadata: Map<String, Any?>) {
+        runCatching {
+            WatchIntentLogger.get().log(
+                eventType = WatchIntentLogger.IntentEventType.SESSION_STARTED,
+                metadata = metadata,
+            )
+        }
     }
 
     /** Record the moment the app enters the background. Read by [handleForeground]
@@ -100,6 +121,10 @@ class DeviceSessionService private constructor(private val context: Context) {
             upsert("session_resumed")
             lastForegroundTouchMs = nowMs
             WatchIntentLogger.get().log(WatchIntentLogger.IntentEventType.APP_OPENED)
+            // A 30-minute-plus return is a new session, and it is the moment
+            // the review gate's counter has to move — mirrors iOS
+            // DeviceSessionService.handleForeground's ["resumed": true] event.
+            logSessionStarted(mapOf("resumed" to true))
         } else {
             val shouldTouch = if (lastForegroundTouchMs > 0L) {
                 (nowMs - lastForegroundTouchMs) / 1000 > 300
