@@ -113,13 +113,11 @@ object ReviewPromptManager {
         if (prefs.getBoolean(KEY_ARMED_DEEP_LINK, false)) {
             prefs.edit().putBoolean(KEY_ARMED_DEEP_LINK, false).apply()
             consider(Trigger.DEEP_LINK_RETURN)
-        } else if (
-            prefs.getInt(KEY_ACTIVE_DAYS, 0) >= ACTIVE_DAY_THRESHOLD &&
-            (prefs.getInt(KEY_DEEP_LINKS, 0) >= 1 || prefs.getInt(KEY_WATCHED, 0) >= 1)
-        ) {
-            // Coming back on a third separate day is as strong a satisfaction
-            // signal as a run of deep links, and far more people clear it.
-            // One real action is still required, so presence alone never asks.
+        } else if (prefs.getInt(KEY_ACTIVE_DAYS, 0) >= ACTIVE_DAY_THRESHOLD) {
+            // Coming back on a third separate day IS the satisfaction signal.
+            // This app is a guide — its value is delivered by looking
+            // something up and leaving — so the prompt is not gated on a deep
+            // link or a watched-toggle first. Mirrors iOS.
             consider(Trigger.RETURN_VISIT)
         }
         val trigger = pendingTrigger ?: return

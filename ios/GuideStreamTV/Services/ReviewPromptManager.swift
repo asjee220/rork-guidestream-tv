@@ -127,15 +127,13 @@ final class ReviewPromptManager {
             }
         }
 
-        // Coming back on a third separate day is as strong a satisfaction
-        // signal as a run of deep links, and far more people clear it: in the
-        // twelve days after this shipped, only 16 iOS devices fired a deep
-        // link at all. It still requires one real action on the install, so
-        // presence alone never asks.
-        guard defaults.integer(forKey: activeDaysKey) >= activeDayThreshold,
-              defaults.integer(forKey: deepLinksKey) >= 1
-                || defaults.integer(forKey: watchedKey) >= 1
-        else { return }
+        // Coming back on a third separate day IS the satisfaction signal.
+        // This app is a guide: its value is delivered by looking something up
+        // and leaving, so requiring a deep link or a watched-toggle first
+        // would gate the prompt on a step the product does not ask of anyone.
+        // Someone who opens it on three different days has found it useful —
+        // that is the whole evidence there is, and it is enough.
+        guard defaults.integer(forKey: activeDaysKey) >= activeDayThreshold else { return }
         consider(.returnVisit)
     }
 
