@@ -47,19 +47,24 @@ final class ReviewPromptManager {
         case alertToWatch = "alert_to_watch"
         /// A cast to Roku / Tizen started. Rarest, kept at the user's request.
         case castStarted = "cast_started"
+        /// Came back on a third separate day, having actually used the app.
+        case returnVisit = "return_visit"
     }
 
     // MARK: Thresholds
 
     private let minInstallDays = 3
-    private let minSessions = 4
-    private let deepLinkThreshold = 3
+    private let minSessions = 3
+    private let deepLinkThreshold = 2
     private let watchedThreshold = 5
-    /// Cooldown between prompts, and a self-imposed annual cap of 2 — one
-    /// below Apple's 3, so a genuinely great moment later in the year still
-    /// has headroom.
-    private let cooldownDays = 120
-    private let maxPerYear = 2
+    /// Separate calendar days the app has been opened, for `.returnVisit`.
+    private let activeDayThreshold = 3
+    /// 90 days is the industry floor between prompts. The annual cap is now
+    /// Apple's own 3 rather than a self-imposed 2: the API silently no-ops
+    /// over quota, so holding one back buys no goodwill — it forfeits a
+    /// prompt, which at this install volume is a real cost.
+    private let cooldownDays = 90
+    private let maxPerYear = 3
 
     // MARK: Storage (per install)
 
@@ -70,6 +75,8 @@ final class ReviewPromptManager {
     private let watchedKey = "gs.reviewPrompt.watched"
     private let shownDatesKey = "gs.reviewPrompt.shownDates"
     private let armedKey = "gs.reviewPrompt.armedDeepLink"
+    private let activeDaysKey = "gs.reviewPrompt.activeDays"
+    private let lastActiveDayKey = "gs.reviewPrompt.lastActiveDay"
 
     private init() {
         if defaults.object(forKey: firstLaunchKey) == nil {
@@ -95,7 +102,9 @@ final class ReviewPromptManager {
 
     func noteWatchedToggled() {
         bump(watchedKey)
-        if defaults.integer(forKey: watchedKey) >= watchedThreshold {
+        // Every fifth, not every toggle past the fifth — matches Android.
+        let count = defaults.integer(forKey: watchedKey)
+        if count >= watchedThreshold, count % watchedThreshold == 0 {
             consider(.watchedMilestone)
         }
     }
@@ -108,10 +117,42 @@ final class ReviewPromptManager {
     /// alert took the user out, coming back is the moment the promise was
     /// kept.
     func appDidBecomeActive() {
-        guard defaults.bool(forKey: armedKey) else { return }
-        defaults.set(false, forKey: armedKey)
-        guard defaults.integer(forKey: deepLinksKey) >= deepLinkThreshold else { return }
-        consider(.deepLinkReturn)
+        noteActiveDay()
+
+        if defaults.bool(forKey: armedKey) {
+            defaults.set(false, forKey: armedKey)
+            if defaults.integer(forKey: deepLinksKey) >= deepLinkThreshold {
+                consider(.deepLinkReturn)
+                return
+            }
+        }
+
+        // Coming back on a third separate day is as strong a satisfaction
+        // signal as a run of deep links, and far more people clear it: in the
+        // twelve days after this shipped, only 16 iOS devices fired a deep
+        // link at all. It still requires one real action on the install, so
+        // presence alone never asks.
+        guard defaults.integer(forKey: activeDaysKey) >= activeDayThreshold,
+              defaults.integer(forKey: deepLinksKey) >= 1
+                || defaults.integer(forKey: watchedKey) >= 1
+        else { return }
+        consider(.returnVisit)
+    }
+
+    /// One increment per calendar day the app is opened.
+    private func noteActiveDay() {
+        let today = Self.dayStamp()
+        guard defaults.string(forKey: lastActiveDayKey) != today else { return }
+        defaults.set(today, forKey: lastActiveDayKey)
+        bump(activeDaysKey)
+    }
+
+    private static func dayStamp() -> String {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter.string(from: Date())
     }
 
     // MARK: - Gating
@@ -126,7 +167,7 @@ final class ReviewPromptManager {
         // would burn a trigger and teach us nothing.
         if isTestFlight { return false }
         guard installedDays >= minInstallDays else { return false }
-        guard defaults.integer(forKey: sessionsKey) >= minSessions else { return false }
+        guard sessionsForGate >= minSessions else { return false }
         // Never stack on top of other modal UI.
         guard CoachMarkManager.shared.homeTourDone else { return false }
         guard AppUpdateGate.shared.prompt == nil else { return false }
@@ -139,6 +180,15 @@ final class ReviewPromptManager {
             return false
         }
         return true
+    }
+
+    /// The local counter starts at zero on the launch where this file first
+    /// shipped, so it under-reports someone who has been here for months.
+    /// DeviceSessionService keeps the same per-install number from the day the
+    /// app was installed — take whichever is larger, so the gate does not make
+    /// a returning user re-earn their history because they updated.
+    private var sessionsForGate: Int {
+        max(defaults.integer(forKey: sessionsKey), DeviceSessionService.shared.sessionCount)
     }
 
     private var installedDays: Int {

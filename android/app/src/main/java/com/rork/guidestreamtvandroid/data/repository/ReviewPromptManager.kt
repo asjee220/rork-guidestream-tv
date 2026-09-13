@@ -7,6 +7,7 @@ import android.content.Intent
 import android.net.Uri
 import android.content.SharedPreferences
 import android.util.Log
+import com.rork.guidestreamtvandroid.data.local.DeviceSessionService
 import com.google.android.play.core.review.ReviewManagerFactory
 import java.util.concurrent.TimeUnit
 
@@ -28,6 +29,7 @@ object ReviewPromptManager {
         WATCHED_MILESTONE("watched_milestone"),
         ALERT_TO_WATCH("alert_to_watch"),
         CAST_STARTED("cast_started"),
+        RETURN_VISIT("return_visit"),
     }
 
     private const val PREFS = "gs_review_prompt"
@@ -37,13 +39,21 @@ object ReviewPromptManager {
     private const val KEY_WATCHED = "watched"
     private const val KEY_SHOWN_DATES = "shownDates"
     private const val KEY_ARMED_DEEP_LINK = "armedDeepLink"
+    private const val KEY_ACTIVE_DAYS = "activeDays"
+    private const val KEY_LAST_ACTIVE_DAY = "lastActiveDay"
 
     private const val MIN_INSTALL_DAYS = 3
-    private const val MIN_SESSIONS = 4
-    private const val DEEP_LINK_THRESHOLD = 3
+    private const val MIN_SESSIONS = 3
+    private const val DEEP_LINK_THRESHOLD = 2
     private const val WATCHED_THRESHOLD = 5
-    private const val COOLDOWN_DAYS = 120
-    private const val MAX_PER_YEAR = 2
+    /** Separate calendar days the app has been opened, for [Trigger.RETURN_VISIT]. */
+    private const val ACTIVE_DAY_THRESHOLD = 3
+    // 90 days is the industry floor between prompts, and the annual cap now
+    // matches what the platform allows rather than self-throttling below it —
+    // over quota the flow silently does nothing, so a held-back prompt is
+    // simply a forfeited one. Mirrors iOS.
+    private const val COOLDOWN_DAYS = 90
+    private const val MAX_PER_YEAR = 3
 
     private lateinit var prefs: SharedPreferences
 
@@ -99,9 +109,18 @@ object ReviewPromptManager {
     /** Call from Activity.onResume. Presents at most one prompt. */
     fun maybePresent(activity: Activity) {
         if (!ready) return
+        noteActiveDay()
         if (prefs.getBoolean(KEY_ARMED_DEEP_LINK, false)) {
             prefs.edit().putBoolean(KEY_ARMED_DEEP_LINK, false).apply()
             consider(Trigger.DEEP_LINK_RETURN)
+        } else if (
+            prefs.getInt(KEY_ACTIVE_DAYS, 0) >= ACTIVE_DAY_THRESHOLD &&
+            (prefs.getInt(KEY_DEEP_LINKS, 0) >= 1 || prefs.getInt(KEY_WATCHED, 0) >= 1)
+        ) {
+            // Coming back on a third separate day is as strong a satisfaction
+            // signal as a run of deep links, and far more people clear it.
+            // One real action is still required, so presence alone never asks.
+            consider(Trigger.RETURN_VISIT)
         }
         val trigger = pendingTrigger ?: return
         pendingTrigger = null
@@ -118,7 +137,7 @@ object ReviewPromptManager {
             val firstLaunch = prefs.getLong(KEY_FIRST_LAUNCH, System.currentTimeMillis())
             val installDays = TimeUnit.MILLISECONDS.toDays(System.currentTimeMillis() - firstLaunch)
             if (installDays < MIN_INSTALL_DAYS) return false
-            if (prefs.getInt(KEY_SESSIONS, 0) < MIN_SESSIONS) return false
+            if (sessionsForGate < MIN_SESSIONS) return false
             // Never on top of a forced-update or update-nudge sheet.
             if (runCatching { AppUpdateGate.get().prompt }.getOrNull() != null) return false
 
@@ -129,6 +148,27 @@ object ReviewPromptManager {
             val last = shown.maxOrNull() ?: return true
             return TimeUnit.MILLISECONDS.toDays(now - last) >= COOLDOWN_DAYS
         }
+
+    /**
+     * The local counter starts at zero on the launch where this shipped, so it
+     * under-reports a long-standing install. DeviceSessionService keeps the
+     * same per-install number from the day the app was installed — take the
+     * larger, so an update does not make a returning user start over.
+     */
+    private val sessionsForGate: Int
+        get() = maxOf(
+            prefs.getInt(KEY_SESSIONS, 0),
+            runCatching { DeviceSessionService.get().sessionCount }.getOrDefault(0),
+        )
+
+    /** One increment per calendar day the app is opened. */
+    private fun noteActiveDay() {
+        val today = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
+            .format(java.util.Date())
+        if (prefs.getString(KEY_LAST_ACTIVE_DAY, null) == today) return
+        prefs.edit().putString(KEY_LAST_ACTIVE_DAY, today).apply()
+        bump(KEY_ACTIVE_DAYS)
+    }
 
     private fun launchFlow(activity: Activity, trigger: Trigger) {
         val manager = ReviewManagerFactory.create(activity)
@@ -156,7 +196,8 @@ object ReviewPromptManager {
                     "trigger" to trigger.value,
                     "deep_links" to prefs.getInt(KEY_DEEP_LINKS, 0),
                     "watched" to prefs.getInt(KEY_WATCHED, 0),
-                    "sessions" to prefs.getInt(KEY_SESSIONS, 0),
+                    "sessions" to sessionsForGate,
+                    "active_days" to prefs.getInt(KEY_ACTIVE_DAYS, 0),
                 ),
             )
         }
