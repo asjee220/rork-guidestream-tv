@@ -537,6 +537,7 @@ struct EpisodeDetailSheet: View {
     /// When non-nil, passed to `CastToTVSheet` so the Roku launch can use
     /// the exact channel+contentID path instead of the webUrl fallback.
     @State private var episodeRokuURL: String? = nil
+    @State private var episodeTvosURL: String? = nil
     @State private var episodeSourceUnavailable: Bool = false
     @State private var isResolvingEpisodeSources: Bool = false
     /// All US streaming sources for this title. Drives the "Where to Watch"
@@ -890,7 +891,8 @@ struct EpisodeDetailSheet: View {
                 tmdbId: tmdbId,
                 isTV: isTV,
                 watchmodeSource: resolvedSource,
-                episodeRokuURL: episodeRokuURL
+                episodeRokuURL: episodeRokuURL,
+                episodeTvosURL: episodeTvosURL
             )
         }
         .sheet(isPresented: $showComments) {
@@ -981,10 +983,12 @@ struct EpisodeDetailSheet: View {
                 let best: WatchmodeSource? = Self.bestEpisodeSource(from: epSources, resolvedSource: resolvedSource)
                 let url: URL? = Self.episodeSourceURL(from: epSources, resolvedSource: best)
                 let rokuPath: String? = Self.episodeRokuPath(from: epSources, resolvedSource: best)
+                let tvosPath: String? = Self.episodeTvosPath(from: epSources, resolvedSource: best)
                 await MainActor.run {
                     if let best { self.resolvedSource = best }
                     self.episodeDeepLinkURL = url
                     self.episodeRokuURL = rokuPath
+                    self.episodeTvosURL = tvosPath
                     self.episodeSourceUnavailable = (best == nil)
                     self.isResolvingEpisodeSources = false
                 }
@@ -1146,9 +1150,11 @@ struct EpisodeDetailSheet: View {
             response?.episodeSource.map { [$0] } ?? []
         let url = Self.episodeSourceURL(from: epSources, resolvedSource: source)
         let rokuPath = Self.episodeRokuPath(from: epSources, resolvedSource: source)
+        let tvosPath = Self.episodeTvosPath(from: epSources, resolvedSource: source)
         await MainActor.run {
             self.episodeDeepLinkURL = url
             self.episodeRokuURL = rokuPath
+            self.episodeTvosURL = tvosPath
             self.episodeSourceUnavailable = false
             self.isResolvingEpisodeSources = false
         }
@@ -2176,6 +2182,28 @@ struct EpisodeDetailSheet: View {
         let lower = rokuUrl.lowercased()
         if lower.contains("deeplinks available") || lower.contains("paid plan") { return nil }
         return rokuUrl
+    }
+
+    /// Picks the `tvos_url` from episode-level Watchmode sources that matches
+    /// the (possibly re-picked) resolved source by `sourceId`.
+    ///
+    /// Without this the Apple TV gets the TITLE-level `tvos_url`, whose id
+    /// names one arbitrary episode — casting any episode of Reacher opened
+    /// S3E2 on 15 Sep 2026. Mirrors `episodeRokuPath`; accepts any scheme,
+    /// since a tvOS deep link is usually a custom one (`aiv://`, `hulu:///`,
+    /// `nflx://`, `pplus://`) and sometimes an https universal link.
+    private static func episodeTvosPath(
+        from episodeSources: [WatchmodeSource],
+        resolvedSource: WatchmodeSource?
+    ) -> String? {
+        guard let rs = resolvedSource,
+              let src = episodeSources.first(where: { $0.sourceId == rs.sourceId }),
+              let tvosUrl = src.tvosUrl,
+              !tvosUrl.isEmpty,
+              tvosUrl.contains("://") else { return nil }
+        let lower = tvosUrl.lowercased()
+        if lower.contains("deeplinks available") || lower.contains("paid plan") { return nil }
+        return tvosUrl
     }
 
     /// Rejects Watchmode's free-tier placeholder string

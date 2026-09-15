@@ -206,6 +206,15 @@ final class TVPlayCommandListener {
             await handle(event: event, myDeviceId: deviceId)
         }
         // The stream ended: the socket dropped, or wake() cut the channel.
+        // Stop the heartbeat with it. While it kept beating on its own task,
+        // `tv_receivers.last_seen_at` advanced every 5 minutes on a TV that was
+        // no longer receiving anything — so the phone's freshness window, which
+        // exists precisely to tell "listening" from "was listening", reported a
+        // deaf TV as live and the cast was published into nothing. Observed
+        // 15 Sep 2026: heartbeats at 16:25 and 16:30 either side of a command
+        // the TV never saw.
+        heartbeatTask?.cancel()
+        heartbeatTask = nil
         // Either way there was a session, so the supervisor should reconnect.
         return true
     }
@@ -286,10 +295,27 @@ final class TVPlayCommandListener {
             return u
         }()
 
+        // An https link has to arrive as `tvosDeepLink`, not just `contentURL`.
+        // `TVOSDeepLinker.resolve` only promotes a contentURL to the playURL
+        // when its scheme is NOT http(s), and `open` only ever puts a web
+        // universal link into the chain via this parameter — which nothing was
+        // passing. So every service whose Watchmode `tvos_url` is an https link
+        // (Peacock, HBO Max, Disney+, Apple TV, Tubi, Pluto) had its deep link
+        // dropped on the floor and fell through to the hardcoded app-home URL.
+        // Native schemes still go via contentURL, where tier 0 picks them up;
+        // passing them here as well would only duplicate them in the chain.
+        let webDeepLink: URL? = {
+            guard let contentURL,
+                  let scheme = contentURL.scheme?.lowercased(),
+                  scheme == "http" || scheme == "https" else { return nil }
+            return contentURL
+        }()
+
         TVOSDeepLinker.open(
             platform: payload.platform,
             title: payload.title,
-            contentURL: contentURL
+            contentURL: contentURL,
+            tvosDeepLink: webDeepLink
         )
     }
 

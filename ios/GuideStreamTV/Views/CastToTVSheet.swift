@@ -32,6 +32,13 @@ struct CastToTVSheet: View {
     /// contentId from the title-level `webUrl`. Supplied by callers that
     /// resolve episode-level Watchmode sources (e.g. EpisodeDetailSheet).
     var episodeRokuURL: String? = nil
+    /// Per-episode tvOS deep link from Watchmode's `tvos_url` field.
+    /// The title-level `tvos_url` carries ONE episode's id (a Prime `gti`, a
+    /// Hulu show guid), so casting an episode without this lands the Apple TV
+    /// on whatever episode the title row happens to name — S3E2 for Reacher on
+    /// 15 Sep 2026, whichever episode had been asked for. Mirrors
+    /// `episodeRokuURL`, which has always been threaded through for Roku.
+    var episodeTvosURL: String? = nil
 
     private let discovery = TVCastDiscovery.shared
     @State private var sendingDeviceId: String? = nil
@@ -1204,10 +1211,12 @@ struct CastToTVSheet: View {
             // Publish a play command to the tvOS companion app via Supabase
             // realtime. The Apple TV receives it over the play-commands
             // channel and deep-links into the streaming app directly.
-            Task {
-                await publishPlayCommand(to: device)
-            }
-            return true
+            //
+            // This used to spawn a detached Task and return true immediately,
+            // so the "Playing on <TV>" toast fired before the send had even
+            // started and every failure below was invisible. The caller shows
+            // "Couldn't reach <TV>" on false.
+            return await publishPlayCommand(to: device)
         case .googleTV, .fireTVStick, .samsungTV, .lgTV, .macAirPlay:
             #if DEBUG
             print("[CastToTVSheet] \(device.kind.rawValue) — showing manual instruction banner for '\(device.name)'")
@@ -1218,37 +1227,37 @@ struct CastToTVSheet: View {
 
     // MARK: - Supabase play command (Apple TV)
 
-    /// Resolves the title's content URL via Watchmode and broadcasts a
-    /// play command to the tvOS companion app over the Supabase realtime
-    /// channel `play-commands:{userId}`. The Apple TV picks up the
-    /// broadcast, compares `target_name` to `UIDevice.current.name`
-    /// (case-insensitive), and deep-links into the streaming app with
-    /// `TVOSDeepLinker.open` when there's a match.
-    private func publishPlayCommand(to device: DiscoveredTVDevice) async {
-        guard let tmdbId else { return }
+    /// Resolves the title's tvOS deep link and broadcasts a play command to
+    /// the tvOS companion app over `play-commands:{userId}`. The Apple TV
+    /// matches `target_name` against its own AirPlay name and hands the link
+    /// to `TVOSDeepLinker.open`.
+    ///
+    /// Returns false when the command could not be sent, so the sheet reports
+    /// a failure instead of a success toast over a cast that never left.
+    @discardableResult
+    private func publishPlayCommand(to device: DiscoveredTVDevice) async -> Bool {
+        // Watchmode's `tvos_url` is the whole game here: it is the deep link
+        // the streaming service itself supplied, per platform, and it works
+        // where a hand-built scheme does not. The episode-level link wins when
+        // there is one, because the title-level link names a single arbitrary
+        // episode of the show.
+        let tvosDeepLink: String? = [episodeTvosURL, watchmodeSource?.tvosUrl]
+            .compactMap { $0 }
+            .first(where: Self.isRealDeepLink)
 
-        let userId = SupabaseManager.shared.client.auth.currentUser?.id.uuidString ?? "guest"
-        let resolvedURL = await StreamingDeepLinker.resolveContentURL(
-            tmdbId: tmdbId,
-            isTV: isTV,
-            platform: platform
-        )
+        // Fallback only, and only useful for the services whose `tvos_url` is
+        // itself an https universal link: tvOS has no browser, so a web URL is
+        // there for the TV's per-platform reconstruction, not to be opened.
+        var resolvedURL: URL? = nil
+        if tvosDeepLink == nil, let tmdbId {
+            resolvedURL = await StreamingDeepLinker.resolveContentURL(
+                tmdbId: tmdbId,
+                isTV: isTV,
+                platform: platform
+            )
+        }
 
-        // Prefer Watchmode's tvos_url when it is a real native-scheme deep
-        // link (hulu://, paramountplus://, nflx://, etc.). The tvOS companion
-        // app opens it directly via UIApplication.shared.open, bypassing the
-        // per-platform URL reconstruction. Fall back to the resolved web URL
-        // when the tvos_url is nil, empty, or a Watchmode placeholder.
-        let castURL: String = {
-            if let tvos = watchmodeSource?.tvosUrl,
-               !tvos.isEmpty,
-               tvos.contains("://"),
-               !tvos.lowercased().contains("deeplinks available"),
-               !tvos.lowercased().contains("paid plan") {
-                return tvos
-            }
-            return resolvedURL?.absoluteString ?? ""
-        }()
+        let castURL = tvosDeepLink ?? resolvedURL?.absoluteString ?? ""
 
         let payload = PlayCommandOutgoing(
             platform: platform,
@@ -1257,46 +1266,48 @@ struct CastToTVSheet: View {
             target_name: Self.castName(device.name)
         )
 
-        do {
-            if let token = try? await SupabaseManager.shared.client.auth.session.accessToken { await SupabaseManager.shared.client.realtimeV2.setAuth(token) }
-            let ch = SupabaseManager.shared.client.realtimeV2.channel("play-commands:\(userId)") { config in config.isPrivate = true }
-            await ch.subscribe()
-            try await ch.broadcast(event: "play-command", message: payload)
-            #if DEBUG
-            print("[CastToTV] broadcast ok → play-commands:\(userId) target_name=\(device.name) platform=\(platform)")
-            #endif
-            // Log the outbound command to debug_logs.
-            await logPlayCommandSent(device: device, userId: userId, resolvedURL: resolvedURL)
-            await ch.unsubscribe()
-        } catch {
-            #if DEBUG
-            print("[CastToTV] broadcast failed: \(error.localizedDescription)")
-            #endif
-        }
+        let sent = await PlayCommandSender.send(payload)
+        await logPlayCommand(device: device, castURL: castURL, sent: sent)
+        return sent
     }
 
-    /// Traces an outbound play command to `debug_logs` so both sides of the
-    /// flow are visible while working on it. Debug builds only — this ran in
-    /// shipping builds and wrote a row, with the resolved deep links, on
-    /// every cast.
-    private func logPlayCommandSent(device: DiscoveredTVDevice, userId: String, resolvedURL: URL?) async {
-        #if DEBUG
+    /// Rejects empty strings and Watchmode's free-tier placeholder
+    /// ("Deeplinks available for paid plans only."), which is a sentence, not
+    /// a URL. Accepts any scheme — a tvOS deep link is usually a custom one.
+    private static func isRealDeepLink(_ s: String) -> Bool {
+        guard s.contains("://") else { return false }
+        let lower = s.lowercased()
+        return !lower.contains("deeplinks available") && !lower.contains("paid plan")
+    }
+
+    /// Traces the outbound command to `debug_logs`.
+    ///
+    /// FAILURES are recorded in shipping builds. Before this, the whole send
+    /// sat inside a `catch` whose only body was a `#if DEBUG` print and the
+    /// trace row was DEBUG-only, so a cast that never left the phone left no
+    /// evidence anywhere — which is why a silently dropped command took a live
+    /// packet test to find. Successes stay DEBUG-only; they were writing a row,
+    /// with the resolved deep links, on every single cast.
+    private func logPlayCommand(device: DiscoveredTVDevice, castURL: String, sent: Bool) async {
+        #if !DEBUG
+        guard !sent else { return }
+        #endif
+        let userId = SupabaseManager.shared.client.auth.currentUser?.id.uuidString
         let payloadDict: [String: AnyJSON] = [
-            "event": .string("play_command_sent"),
-            "user_id": .string(userId),
+            "event": .string(sent ? "play_command_sent" : "play_command_send_failed"),
+            "user_id": userId.map { AnyJSON.string($0) } ?? .null,
             "target_name": .string(device.name),
             "device_id": .string(device.id),
             "device_kind": .string(device.kind.rawValue),
             "platform": .string(platform),
             "title": .string(showTitle),
-            "content_url": .string(resolvedURL?.absoluteString ?? ""),
-            "device_name": .string("tvos=\(watchmodeSource?.tvosUrl ?? "nil") roku=\(watchmodeSource?.rokuUrl ?? "nil")")
+            "content_url": .string(castURL),
+            "matched": .bool(sent)
         ]
         try? await SupabaseManager.shared.client
             .from("debug_logs")
             .insert(payloadDict)
             .execute()
-        #endif
     }
 
     /// Final step in the cast flow — runs after the "Playing on" banner has
