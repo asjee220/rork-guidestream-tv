@@ -32,6 +32,11 @@ struct GuideStreamTVTVApp: App {
                     // restored from the keychain never runs the sign-in path.
                     await TVAuthViewModel.shared.loadSelectedServices()
                     TVTrackingAuthorization.requestIfNeeded()
+                    // Apple TV writes its own device_sessions row from here.
+                    // Without this call the tvOS install exists only in
+                    // tv_receivers, and every install, OS-mix, release,
+                    // activation and retention figure silently excludes it.
+                    DeviceSessionService.shared.incrementSessionAndUpsert()
                 }
                 // Guideline 5.1.2(i): App Privacy in App Store Connect is one
                 // record shared by both platforms, and the phone app declares

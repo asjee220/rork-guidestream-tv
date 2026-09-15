@@ -12,6 +12,8 @@
 
 import SwiftUI
 import Foundation
+import Supabase
+import UIKit
 
 // MARK: - Singleton typealiases
 
@@ -146,11 +148,21 @@ final class AppProfileManager {
     }
 }
 
-// MARK: - DeviceSessionService (no-op)
+// MARK: - DeviceSessionService
 
-/// tvOS stub: the Apple TV install doesn't actively push `device_sessions`
-/// rows, so all calls are no-ops. The session count is still tracked in
-/// UserDefaults so the Devices screen can render this device synthetically.
+/// Apple TV's own `device_sessions` writer.
+///
+/// This used to be a no-op, and that is why Apple TV was invisible to every
+/// install, OS-mix, release, activation and retention figure the Watch Graph
+/// reports: those all read `device_sessions`, and tvOS never wrote a row.
+/// The events it logged still landed in `watch_intent_events`, so tvOS
+/// activity sat inside the event totals with no device in the denominator.
+///
+/// The payload mirrors the iOS service, minus the columns tvOS has no notion
+/// of (SMS, timezone, install attribution). `device_model` comes from uname,
+/// so a real Apple TV reports `AppleTV14,1` and the dashboard's
+/// `wg_platform_family` sorts it into tvOS. Failures are recorded and
+/// swallowed: analytics must never take the UI down.
 @MainActor
 final class DeviceSessionService {
     static let shared = DeviceSessionService()
@@ -164,7 +176,21 @@ final class DeviceSessionService {
 
     private let sessionCountKey = "gs.tv.sessionCount"
 
-    private init() {}
+    /// Hardware identifier, computed once. `AppleTV14,1` on device; the
+    /// simulator returns the host arch (`arm64`), which the dashboard
+    /// already excludes as a simulator.
+    private let deviceModel: String
+
+    private init() {
+        var sysinfo = utsname()
+        uname(&sysinfo)
+        let machineMirror = Mirror(reflecting: sysinfo.machine)
+        let identifier = machineMirror.children.reduce("") { partial, element in
+            guard let value = element.value as? Int8, value != 0 else { return partial }
+            return partial + String(UnicodeScalar(UInt8(value)))
+        }
+        self.deviceModel = identifier.isEmpty ? UIDevice.current.model : identifier
+    }
 
     var sessionCount: Int {
         UserDefaults.standard.integer(forKey: sessionCountKey)
@@ -173,19 +199,64 @@ final class DeviceSessionService {
     func incrementSessionAndUpsert() {
         let next = sessionCount + 1
         UserDefaults.standard.set(next, forKey: sessionCountKey)
+        upsert(reason: "session_started")
     }
 
     func upsert(reason: String) {
-        lastReason = reason
-        lastAttemptAt = Date()
-        totalUpserts += 1
+        Task { _ = await upsertNowReturningError(reason: reason) }
     }
 
+    @discardableResult
     func upsertNowReturningError(reason: String = "diagnostic") async -> String? {
         lastReason = reason
         lastAttemptAt = Date()
         totalUpserts += 1
-        return nil
+        let payload = makePayload()
+        do {
+            try await SupabaseManager.shared.client
+                .from("device_sessions")
+                .upsert(payload, onConflict: "device_id")
+                .execute()
+            totalSuccesses += 1
+            lastSuccessAt = Date()
+            lastError = nil
+            return nil
+        } catch {
+            let message = error.localizedDescription
+            lastError = "\(reason): \(message)"
+            return message
+        }
+    }
+
+    private func makePayload() -> [String: AnyJSON] {
+        let auth = AuthViewModel.shared
+        let userId = auth.currentUser?.id.uuidString
+        let isAuth = userId != nil
+
+        var payload: [String: AnyJSON] = [
+            "device_id": .string(TVDeviceIdentity.shared.deviceId),
+            "is_guest": .bool(auth.isGuest && !isAuth),
+            "is_authenticated": .bool(isAuth),
+            "services": .array(Array(auth.selectedServices).map { .string($0) }),
+            "service_count": .integer(auth.selectedServices.count),
+            "onboarding_complete": .bool(auth.hasCompletedOnboarding),
+            "session_count": .integer(sessionCount),
+            "last_seen_at": .string(ISO8601DateFormatter().string(from: Date())),
+            "os_version": .string(UIDevice.current.systemVersion),
+            "device_model": .string(deviceModel)
+        ]
+        if let userId { payload["user_id"] = .string(userId) }
+        if let email = auth.currentUser?.email, !email.isEmpty {
+            payload["email"] = .string(email)
+        }
+        let info = Bundle.main.infoDictionary
+        if let version = info?["CFBundleShortVersionString"] as? String {
+            payload["app_version"] = .string(version)
+        }
+        if let build = info?["CFBundleVersion"] as? String {
+            payload["build_number"] = .string(build)
+        }
+        return payload
     }
 }
 

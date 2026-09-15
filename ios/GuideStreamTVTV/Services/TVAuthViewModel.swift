@@ -86,34 +86,19 @@ final class TVAuthViewModel {
         UserDefaults.standard.set(true, forKey: "gs.tv.isGuest")
     }
 
-    /// Writes (or updates) a row in the `devices` table so the phone
-    /// app can discover this Apple TV for the Play on TV feature.
-    /// Called after the room-name prompt that follows Sign in with Apple.
+    /// Registers this Apple TV as a play-command receiver for the signed-in
+    /// account, after the room-name prompt that follows Sign in with Apple.
+    ///
+    /// This used to upsert a `devices` table. No such table exists in the
+    /// project, so every call failed and was swallowed — sign-in registered
+    /// nothing. `tv_receivers` is the real ledger, and TVReceiverRegistry is
+    /// its only correct writer: the phone's cast sheet matches on the AirPlay
+    /// name, not on free text, so the display name has to be the resolved
+    /// one. The typed room is kept for the local greeting only.
     func registerDevice(room: String) async {
         guard let uid = currentUser?.id.uuidString else { return }
-        let deviceId = TVDeviceIdentity.shared.deviceId
-        let model = UIDevice.current.model
-        let osVersion = UIDevice.current.systemVersion
-        do {
-            try await TVSupabaseManager.shared.client
-                .from("devices")
-                .upsert([
-                    "device_id": deviceId,
-                    "room": room,
-                    "user_id": uid,
-                    "device_model": model,
-                    "os_version": osVersion,
-                    "last_seen_at": ISO8601DateFormatter().string(from: Date())
-                ], onConflict: "device_id")
-                .execute()
-            #if DEBUG
-            print("[TVAuth] registered device \(deviceId) in room '\(room)'")
-            #endif
-        } catch {
-            #if DEBUG
-            print("[TVAuth] registerDevice failed: \(error.localizedDescription)")
-            #endif
-        }
+        UserDefaults.standard.set(room, forKey: "gs.tv.roomLabel")
+        await TVReceiverRegistry.register(userId: uid)
     }
 
     func signOut() async {
