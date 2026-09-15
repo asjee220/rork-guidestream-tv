@@ -498,13 +498,20 @@ class TMDBService {
         val results: Map<String, TMDBProviderRegion> = emptyMap(),
     )
 
-    /** Returns the top US streaming provider for a title (TV by default, movie when isTV is false). */
+    /**
+     * Top streaming provider for a title in the DEVICE'S region (TV by default,
+     * movie when isTV is false), or null when it does not stream there.
+     *
+     * This read `results["US"]` for every user on earth, so a rail in Manila was
+     * badged with Hulu and Peacock. There is no US fallback: null means "not
+     * streaming where you are", and callers render the title without a badge.
+     */
     suspend fun getTopWatchProvider(tmdbId: Int, isTV: Boolean = true): TMDBWatchProvider? {
         val kind = if (isTV) "tv" else "movie"
         return try {
             val response: TMDBProvidersEnvelope = client.get("$base/$kind/$tmdbId/watch/providers?api_key=$apiKey").body()
-            val us = response.results["US"]
-            us?.flatrate?.firstOrNull() ?: us?.ads?.firstOrNull() ?: us?.free?.firstOrNull()
+            val entry = response.results[DeviceLocale.region]
+            entry?.flatrate?.firstOrNull() ?: entry?.ads?.firstOrNull() ?: entry?.free?.firstOrNull()
         } catch (_: Exception) { null }
     }
 

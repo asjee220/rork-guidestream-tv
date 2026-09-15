@@ -285,16 +285,18 @@ nonisolated struct TVTMDBService {
             }
     }
 
-    /// Returns the top US streaming provider for a title, or nil if no
-    /// real streaming service is associated with it.
+    /// Returns the top streaming provider for a title IN THE DEVICE'S REGION,
+    /// or nil when it does not stream there.
+    ///
+    /// No US fallback: a US badge on a title a user in Manila cannot watch is
+    /// worse than no badge. Callers render the title without one.
     func getTopWatchProvider(tmdbId: Int, isTV: Bool) async throws -> TVTMDBWatchProvider? {
         let locale = DeviceLocale.current()
         let kind = isTV ? "tv" : "movie"
         let urlString = "\(base)/\(kind)/\(tmdbId)/watch/providers?api_key=\(apiKey)"
         let data = try await get(urlString)
         let env = try JSONDecoder().decode(TVTMDBProvidersEnvelope.self, from: data)
-        let regionEntry = env.results[locale.region] ?? env.results["US"]
-        guard let entry = regionEntry else { return nil }
+        guard let entry = env.results[locale.region] else { return nil }
         let pool = (entry.flatrate ?? []) + (entry.ads ?? []) + (entry.free ?? [])
         guard !pool.isEmpty else { return nil }
         return pool.min(by: { ($0.displayPriority ?? 999) < ($1.displayPriority ?? 999) })

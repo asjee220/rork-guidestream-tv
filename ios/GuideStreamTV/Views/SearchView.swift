@@ -96,7 +96,10 @@ final class SearchViewModel {
                         let svcName = provider?.providerName
                         let color = gsBrandColor(for: svcName ?? "")
                         let short = gsShortName(for: svcName ?? "")
-                        guard svcName != nil else { return nil }
+                        // A title that doesn't stream in this region keeps its
+                        // place with no service chip. Dropping it emptied the
+                        // trending row wherever the catalogue is thin, which is
+                        // every market the US fallback used to paper over.
                         return SearchResult(
                             id: item.id, title: item.displayName, isTV: item.isTV,
                             posterUrl: item.posterUrl, backdropUrl: item.backdropUrl,

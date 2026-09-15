@@ -1204,11 +1204,15 @@ struct TVHomeView: View {
             }
         }
 
-        if survivors.isEmpty {
-            heroItems = trending.isEmpty ? [] : Array(trending.prefix(6))
-        } else {
-            heroItems = survivors
+        // Titles that resolve a provider in the user's own region lead, since
+        // the hero's job is "you can watch this tonight". With the US fallback
+        // gone a small market may resolve only two or three, so the rest of the
+        // pool tops it up — a card without a badge beats a hero with one card.
+        if survivors.count < 6 {
+            let taken = Set(survivors.map(\.id))
+            survivors.append(contentsOf: candidates.filter { !taken.contains($0.id) }.prefix(6 - survivors.count))
         }
+        heroItems = survivors.isEmpty ? Array(trending.prefix(6)) : survivors
         heroLoading = false
 
         // Video for the hero, in priority order. A hosted featurette is

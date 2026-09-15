@@ -220,7 +220,10 @@ class ReelsViewModel : ViewModel() {
         if (primaryKeys.isEmpty()) return emptyList()
         val provider = tmdb.getTopWatchProvider(r.id, r.isTV)
         val platform = Platform.from(provider?.providerName)
-        if (platform == null && tab != ReelTab.COMING_SOON) return emptyList()
+        // No in-region provider is no longer a reason to drop the reel. The
+        // fields below already degrade to "Streaming" in brand orange — that is
+        // how COMING_SOON has always rendered — and with the US fallback gone
+        // this guard would have emptied the feed outside the US.
         return primaryKeys.map { key ->
             TrailerItem(
                 id = key,

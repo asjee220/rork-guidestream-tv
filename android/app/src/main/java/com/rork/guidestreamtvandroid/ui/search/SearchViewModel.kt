@@ -117,18 +117,21 @@ class SearchViewModel : ViewModel() {
         if (_popular.value.isNotEmpty()) return
         viewModelScope.launch(Dispatchers.IO) {
             val tv = tmdb.getTrendingTV()
-            val results = tv.take(18).mapNotNull { r ->
+            // A title that doesn't stream in this region keeps its place with
+            // no service chip (SearchResult.platform is nullable and the row
+            // already renders without one). Dropping it emptied this row
+            // wherever the catalogue is thin.
+            val results = tv.take(18).map { r ->
                 val provider = tmdb.getTopWatchProvider(r.id)
-                val platform = Platform.from(provider?.providerName)
-                if (platform != null) SearchResult(
+                SearchResult(
                     id = r.id,
                     title = r.displayName,
                     isTV = r.isTV,
                     posterUrl = r.posterUrl,
                     backdropUrl = r.backdropUrl,
                     year = r.year,
-                    platform = platform,
-                ) else null
+                    platform = Platform.from(provider?.providerName),
+                )
             }
             _popular.value = results
         }
