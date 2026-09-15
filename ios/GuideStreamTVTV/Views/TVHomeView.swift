@@ -515,12 +515,56 @@ struct TVHomeView: View {
                             "media_type": item.isTV ? "tv" : "movie"
                         ]
                     )
-                    TVOSDeepLinker.open(platform: serviceName, title: item.displayName)
+                    Task { @MainActor in
+                        await openContinue(item: item, serviceName: serviceName)
+                    }
                 },
                 onWatchNow: { item in showTitleDetail(heroDetail(for: item)) },
                 featurettes: heroFeaturettes,
                 metadataInset: metadataInset
             )
+        }
+    }
+
+    /// Opens the service the viewer last watched this title on, ON the title
+    /// where Watchmode gives us a link for it.
+    ///
+    /// This was `TVOSDeepLinker.open(platform:title:)` with no URL, which
+    /// could only ever reach the service's home screen — while the title
+    /// screen two presses away opened the title itself, because TVTitleSheet
+    /// resolved sources and this did not. Same resolver, same guard, same
+    /// ordering now; `TVDeepLinkResolver` is the shared walk.
+    ///
+    /// Continue Watching carries no season/episode — it is built from launch
+    /// events — so this is a title-level link by nature. For a series that
+    /// means the show, not a specific episode, which is the honest
+    /// destination for "resume where you were".
+    private func openContinue(item: TVTMDBResult, serviceName: String) async {
+        let resolved = await TVWatchmodeResolver.shared.resolve(
+            tmdbId: item.id,
+            isTV: item.isTV,
+            season: nil,
+            episode: nil,
+            episodePlatformHint: serviceName
+        )
+        // The row the viewer was actually watching on, not whichever source
+        // ranked first — resuming on a service they do not have is worse
+        // than opening the app they do.
+        let source = resolved?.usSources.first {
+            TVDeepLinkResolver.isSameBrand($0.name, serviceName)
+        } ?? resolved?.primarySource
+
+        if let source, let deepLink = TVDeepLinkResolver.deepLink(for: source) {
+            TVOSDeepLinker.open(
+                platform: source.name,
+                title: item.displayName,
+                contentURL: TVDeepLinkResolver.webURL(for: source),
+                tvosDeepLink: deepLink
+            )
+        } else {
+            // Nothing usable came back. The service's own app is still the
+            // right destination, and is exactly what this button did before.
+            TVOSDeepLinker.open(platform: serviceName, title: item.displayName)
         }
     }
 

@@ -1481,91 +1481,18 @@ struct TVTitleSheet: View {
         return ep
     }
 
+    /// The app-opening URL for a source, episode link first.
+    ///
+    /// The ordering, the brand guard and the placeholder rejection now live
+    /// in `TVDeepLinkResolver` so the Home hero's Continue button runs the
+    /// identical walk — it used to open with no URL at all and could only
+    /// reach the service's home screen.
     private func guardedDeepLink(for source: TVWatchmodeResolver.TVResolvedSource) -> URL? {
-        let ep = episodeSource(matching: source)
-        // Reorder so native-scheme candidates (nflx://, aiv://, vuduapp://,
-        // etc.) are preferred over https universal links, preserving the
-        // existing episode-before-title precedence within each group. tvOS
-        // has no browser, so an https URL placed first can silently consume
-        // the launch and land the user nowhere. The brand guard is applied
-        // unchanged at every step.
-        let tvosUrls = [ep?.tvosUrl, source.tvosUrl]
-        let iosUrls = [ep?.iosUrl, source.iosUrl]
-        let webUrls = [ep?.webUrl, source.webUrl]
-
-        func isWebScheme(_ url: URL) -> Bool {
-            let scheme = url.scheme?.lowercased() ?? ""
-            return scheme == "http" || scheme == "https"
-        }
-
-        // Pass 1: native-scheme tvosUrls then native-scheme iosUrls.
-        for candidate in tvosUrls + iosUrls {
-            if let str = candidate, let url = URL(string: str), !isWebScheme(url),
-               urlAllowed(url, forService: source.name) {
-                return url
-            }
-        }
-        // Pass 2: https tvosUrls then https iosUrls (universal links).
-        for candidate in tvosUrls + iosUrls {
-            if let str = candidate, let url = URL(string: str), isWebScheme(url),
-               urlAllowed(url, forService: source.name) {
-                return url
-            }
-        }
-        // Pass 3: web URLs.
-        for candidate in webUrls {
-            if let str = candidate, let url = URL(string: str),
-               urlAllowed(url, forService: source.name) {
-                return url
-            }
-        }
-        return nil
+        TVDeepLinkResolver.deepLink(for: source, episode: episodeSource(matching: source))
     }
 
     private func guardedWebURL(for source: TVWatchmodeResolver.TVResolvedSource) -> URL? {
-        let ep = episodeSource(matching: source)
-        let candidates = [ep?.webUrl, source.webUrl]
-        for candidate in candidates {
-            if let str = candidate, let url = URL(string: str), urlAllowed(url, forService: source.name) {
-                return url
-            }
-        }
-        return nil
-    }
-
-    /// A URL is allowed for a service only when the URL's detected brand is nil
-    /// or equal to the service's brand token. A different non-nil brand is
-    /// rejected (guards against wrong-app deep links, e.g. a Prime link served
-    /// for an Apple TV+ title).
-    private func urlAllowed(_ url: URL, forService name: String) -> Bool {
-        guard let detected = brandToken(forURL: url) else { return true }
-        return detected == brandToken(forServiceName: name)
-    }
-
-    private func brandToken(forURL url: URL) -> String? {
-        let scheme = url.scheme?.lowercased() ?? ""
-        let host = url.host?.lowercased() ?? ""
-        if scheme == "aiv" || host.contains("amazon") || host.contains("primevideo") { return "amazon" }
-        if scheme == "nflx" || host.contains("netflix") { return "netflix" }
-        if scheme == "videos" || host.contains("apple") { return "apple" }
-        if host.contains("hulu") { return "hulu" }
-        if scheme == "disneyplus" || host.contains("disney") { return "disney" }
-        if scheme == "hbomax" || host.contains("max") || host.contains("hbo") { return "max" }
-        if scheme == "paramountplus" || host.contains("paramount") { return "paramount" }
-        if scheme == "peacock" || host.contains("peacock") { return "peacock" }
-        if scheme == "youtube" || host.contains("youtube") { return "youtube" }
-        if host.contains("crunchyroll") { return "crunchyroll" }
-        return nil
-    }
-
-    private func brandToken(forServiceName name: String) -> String? {
-        guard let catalogId = Platform.from(providerName: name)?.catalogId else { return nil }
-        // Map catalog ids to the URL-brand-token space used by brandToken(forURL:).
-        switch catalogId {
-        case "prime":   return "amazon"
-        case "appletv": return "apple"
-        default:        return catalogId
-        }
+        TVDeepLinkResolver.webURL(for: source, episode: episodeSource(matching: source))
     }
 
     // MARK: - Brand styling (local copies mirroring the tvOS ShowDetailScreen /
