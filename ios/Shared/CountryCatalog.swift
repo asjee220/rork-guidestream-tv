@@ -9,6 +9,13 @@
 //  (Crunchyroll is queried as Japanese anime in every market). TMDB provider
 //  ids are region-specific — always use them exactly as listed here.
 //
+//  "Around the World" means AWAY FROM HOME, and home is the viewer's own
+//  region — not the US. Until 15 Sep 2026 this list had no US entry and the
+//  rotation was a global `day mod 11`, so a viewer in Tokyo was shown "Around
+//  the World: Japan" one day in eleven, and nobody outside the US could ever
+//  look at the largest catalogue on earth. Read the destination list through
+//  `destinations(forHomeRegion:)`, never `entries` directly.
+//
 //  RORK MAX NOTE: this file lives in the SHARED group so both iOS and tvOS
 //  targets compile it. It has no UIKit/SwiftUI imports.
 //
@@ -59,7 +66,9 @@ nonisolated struct CountryCatalogEntry: Sendable, Equatable, Identifiable {
 }
 
 nonisolated enum CountryCatalog {
-    /// Curated destinations in rotation order (11 entries).
+    /// Curated destinations in rotation order (12 entries). US is last so a
+    /// US viewer's rotation is byte-for-byte what it was before US existed
+    /// here — their pool is these twelve minus US, in this order.
     static let entries: [CountryCatalogEntry] = [
         CountryCatalogEntry(regionCode: "JP", displayName: "Japan", originalLanguage: "ja", providers: [
             CountryProvider(id: 84, name: "U-NEXT"),
@@ -145,18 +154,61 @@ nonisolated enum CountryCatalog {
             CountryProvider(id: 135, name: "ABC iview"),
             CountryProvider(id: 283, name: "Crunchyroll", originalLanguage: "ja"),
         ]),
+        // Added 15 Sep 2026. Every id below was read from TMDB's own US
+        // provider list and then probed with /discover/tv?watch_region=US to
+        // confirm it returns titles: Hulu 906, HBO Max 508, Peacock 471,
+        // Paramount+ 354, Netflix 2315, Prime Video 1347, Disney+ 473,
+        // Apple TV+ 153, Tubi 1272, Crunchyroll 1045. Hulu leads because the
+        // US-only services are the point of visiting, the same reason GB
+        // leads with BBC iPlayer and BR with Globoplay.
+        CountryCatalogEntry(regionCode: "US", displayName: "United States", originalLanguage: nil, providers: [
+            CountryProvider(id: 15, name: "Hulu"),
+            CountryProvider(id: 1899, name: "HBO Max"),
+            CountryProvider(id: 386, name: "Peacock"),
+            CountryProvider(id: 2303, name: "Paramount+"),
+            CountryProvider(id: 8, name: "Netflix"),
+            CountryProvider(id: 9, name: "Prime Video"),
+            CountryProvider(id: 337, name: "Disney+"),
+            CountryProvider(id: 350, name: "Apple TV+"),
+            CountryProvider(id: 73, name: "Tubi"),
+            CountryProvider(id: 283, name: "Crunchyroll", originalLanguage: "ja"),
+        ]),
     ]
 
-    /// Rotating destination of the day: `floor(now / 86_400_000) mod 11`
-    /// (11 = entry count), computed at read time so the pick advances at UTC
-    /// midnight and iOS and Android agree on the country for any given day.
+    /// Where a viewer in `homeRegion` can travel: the catalogue minus their own
+    /// country. A viewer in Manila gets all twelve including the US; a viewer
+    /// in Tokyo gets eleven without Japan. Falls back to the full list if the
+    /// filter would empty it, which it cannot today but would if the catalogue
+    /// ever shrank to one.
+    ///
+    /// This is the list the destination picker shows and the rail rotates
+    /// through. `entry(forRegionCode:)` deliberately still searches everything,
+    /// so a deep link to your own country resolves rather than silently
+    /// becoming somewhere else.
+    static func destinations(forHomeRegion homeRegion: String) -> [CountryCatalogEntry] {
+        let home = homeRegion.uppercased()
+        let away = entries.filter { $0.regionCode.uppercased() != home }
+        return away.isEmpty ? entries : away
+    }
+
+    /// Rotating destination of the day for a viewer at `homeRegion`:
+    /// `floor(now / 86_400_000) mod destinationCount`, computed at read time so
+    /// the pick advances at UTC midnight. iOS and Android agree because they
+    /// build the same pool (this file's order, minus home) from the same day
+    /// index — keep the two catalogues in the same order or they will drift.
     /// The index is always coerced non-negative.
-    static var countryOfDay: CountryCatalogEntry {
-        let count = entries.count
+    static func countryOfDay(forHomeRegion homeRegion: String) -> CountryCatalogEntry {
+        let pool = destinations(forHomeRegion: homeRegion)
+        let count = pool.count
         let millis = Date().timeIntervalSince1970 * 1000
         let day = Int(floor(millis / 86_400_000))
         let idx = ((day % count) + count) % count
-        return entries[idx]
+        return pool[idx]
+    }
+
+    /// Today's destination for this device's own region.
+    static var countryOfDay: CountryCatalogEntry {
+        countryOfDay(forHomeRegion: DeviceLocale.current().region)
     }
 
     /// Entry for a region code, case-insensitive; nil on miss.

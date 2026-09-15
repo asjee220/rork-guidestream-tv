@@ -46,6 +46,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.rork.guidestreamtvandroid.data.CountryCatalog
+import com.rork.guidestreamtvandroid.data.DeviceLocale
 import com.rork.guidestreamtvandroid.data.models.BrowseCatalog
 import com.rork.guidestreamtvandroid.data.models.TMDBResult
 import com.rork.guidestreamtvandroid.data.remote.TMDBService
@@ -170,7 +171,7 @@ fun AroundTheWorldScreen(
                 contentPadding = PaddingValues(horizontal = 20.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                items(CountryCatalog.entries) { e ->
+                items(CountryCatalog.destinations(DeviceLocale.region)) { e ->
                     val selected = e.regionCode == country.regionCode
                     Box(
                         modifier = Modifier

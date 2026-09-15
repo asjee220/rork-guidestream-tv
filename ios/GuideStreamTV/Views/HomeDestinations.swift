@@ -337,7 +337,8 @@ struct AroundTheWorldView: View {
     // MARK: - Pill rows
 
     private var countryPillRow: some View {
-        pillRow(items: CountryCatalog.entries.map { ($0.id, $0.displayName) },
+        pillRow(items: CountryCatalog.destinations(forHomeRegion: DeviceLocale.current().region)
+                    .map { ($0.id, $0.displayName) },
                 selectedId: entry.regionCode) { regionCode in
             guard regionCode != entry.regionCode,
                   let next = CountryCatalog.entry(forRegionCode: regionCode) else { return }
