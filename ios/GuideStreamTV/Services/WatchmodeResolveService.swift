@@ -98,7 +98,14 @@ nonisolated enum WatchmodeResolveService {
         guard let url = URL(string: "\(base)/functions/v1/watchmode_resolve") else { return nil }
 
         // Build body, omitting nil parameters rather than sending nulls.
-        var body: [String: Any] = ["tmdbId": tmdbId, "isTV": isTV]
+        // The region availability is resolved against. watchmode_resolve v26
+        // defaults to "US" when this is absent, which is what every build
+        // before 15 Sep 2026 did — and why a user in Manila was shown Hulu.
+        var body: [String: Any] = [
+            "tmdbId": tmdbId,
+            "isTV": isTV,
+            "region": DeviceLocale.current().region,
+        ]
         if let season { body["season"] = season }
         if let episode { body["episode"] = episode }
         if let episodePlatformHint { body["episodePlatformHint"] = episodePlatformHint }

@@ -1,6 +1,7 @@
 package com.rork.guidestreamtvandroid.data.remote
 
 import com.rork.guidestreamtvandroid.SupabaseConfig
+import com.rork.guidestreamtvandroid.data.DeviceLocale
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
@@ -80,6 +81,9 @@ object WatchmodeResolveService {
             val body = buildJsonObject {
                 put("tmdbId", JsonPrimitive(tmdbId))
                 put("isTV", JsonPrimitive(isTV))
+                // Region availability is resolved against. watchmode_resolve v26
+                // defaults to "US" when absent — the pre-15-Sep-2026 behaviour.
+                put("region", JsonPrimitive(DeviceLocale.region))
                 put("subscribedServices", JsonArray(subscribedServices.map { JsonPrimitive(it) }))
                 if (season != null) put("season", JsonPrimitive(season))
                 if (episode != null) put("episode", JsonPrimitive(episode))

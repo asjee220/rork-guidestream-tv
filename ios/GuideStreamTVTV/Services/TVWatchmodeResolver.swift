@@ -91,6 +91,7 @@ final class TVWatchmodeResolver {
         let body = ResolveBody(
             tmdbId: tmdbId,
             isTV: isTV,
+            region: DeviceLocale.current().region,
             season: season,
             episode: episode,
             subscribedServices: subscribedServices,
@@ -119,12 +120,15 @@ final class TVWatchmodeResolver {
 private struct ResolveBody: Encodable {
     let tmdbId: Int
     let isTV: Bool?
+    /// Region availability is resolved against (watchmode_resolve v26).
+    /// Absent means "US" server-side, which is what shipped before 15 Sep 2026.
+    let region: String
     let season: Int?
     let episode: Int?
     let subscribedServices: [String]
     let episodePlatformHint: String?
 
     enum CodingKeys: String, CodingKey {
-        case tmdbId, isTV, season, episode, subscribedServices, episodePlatformHint
+        case tmdbId, isTV, region, season, episode, subscribedServices, episodePlatformHint
     }
 }

@@ -59,6 +59,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.rork.guidestreamtvandroid.data.DeviceLocale
 import com.rork.guidestreamtvandroid.data.ShareLinks
 import com.rork.guidestreamtvandroid.data.openWatchLink
 import com.rork.guidestreamtvandroid.data.models.DeepDiveCreator
@@ -842,8 +843,26 @@ fun ShowDetailScreen(
     }
 }
 
-/** Home-region display name, mapped from the literal "US" code (not DeviceLocale). */
-private val homeRegionName: String by lazy { regionDisplayName("US") }
+/**
+ * The unavailable sentence, naming the region availability was resolved against.
+ *
+ * Was `regionDisplayName("US")` behind a `by lazy`, which told a user in Manila a
+ * title was not available in the United States. watchmode_resolve v26 resolves
+ * against the device region and this client now sends it, so the label names the
+ * same place — and it can no longer be cached, since the region can change under
+ * the app.
+ */
+private fun homeRegionSentence(): String {
+    val code = DeviceLocale.region.uppercase()
+    val name = regionDisplayName(code)
+    return if (code in ARTICLE_REGIONS) "Not available in the $name" else "Not available in $name"
+}
+
+/** ISO codes whose English display name takes a definite article. */
+private val ARTICLE_REGIONS = setOf(
+    "US", "GB", "NL", "PH", "AE", "BS", "GM", "MV", "DO",
+    "CD", "CG", "KY", "TC", "VG", "VI", "FK", "MH", "SB", "SC", "KM", "CF",
+)
 
 /** Localized country name for an ISO region code; raw code on miss. */
 private fun regionDisplayName(code: String): String {
@@ -902,7 +921,7 @@ internal fun WhereToWatchRow(
         // unavailable instead of an empty row.
         Column(Modifier.padding(horizontal = 16.dp)) {
             Text(
-                text = "Not available in the $homeRegionName",
+                text = homeRegionSentence(),
                 fontSize = 13.sp,
                 fontWeight = FontWeight.SemiBold,
                 color = TextPrimary,

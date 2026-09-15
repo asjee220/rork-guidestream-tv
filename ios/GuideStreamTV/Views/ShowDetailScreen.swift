@@ -1407,9 +1407,18 @@ struct ShowDetailScreen: View {
                     // No US sources, but the title streams elsewhere — read as
                     // unavailable instead of an empty row.
                     VStack(alignment: .leading, spacing: 3) {
-                        Text("Not available in the \(homeRegionDisplayName)")
-                            .scaledFont(size: 13, weight: .semibold)
-                            .foregroundStyle(.white)
+                        // Two keys, because "the Philippines" and "Japan" cannot
+                        // share a sentence. Both stay LocalizedStringKey — a
+                        // ternary would collapse to Text(String) and lose that.
+                        if homeRegionTakesArticle {
+                            Text("Not available in the \(homeRegionDisplayName)")
+                                .scaledFont(size: 13, weight: .semibold)
+                                .foregroundStyle(.white)
+                        } else {
+                            Text("Not available in \(homeRegionDisplayName)")
+                                .scaledFont(size: 13, weight: .semibold)
+                                .foregroundStyle(.white)
+                        }
                         Text("Streaming in \(availabilityRegionsSummary(vm.resolved.availabilityRegions))")
                             .scaledFont(size: 13)
                             .foregroundStyle(Color.textSecondary)
@@ -1490,10 +1499,26 @@ struct ShowDetailScreen: View {
         .accessibilityLabel("Finding streaming services")
     }
 
-    /// Home-region display name, mapped from the literal "US" region code so
-    /// the unavailable label is stable regardless of the device's region.
+    /// Display name of the region availability was actually resolved against.
+    ///
+    /// This was hard-coded to "US" so the label would "be stable regardless of
+    /// the device's region" — which told a user in Manila that a title was not
+    /// available in the United States. watchmode_resolve v26 resolves against
+    /// the device region and the clients now send it, so the label has to name
+    /// the same place.
     private var homeRegionDisplayName: String {
-        Self.regionDisplayName("US")
+        Self.regionDisplayName(DeviceLocale.current().region)
+    }
+
+    /// ISO codes whose English display name takes a definite article, so the
+    /// sentence reads "the United States" / "the Philippines" but "Japan".
+    private static let articleRegions: Set<String> = [
+        "US", "GB", "NL", "PH", "AE", "BS", "GM", "MV", "DO",
+        "CD", "CG", "KY", "TC", "VG", "VI", "FK", "MH", "SB", "SC", "KM", "CF",
+    ]
+
+    private var homeRegionTakesArticle: Bool {
+        Self.articleRegions.contains(DeviceLocale.current().region.uppercased())
     }
 
     /// Up to three comma-separated country names, then " +N more".
