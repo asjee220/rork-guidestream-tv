@@ -57,6 +57,11 @@ struct PlayOnBottomSheet: View {
     /// targets the caller's active/selected service.
     var preferredServiceName: String? = nil
 
+    /// Per-device flag for the inline services prompt. Set by "Not now";
+    /// never set by choosing services, because once the user has any
+    /// service selected the prompt has nothing left to ask.
+    static let servicesNudgeDismissedKey = "gs.playOnServicesNudgeDismissed"
+
     // Illustrative fallback metadata used until the live Watchmode lookup
     // resolves (or as a fallback when the API is unavailable). Overridden
     // by `metadataLine` / `genreLine` when those are set.
@@ -112,9 +117,15 @@ struct PlayOnBottomSheet: View {
     }
     private let watchCTAColor: Color = Color.orange
 
+    @State private var auth = AuthViewModel.shared
     @State private var isLiked: Bool = false
     @State private var isNotifying: Bool = true
     @State private var showCastSheet: Bool = false
+    /// The services picker, opened from the inline nudge. Closing it
+    /// re-resolves the title so the primary chip reflects the new set.
+    @State private var showServicesSheet: Bool = false
+    @State private var servicesNudgeDismissed: Bool =
+        UserDefaults.standard.bool(forKey: PlayOnBottomSheet.servicesNudgeDismissedKey)
     /// Watchmode-resolved source for this title. When present, drives the
     /// platform label, brand color, and the watch CTA deeplink.
     @State private var resolvedSource: WatchmodeSource?
@@ -174,6 +185,13 @@ struct PlayOnBottomSheet: View {
     private var aboutText: String {
         if let episode = episodeOverview, !episode.isEmpty { return episode }
         return resolvedOverview ?? fallbackAboutText
+    }
+
+    /// The inline "pick your services" card shows only while the user has
+    /// no services selected — the one state in which the primary chip is a
+    /// guess — and never again once they tap "Not now" on this device.
+    private var showsServicesNudge: Bool {
+        auth.selectedServices.isEmpty && !servicesNudgeDismissed
     }
 
     private func brandColor(for name: String) -> Color {
@@ -310,6 +328,9 @@ struct PlayOnBottomSheet: View {
                 watchmodeSource: resolvedSource
             )
         }
+        .sheet(isPresented: $showServicesSheet, onDismiss: { reResolveAfterServicesChange() }) {
+            ServicesBottomSheet()
+        }
         .task(id: isOpen ? (tmdbId ?? -1) : nil) {
             episodeSourceUnavailable = false
             isResolvingEpisodeSources = false
@@ -387,7 +408,17 @@ struct PlayOnBottomSheet: View {
         }
     }
 
-
+    /// The services picker just closed. The resolver's cache key includes
+    /// the subscribed set, so dropping the current result and resolving
+    /// again yields a primary chosen for the services the user now has —
+    /// with no relaunch and no stale chip.
+    private func reResolveAfterServicesChange() {
+        guard isOpen else { return }
+        resolvedSource = nil
+        episodeDeepLinkURL = nil
+        episodeSourceUnavailable = false
+        Task { await resolveStreamingSource() }
+    }
 
     private func close() { onClose() }
 
@@ -421,6 +452,12 @@ struct PlayOnBottomSheet: View {
                         .padding(.horizontal, 20)
                         .padding(.top, 20)
 
+                    if showsServicesNudge {
+                        servicesNudge
+                            .padding(.horizontal, 20)
+                            .padding(.top, 22)
+                    }
+
                     whereToWatchSection
                         .padding(.horizontal, 20)
                         .padding(.top, 22)
@@ -450,6 +487,59 @@ struct PlayOnBottomSheet: View {
         )
         .clipShape(UnevenRoundedRectangle(cornerRadii: .init(topLeading: 28, topTrailing: 28), style: .continuous))
         .shadow(color: .black.opacity(0.5), radius: 28, y: -10)
+    }
+
+    // MARK: - Services nudge
+
+    /// Inline prompt shown while the user has no streaming services
+    /// selected. Sits directly above Where to Watch, the row it improves.
+    private var servicesNudge: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text("Which services do you have?")
+                .scaledFont(size: 14, weight: .bold)
+                .foregroundStyle(.white)
+            Text("Pick them once and every title opens on a service you already pay for.")
+                .scaledFont(size: 12)
+                .foregroundStyle(Color.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 10) {
+                Button {
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    showServicesSheet = true
+                } label: {
+                    Text("Choose services")
+                        .scaledFont(size: 13, weight: .bold)
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                        .background(Capsule().fill(Color.orange))
+                }
+                .buttonStyle(.plain)
+
+                Button {
+                    UserDefaults.standard.set(true, forKey: Self.servicesNudgeDismissedKey)
+                    withAnimation(.easeOut(duration: 0.2)) { servicesNudgeDismissed = true }
+                } label: {
+                    Text("Not now")
+                        .scaledFont(size: 13, weight: .semibold)
+                        .foregroundStyle(Color.textSecondary)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 8)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.top, 9)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(Color.orange.opacity(0.10))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(Color.orange.opacity(0.30), lineWidth: 1)
+        )
     }
 
     // MARK: - Header row (poster + meta)

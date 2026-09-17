@@ -93,6 +93,7 @@ import com.rork.guidestreamtvandroid.ui.components.CircleAction
 import com.rork.guidestreamtvandroid.ui.components.GsSheetDragHandle
 import com.rork.guidestreamtvandroid.ui.components.GsSheetHeader
 import com.rork.guidestreamtvandroid.ui.components.RemoteImage
+import com.rork.guidestreamtvandroid.ui.components.ServicesBottomSheet
 import com.rork.guidestreamtvandroid.ui.components.SocialCounterRow
 import com.rork.guidestreamtvandroid.ui.navigation.PendingTitleRoute
 import com.rork.guidestreamtvandroid.ui.reels.ReelTab
@@ -186,6 +187,20 @@ fun EpisodeDetailSheet(
     var showComments by remember { mutableStateOf(false) }
     var showCast by remember { mutableStateOf(false) }
     var adDismissed by remember(route.titleId) { mutableStateOf(false) }
+    /**
+     * The inline "pick your services" card. Shown only while the user has no
+     * services selected — the one state in which the primary chip is a guess
+     * — and never again once they tap "Not now" on this device. Choosing a
+     * service re-runs the resolve below (selectedServices is a key), so the
+     * chip updates in place without reopening the sheet.
+     */
+    var showServicesSheet by remember { mutableStateOf(false) }
+    var servicesNudgeDismissed by remember {
+        mutableStateOf(
+            context.getSharedPreferences("gs_prefs", android.content.Context.MODE_PRIVATE)
+                .getBoolean("gs.playOnServicesNudgeDismissed", false),
+        )
+    }
 
     val isSaved = userStreams.any { it.titleId == route.titleId }
     val isWatched = watchedIds.contains(route.titleId)
@@ -250,7 +265,10 @@ fun EpisodeDetailSheet(
 
     // Streaming sources are pointless for a title that has not landed yet, so
     // the coming-to-streaming layout skips the Watchmode round trip entirely.
-    LaunchedEffect(tmdbId, isTV, detail?.id, route.isComingToStreaming) {
+    // selectedServices is a key on purpose: the server ranks subscribed
+    // services first when it picks the primary, so a services change must
+    // re-resolve rather than keep showing a chip chosen for the old set.
+    LaunchedEffect(tmdbId, isTV, detail?.id, route.isComingToStreaming, selectedServices) {
         // Pre-warm TV device discovery so the cast sheet opens with a
         // populated device list instead of scanning after the user taps.
         TvCastDiscovery.shared.prewarm()
@@ -593,6 +611,20 @@ fun EpisodeDetailSheet(
                     }
                 }
 
+                // ── Services nudge ───────────────────────────────────
+                // Sits directly above Where to Watch, the row it improves.
+                if (selectedServices.isEmpty() && !servicesNudgeDismissed) {
+                    ServicesNudgeCard(
+                        onChoose = { showServicesSheet = true },
+                        onNotNow = {
+                            context.getSharedPreferences("gs_prefs", android.content.Context.MODE_PRIVATE)
+                                .edit().putBoolean("gs.playOnServicesNudgeDismissed", true).apply()
+                            servicesNudgeDismissed = true
+                        },
+                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
+                    )
+                }
+
                 // Column, not Box: WhereToWatchRow emits three siblings
                 // (spacer, section title, chip row) — a Box stacks them on
                 // top of each other so the title overlaps the chips.
@@ -857,6 +889,17 @@ fun EpisodeDetailSheet(
         )
     }
 
+    if (showServicesSheet) {
+        ServicesBottomSheet(
+            selected = selectedServices,
+            onToggle = { id ->
+                val next = if (id in selectedServices) selectedServices - id else selectedServices + id
+                authVm.setSelectedServices(next)
+            },
+            onDismiss = { showServicesSheet = false },
+        )
+    }
+
     if (showCast) {
         CastToTVSheet(
             onClose = { showCast = false },
@@ -1082,4 +1125,70 @@ private fun isOpenableStreamUrl(url: String?): Boolean {
     if (!lower.contains("://") && !lower.startsWith("intent:")) return false
     if (lower.contains("deeplinks available") || lower.contains("paid plan")) return false
     return true
+}
+
+/**
+ * Inline prompt shown in the detail sheet while the user has no streaming
+ * services selected. Mirrors iOS `PlayOnBottomSheet.servicesNudge`.
+ */
+@Composable
+private fun ServicesNudgeCard(
+    onChoose: () -> Unit,
+    onNotNow: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(BrandOrange.copy(alpha = 0.10f))
+            .border(1.dp, BrandOrange.copy(alpha = 0.30f), RoundedCornerShape(16.dp))
+            .padding(14.dp),
+    ) {
+        Text(
+            text = "Which services do you have?",
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Bold,
+            color = TextPrimary,
+        )
+        Spacer(Modifier.height(3.dp))
+        Text(
+            text = "Pick them once and every title opens on a service you already pay for.",
+            fontSize = 12.sp,
+            color = TextSecondary,
+            lineHeight = 17.sp,
+        )
+        Spacer(Modifier.height(12.dp))
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = "Choose services",
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color.White,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(999.dp))
+                    .background(BrandOrange)
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                    ) { onChoose() }
+                    .padding(horizontal = 14.dp, vertical = 8.dp),
+            )
+            Text(
+                text = "Not now",
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = TextSecondary,
+                modifier = Modifier
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                    ) { onNotNow() }
+                    .padding(horizontal = 6.dp, vertical = 8.dp),
+            )
+        }
+    }
 }

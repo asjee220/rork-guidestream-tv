@@ -63,9 +63,23 @@ nonisolated struct StreamingSourceResolver {
     }
 
     /// In-memory cache of resolved streaming data so reopening a title is
-    /// instant — a hit returns immediately with no network call. Keyed by
-    /// tmdbId, isTV, and episodePlatformHint.
+    /// instant — a hit returns immediately with no network call.
+    ///
+    /// Keyed by tmdbId, isTV, episodePlatformHint, region AND the user's
+    /// subscribed services. The server's `selectPrimary` ranks subscribed
+    /// services first, so the same title resolves to a different primary
+    /// chip once the user changes their services in Profile. Leaving
+    /// services out of the key (the pre-Sep-17 behaviour) served the stale
+    /// chip until the app was relaunched.
     private static let resolveCache = NSCache<NSString, ResolvedBox>()
+
+    /// Drops every cached resolve. Called when the subscribed-services set
+    /// changes so no surface can hand back a primary chosen for the old
+    /// set; the services-aware key below already prevents that on its own,
+    /// this just keeps the cache from filling with dead entries.
+    static func clearCache() {
+        resolveCache.removeAllObjects()
+    }
 
     // MARK: Public API
 
@@ -87,17 +101,20 @@ nonisolated struct StreamingSourceResolver {
         isTV: Bool,
         episodePlatformHint: String? = nil
     ) async -> ResolvedStreaming {
+        // Snapshot the user's subscribed services on the main actor BEFORE
+        // the cache lookup — they are part of the key. The resolver is a
+        // nonisolated struct, so we hop to the main actor to read
+        // AuthViewModel.shared.selectedServices. Set<String> is Sendable,
+        // so this is safe to pass into the detached task.
+        let subscribedServices = await MainActor.run { AuthViewModel.shared.selectedServices }
+        let servicesKey = subscribedServices.sorted().joined(separator: ",")
+        let region = DeviceLocale.current().region
+
         // Cache hit — return immediately without any network call.
-        let cacheKey = "\(tmdbId)-\(isTV)-\(episodePlatformHint ?? "")" as NSString
+        let cacheKey = "\(tmdbId)-\(isTV)-\(episodePlatformHint ?? "")-\(region)-[\(servicesKey)]" as NSString
         if let cached = Self.resolveCache.object(forKey: cacheKey) {
             return cached.value
         }
-
-        // Snapshot the user's subscribed services on the main actor. The
-        // resolver is a nonisolated struct, so we hop to the main actor to
-        // read AuthViewModel.shared.selectedServices. Set<String> is Sendable,
-        // so this is safe to pass into the detached task.
-        let subscribedServices = await MainActor.run { AuthViewModel.shared.selectedServices }
 
         // ── Single edge function call inside a detached task ──────────
         // This task has NO parent — it cannot be cancelled by view
