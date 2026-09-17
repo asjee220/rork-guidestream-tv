@@ -95,6 +95,10 @@ final class PushTokenManager {
         authorized = authorized || settings.authorizationStatus == .ephemeral
         #endif
         guard authorized else { return }
+        // The grant is live, so the stored intent must agree with it. Runs
+        // before the registration call because it is the cheaper of the two
+        // and is a no-op on every launch after the first reconciliation.
+        AuthViewModel.shared.reconcilePushIntentWithSystemGrant()
         // `PushTokenManager` is @MainActor, so we're already on the main
         // thread — but be explicit since UIApplication requires it.
         await MainActor.run { UIApplication.shared.registerForRemoteNotifications() }

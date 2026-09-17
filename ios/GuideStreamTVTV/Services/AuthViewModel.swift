@@ -374,7 +374,32 @@ final class AuthViewModel {
         self.notifySMSEnabled = sms
         UserDefaults.standard.set(push, forKey: "gs.notifyPush")
         UserDefaults.standard.set(sms, forKey: "gs.notifySMS")
+        // Records that the master toggle now carries a decision of the user's,
+        // so `reconcilePushIntentWithSystemGrant()` stops touching it.
+        UserDefaults.standard.set(true, forKey: Self.pushIntentUserSetKey)
         syncPushPreference()
+    }
+
+    /// UserDefaults marker for "the user has set the master push toggle
+    /// themselves at least once on this install". Without it `notify_push`
+    /// cannot tell a deliberate off from a never-touched default, since both
+    /// are `false`.
+    static let pushIntentUserSetKey = "gs.notifyPushUserSet"
+
+    /// Brings `notify_push` back in line with the live tvOS grant. The iOS
+    /// copy of this method carries the full account; the same gap exists here
+    /// because `notifyPushEnabled` is seeded from `gs.notifyPush` (false on a
+    /// fresh install) and is only ever written by an explicit user action.
+    ///
+    /// Only ever turns the flag ON, and only when the user has never set it
+    /// themselves, so a deliberate off with the grant still in place stands.
+    func reconcilePushIntentWithSystemGrant() {
+        guard !UserDefaults.standard.bool(forKey: Self.pushIntentUserSetKey) else { return }
+        guard !notifyPushEnabled else { return }
+        notifyPushEnabled = true
+        UserDefaults.standard.set(true, forKey: "gs.notifyPush")
+        syncPushPreference()
+        print("[AuthViewModel] notify_push reconciled to true from the live tvOS grant")
     }
 
     /// Mirrors the push/SMS intent into `users` for signed-in accounts so it

@@ -208,6 +208,14 @@ class AuthViewModel private constructor(private val context: Context) : ViewMode
     companion object {
         private const val TAG = "AuthViewModel"
 
+        /**
+         * SharedPreferences marker for "the user has set the master push
+         * toggle themselves at least once on this install". Without it
+         * `notify_push` cannot tell a deliberate off from a never-touched
+         * default, since both are `false`.
+         */
+        const val PUSH_INTENT_USER_SET_KEY = "gs.notifyPushUserSet"
+
         @Volatile private var instance: AuthViewModel? = null
 
         fun init(context: Context): AuthViewModel =
@@ -1045,8 +1053,15 @@ class AuthViewModel private constructor(private val context: Context) : ViewMode
         prefs.edit()
             .putBoolean("gs.notifyPush", push)
             .putBoolean("gs.notifySMS", sms)
+            .putBoolean(PUSH_INTENT_USER_SET_KEY, true)
             .apply()
         DeviceSessionService.get().upsert("notifications_changed")
+        // This is the onboarding path, and it previously stopped at
+        // SharedPreferences + device_sessions — `users.notify_push` was only
+        // ever written from the settings screen, so an install that answered
+        // the onboarding prompt and never opened settings left the server
+        // value at its `false` default.
+        persistCategoryPref("gs.notifyPush", "notify_push", push)
     }
 
     // ── Per-category notification preferences ────────────────────────
@@ -1054,7 +1069,31 @@ class AuthViewModel private constructor(private val context: Context) : ViewMode
     /** Master push toggle from the Notifications settings screen. */
     fun setNotifyPushEnabled(enabled: Boolean) {
         _notifyPushEnabled.value = enabled
+        prefs.edit().putBoolean(PUSH_INTENT_USER_SET_KEY, true).apply()
         persistCategoryPref("gs.notifyPush", "notify_push", enabled)
+    }
+
+    /**
+     * Brings `notify_push` back in line with the live Android notification
+     * grant. Mirrors the iOS method of the same name, which carries the full
+     * account.
+     *
+     * `_notifyPushEnabled` is seeded from `gs.notifyPush` — false on a fresh
+     * install — and was only ever written by an explicit user action, so a
+     * grant that arrived any other way left the flag false on a device that
+     * held a registered FCM token and was being pushed to. Measured
+     * 2026-09-17: 128 of 142 accounts had a live token, 23 had the flag set.
+     *
+     * Only ever turns the flag ON, and only when the user has never set it
+     * themselves ([PUSH_INTENT_USER_SET_KEY] records that), so a deliberate
+     * off with the system grant still in place is left alone.
+     */
+    fun reconcilePushIntentWithSystemGrant() {
+        if (prefs.getBoolean(PUSH_INTENT_USER_SET_KEY, false)) return
+        if (_notifyPushEnabled.value) return
+        _notifyPushEnabled.value = true
+        persistCategoryPref("gs.notifyPush", "notify_push", true)
+        Log.d(TAG, "notify_push reconciled to true from the live system grant")
     }
 
     fun setNotifyNewEpisodesEnabled(enabled: Boolean) {

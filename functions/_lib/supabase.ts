@@ -194,7 +194,12 @@ export async function fetchFollowerUserIds(
 
 /**
  * Fetch push tokens for a list of user_ids.
- * Also checks that the user has notifications enabled (notify_push = true).
+ *
+ * NOTE: this does NOT filter on notify_push, whatever this comment said until
+ * 2026-09-17. No live sender reads that column — send_episode_pushes gates on
+ * users.notify_new_episodes and users.notify_sports, send_movie_releases on
+ * notify_movie_releases. notify_push is the client's master toggle only.
+ * Per-category opt-outs are applied by the caller, not here.
  */
 export async function fetchPushTokensForUsers(
   userIds: string[],

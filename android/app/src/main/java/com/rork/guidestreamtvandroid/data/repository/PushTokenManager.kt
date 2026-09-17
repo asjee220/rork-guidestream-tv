@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
 import android.util.Log
+import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import com.google.firebase.messaging.FirebaseMessaging
 import com.rork.guidestreamtvandroid.data.remote.SupabaseManager
@@ -67,6 +68,13 @@ class PushTokenManager private constructor(context: Context) {
                 Log.d(TAG, "registerIfPermitted: POST_NOTIFICATIONS not granted — skipping")
                 return
             }
+        }
+        // The grant is live, so the stored intent must agree with it.
+        // `areNotificationsEnabled()` rather than the POST_NOTIFICATIONS check
+        // above because it is also correct below TIRAMISU, where there is no
+        // runtime permission but notifications can still be off in Settings.
+        if (NotificationManagerCompat.from(appContext).areNotificationsEnabled()) {
+            AuthViewModel.get().reconcilePushIntentWithSystemGrant()
         }
         try {
             FirebaseMessaging.getInstance().token.addOnCompleteListener { task ->

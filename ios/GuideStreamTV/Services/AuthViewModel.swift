@@ -769,8 +769,48 @@ final class AuthViewModel {
         self.notifySMSEnabled = sms
         UserDefaults.standard.set(push, forKey: "gs.notifyPush")
         UserDefaults.standard.set(sms, forKey: "gs.notifySMS")
+        // Records that the master toggle now carries a decision of the user's,
+        // so `reconcilePushIntentWithSystemGrant()` stops touching it.
+        UserDefaults.standard.set(true, forKey: Self.pushIntentUserSetKey)
         DeviceSessionService.shared.upsert(reason: "notifications_changed")
         syncPushPreference()
+    }
+
+    /// UserDefaults marker for "the user has set the master push toggle
+    /// themselves at least once on this install". Without it `notify_push`
+    /// cannot tell a deliberate off from a never-touched default, since both
+    /// are `false`.
+    static let pushIntentUserSetKey = "gs.notifyPushUserSet"
+
+    /// Brings `notify_push` back in line with the live iOS grant.
+    ///
+    /// `notifyPushEnabled` is seeded from `gs.notifyPush` — `false` on a fresh
+    /// install — and was only ever written by an explicit user action: the
+    /// onboarding step, the Profile toggle, or the re-auth banner. A grant that
+    /// arrives any other way (iOS Settings, a second device, an onboarding step
+    /// that was skipped and the permission given later) left the flag reading
+    /// `false` on a device that held a registered token and was being pushed to.
+    /// Measured 2026-09-17: 128 of 142 accounts had a live `push_tokens` row,
+    /// 23 had `notify_push = true`.
+    ///
+    /// Two things were broken by that gap. Profile -> Notifications showed the
+    /// master toggle OFF for people who were authorized and receiving alerts.
+    /// And `PushReauthPrompt.refresh()` gates on `wants && .notDetermined`, so
+    /// the banner never appeared for the reinstall case it was written for.
+    ///
+    /// This only ever turns the flag ON, and only when the user has never set
+    /// it themselves. A deliberate off with the iOS grant still in place is
+    /// left alone. The marker is per-install, which is the correct scope:
+    /// deleting the app revokes the grant, so a reinstall lands on
+    /// `.notDetermined` and this cannot fire there either.
+    func reconcilePushIntentWithSystemGrant() {
+        guard !UserDefaults.standard.bool(forKey: Self.pushIntentUserSetKey) else { return }
+        guard !notifyPushEnabled else { return }
+        notifyPushEnabled = true
+        UserDefaults.standard.set(true, forKey: "gs.notifyPush")
+        DeviceSessionService.shared.upsert(reason: "push_intent_reconciled")
+        syncPushPreference()
+        print("[Auth] notify_push reconciled to true from the live iOS grant")
     }
 
     /// Mirrors the push/SMS intent into `users` for signed-in accounts so it
