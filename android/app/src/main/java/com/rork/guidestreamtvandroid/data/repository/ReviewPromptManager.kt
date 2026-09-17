@@ -42,12 +42,12 @@ object ReviewPromptManager {
     private const val KEY_ACTIVE_DAYS = "activeDays"
     private const val KEY_LAST_ACTIVE_DAY = "lastActiveDay"
 
-    private const val MIN_INSTALL_DAYS = 3
+    private const val MIN_INSTALL_DAYS = 2
     private const val MIN_SESSIONS = 3
-    private const val DEEP_LINK_THRESHOLD = 2
+    private const val DEEP_LINK_THRESHOLD = 1
     private const val WATCHED_THRESHOLD = 5
     /** Separate calendar days the app has been opened, for [Trigger.RETURN_VISIT]. */
-    private const val ACTIVE_DAY_THRESHOLD = 3
+    private const val ACTIVE_DAY_THRESHOLD = 2
     // 90 days is the industry floor between prompts, and the annual cap now
     // matches what the platform allows rather than self-throttling below it —
     // over quota the flow silently does nothing, so a held-back prompt is
@@ -114,7 +114,7 @@ object ReviewPromptManager {
             prefs.edit().putBoolean(KEY_ARMED_DEEP_LINK, false).apply()
             consider(Trigger.DEEP_LINK_RETURN)
         } else if (prefs.getInt(KEY_ACTIVE_DAYS, 0) >= ACTIVE_DAY_THRESHOLD) {
-            // Coming back on a third separate day IS the satisfaction signal.
+            // Coming back on a second separate day IS the satisfaction signal.
             // This app is a guide — its value is delivered by looking
             // something up and leaving — so the prompt is not gated on a deep
             // link or a watched-toggle first. Mirrors iOS.

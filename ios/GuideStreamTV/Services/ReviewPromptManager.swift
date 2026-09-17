@@ -47,18 +47,18 @@ final class ReviewPromptManager {
         case alertToWatch = "alert_to_watch"
         /// A cast to Roku / Tizen started. Rarest, kept at the user's request.
         case castStarted = "cast_started"
-        /// Came back on a third separate day, having actually used the app.
+        /// Came back on a second separate day, having actually used the app.
         case returnVisit = "return_visit"
     }
 
     // MARK: Thresholds
 
-    private let minInstallDays = 3
+    private let minInstallDays = 2
     private let minSessions = 3
-    private let deepLinkThreshold = 2
+    private let deepLinkThreshold = 1
     private let watchedThreshold = 5
     /// Separate calendar days the app has been opened, for `.returnVisit`.
-    private let activeDayThreshold = 3
+    private let activeDayThreshold = 2
     /// 90 days is the industry floor between prompts. The annual cap is now
     /// Apple's own 3 rather than a self-imposed 2: the API silently no-ops
     /// over quota, so holding one back buys no goodwill — it forfeits a
@@ -127,11 +127,11 @@ final class ReviewPromptManager {
             }
         }
 
-        // Coming back on a third separate day IS the satisfaction signal.
+        // Coming back on a second separate day IS the satisfaction signal.
         // This app is a guide: its value is delivered by looking something up
         // and leaving, so requiring a deep link or a watched-toggle first
         // would gate the prompt on a step the product does not ask of anyone.
-        // Someone who opens it on three different days has found it useful —
+        // Someone who opens it on two different days has found it useful —
         // that is the whole evidence there is, and it is enough.
         guard defaults.integer(forKey: activeDaysKey) >= activeDayThreshold else { return }
         consider(.returnVisit)
