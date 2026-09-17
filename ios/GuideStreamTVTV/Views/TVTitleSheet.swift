@@ -219,7 +219,13 @@ struct TVTitleSheet: View {
         }.map { $0.element }
     }
 
-    // Best display name for the Play button
+    // Best display name for the Play button.
+    //
+    // Every rung is emptiness-checked, the last one included (GUI-108). A title
+    // saved to the watchlist BEFORE it was available carries platform "" rather
+    // than nil, so `?? "Streaming"` never fired: the button asked
+    // TVServiceBrandMark for a mark named "", got the plain grey disc it draws
+    // for an unknown service, and read "Watch on" against nothing.
     private var playServiceName: String {
         if let name = activeSource?.name, !name.isEmpty {
             return name
@@ -227,7 +233,10 @@ struct TVTitleSheet: View {
         if let name = resolvedStreaming?.providerNameFallback, !name.isEmpty {
             return name
         }
-        return detail.platform ?? "Streaming"
+        if let platform = detail.platform, !platform.isEmpty {
+            return platform
+        }
+        return "Streaming"
     }
 
     /// Rent or buy. "purchase" is Watchmode's other spelling for buy;
