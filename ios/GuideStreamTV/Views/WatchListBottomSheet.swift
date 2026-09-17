@@ -37,7 +37,7 @@ struct WatchListBottomSheet: View {
                 Button("Close") { dismiss() }
                     .foregroundStyle(Color.textSecondary)
             }
-            WatchListContent()
+            WatchListContent(onSeedDone: { dismiss() })
         }
         .preferredColorScheme(.dark)
         .sheetSurface(.base)
@@ -63,7 +63,7 @@ struct WatchListView: View {
     var body: some View {
         Group {
             if showsPageBar {
-                WatchListContent()
+                WatchListContent(onSeedDone: { router.selectedTab = .home })
                     .safeAreaInset(edge: .top, spacing: 0) {
                         PageBar(
                             selectedServiceIds: orderedSelectedServiceIds,
@@ -81,7 +81,7 @@ struct WatchListView: View {
                     }
                     .toolbar(.hidden, for: .navigationBar)
             } else {
-                WatchListContent()
+                WatchListContent(onSeedDone: { router.selectedTab = .home })
                     .navigationTitle("My Watchlist")
                     .navigationBarTitleDisplayMode(.inline)
                     .toolbarBackground(Color.navy, for: .navigationBar)
@@ -127,6 +127,15 @@ private enum WatchListTab: String, CaseIterable, Identifiable {
         }
     }
 
+    /// The seed pool the empty-state grid draws from for this tab.
+    var seedCategory: WatchListSeedCategory {
+        switch self {
+        case .shows: return .shows
+        case .movies: return .movies
+        case .creators: return .creators
+        }
+    }
+
     /// Which tab a saved row belongs to. Every non-TMDB id is a creator;
     /// TMDB rows split on `is_tv`, falling back to the id's own prefix and
     /// only then to "show" — the same precedence the departure-reminder code
@@ -169,10 +178,14 @@ private enum WatchListSort: String, CaseIterable, Identifiable {
 
 // MARK: - Shared content
 
-/// Renders the watchlist itself — list, empty state, or guest prompt — plus
-/// background atmosphere and the detail-sheet plumbing. Wrap this view in
-/// whatever navigation chrome the surface needs (sheet vs. push).
+/// Renders the watchlist itself — list, seed grid, empty state, or guest
+/// prompt — plus background atmosphere and the detail-sheet plumbing. Wrap
+/// this view in whatever navigation chrome the surface needs (sheet vs. push).
 private struct WatchListContent: View {
+    /// Where "Done" on the seed grid sends the user. The tab hands off to
+    /// Home; the sheet simply closes.
+    var onSeedDone: () -> Void = {}
+
     @State private var streams = StreamsViewModel.shared
     @State private var social = SocialViewModel.shared
     @State private var auth = AuthViewModel.shared
@@ -198,6 +211,12 @@ private struct WatchListContent: View {
     @State private var reminders = ReleaseReminderService.shared
     /// GUI-95 — the week view of upcoming episodes for saved shows.
     @State private var showSchedule: Bool = false
+    /// True while the seed grid owns the screen. Turned on only after the
+    /// first fetch finds nothing saved, and stays on through the user's
+    /// first taps — the list filling up is the point, not a reason to
+    /// switch surfaces mid-session. Off on Done, on dismiss, and when the
+    /// view is rebuilt with titles already present.
+    @State private var seedMode: Bool = false
 
     var body: some View {
         ZStack {
@@ -241,12 +260,16 @@ private struct WatchListContent: View {
             await hydrateSourceImages()
             await refreshDepartureReminders()
             seedSelectedTabIfNeeded()
+            enterSeedModeIfEmpty()
         }
         .task {
             await subscribeToLiveStatus()
         }
-        .onChange(of: streams.userStreams.count) { _, _ in
+        .onChange(of: streams.userStreams.count) { _, newCount in
             seedSelectedTabIfNeeded()
+            // Removing the last saved title brings the grid back; adding
+            // titles never takes it away on its own.
+            if newCount == 0 { enterSeedModeIfEmpty() }
         }
         .refreshable {
             await streams.fetchUserStreams()
@@ -261,19 +284,28 @@ private struct WatchListContent: View {
 
     @ViewBuilder
     private var content: some View {
-        if streams.userStreams.isEmpty {
-            emptyState
-        } else {
-            VStack(spacing: 0) {
-                if !auth.isAuthenticated {
-                    guestSyncBanner
-                        .padding(.horizontal, 16)
-                        .padding(.top, 8)
-                }
-                tabBar
+        VStack(spacing: 0) {
+            if !auth.isAuthenticated && !streams.userStreams.isEmpty {
+                guestSyncBanner
                     .padding(.horizontal, 16)
                     .padding(.top, 8)
-                    .padding(.bottom, 8)
+            }
+            tabBar
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
+                .padding(.bottom, 8)
+            if seedMode {
+                WatchListSeedGrid(
+                    category: selectedTab.seedCategory,
+                    onDone: {
+                        seedMode = false
+                        onSeedDone()
+                    },
+                    onDismiss: { seedMode = false }
+                )
+            } else if streams.userStreams.isEmpty {
+                emptyState
+            } else {
                 filterBar
                     .padding(.horizontal, 16)
                     .padding(.bottom, 8)
@@ -375,6 +407,15 @@ private struct WatchListContent: View {
         }
     }
 
+    /// Shows the seed grid when there is nothing saved and the user has not
+    /// dismissed it on this device.
+    private func enterSeedModeIfEmpty() {
+        guard streams.userStreams.isEmpty, !WatchListSeedPrefs.isDismissed else { return }
+        seedMode = true
+    }
+
+    /// The plain empty state — only reachable once the seed grid has been
+    /// dismissed. Offers the grid back without ever forcing it.
     private var emptyState: some View {
         VStack(spacing: 14) {
             ZStack {
@@ -385,14 +426,31 @@ private struct WatchListContent: View {
                     .scaledFont(size: 32, weight: .semibold)
                     .foregroundStyle(Color.orange)
             }
-            Text("Your watchlist is empty")
+            Text("Nothing saved yet")
                 .scaledFont(size: 17, weight: .bold)
                 .foregroundStyle(.white)
-            Text("Tap the + on any show, movie, or creator to save it here. We'll keep them ready for tonight.")
+            Text("Tap the bookmark on any show, movie, creator or podcast and it lands here.")
                 .scaledFont(size: 13)
                 .foregroundStyle(Color.textSecondary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 36)
+            Button {
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                WatchListSeedPrefs.isDismissed = false
+                seedMode = true
+            } label: {
+                Text("Show suggestions")
+                    .scaledFont(size: 14, weight: .bold)
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 18)
+                    .padding(.vertical, 12)
+                    .background(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .fill(Color.white.opacity(0.10))
+                    )
+            }
+            .buttonStyle(.plain)
+            .padding(.top, 4)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }

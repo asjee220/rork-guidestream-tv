@@ -150,134 +150,48 @@ import kotlin.math.sin
  */
 @Composable
 fun OnboardingFlow(
+    /**
+     * Kept for the callers that still pass it (MainActivity hands 1 to a
+     * signed-in user). Any value above 0 now means "already past Welcome",
+     * so the flow finishes at once rather than showing a step that no
+     * longer exists.
+     */
     startStep: Int = 0,
     onFinish: () -> Unit,
     onWidgetSettings: () -> Unit = {},
 ) {
-    var step by remember { mutableStateOf(startStep) }
     var showEmailAuth by remember { mutableStateOf(false) }
-    var showWidgetSheet by remember { mutableStateOf(false) }
     val auth = AuthViewModel.get()
     val isAuthenticated by auth.isAuthenticated.collectAsState()
-    val streams = StreamsViewModel.get()
 
-    LaunchedEffect(isAuthenticated) {
-        if (isAuthenticated && step == 0) step = 1
-    }
-    val selectedServices = remember { mutableStateOf(auth.selectedServices.value) }
-    LaunchedEffect(auth.selectedServices) {
-        auth.selectedServices.collect { services ->
-            if (selectedServices.value != services) selectedServices.value = services
-        }
-    }
-    var pushOn by remember { mutableStateOf(auth.notifyPushEnabled.value) }
-
-    var followedShowPosters by remember { mutableStateOf<List<String>>(emptyList()) }
-    var followedShowsCount by remember { mutableStateOf(0) }
-    var followedCreatorsCount by remember { mutableStateOf(0) }
-
-    val totalSteps = OnboardingHeader.stepNames.size
-
+    // Onboarding is a single screen. Services live behind the empty
+    // services pill, taste-seeding lives in the empty watchlist's seed grid,
+    // and the push prompt fires on the first save — each decision made where
+    // it pays off instead of up front. The step composables below are
+    // retained for the surfaces that still deep-link into them; they are no
+    // longer part of first launch.
     val finish: () -> Unit = {
         if (!auth.isAuthenticated.value) auth.continueAsGuest()
         auth.completeOnboarding()
         onFinish()
     }
 
-    val commitSeeds: (List<StreamSeed>) -> Unit = { seeds ->
-        seeds.forEach { seed ->
-            streams.addToMyStreams(
-                titleId = seed.titleId,
-                title = seed.title,
-                posterUrl = seed.posterUrl,
-                platform = seed.platform,
-            )
-        }
+    LaunchedEffect(Unit) {
+        if (startStep > 0) finish()
+    }
+    LaunchedEffect(isAuthenticated) {
+        if (isAuthenticated && !auth.hasCompletedOnboarding.value) finish()
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
-        AnimatedContent(
-            targetState = step,
-            transitionSpec = {
-                (slideInHorizontally(tween(350)) { it } + fadeIn(tween(350))) togetherWith
-                    (slideOutHorizontally(tween(350)) { -it } + fadeOut(tween(350)))
+        WelcomeScreen(
+            onContinue = { finish() },
+            onEmailAuth = { showEmailAuth = true },
+            onGuest = {
+                auth.continueAsGuest()
+                finish()
             },
-            label = "onboarding",
-        ) { currentStep ->
-            when (currentStep) {
-                0 -> WelcomeScreen(
-                    onContinue = { step = 1 },
-                    onEmailAuth = { showEmailAuth = true },
-                    onGuest = {
-                        auth.continueAsGuest()
-                        step = 1
-                    },
-                )
-                1 -> ConnectServicesScreen(
-                    selected = selectedServices.value,
-                    onToggle = { id ->
-                        selectedServices.value = if (id in selectedServices.value) {
-                            selectedServices.value - id
-                        } else {
-                            selectedServices.value + id
-                        }
-                    },
-                    onContinue = {
-                        auth.setSelectedServices(selectedServices.value)
-                        step = 2
-                    },
-                    onSkip = {
-                        auth.setSelectedServices(selectedServices.value)
-                        step = 2
-                    },
-                )
-                2 -> WatchingNowScreen(
-                    selectedServices = selectedServices.value,
-                    onContinue = { seeds ->
-                        followedShowsCount = seeds.size
-                        followedShowPosters = seeds.mapNotNull { it.posterUrl }
-                        commitSeeds(seeds)
-                        step = 3
-                    },
-                    onSkip = { step = 3 },
-                    onBack = { step = 2 },
-                    onSkipAll = { finish() },
-                    currentStep = 2,
-                    totalSteps = totalSteps,
-                )
-                3 -> FollowCreatorsOnboardingScreen(
-                    onContinue = { seeds ->
-                        followedCreatorsCount = seeds.size
-                        commitSeeds(seeds)
-                        step = 4
-                    },
-                    onSkip = { finish() },
-                    onBack = { step = 3 },
-                    onSkipAll = { finish() },
-                    currentStep = 3,
-                    totalSteps = totalSteps,
-                )
-                else -> StayNotifiedScreen(
-                    pushOn = pushOn,
-                    onPushToggle = { pushOn = it },
-                    onContinue = {
-                        auth.setNotificationPreferences(pushOn, false)
-                        finish()
-                    },
-                    onBack = { step = 4 },
-                    onWidgetSettings = { showWidgetSheet = true },
-                    currentStep = 4,
-                    totalSteps = totalSteps,
-                    posterUrls = followedShowPosters,
-                    showCount = followedShowsCount,
-                    creatorCount = followedCreatorsCount,
-                )
-            }
-        }
-
-        if (showWidgetSheet) {
-            WidgetInstructionSheet(onDismiss = { showWidgetSheet = false })
-        }
+        )
 
         if (showEmailAuth) {
             Box(
@@ -292,9 +206,7 @@ fun OnboardingFlow(
                 EmailAuthScreen(
                     onAuthenticated = {
                         showEmailAuth = false
-                        if (!auth.hasCompletedOnboarding.value) {
-                            step = 1
-                        }
+                        if (!auth.hasCompletedOnboarding.value) finish()
                     },
                     onClose = { showEmailAuth = false },
                 )

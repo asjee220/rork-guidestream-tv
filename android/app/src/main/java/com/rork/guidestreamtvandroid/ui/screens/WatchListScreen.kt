@@ -44,6 +44,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -92,24 +93,29 @@ private enum class WatchListTab(
     val icon: ImageVector,
     val emptyTitle: String,
     val emptyBody: String,
+    /** The seed pool the empty-state grid draws from for this tab. */
+    val seedCategory: WatchListSeedCategory,
 ) {
     SHOWS(
         "Shows",
         Icons.Filled.Tv,
         "No shows saved yet",
         "Tap the + on any series to keep it here.",
+        WatchListSeedCategory.SHOWS,
     ),
     MOVIES(
         "Movies",
         Icons.Filled.Movie,
         "No movies saved yet",
         "Tap the + on any movie to keep it here.",
+        WatchListSeedCategory.MOVIES,
     ),
     CREATORS(
         "Creators",
         Icons.Filled.People,
         "No creators saved yet",
         "Follow a YouTube channel, podcast or streamer to see it here.",
+        WatchListSeedCategory.CREATORS,
     );
 
     companion object {
@@ -134,7 +140,7 @@ private enum class WatchListTab(
  */
 private enum class WatchListSort(val label: String) {
     RECENT_UPLOAD("Date"),
-    ALPHABETICAL("A\u2013Z"),
+    ALPHABETICAL("A–Z"),
     ;
 
     val next: WatchListSort
@@ -147,6 +153,9 @@ private enum class WatchListSort(val label: String) {
  * arrow, title, and a two-column poster grid of every saved title with a
  * watched badge and an inline remove control. No take limit. Live status and
  * content-source hydration remain iOS-only and are intentionally out of scope.
+ *
+ * With nothing saved, the seed grid takes the place of the list — the same
+ * category tabs above it, seeds for the selected one below.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -160,12 +169,14 @@ fun WatchListScreen(
 ) {
     BackHandler { onBack() }
 
+    val context = LocalContext.current
     val streamsVm = StreamsViewModel.get()
     val userStreams by streamsVm.userStreams.collectAsStateWithLifecycle()
     val watchedIds by streamsVm.watchedIds.collectAsStateWithLifecycle()
     val latestContentAt by streamsVm.latestContentAt.collectAsStateWithLifecycle()
     val latestContentKind by streamsVm.latestContentKind.collectAsStateWithLifecycle()
     val seenContentAt by streamsVm.seenContentAt.collectAsStateWithLifecycle()
+    val isLoadingStreams by streamsVm.isLoadingStreams.collectAsStateWithLifecycle()
 
     val authVm = AuthViewModel.get()
     val selectedServices by authVm.selectedServices.collectAsStateWithLifecycle()
@@ -187,6 +198,17 @@ fun WatchListScreen(
     var creatorSort by remember { mutableStateOf(WatchListSort.RECENT_UPLOAD) }
     var didSeedTab by remember { mutableStateOf(false) }
 
+    // True while the seed grid owns the screen. Turned on only once a load
+    // has finished with nothing saved, and stays on through the user's first
+    // taps — the list filling up is the point, not a reason to switch
+    // surfaces mid-session. Off on Done, on dismiss, and never on for a
+    // screen that opened with titles already present.
+    var seedMode by remember { mutableStateOf(false) }
+    // Whether the user has tapped anything in the grid this session. Rows
+    // that arrive from the server before any tap belong to a returning user
+    // on a fresh install — the grid steps aside for them.
+    var seedInteracted by remember { mutableStateOf(false) }
+
     // Counted before any filter chip applies, so the empty-state copy can
     // tell "this category is empty" apart from "your filters emptied it".
     val tabCounts = userStreams.groupingBy { WatchListTab.of(it) }.eachCount()
@@ -198,6 +220,16 @@ fun WatchListScreen(
                 WatchListTab.values().firstOrNull { (tabCounts[it] ?: 0) > 0 }
                     ?.let { selectedTab = it }
             }
+        }
+    }
+
+    // Removing the last saved title brings the grid back; adding titles
+    // never takes it away on its own.
+    androidx.compose.runtime.LaunchedEffect(userStreams.isEmpty(), isLoadingStreams) {
+        if (userStreams.isEmpty() && !isLoadingStreams && !WatchListSeedPrefs.isDismissed(context)) {
+            seedMode = true
+        } else if (userStreams.isNotEmpty() && seedMode && !seedInteracted) {
+            seedMode = false
         }
     }
 
@@ -308,30 +340,30 @@ fun WatchListScreen(
 
         Spacer(Modifier.height(8.dp))
 
-        // Category tabs, then the existing filter chips beneath them. The
-        // chips still apply, and now apply within whichever tab is selected.
-        if (userStreams.isNotEmpty()) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 20.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                WatchListTab.values().forEach { tab ->
-                    WatchListTabChip(
-                        tab = tab,
-                        isOn = selectedTab == tab,
-                        onSelect = { selectedTab = tab },
-                        modifier = Modifier.weight(1f),
-                    )
-                }
+        // Category tabs — always shown, so the seed grid has somewhere to
+        // switch pools. The filter chips beneath still apply, and now apply
+        // within whichever tab is selected.
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            WatchListTab.values().forEach { tab ->
+                WatchListTabChip(
+                    tab = tab,
+                    isOn = selectedTab == tab,
+                    onSelect = { selectedTab = tab },
+                    modifier = Modifier.weight(1f),
+                )
             }
-
-            Spacer(Modifier.height(8.dp))
         }
 
-        // Watch-list filters — shown only when there are saved titles.
-        if (userStreams.isNotEmpty()) {
+        Spacer(Modifier.height(8.dp))
+
+        // Watch-list filters — shown only when there are saved titles and
+        // the list, not the seed grid, is on screen.
+        if (userStreams.isNotEmpty() && !seedMode) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -389,7 +421,19 @@ fun WatchListScreen(
                 )
             },
         ) {
-        if (userStreams.isEmpty()) {
+        if (seedMode) {
+            WatchListSeedGrid(
+                category = selectedTab.seedCategory,
+                onDone = {
+                    seedMode = false
+                    onBack()
+                },
+                onDismiss = { seedMode = false },
+                onInteraction = { seedInteracted = true },
+            )
+        } else if (userStreams.isEmpty()) {
+            // The plain empty state — only reachable once the seed grid has
+            // been dismissed. Offers the grid back without ever forcing it.
             Column(
                 modifier = Modifier
                     .fillMaxSize()
@@ -399,7 +443,7 @@ fun WatchListScreen(
                 verticalArrangement = Arrangement.Center,
             ) {
                 Text(
-                    text = "Your watchlist is empty",
+                    text = "Nothing saved yet",
                     fontSize = 17.sp,
                     fontWeight = FontWeight.Bold,
                     color = Color.White,
@@ -407,10 +451,28 @@ fun WatchListScreen(
                 )
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    text = "Tap the + on any show, movie, or creator to save it here. We'll keep them ready for tonight.",
+                    text = "Tap the bookmark on any show, movie, creator or podcast and it lands here.",
                     fontSize = 13.sp,
                     color = TextSecondary,
                     textAlign = TextAlign.Center,
+                )
+                Spacer(Modifier.height(18.dp))
+                Text(
+                    text = "Show suggestions",
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(Color.White.copy(alpha = 0.10f))
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                        ) {
+                            WatchListSeedPrefs.setDismissed(context, false)
+                            seedMode = true
+                        }
+                        .padding(horizontal = 18.dp, vertical = 12.dp),
                 )
             }
         } else if (filteredStreams.isEmpty()) {

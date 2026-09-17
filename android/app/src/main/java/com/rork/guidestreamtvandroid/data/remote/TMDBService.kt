@@ -81,6 +81,11 @@ class TMDBService {
         return fetchList("$base/trending/tv/week?api_key=$apiKey&language=${DeviceLocale.tmdbLanguage}&page=$page", "tv")
     }
 
+    /** Trending movies this week — the movie twin of [getTrendingTV]. */
+    suspend fun getTrendingMovies(page: Int = 1): List<TMDBResult> {
+        return fetchList("$base/trending/movie/week?api_key=$apiKey&language=${DeviceLocale.tmdbLanguage}&page=$page", "movie")
+    }
+
     /** Currently airing TV shows. */
     suspend fun getOnTheAir(): List<TMDBResult> {
         return fetchList("$base/tv/on_the_air?api_key=$apiKey&language=${DeviceLocale.tmdbLanguage}&page=1", "tv")

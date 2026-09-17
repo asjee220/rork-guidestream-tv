@@ -12,131 +12,52 @@ import Supabase
 // MARK: - Coordinator
 
 struct OnboardingFlow: View {
+    /// Kept for the callers that still pass it (`ContentView` hands 1 to a
+    /// signed-in user). Any value above 0 now means "already past Welcome",
+    /// so the flow finishes at once rather than showing a step that no
+    /// longer exists.
     var startStep: Int = 0
     var onFinish: () -> Void
     var onWidgetSettings: () -> Void = {}
 
-    @State private var step: Int = 0
-    @State private var selectedServices: Set<String> = AuthViewModel.shared.selectedServices
-    @State private var pushOn: Bool = AuthViewModel.shared.notifyPushEnabled
     @State private var showEmailAuth: Bool = false
-    @State private var followedShowPosters: [String] = []
-    @State private var followedShowsCount: Int = 0
-    @State private var followedCreatorsCount: Int = 0
-    @State private var showWidgetSheet: Bool = false
 
+    // Onboarding is a single screen. Services live behind the empty
+    // services pill, taste-seeding lives in the empty watchlist's seed grid,
+    // and the push prompt fires on the first save — each decision made where
+    // it pays off instead of up front. The step views below are retained
+    // for the surfaces that still deep-link into them (Profile → services,
+    // Profile → notifications); they are no longer part of first launch.
     var body: some View {
         ZStack {
             BrandBackground()
 
-            Group {
-                switch step {
-                case 0:
-                    WelcomeOnboardingView(
-                        onContinue: { advance() },
-                        onEmailAuth: { showEmailAuth = true },
-                        onGuest: {
-                            AuthViewModel.shared.continueAsGuest()
-                            advance()
-                        }
-                    )
-                case 1:
-                    ConnectServicesView(
-                        selected: $selectedServices,
-                        onContinue: {
-                            AuthViewModel.shared.setSelectedServices(selectedServices)
-                            advance()
-                        },
-                        onSkip: {
-                            AuthViewModel.shared.setSelectedServices(selectedServices)
-                            advance()
-                        }
-                    )
-                case 2:
-                    WatchingNowView(
-                        selectedServices: selectedServices,
-                        onContinue: { inserts in
-                            followedShowsCount = inserts.count
-                            followedShowPosters = inserts.compactMap { $0.poster_url }
-                            commitInserts(inserts) { advance() }
-                        },
-                        onSkip: { advance() },
-                        onBack: { goBack() },
-                        onSkipAll: { finishOnboarding() },
-                        currentStep: 2,
-                        totalSteps: OnboardingHeader.stepNames.count
-                    )
-                case 3:
-                    FollowCreatorsOnboardingView(
-                        onContinue: { inserts in
-                            followedCreatorsCount = inserts.count
-                            commitInserts(inserts) { advance() }
-                        },
-                        onSkip: { finishOnboarding() },
-                        onBack: { goBack() },
-                        onSkipAll: { finishOnboarding() },
-                        currentStep: 3,
-                        totalSteps: OnboardingHeader.stepNames.count
-                    )
-                default:
-                    StayNotifiedView(
-                        pushOn: $pushOn,
-                        onContinue: {
-                            AuthViewModel.shared.setNotificationPreferences(push: pushOn, sms: false)
-                            if !AuthViewModel.shared.isSignedIn {
-                                AuthViewModel.shared.continueAsGuest()
-                            }
-                            finishOnboarding()
-                        },
-                        onBack: { goBack() },
-                        onWidgetSettings: { showWidgetSheet = true },
-                        currentStep: 4,
-                        totalSteps: OnboardingHeader.stepNames.count,
-                        posterUrls: followedShowPosters,
-                        showCount: followedShowsCount,
-                        creatorCount: followedCreatorsCount
-                    )
+            WelcomeOnboardingView(
+                onContinue: { finishOnboarding() },
+                onEmailAuth: { showEmailAuth = true },
+                onGuest: {
+                    AuthViewModel.shared.continueAsGuest()
+                    finishOnboarding()
                 }
-            }
-            .transition(.asymmetric(
-                insertion: .move(edge: .trailing).combined(with: .opacity),
-                removal: .move(edge: .leading).combined(with: .opacity)
-            ))
+            )
+            .transition(.opacity)
         }
         .preferredColorScheme(.dark)
-        .sheet(isPresented: $showWidgetSheet) {
-            WidgetInstructionSheet(onDismiss: { showWidgetSheet = false })
-        }
         .sheet(isPresented: $showEmailAuth) {
             EmailAuthView(
                 onAuthenticated: {
                     showEmailAuth = false
                     if !AuthViewModel.shared.hasCompletedOnboarding {
-                        advance()
+                        finishOnboarding()
                     }
                 },
                 onClose: { showEmailAuth = false }
             )
         }
-        .onChange(of: AuthViewModel.shared.selectedServices) { _, newValue in
-            selectedServices = newValue
-        }
         .onAppear {
-            if step == 0 && startStep > 0 {
-                step = startStep
+            if startStep > 0 {
+                finishOnboarding()
             }
-        }
-    }
-
-    private func advance() {
-        withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) {
-            step += 1
-        }
-    }
-
-    private func goBack() {
-        withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) {
-            step -= 1
         }
     }
 
@@ -146,23 +67,6 @@ struct OnboardingFlow: View {
         }
         AuthViewModel.shared.completeOnboarding()
         onFinish()
-    }
-
-    private func commitInserts(_ inserts: [UserStreamInsert], completion: @escaping () -> Void) {
-        guard !inserts.isEmpty else { completion(); return }
-        let isGuest = !AuthViewModel.shared.isAuthenticated
-        let conflictTarget = isGuest ? "device_id,title_id" : "user_id,title_id"
-        Task {
-            do {
-                try await SupabaseManager.shared.client
-                    .from("user_streams")
-                    .upsert(inserts, onConflict: conflictTarget)
-                    .execute()
-            } catch {
-                print("[GuideStream] ⚠️ seed upsert failed (conflict: \(conflictTarget)): \(error)")
-            }
-            await MainActor.run { completion() }
-        }
     }
 }
 
