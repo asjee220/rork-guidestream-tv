@@ -83,6 +83,15 @@ final class AuthViewModel {
             syncSportsPreference()
         }
     }
+    /// Weekly "New on your services" digest — the one discovery push in the
+    /// app. Backed by `users.notify_new_on_services` (defaults true server-side).
+    var notifyNewOnServicesEnabled: Bool = (UserDefaults.standard.object(forKey: "gs.notifyNewOnServices") as? Bool) ?? true {
+        didSet {
+            guard !isApplyingCategoryPrefs else { return }
+            UserDefaults.standard.set(notifyNewOnServicesEnabled, forKey: "gs.notifyNewOnServices")
+            syncNewOnServicesPreference()
+        }
+    }
     /// Guards `notifyMovieReleasesEnabled.didSet` so loading the persisted
     /// value from Supabase doesn't trigger a redundant write-back.
     private var isApplyingMovieReleasePref = false
@@ -450,6 +459,24 @@ final class AuthViewModel {
         }
     }
 
+    private func syncNewOnServicesPreference() {
+        guard let userId = currentUser?.id.uuidString else { return }
+        let enabled = notifyNewOnServicesEnabled
+        Task {
+            do {
+                try await SupabaseManager.shared.client
+                    .from("users")
+                    .update(["notify_new_on_services": enabled])
+                    .eq("id", value: userId)
+                    .execute()
+                print("[Auth] notify_new_on_services \(enabled) saved for user \(userId)")
+                DeviceSessionService.shared.upsert(reason: "notifications_changed")
+            } catch {
+                print("[Auth ERROR] notify_new_on_services update failed: \(error.localizedDescription)")
+            }
+        }
+    }
+
     /// Loads `users.notify_movie_releases` into `notifyMovieReleasesEnabled`
     /// for the signed-in user without re-triggering the upsert. Guests keep
     /// their locally-cached value.
@@ -524,7 +551,7 @@ final class AuthViewModel {
         do {
             let rows: [NotificationCategoryRow] = try await SupabaseManager.shared.client
                 .from("users")
-                .select("notify_push, notify_new_episodes, notify_watchlist, notify_live, notify_sports, notify_movie_releases")
+                .select("notify_push, notify_new_episodes, notify_watchlist, notify_live, notify_sports, notify_movie_releases, notify_new_on_services")
                 .eq("id", value: uid)
                 .limit(1)
                 .execute()
@@ -543,6 +570,7 @@ final class AuthViewModel {
             if let v = prefs.notify_watchlist { notifyWatchlistEnabled = v; UserDefaults.standard.set(v, forKey: "gs.notifyWatchlist") }
             if let v = prefs.notify_live { notifyLiveEnabled = v; UserDefaults.standard.set(v, forKey: "gs.notifyLive") }
             if let v = prefs.notify_sports { notifySportsEnabled = v; UserDefaults.standard.set(v, forKey: "gs.notifySports") }
+            if let v = prefs.notify_new_on_services { notifyNewOnServicesEnabled = v; UserDefaults.standard.set(v, forKey: "gs.notifyNewOnServices") }
             isApplyingCategoryPrefs = false
             if let v = prefs.notify_movie_releases {
                 isApplyingMovieReleasePref = true
@@ -919,6 +947,7 @@ final class AuthViewModel {
         notifyWatchlistEnabled = true
         notifyLiveEnabled = true
         notifySportsEnabled = true
+        notifyNewOnServicesEnabled = true
         notifyMovieReleasesEnabled = true
         isApplyingCategoryPrefs = false
         isApplyingMovieReleasePref = false
@@ -940,6 +969,7 @@ final class AuthViewModel {
             "gs.notifyWatchlist",
             "gs.notifyLive",
             "gs.notifySports",
+            "gs.notifyNewOnServices",
             "gs.notifyMovieReleases",
             "gs.hasUsedEmailAuth"
         ] {
@@ -1560,4 +1590,5 @@ nonisolated struct NotificationCategoryRow: Decodable, Sendable {
     let notify_live: Bool?
     let notify_sports: Bool?
     let notify_movie_releases: Bool?
+    let notify_new_on_services: Bool?
 }

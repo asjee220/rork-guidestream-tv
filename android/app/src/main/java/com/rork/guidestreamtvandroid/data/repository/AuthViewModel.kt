@@ -90,6 +90,7 @@ class AuthViewModel private constructor(private val context: Context) : ViewMode
         @SerialName("notify_live") val notifyLive: Boolean? = null,
         @SerialName("notify_sports") val notifySports: Boolean? = null,
         @SerialName("notify_movie_releases") val notifyMovieReleases: Boolean? = null,
+        @SerialName("notify_new_on_services") val notifyNewOnServices: Boolean? = null,
     )
 
     private val prefs = context.getSharedPreferences("gs_prefs", Context.MODE_PRIVATE)
@@ -164,6 +165,10 @@ class AuthViewModel private constructor(private val context: Context) : ViewMode
 
     private val _notifySportsEnabled = MutableStateFlow(prefs.getBoolean("gs.notifySports", true))
     val notifySportsEnabled: StateFlow<Boolean> = _notifySportsEnabled.asStateFlow()
+
+    /** Weekly "New on your services" digest — the one discovery push. `users.notify_new_on_services`. */
+    private val _notifyNewOnServicesEnabled = MutableStateFlow(prefs.getBoolean("gs.notifyNewOnServices", true))
+    val notifyNewOnServicesEnabled: StateFlow<Boolean> = _notifyNewOnServicesEnabled.asStateFlow()
 
     private val _hasUsedEmailAuth = MutableStateFlow(prefs.getBoolean("gs.hasUsedEmailAuth", false))
     val hasUsedEmailAuth: StateFlow<Boolean> = _hasUsedEmailAuth.asStateFlow()
@@ -347,7 +352,7 @@ class AuthViewModel private constructor(private val context: Context) : ViewMode
                     columns = Columns.raw(
                         "onboarding_complete, services, avatar_url, notify_push, notify_sms, " +
                             "notify_new_episodes, notify_watchlist, notify_live, " +
-                            "notify_sports, notify_movie_releases",
+                            "notify_sports, notify_movie_releases, notify_new_on_services",
                     ),
                 ) {
                     filter { eq("id", uid) }
@@ -394,6 +399,10 @@ class AuthViewModel private constructor(private val context: Context) : ViewMode
             row.notifyMovieReleases?.let {
                 _notifyMovieReleasesEnabled.value = it
                 prefs.edit().putBoolean("gs.notifyMovieReleases", it).apply()
+            }
+            row.notifyNewOnServices?.let {
+                _notifyNewOnServicesEnabled.value = it
+                prefs.edit().putBoolean("gs.notifyNewOnServices", it).apply()
             }
         } catch (_: Exception) {
             // Columns may be missing on older projects — keep local defaults.
@@ -1121,6 +1130,11 @@ class AuthViewModel private constructor(private val context: Context) : ViewMode
         persistCategoryPref("gs.notifyMovieReleases", "notify_movie_releases", enabled)
     }
 
+    fun setNotifyNewOnServicesEnabled(enabled: Boolean) {
+        _notifyNewOnServicesEnabled.value = enabled
+        persistCategoryPref("gs.notifyNewOnServices", "notify_new_on_services", enabled)
+    }
+
     /**
      * Writes a single notification-category preference to SharedPreferences and,
      * for signed-in users, mirrors it to the matching `users` column. Failures
@@ -1219,6 +1233,7 @@ class AuthViewModel private constructor(private val context: Context) : ViewMode
             _notifyLiveEnabled.value = true
             _notifySportsEnabled.value = true
             _notifyMovieReleasesEnabled.value = true
+            _notifyNewOnServicesEnabled.value = true
             updateSignedInState()
 
             prefs.edit().apply {
@@ -1227,7 +1242,7 @@ class AuthViewModel private constructor(private val context: Context) : ViewMode
                     "gs.firstName", "gs.lastName", "gs.onboardingComplete",
                     "gs.selectedServices", "gs.avatarUrl", "gs.notifyPush", "gs.notifySMS",
                     "gs.notifyNewEpisodes", "gs.notifyWatchlist", "gs.notifyLive",
-                    "gs.notifySports", "gs.notifyMovieReleases", "gs.hasUsedEmailAuth",
+                    "gs.notifySports", "gs.notifyMovieReleases", "gs.notifyNewOnServices", "gs.hasUsedEmailAuth",
                 ).forEach { remove(it) }
             }.apply()
 

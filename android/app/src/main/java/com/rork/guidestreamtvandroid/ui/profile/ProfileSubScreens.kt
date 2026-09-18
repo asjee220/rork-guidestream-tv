@@ -155,6 +155,7 @@ fun NotificationsSettingsScreen(
     val notifyLive by authVm.notifyLiveEnabled.collectAsStateWithLifecycle()
     val notifySports by authVm.notifySportsEnabled.collectAsStateWithLifecycle()
     val notifyMovieReleases by authVm.notifyMovieReleasesEnabled.collectAsStateWithLifecycle()
+    val notifyNewOnServices by authVm.notifyNewOnServicesEnabled.collectAsStateWithLifecycle()
 
     // `notifyPush` is only the user's *intent*. The OS grant decides whether a
     // notification can actually be delivered, and on Android 13+ the two drift
@@ -283,6 +284,12 @@ fun NotificationsSettingsScreen(
                 notifyMovieReleases,
                 enabled = pushOn,
             ) { authVm.setNotifyMovieReleasesEnabled(it) }
+            NotifyToggleRow(
+                "New on Your Services",
+                "A weekly heads-up on new arrivals you can watch",
+                notifyNewOnServices,
+                enabled = pushOn,
+            ) { authVm.setNotifyNewOnServicesEnabled(it) }
         }
 
         Spacer(Modifier.height(40.dp))

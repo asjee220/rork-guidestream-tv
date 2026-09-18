@@ -97,6 +97,15 @@ final class AuthViewModel {
             syncSportsPreference()
         }
     }
+    /// Weekly "New on your services" digest — the one discovery push in the
+    /// app. Backed by `users.notify_new_on_services` (defaults true server-side).
+    var notifyNewOnServicesEnabled: Bool = (UserDefaults.standard.object(forKey: "gs.notifyNewOnServices") as? Bool) ?? true {
+        didSet {
+            guard !isApplyingCategoryPrefs else { return }
+            UserDefaults.standard.set(notifyNewOnServicesEnabled, forKey: "gs.notifyNewOnServices")
+            syncNewOnServicesPreference()
+        }
+    }
     var notifyMovieReleasesEnabled: Bool = (UserDefaults.standard.object(forKey: "gs.notifyMovieReleases") as? Bool) ?? true {
         didSet {
             guard !isApplyingCategoryPrefs else { return }
@@ -236,6 +245,23 @@ final class AuthViewModel {
         }
     }
 
+    private func syncNewOnServicesPreference() {
+        guard let userId = currentUser?.id.uuidString else { return }
+        let enabled = notifyNewOnServicesEnabled
+        Task {
+            do {
+                try await SupabaseManager.shared.client
+                    .from("users")
+                    .update(["notify_new_on_services": enabled])
+                    .eq("id", value: userId)
+                    .execute()
+                print("[AuthViewModel] synced notify_new_on_services=\(enabled)")
+            } catch {
+                print("[AuthViewModel] sync notify_new_on_services failed: \(error.localizedDescription)")
+            }
+        }
+    }
+
     private func syncMovieReleasePreference() {
         guard let userId = currentUser?.id.uuidString else { return }
         let enabled = notifyMovieReleasesEnabled
@@ -260,7 +286,7 @@ final class AuthViewModel {
         do {
             let rows: [NotificationCategoryRow] = try await SupabaseManager.shared.client
                 .from("users")
-                .select("notify_push, notify_new_episodes, notify_watchlist, notify_live, notify_sports, notify_movie_releases")
+                .select("notify_push, notify_new_episodes, notify_watchlist, notify_live, notify_sports, notify_movie_releases, notify_new_on_services")
                 .eq("id", value: uid)
                 .limit(1)
                 .execute()
@@ -280,6 +306,7 @@ final class AuthViewModel {
             if let val = row.notify_watchlist { notifyWatchlistEnabled = val; UserDefaults.standard.set(val, forKey: "gs.notifyWatchlist") }
             if let val = row.notify_live { notifyLiveEnabled = val; UserDefaults.standard.set(val, forKey: "gs.notifyLive") }
             if let val = row.notify_sports { notifySportsEnabled = val; UserDefaults.standard.set(val, forKey: "gs.notifySports") }
+            if let val = row.notify_new_on_services { notifyNewOnServicesEnabled = val; UserDefaults.standard.set(val, forKey: "gs.notifyNewOnServices") }
             if let val = row.notify_movie_releases { notifyMovieReleasesEnabled = val; UserDefaults.standard.set(val, forKey: "gs.notifyMovieReleases") }
             isApplyingCategoryPrefs = false
             print("[AuthViewModel] loaded notification category preferences")
@@ -493,4 +520,5 @@ private struct NotificationCategoryRow: Decodable {
     let notify_live: Bool?
     let notify_sports: Bool?
     let notify_movie_releases: Bool?
+    let notify_new_on_services: Bool?
 }

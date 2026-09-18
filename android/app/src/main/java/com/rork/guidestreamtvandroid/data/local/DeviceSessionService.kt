@@ -199,6 +199,7 @@ class DeviceSessionService private constructor(private val context: Context) {
             put("notify_live", auth.notifyLiveEnabled.value)
             put("notify_sports", auth.notifySportsEnabled.value)
             put("notify_movie_releases", auth.notifyMovieReleasesEnabled.value)
+            put("notify_new_on_services", auth.notifyNewOnServicesEnabled.value)
             put("onboarding_complete", auth.hasCompletedOnboarding.value)
             put("session_count", sessionCount)
             put("last_seen_at", nowIso)

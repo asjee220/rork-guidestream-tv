@@ -1023,10 +1023,21 @@ struct NotificationsSettingsView: View {
                             isOn: $auth.notifyMovieReleasesEnabled,
                             tint: Color.orange
                         )
+
+                        ProfileRowDivider()
+
+                        NotificationToggleRow(
+                            icon: "sparkles",
+                            iconTint: Color(red: 0.55, green: 0.78, blue: 0.95),
+                            title: "New on your services",
+                            subtitle: "A weekly heads-up on new arrivals you can watch",
+                            isOn: $auth.notifyNewOnServicesEnabled,
+                            tint: Color(red: 0.55, green: 0.78, blue: 0.95)
+                        )
                     }
                     // Category switches are meaningless while the master
                     // toggle is off — dim and lock them so the screen can't
-                    // show five live-looking alert types that can't fire.
+                    // show six live-looking alert types that can't fire.
                     .opacity(pushOn ? 1 : 0.4)
                     .disabled(!pushOn)
                     .animation(.easeInOut(duration: 0.2), value: pushOn)

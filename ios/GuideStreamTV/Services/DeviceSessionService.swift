@@ -261,6 +261,7 @@ final class DeviceSessionService {
             "notify_live": .bool(auth.notifyLiveEnabled),
             "notify_sports": .bool(auth.notifySportsEnabled),
             "notify_movie_releases": .bool(auth.notifyMovieReleasesEnabled),
+            "notify_new_on_services": .bool(auth.notifyNewOnServicesEnabled),
             "onboarding_complete": .bool(auth.hasCompletedOnboarding),
             "session_count": .integer(sessionCount),
             "last_seen_at": .string(nowString),
