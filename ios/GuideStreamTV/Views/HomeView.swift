@@ -672,7 +672,10 @@ struct HomeView: View {
                                 WatchIntentLogger.shared.log(
                                     eventType: .cardTapped,
                                     titleId: String(pick.tmdbId),
-                                    metadata: ["section": "todays_pick"]
+                                    metadata: [
+                                        "section": "todays_pick",
+                                        "source": personalPick != nil ? "recommended" : "new_releases"
+                                    ]
                                 )
                                 prefetchResolve(tmdbId: pick.tmdbId, isTV: pick.tmdbType == "tv")
                                 detailSubject = .show(PosterShow(
@@ -2487,17 +2490,23 @@ struct HomeView: View {
 
     // MARK: - Today's Pick
 
-    /// Selects one row from `newReleases` (already ordered by popularity
-    /// descending) using a day-of-year rotation so the pick is stable within
-    /// a day and changes at local midnight. Takes the first 10 entries (or
-    /// fewer when the array is smaller), picks index `dayOfYear % count`, and
-    /// advances to the next index (modulo count) when the pick has no poster.
-    /// Returns nil when `newReleases` is empty.
+    /// Today's Pick is personal when it can be (GUI-106). With a Recommended
+    /// for You rail in hand — the server's ranking over the viewer's
+    /// watchlist, likes, browse and search signals — the pick rotates
+    /// day-of-year through its top ten, so it is stable within a day, changes
+    /// at local midnight, and is something this viewer would plausibly watch
+    /// rather than whatever is most popular this week. The rotation, not
+    /// `first`, keeps it from always duplicating the rail's lead poster.
+    ///
+    /// Without recommendations (no services picked, no signals yet, or the
+    /// call failed) it falls back to the original behaviour: the same
+    /// rotation over `newReleases`, already popularity-descending, skipping
+    /// rows with no poster. Returns nil only when both sources are empty.
     private var todaysPick: StreamingRelease? {
+        if let personal = personalPick { return personal }
         guard !newReleases.isEmpty else { return nil }
         let pool = Array(newReleases.prefix(10))
         let count = pool.count
-        let dayOfYear = Calendar.current.ordinality(of: .day, in: .year, for: Date()) ?? 1
         var idx = dayOfYear % count
         for _ in 0..<count {
             let candidate = pool[idx]
@@ -2506,6 +2515,34 @@ struct HomeView: View {
             idx = (idx + 1) % count
         }
         return pool[dayOfYear % count]
+    }
+
+    private var dayOfYear: Int {
+        Calendar.current.ordinality(of: .day, in: .year, for: Date()) ?? 1
+    }
+
+    /// The recommended title on rotation today, shaped as a
+    /// `StreamingRelease` so `TodaysPickSection` needs no second model. No
+    /// source name: the recommender guarantees the title streams on one of
+    /// the viewer's services but does not say which, so the CTA reads
+    /// "Watch now" and the detail sheet resolves the service on open.
+    private var personalPick: StreamingRelease? {
+        let pool = recommendedTitles.prefix(10).filter { $0.posterUrl != nil }
+        guard !pool.isEmpty else { return nil }
+        let rec = pool[dayOfYear % pool.count]
+        return StreamingRelease(
+            tmdbId: rec.tmdbId,
+            tmdbType: rec.mediaType,
+            title: rec.title,
+            posterUrl: rec.posterUrl,
+            posterPath: rec.posterPath,
+            sourceName: nil,
+            isOriginal: nil,
+            sourceReleaseDate: nil,
+            popularity: nil,
+            voteCount: nil,
+            voteAverage: rec.voteAverage
+        )
     }
 
     /// Reuses the same selected-services contains-check as `topPicksShows`

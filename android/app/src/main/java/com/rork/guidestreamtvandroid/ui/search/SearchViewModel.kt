@@ -8,6 +8,7 @@ import com.rork.guidestreamtvandroid.data.models.TMDBResult
 import com.rork.guidestreamtvandroid.data.remote.LiveStatusService
 import com.rork.guidestreamtvandroid.data.remote.SupabaseManager
 import com.rork.guidestreamtvandroid.data.remote.TMDBService
+import com.rork.guidestreamtvandroid.data.repository.WatchIntentLogger
 import io.github.jan.supabase.postgrest.postgrest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -85,6 +86,14 @@ class SearchViewModel : ViewModel() {
     val popular: StateFlow<List<SearchResult>> = _popular.asStateFlow()
 
     private var searchJob: Job? = null
+    /**
+     * Logs the query the viewer settles on, not every keystroke. Search fires
+     * 250ms after typing pauses; the log waits a further 1.5s so a burst of
+     * typing lands as one `search_query` row. That row feeds
+     * `recommend_titles`, which resolves it to a TMDB seed (GUI-106).
+     * Mirrors iOS SearchViewModel.logTask.
+     */
+    private var logJob: Job? = null
 
     companion object {
         @Volatile private var instance: SearchViewModel? = null
@@ -96,6 +105,7 @@ class SearchViewModel : ViewModel() {
     fun setQuery(q: String) {
         _query.value = q
         searchJob?.cancel()
+        logJob?.cancel()
         if (q.isBlank()) {
             _tmdbResults.value = emptyList()
             _creatorResults.value = emptyList()
@@ -105,6 +115,28 @@ class SearchViewModel : ViewModel() {
         searchJob = viewModelScope.launch(Dispatchers.IO) {
             delay(250)
             search(q)
+        }
+        logJob = viewModelScope.launch(Dispatchers.IO) {
+            delay(1500)
+            logSettledQuery(q)
+        }
+    }
+
+    private fun logSettledQuery(q: String) {
+        val trimmed = q.trim()
+        if (trimmed.length < 3) return
+        try {
+            WatchIntentLogger.get().log(
+                WatchIntentLogger.IntentEventType.SEARCH_QUERY,
+                metadata = mapOf(
+                    "query" to trimmed,
+                    "surface" to "search",
+                    "scope" to _scope.value.name.lowercase(),
+                    "result_count" to (_tmdbResults.value.size + _creatorResults.value.size),
+                ),
+            )
+        } catch (_: IllegalStateException) {
+            // Logger not initialised (previews) — a missing analytics row is fine.
         }
     }
 

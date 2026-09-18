@@ -301,6 +301,7 @@ fun SearchScreen(
                                 posterUrl = result.posterUrl,
                                 serviceName = result.platform?.name,
                                 onClick = {
+                                    logTitleTap(result, section = "browse", query = "")
                                     onOpenTitle(PendingTitleRoute(
                                         titleId = result.id.toString(),
                                         titleName = result.title,
@@ -439,6 +440,7 @@ fun SearchScreen(
                                 year = result.year,
                                 isTV = result.isTV,
                                 onClick = {
+                                    logTitleTap(result, section = "search", query = query)
                                     onOpenTitle(PendingTitleRoute(
                                         titleId = result.id.toString(),
                                         titleName = result.title,
@@ -531,6 +533,24 @@ fun SearchScreen(
             }
         }
     }
+}
+
+/**
+ * Creator taps were logged; title taps never were, so a search that ended in
+ * a detail screen left no trace for the recommender (GUI-106). Same event and
+ * section the creator rows use, with the TMDB id the server keys on.
+ */
+private fun logTitleTap(result: SearchViewModel.SearchResult, section: String, query: String) {
+    WatchIntentLogger.get().log(
+        WatchIntentLogger.IntentEventType.CARD_TAPPED,
+        titleId = result.id.toString(),
+        metadata = mapOf(
+            "section" to section,
+            "tmdb_id" to result.id,
+            "media_type" to if (result.isTV) "tv" else "movie",
+            "query" to query.trim(),
+        ),
+    )
 }
 
 @Composable

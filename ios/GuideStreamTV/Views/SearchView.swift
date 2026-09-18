@@ -70,9 +70,16 @@ final class SearchViewModel {
     var isLoadingCreators: Bool = false
 
     private var searchTask: Task<Void, Never>?
+    /// Logs the query the viewer settles on, not every keystroke. Search
+    /// fires 250ms after typing pauses; the log waits a further 1.5s so a
+    /// burst of typing lands as one `search_query` row. That row feeds
+    /// `recommend_titles`, which resolves it to a TMDB seed (GUI-106) —
+    /// searching for a title is a stronger signal than tapping a card.
+    private var logTask: Task<Void, Never>?
 
     func onQueryChange(_ q: String) {
         searchTask?.cancel()
+        logTask?.cancel()
         if q.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             tmdbResults = []; creatorResults = []; isSearching = false; return
         }
@@ -81,6 +88,26 @@ final class SearchViewModel {
             guard !Task.isCancelled else { return }
             await search(q)
         }
+        logTask = Task {
+            try? await Task.sleep(for: .milliseconds(1500))
+            guard !Task.isCancelled else { return }
+            await logSettledQuery(q)
+        }
+    }
+
+    @MainActor
+    private func logSettledQuery(_ q: String) {
+        let trimmed = q.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count >= 3 else { return }
+        WatchIntentLogger.shared.log(
+            eventType: .searchQuery,
+            metadata: [
+                "query": trimmed,
+                "surface": "search",
+                "scope": scope.rawValue,
+                "result_count": tmdbResults.count + creatorResults.count
+            ]
+        )
     }
 
     func loadPopular() async {
@@ -489,6 +516,21 @@ struct SearchView: View {
     }
 
     private func openTMDB(_ result: SearchResult) {
+        // Creators taps were logged; title taps never were, so a search that
+        // ended in a detail sheet left no trace for the recommender. Same
+        // event and section the creator rows use, with the TMDB id the
+        // server keys on.
+        let query = vm.query.trimmingCharacters(in: .whitespacesAndNewlines)
+        WatchIntentLogger.shared.log(
+            eventType: .cardTapped,
+            titleId: String(result.id),
+            metadata: [
+                "section": query.isEmpty ? "browse" : "search",
+                "tmdb_id": result.id,
+                "media_type": result.isTV ? "tv" : "movie",
+                "query": query
+            ]
+        )
         if let cb = onSelectResult { cb(result); return }
         isPresented = false
     }

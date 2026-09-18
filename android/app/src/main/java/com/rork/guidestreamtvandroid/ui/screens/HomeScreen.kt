@@ -480,18 +480,27 @@ fun HomeScreen(
         // one thing on Home already reachable in a single tap, and
         // Recommended for You has taken the slot under the hero.
 
-        // Today's Pick — daily spotlight from streaming_releases
+        // Today's Pick — personal when it can be (GUI-106): a day-of-year
+        // rotation through the top ten of Recommended for You, falling back
+        // to the streaming_releases rotation the view model computes when
+        // there are no recommendations (no services, no signals, or the call
+        // failed). Mirrors iOS HomeView.personalPick.
+        val personalPick = remember(recommendedTitles) { personalTodaysPick(recommendedTitles) }
+        val shownPick = personalPick ?: todaysPick
         if (!homeReady) {
             ShimmerSection("Today's Pick", Modifier.padding(horizontal = widthClass.homeHorizontalPadding, vertical = 8.dp))
-        } else if (todaysPick != null) {
+        } else if (shownPick != null) {
             TodaysPickSpotlight(
-                pick = todaysPick!!,
+                pick = shownPick,
                 selectedServices = selectedServices,
                 onOpen = { row ->
                     WatchIntentLogger.get().log(
                         WatchIntentLogger.IntentEventType.CARD_TAPPED,
                         titleId = row.tmdbId.toString(),
-                        metadata = mapOf("section" to "todays_pick"),
+                        metadata = mapOf(
+                            "section" to "todays_pick",
+                            "source" to if (personalPick != null) "recommended" else "new_releases",
+                        ),
                     )
                     onOpenTitle(PendingTitleRoute(
                         titleId = row.tmdbId.toString(),
@@ -1520,6 +1529,34 @@ private fun HeroCtaPill(label: String, tint: Color) {
 }
 
 // ── Today's Pick Spotlight ─────────────────────────────────────────────────
+
+/**
+ * The recommended title on rotation today, shaped as a [StreamingReleasesService.StreamingReleaseRow]
+ * so [TodaysPickSpotlight] needs no second model. Rotation rather than `first`
+ * keeps it from always duplicating the rail's lead poster. No source name: the
+ * recommender guarantees the title streams on one of the viewer's services but
+ * does not say which, so the CTA reads "Watch now" and the detail screen
+ * resolves the service on open. Null when there are no recommendations.
+ */
+private fun personalTodaysPick(
+    recommended: List<com.rork.guidestreamtvandroid.data.remote.RecommendedTitle>,
+): StreamingReleasesService.StreamingReleaseRow? {
+    val pool = recommended.take(10).filter { !it.posterPath.isNullOrBlank() }
+    if (pool.isEmpty()) return null
+    val rec = pool[java.time.LocalDate.now().dayOfYear % pool.size]
+    return StreamingReleasesService.StreamingReleaseRow(
+        tmdbId = rec.tmdbId,
+        tmdbType = rec.mediaType,
+        title = rec.title,
+        posterPath = rec.posterPath,
+        posterUrl = rec.posterUrl,
+        sourceName = null,
+        isOriginal = null,
+        popularity = null,
+        voteCount = null,
+        voteAverage = rec.voteAverage,
+    )
+}
 
 @Composable
 private fun TodaysPickSpotlight(
