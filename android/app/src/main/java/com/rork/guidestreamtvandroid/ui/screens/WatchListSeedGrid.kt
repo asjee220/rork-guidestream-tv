@@ -109,7 +109,12 @@ object WatchListSeedPrefs {
     }
 }
 
-/** Saves needed before "Today's Pick" is unlocked. Counted across every category. */
+/**
+ * Saves before Home counts as personalized (Recommended for You, Top Picks genre and
+ * New Episodes all key off user_streams). Counted across every category. Nothing on Home
+ * is gated on it — Today's Pick is a daily rotation shown regardless — so the copy
+ * promises personalization, never an unlock.
+ */
 private const val NUDGE_THRESHOLD = 3
 private const val COLUMNS = 3
 private const val SEED_COUNT = 12
@@ -290,7 +295,7 @@ fun WatchListSeedGrid(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        text = "Done — take me to Today's Pick",
+                        text = "Done — take me Home",
                         fontSize = 15.sp,
                         fontWeight = FontWeight.Bold,
                         color = Color.White,
@@ -436,9 +441,9 @@ private fun SeedNudge(savedCount: Int, remaining: Int) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text(
             text = when {
-                done -> "Today's Pick is ready"
-                remaining == 1 -> "1 more unlocks Today's Pick"
-                else -> "$remaining more unlock Today's Pick"
+                done -> "Your Home is personalized"
+                remaining == 1 -> "1 more to personalize your Home"
+                else -> "$remaining more to personalize your Home"
             },
             fontSize = 12.sp,
             fontWeight = FontWeight.SemiBold,

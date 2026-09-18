@@ -37,8 +37,11 @@ struct WatchListSeedGrid: View {
     /// Fired from the ✕. The caller decides what replaces the grid.
     let onDismiss: () -> Void
 
-    /// Saves needed before "Today's Pick" is unlocked. Counted across every
-    /// category, not per tab.
+    /// Saves before Home counts as personalized (Recommended for You, Top
+    /// Picks genre, New Episodes all key off `user_streams`). Counted across
+    /// every category, not per tab. Nothing on Home is gated on it — Today's
+    /// Pick is a daily rotation that shows regardless — so the copy promises
+    /// personalization, never an unlock.
     static let nudgeThreshold = 3
     static let columns = 3
     static let seedCount = 12
@@ -124,11 +127,11 @@ struct WatchListSeedGrid: View {
         HStack(spacing: 10) {
             Group {
                 if remaining == 0 {
-                    Text("Today's Pick is ready")
+                    Text("Your Home is personalized")
                 } else if remaining == 1 {
-                    Text("1 more unlocks Today's Pick")
+                    Text("1 more to personalize your Home")
                 } else {
-                    Text("\(remaining) more unlock Today's Pick")
+                    Text("\(remaining) more to personalize your Home")
                 }
             }
             .scaledFont(size: 12, weight: .semibold)
@@ -213,7 +216,7 @@ struct WatchListSeedGrid: View {
             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
             onDone()
         } label: {
-            Text("Done — take me to Today's Pick")
+            Text("Done — take me Home")
                 .scaledFont(size: 15, weight: .bold)
                 .foregroundStyle(.white)
                 .frame(maxWidth: .infinity)
