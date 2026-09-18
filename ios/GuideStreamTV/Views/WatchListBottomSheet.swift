@@ -321,12 +321,19 @@ private struct WatchListContent: View {
     /// Two-up poster grid, replacing the old single-column list. A saved
     /// title is recognised by its artwork long before its name, and two
     /// columns put roughly three times as many of them on screen.
+    ///
+    /// Each column is pinned to the top of its row. A LazyVGrid row is as
+    /// tall as its tallest cell and centres the others in it by default, so a
+    /// one-line title next to a two-line one sat half a line lower and its
+    /// poster no longer lined up with its neighbour's (GUI-107). Cells vary in
+    /// height for three reasons — title wrap, the expiry row, the live stream
+    /// title — and every one of them belongs below the poster, not around it.
     private var posterGrid: some View {
         ScrollView {
             LazyVGrid(
                 columns: [
-                    GridItem(.flexible(), spacing: 14),
-                    GridItem(.flexible(), spacing: 14),
+                    GridItem(.flexible(), spacing: 14, alignment: .top),
+                    GridItem(.flexible(), spacing: 14, alignment: .top),
                 ],
                 alignment: .leading,
                 spacing: 18
