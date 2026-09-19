@@ -321,7 +321,7 @@ struct ScheduleView: View {
                     Text(game.sport)
                         .scaledFont(size: 9, weight: .black)
                         .foregroundStyle(Color.white.opacity(0.35))
-                    ForEach(SportsSimulcast.enrich(game.broadcasts).prefix(2), id: \.self) { name in
+                    ForEach(SportsSimulcast.ranked(game.broadcasts).prefix(2), id: \.self) { name in
                         Text(name)
                             .scaledFont(size: 9, weight: .semibold)
                             .foregroundStyle(Color.white.opacity(0.7))

@@ -592,7 +592,7 @@ struct SportsView: View {
                 liveTeamBlock(team: game.home, leading: false)
             }
 
-            broadcastsRow(game.broadcasts)
+            broadcastsRow(TVSportsSimulcast.ranked(game.broadcasts))
         }
         .padding(46)
         .frame(minHeight: 210)
@@ -666,7 +666,7 @@ struct SportsView: View {
                     .foregroundStyle(Color.white.opacity(0.35))
             }
 
-            broadcastsRow(game.broadcasts)
+            broadcastsRow(TVSportsSimulcast.ranked(game.broadcasts))
         }
         .padding(46)
         .frame(minHeight: 210)

@@ -680,7 +680,7 @@ fun LiveGameRow(game: SportsGame, onClick: () -> Unit) {
             Text("VS", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White.copy(alpha = 0.2f))
             LiveTeamBlock(game.home, Modifier.weight(1f), Alignment.End)
         }
-        BroadcastsRow(game.broadcasts)
+        BroadcastsRow(rankedBroadcasts(game.broadcasts, AuthViewModel.get()))
     }
 }
 
@@ -722,7 +722,7 @@ fun UpcomingGameRow(game: SportsGame, onClick: () -> Unit) {
             }
             Icon(Icons.Outlined.ChevronRight, contentDescription = null, tint = Color.White.copy(alpha = 0.35f), modifier = Modifier.size(16.dp))
         }
-        BroadcastsRow(game.broadcasts)
+        BroadcastsRow(rankedBroadcasts(game.broadcasts, AuthViewModel.get()))
     }
 }
 

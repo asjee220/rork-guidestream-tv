@@ -186,7 +186,7 @@ struct SportsListView: View {
                 liveTeam(team: game.home, leading: false)
             }
 
-            broadcastsRow(game.broadcasts)
+            broadcastsRow(SportsSimulcast.ranked(game.broadcasts))
         }
         .padding(12)
         .background(RoundedRectangle(cornerRadius: 16).fill(Color(hex: "161B27")))
@@ -234,7 +234,7 @@ struct SportsListView: View {
                     .foregroundStyle(Color.white.opacity(0.3))
             }
 
-            broadcastsRow(game.broadcasts)
+            broadcastsRow(SportsSimulcast.ranked(game.broadcasts))
         }
         .padding(12)
         .background(RoundedRectangle(cornerRadius: 16).fill(Color(hex: "161B27")))

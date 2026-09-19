@@ -2,6 +2,7 @@ package com.rork.guidestreamtvandroid.ui.sports
 
 import androidx.compose.ui.graphics.Color
 import com.rork.guidestreamtvandroid.data.models.SportsGame
+import com.rork.guidestreamtvandroid.data.repository.AuthViewModel
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -63,36 +64,30 @@ internal fun broadcastColor(name: String): Color {
     }
 }
 
-/** Normalized names that are already streaming destinations — never get a companion. */
-private val streamingDestinations = setOf(
-    "peacock", "peacockpremium", "paramount", "paramountplus", "primevideo",
-    "amazonprime", "netflix", "appletv", "appletvplus", "hbomax", "max",
-    "hulu", "fubo", "fubotv", "slingtv", "youtube", "youtubetv", "tubi",
-    "disneyplus", "espn", "espnplus", "nflplus", "nbaleaguepass", "mlbtv",
-    "foxone",
-)
-
 /**
- * Exact normalized key → streaming companion. Matched exactly, never by
- * substring, so unexpected network names (MSG, FDSSO, …) yield nothing.
+ * Exact normalized key → streaming companions, in preference order. Matched
+ * exactly, never by substring, so unexpected network names (MSG, FDSSO, …)
+ * yield nothing. ESPN's carriers also list Hulu because the Disney bundle and
+ * Hulu + Live TV both carry ESPN. Mirrors iOS SportsSimulcast.
  */
-private val simulcastCompanions = mapOf(
-    "nbc" to "Peacock", "nbcsn" to "Peacock", "cnbc" to "Peacock",
-    "usa" to "Peacock", "usanetwork" to "Peacock", "usanet" to "Peacock",
-    "telemundo" to "Peacock",
-    "universo" to "Peacock", "golf" to "Peacock", "golfchannel" to "Peacock",
-    "cbs" to "Paramount+", "cbssn" to "Paramount+", "cbssportsnetwork" to "Paramount+",
-    "abc" to "ESPN", "espn2" to "ESPN", "espnu" to "ESPN", "espnews" to "ESPN",
-    "espndeportes" to "ESPN", "secn" to "ESPN", "secnetwork" to "ESPN",
-    "secnplus" to "ESPN",
-    "accn" to "ESPN", "accnetwork" to "ESPN",
-    "fox" to "Fox One", "foxsports" to "Fox One", "fs1" to "Fox One",
-    "fs2" to "Fox One", "btn" to "Fox One", "bigtennetwork" to "Fox One",
-    "foxdeportes" to "Fox One",
-    "tnt" to "HBO Max", "tbs" to "HBO Max", "trutv" to "HBO Max",
-    "nfln" to "NFL+", "nflnetwork" to "NFL+",
-    "nbatv" to "NBA League Pass",
-    "mlbn" to "MLB.TV", "mlbnetwork" to "MLB.TV",
+private val simulcastCompanions: Map<String, List<String>> = mapOf(
+    "nbc" to listOf("Peacock"), "nbcsn" to listOf("Peacock"), "cnbc" to listOf("Peacock"),
+    "usa" to listOf("Peacock"), "usanetwork" to listOf("Peacock"), "usanet" to listOf("Peacock"),
+    "telemundo" to listOf("Peacock"),
+    "universo" to listOf("Peacock"), "golf" to listOf("Peacock"), "golfchannel" to listOf("Peacock"),
+    "cbs" to listOf("Paramount+"), "cbssn" to listOf("Paramount+"), "cbssportsnetwork" to listOf("Paramount+"),
+    "abc" to listOf("ESPN", "Hulu"), "espn" to listOf("Hulu"), "espn2" to listOf("ESPN", "Hulu"),
+    "espnu" to listOf("ESPN", "Hulu"), "espnews" to listOf("ESPN", "Hulu"),
+    "espndeportes" to listOf("ESPN", "Hulu"), "secn" to listOf("ESPN", "Hulu"),
+    "secnetwork" to listOf("ESPN", "Hulu"), "secnplus" to listOf("ESPN", "Hulu"),
+    "accn" to listOf("ESPN", "Hulu"), "accnetwork" to listOf("ESPN", "Hulu"),
+    "fox" to listOf("Fox One"), "foxsports" to listOf("Fox One"), "fs1" to listOf("Fox One"),
+    "fs2" to listOf("Fox One"), "btn" to listOf("Fox One"), "bigtennetwork" to listOf("Fox One"),
+    "foxdeportes" to listOf("Fox One"),
+    "tnt" to listOf("HBO Max"), "tbs" to listOf("HBO Max"), "trutv" to listOf("HBO Max"),
+    "nfln" to listOf("NFL+"), "nflnetwork" to listOf("NFL+"),
+    "nbatv" to listOf("NBA League Pass"),
+    "mlbn" to listOf("MLB.TV"), "mlbnetwork" to listOf("MLB.TV"),
 )
 
 /** Lowercased with every non-alphanumeric character removed. */
@@ -117,12 +112,26 @@ internal fun enrichBroadcasts(broadcasts: List<String>): List<String> {
     for (name in broadcasts) {
         val key = normalizeBroadcast(name)
         if (seen.add(key)) result.add(name)
-        if (key in streamingDestinations) continue
-        val companion = simulcastCompanions[key] ?: continue
-        if (seen.add(normalizeBroadcast(companion))) result.add(companion)
+        for (companion in simulcastCompanions[key].orEmpty()) {
+            if (seen.add(normalizeBroadcast(companion))) result.add(companion)
+        }
     }
     return result
 }
+
+/**
+ * [enrichBroadcasts] stable-sorted so the services the user subscribes to
+ * come first — what the watch sheet's CTA already does. On the cards it means
+ * a game on ABC reads "ESPN" to an ESPN or Hulu subscriber.
+ */
+internal fun rankedBroadcasts(broadcasts: List<String>, auth: AuthViewModel): List<String> =
+    enrichBroadcasts(broadcasts)
+        .withIndex()
+        .sortedWith(
+            compareByDescending<IndexedValue<String>> { auth.subscribesToService(it.value) }
+                .thenBy { it.index }
+        )
+        .map { it.value }
 
 private fun parseStart(timestamp: String?): Date? {
     if (timestamp == null) return null

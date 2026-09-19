@@ -19,35 +19,28 @@ import Foundation
 /// alias the phone types and a bare `SportsSimulcast` would be ambiguous.
 nonisolated enum TVSportsSimulcast {
 
-    /// Normalized names that are already streaming destinations — these never
-    /// get a companion appended.
-    private static let streamingDestinations: Set<String> = [
-        "peacock", "peacockpremium", "paramount", "paramountplus", "primevideo",
-        "amazonprime", "netflix", "appletv", "appletvplus", "hbomax", "max",
-        "hulu", "fubo", "fubotv", "slingtv", "youtube", "youtubetv", "tubi",
-        "disneyplus", "espn", "espnplus", "nflplus", "nbaleaguepass", "mlbtv",
-        "foxone"
-    ]
-
-    /// Exact normalized key → streaming companion. Matched exactly, never by
-    /// substring, so unexpected network names (MSG, FDSSO, …) yield nothing.
-    private static let companions: [String: String] = [
-        "nbc": "Peacock", "nbcsn": "Peacock", "cnbc": "Peacock",
-        "usa": "Peacock", "usanetwork": "Peacock", "usanet": "Peacock",
-        "telemundo": "Peacock",
-        "universo": "Peacock", "golf": "Peacock", "golfchannel": "Peacock",
-        "cbs": "Paramount+", "cbssn": "Paramount+", "cbssportsnetwork": "Paramount+",
-        "abc": "ESPN", "espn2": "ESPN", "espnu": "ESPN", "espnews": "ESPN",
-        "espndeportes": "ESPN", "secn": "ESPN", "secnetwork": "ESPN",
-        "secnplus": "ESPN",
-        "accn": "ESPN", "accnetwork": "ESPN",
-        "fox": "Fox One", "foxsports": "Fox One", "fs1": "Fox One",
-        "fs2": "Fox One", "btn": "Fox One", "bigtennetwork": "Fox One",
-        "foxdeportes": "Fox One",
-        "tnt": "HBO Max", "tbs": "HBO Max", "trutv": "HBO Max",
-        "nfln": "NFL+", "nflnetwork": "NFL+",
-        "nbatv": "NBA League Pass",
-        "mlbn": "MLB.TV", "mlbnetwork": "MLB.TV"
+    /// Exact normalized key → streaming companions, in preference order.
+    /// Matched exactly, never by substring, so unexpected network names
+    /// (MSG, FDSSO, …) yield nothing. ESPN's carriers also list Hulu because
+    /// the Disney bundle and Hulu + Live TV both carry ESPN.
+    private static let companions: [String: [String]] = [
+        "nbc": ["Peacock"], "nbcsn": ["Peacock"], "cnbc": ["Peacock"],
+        "usa": ["Peacock"], "usanetwork": ["Peacock"], "usanet": ["Peacock"],
+        "telemundo": ["Peacock"],
+        "universo": ["Peacock"], "golf": ["Peacock"], "golfchannel": ["Peacock"],
+        "cbs": ["Paramount+"], "cbssn": ["Paramount+"], "cbssportsnetwork": ["Paramount+"],
+        "abc": ["ESPN", "Hulu"], "espn": ["Hulu"], "espn2": ["ESPN", "Hulu"],
+        "espnu": ["ESPN", "Hulu"], "espnews": ["ESPN", "Hulu"],
+        "espndeportes": ["ESPN", "Hulu"], "secn": ["ESPN", "Hulu"],
+        "secnetwork": ["ESPN", "Hulu"], "secnplus": ["ESPN", "Hulu"],
+        "accn": ["ESPN", "Hulu"], "accnetwork": ["ESPN", "Hulu"],
+        "fox": ["Fox One"], "foxsports": ["Fox One"], "fs1": ["Fox One"],
+        "fs2": ["Fox One"], "btn": ["Fox One"], "bigtennetwork": ["Fox One"],
+        "foxdeportes": ["Fox One"],
+        "tnt": ["HBO Max"], "tbs": ["HBO Max"], "trutv": ["HBO Max"],
+        "nfln": ["NFL+"], "nflnetwork": ["NFL+"],
+        "nbatv": ["NBA League Pass"],
+        "mlbn": ["MLB.TV"], "mlbnetwork": ["MLB.TV"]
     ]
 
     /// Lowercased with every non-alphanumeric character removed.
@@ -68,12 +61,24 @@ nonisolated enum TVSportsSimulcast {
             if seen.insert(key).inserted {
                 result.append(name)
             }
-            guard !streamingDestinations.contains(key),
-                  let companion = companions[key],
-                  seen.insert(normalize(companion)).inserted else { continue }
-            result.append(companion)
+            for companion in companions[key] ?? [] where seen.insert(normalize(companion)).inserted {
+                result.append(companion)
+            }
         }
         return result
+    }
+
+    /// `enrich` stable-sorted so the services the user subscribes to come
+    /// first. This is what the watch sheet's CTA already does; using it on the
+    /// cards means a game on ABC reads "ESPN" to an ESPN or Hulu subscriber.
+    @MainActor
+    static func ranked(_ broadcasts: [String]) -> [String] {
+        enrich(broadcasts).enumerated().sorted { a, b in
+            let aSub = AuthViewModel.shared.subscribesToService(named: a.element)
+            let bSub = AuthViewModel.shared.subscribesToService(named: b.element)
+            if aSub != bSub { return aSub }
+            return a.offset < b.offset
+        }.map { $0.element }
     }
 }
 
