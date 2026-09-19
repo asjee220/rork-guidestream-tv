@@ -62,6 +62,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.rork.guidestreamtvandroid.data.DeviceLocale
 import com.rork.guidestreamtvandroid.data.ShareLinks
 import com.rork.guidestreamtvandroid.data.openWatchLink
+import com.rork.guidestreamtvandroid.data.serviceSearchUrl
 import com.rork.guidestreamtvandroid.data.models.DeepDiveCreator
 import com.rork.guidestreamtvandroid.data.models.Platform
 import com.rork.guidestreamtvandroid.ui.components.rememberLockOn
@@ -502,10 +503,12 @@ fun ShowDetailScreen(
                                     // Prefer the native Android app link, then the
                                     // Android TV link, then the web URL — episode-level
                                     // source first for TV — with Watchmode placeholder
-                                    // strings filtered out. Falls back to TMDB's watch
-                                    // page when nothing is usable.
+                                    // strings filtered out. A source with no links goes
+                                    // to the service's own search page; TMDB's watch
+                                    // page only when the service cannot be named.
                                     val epSrc = if (isTV) episodeSource?.takeIf { it.sourceId == selectedSource?.sourceId } else null
-                                    val fallback = "https://www.themoviedb.org/${if (isTV) "tv" else "movie"}/$tmdbId/watch"
+                                    val fallback = serviceSearchUrl(selectedSource?.name, detail?.name ?: titleName)
+                                        ?: "https://www.themoviedb.org/${if (isTV) "tv" else "movie"}/$tmdbId/watch"
                                     val target = listOf(
                                         epSrc?.androidUrl, epSrc?.androidTvUrl, epSrc?.webUrl,
                                         selectedSource?.androidUrl, selectedSource?.androidTvUrl, selectedSource?.webUrl,

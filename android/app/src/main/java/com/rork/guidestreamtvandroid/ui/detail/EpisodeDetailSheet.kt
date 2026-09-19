@@ -69,6 +69,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.rork.guidestreamtvandroid.data.ShareLinks
 import com.rork.guidestreamtvandroid.data.openWatchLink
+import com.rork.guidestreamtvandroid.data.serviceSearchUrl
 import com.rork.guidestreamtvandroid.data.models.Platform
 import com.rork.guidestreamtvandroid.data.models.StreamingCatalog
 import com.rork.guidestreamtvandroid.data.models.TitleId
@@ -704,6 +705,7 @@ fun EpisodeDetailSheet(
                                         episodeSource = if (isTV) episodeSource else null,
                                         tmdbId = tmdbId,
                                         isTV = isTV,
+                                        title = displayTitle,
                                     )
                                     WatchIntentLogger.get().log(
                                         WatchIntentLogger.IntentEventType.DEEPLINK_FIRED,
@@ -1058,7 +1060,8 @@ private fun shareTitle(
 /**
  * Opens the best available link for the active source: the episode-level
  * Android app link first, then the source's own Android / Android TV / web
- * links, falling back to TMDB's watch page. Placeholder strings returned by
+ * links, then the service's own search page, and only then TMDB's watch
+ * page. Placeholder strings returned by
  * Watchmode's free tier are filtered out before we try to launch them.
  */
 private fun openWatchTarget(
@@ -1067,9 +1070,14 @@ private fun openWatchTarget(
     episodeSource: WatchmodeSrc?,
     tmdbId: Int?,
     isTV: Boolean,
+    title: String? = null,
 ) {
     val epSrc = episodeSource?.takeIf { it.sourceId == selectedSource?.sourceId }
-    val fallback = "https://www.themoviedb.org/${if (isTV) "tv" else "movie"}/${tmdbId ?: 0}/watch"
+    // A source with no links (TMDB-synthesised, or Watchmode over quota) goes
+    // to the service's own search page, never to a third-party site. TMDB's
+    // watch page is the last resort only for a service we cannot name.
+    val fallback = serviceSearchUrl(selectedSource?.name, title)
+        ?: "https://www.themoviedb.org/${if (isTV) "tv" else "movie"}/${tmdbId ?: 0}/watch"
     val target = listOf(
         epSrc?.androidUrl, epSrc?.androidTvUrl, epSrc?.webUrl,
         selectedSource?.androidUrl, selectedSource?.androidTvUrl, selectedSource?.webUrl,

@@ -9,6 +9,37 @@ import com.rork.guidestreamtvandroid.data.repository.RakutenManager
 import com.rork.guidestreamtvandroid.ui.components.openInAppBrowser
 
 /**
+ * The service's own search page for [title], used when the resolved source
+ * carries no link at all. That is the normal shape of a TMDB-synthesised
+ * source (TMDB publishes provider names, never per-provider URLs), and it is
+ * every source while Watchmode is over quota. Mirrors the web targets in iOS
+ * `StreamingDeepLinker`, so both platforms land on the same page. Android
+ * App Links then route a claimed domain (netflix.com, hulu.com, ...) into the
+ * installed app on their own. Null for a service with no known search page —
+ * the caller then decides what the last resort is.
+ */
+fun serviceSearchUrl(serviceName: String?, title: String?): String? {
+    val key = serviceName?.lowercase()?.takeIf { it.isNotBlank() } ?: return null
+    val q = Uri.encode(title?.trim().orEmpty())
+    return when {
+        key.contains("netflix") -> "https://www.netflix.com/search?q=$q"
+        key.contains("hbo") || key.contains("max") -> "https://play.max.com/search?q=$q"
+        key.contains("hulu") -> "https://www.hulu.com/search?q=$q"
+        key.contains("disney") -> "https://www.disneyplus.com/search?q=$q"
+        key.contains("apple") -> "https://tv.apple.com/search?term=$q"
+        key.contains("prime") || key.contains("amazon") -> "https://www.primevideo.com/search/ref=atv_nb_sr?phrase=$q"
+        key.contains("paramount") -> "https://www.paramountplus.com/search/?query=$q"
+        key.contains("peacock") -> "https://www.peacocktv.com/search?q=$q"
+        key.contains("youtube") -> "https://www.youtube.com/results?search_query=$q"
+        key.contains("showtime") -> "https://www.showtime.com/"
+        key.contains("starz") -> "https://www.starz.com/"
+        key.contains("crunchyroll") -> "https://www.crunchyroll.com/search?q=$q"
+        key.contains("patreon") -> "https://www.patreon.com/search?q=$q"
+        else -> null
+    }
+}
+
+/**
  * Opens a Watch target: the streaming app when it is installed, otherwise the
  * title's page on the service's own site, inside GuideStream.
  *
