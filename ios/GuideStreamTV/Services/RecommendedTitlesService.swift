@@ -22,7 +22,7 @@
 import Foundation
 
 /// One recommended title as returned by `recommend_titles`.
-nonisolated struct RecommendedTitle: Decodable, Sendable, Identifiable {
+nonisolated struct RecommendedTitle: Codable, Sendable, Identifiable {
     let tmdbId: Int
     let mediaType: String
     let title: String

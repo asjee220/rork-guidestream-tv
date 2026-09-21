@@ -1764,6 +1764,7 @@ struct HomeView: View {
         topRated = snap.topRated
         genreShows = snap.genreShows
         recommendedShows = snap.recommendedShows
+        recommendedTitles = snap.recommendedTitles
         newReleases = snap.newReleases
         var providers: [Int: Platform] = [:]
         for (id, name) in snap.providerNames {
@@ -1792,6 +1793,7 @@ struct HomeView: View {
             topRated: topRated,
             genreShows: genreShows,
             recommendedShows: recommendedShows,
+            recommendedTitles: recommendedTitles,
             newReleases: newReleases,
             providerNames: names
         ))
@@ -1835,6 +1837,9 @@ struct HomeView: View {
             subscribedServices: services
         ) else { return }
         recommendedTitles = items
+        // First rail under the hero — the snapshot must carry it, so re-save
+        // whenever it lands after the provider pass has already written one.
+        persistHomeSnapshot()
     }
 
     /// Fetches recommended creators/podcasts based on the categories of creators

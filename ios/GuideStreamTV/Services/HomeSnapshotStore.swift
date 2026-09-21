@@ -5,7 +5,7 @@ import Foundation
 /// TMDB-backed rails and their resolved provider names are stored — live
 /// sports, creator uploads and anything time-sensitive are refetched.
 nonisolated struct HomeSnapshot: Codable, Sendable {
-    static let currentVersion = 1
+    static let currentVersion = 2
 
     var version: Int = HomeSnapshot.currentVersion
     var savedAt: Date
@@ -16,6 +16,9 @@ nonisolated struct HomeSnapshot: Codable, Sendable {
     var topRated: [TMDBResult]
     var genreShows: [TMDBResult]
     var recommendedShows: [TMDBResult]
+    /// Recommended for You — the first rail under the hero. Without it the
+    /// snapshot paints Today's Pick first and the page reflows when it lands.
+    var recommendedTitles: [RecommendedTitle]
     var newReleases: [StreamingRelease]
     /// tmdbId → provider display name, rebuilt into `Platform` on load.
     var providerNames: [Int: String]

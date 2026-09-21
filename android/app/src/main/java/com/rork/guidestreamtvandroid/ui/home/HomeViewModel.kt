@@ -369,6 +369,7 @@ class HomeViewModel : ViewModel() {
             _newReleases.value = snap.releaseRows.map { it.toTMDBResult() }
             _todaysPick.value = pickToday(snap.releaseRows)
         }
+        if (snap.recommendedTitles.isNotEmpty()) _recommendedTitles.value = snap.recommendedTitles
         val providers = HashMap<Int, Platform>()
         for ((id, name) in snap.providerNames) {
             Platform.from(name)?.let { providers[id] = it }
@@ -395,6 +396,7 @@ class HomeViewModel : ViewModel() {
                 genreShows = _genreShows.value,
                 bingeReady = _bingeReady.value,
                 releaseRows = releaseRows,
+                recommendedTitles = _recommendedTitles.value,
                 providerNames = _providerByTmdb.value.mapValues { it.value.name },
             )
         )
@@ -759,6 +761,9 @@ class HomeViewModel : ViewModel() {
                 deviceId = DeviceIdentity.get().deviceId,
                 subscribedServices = services,
             )
+            // The rail sits first under the hero, so the snapshot must carry
+            // it — re-save once it lands (no-op while still showing a snapshot).
+            persistHomeSnapshot()
         }
     }
 

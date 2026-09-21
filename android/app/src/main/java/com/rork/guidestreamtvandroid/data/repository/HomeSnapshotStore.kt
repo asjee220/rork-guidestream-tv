@@ -2,6 +2,7 @@ package com.rork.guidestreamtvandroid.data.repository
 
 import android.content.Context
 import com.rork.guidestreamtvandroid.data.models.TMDBResult
+import com.rork.guidestreamtvandroid.data.remote.RecommendedTitle
 import com.rork.guidestreamtvandroid.data.remote.StreamingReleasesService
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -24,10 +25,13 @@ data class HomeSnapshot(
     val genreShows: List<TMDBResult>,
     val bingeReady: List<TMDBResult>,
     val releaseRows: List<StreamingReleasesService.StreamingReleaseRow>,
+    /** Recommended for You — the first rail under the hero; without it the
+     * snapshot paints Today's Pick first and the page reflows when it lands. */
+    val recommendedTitles: List<RecommendedTitle> = emptyList(),
     /** tmdbId → provider display name, rebuilt into Platform on load. */
     val providerNames: Map<Int, String>,
 ) {
-    companion object { const val CURRENT_VERSION = 1 }
+    companion object { const val CURRENT_VERSION = 2 }
 }
 
 object HomeSnapshotStore {
