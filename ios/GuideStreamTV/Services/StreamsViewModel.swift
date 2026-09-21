@@ -73,13 +73,17 @@ final class StreamsViewModel {
     // MARK: - Read
 
     func refreshAll() async {
+        // user_streams first — the three fetches below key off its title ids —
+        // then those three concurrently instead of one after another.
+        // fetchWatchlistSeen hydrates the seen baseline on the home path too,
+        // so the Home rail badge matches the sheet's badge after a cold launch.
         await fetchUserStreams()
-        await fetchNewEpisodes()
-        await fetchLatestContentDates()
-        // Hydrate the seen baseline on the home path too, not just when the
-        // watch-list sheet opens, so the Home rail badge matches the sheet's
-        // badge after a cold launch. Mirrors Android's refreshAll().
-        await fetchWatchlistSeen()
+        await withTaskGroup(of: Void.self) { group in
+            group.addTask { await self.fetchNewEpisodes() }
+            group.addTask { await self.fetchLatestContentDates() }
+            group.addTask { await self.fetchWatchlistSeen() }
+            for await _ in group { }
+        }
         // `new_episodes` is populated server-side (youtube_websub_callback,
         // rss_poll_podcasts and the TMDB refresh jobs). The client only reads it.
         // Keep the widget in sync with the latest counts.

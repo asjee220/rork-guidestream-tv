@@ -26,7 +26,7 @@ nonisolated enum TMDBImage {
 
 // MARK: - Models
 
-nonisolated struct TMDBResult: Identifiable, Hashable, Sendable, Decodable {
+nonisolated struct TMDBResult: Identifiable, Hashable, Sendable, Codable {
     let id: Int
     let mediaType: String?       // "tv" or "movie" (multi-search); nil for trending tv
     let name: String?

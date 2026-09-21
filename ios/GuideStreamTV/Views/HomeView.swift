@@ -1509,12 +1509,32 @@ struct HomeView: View {
             // Fire-and-forget: clear badge without blocking the home load.
             Task { await clearBadge() }
 
-            // Stage 1: Refresh streams and load trending content concurrently.
+            // Stage 0: paint the last launch's rails immediately (stale-while-
+            // revalidate). The network load below then replaces them in place.
+            applyHomeSnapshotIfAvailable()
+
+            // Stage 1: everything the hero needs, in two concurrent lanes.
+            //   Lane A — user_streams, then the follow-scoped fetches that key
+            //            off it (creator uploads, live status, recommendations).
+            //   Lane B — the TMDB rails plus providers for the hero pool only.
+            // Previously lane A's second half ran as a separate stage *after*
+            // lane B finished, which put one more full round trip in front of
+            // the first paint for no reason.
             await withTaskGroup(of: Void.self) { group in
-                group.addTask { await streams.refreshAll() }
+                group.addTask {
+                    await streams.refreshAll()
+                    await withTaskGroup(of: Void.self) { inner in
+                        inner.addTask { await subscribeToLiveStatus() }
+                        inner.addTask { await loadCreatorUploads() }
+                        inner.addTask { await loadRecommendedCreators() }
+                        inner.addTask { await loadRecommendedTitles() }
+                        for await _ in inner { }
+                    }
+                }
                 group.addTask { await loadTrendingIfNeeded(deferNonCritical: true) }
                 for await _ in group { }
             }
+            if Task.isCancelled { return }
 
             // Watchlist-derived sections (Top Picks genre, TVDB upcoming) must
             // run after streams.refreshAll() completes so topGenreFromWatchList()
@@ -1524,23 +1544,16 @@ struct HomeView: View {
             // Around the World rail — fire-and-forget so it never blocks Home.
             Task { await loadAroundTheWorldRail() }
 
-            // Stage 2: Live status, creator uploads, and recommended creators concurrently.
-            await withTaskGroup(of: Void.self) { group in
-                group.addTask { await subscribeToLiveStatus() }
-                group.addTask { await loadCreatorUploads() }
-                group.addTask { await loadRecommendedCreators() }
-                group.addTask { await loadRecommendedTitles() }
-                for await _ in group { }
-            }
-
             buildLiveCreators()
             rebuildHeroRail()
             // Show the hero carousel and all sections that have data RIGHT NOW.
             // Non-hero sections (Coming Soon, platform rows, expiring) populate
             // asynchronously as their deferred loads complete.
             await MainActor.run {
-                withAnimation(.easeOut(duration: 0.35).delay(0.1)) {
-                    homeContentReady = true
+                if !homeContentReady {
+                    withAnimation(.easeOut(duration: 0.35).delay(0.1)) {
+                        homeContentReady = true
+                    }
                 }
                 // Fire the home coach mark tour now that rails have laid out
                 if coachMark.shouldStartHomeTour(
@@ -1553,8 +1566,11 @@ struct HomeView: View {
                 }
             }
 
-            // Fire-and-forget: hydrate the remaining providers (beyond the first 40).
-            Task { await hydrateProviders() }
+            // Fire-and-forget: hydrate the remaining providers (beyond the hero pool).
+            Task {
+                await hydrateProviders()
+                persistHomeSnapshot()
+            }
 
             // Continue loading non-critical sections in the background.
             await loadComingToStreaming()
@@ -1722,10 +1738,63 @@ struct HomeView: View {
 
         // Fire-and-forget, as on first load — the rails are already correct
         // without it and it only fills in provider logos.
-        Task { await hydrateProviders() }
+        Task {
+            await hydrateProviders()
+            persistHomeSnapshot()
+        }
 
         await loadComingToStreaming()
         await hydrateSourceImages()
+    }
+
+    // MARK: - Home snapshot (instant first paint)
+
+    /// Paints the previous launch's TMDB rails and provider badges before any
+    /// request is made, so Home is on screen in one frame instead of after the
+    /// full cold load. Live sports, creator uploads and everything else
+    /// time-sensitive still wait for the network. No-op when there is no
+    /// usable snapshot, or when Home is already showing content.
+    private func applyHomeSnapshotIfAvailable() {
+        guard !homeContentReady, trending.isEmpty else { return }
+        guard let snap = HomeSnapshotStore.load() else { return }
+        trending = snap.trending
+        onAir = snap.onAir
+        bingeFallback = snap.bingeFallback
+        newToday = snap.newToday
+        topRated = snap.topRated
+        genreShows = snap.genreShows
+        recommendedShows = snap.recommendedShows
+        newReleases = snap.newReleases
+        var providers: [Int: Platform] = [:]
+        for (id, name) in snap.providerNames {
+            if let platform = Platform.from(providerName: name) { providers[id] = platform }
+        }
+        providerByTmdb = providers
+        rebuildHeroRail()
+        var t = Transaction()
+        t.disablesAnimations = true
+        withTransaction(t) { homeContentReady = true }
+    }
+
+    /// Writes the current TMDB rails and provider names to disk for the next
+    /// launch. Called once the background provider hydration has finished so
+    /// the snapshot carries as many badges as possible.
+    private func persistHomeSnapshot() {
+        guard !trending.isEmpty else { return }
+        var names: [Int: String] = [:]
+        for (id, platform) in providerByTmdb { names[id] = platform.name }
+        HomeSnapshotStore.save(HomeSnapshot(
+            savedAt: Date(),
+            trending: trending,
+            onAir: onAir,
+            bingeFallback: bingeFallback,
+            newToday: newToday,
+            topRated: topRated,
+            genreShows: genreShows,
+            recommendedShows: recommendedShows,
+            newReleases: newReleases,
+            providerNames: names
+        ))
     }
 
     private func loadCreatorUploads() async {
@@ -1930,7 +1999,11 @@ struct HomeView: View {
         if let tr { topRated = tr }
         if let genre { genreShows = genre }
         sportsGames = s
-        await hydrateProviders(maxItems: 60)
+        // Only the hero pool gates first paint: `rebuildHeroRail` draws from
+        // trending + onAir + bingeFallback, capped at 15 media items, and
+        // `hydrateProviders` walks that same prefix. 24 leaves headroom for
+        // titles with no provider; the rest hydrates behind the reveal.
+        await hydrateProviders(maxItems: 24)
 
         // Refresh the watched set so Top Picks exclusion is fresh on Home.
         Task { await SocialViewModel.shared.loadAllWatched() }

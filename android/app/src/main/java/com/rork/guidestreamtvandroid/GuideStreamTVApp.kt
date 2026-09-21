@@ -16,6 +16,7 @@ import com.rork.guidestreamtvandroid.data.repository.ReleaseReminderService
 import com.rork.guidestreamtvandroid.data.repository.SocialViewModel
 import com.rork.guidestreamtvandroid.data.repository.SportsLiveScoreController
 import com.rork.guidestreamtvandroid.data.repository.StreamsViewModel
+import com.rork.guidestreamtvandroid.data.repository.HomeSnapshotStore
 import com.rork.guidestreamtvandroid.data.repository.TeamFavoritesService
 import com.rork.guidestreamtvandroid.data.repository.ReviewPromptManager
 import com.rork.guidestreamtvandroid.data.repository.WatchIntentLogger
@@ -43,6 +44,7 @@ class GuideStreamTVApp : Application() {
         safe("WatchIntentLogger") { WatchIntentLogger.init(this) }
         safe("DeviceSessionService") { DeviceSessionService.init(this) }
         safe("StreamsViewModel") { StreamsViewModel.init(this) }
+        safe("HomeSnapshotStore") { HomeSnapshotStore.init(this) }
         safe("SocialViewModel") { SocialViewModel.init(this) }
         safe("ReleaseReminderService") { ReleaseReminderService.init(this) }
         safe("TeamFavoritesService") { TeamFavoritesService.init(this) }

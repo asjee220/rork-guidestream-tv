@@ -127,12 +127,20 @@ class StreamsViewModel private constructor(context: Context) {
             try { fetchUserStreamsNow() }
             catch (c: CancellationException) { throw c }
             catch (_: Exception) {}
-            try { fetchLatestContentDates() }
-            catch (c: CancellationException) { throw c }
-            catch (_: Exception) {}
-            try { fetchWatchlistSeen() }
-            catch (c: CancellationException) { throw c }
-            catch (_: Exception) {}
+            // Both key off the saved title ids, so they wait for user_streams —
+            // but not for each other.
+            coroutineScope {
+                launch(Dispatchers.IO) {
+                    try { fetchLatestContentDates() }
+                    catch (c: CancellationException) { throw c }
+                    catch (_: Exception) {}
+                }
+                launch(Dispatchers.IO) {
+                    try { fetchWatchlistSeen() }
+                    catch (c: CancellationException) { throw c }
+                    catch (_: Exception) {}
+                }
+            }
             episodes.join()
         }
     }
@@ -157,12 +165,18 @@ class StreamsViewModel private constructor(context: Context) {
                 try { fetchUserStreamsNow() }
                 catch (c: CancellationException) { throw c }
                 catch (_: Exception) {}
-                try { fetchLatestContentDates() }
-                catch (c: CancellationException) { throw c }
-                catch (_: Exception) {}
-                try { fetchWatchlistSeen() }
-                catch (c: CancellationException) { throw c }
-                catch (_: Exception) {}
+                coroutineScope {
+                    launch(Dispatchers.IO) {
+                        try { fetchLatestContentDates() }
+                        catch (c: CancellationException) { throw c }
+                        catch (_: Exception) {}
+                    }
+                    launch(Dispatchers.IO) {
+                        try { fetchWatchlistSeen() }
+                        catch (c: CancellationException) { throw c }
+                        catch (_: Exception) {}
+                    }
+                }
             }
             episodes.join()
             streams.join()

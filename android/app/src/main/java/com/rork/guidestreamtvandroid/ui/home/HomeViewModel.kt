@@ -24,6 +24,8 @@ import com.rork.guidestreamtvandroid.data.remote.StreamingUpcomingService
 import com.rork.guidestreamtvandroid.data.remote.TMDBService
 import com.rork.guidestreamtvandroid.data.remote.toTMDBResult
 import com.rork.guidestreamtvandroid.data.repository.AuthViewModel
+import com.rork.guidestreamtvandroid.data.repository.HomeSnapshot
+import com.rork.guidestreamtvandroid.data.repository.HomeSnapshotStore
 import com.rork.guidestreamtvandroid.data.repository.StreamsViewModel
 import com.rork.guidestreamtvandroid.ui.sports.SportsViewModel
 import com.rork.guidestreamtvandroid.widget.WidgetDataService
@@ -231,6 +233,10 @@ class HomeViewModel : ViewModel() {
     fun loadAll() {
         if (_homeContentReady.value) return
         viewModelScope.launch(Dispatchers.IO) {
+            // Stage 0: paint the last launch's rails immediately (stale-while-
+            // revalidate). The network load below then replaces them in place.
+            applyHomeSnapshotIfAvailable()
+
             val jobs = listOf(
                 launch {
                     // Fetch all four trending pages concurrently, concatenate
@@ -291,6 +297,9 @@ class HomeViewModel : ViewModel() {
             resolveProviders(_trending.value.take(15))
 
             _homeContentReady.value = true
+            // Fresh rails replaced any snapshot; drop the flag so nothing
+            // downstream mistakes them for cached data.
+            showingSnapshot = false
 
             // Deferred, non-blocking work. Each runs in its own sibling
             // coroutine (viewModelScope is a SupervisorJob) with its own
@@ -310,6 +319,7 @@ class HomeViewModel : ViewModel() {
             launchDeferred {
                 _trending.first { it.isNotEmpty() }
                 resolveProviders(_trending.value.take(40))
+                persistHomeSnapshot()
             }
             launchDeferred { StreamsViewModel.get().refreshAll() }
 
@@ -332,6 +342,77 @@ class HomeViewModel : ViewModel() {
             loadRecommendedCreators()
             loadRecommendedTitles()
         }
+    }
+
+    // MARK: Home snapshot (instant first paint)
+
+    /** True while the rails on screen came from disk rather than the network. */
+    @Volatile private var showingSnapshot = false
+
+    /**
+     * Paints the previous launch's TMDB rails, Today's Pick and provider
+     * badges before any request is made, so Home is on screen in one frame
+     * instead of after the cold load. Live sports, creator uploads and
+     * everything else time-sensitive still wait for the network. No-op when
+     * there is no usable snapshot or when rails are already populated.
+     */
+    private fun applyHomeSnapshotIfAvailable() {
+        if (_homeContentReady.value || _trending.value.isNotEmpty()) return
+        val snap = HomeSnapshotStore.load() ?: return
+        _trending.value = snap.trending
+        _onAir.value = snap.onAir
+        _topRated.value = snap.topRated
+        _genreShows.value = snap.genreShows
+        _bingeReady.value = snap.bingeReady
+        if (snap.releaseRows.isNotEmpty()) {
+            releaseRows = snap.releaseRows
+            _newReleases.value = snap.releaseRows.map { it.toTMDBResult() }
+            _todaysPick.value = pickToday(snap.releaseRows)
+        }
+        val providers = HashMap<Int, Platform>()
+        for ((id, name) in snap.providerNames) {
+            Platform.from(name)?.let { providers[id] = it }
+        }
+        _providerByTmdb.value = providers
+        showingSnapshot = true
+        _homeContentReady.value = true
+    }
+
+    /**
+     * Writes the current TMDB rails and provider names to disk for the next
+     * launch. Called once the 40-item provider pass has finished so the
+     * snapshot carries as many badges as possible. Never persists rails that
+     * are themselves still the snapshot.
+     */
+    private fun persistHomeSnapshot() {
+        if (showingSnapshot || _trending.value.isEmpty()) return
+        HomeSnapshotStore.save(
+            HomeSnapshot(
+                savedAtMs = System.currentTimeMillis(),
+                trending = _trending.value,
+                onAir = _onAir.value,
+                topRated = _topRated.value,
+                genreShows = _genreShows.value,
+                bingeReady = _bingeReady.value,
+                releaseRows = releaseRows,
+                providerNames = _providerByTmdb.value.mapValues { it.value.name },
+            )
+        )
+    }
+
+    /** Today's Pick from popularity-ordered release rows: first 10, day-of-year
+     * rotation, skipping rows with neither posterUrl nor posterPath. */
+    private fun pickToday(rows: List<StreamingReleasesService.StreamingReleaseRow>): StreamingReleasesService.StreamingReleaseRow? {
+        val pool = rows.take(10)
+        if (pool.isEmpty()) return null
+        val count = pool.size
+        var idx = LocalDate.now().dayOfYear % count
+        for (i in 0 until count) {
+            val candidate = pool[idx]
+            if (!candidate.posterUrl.isNullOrEmpty() || !candidate.posterPath.isNullOrEmpty()) return candidate
+            idx = (idx + 1) % count
+        }
+        return pool[LocalDate.now().dayOfYear % count]
     }
 
     /**
@@ -1046,6 +1127,8 @@ class HomeViewModel : ViewModel() {
             launchDeferred { loadHeroCreatorItems() }
             launchDeferred { SportsViewModel.get().refreshGamesNow() }
             resolvePreferredGenres()
+            showingSnapshot = false
+            launchDeferred { persistHomeSnapshot() }
 
             // Refresh the watchlist / watched / badges / new-episode counts.
             try { StreamsViewModel.get().refreshAllNow() }

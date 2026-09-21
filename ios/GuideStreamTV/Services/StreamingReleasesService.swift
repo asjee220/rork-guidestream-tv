@@ -40,7 +40,7 @@ final class StreamingReleasesService {
 
 // MARK: - Decodable row for server reads
 
-nonisolated struct StreamingRelease: Decodable, Sendable {
+nonisolated struct StreamingRelease: Codable, Sendable {
     let tmdbId: Int
     let tmdbType: String
     let title: String
