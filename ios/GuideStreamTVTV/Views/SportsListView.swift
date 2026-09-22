@@ -240,32 +240,33 @@ struct SportsListView: View {
     }
 
     private func upcomingRow(_ game: SportsGame) -> some View {
-        return VStack(spacing: 8) {
-            HStack(spacing: 8) {
-                TeamLogoBadge(team: game.away, size: 40, cornerRadius: 8, inset: 5, abbreviationFontSize: 7)
+        return VStack(spacing: 20) {
+            HStack(spacing: 20) {
+                TeamLogoBadge(team: game.away, size: 120, cornerRadius: 24, inset: 14, abbreviationFontSize: 26)
                 Text("vs")
-                    .scaledFont(size: 11, weight: .bold)
-                    .foregroundStyle(Color.white.opacity(0.3))
-                TeamLogoBadge(team: game.home, size: 40, cornerRadius: 8, inset: 5, abbreviationFontSize: 7)
-                VStack(alignment: .leading, spacing: 2) {
+                    .scaledFont(size: 26, weight: .bold)
+                    .foregroundStyle(Color.white.opacity(0.4))
+                TeamLogoBadge(team: game.home, size: 120, cornerRadius: 24, inset: 14, abbreviationFontSize: 26)
+                VStack(alignment: .leading, spacing: 6) {
                     Text("\(game.away.shortName) vs \(game.home.shortName)")
-                        .scaledFont(size: 13, weight: .bold)
+                        .scaledFont(size: 32, weight: .bold)
                         .foregroundStyle(.white)
                         .lineLimit(1)
                     Text("\(game.sport) · \(game.scheduleLabel)")
-                        .scaledFont(size: 10)
-                        .foregroundStyle(Color.white.opacity(0.4))
+                        .scaledFont(size: 24)
+                        .foregroundStyle(Color.white.opacity(0.55))
                         .lineLimit(1)
                 }
+                .padding(.leading, 8)
                 Spacer()
                 Image(systemName: "chevron.right")
-                    .scaledFont(size: 12, weight: .bold)
-                    .foregroundStyle(Color.white.opacity(0.3))
+                    .scaledFont(size: 26, weight: .bold)
+                    .foregroundStyle(Color.white.opacity(0.4))
             }
 
             broadcastsRow(TVSportsSimulcast.ranked(game.broadcasts))
         }
-        .padding(12)
+        .padding(40)
         .background(RoundedRectangle(cornerRadius: 16).fill(Color(hex: "161B27")))
         .overlay(
             RoundedRectangle(cornerRadius: 16).stroke(Color.white.opacity(0.07), lineWidth: 1)
@@ -273,47 +274,47 @@ struct SportsListView: View {
     }
 
     private func finalRow(_ game: SportsGame) -> some View {
-        HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 6) {
-                    TeamLogoBadge(team: game.away, size: 18, cornerRadius: 5, inset: 3, abbreviationFontSize: 6)
+        HStack(spacing: 32) {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(spacing: 16) {
+                    TeamLogoBadge(team: game.away, size: 72, cornerRadius: 16, inset: 9, abbreviationFontSize: 18)
                     Text(game.away.abbreviation)
-                        .scaledFont(size: 11, weight: .bold)
-                        .foregroundStyle(game.away.isWinner ? .white : Color.white.opacity(0.5))
+                        .scaledFont(size: 28, weight: .bold)
+                        .foregroundStyle(game.away.isWinner ? .white : Color.white.opacity(0.55))
                     Spacer()
                     Text(game.away.score)
-                        .scaledFont(size: 14, weight: .black)
-                        .foregroundStyle(game.away.isWinner ? .white : Color.white.opacity(0.5))
+                        .scaledFont(size: 40, weight: .black)
+                        .foregroundStyle(game.away.isWinner ? .white : Color.white.opacity(0.55))
                 }
-                HStack(spacing: 6) {
-                    TeamLogoBadge(team: game.home, size: 18, cornerRadius: 5, inset: 3, abbreviationFontSize: 6)
+                HStack(spacing: 16) {
+                    TeamLogoBadge(team: game.home, size: 72, cornerRadius: 16, inset: 9, abbreviationFontSize: 18)
                     Text(game.home.abbreviation)
-                        .scaledFont(size: 11, weight: .bold)
-                        .foregroundStyle(game.home.isWinner ? .white : Color.white.opacity(0.5))
+                        .scaledFont(size: 28, weight: .bold)
+                        .foregroundStyle(game.home.isWinner ? .white : Color.white.opacity(0.55))
                     Spacer()
                     Text(game.home.score)
-                        .scaledFont(size: 14, weight: .black)
-                        .foregroundStyle(game.home.isWinner ? .white : Color.white.opacity(0.5))
+                        .scaledFont(size: 40, weight: .black)
+                        .foregroundStyle(game.home.isWinner ? .white : Color.white.opacity(0.55))
                 }
             }
-            .frame(width: 110)
+            .frame(width: 320)
 
-            Rectangle().fill(Color.white.opacity(0.06)).frame(width: 1, height: 36)
+            Rectangle().fill(Color.white.opacity(0.08)).frame(width: 2, height: 120)
 
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: 8) {
                 Text(game.scheduleLabel)
-                    .scaledFont(size: 10, weight: .bold)
-                    .foregroundStyle(Color.white.opacity(0.55))
+                    .scaledFont(size: 26, weight: .bold)
+                    .foregroundStyle(Color.white.opacity(0.7))
                 Text(game.sport)
-                    .scaledFont(size: 9, weight: .semibold)
-                    .foregroundStyle(Color.white.opacity(0.35))
+                    .scaledFont(size: 22, weight: .semibold)
+                    .foregroundStyle(Color.white.opacity(0.5))
             }
             Spacer()
             Image(systemName: "chevron.right")
-                .scaledFont(size: 12, weight: .bold)
-                .foregroundStyle(Color.white.opacity(0.3))
+                .scaledFont(size: 26, weight: .bold)
+                .foregroundStyle(Color.white.opacity(0.4))
         }
-        .padding(12)
+        .padding(40)
         .background(RoundedRectangle(cornerRadius: 14).fill(Color(hex: "12161F")))
         .overlay(
             RoundedRectangle(cornerRadius: 14).stroke(Color.white.opacity(0.05), lineWidth: 1)
@@ -363,10 +364,10 @@ struct SportsListView: View {
     private var emptyState: some View {
         VStack(spacing: 8) {
             Image(systemName: "sportscourt")
-                .scaledFont(size: 28)
+                .scaledFont(size: 56)
                 .foregroundStyle(Color.white.opacity(0.3))
             Text("No \(section.title.lowercased()) games\(sportFilter == "All" ? "" : " for \(sportFilter)").")
-                .scaledFont(size: 13, weight: .medium)
+                .scaledFont(size: 28, weight: .medium)
                 .foregroundStyle(Color.white.opacity(0.5))
         }
         .frame(maxWidth: .infinity)
