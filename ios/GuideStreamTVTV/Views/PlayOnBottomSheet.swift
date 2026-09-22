@@ -479,11 +479,11 @@ struct PlayOnBottomSheet: View {
                 titleId: WatchIntentLogger.titleSlug(showTitle),
                 metadata: ["device_id": "watch-on-platform", "platform": whereToWatchLabel]
             )
-            StreamingDeepLinker.open(
+            // StreamingDeepLinker is a no-op stub on tvOS.
+            TVOSDeepLinker.open(
                 platform: whereToWatchLabel,
                 title: showTitle,
-                tmdbId: tmdbId,
-                isTV: resolvedIsTV
+                tvosDeepLink: resolvedSource?.tvosUrl.flatMap(URL.init(string:))
             )
             onDeviceSelected("watch-on-platform")
         } label: {

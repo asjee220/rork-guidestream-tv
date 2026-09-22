@@ -347,13 +347,8 @@ struct ShowDetailScreen: View {
     /// search-URL fallback used by the rest of the app, rather than handing
     /// Watchmode's raw `ios_url` placeholder to `UIApplication.shared.open`.
     private func openDeeplink(serviceName: String) {
-        StreamingDeepLinker.open(
-            platform: serviceName,
-            title: displayTitle,
-            tmdbId: resolvedTmdbId,
-            isTV: isTV,
-            titleSlug: titleId
-        )
+        // StreamingDeepLinker is a no-op stub on tvOS.
+        TVOSDeepLinker.open(platform: serviceName, title: displayTitle)
     }
 
     private func openPlayOn() {

@@ -530,11 +530,12 @@ struct EpisodeDetailSheet: View {
 
     private var watchButton: some View {
         Button {
-            StreamingDeepLinker.open(
+            // StreamingDeepLinker is a no-op stub on tvOS; this opens the app,
+            // using Watchmode's tvOS link for the title when it has one.
+            TVOSDeepLinker.open(
                 platform: whereToWatchLabel,
                 title: title,
-                tmdbId: tmdbId,
-                isTV: isTV
+                tvosDeepLink: resolvedSource?.tvosUrl.flatMap(URL.init(string:))
             )
             dismiss()
         } label: {
