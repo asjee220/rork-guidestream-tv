@@ -16,6 +16,7 @@ import UIKit
 /// slab over whatever it wraps even under `.focusEffectDisabled()`.
 private enum SportsSheetFocus: Hashable {
     case remind, like, favoriteAway, favoriteHome, watch, watchlist, close
+    case chip(String)
 }
 
 struct SportsWatchSheet: View {
@@ -29,10 +30,22 @@ struct SportsWatchSheet: View {
     @State private var social = SocialViewModel.shared
     @State private var isToggleSaving: Bool = false
     @State private var isTogglingLike: Bool = false
+    /// The Where-to-Watch chip the viewer picked. Nil until they pick one, so
+    /// the CTA defaults to the first subscribed service (same as iPhone).
+    @State private var selectedBroadcast: String?
 
     private var awayColor: Color { game.away.primaryHex.map { Color(hex: $0) } ?? Color(white: 0.18) }
     private var homeColor: Color { game.home.primaryHex.map { Color(hex: $0) } ?? Color(white: 0.18) }
-    private var primaryBroadcast: String? { game.broadcasts.first }
+    /// Carrier plus streaming companions (NBC → Peacock), subscribed first.
+    private var sortedBroadcasts: [String] { TVSportsSimulcast.ranked(game.broadcasts) }
+
+    /// What the Watch CTA, About copy and logs target: the viewer's chip pick,
+    /// else the first subscribed service, else the raw carrier. Was the raw
+    /// carrier always, so a Peacock subscriber saw "Watch on NBC" (GUI-111).
+    private var primaryBroadcast: String? {
+        if let sel = selectedBroadcast, sortedBroadcasts.contains(sel) { return sel }
+        return sortedBroadcasts.first ?? game.broadcasts.first
+    }
 
     private var gameTitle: String {
         "\(game.away.shortName) vs \(game.home.shortName)"
@@ -476,7 +489,7 @@ struct SportsWatchSheet: View {
     private var whereToWatchSection: some View {
         // Enriched with streaming simulcast companions (ESPN's scoreboard only
         // reports the linear carrier); `game.broadcasts` itself stays untouched.
-        let enriched = TVSportsSimulcast.enrich(game.broadcasts)
+        let enriched = sortedBroadcasts
         return VStack(alignment: .leading, spacing: 10) {
             Text("WHERE TO WATCH")
                 .scaledFont(size: 19, weight: .heavy)
@@ -489,13 +502,16 @@ struct SportsWatchSheet: View {
                     .foregroundStyle(Color.white.opacity(0.5))
             } else {
                 ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
+                    HStack(spacing: 16) {
                         ForEach(enriched, id: \.self) { name in
                             broadcastChip(name)
                         }
                     }
+                    .padding(.vertical, 8)
                 }
                 .scrollClipDisabled()
+                // Catch up/down from anywhere across the actions row.
+                .focusSection()
             }
 
             if !enriched.isEmpty {
@@ -518,13 +534,34 @@ struct SportsWatchSheet: View {
         }
     }
 
+    /// Focusable: select a chip to point the Watch CTA at that service.
+    /// Selected = full colour + checkmark; others dim. Focus = 2pt white stroke.
     private func broadcastChip(_ name: String) -> some View {
-        Text(name)
-            .scaledFont(size: 20, weight: .heavy)
+        let isSelected = primaryBroadcast == name
+        let isFocused = focus == .chip(name)
+        return Button {
+            selectedBroadcast = name
+        } label: {
+            HStack(spacing: 8) {
+                if isSelected {
+                    Image(systemName: "checkmark")
+                        .scaledFont(size: 18, weight: .heavy)
+                }
+                Text(name)
+                    .scaledFont(size: 20, weight: .heavy)
+            }
             .foregroundStyle(.white)
             .padding(.horizontal, 20)
             .padding(.vertical, 11)
             .background(Capsule().fill(broadcastColor(name)))
+            .opacity(isSelected || isFocused ? 1 : 0.55)
+            .overlay(Capsule().stroke(isFocused ? Color.white : Color.clear, lineWidth: 2))
+            .scaleEffect(isFocused ? 1.06 : 1.0)
+            .animation(.easeOut(duration: 0.15), value: isFocused)
+        }
+        .buttonStyle(TVFlatButtonStyle())
+        .focusEffectDisabled()
+        .focused($focus, equals: .chip(name))
     }
 
     private func broadcastColor(_ name: String) -> Color {
@@ -580,10 +617,10 @@ struct SportsWatchSheet: View {
                     "platform_name": platform
                 ]
             )
-            StreamingDeepLinker.open(
+            // StreamingDeepLinker is a no-op stub on tvOS; this opens the app.
+            TVOSDeepLinker.open(
                 platform: platform,
-                title: "\(game.away.displayName) vs \(game.home.displayName)",
-                titleSlug: slug
+                title: "\(game.away.displayName) vs \(game.home.displayName)"
             )
             dismiss()
         } label: {
