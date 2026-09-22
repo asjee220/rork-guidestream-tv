@@ -27,6 +27,89 @@ struct TVHeroContinueState {
     let serviceName: String?
 }
 
+/// One hero item. The phone's hero mixes live games, live creators, the
+/// newest upload per followed channel and trending titles (GUI-102); the TV
+/// hero used to take titles only. Only `.media` resolves a featurette —
+/// everything else keys its video lookup on an id no featurette carries, so
+/// it renders as a still.
+enum TVHeroEntry: Identifiable, Hashable {
+    case media(TVTMDBResult)
+    case game(TVSportsGame)
+    /// A followed creator who is live right now.
+    case liveCreator(titleId: String, name: String, streamTitle: String?, imageUrl: String?, viewers: Int?)
+    /// The newest upload from a followed channel.
+    case upload(TVNewEpisodeRow)
+
+    var id: String {
+        switch self {
+        case .media(let r): return r.canonicalTitleId
+        case .game(let g): return "game:\(g.id)"
+        case .liveCreator(let titleId, _, _, _, _): return "live:\(titleId)"
+        case .upload(let row): return "upload:\(row.id)"
+        }
+    }
+
+    var media: TVTMDBResult? {
+        if case .media(let r) = self { return r }
+        return nil
+    }
+
+    /// Key for the featurette / trailer lookups. Non-media ids never match.
+    var canonicalTitleId: String {
+        media?.canonicalTitleId ?? id
+    }
+
+    var backdropUrl: String? {
+        switch self {
+        case .media(let r): return r.backdropUrl
+        case .game: return nil
+        case .liveCreator(_, _, _, let imageUrl, _): return imageUrl
+        case .upload(let row): return row.thumbnailUrl ?? row.posterUrl
+        }
+    }
+
+    var eyebrow: String {
+        switch self {
+        case .media(let r): return r.isTV ? "TRENDING SHOW" : "TRENDING MOVIE"
+        case .game(let g): return "LIVE · \(g.sport.uppercased())"
+        case .liveCreator: return "LIVE NOW"
+        case .upload(let row):
+            return "NEW FROM \(row.showName.uppercased())"
+        }
+    }
+
+    var displayName: String {
+        switch self {
+        case .media(let r): return r.displayName
+        case .game(let g): return "\(g.away.shortName) vs \(g.home.shortName)"
+        case .liveCreator(_, let name, _, _, _): return name
+        case .upload(let row): return row.title ?? row.showName
+        }
+    }
+
+    var overview: String? {
+        switch self {
+        case .media(let r): return r.overview
+        case .game(let g):
+            let score = "\(g.away.abbreviation) \(g.away.score) – \(g.home.abbreviation) \(g.home.score)"
+            return [score, g.statusDetail].filter { !$0.isEmpty }.joined(separator: " · ")
+        case .liveCreator(_, _, let streamTitle, _, let viewers):
+            let watching = viewers.map { "\($0.formatted()) watching" }
+            return [streamTitle, watching].compactMap { $0 }.joined(separator: " · ")
+        case .upload(let row): return row.synopsis
+        }
+    }
+
+    var ctaLabel: String {
+        switch self {
+        case .media: return "Watch Now"
+        case .game: return "Where to Watch"
+        case .liveCreator: return "Watch Live"
+        case .upload: return "Watch"
+        }
+    }
+}
+
 /// Preference the hero raises when a left move at the first item should
 /// fall through to opening the side menu. Handled by TVMainView; the
 /// value is a monotonic counter so only real requests open the menu.
@@ -57,7 +140,7 @@ struct TVHeroHoldsLeftKey: PreferenceKey {
 }
 
 struct TVHeroCarousel: View {
-    let items: [TVTMDBResult]
+    let items: [TVHeroEntry]
     /// Bound from TVHomeView so the scroll content can declare the CTA the
     /// default focus for the scene, preventing launch focus from landing on
     /// a rail card and scrolling the hero off screen.
@@ -70,7 +153,7 @@ struct TVHeroCarousel: View {
     /// Resume: open the service they were watching on.
     let onContinue: (TVTMDBResult, String?) -> Void
     /// Not started: open the title screen.
-    let onWatchNow: (TVTMDBResult) -> Void
+    let onWatchNow: (TVHeroEntry) -> Void
     /// canonicalTitleId -> hosted featurette URL. A missing key means the
     /// item renders as a drifting still.
     let featurettes: [String: String]
@@ -115,7 +198,7 @@ struct TVHeroCarousel: View {
     /// first rail card.
     @Namespace private var heroNamespace
 
-    private var currentItem: TVTMDBResult? {
+    private var currentItem: TVHeroEntry? {
         items.indices.contains(index) ? items[index] : nil
     }
 
@@ -227,9 +310,13 @@ struct TVHeroCarousel: View {
     /// hero art fills the full width and fades off at the bottom into the
     /// first rail of content.
     @ViewBuilder
-    private func itemLayer(for item: TVTMDBResult) -> some View {
+    private func itemLayer(for item: TVHeroEntry) -> some View {
         ZStack {
-            TVHeroStillBackdrop(urlString: item.backdropUrl)
+            if case .game(let game) = item {
+                TVHeroGameBackdrop(game: game)
+            } else {
+                TVHeroStillBackdrop(urlString: item.backdropUrl)
+            }
             if let player {
                 TVFeaturetteLayer(player: player)
                     .opacity(videoReady ? 1 : 0)
@@ -267,7 +354,7 @@ struct TVHeroCarousel: View {
     private var metadataBlock: some View {
         if let item = currentItem {
             VStack(alignment: .leading, spacing: 14) {
-                Text(item.isTV ? "TRENDING SHOW" : "TRENDING MOVIE")
+                Text(item.eyebrow)
                     .font(.system(size: 16, weight: .heavy))
                     .foregroundStyle(TVTheme.orange)
                     .tracking(2)
@@ -289,10 +376,10 @@ struct TVHeroCarousel: View {
                 // moved off the hero with this — it is on the title screen,
                 // and asking someone to file a title they are mid-way
                 // through was the wrong offer on the app's front page.
-                let resume = continueState(item)
+                let resume = item.media.flatMap(continueState)
                 Button {
-                    if let resume {
-                        onContinue(item, resume.serviceName)
+                    if let resume, let media = item.media {
+                        onContinue(media, resume.serviceName)
                     } else {
                         onWatchNow(item)
                     }
@@ -312,7 +399,7 @@ struct TVHeroCarousel: View {
                                     .font(.system(size: 22, weight: .semibold))
                             }
                         } else {
-                            Text("Watch Now")
+                            Text(item.ctaLabel)
                                 .font(.system(size: 22, weight: .semibold))
                         }
                     }
@@ -517,7 +604,7 @@ struct TVHeroCarousel: View {
         prerolledIndex = nil
     }
 
-    private func setUpPlayer(for item: TVTMDBResult, url: URL) {
+    private func setUpPlayer(for item: TVHeroEntry, url: URL) {
         Self.activateAudioSessionIfNeeded()
 
         let newPlayer: AVPlayer
@@ -674,7 +761,7 @@ struct TVHeroCarousel: View {
     /// of the same trailer first, then another key. Bounded so a title whose
     /// candidates are all dead falls back to its still rather than churning
     /// for the whole dwell.
-    private func retryWithNextStream(for item: TVTMDBResult) async {
+    private func retryWithNextStream(for item: TVHeroEntry) async {
         guard streamRetries < 4 else { return }
         streamRetries += 1
         guard let next = await TVTrailerStreamService.shared.nextStreamURL(for: item.canonicalTitleId),
@@ -684,7 +771,7 @@ struct TVHeroCarousel: View {
         setUpPlayer(for: item, url: url)
     }
 
-    private func markVideoReady(for item: TVTMDBResult) {
+    private func markVideoReady(for item: TVHeroEntry) {
         withAnimation(.easeOut(duration: 0.4)) {
             videoReady = true
         }
@@ -786,6 +873,39 @@ private struct TVHeroStillBackdrop: View {
                     drift = 1.08
                 }
             }
+    }
+}
+
+// MARK: - Live game backdrop
+
+/// A live game has no artwork, so it gets the two teams' colours and logos —
+/// the same treatment the phone's hero gives a game card.
+private struct TVHeroGameBackdrop: View {
+    let game: TVSportsGame
+
+    private func color(_ hex: String?, _ fallback: Color) -> Color {
+        hex.map { Color(hex: $0) } ?? fallback
+    }
+
+    var body: some View {
+        let away = color(game.away.primaryHex, Color(red: 0.10, green: 0.15, blue: 0.32))
+        let home = color(game.home.primaryHex, Color(red: 0.32, green: 0.10, blue: 0.15))
+        ZStack {
+            LinearGradient(colors: [away, away.opacity(0.85), home.opacity(0.85), home],
+                           startPoint: .topLeading, endPoint: .bottomTrailing)
+            HStack(spacing: 160) {
+                TVRemoteImage(urlString: game.away.logoURL, contentMode: .fit)
+                    .frame(width: 320, height: 320)
+                Text("VS")
+                    .font(.system(size: 64, weight: .black))
+                    .foregroundStyle(.white.opacity(0.35))
+                TVRemoteImage(urlString: game.home.logoURL, contentMode: .fit)
+                    .frame(width: 320, height: 320)
+            }
+            .offset(x: 260, y: -120)
+            .opacity(0.9)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 

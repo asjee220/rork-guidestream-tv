@@ -84,6 +84,42 @@ private nonisolated struct TVTMDBFreshnessEpisode: Decodable, Sendable {
     }
 }
 
+/// Next scheduled episode of a series, for the Upcoming Episodes rail.
+nonisolated struct TVTMDBNextEpisode: Hashable, Sendable {
+    let showName: String
+    let posterPath: String?
+    let seasonNumber: Int?
+    let episodeNumber: Int?
+    let episodeName: String?
+    let airDate: String?
+}
+
+private nonisolated struct TVTMDBNextEpisodeEnvelope: Decodable, Sendable {
+    let name: String?
+    let posterPath: String?
+    let nextEpisodeToAir: Episode?
+
+    struct Episode: Decodable, Sendable {
+        let name: String?
+        let seasonNumber: Int?
+        let episodeNumber: Int?
+        let airDate: String?
+
+        enum CodingKeys: String, CodingKey {
+            case name
+            case seasonNumber = "season_number"
+            case episodeNumber = "episode_number"
+            case airDate = "air_date"
+        }
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case name
+        case posterPath = "poster_path"
+        case nextEpisodeToAir = "next_episode_to_air"
+    }
+}
+
 private nonisolated struct TVTMDBBackdrop: Decodable, Sendable {
     let backdropPath: String?
 
@@ -443,6 +479,68 @@ nonisolated struct TVTMDBService {
         guard let data = try? await get(urlString) else { return [] }
         guard let env = try? JSONDecoder().decode(TVTMDBSearchEnvelope.self, from: data) else { return [] }
         return env.results.map { stamp($0, mediaType: "movie") }
+    }
+
+    // MARK: - Home parity rails (GUI-102)
+    //
+    // Same endpoints and parameters as the phone's TMDBService, so the TV's
+    // Top rated / Binge Worthy / Around the World rails draw the same titles.
+
+    /// Top-rated TV. Feeds "Top rated right now".
+    func getTopRated() async -> [TVTMDBResult] {
+        let locale = DeviceLocale.current()
+        let urlString = "\(base)/tv/top_rated?api_key=\(apiKey)&language=\(locale.tmdbLanguage)&page=1"
+        guard let data = try? await get(urlString),
+              let env = try? JSONDecoder().decode(TVTMDBSearchEnvelope.self, from: data) else { return [] }
+        return env.results.map { stamp($0, mediaType: "tv") }
+    }
+
+    /// Popular series that have ended — complete, so bingeable. Feeds
+    /// "Binge Worthy" and the tail of the hero pool, as on the phone.
+    func getEndedSeries() async -> [TVTMDBResult] {
+        let locale = DeviceLocale.current()
+        let urlString = "\(base)/discover/tv?api_key=\(apiKey)&language=\(locale.tmdbLanguage)&sort_by=popularity.desc&with_status=Ended&page=1"
+        guard let data = try? await get(urlString),
+              let env = try? JSONDecoder().decode(TVTMDBSearchEnvelope.self, from: data) else { return [] }
+        return env.results.map { stamp($0, mediaType: "tv") }
+    }
+
+    /// Popular TV on one provider in one region. Feeds "Around the World".
+    func discoverByProvider(
+        providerId: Int,
+        limit: Int = 15,
+        region: String,
+        originalLanguage: String? = nil,
+        voteCountGte: Int? = nil,
+        withoutKeywords: String? = nil
+    ) async -> [TVTMDBResult] {
+        let locale = DeviceLocale.current()
+        var urlString = "\(base)/discover/tv?api_key=\(apiKey)&language=\(locale.tmdbLanguage)&sort_by=popularity.desc&watch_region=\(region)&with_watch_providers=\(providerId)&with_watch_monetization_types=flatrate%7Cads&page=1"
+        if let originalLanguage { urlString += "&with_original_language=\(originalLanguage)" }
+        if let voteCountGte { urlString += "&vote_count.gte=\(voteCountGte)" }
+        if let withoutKeywords { urlString += "&without_keywords=\(withoutKeywords)" }
+        guard let data = try? await get(urlString),
+              let env = try? JSONDecoder().decode(TVTMDBSearchEnvelope.self, from: data) else { return [] }
+        return Array(env.results.map { stamp($0, mediaType: "tv") }.prefix(limit))
+    }
+
+    /// The next scheduled episode of a series. Feeds "Upcoming Episodes" —
+    /// the phone asks TheTVDB, which tvOS has no client for; TMDB's
+    /// `next_episode_to_air` answers the same question.
+    func getNextEpisode(tmdbId: Int) async -> TVTMDBNextEpisode? {
+        let locale = DeviceLocale.current()
+        let urlString = "\(base)/tv/\(tmdbId)?api_key=\(apiKey)&language=\(locale.tmdbLanguage)"
+        guard let data = try? await get(urlString),
+              let env = try? JSONDecoder().decode(TVTMDBNextEpisodeEnvelope.self, from: data),
+              let next = env.nextEpisodeToAir else { return nil }
+        return TVTMDBNextEpisode(
+            showName: env.name ?? "",
+            posterPath: env.posterPath,
+            seasonNumber: next.seasonNumber,
+            episodeNumber: next.episodeNumber,
+            episodeName: next.name,
+            airDate: next.airDate
+        )
     }
 
     private func stamp(_ r: TVTMDBResult, mediaType: String) -> TVTMDBResult {

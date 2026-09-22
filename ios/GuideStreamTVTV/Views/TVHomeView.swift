@@ -63,6 +63,13 @@ private struct NowAndNextRail: Identifiable {
     var id: String { service.id }
 }
 
+/// A followed show's next scheduled episode (GUI-102).
+struct UpcomingEpisodeItem: Identifiable, Hashable {
+    let tmdbId: Int
+    let next: TVTMDBNextEpisode
+    var id: Int { tmdbId }
+}
+
 private struct TopPickItem: Identifiable {
     let result: TVTMDBResult
     let providerName: String
@@ -88,6 +95,25 @@ struct TVHomeView: View {
     @State private var sports: [TVSportsGame] = []
     @State private var isLoading: Bool = true
     @State private var heroItems: [TVTMDBResult] = []
+    /// What the hero actually shows: live games, live creators and the newest
+    /// uploads ahead of `heroItems`, the same mix as the phone (GUI-102).
+    @State private var heroEntries: [TVHeroEntry] = []
+    @State private var heroGame: TVSportsGame?
+
+    // GUI-102 — rails the phone had and the TV did not.
+    @State private var endedShows: [TVTMDBResult] = []
+    @State private var topRated: [TVTMDBResult] = []
+    /// tmdb id -> top provider name, for the provider-gated rails.
+    @State private var providerNames: [Int: String] = [:]
+    @State private var followedNewEpisodes: [TVNewEpisodeRow] = []
+    @State private var creatorUploads: [TVNewEpisodeRow] = []
+    @State private var liveCreators: [TVLiveStatus] = []
+    @State private var newThisWeek: [TVStreamingRelease] = []
+    @State private var leavingSoon: [TVExpiringRow] = []
+    @State private var upcomingEpisodes: [UpcomingEpisodeItem] = []
+    @State private var aroundTheWorld: [TVTMDBResult] = []
+    @State private var aroundCountry: CountryCatalogEntry?
+    @State private var aroundProviderName: String?
     @State private var heroLoading: Bool = true
     /// canonicalTitleId -> hosted featurette URL for the hero pool.
     /// Empty until the single batched lookup resolves after the pool is
@@ -209,6 +235,8 @@ struct TVHomeView: View {
                         if wasFocused, !isFocused { heroHandingOffFocus = true }
                     }
 
+                // Rows follow the phone's Home order (GUI-102); Continue
+                // Watching stays directly under the hero.
                 // 1a. Continue Watching — highest-intent rail on the screen, so
                 // it sits directly under the hero. Hidden entirely when the
                 // user is a guest or has no recent launches.
@@ -287,6 +315,113 @@ struct TVHomeView: View {
                     }
                 }
 
+                // 3. Today's Pick — one full-width card, deterministic per
+                // local day.
+                if let pick = todaysPick {
+                    todaysPickSection(for: pick)
+                }
+
+                // New Episodes — episodes of shows this viewer follows, as on
+                // the phone. Falls back to TMDB's on-the-air list only when
+                // they follow nothing with a recent episode (GUI-102).
+                if !followedNewEpisodes.isEmpty {
+                    TVRail(title: "New Episodes", accent: TVTheme.blue, count: followedNewEpisodes.count) {
+                        ForEach(followedNewEpisodes) { row in
+                            if let tmdbId = row.tmdbId {
+                                tmdbCard(
+                                    tmdbId: tmdbId,
+                                    isTV: true,
+                                    title: row.showName,
+                                    subtitle: episodeSubtitle(row),
+                                    posterUrl: row.posterUrl,
+                                    accent: TVTheme.blue
+                                )
+                            }
+                        }
+                    }
+                } else if !newEpisodes.isEmpty {
+                    TVRail(title: "New Episodes", accent: TVTheme.blue, count: newEpisodes.count) {
+                        ForEach(newEpisodes) { item in
+                            posterCard(for: item, accent: TVTheme.blue)
+                        }
+                    }
+                }
+
+                // Around the World — one country a day, relative to home.
+                if let country = aroundCountry, !aroundTheWorld.isEmpty {
+                    TVRail(
+                        title: "Around the World · \(country.displayName)\(aroundProviderName.map { " on \($0)" } ?? "")",
+                        accent: TVTheme.orange,
+                        count: aroundTheWorld.count
+                    ) {
+                        ForEach(aroundTheWorld) { item in
+                            tmdbCard(
+                                tmdbId: item.id,
+                                isTV: item.isTV,
+                                title: item.displayName,
+                                subtitle: item.year.map(String.init) ?? "Series",
+                                posterUrl: item.posterUrl,
+                                accent: TVTheme.orange
+                            )
+                        }
+                    }
+                }
+
+                // 8. Coming to Streaming
+                if !comingToStreaming.isEmpty {
+                    TVRail(title: "Coming to Streaming", accent: TVTheme.orange, count: comingToStreaming.count) {
+                        ForEach(comingToStreaming) { item in
+                            comingToStreamingCard(for: item)
+                        }
+                    }
+                }
+
+                // New This Week — streaming_releases, newest first.
+                if !newThisWeek.isEmpty {
+                    TVRail(title: "New This Week", accent: TVTheme.orange, count: newThisWeek.count) {
+                        ForEach(newThisWeek) { release in
+                            tmdbCard(
+                                tmdbId: release.tmdbId,
+                                isTV: release.isTV,
+                                title: release.title,
+                                subtitle: release.sourceName ?? (release.isTV ? "Series" : "Movie"),
+                                posterUrl: release.posterUrl,
+                                accent: TVTheme.orange
+                            )
+                        }
+                    }
+                }
+
+                // 4. Top Picks for You
+                if !topPicks.isEmpty {
+                    TVRail(
+                        title: "Top Picks for You",
+                        accent: TVTheme.orange,
+                        count: topPicks.count,
+                        seeAllKey: "top_picks",
+                        onSeeAll: {
+                            seeAllPayload = TVSeeAllGridPayload(
+                                title: "Top Picks for You",
+                                accent: TVTheme.orange,
+                                items: topPicksGridItems
+                            )
+                        }
+                    ) {
+                        ForEach(topPicks) { item in
+                            topPickCard(for: item)
+                        }
+                    }
+                }
+
+                // 9. Creators / Podcasts for You
+                if !recommendedCreators.isEmpty {
+                    TVRail(title: "Creators / Podcasts for You", accent: TVTheme.blue, count: recommendedCreators.count) {
+                        ForEach(recommendedCreators) { creator in
+                            creatorCard(for: creator)
+                        }
+                    }
+                }
+
                 // 2. Everyone's Watching
                 if !everyonesWatching.isEmpty {
                     TVRail(
@@ -316,29 +451,18 @@ struct TVHomeView: View {
                         .padding(.horizontal, 80)
                 }
 
-                // 3. Today's Pick — one full-width card, deterministic per
-                // local day.
-                if let pick = todaysPick {
-                    todaysPickSection(for: pick)
-                }
-
-                // 4. Top Picks for You
-                if !topPicks.isEmpty {
-                    TVRail(
-                        title: "Top Picks for You",
-                        accent: TVTheme.orange,
-                        count: topPicks.count,
-                        seeAllKey: "top_picks",
-                        onSeeAll: {
-                            seeAllPayload = TVSeeAllGridPayload(
-                                title: "Top Picks for You",
-                                accent: TVTheme.orange,
-                                items: topPicksGridItems
+                // Leaving Soon — expiring_titles within 20 days.
+                if !leavingSoon.isEmpty {
+                    TVRail(title: "Leaving Soon", accent: TVTheme.orange, count: leavingSoon.count) {
+                        ForEach(leavingSoon) { row in
+                            tmdbCard(
+                                tmdbId: row.tmdbId,
+                                isTV: row.isTV,
+                                title: row.title,
+                                subtitle: leavingSubtitle(row),
+                                posterUrl: row.posterUrl,
+                                accent: TVTheme.orange
                             )
-                        }
-                    ) {
-                        ForEach(topPicks) { item in
-                            topPickCard(for: item)
                         }
                     }
                 }
@@ -396,29 +520,59 @@ struct TVHomeView: View {
                         .padding(.horizontal, 80)
                 }
 
-                // 7. New Episodes
-                if !newEpisodes.isEmpty {
-                    TVRail(title: "New Episodes", accent: TVTheme.blue, count: newEpisodes.count) {
-                        ForEach(newEpisodes) { item in
+                // Top rated right now — only titles on a streaming service.
+                if !topRatedOnService.isEmpty {
+                    TVRail(title: "Top rated right now", accent: TVTheme.orange, count: topRatedOnService.count) {
+                        ForEach(topRatedOnService) { item in
+                            tmdbCard(
+                                tmdbId: item.id,
+                                isTV: item.isTV,
+                                title: item.displayName,
+                                subtitle: providerNames[item.id] ?? "",
+                                posterUrl: item.posterUrl,
+                                accent: TVTheme.orange
+                            )
+                        }
+                    }
+                }
+
+                // New seasons — on-air shows already on this viewer's watchlist.
+                if !newSeasonsYouFollow.isEmpty {
+                    TVRail(title: "New seasons — shows you follow", accent: TVTheme.blue, count: newSeasonsYouFollow.count) {
+                        ForEach(newSeasonsYouFollow) { item in
                             posterCard(for: item, accent: TVTheme.blue)
                         }
                     }
                 }
 
-                // 8. Coming to Streaming
-                if !comingToStreaming.isEmpty {
-                    TVRail(title: "Coming to Streaming", accent: TVTheme.orange, count: comingToStreaming.count) {
-                        ForEach(comingToStreaming) { item in
-                            comingToStreamingCard(for: item)
+                // Upcoming Episodes — next scheduled episode of followed shows.
+                if !upcomingEpisodes.isEmpty {
+                    TVRail(title: "Upcoming Episodes", accent: TVTheme.blue, count: upcomingEpisodes.count) {
+                        ForEach(upcomingEpisodes) { item in
+                            tmdbCard(
+                                tmdbId: item.tmdbId,
+                                isTV: true,
+                                title: item.next.showName,
+                                subtitle: upcomingSubtitle(item.next),
+                                posterUrl: TVTMDBImage.url(item.next.posterPath, size: .poster500),
+                                accent: TVTheme.blue
+                            )
                         }
                     }
                 }
 
-                // 9. Creators / Podcasts for You
-                if !recommendedCreators.isEmpty {
-                    TVRail(title: "Creators / Podcasts for You", accent: TVTheme.blue, count: recommendedCreators.count) {
-                        ForEach(recommendedCreators) { creator in
-                            creatorCard(for: creator)
+                // Binge Worthy — ended series, on a streaming service.
+                if !bingeWorthy.isEmpty {
+                    TVRail(title: "Binge Worthy", accent: TVTheme.orange, count: bingeWorthy.count) {
+                        ForEach(bingeWorthy) { item in
+                            tmdbCard(
+                                tmdbId: item.id,
+                                isTV: true,
+                                title: item.displayName,
+                                subtitle: providerNames[item.id] ?? "Complete series",
+                                posterUrl: item.posterUrl,
+                                accent: TVTheme.orange
+                            )
                         }
                     }
                 }
@@ -453,7 +607,7 @@ struct TVHomeView: View {
             // rail ever fills on a cold launch. Every other rail on this
             // screen is anonymous, so none of them need this.
             .task(id: auth.currentUser?.id) { await buildContinueWatching() }
-            .onChange(of: heroItems.isEmpty) { _, isEmpty in
+            .onChange(of: heroEntries.isEmpty) { _, isEmpty in
                 guard !isEmpty, !didClaimInitialFocus else { return }
                 didClaimInitialFocus = true
                 Task { @MainActor in
@@ -465,6 +619,9 @@ struct TVHomeView: View {
             .fullScreenCover(item: $seeAllPayload) { payload in
                 TVSeeAllGridView(payload: payload, pendingDetail: $pendingDetail)
             }
+            .fullScreenCover(item: $heroGame) { game in
+                SportsWatchSheet(game: game)
+            }
     }
 
     // MARK: - Hero
@@ -474,7 +631,7 @@ struct TVHomeView: View {
     /// runs full bleed.
     @ViewBuilder
     private func heroSection(metadataInset: CGFloat) -> some View {
-        if heroItems.isEmpty {
+        if heroEntries.isEmpty {
             // Reserve the full-screen height so the rails below don't
             // jump when the data lands.
             Rectangle()
@@ -488,7 +645,7 @@ struct TVHomeView: View {
                 }
         } else {
             TVHeroCarousel(
-                items: heroItems,
+                items: heroEntries,
                 ctaFocused: $heroCTAFocused,
                 continueState: { item in
                     // Same identity the rail is built on — "tmdb:tv:1396".
@@ -519,7 +676,7 @@ struct TVHomeView: View {
                         await openContinue(item: item, serviceName: serviceName)
                     }
                 },
-                onWatchNow: { item in showTitleDetail(heroDetail(for: item)) },
+                onWatchNow: { entry in openHeroEntry(entry) },
                 featurettes: heroFeaturettes,
                 metadataInset: metadataInset
             )
@@ -582,6 +739,221 @@ struct TVHomeView: View {
             platform: nil,
             isTVHint: item.isTV
         )
+    }
+
+    /// Hero CTA for anything that is not a resume.
+    private func openHeroEntry(_ entry: TVHeroEntry) {
+        switch entry {
+        case .media(let item):
+            showTitleDetail(heroDetail(for: item))
+        case .game(let game):
+            heroGame = game
+        case .liveCreator(let titleId, let name, _, let imageUrl, _):
+            pendingDetail = creatorDetail(titleId: titleId, name: name, imageUrl: imageUrl)
+        case .upload(let row):
+            pendingDetail = creatorDetail(titleId: row.titleId, name: row.showName, imageUrl: row.posterUrl)
+        }
+    }
+
+    private func creatorDetail(titleId: String, name: String, imageUrl: String?) -> TVTitleDetail {
+        TVTitleDetail(
+            titleId: titleId,
+            title: name,
+            overview: nil,
+            posterUrl: imageUrl,
+            backdropUrl: nil,
+            tag: (TVCreatorKind.from(titleId: titleId)?.displayLabel ?? "CREATOR").uppercased(),
+            accent: TVTheme.blue,
+            year: nil,
+            platform: nil,
+            isTVHint: nil
+        )
+    }
+
+    /// Poster card for any TMDB title the parity rails show.
+    private func tmdbCard(
+        tmdbId: Int,
+        isTV: Bool,
+        title: String,
+        subtitle: String,
+        posterUrl: String?,
+        accent: Color
+    ) -> some View {
+        let titleId = "tmdb:\(isTV ? "tv" : "movie"):\(tmdbId)"
+        return TVPosterCard(
+            title: title,
+            subtitle: subtitle,
+            posterUrl: posterUrl,
+            accent: accent,
+            isSaved: streams.contains(titleId: titleId) || streams.contains(titleId: String(tmdbId))
+        ) {
+            pendingDetail = TVTitleDetail(
+                titleId: titleId,
+                title: title,
+                overview: nil,
+                posterUrl: posterUrl,
+                backdropUrl: nil,
+                tag: isTV ? "SERIES" : "MOVIE",
+                accent: accent,
+                year: nil,
+                platform: nil,
+                isTVHint: isTV
+            )
+        }
+    }
+
+
+    // MARK: - GUI-102 parity rails
+
+    private var topRatedOnService: [TVTMDBResult] {
+        Array(topRated.filter { providerNames[$0.id] != nil }.prefix(20))
+    }
+
+    private var bingeWorthy: [TVTMDBResult] {
+        Array(endedShows.filter { providerNames[$0.id] != nil }.prefix(20))
+    }
+
+    /// TMDB ids on this viewer's watchlist, whichever form they were saved in.
+    private var savedTmdbIds: Set<Int> {
+        Set(streams.userStreams.compactMap { TVTitleID.tmdbId(from: $0.titleId) })
+    }
+
+    private var newSeasonsYouFollow: [TVTMDBResult] {
+        let saved = savedTmdbIds
+        return Array(newEpisodes.filter { saved.contains($0.id) }.prefix(8))
+    }
+
+    private func episodeSubtitle(_ row: TVNewEpisodeRow) -> String {
+        var parts: [String] = []
+        if let s = row.seasonValue, let e = row.episodeValue { parts.append("S\(s) E\(e)") }
+        if let platform = row.platform, !platform.isEmpty { parts.append(platform) }
+        return parts.isEmpty ? "New episode" : parts.joined(separator: " · ")
+    }
+
+    private func leavingSubtitle(_ row: TVExpiringRow) -> String {
+        let days = TVHomeRailsService.daysUntil(row.leavingDate) ?? 0
+        let when = days <= 0 ? "Today" : days == 1 ? "1 day left" : "\(days) days left"
+        return [when, row.serviceName].compactMap { $0 }.joined(separator: " · ")
+    }
+
+    private func upcomingSubtitle(_ next: TVTMDBNextEpisode) -> String {
+        var parts: [String] = []
+        if let s = next.seasonNumber, let e = next.episodeNumber { parts.append("S\(s) E\(e)") }
+        if let date = next.airDate, !date.isEmpty { parts.append(date) }
+        return parts.isEmpty ? "Coming up" : parts.joined(separator: " · ")
+    }
+
+    /// Everything the new rails read, fetched once per Home load.
+    private func buildParityRails() async {
+        let savedIds = streams.userStreams.map(\.titleId)
+        async let episodesTask = TVHomeRailsService.fetchNewEpisodes(forTitleIds: savedIds)
+        async let liveTask = TVHomeRailsService.fetchLive(titleIds: savedIds)
+        async let leavingTask = TVHomeRailsService.fetchLeavingSoon()
+        async let releasesTask = TVStreamingReleasesService.shared.fetchReleases()
+        async let topRatedTask = TVTMDBService.shared.getTopRated()
+        async let aroundTask: Void = buildAroundTheWorld()
+        async let upcomingTask: Void = buildUpcomingEpisodes()
+
+        let (episodes, live, leaving, releases, rated) = await (episodesTask, liveTask, leavingTask, releasesTask, topRatedTask)
+        if let episodes {
+            followedNewEpisodes = episodes.filter { $0.tmdbId != nil }
+            // Newest upload per followed channel, as the phone's hero does.
+            var seen = Set<String>()
+            creatorUploads = episodes
+                .filter { TVCreatorKind.from(titleId: $0.titleId) == .youtube }
+                .filter { seen.insert($0.titleId).inserted }
+        }
+        liveCreators = live
+        if let leaving { leavingSoon = leaving }
+        if let releases { newThisWeek = Array(releases.prefix(20)) }
+        topRated = rated
+        await hydrateProviderNames(for: Array(rated.prefix(25)) + Array(endedShows.prefix(25)))
+        _ = await (aroundTask, upcomingTask)
+        composeHeroEntries()
+    }
+
+    /// Top provider name per title, for Top rated and Binge Worthy. Titles
+    /// with no provider in this region are left out and so drop off the rail.
+    private func hydrateProviderNames(for items: [TVTMDBResult]) async {
+        let todo = items.filter { providerNames[$0.id] == nil }
+        guard !todo.isEmpty else { return }
+        let found = await withTaskGroup(of: (Int, String?).self) { group in
+            for item in todo {
+                group.addTask {
+                    let p = try? await TVTMDBService.shared.getTopWatchProvider(tmdbId: item.id, isTV: item.isTV)
+                    return (item.id, p?.providerName)
+                }
+            }
+            var out: [Int: String] = [:]
+            for await (id, name) in group { if let name { out[id] = name } }
+            return out
+        }
+        providerNames.merge(found) { _, new in new }
+    }
+
+    private func buildAroundTheWorld() async {
+        let country = CountryCatalog.countryOfDay
+        guard let provider = country.providers.first else { return }
+        let results = await TVTMDBService.shared.discoverByProvider(
+            providerId: provider.id,
+            limit: 10,
+            region: country.regionCode,
+            originalLanguage: country.effectiveOriginalLanguage(for: provider),
+            voteCountGte: country.voteFloor(for: provider),
+            withoutKeywords: BrowseCatalog.adultKeywordIds
+        )
+        guard !results.isEmpty else { return }
+        aroundCountry = country
+        aroundProviderName = provider.name
+        aroundTheWorld = results
+    }
+
+    /// Next episode for up to eight followed shows — the phone's cap.
+    private func buildUpcomingEpisodes() async {
+        let ids = Array(streams.userStreams.compactMap { TVTitleID.tmdbId(from: $0.titleId) }.prefix(8))
+        guard !ids.isEmpty else { return }
+        let found = await withTaskGroup(of: UpcomingEpisodeItem?.self) { group in
+            for id in ids {
+                group.addTask {
+                    guard let next = await TVTMDBService.shared.getNextEpisode(tmdbId: id) else { return nil }
+                    return UpcomingEpisodeItem(tmdbId: id, next: next)
+                }
+            }
+            var out: [UpcomingEpisodeItem] = []
+            for await item in group { if let item { out.append(item) } }
+            return out
+        }
+        upcomingEpisodes = found.sorted { ($0.next.airDate ?? "9999") < ($1.next.airDate ?? "9999") }
+    }
+
+    /// The phone's hero mix: live games (4), live creators (2), newest
+    /// uploads (4), then titles. Titles stay at the TV's own cap — each one
+    /// can resolve a trailer, and that is the work that once exhausted the
+    /// Apple TV's memory.
+    private func composeHeroEntries() {
+        var entries: [TVHeroEntry] = []
+        for game in sports
+            .filter({ $0.state == .live })
+            .sorted(by: { ($0.startDate ?? .distantPast) > ($1.startDate ?? .distantPast) })
+            .prefix(4) {
+            entries.append(.game(game))
+        }
+        let names = Dictionary(streams.userStreams.map { ($0.titleId, $0.title ?? "") }, uniquingKeysWith: { a, _ in a })
+        let posters = Dictionary(streams.userStreams.map { ($0.titleId, $0.posterUrl) }, uniquingKeysWith: { a, _ in a })
+        for live in liveCreators.prefix(2) {
+            entries.append(.liveCreator(
+                titleId: live.titleId,
+                name: names[live.titleId].flatMap { $0.isEmpty ? nil : $0 } ?? "Live now",
+                streamTitle: live.streamTitle,
+                imageUrl: posters[live.titleId] ?? nil,
+                viewers: live.viewerCount
+            ))
+        }
+        for upload in creatorUploads.prefix(4) {
+            entries.append(.upload(upload))
+        }
+        entries.append(contentsOf: heroItems.map { .media($0) })
+        heroEntries = entries
     }
 
     // MARK: - Today's Pick
@@ -1091,10 +1463,12 @@ struct TVHomeView: View {
         async let sportsTask = TVSportsService.shared.fetchAll()
         async let watchTask: Void = TVStreamsViewModel.shared.fetchUserStreams()
         async let watchedTask: Void = SocialViewModel.shared.loadAllWatched()
+        async let endedTask = TVTMDBService.shared.getEndedSeries()
 
-        let (t, ne, sp, _, _) = await (trendingTask, newEpisodesTask, sportsTask, watchTask, watchedTask)
+        let (t, ne, sp, _, _, ended) = await (trendingTask, newEpisodesTask, sportsTask, watchTask, watchedTask, endedTask)
         self.trending = t
         self.newEpisodes = ne
+        self.endedShows = ended
         self.sports = sp
         self.isLoading = false
 
@@ -1108,8 +1482,9 @@ struct TVHomeView: View {
         async let nowNextTask: Void = buildNowAndNext()
         async let todaysPickTask: Void = buildTodaysPick()
         async let affiliateTask: Void = TVAffiliateService.shared.fetchIfNeeded()
+        async let parityTask: Void = buildParityRails()
 
-        _ = await (heroTask, everyoneTask, comingTask, popularTask, creatorsTask, nowNextTask, todaysPickTask, affiliateTask)
+        _ = await (heroTask, everyoneTask, comingTask, popularTask, creatorsTask, nowNextTask, todaysPickTask, affiliateTask, parityTask)
         _ = await recommendedTask
     }
 
@@ -1229,7 +1604,7 @@ struct TVHomeView: View {
     private func buildHeroItems() async {
         var seenIds = Set<Int>()
         var pool: [TVTMDBResult] = []
-        for candidate in trending + newEpisodes {
+        for candidate in trending + newEpisodes + endedShows {
             if seenIds.insert(candidate.id).inserted {
                 pool.append(candidate)
             }
@@ -1257,6 +1632,7 @@ struct TVHomeView: View {
             survivors.append(contentsOf: candidates.filter { !taken.contains($0.id) }.prefix(6 - survivors.count))
         }
         heroItems = survivors.isEmpty ? Array(trending.prefix(6)) : survivors
+        composeHeroEntries()
         heroLoading = false
 
         // Video for the hero, in priority order. A hosted featurette is
