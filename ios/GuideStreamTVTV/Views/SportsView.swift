@@ -557,28 +557,28 @@ struct SportsView: View {
     private func liveScoreCard(_ game: SportsGame) -> some View {
         VStack(spacing: 12) {
             HStack {
-                HStack(spacing: 5) {
+                HStack(spacing: 10) {
                     Circle()
                         .fill(Color(hex: "E50914"))
-                        .frame(width: 6, height: 6)
+                        .frame(width: 12, height: 12)
                     Text("LIVE")
-                        .scaledFont(size: 14, weight: .black)
+                        .scaledFont(size: 24, weight: .black)
                         .foregroundStyle(Color(hex: "E50914"))
                     Text("\(game.sport) · \(game.scheduleLabel)")
-                        .scaledFont(size: 14, weight: .semibold)
-                        .foregroundStyle(Color.white.opacity(0.5))
+                        .scaledFont(size: 24, weight: .semibold)
+                        .foregroundStyle(Color.white.opacity(0.6))
                         .lineLimit(1)
                 }
                 Spacer()
                 // The "Watch ▶" affordance now shares the same handler as the
                 // whole card — opens the SportsWatchSheet for this game.
                 Text("Watch ▶")
-                    .scaledFont(size: 17, weight: .bold)
+                    .scaledFont(size: 26, weight: .bold)
                     .foregroundStyle(.white)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
+                    .padding(.horizontal, 24)
+                    .padding(.vertical, 12)
                     .background(
-                        RoundedRectangle(cornerRadius: 20).fill(Color(hex: "F5821F"))
+                        RoundedRectangle(cornerRadius: 30).fill(Color(hex: "F5821F"))
                     )
             }
 
@@ -586,8 +586,8 @@ struct SportsView: View {
                 liveTeamBlock(team: game.away, leading: true)
                 Spacer()
                 Text("VS")
-                    .scaledFont(size: 17, weight: .bold)
-                    .foregroundStyle(Color.white.opacity(0.2))
+                    .scaledFont(size: 28, weight: .bold)
+                    .foregroundStyle(Color.white.opacity(0.3))
                 Spacer()
                 liveTeamBlock(team: game.home, leading: false)
             }
@@ -607,14 +607,14 @@ struct SportsView: View {
 
     private func liveTeamBlock(team: GameTeam, leading: Bool) -> some View {
         let scoreColor: Color = team.isWinner ? .white : Color.white.opacity(0.55)
-        return VStack(spacing: 4) {
-            TeamLogoBadge(team: team, size: 110, cornerRadius: 22, inset: 13, abbreviationFontSize: 14)
+        return VStack(spacing: 8) {
+            TeamLogoBadge(team: team, size: 150, cornerRadius: 28, inset: 18, abbreviationFontSize: 30)
             Text(team.shortName)
-                .scaledFont(size: 15, weight: .semibold)
-                .foregroundStyle(Color.white.opacity(0.6))
+                .scaledFont(size: 26, weight: .semibold)
+                .foregroundStyle(Color.white.opacity(0.7))
                 .lineLimit(1)
             Text(team.score)
-                .scaledFont(size: 36, weight: .black)
+                .scaledFont(size: 60, weight: .black)
                 .foregroundStyle(scoreColor)
         }
         .frame(maxWidth: .infinity, alignment: leading ? .leading : .trailing)
@@ -751,18 +751,18 @@ struct SportsView: View {
     @ViewBuilder
     private func broadcastsRow(_ broadcasts: [String]) -> some View {
         if !broadcasts.isEmpty {
-            HStack(spacing: 6) {
+            HStack(spacing: 12) {
                 Text("ON:")
-                    .scaledFont(size: 17, weight: .bold)
-                    .foregroundStyle(Color.white.opacity(0.35))
+                    .scaledFont(size: 22, weight: .bold)
+                    .foregroundStyle(Color.white.opacity(0.45))
                 ForEach(broadcasts.prefix(4), id: \.self) { name in
                     Text(name)
-                        .scaledFont(size: 17, weight: .black)
+                        .scaledFont(size: 22, weight: .black)
                         .foregroundStyle(.white)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 3)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
                         .background(
-                            RoundedRectangle(cornerRadius: 5).fill(broadcastColor(name))
+                            RoundedRectangle(cornerRadius: 10).fill(broadcastColor(name))
                         )
                 }
                 Spacer()
