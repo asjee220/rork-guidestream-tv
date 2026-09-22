@@ -188,17 +188,22 @@ enum StreamingDeepLinker {
         // 9 Sep 2026, ending in nothing at all. Go straight to the service's
         // site, inside the app. `nil` means we cannot tell, and an unknown
         // keeps the full chain.
-        if appIsInstalled(platform: platform) == false {
+        let scheme = url.scheme?.lowercased() ?? ""
+        let isWeb = scheme == "https" || scheme == "http"
+
+        // Only short-circuit non-web links. A `universalLinksOnly` open that no
+        // app claims fails silently with no visible beat, so an https link is
+        // always worth one try — and `appIsInstalled` checks our guessed
+        // scheme (`hbomax://`), not the app. GUI-110: HBO Max claims every
+        // play.hbomax.com path, but a false from `canOpenURL("hbomax://")`
+        // skipped the link that would have opened it.
+        if !isWeb, appIsInstalled(platform: platform) == false {
             print("[Deeplink] \(platform) app not installed; opening the web destination in-app")
-            let target = resolve(platform: platform, title: title)
-            let scheme = url.scheme?.lowercased() ?? ""
-            let destination = (scheme == "https" || scheme == "http") ? url : target.webURL
-            presentWeb(destination, platform: platform)
+            presentWeb(resolve(platform: platform, title: title).webURL, platform: platform)
             return
         }
 
-        let scheme = url.scheme?.lowercased() ?? ""
-        if scheme == "https" || scheme == "http" {
+        if isWeb {
             UIApplication.shared.open(url, options: [.universalLinksOnly: true]) { universalOk in
                 if universalOk {
                     print("[Deeplink] ✓ universal link opened in app: \(url.absoluteString)")
@@ -270,10 +275,17 @@ enum StreamingDeepLinker {
         let target = tracked ?? destination
         print("[Deeplink] web destination \(target.absoluteString) tracked=\(tracked != nil)")
 
-        if !InAppBrowserPresenter.present(target) {
-            // No window, or a scheme the sheet cannot take. Safari beats
-            // nothing at all, which is the failure this path exists to end.
-            UIApplication.shared.open(target)
+        // Every Watch button closes its sheet ~180ms after the tap. Presented
+        // before that, the browser sits ON the sheet and is torn down with it
+        // — the viewer sees the sheets close and nothing else (GUI-110). Wait
+        // for the dismissal to finish, then present from whatever is on top.
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(650))
+            if !InAppBrowserPresenter.present(target) {
+                // No window, or a scheme the sheet cannot take. Safari beats
+                // nothing at all, which is the failure this path exists to end.
+                UIApplication.shared.open(target, options: [:], completionHandler: nil)
+            }
         }
     }
 
