@@ -97,14 +97,20 @@ class DeviceSessionService private constructor(private val context: Context) {
     }
 
     /** Called on every foreground transition (activity start 0→1). The first
-     * call in a process is a no-op so the cold-launch increment in
-     * [GuideStreamTVApp.onCreate] remains the only initial session count
-     * bump. Subsequent calls check the background duration: 30+ minutes
-     * starts a new session; under 30 minutes issues a `foreground_touch`
-     * upsert at most once every 5 minutes. */
+     * call in a process is the cold launch: it logs `app_opened` and bumps the
+     * session counter. This is the only place the initial bump happens —
+     * deliberately not [GuideStreamTVApp.onCreate], which also runs for
+     * headless process starts (FCM, WorkManager) that are not sessions.
+     * Subsequent calls check the background duration: 30+ minutes starts a
+     * new session; under 30 minutes issues a `foreground_touch` upsert at
+     * most once every 5 minutes. */
     fun handleForeground() {
         if (!coldLaunchCounted) {
             coldLaunchCounted = true
+            runCatching {
+                WatchIntentLogger.get().log(WatchIntentLogger.IntentEventType.APP_OPENED)
+            }
+            incrementSessionAndUpsert()
             return
         }
 

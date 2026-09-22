@@ -73,9 +73,12 @@ class GuideStreamTVApp : Application() {
         // safety timeout) before the SDK initializes, so no ad request can
         // fire before consent is resolved.
 
-        // Log app opened + bump session counter
-        safe("appOpened") { WatchIntentLogger.get().log(WatchIntentLogger.IntentEventType.APP_OPENED) }
-        safe("sessionUpsert") { DeviceSessionService.get().incrementSessionAndUpsert() }
+        // The cold-launch session increment and app_opened event fire from
+        // DeviceSessionService.handleForeground on the first activity start,
+        // not here. Application.onCreate also runs for headless process
+        // starts (FCM delivery, WorkManager, widget updates), and counting
+        // those inflated Android session_count ~3x against iOS, which bumps
+        // from ContentView.task only when the UI is actually on screen.
 
         // Track foreground/background transitions via activity lifecycle.
         // A rise from zero to one started-activity means the app returned to
