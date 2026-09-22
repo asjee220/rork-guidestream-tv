@@ -70,11 +70,11 @@ enum TVHeroEntry: Identifiable, Hashable {
 
     var eyebrow: String {
         switch self {
-        case .media(let r): return r.isTV ? "TRENDING SHOW" : "TRENDING MOVIE"
-        case .game(let g): return "LIVE · \(g.sport.uppercased())"
-        case .liveCreator: return "LIVE NOW"
+        case .media(let r): return r.isTV ? String(localized: "TRENDING SHOW") : String(localized: "TRENDING MOVIE")
+        case .game(let g): return String(localized: "LIVE · \(g.sport.uppercased())")
+        case .liveCreator: return String(localized: "LIVE NOW")
         case .upload(let row):
-            return "NEW FROM \(row.showName.uppercased())"
+            return String(localized: "NEW FROM \(row.showName.uppercased())")
         }
     }
 
@@ -94,7 +94,7 @@ enum TVHeroEntry: Identifiable, Hashable {
             let score = "\(g.away.abbreviation) \(g.away.score) – \(g.home.abbreviation) \(g.home.score)"
             return [score, g.statusDetail].filter { !$0.isEmpty }.joined(separator: " · ")
         case .liveCreator(_, _, let streamTitle, _, let viewers):
-            let watching = viewers.map { "\($0.formatted()) watching" }
+            let watching = viewers.map { String(localized: "\($0.formatted()) watching") }
             return [streamTitle, watching].compactMap { $0 }.joined(separator: " · ")
         case .upload(let row): return row.synopsis
         }
@@ -102,10 +102,10 @@ enum TVHeroEntry: Identifiable, Hashable {
 
     var ctaLabel: String {
         switch self {
-        case .media: return "Watch Now"
-        case .game: return "Where to Watch"
-        case .liveCreator: return "Watch Live"
-        case .upload: return "Watch"
+        case .media: return String(localized: "Watch Now")
+        case .game: return String(localized: "Where to Watch")
+        case .liveCreator: return String(localized: "Watch Live")
+        case .upload: return String(localized: "Watch")
         }
     }
 }
