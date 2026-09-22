@@ -85,7 +85,7 @@ private nonisolated struct TVTMDBFreshnessEpisode: Decodable, Sendable {
 }
 
 /// Next scheduled episode of a series, for the Upcoming Episodes rail.
-nonisolated struct TVTMDBNextEpisode: Hashable, Sendable {
+nonisolated struct TVTMDBNextEpisode: Hashable, Sendable, Codable {
     let showName: String
     let posterPath: String?
     let seasonNumber: Int?

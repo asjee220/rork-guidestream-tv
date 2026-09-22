@@ -64,7 +64,7 @@ final class TVContinueWatchingService {
 
 // MARK: - Decodable row
 
-nonisolated struct TVContinueWatchingRow: Decodable, Sendable, Identifiable {
+nonisolated struct TVContinueWatchingRow: Codable, Sendable, Identifiable {
     let tmdbId: Int
     /// "tv" or "movie" — resolved server-side from title_names. The launch
     /// events themselves carry no media type, which is why the view joins.

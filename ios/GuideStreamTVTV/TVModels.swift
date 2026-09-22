@@ -61,7 +61,7 @@ nonisolated enum TVTMDBImage {
     }
 }
 
-nonisolated struct TVTMDBResult: Identifiable, Hashable, Sendable, Decodable {
+nonisolated struct TVTMDBResult: Identifiable, Hashable, Sendable, Codable {
     let id: Int
     let mediaType: String?
     let name: String?

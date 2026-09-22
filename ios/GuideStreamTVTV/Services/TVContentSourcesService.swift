@@ -14,7 +14,7 @@
 import Foundation
 import Supabase
 
-struct TVRecommendedCreator: Identifiable, Hashable, Sendable {
+nonisolated struct TVRecommendedCreator: Identifiable, Hashable, Sendable, Codable {
     let titleId: String
     let displayName: String
     let imageUrl: String?

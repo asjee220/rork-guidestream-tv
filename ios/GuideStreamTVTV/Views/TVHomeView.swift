@@ -14,14 +14,14 @@ import UIKit
 
 // MARK: - Rail item structs
 
-private struct EveryonesWatchingItem: Identifiable {
+nonisolated private struct EveryonesWatchingItem: Identifiable, Codable {
     let result: TVTMDBResult
     let rank: Int
     let providerName: String?
     var id: Int { result.id }
 }
 
-private struct ComingToStreamingItem: Identifiable {
+nonisolated private struct ComingToStreamingItem: Identifiable, Codable {
     let result: TVTMDBResult
     let badge: String
     let meta: String
@@ -32,7 +32,7 @@ private struct ComingToStreamingItem: Identifiable {
     var id: Int { result.id }
 }
 
-private struct NowNextItem: Identifiable {
+nonisolated private struct NowNextItem: Identifiable, Codable {
     let release: TVStreamingRelease
     let badge: String
     var id: Int { release.tmdbId }
@@ -64,10 +64,51 @@ private struct NowAndNextRail: Identifiable {
 }
 
 /// A followed show's next scheduled episode (GUI-102).
-struct UpcomingEpisodeItem: Identifiable, Hashable {
+nonisolated struct UpcomingEpisodeItem: Identifiable, Hashable, Codable {
     let tmdbId: Int
     let next: TVTMDBNextEpisode
     var id: Int { tmdbId }
+}
+
+/// Everything Home renders above and below the fold, as it was last built.
+/// Painted on the next launch before any request; see TVHomeSnapshotStore.
+/// Rule from the phone: any rail above the fold must be in here, or the
+/// first paint reflows when the real data lands. Live sports, live creators
+/// and creator uploads are deliberately left out — they are time-sensitive.
+nonisolated private struct TVHomeSnapshot: Codable, Sendable {
+    struct ContinueRow: Codable {
+        let row: TVContinueWatchingRow
+        let posterUrl: String?
+        let serviceId: String?
+    }
+    struct NowNext: Codable {
+        let serviceId: String
+        let items: [NowNextItem]
+    }
+    var trending: [TVTMDBResult] = []
+    var onAir: [TVTMDBResult] = []
+    var ended: [TVTMDBResult] = []
+    var topRated: [TVTMDBResult] = []
+    var providerNames: [Int: String] = [:]
+    var heroItems: [TVTMDBResult] = []
+    var heroFeaturettes: [String: String] = [:]
+    var continueWatching: [ContinueRow] = []
+    var recommendedTitles: [TVRecommendedTitle] = []
+    var todaysPick: TVStreamingRelease?
+    var todaysPickBackdropUrl: String?
+    var everyonesWatching: [EveryonesWatchingItem] = []
+    var topPicksSource: [TVTMDBResult] = []
+    var popularOnService: [String: [TVTMDBResult]] = [:]
+    var nowAndNext: [NowNext] = []
+    var comingToStreaming: [ComingToStreamingItem] = []
+    var recommendedCreators: [TVRecommendedCreator] = []
+    var followedNewEpisodes: [TVNewEpisodeRow] = []
+    var newThisWeek: [TVStreamingRelease] = []
+    var leavingSoon: [TVExpiringRow] = []
+    var upcomingEpisodes: [UpcomingEpisodeItem] = []
+    var aroundTheWorld: [TVTMDBResult] = []
+    var aroundRegionCode: String?
+    var aroundProviderName: String?
 }
 
 private struct TopPickItem: Identifiable {
@@ -875,17 +916,28 @@ struct TVHomeView: View {
     /// Top provider name per title, for Top rated and Binge Worthy. Titles
     /// with no provider in this region are left out and so drop off the rail.
     private func hydrateProviderNames(for items: [TVTMDBResult]) async {
-        let todo = items.filter { providerNames[$0.id] == nil }
+        var seen = Set<Int>()
+        let todo = items.filter { providerNames[$0.id] == nil && seen.insert($0.id).inserted }
         guard !todo.isEmpty else { return }
+        // Sliding window of 8 in flight. The hero, Everyone's Watching and
+        // the parity rails all call this at once; unbounded, that was ~90
+        // concurrent TMDB requests and the 429s came back as "no provider",
+        // which emptied Everyone's Watching to four titles.
+        let maxConcurrent = 8
+        var cursor = 0
         let found = await withTaskGroup(of: (Int, String?).self) { group in
-            for item in todo {
+            func schedule(_ item: TVTMDBResult) {
                 group.addTask {
                     let p = try? await TVTMDBService.shared.getTopWatchProvider(tmdbId: item.id, isTV: item.isTV)
                     return (item.id, p?.providerName)
                 }
             }
+            while cursor < todo.count && cursor < maxConcurrent { schedule(todo[cursor]); cursor += 1 }
             var out: [Int: String] = [:]
-            for await (id, name) in group { if let name { out[id] = name } }
+            while let (id, name) = await group.next() {
+                if let name { out[id] = name }
+                if cursor < todo.count { schedule(todo[cursor]); cursor += 1 }
+            }
             return out
         }
         providerNames.merge(found) { _, new in new }
@@ -1210,6 +1262,9 @@ struct TVHomeView: View {
                 service: service
             )
         }
+        // This rail is above the fold and arrives on its own task, so a
+        // snapshot written by loadAll before it landed is refreshed here.
+        persistHomeSnapshot()
     }
 
     // MARK: - Cards
@@ -1457,6 +1512,7 @@ struct TVHomeView: View {
     // MARK: - Data loading
 
     private func loadAll() async {
+        restoreHomeSnapshot()
         isLoading = true
         async let trendingTask = (try? TVTMDBService.shared.getTrending()) ?? []
         async let newEpisodesTask = (try? TVTMDBService.shared.getOnTheAir()) ?? []
@@ -1472,6 +1528,11 @@ struct TVHomeView: View {
         self.sports = sp
         self.isLoading = false
 
+        // One provider pass for the titles the hero and Everyone's Watching
+        // both draw from, before either starts, so neither waits on the other
+        // and no title is looked up twice.
+        await hydrateProviderNames(for: Array((t + ne + ended).prefix(18)) + Array(t.prefix(25)))
+
         // Build hero and new rails concurrently after base data lands.
         async let heroTask: Void = buildHeroItems()
         async let everyoneTask: Void = buildEveryonesWatching(from: t)
@@ -1486,6 +1547,89 @@ struct TVHomeView: View {
 
         _ = await (heroTask, everyoneTask, comingTask, popularTask, creatorsTask, nowNextTask, todaysPickTask, affiliateTask, parityTask)
         _ = await recommendedTask
+        persistHomeSnapshot()
+    }
+
+    // MARK: - Snapshot
+
+    /// Paints the last load before the first request goes out. Only when this
+    /// screen has nothing yet, so a pull of fresh data is never overwritten
+    /// by a stale file.
+    private func restoreHomeSnapshot() {
+        guard trending.isEmpty, heroItems.isEmpty,
+              let snap = TVHomeSnapshotStore.load(TVHomeSnapshot.self),
+              !snap.trending.isEmpty else { return }
+        trending = snap.trending
+        newEpisodes = snap.onAir
+        endedShows = snap.ended
+        topRated = snap.topRated
+        providerNames = snap.providerNames
+        heroItems = snap.heroItems
+        heroFeaturettes = snap.heroFeaturettes
+        continueWatching = snap.continueWatching.map { c in
+            ContinueWatchingItem(
+                row: c.row,
+                posterUrl: c.posterUrl,
+                service: c.serviceId.flatMap { id in StreamingCatalog.all.first { $0.id == id } }
+            )
+        }
+        recommendedTitles = snap.recommendedTitles
+        todaysPick = snap.todaysPick
+        todaysPickBackdropUrl = snap.todaysPickBackdropUrl
+        everyonesWatching = snap.everyonesWatching
+        popularOnService = snap.popularOnService
+        nowAndNextRails = snap.nowAndNext.compactMap { rail in
+            guard let service = StreamingCatalog.all.first(where: { $0.id == rail.serviceId }) else { return nil }
+            return NowAndNextRail(service: service, items: rail.items)
+        }
+        comingToStreaming = snap.comingToStreaming
+        recommendedCreators = snap.recommendedCreators
+        followedNewEpisodes = snap.followedNewEpisodes
+        newThisWeek = snap.newThisWeek
+        leavingSoon = snap.leavingSoon
+        upcomingEpisodes = snap.upcomingEpisodes
+        aroundTheWorld = snap.aroundTheWorld
+        aroundCountry = snap.aroundRegionCode.flatMap { CountryCatalog.entry(forRegionCode: $0) }
+        aroundProviderName = snap.aroundProviderName
+        composeHeroEntries()
+        heroLoading = false
+        isLoading = false
+        #if DEBUG
+        print("[home] painted from snapshot: \(heroItems.count) hero, \(everyonesWatching.count) everyone's, \(providerNames.count) providers")
+        #endif
+    }
+
+    /// Writes what is on screen now. Called after a full load and after
+    /// Continue Watching lands, which arrives on its own auth-keyed task.
+    private func persistHomeSnapshot() {
+        guard !trending.isEmpty, !heroItems.isEmpty else { return }
+        var snap = TVHomeSnapshot()
+        snap.trending = trending
+        snap.onAir = newEpisodes
+        snap.ended = endedShows
+        snap.topRated = topRated
+        snap.providerNames = providerNames
+        snap.heroItems = heroItems
+        snap.heroFeaturettes = heroFeaturettes
+        snap.continueWatching = continueWatching.map {
+            TVHomeSnapshot.ContinueRow(row: $0.row, posterUrl: $0.posterUrl, serviceId: $0.service?.id)
+        }
+        snap.recommendedTitles = recommendedTitles
+        snap.todaysPick = todaysPick
+        snap.todaysPickBackdropUrl = todaysPickBackdropUrl
+        snap.everyonesWatching = everyonesWatching
+        snap.popularOnService = popularOnService
+        snap.nowAndNext = nowAndNextRails.map { TVHomeSnapshot.NowNext(serviceId: $0.service.id, items: $0.items) }
+        snap.comingToStreaming = comingToStreaming
+        snap.recommendedCreators = recommendedCreators
+        snap.followedNewEpisodes = followedNewEpisodes
+        snap.newThisWeek = newThisWeek
+        snap.leavingSoon = leavingSoon
+        snap.upcomingEpisodes = upcomingEpisodes
+        snap.aroundTheWorld = aroundTheWorld
+        snap.aroundRegionCode = aroundCountry?.regionCode
+        snap.aroundProviderName = aroundProviderName
+        TVHomeSnapshotStore.save(snap)
     }
 
     /// Loads the "Recommended for You" rail from the `recommend_titles` edge
@@ -1611,16 +1755,14 @@ struct TVHomeView: View {
         }
         let candidates = Array(pool.prefix(18))
 
+        // Was one request at a time, up to 18 in a row, before the hero could
+        // appear. Now one wave, and titles whose provider is already known
+        // (snapshot, or another rail) cost nothing.
+        await hydrateProviderNames(for: candidates)
         var survivors: [TVTMDBResult] = []
-        for candidate in candidates {
+        for candidate in candidates where providerNames[candidate.id] != nil {
             if survivors.count >= 6 { break }
-            let provider = try? await TVTMDBService.shared.getTopWatchProvider(
-                tmdbId: candidate.id,
-                isTV: candidate.isTV
-            )
-            if provider != nil {
-                survivors.append(candidate)
-            }
+            survivors.append(candidate)
         }
 
         // Titles that resolve a provider in the user's own region lead, since
@@ -1677,24 +1819,12 @@ struct TVHomeView: View {
     /// in the full de-duplicated trending array, capped at 20.
     private func buildEveryonesWatching(from trendingItems: [TVTMDBResult]) async {
         let candidates = Array(trendingItems.prefix(25))
-        let results = await withTaskGroup(of: (Int, TVTMDBResult, String?).self) { group in
-            for (index, item) in candidates.enumerated() {
-                group.addTask {
-                    let provider = try? await TVTMDBService.shared.getTopWatchProvider(
-                        tmdbId: item.id,
-                        isTV: item.isTV
-                    )
-                    return (index, item, provider?.providerName)
-                }
-            }
-            var collected: [(Int, TVTMDBResult, String?)] = []
-            for await item in group { collected.append(item) }
-            return collected
-        }
-        // Sort by original trending position so rank is stable.
-        let sorted = results.sorted { $0.0 < $1.0 }
+        // Shares the provider map with the hero and the parity rails, so a
+        // title looked up once this launch is never looked up again.
+        await hydrateProviderNames(for: candidates)
         var items: [EveryonesWatchingItem] = []
-        for (index, result, providerName) in sorted {
+        for (index, result) in candidates.enumerated() {
+            let providerName = providerNames[result.id]
             guard providerName != nil else { continue }
             let rank = index + 1
             if items.count >= 20 { break }

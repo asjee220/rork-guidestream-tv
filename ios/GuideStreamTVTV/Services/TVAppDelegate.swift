@@ -18,6 +18,11 @@ final class TVAppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCe
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
         UNUserNotificationCenter.current().delegate = self
+        // Posters and backdrops are fetched through URLSession.shared, and
+        // TMDB sends long cache headers. The default cache (4MB/20MB) barely
+        // outlives one Home screen of original-size backdrops, so every
+        // relaunch refetched everything. Big enough for a few days of art.
+        URLCache.shared = URLCache(memoryCapacity: 64 * 1024 * 1024, diskCapacity: 512 * 1024 * 1024)
         return true
     }
 

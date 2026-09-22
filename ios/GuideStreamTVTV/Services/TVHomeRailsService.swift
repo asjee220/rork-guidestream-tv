@@ -16,7 +16,7 @@ import Supabase
 
 /// Row from `public.new_episodes`. The target's `NewEpisodeRow` is a
 /// non-decodable stub for shared view signatures, so this is its own type.
-nonisolated struct TVNewEpisodeRow: Decodable, Identifiable, Hashable, Sendable {
+nonisolated struct TVNewEpisodeRow: Codable, Identifiable, Hashable, Sendable {
     let id: String
     let titleId: String
     let title: String?
@@ -53,7 +53,7 @@ nonisolated struct TVNewEpisodeRow: Decodable, Identifiable, Hashable, Sendable 
 }
 
 /// Row from `public.expiring_titles`, refreshed daily server-side.
-nonisolated struct TVExpiringRow: Decodable, Identifiable, Hashable, Sendable {
+nonisolated struct TVExpiringRow: Codable, Identifiable, Hashable, Sendable {
     let tmdbId: Int
     let tmdbType: String?
     let title: String

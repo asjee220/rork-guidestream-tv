@@ -62,7 +62,7 @@ final class TVStreamingReleasesService {
 
 // MARK: - Decodable row
 
-nonisolated struct TVStreamingRelease: Decodable, Sendable, Identifiable {
+nonisolated struct TVStreamingRelease: Codable, Sendable, Identifiable, Hashable {
     let tmdbId: Int
     let tmdbType: String
     let title: String

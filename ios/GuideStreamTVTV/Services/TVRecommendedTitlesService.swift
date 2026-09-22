@@ -14,7 +14,7 @@
 
 import Foundation
 
-nonisolated struct TVRecommendedTitle: Decodable, Sendable, Identifiable {
+nonisolated struct TVRecommendedTitle: Codable, Sendable, Identifiable {
     let tmdbId: Int
     let mediaType: String
     let title: String
