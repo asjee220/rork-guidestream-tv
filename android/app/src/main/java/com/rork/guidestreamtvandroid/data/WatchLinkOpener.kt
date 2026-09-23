@@ -40,6 +40,32 @@ fun serviceSearchUrl(serviceName: String?, title: String?): String? {
 }
 
 /**
+ * The service's own custom URL scheme, pointing at the app's home screen.
+ * Used when the resolved target could not be launched by anything on the
+ * device (the https link is unverified, or nothing claims it): if the
+ * streaming app is installed it will still answer its private scheme, and
+ * landing on its home is closer to "watch" than dropping the viewer onto a
+ * web search. Null for a service with no known scheme.
+ */
+fun serviceNativeSchemeUrl(serviceName: String?): String? {
+    val key = serviceName?.lowercase()?.takeIf { it.isNotBlank() } ?: return null
+    return when {
+        key.contains("netflix") -> "nflx://"
+        key.contains("hbo") || key.contains("max") -> "hbomax://"
+        key.contains("hulu") -> "hulu://"
+        key.contains("disney") -> "disneyplus://"
+        key.contains("prime") || key.contains("amazon") -> "primevideo://"
+        key.contains("paramount") -> "paramountplus://"
+        key.contains("peacock") -> "peacock://"
+        key.contains("youtube") -> "youtube://"
+        key.contains("starz") -> "starz://"
+        key.contains("crunchyroll") -> "crunchyroll://"
+        key.contains("patreon") -> "patreon://"
+        else -> null
+    }
+}
+
+/**
  * Opens a Watch target: the streaming app when it is installed, otherwise the
  * title's page on the service's own site, inside GuideStream.
  *
@@ -77,6 +103,19 @@ fun openWatchLink(
         else -> false
     }
     if (launched) return
+
+    // The target itself went nowhere. Before falling to the web, knock on the
+    // service's own scheme - an installed app answers it even when its https
+    // links are unverified. Skipped when the target already was that scheme,
+    // since that attempt just failed above.
+    val nativeHome = serviceNativeSchemeUrl(serviceName)
+    if (nativeHome != null && !target.startsWith(nativeHome, ignoreCase = true)) {
+        val opened = runCatching {
+            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(nativeHome)))
+            true
+        }.getOrDefault(false)
+        if (opened) return
+    }
 
     // Nothing on the device wanted it. Land on the service's own site rather
     // than on nothing, and keep it inside the app.
