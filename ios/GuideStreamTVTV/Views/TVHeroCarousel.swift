@@ -863,10 +863,17 @@ private struct TVHeroStillBackdrop: View {
     @State private var drift: CGFloat = 1.0
 
     var body: some View {
-        TVRemoteImage(urlString: urlString, contentMode: .fill)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // Sized by Color.clear, not by the image. An aspect-fill image that
+        // is not 16:9 — a square creator poster, a 4:3 YouTube thumbnail —
+        // reports its overflowing size through a flexible frame, which grew
+        // the hero's ZStack past the screen and pushed the bottom-aligned
+        // metadata and CTA down onto the first rail.
+        Color.clear
+            .overlay {
+                TVRemoteImage(urlString: urlString, contentMode: .fill)
+                    .scaleEffect(drift)
+            }
             .clipped()
-            .scaleEffect(drift)
             .onAppear {
                 drift = 1.0
                 withAnimation(.linear(duration: 10)) {
