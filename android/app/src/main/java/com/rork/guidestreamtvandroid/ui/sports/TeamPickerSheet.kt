@@ -26,7 +26,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.Search
@@ -62,11 +61,8 @@ import com.rork.guidestreamtvandroid.ui.components.GsSheetDragHandle
 import com.rork.guidestreamtvandroid.ui.theme.BrandBlue
 import com.rork.guidestreamtvandroid.ui.theme.BrandOrange
 import com.rork.guidestreamtvandroid.ui.theme.Hairline
-import com.rork.guidestreamtvandroid.ui.theme.OutlineVariant
 import com.rork.guidestreamtvandroid.ui.theme.SheetLevel
 import com.rork.guidestreamtvandroid.ui.theme.SheetSurfaceBase
-import com.rork.guidestreamtvandroid.ui.theme.SurfaceContainer
-import com.rork.guidestreamtvandroid.ui.theme.TextSecondary
 import com.rork.guidestreamtvandroid.ui.theme.sheetTopInset
 import kotlinx.coroutines.launch
 
@@ -190,6 +186,26 @@ fun TeamPickerSheet(
                 )
             }
 
+            // Following — tap a circle to unfollow (sports restyle 2026-09-25)
+            if (orderedSelection.isNotEmpty()) {
+                Text(
+                    "Following",
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = BrandOrange,
+                    modifier = Modifier.padding(horizontal = 20.dp),
+                )
+                LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    contentPadding = PaddingValues(horizontal = 20.dp),
+                    modifier = Modifier.padding(top = 10.dp, bottom = 14.dp),
+                ) {
+                    items(orderedSelection, key = { "following-${it.teamUid}" }) { team ->
+                        FollowingCircle(team) { selected.remove(team.teamUid) }
+                    }
+                }
+            }
+
             // Sport pills
             LazyRow(
                 horizontalArrangement = Arrangement.spacedBy(7.dp),
@@ -280,7 +296,7 @@ fun TeamPickerSheet(
                 when {
                     teams.isEmpty() && isLoading -> {
                         LazyVerticalGrid(
-                            columns = GridCells.Adaptive(96.dp),
+                            columns = GridCells.Fixed(4),
                             horizontalArrangement = Arrangement.spacedBy(10.dp),
                             verticalArrangement = Arrangement.spacedBy(10.dp),
                             contentPadding = PaddingValues(horizontal = 20.dp),
@@ -288,8 +304,8 @@ fun TeamPickerSheet(
                             items(12) {
                                 Box(
                                     Modifier
-                                        .height(92.dp)
-                                        .clip(RoundedCornerShape(14.dp))
+                                        .size(74.dp)
+                                        .clip(CircleShape)
                                         .background(Color.White.copy(alpha = 0.045f)),
                                 )
                             }
@@ -340,9 +356,9 @@ fun TeamPickerSheet(
 
                     else -> {
                         LazyVerticalGrid(
-                            columns = GridCells.Adaptive(96.dp),
+                            columns = GridCells.Fixed(4),
                             horizontalArrangement = Arrangement.spacedBy(10.dp),
-                            verticalArrangement = Arrangement.spacedBy(10.dp),
+                            verticalArrangement = Arrangement.spacedBy(16.dp),
                             contentPadding = PaddingValues(start = 20.dp, end = 20.dp, bottom = 16.dp),
                         ) {
                             items(visibleTeams, key = { it.teamUid }) { team ->
@@ -372,18 +388,6 @@ fun TeamPickerSheet(
             ) {
                 Box(Modifier.fillMaxWidth().height(1.dp).background(Hairline))
                 Spacer(Modifier.height(12.dp))
-
-                if (orderedSelection.isNotEmpty()) {
-                    LazyRow(
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        contentPadding = PaddingValues(horizontal = 20.dp),
-                        modifier = Modifier.padding(bottom = 10.dp),
-                    ) {
-                        items(orderedSelection, key = { it.teamUid }) { team ->
-                            SelectedChip(team) { selected.remove(team.teamUid) }
-                        }
-                    }
-                }
 
                 Box(
                     modifier = Modifier
@@ -481,109 +485,60 @@ private fun TeamTile(
     isSelected: Boolean,
     onToggle: () -> Unit,
 ) {
-    Box {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterVertically),
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(92.dp)
-                .clip(RoundedCornerShape(14.dp))
-                .background(
-                    if (isSelected) BrandOrange.copy(alpha = 0.10f) else Color.White.copy(alpha = 0.045f),
-                )
-                .border(
-                    1.dp,
-                    if (isSelected) BrandOrange else OutlineVariant,
-                    RoundedCornerShape(14.dp),
-                )
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null,
-                ) { onToggle() }
-                .padding(horizontal = 4.dp),
-        ) {
-            TeamLogo(
-                team = team.asTeamSummary(),
-                size = 46.dp,
-                cornerRadius = 11.dp,
-                inset = 5.dp,
-                abbreviationFontSize = 11.sp,
-            )
-            Text(
-                team.displayLabel,
-                fontSize = 10.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = if (isSelected) Color.White else Color.White.copy(alpha = 0.72f),
-                textAlign = TextAlign.Center,
-                maxLines = 2,
-                lineHeight = 12.sp,
-            )
-        }
-        if (isSelected) {
-            Box(
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(5.dp)
-                    .size(17.dp)
-                    .clip(CircleShape)
-                    .background(BrandOrange),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    Icons.Filled.Check,
-                    contentDescription = null,
-                    tint = Color.White,
-                    modifier = Modifier.size(11.dp),
-                )
-            }
-        }
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(7.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+            ) { onToggle() },
+    ) {
+        TeamCrestCircle(team = team.asTeamSummary(), size = 74.dp, filled = isSelected)
+        Text(
+            team.displayLabel,
+            fontSize = 12.sp,
+            fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium,
+            color = if (isSelected) Color.White else Color.White.copy(alpha = 0.55f),
+            textAlign = TextAlign.Center,
+            maxLines = 2,
+            lineHeight = 14.sp,
+        )
     }
 }
 
+/** Followed team in the Following row: filled crest circle with a minus badge. */
 @Composable
-private fun SelectedChip(
+private fun FollowingCircle(
     team: SportsTeamCatalogService.SportsTeamRow,
     onRemove: () -> Unit,
 ) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(5.dp),
+    Box(
         modifier = Modifier
-            .clip(CircleShape)
-            .background(SurfaceContainer)
-            .border(1.dp, OutlineVariant, CircleShape)
-            .padding(start = 5.dp, end = 9.dp, top = 4.dp, bottom = 4.dp),
+            .size(58.dp)
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+            ) { onRemove() },
     ) {
-        TeamLogo(
-            team = team.asTeamSummary(),
-            size = 16.dp,
-            cornerRadius = 4.dp,
-            inset = 1.dp,
-            abbreviationFontSize = 5.sp,
-        )
-        Text(
-            team.teamAbbr ?: team.displayLabel,
-            fontSize = 10.5.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = Color.White,
-        )
-        Icon(
-            Icons.Filled.Close,
-            contentDescription = "Remove",
-            tint = TextSecondary,
+        TeamCrestCircle(team = team.asTeamSummary(), size = 56.dp)
+        Box(
             modifier = Modifier
-                .size(11.dp)
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null,
-                ) { onRemove() },
-        )
+                .align(Alignment.BottomEnd)
+                .size(20.dp)
+                .clip(CircleShape)
+                .background(Color.White)
+                .border(2.dp, SheetSurfaceBase, CircleShape),
+            contentAlignment = Alignment.Center,
+        ) {
+            Box(Modifier.width(9.dp).height(2.dp).clip(RoundedCornerShape(1.dp)).background(Color(0xFF0B131D)))
+        }
     }
 }
 
 /**
- * Bridges a catalogue row into the [SportsGame.TeamSummary] shape [TeamLogo]
+ * Bridges a catalogue row into the [SportsGame.TeamSummary] shape [TeamCrestCircle]
  * already renders, so picker crests are visually identical to game-card crests.
  */
 private fun SportsTeamCatalogService.SportsTeamRow.asTeamSummary(): SportsGame.TeamSummary =

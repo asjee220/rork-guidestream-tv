@@ -55,6 +55,9 @@ struct SportsView: View {
     @State private var favorites = TVTeamFavoritesService.shared
     /// Non-nil while the picker is up; carries which mode it opened in.
     @State private var picker: TVTeamPickerView.Mode?
+    /// Game photos for the My games hero cards, keyed by game id.
+    @State private var gameImages: [String: String] = [:]
+    @State private var catalog = TVSportsTeamCatalogService.shared
     /// GUI-95 — the week grid of games for followed teams. A shell route, not
     /// a presentation: see TVTitleRoute.swift.
     @Environment(\.showSchedule) private var showSchedule
@@ -138,7 +141,8 @@ struct SportsView: View {
                     shortName: name,
                     score: "",
                     primaryHex: nil,
-                    isWinner: false
+                    isWinner: false,
+                    logoURL: catalog.teams.first { $0.team_uid == uid }?.logo_url
                 )
             )
         }
@@ -148,6 +152,20 @@ struct SportsView: View {
             if a.isLive != b.isLive { return a.isLive }
             return a.name < b.name
         }
+    }
+
+    /// Sports restyle: games involving a followed team — live first, then
+    /// today's, then today's finals — shown as hero cards above the sections.
+    private var myGames: [SportsGame] {
+        let uids = favorites.favoriteUids()
+        guard !uids.isEmpty else { return [] }
+        let mine = filteredGames.filter { g in
+            (g.away.uid.map(uids.contains) ?? false) || (g.home.uid.map(uids.contains) ?? false)
+        }
+        let live = mine.filter { $0.state == .live }
+        let today = mine.filter { $0.state == .pre && $0.startsToday }
+        let finals = mine.filter { $0.state == .post && TVSportsClock.isToday($0.startDate) }
+        return Array((live + today + finals).prefix(6))
     }
 
     /// The followed team's next game: live if one is on, else the soonest
@@ -193,6 +211,9 @@ struct SportsView: View {
                         // which is the whole point of the screen having
                         // favourites at all.
                         myTeamsSection
+                        if !myGames.isEmpty {
+                            myGamesSection
+                        }
                         Rectangle()
                             .fill(Color.white.opacity(0.06))
                             .frame(height: 1)
@@ -260,6 +281,7 @@ struct SportsView: View {
             #endif
         }
         .task {
+            await catalog.load()
             await load()
             await favorites.load()
             // A viewer with nothing followed is offered the picker once, on
@@ -286,6 +308,8 @@ struct SportsView: View {
             self.isLoading = false
             self.loadError = fetched.isEmpty ? "No games available right now." : nil
         }
+        let images = await SportsService.shared.fetchImages(ids: fetched.map(\.id))
+        await MainActor.run { self.gameImages = images }
     }
 
     // MARK: - Header
@@ -374,8 +398,8 @@ struct SportsView: View {
     private var myTeamsSection: some View {
         VStack(alignment: .leading, spacing: 34) {
             HStack {
-                Text("My Teams")
-                    .scaledFont(size: 24, weight: .bold)
+                Text("My teams")
+                    .scaledFont(size: 30, weight: .semibold)
                     .foregroundStyle(.white)
                 Spacer()
                 TVScheduleChip { showSchedule(.sports) }
@@ -389,7 +413,7 @@ struct SportsView: View {
                 noFavoritesPrompt
             } else {
                 ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 10) {
+                    HStack(alignment: .top, spacing: 40) {
                         ForEach(favoriteTeams, id: \.abbrev) { team in
                             Button {
                                 if let game = teamGame(for: team) {
@@ -404,6 +428,9 @@ struct SportsView: View {
                         }
                         addTeamChip
                     }
+                    // Room for the focused circle's lift and shadow.
+                    .padding(.vertical, 20)
+                    .padding(.horizontal, 12)
                 }
                 .focusSection()
             }
@@ -445,34 +472,32 @@ struct SportsView: View {
         }
     }
 
+    /// Sports restyle: the crest on its team-colour circle, the name and the
+    /// next-game label. Focus thickens the crest's own white ring and lifts it.
     private func teamChip(_ team: TeamChip, isFocused: Bool = false) -> some View {
-        VStack(spacing: 3) {
-            TeamLogoBadge(team: team.team, size: 72, cornerRadius: 7, inset: 9, abbreviationFontSize: 11)
-            Text(team.name)
-                .scaledFont(size: 14, weight: .semibold)
-                .foregroundStyle(Color.white.opacity(0.6))
-                .lineLimit(1)
-            if !team.next.isEmpty {
-                Text(team.next)
-                    .scaledFont(size: 12, weight: .bold)
-                    .foregroundStyle(team.isLive ? Color(hex: "E50914") : Color(hex: "F5821F"))
+        VStack(spacing: 10) {
+            ZStack(alignment: .bottom) {
+                TVTeamCrestCircle(team: team.team, size: 116, focused: isFocused)
+                if team.isLive {
+                    Text("LIVE")
+                        .scaledFont(size: 15, weight: .bold)
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 2)
+                        .background(RoundedRectangle(cornerRadius: 8).fill(Color(hex: "D42B2B")))
+                        .offset(y: 10)
+                }
             }
+            Text(team.name)
+                .scaledFont(size: 20, weight: isFocused ? .bold : .semibold)
+                .foregroundStyle(isFocused ? .white : Color.white.opacity(0.8))
+                .lineLimit(1)
+            Text(team.next.isEmpty ? " " : team.next)
+                .scaledFont(size: 16, weight: .semibold)
+                .foregroundStyle(team.isLive ? Color(hex: "FF5A5A") : Color.white.opacity(0.5))
+                .padding(.top, -6)
         }
-        .padding(32)
-        .frame(minWidth: 270, minHeight: 180)
-        .background(
-            RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.04))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(
-                    isFocused
-                        ? Color.white
-                        : (team.isLive ? Color(hex: "E50914").opacity(0.35) : Color.white.opacity(0.07)),
-                    lineWidth: isFocused ? 2 : 1
-                )
-        )
-        .animation(.easeOut(duration: 0.15), value: isFocused)
+        .frame(width: 150)
     }
 
     private var addTeamChip: some View {
@@ -480,36 +505,191 @@ struct SportsView: View {
         return Button {
             picker = .edit
         } label: {
-            VStack(spacing: 3) {
-                Text("+")
-                    .scaledFont(size: 27, weight: .bold)
-                    .foregroundStyle(Color.white.opacity(0.2))
-                    .frame(width: 72, height: 72)
+            VStack(spacing: 10) {
+                Circle()
+                    .strokeBorder(style: StrokeStyle(lineWidth: isFocused ? 4 : 2, dash: isFocused ? [] : [6]))
+                    .foregroundStyle(isFocused ? Color.white : Color.white.opacity(0.25))
+                    .frame(width: 116, height: 116)
+                    .overlay(
+                        Image(systemName: "plus")
+                            .font(.system(size: 36, weight: .semibold))
+                            .foregroundStyle(Color.white.opacity(isFocused ? 0.9 : 0.35))
+                    )
+                    .scaleEffect(isFocused ? 1.08 : 1)
                 Text("Add")
-                    .scaledFont(size: 14, weight: .semibold)
-                    .foregroundStyle(Color.white.opacity(0.4))
+                    .scaledFont(size: 20, weight: .semibold)
+                    .foregroundStyle(Color.white.opacity(isFocused ? 1 : 0.5))
                 Text(" ")
-                    .scaledFont(size: 12, weight: .bold)
+                    .scaledFont(size: 16, weight: .semibold)
+                    .padding(.top, -6)
             }
-            .padding(32)
-            .frame(minWidth: 270, minHeight: 180)
-            .overlay(
-                Group {
-                    if isFocused {
-                        RoundedRectangle(cornerRadius: 12)
-                            .stroke(Color.white, lineWidth: 2)
-                    } else {
-                        RoundedRectangle(cornerRadius: 12)
-                            .stroke(style: StrokeStyle(lineWidth: 1, dash: [4]))
-                            .foregroundStyle(Color.white.opacity(0.15))
-                    }
-                }
-            )
+            .frame(width: 150)
             .animation(.easeOut(duration: 0.15), value: isFocused)
         }
         .buttonStyle(TVFlatButtonStyle())
         .focusEffectDisabled()
         .focused($focusedTeam, equals: "__add__")
+    }
+
+    // MARK: - My games (hero cards)
+
+    private var myGamesSection: some View {
+        VStack(alignment: .leading, spacing: 24) {
+            HStack(spacing: 12) {
+                Image(systemName: "star.fill")
+                    .font(.system(size: 26))
+                    .foregroundStyle(Color(hex: "F5821F"))
+                Text("My games")
+                    .scaledFont(size: 30, weight: .semibold)
+                    .foregroundStyle(.white)
+            }
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 36) {
+                    ForEach(myGames) { game in
+                        let isFocused = focusedGameId == "hero-" + game.id
+                        Button {
+                            selectedGame = game
+                        } label: {
+                            heroCard(game, isFocused: isFocused)
+                        }
+                        .buttonStyle(TVFlatButtonStyle())
+                        .focusEffectDisabled()
+                        .focused($focusedGameId, equals: "hero-" + game.id)
+                    }
+                }
+                .padding(.vertical, 24)
+                .padding(.horizontal, 16)
+            }
+            .focusSection()
+        }
+    }
+
+    private func heroCard(_ game: SportsGame, isFocused: Bool) -> some View {
+        ZStack(alignment: .bottom) {
+            heroBackground(game)
+            LinearGradient(
+                stops: [
+                    .init(color: Color(hex: "04090F").opacity(0.05), location: 0),
+                    .init(color: Color(hex: "04090F").opacity(0.30), location: 0.45),
+                    .init(color: Color(hex: "04090F").opacity(0.90), location: 1)
+                ],
+                startPoint: .top, endPoint: .bottom
+            )
+            VStack(spacing: 0) {
+                HStack {
+                    Text(game.sport)
+                        .scaledFont(size: 18, weight: .medium)
+                        .foregroundStyle(Color.white.opacity(0.85))
+                    Spacer()
+                }
+                .padding(.horizontal, 22)
+                .padding(.top, 18)
+                Spacer(minLength: 0)
+                HStack(alignment: .bottom, spacing: 8) {
+                    heroTeam(game.away)
+                    VStack(spacing: 8) {
+                        Text(heroStatus(game))
+                            .scaledFont(size: 20, weight: .semibold)
+                            .foregroundStyle(heroStatusColor(game))
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 4)
+                            .background(RoundedRectangle(cornerRadius: 10).fill(Color(hex: "04090F").opacity(0.75)))
+                            .lineLimit(1)
+                        Text(game.state == .pre ? "vs" : "\(game.away.score) – \(game.home.score)")
+                            .scaledFont(size: game.state == .pre ? 34 : 54, weight: .semibold)
+                            .foregroundStyle(.white)
+                            .monospacedDigit()
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
+                    }
+                    .frame(maxWidth: .infinity)
+                    heroTeam(game.home)
+                }
+                .padding(.horizontal, 20)
+                HStack(spacing: 8) {
+                    let names = TVSportsSimulcast.ranked(game.broadcasts)
+                    if !names.isEmpty {
+                        Text("On")
+                            .scaledFont(size: 15, weight: .semibold)
+                            .foregroundStyle(Color.white.opacity(0.6))
+                        ForEach(names.prefix(3), id: \.self) { name in
+                            Text(name)
+                                .scaledFont(size: 15, weight: .semibold)
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 3)
+                                .background(RoundedRectangle(cornerRadius: 6).fill(Color.white.opacity(0.16)))
+                        }
+                    }
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 22)
+                .padding(.vertical, 14)
+            }
+        }
+        .frame(width: 540, height: 304)
+        .clipShape(RoundedRectangle(cornerRadius: 22))
+        .overlay(
+            RoundedRectangle(cornerRadius: 22)
+                .stroke(isFocused ? Color.white : Color.white.opacity(0.10), lineWidth: isFocused ? 3 : 1)
+        )
+        .scaleEffect(isFocused ? 1.04 : 1)
+        .shadow(color: .black.opacity(isFocused ? 0.6 : 0), radius: isFocused ? 22 : 0, y: isFocused ? 14 : 0)
+        .animation(.easeOut(duration: 0.15), value: isFocused)
+    }
+
+    /// The game photo when `sports_games.image_url` has one, otherwise a hard
+    /// diagonal split of the two teams' colours.
+    @ViewBuilder
+    private func heroBackground(_ game: SportsGame) -> some View {
+        let a = game.away.primaryHex.map { Color(hex: $0) } ?? Color(hex: "1B212C")
+        let h = game.home.primaryHex.map { Color(hex: $0) } ?? Color(hex: "3A4150")
+        let split = LinearGradient(
+            stops: [.init(color: a, location: 0), .init(color: a, location: 0.47),
+                    .init(color: h, location: 0.53), .init(color: h, location: 1)],
+            startPoint: .topLeading, endPoint: .bottomTrailing
+        )
+        if let s = gameImages[game.id], let url = URL(string: s) {
+            AsyncImage(url: url) { phase in
+                if case .success(let image) = phase {
+                    image.resizable().scaledToFill()
+                } else {
+                    split
+                }
+            }
+            .frame(width: 540, height: 304)
+            .clipped()
+        } else {
+            split
+        }
+    }
+
+    private func heroTeam(_ team: GameTeam) -> some View {
+        VStack(spacing: 8) {
+            TVTeamCrestCircle(team: team, size: 80)
+            Text(team.shortName)
+                .scaledFont(size: 22, weight: .semibold)
+                .foregroundStyle(.white)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+        }
+        .frame(width: 150)
+    }
+
+    private func heroStatus(_ game: SportsGame) -> String {
+        switch game.state {
+        case .live: return game.statusDetail
+        case .post: return "Final"
+        case .pre: return game.scheduleLabel
+        }
+    }
+
+    private func heroStatusColor(_ game: SportsGame) -> Color {
+        switch game.state {
+        case .live: return Color(hex: "FF5A5A")
+        case .post: return Color(hex: "5BD17A")
+        case .pre: return Color(hex: "F5821F")
+        }
     }
 
     // MARK: - Helper for tappable card wrapper
@@ -543,7 +723,7 @@ struct SportsView: View {
 
     private var liveNowSection: some View {
         VStack(alignment: .leading, spacing: 34) {
-            sectionHeader(title: "Live Now", count: liveGames.count) {
+            sectionHeader(title: "Live now", count: liveGames.count) {
                 path.append(.allLive)
             }
             ForEach(liveGames.prefix(4)) { game in
@@ -608,7 +788,7 @@ struct SportsView: View {
     private func liveTeamBlock(team: GameTeam, leading: Bool) -> some View {
         let scoreColor: Color = team.isWinner ? .white : Color.white.opacity(0.55)
         return VStack(spacing: 8) {
-            TeamLogoBadge(team: team, size: 150, cornerRadius: 28, inset: 18, abbreviationFontSize: 30)
+            TVTeamCrestCircle(team: team, size: 130)
             Text(team.shortName)
                 .scaledFont(size: 26, weight: .semibold)
                 .foregroundStyle(Color.white.opacity(0.7))
@@ -645,11 +825,11 @@ struct SportsView: View {
     private func upcomingGameCard(_ game: SportsGame) -> some View {
         return VStack(spacing: 8) {
             HStack(spacing: 8) {
-                TeamLogoBadge(team: game.away, size: 110, cornerRadius: 22, inset: 13, abbreviationFontSize: 11)
+                TVTeamCrestCircle(team: game.away, size: 100)
                 Text("vs")
                     .scaledFont(size: 17, weight: .bold)
                     .foregroundStyle(Color.white.opacity(0.3))
-                TeamLogoBadge(team: game.home, size: 110, cornerRadius: 22, inset: 13, abbreviationFontSize: 11)
+                TVTeamCrestCircle(team: game.home, size: 100)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("\(game.away.shortName) vs \(game.home.shortName)")
                         .scaledFont(size: 20, weight: .bold)
@@ -698,7 +878,7 @@ struct SportsView: View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
-                    TeamLogoBadge(team: game.away, size: 110, cornerRadius: 22, inset: 13, abbreviationFontSize: 9)
+                    TVTeamCrestCircle(team: game.away, size: 72)
                     Text(game.away.abbreviation)
                         .scaledFont(size: 17, weight: .bold)
                         .foregroundStyle(game.away.isWinner ? .white : Color.white.opacity(0.5))
@@ -708,7 +888,7 @@ struct SportsView: View {
                         .foregroundStyle(game.away.isWinner ? .white : Color.white.opacity(0.5))
                 }
                 HStack(spacing: 6) {
-                    TeamLogoBadge(team: game.home, size: 110, cornerRadius: 22, inset: 13, abbreviationFontSize: 9)
+                    TVTeamCrestCircle(team: game.home, size: 72)
                     Text(game.home.abbreviation)
                         .scaledFont(size: 17, weight: .bold)
                         .foregroundStyle(game.home.isWinner ? .white : Color.white.opacity(0.5))

@@ -70,6 +70,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.rork.guidestreamtvandroid.data.models.SportsGame
+import com.rork.guidestreamtvandroid.data.remote.SportsService
+import com.rork.guidestreamtvandroid.data.remote.SportsTeamCatalogService
+import androidx.compose.ui.graphics.Brush
 import com.rork.guidestreamtvandroid.data.models.StreamingCatalog
 import com.rork.guidestreamtvandroid.data.models.StreamingService
 import com.rork.guidestreamtvandroid.data.repository.AuthViewModel
@@ -132,6 +135,12 @@ fun SportsScreen(
     val favorites = TeamFavoritesService.get()
     val favRows by favorites.rows.collectAsStateWithLifecycle()
 
+    // Sports restyle: the catalogue supplies crest-circle fills and a logo
+    // fallback for followed teams with no game on today's board.
+    val catalog = SportsTeamCatalogService.get()
+    val catalogTeams by catalog.teams.collectAsStateWithLifecycle()
+    var gameImages by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
+
     var teamPickerMode by remember { mutableStateOf<TeamPickerMode?>(null) }
     var watchGame by remember { mutableStateOf<SportsGame?>(null) }
     var seeAll by remember { mutableStateOf<SportsSection?>(null) }
@@ -142,6 +151,7 @@ fun SportsScreen(
     LaunchedEffect(Unit) {
         WatchIntentLogger.get().log(WatchIntentLogger.IntentEventType.SPORTS_TAB_OPENED)
         favorites.load()
+        catalog.load()
         // First open of the Sports tab: offer the team picker once. Skipped
         // when the user already has favorites (e.g. from another install of
         // the same account) so it never interrupts an established user.
@@ -162,19 +172,35 @@ fun SportsScreen(
     val finals = remember(filtered) { filtered.filter { it.state == "post" } }
 
     // Build My Teams chips from persisted favorites, matched to loaded games.
-    val teamChips = remember(favRows, games) {
+    val teamChips = remember(favRows, games, catalogTeams) {
         favRows.values.mapNotNull { row ->
             val game = findGameForFavorite(games, row.teamUid, row.teamAbbr)
+            val catalogRow = catalog.row(row.teamUid)
             TeamChip(
                 uid = row.teamUid,
                 abbrev = row.teamAbbr ?: (row.teamName ?: row.teamUid).take(3).uppercase(),
                 name = row.teamName ?: row.teamAbbr ?: "",
-                colorHex = colorHexForFavorite(game, row.teamUid),
-                logoUrl = logoUrlForFavorite(game, row.teamUid, row.teamAbbr),
+                colorHex = colorHexForFavorite(game, row.teamUid) ?: catalogRow?.color,
+                logoUrl = logoUrlForFavorite(game, row.teamUid, row.teamAbbr) ?: catalogRow?.logoUrl,
                 statusLabel = teamStatusLabel(game),
                 isLive = game?.state == "live",
             )
         }
+    }
+
+    // My games: followed teams' live games, then today's upcoming, then
+    // today's finals. Mirrors iOS SportsView.myGames.
+    val myGames = remember(filtered, favRows) {
+        val uids = favRows.keys
+        fun mine(g: SportsGame) = g.away.uid in uids || g.home.uid in uids
+        val ours = filtered.filter(::mine)
+        (ours.filter { it.state == "live" } +
+            ours.filter { it.state == "pre" && isStartToday(it.startTime) } +
+            ours.filter { it.state == "post" && isStartToday(it.startTime) }).take(4)
+    }
+    LaunchedEffect(myGames.map { it.id }) {
+        val missing = myGames.map { it.id }.filter { it !in gameImages }
+        if (missing.isNotEmpty()) gameImages = gameImages + SportsService.get().fetchImages(missing)
     }
 
     val listState = rememberLazyListState()
@@ -262,6 +288,9 @@ fun SportsScreen(
                 item {
                     Box(Modifier.fillMaxWidth().height(1.dp).background(Hairline))
                 }
+                if (myGames.isNotEmpty()) {
+                    item { MyGamesSection(myGames, gameImages) { game -> openCard(game) { watchGame = it } } }
+                }
             } else {
                 item { NoFavoritesPrompt(onTap = { teamPickerMode = TeamPickerMode.ONBOARDING }) }
             }
@@ -275,7 +304,7 @@ fun SportsScreen(
                 item { EmptyState(activeSport) }
             } else {
                 if (live.isNotEmpty()) {
-                    item { SectionHeader("Live Now", live.size) { seeAll = SportsSection.LIVE } }
+                    item { SectionHeader("Live now", live.size) { seeAll = SportsSection.LIVE } }
                     items(live.take(4), key = { "live-${it.id}" }) { game ->
                         LiveGameRow(game) { openCard(game, watchGameSetter = { watchGame = it }) }
                     }
@@ -438,7 +467,7 @@ private fun MyTeamsSection(
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("My Teams", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
+            Text("My teams", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
             Spacer(Modifier.weight(1f))
             // GUI-95 — the week view of games for followed teams.
             Text(
@@ -468,49 +497,173 @@ private fun MyTeamsSection(
                     .padding(horizontal = 8.dp, vertical = 4.dp),
             )
         }
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             items(chips, key = { it.uid }) { chip ->
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(3.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
                     modifier = Modifier
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(SurfaceContainer)
-                        .border(
-                            1.dp,
-                            if (chip.isLive) LiveRed.copy(alpha = 0.35f) else OutlineVariant,
-                            RoundedCornerShape(12.dp),
-                        )
+                        .width(66.dp)
                         .clickable(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null,
-                        ) { onChipTap(chip) }
-                        .padding(8.dp)
-                        .width(64.dp),
+                        ) { onChipTap(chip) },
                 ) {
-                    TeamLogo(
-                        team = SportsGame.TeamSummary(
-                            name = chip.name,
-                            abbreviation = chip.abbrev,
-                            uid = chip.uid,
-                            displayName = chip.name,
-                            shortName = chip.name,
-                            primaryHex = chip.colorHex,
-                            logoUrl = chip.logoUrl,
-                        ),
-                        size = 26.dp,
-                        cornerRadius = 7.dp,
-                        inset = 3.dp,
-                        abbreviationFontSize = 8.sp,
-                    )
-                    Text(chip.name, fontSize = 9.sp, fontWeight = FontWeight.SemiBold, color = Color.White.copy(alpha = 0.6f), maxLines = 1)
+                    Box(contentAlignment = Alignment.BottomCenter) {
+                        TeamCrestCircle(
+                            team = SportsGame.TeamSummary(
+                                name = chip.name,
+                                abbreviation = chip.abbrev,
+                                uid = chip.uid,
+                                displayName = chip.name,
+                                shortName = chip.name,
+                                primaryHex = chip.colorHex,
+                                logoUrl = chip.logoUrl,
+                            ),
+                            size = 58.dp,
+                            modifier = Modifier.padding(bottom = if (chip.isLive) 6.dp else 0.dp),
+                        )
+                        if (chip.isLive) {
+                            Box(
+                                Modifier
+                                    .clip(RoundedCornerShape(4.dp))
+                                    .background(LiveRed)
+                                    .padding(horizontal = 5.dp, vertical = 1.dp),
+                            ) {
+                                Text("LIVE", fontSize = 8.sp, fontWeight = FontWeight.Black, color = Color.White)
+                            }
+                        }
+                    }
+                    Text(chip.name, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = Color.White, maxLines = 1)
                     Text(
                         chip.statusLabel,
-                        fontSize = 8.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = if (chip.isLive) LiveRed else BrandOrange,
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = if (chip.isLive) LiveRed else Color.White.copy(alpha = 0.5f),
                         maxLines = 1,
                     )
+                }
+            }
+        }
+    }
+}
+
+// MARK: - My games (hero cards)
+
+@Composable
+private fun MyGamesSection(
+    games: List<SportsGame>,
+    images: Map<String, String>,
+    onOpen: (SportsGame) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text("My games", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            items(games, key = { "my-${it.id}" }) { game ->
+                HeroGameCard(
+                    game = game,
+                    imageUrl = images[game.id],
+                    modifier = if (games.size == 1) Modifier.fillParentMaxWidth() else Modifier.fillParentMaxWidth(0.88f),
+                    onClick = { onOpen(game) },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun HeroGameCard(
+    game: SportsGame,
+    imageUrl: String?,
+    modifier: Modifier,
+    onClick: () -> Unit,
+) {
+    val shape = RoundedCornerShape(18.dp)
+    Box(
+        modifier = modifier
+            .height(196.dp)
+            .clip(shape)
+            .background(
+                Brush.horizontalGradient(
+                    0f to hexToColor(game.away.primaryHex, SurfaceContainer),
+                    0.5f to hexToColor(game.away.primaryHex, SurfaceContainer),
+                    0.5f to hexToColor(game.home.primaryHex, SurfaceContainer),
+                    1f to hexToColor(game.home.primaryHex, SurfaceContainer),
+                ),
+            )
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+            ) { onClick() },
+    ) {
+        if (imageUrl != null) {
+            SubcomposeAsyncImage(
+                model = imageUrl,
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop,
+            )
+        }
+        Box(
+            Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.verticalGradient(
+                        0f to Color.Black.copy(alpha = 0.15f),
+                        0.45f to Color.Black.copy(alpha = 0.35f),
+                        1f to Color.Black.copy(alpha = 0.85f),
+                    ),
+                ),
+        )
+        Column(Modifier.fillMaxSize().padding(14.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    game.leagueShort.ifEmpty { game.sport },
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color.White.copy(alpha = 0.8f),
+                )
+                Spacer(Modifier.weight(1f))
+                if (game.state == "live") {
+                    Box(Modifier.clip(CircleShape).background(BrandOrange).padding(horizontal = 12.dp, vertical = 5.dp)) {
+                        Text("Watch", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                    }
+                }
+            }
+            Spacer(Modifier.weight(1f))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                TeamCrestCircle(game.away, size = 52.dp)
+                Spacer(Modifier.width(10.dp))
+                Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                    val (label, tint) = when (game.state) {
+                        "live" -> "Live" to Color(0xFFFF5A5A)
+                        "post" -> "Final" to Color(0xFF5BD17A)
+                        else -> game.statusDetail.ifEmpty { "Upcoming" } to BrandOrange
+                    }
+                    Box(Modifier.clip(CircleShape).background(tint.copy(alpha = 0.2f)).padding(horizontal = 9.dp, vertical = 3.dp)) {
+                        Text(label, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = tint, maxLines = 1)
+                    }
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        if (game.state == "pre") "vs" else "${game.away.score.ifEmpty { "0" }} – ${game.home.score.ifEmpty { "0" }}",
+                        fontSize = if (game.state == "pre") 16.sp else 24.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White,
+                    )
+                }
+                Spacer(Modifier.width(10.dp))
+                TeamCrestCircle(game.home, size = 52.dp)
+            }
+            val nets = rankedBroadcasts(game.broadcasts, AuthViewModel.get())
+            if (nets.isNotEmpty()) {
+                Spacer(Modifier.height(10.dp))
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("On", fontSize = 10.sp, fontWeight = FontWeight.Medium, color = Color.White.copy(alpha = 0.6f))
+                    nets.take(3).forEach { name ->
+                        Box(Modifier.clip(RoundedCornerShape(5.dp)).background(Color.White.copy(alpha = 0.16f)).padding(horizontal = 7.dp, vertical = 2.dp)) {
+                            Text(name, fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color.White, maxLines = 1)
+                        }
+                    }
                 }
             }
         }
@@ -520,7 +673,7 @@ private fun MyTeamsSection(
 @Composable
 private fun NoFavoritesPrompt(onTap: () -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("My Teams", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
+        Text("My teams", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -691,7 +844,7 @@ private fun LiveTeamBlock(team: SportsGame.TeamSummary, modifier: Modifier, alig
         horizontalAlignment = align,
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        TeamLogo(team, size = 50.dp, cornerRadius = 10.dp, inset = 6.dp, abbreviationFontSize = 9.sp)
+        TeamCrestCircle(team, size = 50.dp)
         Text(team.shortName.ifEmpty { team.abbreviation }, fontSize = 10.sp, fontWeight = FontWeight.SemiBold, color = Color.White.copy(alpha = 0.6f), maxLines = 1)
         Text(team.score.ifEmpty { "0" }, fontSize = 24.sp, fontWeight = FontWeight.Black, color = if (team.isWinner) Color.White else Color.White.copy(alpha = 0.55f))
     }
@@ -728,7 +881,7 @@ fun UpcomingGameRow(game: SportsGame, onClick: () -> Unit) {
 
 @Composable
 private fun TeamBadge(team: SportsGame.TeamSummary) {
-    TeamLogo(team, size = 40.dp, cornerRadius = 8.dp, inset = 5.dp, abbreviationFontSize = 7.sp)
+    TeamCrestCircle(team, size = 40.dp)
 }
 
 @Composable
@@ -764,7 +917,7 @@ fun FinalGameRow(game: SportsGame, onClick: () -> Unit) {
 private fun FinalScoreLine(team: SportsGame.TeamSummary) {
     val color = if (team.isWinner) Color.White else Color.White.copy(alpha = 0.5f)
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        TeamLogo(team, size = 18.dp, cornerRadius = 5.dp, inset = 3.dp, abbreviationFontSize = 6.sp)
+        TeamCrestCircle(team, size = 22.dp)
         Text(team.abbreviation, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = color)
         Spacer(Modifier.weight(1f))
         Text(team.score.ifEmpty { "0" }, fontSize = 14.sp, fontWeight = FontWeight.Black, color = color)

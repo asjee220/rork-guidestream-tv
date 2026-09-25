@@ -37,7 +37,8 @@ struct TeamPickerSheet: View {
     @State private var selected: [String: SportsTeamRow] = [:]
     @State private var isSaving: Bool = false
 
-    private let columns = [GridItem(.adaptive(minimum: 96), spacing: 10)]
+    /// Sports restyle: four crest circles per row, as in the approved mockup.
+    private let columns = Array(repeating: GridItem(.flexible(), spacing: 10), count: 4)
 
     private var activeSport: String {
         selectedSport.isEmpty ? (catalog.sports.first ?? "") : selectedSport
@@ -53,6 +54,7 @@ struct TeamPickerSheet: View {
     var body: some View {
         VStack(spacing: 0) {
             header
+            followingRow
             sportPills
             searchField
             content
@@ -171,7 +173,7 @@ struct TeamPickerSheet: View {
             catalogUnavailable
         } else {
             ScrollView(.vertical, showsIndicators: false) {
-                LazyVGrid(columns: columns, spacing: 10) {
+                LazyVGrid(columns: columns, spacing: 14) {
                     ForEach(visibleTeams) { team in
                         teamTile(team)
                     }
@@ -190,6 +192,8 @@ struct TeamPickerSheet: View {
         }
     }
 
+    /// Followed: the crest on its team-colour circle with the white ring and a
+    /// bold name. Not followed: the crest on a dark circle with a faint ring.
     private func teamTile(_ team: SportsTeamRow) -> some View {
         let isOn = selected[team.team_uid] != nil
         return Button {
@@ -200,44 +204,63 @@ struct TeamPickerSheet: View {
                 selected[team.team_uid] = team
             }
         } label: {
-            ZStack(alignment: .topTrailing) {
-                VStack(spacing: 6) {
-                    TeamLogoBadge(
-                        team: team.asGameTeam,
-                        size: 46,
-                        cornerRadius: 11,
-                        inset: 5,
-                        abbreviationFontSize: 11
-                    )
-                    Text(team.displayLabel)
-                        .scaledFont(size: 10, weight: .semibold)
-                        .foregroundStyle(isOn ? .white : Color.white.opacity(0.72))
-                        .multilineTextAlignment(.center)
-                        .lineLimit(2)
-                        .padding(.horizontal, 2)
-                }
-                .frame(maxWidth: .infinity)
-                .frame(height: 92)
-                .background(
-                    RoundedRectangle(cornerRadius: 14)
-                        .fill(isOn ? Color(hex: "F5821F").opacity(0.10) : Color.white.opacity(0.045))
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 14)
-                        .stroke(isOn ? Color(hex: "F5821F") : Color.white.opacity(0.07), lineWidth: 1)
-                )
-
-                if isOn {
-                    Image(systemName: "checkmark")
-                        .scaledFont(size: 9, weight: .black)
-                        .foregroundStyle(.white)
-                        .frame(width: 17, height: 17)
-                        .background(Circle().fill(Color(hex: "F5821F")))
-                        .padding(5)
-                }
+            VStack(spacing: 8) {
+                TeamCrestCircle(team: team.asGameTeam, size: 74, filled: isOn)
+                Text(team.displayLabel)
+                    .scaledFont(size: 13, weight: isOn ? .semibold : .medium)
+                    .foregroundStyle(isOn ? .white : Color.white.opacity(0.55))
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.85)
             }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 4)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .accessibilityAddTraits(isOn ? .isSelected : [])
+    }
+
+    // MARK: - Following
+
+    /// The teams picked so far, each with a minus badge that unfollows it.
+    @ViewBuilder
+    private var followingRow: some View {
+        if !selected.isEmpty {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Following")
+                    .scaledFont(size: 17, weight: .semibold)
+                    .foregroundStyle(Color(hex: "F5821F"))
+                    .padding(.horizontal, 20)
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 12) {
+                        ForEach(orderedSelection) { team in
+                            Button {
+                                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                selected.removeValue(forKey: team.team_uid)
+                            } label: {
+                                TeamCrestCircle(team: team.asGameTeam, size: 56)
+                                    .overlay(alignment: .bottomTrailing) {
+                                        Circle()
+                                            .fill(Color.white)
+                                            .frame(width: 20, height: 20)
+                                            .overlay(
+                                                Capsule().fill(Color(hex: "0B131D")).frame(width: 9, height: 2)
+                                            )
+                                            .overlay(Circle().stroke(Color(hex: "0B131D"), lineWidth: 2))
+                                            .offset(x: 2, y: 2)
+                                    }
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Unfollow \(team.displayLabel)")
+                        }
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 4)
+                }
+            }
+            .padding(.bottom, 12)
+        }
     }
 
     private var loadingGrid: some View {
@@ -277,19 +300,6 @@ struct TeamPickerSheet: View {
 
     private var footer: some View {
         VStack(spacing: 0) {
-            if !selected.isEmpty {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 6) {
-                        ForEach(orderedSelection) { team in
-                            selectedChip(team)
-                        }
-                    }
-                    .padding(.horizontal, 20)
-                }
-                .frame(height: 34)
-                .padding(.bottom, 10)
-            }
-
             Button {
                 Task { await commit() }
             } label: {
@@ -341,34 +351,6 @@ struct TeamPickerSheet: View {
     /// Selection in catalogue order so the strip doesn't reshuffle on each tap.
     private var orderedSelection: [SportsTeamRow] {
         catalog.teams.filter { selected[$0.team_uid] != nil }
-    }
-
-    private func selectedChip(_ team: SportsTeamRow) -> some View {
-        HStack(spacing: 5) {
-            TeamLogoBadge(
-                team: team.asGameTeam,
-                size: 16,
-                cornerRadius: 4,
-                inset: 1,
-                abbreviationFontSize: 5
-            )
-            Text(team.team_abbr ?? team.displayLabel)
-                .scaledFont(size: 10.5, weight: .semibold)
-                .foregroundStyle(.white)
-            Button {
-                selected.removeValue(forKey: team.team_uid)
-            } label: {
-                Image(systemName: "xmark")
-                    .scaledFont(size: 8, weight: .bold)
-                    .foregroundStyle(Color.white.opacity(0.5))
-            }
-            .buttonStyle(.plain)
-        }
-        .padding(.leading, 5)
-        .padding(.trailing, 9)
-        .padding(.vertical, 4)
-        .background(Capsule().fill(Color.white.opacity(0.07)))
-        .overlay(Capsule().stroke(Color.white.opacity(0.10), lineWidth: 1))
     }
 
     private var ctaEnabled: Bool {

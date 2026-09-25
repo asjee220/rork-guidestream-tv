@@ -7,6 +7,7 @@
 //
 
 import Foundation
+import Supabase
 
 // MARK: - Streaming Simulcast Companions
 
@@ -128,6 +129,29 @@ final class TVSportsService {
                 if a.state.isLive != b.state.isLive { return a.state.isLive }
                 return (a.startDate ?? .distantFuture) < (b.startDate ?? .distantFuture)
             }
+        }
+    }
+
+    /// Game photos for the Sports hero cards, keyed by game id, from
+    /// `sports_games.image_url`. Mirrors the phone's SportsService.fetchImages.
+    func fetchImages(ids: [String]) async -> [String: String] {
+        let unique = Array(Set(ids.filter { !$0.isEmpty }))
+        guard !unique.isEmpty else { return [:] }
+        do {
+            let rows: [TVSportsGameImageRow] = try await TVSupabaseManager.shared.client
+                .from("sports_games")
+                .select("game_id,image_url")
+                .in("game_id", values: unique)
+                .execute()
+                .value
+            var out: [String: String] = [:]
+            for r in rows {
+                if let url = r.image_url, !url.isEmpty { out[r.game_id] = url }
+            }
+            return out
+        } catch {
+            print("[TVSportsService] fetchImages failed: \(error.localizedDescription)")
+            return [:]
         }
     }
 
@@ -343,4 +367,10 @@ nonisolated struct TVESPNTeam: Decodable {
     let name: String?
     let color: String?
     let logo: String?
+}
+
+/// `sports_games` projection for the hero-card photo lookup.
+nonisolated struct TVSportsGameImageRow: Decodable, Sendable {
+    let game_id: String
+    let image_url: String?
 }

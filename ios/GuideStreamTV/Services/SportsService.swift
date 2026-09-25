@@ -279,6 +279,30 @@ final class SportsService {
         }
     }
 
+    /// Game photos for the Sports hero cards, keyed by game id, from
+    /// `sports_games.image_url`. Games without a photo are simply absent and
+    /// the card falls back to the two team colours. Never throws.
+    func fetchImages(ids: [String]) async -> [String: String] {
+        let unique = Array(Set(ids.filter { !$0.isEmpty }))
+        guard !unique.isEmpty else { return [:] }
+        do {
+            let rows: [SportsGameImageRow] = try await SupabaseManager.shared.client
+                .from("sports_games")
+                .select("game_id,image_url")
+                .in("game_id", values: unique)
+                .execute()
+                .value
+            var out: [String: String] = [:]
+            for r in rows {
+                if let url = r.image_url, !url.isEmpty { out[r.game_id] = url }
+            }
+            return out
+        } catch {
+            print("[SportsService] fetchImages failed: \(error.localizedDescription)")
+            return [:]
+        }
+    }
+
     /// Builds a `SportsGame` from a `sports_games` row. Scores are stored as
     /// integers there and as display strings on the model, so nil becomes "".
     private static func mapRow(_ r: SportsGameRow) -> SportsGame {
@@ -568,4 +592,10 @@ nonisolated struct SportsGameRow: Decodable, Sendable {
     let away_score: Int?
     let start_at: String?
     let broadcast: String?
+}
+
+/// `sports_games` projection for the hero-card photo lookup.
+nonisolated struct SportsGameImageRow: Decodable, Sendable {
+    let game_id: String
+    let image_url: String?
 }

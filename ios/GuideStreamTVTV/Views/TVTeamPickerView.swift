@@ -46,7 +46,8 @@ struct TVTeamPickerView: View {
     @FocusState private var focusedSport: String?
     @FocusState private var focusedTeam: String?
 
-    private let columns = Array(repeating: GridItem(.flexible(), spacing: 28), count: 5)
+    /// Sports restyle: eight crest circles per row, as in the approved mockup.
+    private let columns = Array(repeating: GridItem(.flexible(), spacing: 24), count: 8)
 
     private var sports: [String] { catalog.sports }
 
@@ -61,6 +62,7 @@ struct TVTeamPickerView: View {
 
             VStack(alignment: .leading, spacing: 32) {
                 header
+                followingRow
                 sportPills
                 if catalog.teams.isEmpty {
                     loadingState
@@ -87,8 +89,8 @@ struct TVTeamPickerView: View {
     private var header: some View {
         HStack(alignment: .firstTextBaseline, spacing: 20) {
             VStack(alignment: .leading, spacing: 10) {
-                Text(mode == .onboarding ? "Follow your teams" : "My Teams")
-                    .font(.system(size: 48, weight: .black))
+                Text(mode == .onboarding ? "Follow your teams" : "My teams")
+                    .font(.system(size: 48, weight: .bold))
                     .foregroundStyle(.white)
                 Text(mode == .onboarding
                      ? "Pick the teams you care about and their games lead your Sports screen."
@@ -161,6 +163,9 @@ struct TVTeamPickerView: View {
         .focusSection()
     }
 
+    /// Followed: the crest on its team-colour circle with the white ring.
+    /// Not followed: the crest on a dark circle with a faint ring. Focus
+    /// thickens the ring and lifts the circle — no tvOS focus slab.
     private func teamTile(_ team: TVSportsTeamRow) -> some View {
         let isOn = selection.contains(team.team_uid)
         let focused = focusedTeam == team.team_uid
@@ -168,44 +173,54 @@ struct TVTeamPickerView: View {
             if isOn { selection.remove(team.team_uid) } else { selection.insert(team.team_uid) }
         } label: {
             VStack(spacing: 14) {
-                ZStack(alignment: .topTrailing) {
-                    TeamLogoBadge(team: team.asGameTeam, size: 96, cornerRadius: 12, inset: 12,
-                                  abbreviationFontSize: 20)
-                    if isOn {
-                        Image(systemName: "checkmark.circle.fill")
-                            .font(.system(size: 28, weight: .bold))
-                            .foregroundStyle(.white, TVTheme.orange)
-                            .offset(x: 10, y: -10)
-                    }
-                }
+                TVTeamCrestCircle(team: team.asGameTeam, size: 140, filled: isOn, focused: focused)
                 Text(team.displayLabel)
-                    .font(.system(size: 20, weight: .semibold))
-                    .foregroundStyle(.white)
+                    .font(.system(size: 22, weight: isOn || focused ? .semibold : .medium))
+                    .foregroundStyle(isOn || focused ? .white : Color.white.opacity(0.55))
                     .lineLimit(1)
-                Text(team.league)
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(TVTheme.textTertiary)
-                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
             }
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 24)
-            .background(
-                RoundedRectangle(cornerRadius: 16)
-                    .fill(Color.white.opacity(isOn ? 0.12 : 0.04))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .stroke(focused ? TVTheme.orange.opacity(0.95) : Color.white.opacity(isOn ? 0.25 : 0.06),
-                            lineWidth: focused ? 4 : 1)
-            )
-            .scaleEffect(focused ? 1.05 : 1.0)
-            .shadow(color: focused ? TVTheme.orange.opacity(0.55) : .clear,
-                    radius: focused ? 30 : 0, y: focused ? 18 : 0)
-            .animation(.spring(response: 0.35, dampingFraction: 0.75), value: focused)
+            .padding(.vertical, 12)
         }
         .buttonStyle(TVFlatButtonStyle())
         .focusEffectDisabled()
         .focused($focusedTeam, equals: team.team_uid)
+    }
+
+    // MARK: - Following
+
+    /// Teams picked so far. Selecting one here unfollows it.
+    @ViewBuilder
+    private var followingRow: some View {
+        let followed = catalog.teams.filter { selection.contains($0.team_uid) }
+        if !followed.isEmpty {
+            HStack(spacing: 24) {
+                Text("Following")
+                    .font(.system(size: 26, weight: .semibold))
+                    .foregroundStyle(TVTheme.orange)
+                    .frame(width: 170, alignment: .leading)
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 22) {
+                        ForEach(followed) { team in
+                            let key = "following-" + team.team_uid
+                            Button {
+                                selection.remove(team.team_uid)
+                            } label: {
+                                TVTeamCrestCircle(team: team.asGameTeam, size: 84, focused: focusedTeam == key)
+                            }
+                            .buttonStyle(TVFlatButtonStyle())
+                            .focusEffectDisabled()
+                            .focused($focusedTeam, equals: key)
+                            .accessibilityLabel("Unfollow \(team.displayLabel)")
+                        }
+                    }
+                    .padding(.vertical, 14)
+                    .padding(.horizontal, 10)
+                }
+            }
+            .focusSection()
+        }
     }
 
     private var loadingState: some View {

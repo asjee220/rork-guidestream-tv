@@ -31,7 +31,10 @@ final class SportsTeamCatalogService {
     /// UserDefaults cache so the picker can render instantly on a warm launch
     /// and still works offline. Keyed with a version suffix so the shape can
     /// change without stale decodes.
-    private let localCacheKey = "gs.sportsTeamCatalog.v1"
+    ///
+    /// v2 (2026-09-25): rows gained `fill_color`. A v1 cache would satisfy
+    /// `load()`'s warm-cache early return forever and never pick it up.
+    private let localCacheKey = "gs.sportsTeamCatalog.v2"
 
     private init() {
         teams = loadLocalCache()
@@ -49,6 +52,25 @@ final class SportsTeamCatalogService {
 
     func teams(forSport sport: String) -> [SportsTeamRow] {
         teams.filter { $0.sport == sport }
+    }
+
+    /// Crest circle fill for a team uid — `fill_color` from sports_teams,
+    /// which sports_team_fill sets to the secondary colour when the crest is
+    /// mostly the primary one. Nil when the team is not in the catalogue.
+    func fillHex(forUid uid: String?) -> String? {
+        guard let uid, !uid.isEmpty else { return nil }
+        if fillIndex.isEmpty && !teams.isEmpty { rebuildFillIndex() }
+        return fillIndex[uid]
+    }
+
+    @ObservationIgnored private var fillIndex: [String: String] = [:]
+
+    private func rebuildFillIndex() {
+        var index: [String: String] = [:]
+        for t in teams {
+            if let hex = t.fill_color ?? t.color, !hex.isEmpty { index[t.team_uid] = hex }
+        }
+        fillIndex = index
     }
 
     /// Fetches the catalogue. Skips the network entirely when a non-empty
@@ -83,6 +105,7 @@ final class SportsTeamCatalogService {
             }
             if !rows.isEmpty {
                 teams = rows
+                rebuildFillIndex()
                 saveLocalCache(rows)
             }
             lastLoadFailed = rows.isEmpty && teams.isEmpty
@@ -118,6 +141,9 @@ nonisolated struct SportsTeamRow: Codable, Sendable, Hashable, Identifiable {
     let league: String
     let sport: String
     let color: String?
+    /// Crest circle fill (see SportsTeamCatalogService.fillHex). Optional so
+    /// rows written before the column existed still decode.
+    let fill_color: String?
     let logo_url: String?
     let sort_order: Int
 

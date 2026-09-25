@@ -37,6 +37,9 @@ class SportsTeamCatalogService private constructor() {
         val color: String? = null,
         @SerialName("logo_url") val logoUrl: String? = null,
         @SerialName("sort_order") val sortOrder: Int = 0,
+        /** Crest-circle fill: `color`, or the secondary colour when the crest
+         * is mostly the primary one. Set server-side by sports_team_fill. */
+        @SerialName("fill_color") val fillColor: String? = null,
     ) {
         /** Label used on picker tiles — the short name where ESPN provides one
          * ("Knicks"), otherwise the full display name. */
@@ -59,6 +62,13 @@ class SportsTeamCatalogService private constructor() {
 
     fun teamsForSport(sport: String): List<SportsTeamRow> =
         _teams.value.filter { it.sport == sport }
+
+    @Volatile private var byUid: Map<String, SportsTeamRow> = emptyMap()
+
+    fun row(uid: String?): SportsTeamRow? = uid?.let { byUid[it] }
+
+    /** Crest-circle fill for a team uid, or null when the catalogue has no row. */
+    fun fillHex(uid: String?): String? = row(uid)?.let { it.fillColor ?: it.color }
 
     /**
      * Fetches the catalogue. Skips the network entirely when a non-empty cache
@@ -90,7 +100,10 @@ class SportsTeamCatalogService private constructor() {
                 if (page.size < PAGE_SIZE) break
                 from += PAGE_SIZE
             }
-            if (rows.isNotEmpty()) _teams.value = rows
+            if (rows.isNotEmpty()) {
+                byUid = rows.associateBy { it.teamUid }
+                _teams.value = rows
+            }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Throwable) {

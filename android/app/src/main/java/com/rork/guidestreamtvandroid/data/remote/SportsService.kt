@@ -186,6 +186,34 @@ class SportsService {
         }
     }
 
+    @Serializable
+    private data class SportsGameImageRow(
+        @SerialName("game_id") val gameId: String,
+        @SerialName("image_url") val imageUrl: String? = null,
+    )
+
+    /**
+     * Sports restyle (2026-09-25): hero photos for the given games, keyed by
+     * game id, from sports_games.image_url. Games without a photo are absent;
+     * callers fall back to the team-colour split.
+     */
+    suspend fun fetchImages(ids: List<String>): Map<String, String> = withContext(Dispatchers.IO) {
+        if (ids.isEmpty()) return@withContext emptyMap()
+        try {
+            SupabaseManager.client.postgrest
+                .from("sports_games")
+                .select(columns = io.github.jan.supabase.postgrest.query.Columns.raw("game_id,image_url")) {
+                    filter { isIn("game_id", ids) }
+                }
+                .decodeList<SportsGameImageRow>()
+                .mapNotNull { r -> r.imageUrl?.takeIf { it.isNotBlank() }?.let { r.gameId to it } }
+                .toMap()
+        } catch (e: Exception) {
+            Log.w("SportsService", "fetchImages failed", e)
+            emptyMap()
+        }
+    }
+
     /**
      * Resolves a single game by its ESPN id from Supabase's `sports_games`
      * table, which the `sports_poll_and_notify` edge function keeps current.

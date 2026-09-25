@@ -67,6 +67,8 @@ struct SportsView: View {
     @State private var auth = AuthViewModel.shared
     @State private var favorites = TeamFavoritesService.shared
     @State private var teamPickerMode: TeamPickerSheet.Mode?
+    /// Game photos for the My games hero cards, keyed by game id.
+    @State private var gameImages: [String: String] = [:]
 
     /// One-shot gate for the first-run team picker. Survives sign-out on
     /// purpose — the prompt is about this install, not this account.
@@ -82,6 +84,13 @@ struct SportsView: View {
         let isLive: Bool
         let teamUid: String
         let logoURL: String?
+        let primaryHex: String?
+
+        var gameTeam: GameTeam {
+            GameTeam(id: nil, uid: teamUid, abbreviation: abbrev, displayName: name,
+                     shortName: name, score: "", primaryHex: primaryHex,
+                     isWinner: false, logoURL: logoURL)
+        }
     }
 
     private var filteredGames: [SportsGame] {
@@ -116,6 +125,12 @@ struct SportsView: View {
                 return Color.white.opacity(0.15)
             }()
             let label = statusLabel(for: game)
+            let primaryHex: String? = {
+                guard let game else { return nil }
+                if game.away.uid == uid { return game.away.primaryHex }
+                if game.home.uid == uid { return game.home.primaryHex }
+                return nil
+            }()
             return TeamChip(
                 abbrev: row.team_abbr ?? String((row.team_name ?? uid).prefix(3)).uppercased(),
                 name: row.team_name ?? row.team_abbr ?? "",
@@ -124,6 +139,8 @@ struct SportsView: View {
                 isLive: game?.state == .live,
                 teamUid: uid,
                 logoURL: logoURLForFavorite(game, teamUid: uid, teamAbbr: row.team_abbr)
+                    ?? catalogLogo(uid),
+                primaryHex: primaryHex
             )
         }
     }
@@ -161,6 +178,25 @@ struct SportsView: View {
         return nil
     }
 
+    /// Crest for a followed team with no game on today's slate.
+    private func catalogLogo(_ uid: String) -> String? {
+        SportsTeamCatalogService.shared.teams.first { $0.team_uid == uid }?.logo_url
+    }
+
+    /// Sports restyle: games involving a followed team — live first, then
+    /// today's, then today's finals — shown as hero cards above the sections.
+    private var myGames: [SportsGame] {
+        let uids = favorites.favoriteUids()
+        guard !uids.isEmpty else { return [] }
+        let mine = filteredGames.filter { g in
+            (g.away.uid.map(uids.contains) ?? false) || (g.home.uid.map(uids.contains) ?? false)
+        }
+        let live = mine.filter { $0.state == .live }
+        let today = mine.filter { $0.state == .pre && $0.startsToday }
+        let finals = mine.filter { $0.state == .post && SportsClock.isToday($0.startDate) }
+        return Array((live + today + finals).prefix(4))
+    }
+
     private func statusLabel(for game: SportsGame?) -> String {
         guard let game else { return "No game scheduled" }
         if game.state == .live { return "LIVE" }
@@ -190,6 +226,10 @@ struct SportsView: View {
                                 .frame(height: 1)
                         } else {
                             noFavoritesPrompt
+                        }
+
+                        if !myGames.isEmpty {
+                            myGamesSection
                         }
 
                         if isLoading && games.isEmpty {
@@ -286,6 +326,7 @@ struct SportsView: View {
                     teamPickerMode = .onboarding
                 }
             }
+            await SportsTeamCatalogService.shared.load()
             await load()
         }
         // GUI-46: `.task(id:)` runs both on first appearance AND on every
@@ -318,6 +359,8 @@ struct SportsView: View {
             self.isLoading = false
             self.loadError = fetched.isEmpty ? "No games available right now." : nil
         }
+        let images = await SportsService.shared.fetchImages(ids: fetched.map(\.id))
+        await MainActor.run { self.gameImages = images }
     }
 
     // MARK: - Sport pills
@@ -362,8 +405,8 @@ struct SportsView: View {
     private var myTeamsSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Text("My Teams")
-                    .scaledFont(size: 16, weight: .bold)
+                Text("My teams")
+                    .scaledFont(size: 18, weight: .semibold)
                     .foregroundStyle(.white)
                 Spacer()
                 Button {
@@ -387,11 +430,13 @@ struct SportsView: View {
             }
 
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 10) {
+                HStack(alignment: .top, spacing: 14) {
                     ForEach(favoriteTeams, id: \.teamUid) { team in
                         teamChipView(team)
                     }
                 }
+                .padding(.vertical, 2)
+                .padding(.horizontal, 2)
             }
         }
     }
@@ -413,8 +458,8 @@ struct SportsView: View {
     /// Prompt shown when the user has no favorited teams yet.
     private var noFavoritesPrompt: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("My Teams")
-                .scaledFont(size: 16, weight: .bold)
+            Text("My teams")
+                .scaledFont(size: 18, weight: .semibold)
                 .foregroundStyle(.white)
             Button {
                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
@@ -446,61 +491,191 @@ struct SportsView: View {
         }
     }
 
-    /// Chip crest. With a loaded logo it renders on the shared neutral light
-    /// plate ([TeamCrestPlate]) — crest scaled to fit with a 3pt inset. Falls
-    /// back to the existing full-colour abbreviation square when the URL is
-    /// missing or the load fails.
-    @ViewBuilder
-    private func teamChipBadge(_ team: TeamChip) -> some View {
-        if let logoURL = team.logoURL,
-           !logoURL.isEmpty,
-           let url = URL(string: logoURL) {
-            AsyncImage(url: url) { phase in
-                switch phase {
-                case .success(let image):
-                    TeamCrestPlate(size: 26, cornerRadius: 7, inset: 3, image: image)
-                case .empty, .failure:
-                    chipFallbackBadge(team)
-                @unknown default:
-                    chipFallbackBadge(team)
+    /// Sports restyle: the crest on its team-colour circle, then the name and
+    /// the next-game label. Live teams get a LIVE tab under the circle.
+    private func teamChipContent(_ team: TeamChip) -> some View {
+        VStack(spacing: 6) {
+            ZStack(alignment: .bottom) {
+                TeamCrestCircle(team: team.gameTeam, size: 58)
+                if team.isLive {
+                    Text("LIVE")
+                        .scaledFont(size: 9, weight: .bold)
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 1)
+                        .background(RoundedRectangle(cornerRadius: 6).fill(Color(hex: "D42B2B")))
+                        .offset(y: 7)
                 }
             }
-        } else {
-            chipFallbackBadge(team)
-        }
-    }
-
-    private func chipFallbackBadge(_ team: TeamChip) -> some View {
-        RoundedRectangle(cornerRadius: 7)
-            .fill(team.color)
-            .frame(width: 26, height: 26)
-            .overlay(
-                Text(team.abbrev)
-                    .scaledFont(size: 7, weight: .black)
-                    .foregroundStyle(.white)
-            )
-    }
-
-    private func teamChipContent(_ team: TeamChip) -> some View {
-        VStack(spacing: 3) {
-            teamChipBadge(team)
             Text(team.name)
-                .scaledFont(size: 9, weight: .semibold)
-                .foregroundStyle(Color.white.opacity(0.6))
+                .scaledFont(size: 11, weight: .semibold)
+                .foregroundStyle(Color.white.opacity(0.9))
                 .lineLimit(1)
             Text(team.next)
-                .scaledFont(size: 8, weight: .bold)
-                .foregroundStyle(team.isLive ? Color(hex: "E50914") : Color(hex: "F5821F"))
+                .scaledFont(size: 10, weight: .medium)
+                .foregroundStyle(team.isLive ? Color(hex: "FF5A5A") : Color.white.opacity(0.5))
+                .lineLimit(1)
+                .padding(.top, -4)
         }
-        .padding(8)
-        .frame(minWidth: 64)
-        .background(
-            RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.04))
+        .frame(width: 66)
+    }
+
+    // MARK: - My games (hero cards)
+
+    private var myGamesSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                Image(systemName: "star.fill")
+                    .scaledFont(size: 15)
+                    .foregroundStyle(Color(hex: "F5821F"))
+                Text("My games")
+                    .scaledFont(size: 18, weight: .semibold)
+                    .foregroundStyle(.white)
+                Text(myGames.count == 1 ? "1 game" : "\(myGames.count) games")
+                    .scaledFont(size: 13, weight: .medium)
+                    .foregroundStyle(Color.white.opacity(0.55))
+            }
+            ForEach(myGames) { game in
+                tappableCard(game) {
+                    heroCard(game)
+                }
+            }
+        }
+    }
+
+    private func heroCard(_ game: SportsGame) -> some View {
+        ZStack(alignment: .bottom) {
+            heroBackground(game)
+            LinearGradient(
+                stops: [
+                    .init(color: Color(hex: "04090F").opacity(0.05), location: 0),
+                    .init(color: Color(hex: "04090F").opacity(0.30), location: 0.45),
+                    .init(color: Color(hex: "04090F").opacity(0.88), location: 1)
+                ],
+                startPoint: .top, endPoint: .bottom
+            )
+            VStack(spacing: 0) {
+                HStack {
+                    Text(game.sport)
+                        .scaledFont(size: 12, weight: .medium)
+                        .foregroundStyle(Color.white.opacity(0.85))
+                    Spacer()
+                    if game.state == .live {
+                        Text("Watch")
+                            .scaledFont(size: 12, weight: .semibold)
+                            .foregroundStyle(Color(hex: "1A0E02"))
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 5)
+                            .background(Capsule().fill(Color(hex: "F5821F")))
+                    }
+                }
+                .padding(.horizontal, 14)
+                .padding(.top, 12)
+                Spacer(minLength: 0)
+                HStack(alignment: .bottom, spacing: 4) {
+                    heroTeam(game.away, dimmed: game.state == .post && game.home.isWinner)
+                    VStack(spacing: 6) {
+                        Text(heroStatus(game))
+                            .scaledFont(size: 12, weight: .semibold)
+                            .foregroundStyle(heroStatusColor(game))
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 3)
+                            .background(RoundedRectangle(cornerRadius: 8).fill(Color(hex: "04090F").opacity(0.75)))
+                            .lineLimit(1)
+                        Text(game.state == .pre ? "vs" : "\(game.away.score) – \(game.home.score)")
+                            .scaledFont(size: game.state == .pre ? 22 : 34, weight: .semibold)
+                            .foregroundStyle(.white)
+                            .monospacedDigit()
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
+                    }
+                    .frame(maxWidth: .infinity)
+                    heroTeam(game.home, dimmed: game.state == .post && game.away.isWinner)
+                }
+                .padding(.horizontal, 12)
+                heroBroadcasts(SportsSimulcast.ranked(game.broadcasts))
+                    .padding(.horizontal, 14)
+                    .padding(.top, 10)
+                    .padding(.bottom, 10)
+            }
+        }
+        .frame(height: 196)
+        .clipShape(RoundedRectangle(cornerRadius: 18))
+        .overlay(RoundedRectangle(cornerRadius: 18).stroke(Color.white.opacity(0.10), lineWidth: 1))
+    }
+
+    /// The game photo when `sports_games.image_url` has one, otherwise a hard
+    /// diagonal split of the two teams' colours.
+    @ViewBuilder
+    private func heroBackground(_ game: SportsGame) -> some View {
+        let a = game.away.primaryHex.map { Color(hex: $0) } ?? Color(hex: "1B212C")
+        let h = game.home.primaryHex.map { Color(hex: $0) } ?? Color(hex: "3A4150")
+        let split = LinearGradient(
+            stops: [.init(color: a, location: 0), .init(color: a, location: 0.47),
+                    .init(color: h, location: 0.53), .init(color: h, location: 1)],
+            startPoint: .topLeading, endPoint: .bottomTrailing
         )
-        .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(team.isLive ? Color(hex: "E50914").opacity(0.35) : Color.white.opacity(0.07), lineWidth: 1)
-        )
+        if let s = gameImages[game.id], let url = URL(string: s) {
+            AsyncImage(url: url) { phase in
+                if case .success(let image) = phase {
+                    image.resizable().scaledToFill()
+                } else {
+                    split
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .clipped()
+        } else {
+            split
+        }
+    }
+
+    private func heroTeam(_ team: GameTeam, dimmed: Bool) -> some View {
+        VStack(spacing: 5) {
+            TeamCrestCircle(team: team, size: 52)
+            Text(team.shortName)
+                .scaledFont(size: 14, weight: .semibold)
+                .foregroundStyle(dimmed ? Color.white.opacity(0.7) : .white)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+        }
+        .frame(width: 96)
+    }
+
+    private func heroStatus(_ game: SportsGame) -> String {
+        switch game.state {
+        case .live: return game.statusDetail
+        case .post: return "Final"
+        case .pre: return game.scheduleLabel
+        }
+    }
+
+    private func heroStatusColor(_ game: SportsGame) -> Color {
+        switch game.state {
+        case .live: return Color(hex: "FF5A5A")
+        case .post: return Color(hex: "5BD17A")
+        case .pre: return Color(hex: "F5821F")
+        }
+    }
+
+    @ViewBuilder
+    private func heroBroadcasts(_ broadcasts: [String]) -> some View {
+        HStack(spacing: 6) {
+            if !broadcasts.isEmpty {
+                Text("On")
+                    .scaledFont(size: 10, weight: .semibold)
+                    .foregroundStyle(Color.white.opacity(0.6))
+                ForEach(broadcasts.prefix(3), id: \.self) { name in
+                    Text(name)
+                        .scaledFont(size: 10, weight: .semibold)
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 2)
+                        .background(RoundedRectangle(cornerRadius: 5).fill(Color.white.opacity(0.16)))
+                }
+            }
+            Spacer(minLength: 0)
+        }
     }
 
     // MARK: - Helper for tappable card wrapper
@@ -522,7 +697,7 @@ struct SportsView: View {
 
     private var liveNowSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            sectionHeader(title: "Live Now", count: liveGames.count) {
+            sectionHeader(title: "Live now", count: liveGames.count) {
                 path.append(.allLive)
             }
             ForEach(liveGames.prefix(4)) { game in
@@ -586,7 +761,7 @@ struct SportsView: View {
     private func liveTeamBlock(team: GameTeam, leading: Bool) -> some View {
         let scoreColor: Color = team.isWinner ? .white : Color.white.opacity(0.55)
         return VStack(spacing: 4) {
-            TeamLogoBadge(team: team, size: 50, cornerRadius: 10, inset: 6, abbreviationFontSize: 9)
+            TeamCrestCircle(team: team, size: 50)
             Text(team.shortName)
                 .scaledFont(size: 10, weight: .semibold)
                 .foregroundStyle(Color.white.opacity(0.6))
@@ -624,11 +799,11 @@ struct SportsView: View {
     private func upcomingGameCard(_ game: SportsGame) -> some View {
         return VStack(spacing: 8) {
             HStack(spacing: 8) {
-                TeamLogoBadge(team: game.away, size: 40, cornerRadius: 8, inset: 5, abbreviationFontSize: 7)
+                TeamCrestCircle(team: game.away, size: 40)
                 Text("vs")
                     .scaledFont(size: 11, weight: .bold)
                     .foregroundStyle(Color.white.opacity(0.3))
-                TeamLogoBadge(team: game.home, size: 40, cornerRadius: 8, inset: 5, abbreviationFontSize: 7)
+                TeamCrestCircle(team: game.home, size: 40)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("\(game.away.shortName) vs \(game.home.shortName)")
                         .scaledFont(size: 13, weight: .bold)
@@ -676,7 +851,7 @@ struct SportsView: View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
-                    TeamLogoBadge(team: game.away, size: 18, cornerRadius: 5, inset: 3, abbreviationFontSize: 6)
+                    TeamCrestCircle(team: game.away, size: 22)
                     Text(game.away.abbreviation)
                         .scaledFont(size: 11, weight: .bold)
                         .foregroundStyle(game.away.isWinner ? .white : Color.white.opacity(0.5))
@@ -686,7 +861,7 @@ struct SportsView: View {
                         .foregroundStyle(game.away.isWinner ? .white : Color.white.opacity(0.5))
                 }
                 HStack(spacing: 6) {
-                    TeamLogoBadge(team: game.home, size: 18, cornerRadius: 5, inset: 3, abbreviationFontSize: 6)
+                    TeamCrestCircle(team: game.home, size: 22)
                     Text(game.home.abbreviation)
                         .scaledFont(size: 11, weight: .bold)
                         .foregroundStyle(game.home.isWinner ? .white : Color.white.opacity(0.5))

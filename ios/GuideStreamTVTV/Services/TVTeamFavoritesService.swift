@@ -220,10 +220,31 @@ final class TVSportsTeamCatalogService {
     private(set) var teams: [TVSportsTeamRow] = []
     private(set) var isLoading = false
 
-    private let localCacheKey = "gs.sportsTeamCatalog.v1"
+    /// v2 (2026-09-25): rows gained `fill_color`; a v1 cache would satisfy
+    /// `load()`'s warm-cache early return and never pick it up.
+    private let localCacheKey = "gs.sportsTeamCatalog.v2"
 
     private init() {
         teams = loadLocalCache()
+    }
+
+    /// Crest circle fill for a team uid — `sports_teams.fill_color`, which
+    /// sports_team_fill sets to the secondary colour when the crest is mostly
+    /// the primary one. Mirrors the phone's SportsTeamCatalogService.fillHex.
+    func fillHex(forUid uid: String?) -> String? {
+        guard let uid, !uid.isEmpty else { return nil }
+        if fillIndex.isEmpty && !teams.isEmpty { rebuildFillIndex() }
+        return fillIndex[uid]
+    }
+
+    @ObservationIgnored private var fillIndex: [String: String] = [:]
+
+    private func rebuildFillIndex() {
+        var index: [String: String] = [:]
+        for t in teams {
+            if let hex = t.fill_color ?? t.color, !hex.isEmpty { index[t.team_uid] = hex }
+        }
+        fillIndex = index
     }
 
     /// Sports in catalogue order, de-duplicated. The order the table returns
@@ -269,6 +290,7 @@ final class TVSportsTeamCatalogService {
             }
             if !all.isEmpty {
                 teams = all
+                rebuildFillIndex()
                 saveLocalCache(all)
             }
         } catch {
@@ -298,6 +320,8 @@ nonisolated struct TVSportsTeamRow: Codable, Sendable, Hashable, Identifiable {
     let league: String
     let sport: String
     let color: String?
+    /// Crest circle fill; optional so older rows still decode.
+    let fill_color: String?
     let logo_url: String?
     let sort_order: Int
 
