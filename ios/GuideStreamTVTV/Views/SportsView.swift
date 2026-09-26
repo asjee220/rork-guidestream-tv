@@ -361,12 +361,15 @@ struct SportsView: View {
                     } label: {
                         Text(sport)
                             .scaledFont(size: 28, weight: .bold)
-                            .foregroundStyle(isActive || isFocused ? Color.white : Color.white.opacity(0.5))
+                            .foregroundStyle(isFocused ? TVButtonFocus.content : (isActive ? Color.white : Color.white.opacity(0.5)))
                             .padding(.horizontal, 30)
                             .padding(.vertical, 16)
                             .background(
                                 Group {
-                                    if isActive {
+                                    if isFocused {
+                                        RoundedRectangle(cornerRadius: 32)
+                                            .fill(TVButtonFocus.fill)
+                                    } else if isActive {
                                         RoundedRectangle(cornerRadius: 32)
                                             .fill(Color(hex: "F5821F"))
                                     } else {
@@ -377,10 +380,11 @@ struct SportsView: View {
                             .overlay(
                                 RoundedRectangle(cornerRadius: 32)
                                     .stroke(
-                                        isFocused ? Color.white : (isActive ? Color.clear : Color.white.opacity(0.15)),
-                                        lineWidth: isFocused ? 2 : 1
+                                        (isFocused || isActive) ? Color.clear : Color.white.opacity(0.15),
+                                        lineWidth: 1
                                     )
                             )
+                            .scaleEffect(isFocused ? TVButtonFocus.scale : 1.0)
                             .animation(.easeOut(duration: 0.15), value: isFocused)
                     }
                     .buttonStyle(TVFlatButtonStyle())

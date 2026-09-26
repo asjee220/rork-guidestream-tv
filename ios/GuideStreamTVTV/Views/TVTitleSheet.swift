@@ -684,17 +684,16 @@ struct TVTitleSheet: View {
         } label: {
             Text(summary.name ?? "Season \(number)")
                 .font(.system(size: 24, weight: .semibold))
-                .foregroundStyle(isOn ? Color.black : TVTheme.textSecondary)
+                .foregroundStyle(focused ? TVButtonFocus.content : (isOn ? Color.black : TVTheme.textSecondary))
                 .padding(.horizontal, 26)
                 .padding(.vertical, 12)
-                // Selection and focus are separate cues, the way the side
-                // menu keeps its orange bar and its plate independent: the
-                // filled capsule says which season is showing, the plate
-                // says which pill the remote is on.
-                .background(isOn ? Color.white.opacity(0.92) : Color.white.opacity(0.10), in: Capsule())
-                .overlay(Capsule().fill(Color.white.opacity(focused && !isOn ? 0.16 : 0)))
-                .overlay(Capsule().stroke(Color.white.opacity(focused ? 0.9 : 0), lineWidth: 2))
-                .scaleEffect(focused ? 1.06 : 1.0)
+                // The filled capsule says which season is showing; focus is
+                // the shared solid white fill, and — because the selected
+                // pill is already near-white — the lift and shadow are what
+                // tell focus from selection on that one.
+                .background(focused ? TVButtonFocus.fill : (isOn ? Color.white.opacity(0.92) : Color.white.opacity(0.10)), in: Capsule())
+                .scaleEffect(focused ? TVButtonFocus.scale : 1.0)
+                .tvButtonFocusShadow(focused)
                 .animation(.easeOut(duration: 0.15), value: focused)
         }
         .buttonStyle(TVFlatButtonStyle())
@@ -1167,7 +1166,7 @@ struct TVTitleSheet: View {
             HStack(spacing: 14) {
                 if isResolving && resolvedStreaming == nil || launchingService != nil {
                     ProgressView()
-                        .tint(.white)
+                        .tint(focusedField == .play ? TVButtonFocus.content : .white)
                 } else if launchFailedService != nil {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .font(.system(size: 24, weight: .bold))
@@ -1195,9 +1194,15 @@ struct TVTitleSheet: View {
                     providerMark(for: playServiceName, size: 40)
                 }
             }
-            .foregroundStyle(.white)
+            .foregroundStyle(focusedField == .play ? TVButtonFocus.content : .white)
             .padding(.horizontal, 28)
             .padding(.vertical, 18)
+            // The shared white fill, laid inside the card so the resting
+            // platter and the card's lift are exactly what they were.
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(focusedField == .play ? TVButtonFocus.fill : Color.clear)
+            )
         }
         .buttonStyle(.card)
         .focused($focusedField, equals: .play)
@@ -1243,13 +1248,13 @@ struct TVTitleSheet: View {
         return Button(action: action) {
             VStack(spacing: 12) {
                 ZStack {
-                    // The side menu's plate, in circular form: white 16% when
-                    // focused, nothing when not, plus the same 1.06 lift.
+                    // The shared button focus in circular form: a solid white
+                    // fill and a black glyph when focused, plus the 1.06 lift.
                     Circle()
-                        .fill(Color.white.opacity(focused ? 0.16 : 0.06))
+                        .fill(focused ? TVButtonFocus.fill : Color.white.opacity(0.06))
                     Image(systemName: icon)
                         .font(.system(size: 34, weight: .semibold))
-                        .foregroundStyle(tint)
+                        .foregroundStyle(focused ? TVButtonFocus.content : tint)
                 }
                 .frame(width: 84, height: 84)
                 .scaleEffect(focused ? 1.06 : 1.0)

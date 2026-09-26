@@ -139,17 +139,16 @@ struct TVTeamPickerView: View {
                     } label: {
                         Text(sport)
                             .font(.system(size: 24, weight: .semibold))
-                            .foregroundStyle(isOn ? Color.black : TVTheme.textSecondary)
+                            .foregroundStyle(focused ? TVButtonFocus.content : (isOn ? Color.black : TVTheme.textSecondary))
                             .padding(.horizontal, 26)
                             .padding(.vertical, 12)
                             // Selection and focus stay separate cues, as on
-                            // the title screen's season pills.
-                            .background(isOn ? Color.white.opacity(0.92) : Color.white.opacity(0.10), in: Capsule())
-                            .overlay(Capsule().fill(Color.white.opacity(focused && !isOn ? 0.16 : 0)))
-                            // A white ring vanishes on the selected (white)
-                            // pill, so focus there is shown in orange.
-                            .overlay(Capsule().stroke(isOn ? TVTheme.orange : Color.white.opacity(0.9), lineWidth: 3).opacity(focused ? 1 : 0))
-                            .scaleEffect(focused ? 1.06 : 1.0)
+                            // the title screen's season pills: focus is the
+                            // shared solid white fill, and on the selected
+                            // (already white) pill the lift and shadow carry it.
+                            .background(focused ? TVButtonFocus.fill : (isOn ? Color.white.opacity(0.92) : Color.white.opacity(0.10)), in: Capsule())
+                            .scaleEffect(focused ? TVButtonFocus.scale : 1.0)
+                            .tvButtonFocusShadow(focused)
                             .animation(.easeOut(duration: 0.15), value: focused)
                     }
                     .buttonStyle(TVFlatButtonStyle())

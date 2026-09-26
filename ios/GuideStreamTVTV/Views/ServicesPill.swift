@@ -33,6 +33,8 @@ struct ServicesPill: View {
     /// No services chosen yet — the pill switches to its invitation state.
     private var isEmpty: Bool { serviceIds.isEmpty }
 
+    @FocusState private var isFocused: Bool
+
     var body: some View {
         Button(action: onTap) {
             HStack(spacing: 8) {
@@ -40,22 +42,22 @@ struct ServicesPill: View {
                     ghostIcons
                     Text("Add")
                         .scaledFont(size: 11, weight: .heavy)
-                        .foregroundStyle(Color.orange)
+                        .foregroundStyle(isFocused ? TVButtonFocus.content : Color.orange)
                 } else {
                     stackedIcons
                 }
                 Image(systemName: "chevron.down")
                     .scaledFont(size: 9, weight: .bold)
-                    .foregroundStyle(Color.orange.opacity(0.75))
+                    .foregroundStyle(isFocused ? TVButtonFocus.content : Color.orange.opacity(0.75))
             }
             .padding(.leading, 6)
             .padding(.trailing, 10)
             .padding(.vertical, 5)
             .background(
-                Capsule().fill(Color.orange.opacity(0.10))
+                Capsule().fill(isFocused ? TVButtonFocus.fill : Color.orange.opacity(0.10))
             )
             .overlay(
-                Capsule().stroke(Color.orange, lineWidth: 1.4)
+                Capsule().stroke(isFocused ? Color.clear : Color.orange, lineWidth: 1.4)
             )
             .overlay(alignment: .topTrailing) {
                 // No badge in the empty state — a "0" reads as a broken
@@ -64,8 +66,13 @@ struct ServicesPill: View {
                     counterBadge.offset(x: 6, y: -7)
                 }
             }
+            .scaleEffect(isFocused ? TVButtonFocus.scale : 1.0)
+            .animation(.easeOut(duration: 0.15), value: isFocused)
         }
-        .buttonStyle(.plain)
+        // Our own white fill is the focus cue, not the system slab.
+        .buttonStyle(TVFlatButtonStyle())
+        .focusEffectDisabled()
+        .focused($isFocused)
         .accessibilityLabel(
             isEmpty
                 ? "Add your services. None selected yet. Press to choose."

@@ -18,6 +18,7 @@ import AuthenticationServices
 struct TVSignInView: View {
     @State private var auth = TVAuthViewModel.shared
     @FocusState private var isSignInFocused: Bool
+    @FocusState private var isGuestFocused: Bool
     let onContinue: () -> Void
 
     // MARK: - Guest confirmation
@@ -109,9 +110,21 @@ struct TVSignInView: View {
                     } label: {
                         Text("Continue as Guest")
                             .font(.system(size: 17, weight: .medium))
-                            .foregroundStyle(TVTheme.textTertiary)
+                            .foregroundStyle(isGuestFocused ? TVButtonFocus.content : TVTheme.textTertiary)
+                            // The fill bleeds past the text so focus reads as
+                            // a button without moving the card's layout.
+                            .background(
+                                Capsule()
+                                    .fill(isGuestFocused ? TVButtonFocus.fill : Color.clear)
+                                    .padding(.horizontal, -20)
+                                    .padding(.vertical, -10)
+                            )
+                            .scaleEffect(isGuestFocused ? TVButtonFocus.scale : 1.0)
+                            .animation(.easeOut(duration: 0.15), value: isGuestFocused)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(TVFlatButtonStyle())
+                    .focusEffectDisabled()
+                    .focused($isGuestFocused)
                     .disabled(auth.isAuthenticating || roomIsSaving)
 
                     if let err = auth.lastError {

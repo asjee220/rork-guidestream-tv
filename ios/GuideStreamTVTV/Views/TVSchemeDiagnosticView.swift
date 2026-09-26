@@ -112,7 +112,7 @@ struct TVSchemeDiagnosticView: View {
             } label: { focused in
                 Text("Done")
                     .font(.system(size: 20, weight: .medium))
-                    .foregroundStyle(focused ? Color.navy : TVTheme.orange)
+                    .foregroundStyle(focused ? TVButtonFocus.content : TVTheme.orange)
             }
         }
         .padding(.horizontal, 80)
@@ -240,7 +240,7 @@ struct TVSchemeDiagnosticView: View {
         HStack(spacing: 10) {
             Text(title)
                 .font(.system(size: 18, weight: .semibold))
-                .foregroundStyle(enabled ? (focused ? Color.navy : .white) : TVTheme.textTertiary)
+                .foregroundStyle(enabled ? (focused ? TVButtonFocus.content : .white) : TVTheme.textTertiary)
             if let result {
                 Text(result ? "PASS" : "FAIL")
                     .font(.system(size: 14, weight: .heavy))
@@ -499,7 +499,7 @@ struct TVSchemeDiagnosticView: View {
 /// Orange-outlined ghost button used by every control on this screen
 /// (Done, Open app, and each candidate). Mirrors GhostButton in
 /// SportsView.swift: orange text inside a 2pt orange rounded outline on
-/// a clear background, inverting to a filled orange pill with dark text
+/// a clear background, inverting to the shared white fill with black text
 /// when focused. Focus is read with @FocusState bound to the Button —
 /// the pattern proven to track focus on this platform — instead of the
 /// broken @Environment(\.isFocused)-inside-a-ButtonStyle approach.
@@ -516,14 +516,16 @@ private struct DiagnosticGhostButton<Label: View>: View {
                 .padding(.vertical, 14)
                 .background(
                     RoundedRectangle(cornerRadius: 12)
-                        .fill(isFocused ? TVTheme.orange : Color.clear)
+                        .fill(isFocused ? TVButtonFocus.fill : Color.clear)
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: 12)
-                        .stroke(TVTheme.orange, lineWidth: 2)
+                        .stroke(isFocused ? Color.clear : TVTheme.orange, lineWidth: 2)
                 )
         }
-        .buttonStyle(.plain)
+        // Our own white fill is the focus cue, not the system slab.
+        .buttonStyle(TVFlatButtonStyle())
+        .focusEffectDisabled()
         .focused($isFocused)
         .animation(.spring(response: 0.3, dampingFraction: 0.85), value: isFocused)
     }

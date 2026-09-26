@@ -42,6 +42,8 @@ struct ProfileView: View {
     @State private var isSigningOut: Bool = false
     @State private var activeSheet: ProfileSheet?
     @State private var showSchemeDiagnostics: Bool = false
+    @FocusState private var diagnosticsRowFocused: Bool
+    @FocusState private var setupBannerFocused: Bool
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -95,29 +97,31 @@ struct ProfileView: View {
                             HStack(spacing: 14) {
                                 ZStack {
                                     RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                        .fill(Color.white.opacity(0.07))
+                                        .fill(diagnosticsRowFocused ? Color.black.opacity(0.07) : Color.white.opacity(0.07))
                                     Image(systemName: "ant.fill")
                                         .scaledFont(size: 24, weight: .semibold)
-                                        .foregroundStyle(Color.orange)
+                                        .foregroundStyle(diagnosticsRowFocused ? TVButtonFocus.content : Color.orange)
                                 }
                                 .frame(width: 64, height: 64)
 
                                 Text("Scheme diagnostics")
                                     .scaledFont(size: 24, weight: .semibold)
-                                    .foregroundStyle(.white)
+                                    .foregroundStyle(diagnosticsRowFocused ? TVButtonFocus.content : .white)
 
                                 Spacer(minLength: 8)
 
                                 Image(systemName: "chevron.right")
                                     .scaledFont(size: 20, weight: .semibold)
-                                    .foregroundStyle(Color.textTertiary)
+                                    .foregroundStyle(diagnosticsRowFocused ? TVButtonFocus.content : Color.textTertiary)
                             }
                             .padding(.horizontal, 28)
                             .padding(.vertical, 28)
                             .frame(minHeight: 110)
+                            .background(diagnosticsRowFocused ? TVButtonFocus.fill : Color.clear)
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.card)
+                        .focused($diagnosticsRowFocused)
                         .padding(.top, 8)
 
                         // Floating tab bar safe area
@@ -220,32 +224,34 @@ struct ProfileView: View {
             HStack(spacing: 12) {
                 ZStack {
                     Circle()
-                        .fill(Color.orange.opacity(0.18))
+                        .fill(setupBannerFocused ? Color.black.opacity(0.08) : Color.orange.opacity(0.18))
                         .frame(width: 64, height: 64)
                     Image(systemName: "exclamationmark.triangle.fill")
                         .scaledFont(size: 24, weight: .bold)
-                        .foregroundStyle(Color.orange)
+                        .foregroundStyle(setupBannerFocused ? TVButtonFocus.content : Color.orange)
                 }
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Supabase setup needed")
                         .scaledFont(size: 21, weight: .heavy)
-                        .foregroundStyle(.white)
+                        .foregroundStyle(setupBannerFocused ? TVButtonFocus.content : .white)
                         .lineLimit(1)
                     Text(bannerSubtitle)
                         .scaledFont(size: 17)
-                        .foregroundStyle(Color.white.opacity(0.75))
+                        .foregroundStyle(setupBannerFocused ? TVButtonFocus.content.opacity(0.75) : Color.white.opacity(0.75))
                         .lineLimit(2)
                 }
                 Spacer(minLength: 4)
                 Image(systemName: "chevron.right")
                     .scaledFont(size: 18, weight: .bold)
-                    .foregroundStyle(Color.orange)
+                    .foregroundStyle(setupBannerFocused ? TVButtonFocus.content : Color.orange)
             }
             .padding(.horizontal, 28)
             .padding(.vertical, 28)
             .frame(maxWidth: .infinity, minHeight: 110)
+            .background(setupBannerFocused ? TVButtonFocus.fill : Color.clear)
         }
         .buttonStyle(.card)
+        .focused($setupBannerFocused)
         .accessibilityLabel("Supabase setup needed. Open diagnostics.")
     }
 
@@ -734,28 +740,30 @@ struct ProfileRow: View {
     var titleColor: Color = Color.white
     let onTap: () -> Void
 
+    @FocusState private var isFocused: Bool
+
     var body: some View {
         Button(action: tap) {
             HStack(spacing: 14) {
                 ZStack {
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(Color.white.opacity(0.07))
+                        .fill(isFocused ? Color.black.opacity(0.07) : Color.white.opacity(0.07))
                     Image(systemName: icon)
                         .scaledFont(size: 24, weight: .semibold)
-                        .foregroundStyle(iconTint)
+                        .foregroundStyle(isFocused ? TVButtonFocus.content : iconTint)
                 }
                 .frame(width: 64, height: 64)
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)
                         .scaledFont(size: 24, weight: .semibold)
-                        .foregroundStyle(titleColor)
+                        .foregroundStyle(isFocused ? TVButtonFocus.content : titleColor)
                         .lineLimit(1)
                         .minimumScaleFactor(0.85)
                     if !subtitle.isEmpty {
                         Text(subtitle)
                             .scaledFont(size: 18)
-                            .foregroundStyle(Color.textSecondary)
+                            .foregroundStyle(isFocused ? TVButtonFocus.content.opacity(0.7) : Color.textSecondary)
                             .lineLimit(2)
                     }
                 }
@@ -765,15 +773,19 @@ struct ProfileRow: View {
                 if !trailingHidden {
                     Image(systemName: "chevron.right")
                         .scaledFont(size: 20, weight: .semibold)
-                        .foregroundStyle(Color.textTertiary)
+                        .foregroundStyle(isFocused ? TVButtonFocus.content : Color.textTertiary)
                 }
             }
             .padding(.horizontal, 28)
             .padding(.vertical, 28)
             .frame(minHeight: 110)
+            // The shared white fill, laid inside the card so the resting
+            // row and the card's lift are exactly what they were.
+            .background(isFocused ? TVButtonFocus.fill : Color.clear)
             .contentShape(Rectangle())
         }
         .buttonStyle(.card)
+        .focused($isFocused)
     }
 
     private func tap() {

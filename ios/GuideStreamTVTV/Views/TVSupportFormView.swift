@@ -30,6 +30,7 @@ struct TVSupportFormView: View {
     @State private var isSending = false
     @State private var errorText: String?
     @State private var sent = false
+    @FocusState private var focusedTopic: String?
 
     init(presetTopic: String) {
         self.presetTopic = presetTopic
@@ -65,22 +66,27 @@ struct TVSupportFormView: View {
                         ProfileCard {
                             ForEach(Array(TVSupportRequestService.topics.enumerated()), id: \.element) { idx, option in
                                 if idx > 0 { ProfileRowDivider() }
+                                let isFocused = focusedTopic == option
                                 Button { topic = option } label: {
                                     HStack {
                                         Text(option)
                                             .scaledFont(size: 20)
-                                            .foregroundStyle(.white)
+                                            .foregroundStyle(isFocused ? TVButtonFocus.content : .white)
                                         Spacer()
                                         if option == topic {
                                             Image(systemName: "checkmark")
-                                                .foregroundStyle(Color.orange)
+                                                .foregroundStyle(isFocused ? TVButtonFocus.content : Color.orange)
                                         }
                                     }
                                     .padding(.horizontal, 24)
                                     .padding(.vertical, 16)
+                                    // Shared white fill inside the card, so
+                                    // the resting row and the lift are unchanged.
+                                    .background(isFocused ? TVButtonFocus.fill : Color.clear)
                                     .contentShape(Rectangle())
                                 }
                                 .buttonStyle(.card)
+                                .focused($focusedTopic, equals: option)
                             }
                         }
 

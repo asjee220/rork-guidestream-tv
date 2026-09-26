@@ -268,7 +268,7 @@ struct TVWatchListView: View {
 
     /// Creators-only sort toggle, living in the chip row so it needs no focus
     /// section of its own — right from the last tab lands on it. Flat style
-    /// plus a 2pt stroke, the house selection treatment for tvOS.
+    /// plus the shared white-fill button focus.
     private var sortChip: some View {
         Button {
             creatorSort = creatorSort.next
@@ -279,12 +279,11 @@ struct TVWatchListView: View {
                 creatorSort.text
                     .font(.system(size: 22, weight: .semibold))
             }
-            .foregroundStyle(TVTheme.textSecondary)
+            .foregroundStyle(sortChipFocused ? TVButtonFocus.content : TVTheme.textSecondary)
             .padding(.horizontal, 22)
             .padding(.vertical, 12)
-            .background(Color.white.opacity(0.10), in: Capsule())
-            .overlay(Capsule().stroke(Color.white.opacity(sortChipFocused ? 0.9 : 0), lineWidth: 2))
-            .scaleEffect(sortChipFocused ? 1.06 : 1.0)
+            .background(sortChipFocused ? TVButtonFocus.fill : Color.white.opacity(0.10), in: Capsule())
+            .scaleEffect(sortChipFocused ? TVButtonFocus.scale : 1.0)
             .animation(.easeOut(duration: 0.15), value: sortChipFocused)
         }
         .buttonStyle(TVFlatButtonStyle())
@@ -309,19 +308,17 @@ struct TVWatchListView: View {
                     .font(.system(size: 18, weight: .heavy))
                     .padding(.horizontal, 10)
                     .padding(.vertical, 3)
-                    .background(Color.white.opacity(isOn ? 0.18 : 0.10), in: Capsule())
+                    .background(focused ? Color.black.opacity(0.10) : Color.white.opacity(isOn ? 0.18 : 0.10), in: Capsule())
             }
-            .foregroundStyle(isOn ? Color.black : TVTheme.textSecondary)
+            .foregroundStyle(focused ? TVButtonFocus.content : (isOn ? Color.black : TVTheme.textSecondary))
             .padding(.horizontal, 26)
             .padding(.vertical, 12)
-            // Selection and focus stay separate cues, the way the season
-            // pills on the title screen keep them apart: the filled capsule
-            // says which category is showing, the plate says which chip the
-            // remote is on.
-            .background(isOn ? Color.white.opacity(0.92) : Color.white.opacity(0.10), in: Capsule())
-            .overlay(Capsule().fill(Color.white.opacity(focused && !isOn ? 0.16 : 0)))
-            .overlay(Capsule().stroke(Color.white.opacity(focused ? 0.9 : 0), lineWidth: 2))
-            .scaleEffect(focused ? 1.06 : 1.0)
+            // The filled capsule says which category is showing; focus is
+            // the shared solid white fill, and on the already-white selected
+            // chip the lift and shadow are what tell focus from selection.
+            .background(focused ? TVButtonFocus.fill : (isOn ? Color.white.opacity(0.92) : Color.white.opacity(0.10)), in: Capsule())
+            .scaleEffect(focused ? TVButtonFocus.scale : 1.0)
+            .tvButtonFocusShadow(focused)
             .animation(.easeOut(duration: 0.15), value: focused)
         }
         // An empty style, not .plain: .plain still lays tvOS's white slab

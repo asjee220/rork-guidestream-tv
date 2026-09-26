@@ -80,27 +80,27 @@ struct TVWatchOptionsSheet: View {
 
                 Text(displayName(for: source.name))
                     .font(.system(size: 26, weight: .bold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(focused ? TVButtonFocus.content : .white)
 
                 Spacer(minLength: 24)
 
                 Text(offerLabel(for: source, subscribed: subscribed))
                     .font(.system(size: 22, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.85))
+                    .foregroundStyle(focused ? TVButtonFocus.content : .white.opacity(0.85))
             }
             .padding(.horizontal, 26)
             .padding(.vertical, 20)
             .frame(maxWidth: 900, alignment: .leading)
             // Neutral, so the brand-coloured mark is the thing carrying the
-            // service's identity. The side menu's plate marks focus.
+            // service's identity. Focus is the shared solid white fill with
+            // black text.
             .background(
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(Color.white.opacity(focused ? 0.16 : 0.07))
+                    .fill(focused ? TVButtonFocus.fill : Color.white.opacity(0.07))
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .stroke(Color.white.opacity(focused ? 0.85 : 0.10),
-                            lineWidth: focused ? 2 : 1)
+                    .stroke(focused ? Color.clear : Color.white.opacity(0.10), lineWidth: 1)
             )
             .scaleEffect(focused ? 1.04 : 1.0)
             .animation(.easeOut(duration: 0.15), value: focused)
@@ -133,7 +133,7 @@ struct TVWatchOptionsSheet: View {
     }
 }
 
-/// Draws nothing, so the row's own plate is the only focus cue.
+/// Draws nothing, so the row's own white fill is the only focus cue.
 private struct TVWatchOptionButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label

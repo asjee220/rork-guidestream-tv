@@ -28,6 +28,8 @@ struct AccountView: View {
     @State private var showDeleteConfirm: Bool = false
     @State private var isSendingReset: Bool = false
     @FocusState private var nameFocused: Bool
+    @FocusState private var saveFocused: Bool
+    @FocusState private var goToSignInFocused: Bool
 
     var body: some View {
         ZStack {
@@ -126,21 +128,27 @@ struct AccountView: View {
                     if isSaving {
                         ProgressView()
                             .progressViewStyle(.circular)
-                            .tint(.white)
+                            .tint(saveFocused ? TVButtonFocus.content : .white)
                             .frame(width: 70, height: 48)
                     } else {
                         Text("Save")
                             .scaledFont(size: 14, weight: .bold)
-                            .foregroundStyle(.white)
+                            .foregroundStyle(saveFocused ? TVButtonFocus.content : .white)
                             .frame(width: 70, height: 48)
                     }
                 }
-                .buttonStyle(.plain)
+                // Our own white fill is the focus cue, not the system slab.
+                .buttonStyle(TVFlatButtonStyle())
+                .focusEffectDisabled()
+                .focused($saveFocused)
                 .background(
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(saveDisabled ? Color.orange.opacity(0.35) : Color.orange)
+                        .fill(saveFocused ? TVButtonFocus.fill : (saveDisabled ? Color.orange.opacity(0.35) : Color.orange))
                 )
-                .shadow(color: saveDisabled ? .clear : Color.orange.opacity(0.4), radius: 12, y: 4)
+                .shadow(color: (saveDisabled || saveFocused) ? .clear : Color.orange.opacity(0.4), radius: 12, y: 4)
+                .tvButtonFocusShadow(saveFocused)
+                .scaleEffect(saveFocused ? TVButtonFocus.scale : 1.0)
+                .animation(.easeOut(duration: 0.15), value: saveFocused)
                 .disabled(saveDisabled)
             }
         }
@@ -214,13 +222,19 @@ struct AccountView: View {
             Button(action: signOutToWelcome) {
                 Text("Go to sign in")
                     .scaledFont(size: 15, weight: .bold)
-                    .foregroundStyle(.white)
+                    .foregroundStyle(goToSignInFocused ? TVButtonFocus.content : .white)
                     .frame(maxWidth: .infinity)
                     .frame(height: 50)
-                    .background(Capsule().fill(Color.orange))
-                    .shadow(color: Color.orange.opacity(0.45), radius: 18)
+                    .background(Capsule().fill(goToSignInFocused ? TVButtonFocus.fill : Color.orange))
+                    .shadow(color: goToSignInFocused ? .clear : Color.orange.opacity(0.45), radius: 18)
+                    .tvButtonFocusShadow(goToSignInFocused)
+                    .scaleEffect(goToSignInFocused ? TVButtonFocus.scale : 1.0)
+                    .animation(.easeOut(duration: 0.15), value: goToSignInFocused)
             }
-            .buttonStyle(.plain)
+            // Our own white fill is the focus cue, not the system slab.
+            .buttonStyle(TVFlatButtonStyle())
+            .focusEffectDisabled()
+            .focused($goToSignInFocused)
         }
         .padding(.top, 32)
     }
@@ -339,6 +353,7 @@ struct ProfileInfoRow: View {
     /// is truncated). When nil, `value` is copied.
     var fullValueOverride: String? = nil
     @State private var didCopy: Bool = false
+    @FocusState private var copyFocused: Bool
 
     var body: some View {
         HStack(spacing: 14) {
@@ -358,11 +373,16 @@ struct ProfileInfoRow: View {
                 Button(action: copy) {
                     Image(systemName: didCopy ? "checkmark" : "doc.on.doc")
                         .scaledFont(size: 12, weight: .semibold)
-                        .foregroundStyle(didCopy ? Color.green : Color.textTertiary)
+                        .foregroundStyle(copyFocused ? TVButtonFocus.content : (didCopy ? Color.green : Color.textTertiary))
                         .frame(width: 28, height: 28)
-                        .background(Circle().fill(Color.white.opacity(0.06)))
+                        .background(Circle().fill(copyFocused ? TVButtonFocus.fill : Color.white.opacity(0.06)))
+                        .scaleEffect(copyFocused ? TVButtonFocus.scale : 1.0)
+                        .animation(.easeOut(duration: 0.15), value: copyFocused)
                 }
-                .buttonStyle(.plain)
+                // Our own white fill is the focus cue, not the system slab.
+                .buttonStyle(TVFlatButtonStyle())
+                .focusEffectDisabled()
+                .focused($copyFocused)
             }
         }
         .padding(.horizontal, 16)
@@ -539,23 +559,25 @@ struct ConnectedServicesView: View {
                             .scaledFont(size: 30, weight: .bold)
                     }
                 }
-                .foregroundStyle(.white)
+                .foregroundStyle(saveFocused ? TVButtonFocus.content : .white)
                 .frame(maxWidth: 700)
                 .frame(height: 80)
-                .background(
-                    LinearGradient(
-                        colors: [Color.orange, Color.orange.opacity(0.85)],
-                        startPoint: .top, endPoint: .bottom
-                    )
-                )
+                .background {
+                    if saveFocused {
+                        TVButtonFocus.fill
+                    } else {
+                        LinearGradient(
+                            colors: [Color.orange, Color.orange.opacity(0.85)],
+                            startPoint: .top, endPoint: .bottom
+                        )
+                    }
+                }
                 .clipShape(Capsule())
-                .overlay(
-                    Capsule().stroke(saveFocused ? Color.white : Color.clear, lineWidth: 4)
-                )
                 .shadow(
-                    color: Color.orange.opacity(saveFocused ? 0.7 : 0.45),
-                    radius: saveFocused ? 30 : 22, x: 0, y: 0
+                    color: saveFocused ? Color.clear : Color.orange.opacity(0.45),
+                    radius: 22, x: 0, y: 0
                 )
+                .tvButtonFocusShadow(saveFocused)
                 .scaleEffect(saveFocused ? 1.04 : 1.0)
                 .animation(.easeOut(duration: 0.15), value: saveFocused)
             }
@@ -1245,6 +1267,7 @@ struct ProfilesView: View {
     @State private var manager = AppProfileManager.shared
     @State private var showAddSheet: Bool = false
     @State private var editing: WatchProfile?
+    @FocusState private var addProfileFocused: Bool
 
     var body: some View {
         ZStack {
@@ -1277,27 +1300,32 @@ struct ProfilesView: View {
                         HStack(spacing: 10) {
                             Image(systemName: "plus.circle.fill")
                                 .scaledFont(size: 17, weight: .semibold)
-                                .foregroundStyle(Color.orange)
+                                .foregroundStyle(addProfileFocused ? TVButtonFocus.content : Color.orange)
                             Text("Add a new profile")
                                 .scaledFont(size: 15, weight: .semibold)
-                                .foregroundStyle(.white)
+                                .foregroundStyle(addProfileFocused ? TVButtonFocus.content : .white)
                             Spacer()
                             Image(systemName: "chevron.right")
                                 .scaledFont(size: 12, weight: .semibold)
-                                .foregroundStyle(Color.textTertiary)
+                                .foregroundStyle(addProfileFocused ? TVButtonFocus.content : Color.textTertiary)
                         }
                         .padding(.horizontal, 16)
                         .padding(.vertical, 14)
                     }
-                    .buttonStyle(.plain)
+                    // Our own white fill is the focus cue, not the system slab.
+                    .buttonStyle(TVFlatButtonStyle())
+                    .focusEffectDisabled()
+                    .focused($addProfileFocused)
                     .background(
                         RoundedRectangle(cornerRadius: 18, style: .continuous)
-                            .fill(Color.orange.opacity(0.06))
+                            .fill(addProfileFocused ? TVButtonFocus.fill : Color.orange.opacity(0.06))
                     )
                     .overlay(
                         RoundedRectangle(cornerRadius: 18, style: .continuous)
-                            .stroke(Color.orange.opacity(0.30), style: StrokeStyle(lineWidth: 1, dash: [4, 4]))
+                            .stroke(addProfileFocused ? Color.clear : Color.orange.opacity(0.30), style: StrokeStyle(lineWidth: 1, dash: [4, 4]))
                     )
+                    .scaleEffect(addProfileFocused ? 1.03 : 1.0)
+                    .animation(.easeOut(duration: 0.15), value: addProfileFocused)
                     .padding(.horizontal, 20)
 
                     Color.clear.frame(height: 40)
@@ -1342,6 +1370,8 @@ private struct WatchProfileRow: View {
     let onEdit: () -> Void
     let onRemove: () -> Void
 
+    @FocusState private var isFocused: Bool
+
     var body: some View {
         Button(action: onSelect) {
             HStack(spacing: 14) {
@@ -1360,7 +1390,7 @@ private struct WatchProfileRow: View {
                     HStack(spacing: 6) {
                         Text(profile.name)
                             .scaledFont(size: 15, weight: .semibold)
-                            .foregroundStyle(.white)
+                            .foregroundStyle(isFocused ? TVButtonFocus.content : .white)
                         if profile.isKid {
                             Text("KID")
                                 .scaledFont(size: 9, weight: .heavy)
@@ -1374,7 +1404,7 @@ private struct WatchProfileRow: View {
                     }
                     Text(isActive ? "Active profile" : "Tap to switch")
                         .scaledFont(size: 11)
-                        .foregroundStyle(isActive ? Color.orange : Color.textSecondary)
+                        .foregroundStyle(isFocused ? TVButtonFocus.content.opacity(0.7) : (isActive ? Color.orange : Color.textSecondary))
                 }
 
                 Spacer(minLength: 8)
@@ -1382,7 +1412,7 @@ private struct WatchProfileRow: View {
                 if isActive {
                     Image(systemName: "checkmark.circle.fill")
                         .scaledFont(size: 18, weight: .semibold)
-                        .foregroundStyle(Color.orange)
+                        .foregroundStyle(isFocused ? TVButtonFocus.content : Color.orange)
                 }
 
                 Menu {
@@ -1395,17 +1425,21 @@ private struct WatchProfileRow: View {
                 } label: {
                     Image(systemName: "ellipsis")
                         .scaledFont(size: 14, weight: .semibold)
-                        .foregroundStyle(Color.textTertiary)
+                        .foregroundStyle(isFocused ? TVButtonFocus.content : Color.textTertiary)
                         .frame(width: 28, height: 28)
-                        .background(Circle().fill(Color.white.opacity(0.06)))
+                        .background(Circle().fill(isFocused ? Color.black.opacity(0.08) : Color.white.opacity(0.06)))
                         .contentShape(Rectangle())
                 }
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 14)
+            // The shared white fill, laid inside the card so the resting
+            // row and the card's lift are exactly what they were.
+            .background(isFocused ? TVButtonFocus.fill : Color.clear)
             .contentShape(Rectangle())
         }
         .buttonStyle(.card)
+        .focused($isFocused)
     }
 }
 
@@ -1421,6 +1455,7 @@ private struct ProfileEditorSheet: View {
     @State private var isKid: Bool
     @State private var emoji: String
     @FocusState private var nameFocused: Bool
+    @FocusState private var commitFocused: Bool
 
     init(
         existing: WatchProfile?,
@@ -1502,19 +1537,29 @@ private struct ProfileEditorSheet: View {
                     Button(action: commit) {
                         Text(existing == nil ? "Create Profile" : "Save Changes")
                             .scaledFont(size: 16, weight: .bold)
-                            .foregroundStyle(.white)
+                            .foregroundStyle(commitFocused ? TVButtonFocus.content : .white)
                             .frame(maxWidth: .infinity)
                             .frame(height: 52)
-                            .background(
-                                LinearGradient(
-                                    colors: [Color.orange.opacity(name.trimmingCharacters(in: .whitespaces).isEmpty ? 0.4 : 1), Color.orange.opacity((name.trimmingCharacters(in: .whitespaces).isEmpty ? 0.4 : 1) * 0.85)],
-                                    startPoint: .top, endPoint: .bottom
-                                )
-                            )
+                            .background {
+                                if commitFocused {
+                                    TVButtonFocus.fill
+                                } else {
+                                    LinearGradient(
+                                        colors: [Color.orange.opacity(name.trimmingCharacters(in: .whitespaces).isEmpty ? 0.4 : 1), Color.orange.opacity((name.trimmingCharacters(in: .whitespaces).isEmpty ? 0.4 : 1) * 0.85)],
+                                        startPoint: .top, endPoint: .bottom
+                                    )
+                                }
+                            }
                             .clipShape(Capsule())
-                            .shadow(color: Color.orange.opacity(0.5), radius: 18)
+                            .shadow(color: commitFocused ? Color.clear : Color.orange.opacity(0.5), radius: 18)
+                            .tvButtonFocusShadow(commitFocused)
+                            .scaleEffect(commitFocused ? 1.03 : 1.0)
+                            .animation(.easeOut(duration: 0.15), value: commitFocused)
                     }
-                    .buttonStyle(.plain)
+                    // Our own white fill is the focus cue, not the system slab.
+                    .buttonStyle(TVFlatButtonStyle())
+                    .focusEffectDisabled()
+                    .focused($commitFocused)
                     .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
                     .padding(.horizontal, 20)
                     .padding(.bottom, 16)
@@ -1809,33 +1854,39 @@ private struct FAQRow: View {
     let isExpanded: Bool
     let onTap: () -> Void
 
+    @FocusState private var isFocused: Bool
+
     var body: some View {
         Button(action: onTap) {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 12) {
                     Text(item.question)
                         .scaledFont(size: 14, weight: .semibold)
-                        .foregroundStyle(.white)
+                        .foregroundStyle(isFocused ? TVButtonFocus.content : .white)
                         .fixedSize(horizontal: false, vertical: true)
                         .frame(maxWidth: .infinity, alignment: .leading)
                     Image(systemName: isExpanded ? "minus" : "plus")
                         .scaledFont(size: 12, weight: .bold)
-                        .foregroundStyle(Color.orange)
+                        .foregroundStyle(isFocused ? TVButtonFocus.content : Color.orange)
                         .frame(width: 22, height: 22)
-                        .background(Circle().fill(Color.orange.opacity(0.14)))
+                        .background(Circle().fill(isFocused ? Color.black.opacity(0.08) : Color.orange.opacity(0.14)))
                 }
                 if isExpanded {
                     Text(item.answer)
                         .scaledFont(size: 12)
-                        .foregroundStyle(Color.textSecondary)
+                        .foregroundStyle(isFocused ? TVButtonFocus.content.opacity(0.75) : Color.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                         .transition(.opacity)
                 }
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 14)
+            // The shared white fill, laid inside the card so the resting
+            // row and the card's lift are exactly what they were.
+            .background(isFocused ? TVButtonFocus.fill : Color.clear)
             .contentShape(Rectangle())
         }
         .buttonStyle(.card)
+        .focused($isFocused)
     }
 }

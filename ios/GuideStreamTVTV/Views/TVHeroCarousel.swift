@@ -403,9 +403,15 @@ struct TVHeroCarousel: View {
                                 .font(.system(size: 22, weight: .semibold))
                         }
                     }
-                    .foregroundStyle(.white)
+                    .foregroundStyle(ctaFocused ? TVButtonFocus.content : .white)
                     .padding(.horizontal, 28)
                     .padding(.vertical, 18)
+                    // The shared white fill, laid inside the card so the
+                    // resting platter and the card's lift are unchanged.
+                    .background(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .fill(ctaFocused ? TVButtonFocus.fill : Color.clear)
+                    )
                 }
                 .buttonStyle(.card)
                 .focused($ctaFocused)

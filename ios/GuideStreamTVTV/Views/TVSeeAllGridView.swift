@@ -92,17 +92,22 @@ struct TVSeeAllGridView: View {
         } label: {
             Image(systemName: "xmark")
                 .font(.system(size: 20, weight: .bold))
-                .foregroundStyle(closeFocused ? Color.white : TVTheme.textSecondary)
+                .foregroundStyle(closeFocused ? TVButtonFocus.content : TVTheme.textSecondary)
                 .padding(.horizontal, 26)
                 .padding(.vertical, 12)
+                .background(Capsule().fill(closeFocused ? TVButtonFocus.fill : Color.clear))
                 .background(
                     Capsule().stroke(
-                        closeFocused ? TVTheme.orange : Color.white.opacity(0.25),
-                        lineWidth: closeFocused ? 2 : 1
+                        closeFocused ? Color.clear : Color.white.opacity(0.25),
+                        lineWidth: 1
                     )
                 )
+                .scaleEffect(closeFocused ? TVButtonFocus.scale : 1.0)
+                .animation(.easeOut(duration: 0.15), value: closeFocused)
         }
-        .buttonStyle(.plain)
+        // Our own white fill is the focus cue, not the system slab.
+        .buttonStyle(TVFlatButtonStyle())
+        .focusEffectDisabled()
         .focused($closeFocused)
     }
 

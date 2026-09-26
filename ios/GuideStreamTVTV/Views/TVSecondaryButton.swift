@@ -52,21 +52,44 @@ struct TVSecondaryButton: View {
         } label: {
             Text(title)
                 .font(.system(size: 20, weight: .semibold))
-                .foregroundStyle(isFocused ? Color.white : TVTheme.textSecondary)
+                .foregroundStyle(isFocused ? TVButtonFocus.content : TVTheme.textSecondary)
                 .padding(.horizontal, 28)
                 .padding(.vertical, 10)
-                // A white 16% plate and a 1.06 lift on focus, with the
+                // The shared white fill and a 1.06 lift on focus, with the
                 // resting outline kept so the control still reads as a
                 // button when nothing is focused.
-                .background(Capsule().fill(Color.white.opacity(isFocused ? 0.16 : 0)))
+                .background(Capsule().fill(isFocused ? TVButtonFocus.fill : Color.clear))
                 .background(
                     Capsule().stroke(Color.white.opacity(isFocused ? 0 : 0.25), lineWidth: 1)
                 )
-                .scaleEffect(isFocused ? 1.06 : 1.0)
+                .scaleEffect(isFocused ? TVButtonFocus.scale : 1.0)
                 .animation(.easeOut(duration: 0.15), value: isFocused)
         }
         .buttonStyle(TVFlatButtonStyle())
         .focusEffectDisabled()
         .focused($isFocused)
+    }
+}
+
+/// The focused state every control that reads as a button shares on tvOS:
+/// a solid white fill with black text and black icons. Content cards —
+/// posters, hero and game cards, crests, logo tiles — keep their own
+/// artwork-led focus and do not use this.
+enum TVButtonFocus {
+    static let fill = Color.white
+    static let content = Color.black
+    static let scale: CGFloat = 1.06
+}
+
+extension View {
+    /// A soft shadow under a focused button. The white fill is the focus
+    /// cue; for a selected pill that is already white at rest, this and the
+    /// scale lift are what tell focus apart from selection.
+    func tvButtonFocusShadow(_ isFocused: Bool) -> some View {
+        shadow(
+            color: Color.black.opacity(isFocused ? 0.45 : 0),
+            radius: isFocused ? 14 : 0,
+            y: isFocused ? 6 : 0
+        )
     }
 }

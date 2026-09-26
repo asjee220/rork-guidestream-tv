@@ -11,9 +11,10 @@
 import SwiftUI
 import UIKit
 
-/// Focus targets on the sheet. tvOS selection here is a 2pt white stroke on
-/// each control's own shape — never `.buttonStyle(.plain)`, which lays a white
-/// slab over whatever it wraps even under `.focusEffectDisabled()`.
+/// Focus targets on the sheet. tvOS focus here is the shared white fill with
+/// black text and icons (`TVButtonFocus`) on each control's own shape — never
+/// `.buttonStyle(.plain)`, which lays a white slab over whatever it wraps even
+/// under `.focusEffectDisabled()`.
 private enum SportsSheetFocus: Hashable {
     case remind, like, favoriteAway, favoriteHome, watch, watchlist, close
     case chip(String)
@@ -399,7 +400,8 @@ struct SportsWatchSheet: View {
     }
 
     /// One circular action. `isHighlighted` is the resting "already on" state
-    /// — a followed team, not a focused one; focus stays the 2pt white stroke.
+    /// — a followed team, not a focused one; focus is the white-filled circle
+    /// with a black glyph.
     private func circleAction(
         icon: String,
         label: String,
@@ -415,20 +417,16 @@ struct SportsWatchSheet: View {
             VStack(spacing: 12) {
                 ZStack {
                     Circle()
-                        .fill(isHighlighted ? Color.orange.opacity(0.22) : Color.white.opacity(0.08))
+                        .fill(isFocused ? TVButtonFocus.fill : (isHighlighted ? Color.orange.opacity(0.22) : Color.white.opacity(0.08)))
                         .frame(width: 84, height: 84)
-                    if isHighlighted {
+                    if isHighlighted && !isFocused {
                         Circle()
                             .stroke(Color.orange, lineWidth: 2)
                             .frame(width: 84, height: 84)
                     }
-                    // Focus is the house 2pt white stroke on the shape itself.
-                    Circle()
-                        .stroke(isFocused ? Color.white : Color.clear, lineWidth: 2)
-                        .frame(width: 84, height: 84)
                     Image(systemName: icon)
                         .scaledFont(size: 34, weight: .regular)
-                        .foregroundStyle(tint)
+                        .foregroundStyle(isFocused ? TVButtonFocus.content : tint)
                     if showDot {
                         Circle()
                             .fill(Color(red: 0x3D/255, green: 0xE0/255, blue: 0x6A/255))
@@ -535,7 +533,8 @@ struct SportsWatchSheet: View {
     }
 
     /// Focusable: select a chip to point the Watch CTA at that service.
-    /// Selected = full colour + checkmark; others dim. Focus = 2pt white stroke.
+    /// Selected = full colour + checkmark; others dim. Focus = white fill,
+    /// black text.
     private func broadcastChip(_ name: String) -> some View {
         let isSelected = primaryBroadcast == name
         let isFocused = focus == .chip(name)
@@ -550,12 +549,11 @@ struct SportsWatchSheet: View {
                 Text(name)
                     .scaledFont(size: 20, weight: .heavy)
             }
-            .foregroundStyle(.white)
+            .foregroundStyle(isFocused ? TVButtonFocus.content : .white)
             .padding(.horizontal, 20)
             .padding(.vertical, 11)
-            .background(Capsule().fill(broadcastColor(name)))
+            .background(Capsule().fill(isFocused ? TVButtonFocus.fill : broadcastColor(name)))
             .opacity(isSelected || isFocused ? 1 : 0.55)
-            .overlay(Capsule().stroke(isFocused ? Color.white : Color.clear, lineWidth: 2))
             .scaleEffect(isFocused ? 1.06 : 1.0)
             .animation(.easeOut(duration: 0.15), value: isFocused)
         }
@@ -631,12 +629,12 @@ struct SportsWatchSheet: View {
                     .scaledFont(size: 28, weight: .semibold)
                     .lineLimit(1)
             }
-            .foregroundStyle(.white)
+            .foregroundStyle(focus == .watch ? TVButtonFocus.content : .white)
             .padding(.horizontal, 52)
             .frame(height: 92)
-            .background(Capsule().fill(canWatch ? Color.orange : Color.white.opacity(0.15)))
-            .overlay(Capsule().stroke(focus == .watch ? Color.white : Color.clear, lineWidth: 2))
-            .shadow(color: canWatch ? Color.orange.opacity(0.55) : .clear, radius: 22, y: 0)
+            .background(Capsule().fill(focus == .watch ? TVButtonFocus.fill : (canWatch ? Color.orange : Color.white.opacity(0.15))))
+            .shadow(color: canWatch && focus != .watch ? Color.orange.opacity(0.55) : .clear, radius: 22, y: 0)
+            .tvButtonFocusShadow(focus == .watch)
             .scaleEffect(focus == .watch ? 1.04 : 1.0)
             .animation(.easeOut(duration: 0.15), value: focus == .watch)
         }
@@ -671,7 +669,10 @@ struct SportsWatchSheet: View {
         } label: {
             VStack(spacing: 6) {
                 ZStack {
-                    if isSaved {
+                    if focus == .watchlist {
+                        Circle()
+                            .fill(TVButtonFocus.fill)
+                    } else if isSaved {
                         Circle()
                             .fill(Color.clear)
                             .overlay(Circle().stroke(Color.white, lineWidth: 2.5))
@@ -683,17 +684,14 @@ struct SportsWatchSheet: View {
                     if isToggleSaving {
                         ProgressView()
                             .controlSize(.small)
-                            .tint(.white)
+                            .tint(focus == .watchlist ? TVButtonFocus.content : .white)
                     } else {
                         Image(systemName: isSaved ? "checkmark" : "plus")
                             .scaledFont(size: 34, weight: .bold)
-                            .foregroundStyle(.white)
+                            .foregroundStyle(focus == .watchlist ? TVButtonFocus.content : .white)
                     }
                 }
                 .frame(width: 84, height: 84)
-                .overlay(
-                    Circle().stroke(focus == .watchlist ? Color.white : Color.clear, lineWidth: 2)
-                )
 
                 Text(isSaved ? "Saved" : "Watchlist")
                     .scaledFont(size: 18, weight: .semibold)
@@ -737,10 +735,12 @@ struct SportsWatchSheet: View {
                 Image(systemName: "xmark")
                     .scaledFont(size: 20, weight: .semibold)
             }
-            .foregroundStyle(Color.white.opacity(focus == .close ? 1 : 0.85))
+            .foregroundStyle(focus == .close ? TVButtonFocus.content : Color.white.opacity(0.85))
             .padding(.horizontal, 30)
             .padding(.vertical, 14)
-            .overlay(Capsule().stroke(focus == .close ? Color.white : Color.clear, lineWidth: 2))
+            .background(Capsule().fill(focus == .close ? TVButtonFocus.fill : Color.clear))
+            .scaleEffect(focus == .close ? TVButtonFocus.scale : 1.0)
+            .animation(.easeOut(duration: 0.15), value: focus == .close)
         }
         .buttonStyle(TVFlatButtonStyle())
         .focusEffectDisabled()

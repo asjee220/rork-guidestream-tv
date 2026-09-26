@@ -418,6 +418,7 @@ final class SupabaseSchemaProbe {
 /// the full Supabase diagnostics screen from the iOS app.
 struct SupabaseDiagnosticsView: View {
     @Environment(\.dismiss) private var dismiss
+    @FocusState private var doneFocused: Bool
 
     var body: some View {
         ZStack {
@@ -454,10 +455,26 @@ struct SupabaseDiagnosticsView: View {
 
                 Spacer()
 
-                Button("Done") { dismiss() }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(Color.orange)
-                    .padding(.bottom, 20)
+                Button {
+                    dismiss()
+                } label: {
+                    Text("Done")
+                        .foregroundStyle(doneFocused ? TVButtonFocus.content : Color.orange)
+                        // The fill bleeds past the text so focus reads as a
+                        // button without moving the panel's layout.
+                        .background(
+                            Capsule()
+                                .fill(doneFocused ? TVButtonFocus.fill : Color.clear)
+                                .padding(.horizontal, -20)
+                                .padding(.vertical, -10)
+                        )
+                        .scaleEffect(doneFocused ? TVButtonFocus.scale : 1.0)
+                        .animation(.easeOut(duration: 0.15), value: doneFocused)
+                }
+                .buttonStyle(TVFlatButtonStyle())
+                .focusEffectDisabled()
+                .focused($doneFocused)
+                .padding(.bottom, 20)
             }
             .padding(.horizontal, 24)
             .padding(.top, 40)

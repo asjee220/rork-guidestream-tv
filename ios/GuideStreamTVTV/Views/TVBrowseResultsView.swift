@@ -32,6 +32,7 @@ struct TVBrowseResultsView: View {
     @State private var streams = TVStreamsViewModel.shared
 
     @FocusState private var filtersButtonFocused: Bool
+    @FocusState private var dropButtonFocused: Bool
 
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 26), count: 5)
     /// Two full rows between ad chips.
@@ -103,15 +104,18 @@ struct TVBrowseResultsView: View {
                     Text(filters.activeCount == 0 ? "Filters" : "Filters (\(filters.activeCount))")
                         .font(.system(size: 20, weight: .semibold))
                 }
-                .foregroundStyle(filtersButtonFocused ? TVTheme.textPrimary : TVTheme.textSecondary)
+                .foregroundStyle(filtersButtonFocused ? TVButtonFocus.content : TVTheme.textSecondary)
                 .padding(.horizontal, 26)
                 .padding(.vertical, 11)
+                .background(Capsule().fill(filtersButtonFocused ? TVButtonFocus.fill : Color.clear))
                 .overlay {
                     Capsule().stroke(
-                        filtersButtonFocused ? TVTheme.orange : Color.white.opacity(0.25),
-                        lineWidth: filtersButtonFocused ? 2 : 1
+                        filtersButtonFocused ? Color.clear : Color.white.opacity(0.25),
+                        lineWidth: 1
                     )
                 }
+                .scaleEffect(filtersButtonFocused ? TVButtonFocus.scale : 1.0)
+                .animation(.easeOut(duration: 0.15), value: filtersButtonFocused)
             }
             .buttonStyle(TVPanelButtonStyle())
             .focused($filtersButtonFocused)
@@ -246,12 +250,15 @@ struct TVBrowseResultsView: View {
                 } label: {
                     Text("Drop \(recovery.label)")
                         .font(.system(size: 19, weight: .semibold))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(dropButtonFocused ? TVButtonFocus.content : .white)
                         .padding(.horizontal, 28)
                         .padding(.vertical, 11)
-                        .background(TVTheme.orange, in: Capsule())
+                        .background(dropButtonFocused ? TVButtonFocus.fill : TVTheme.orange, in: Capsule())
+                        .scaleEffect(dropButtonFocused ? TVButtonFocus.scale : 1.0)
+                        .animation(.easeOut(duration: 0.15), value: dropButtonFocused)
                 }
                 .buttonStyle(TVPanelButtonStyle())
+                .focused($dropButtonFocused)
                 .focusEffectDisabled()
                 .padding(.top, 8)
             } else {
@@ -402,13 +409,10 @@ private struct TVGenreChip: View {
         Button(action: action) {
             Text(title)
                 .font(.system(size: 21, weight: .semibold))
-                .foregroundStyle(isSelected ? .white : (isFocused ? TVTheme.textPrimary : TVTheme.textSecondary))
+                .foregroundStyle(isFocused ? TVButtonFocus.content : (isSelected ? .white : TVTheme.textSecondary))
                 .padding(.horizontal, 26)
                 .padding(.vertical, 11)
-                .background(isSelected ? TVTheme.orange : Color.white.opacity(0.05), in: Capsule())
-                .overlay {
-                    Capsule().stroke(isFocused && !isSelected ? TVTheme.orange : Color.clear, lineWidth: 2)
-                }
+                .background(isFocused ? TVButtonFocus.fill : (isSelected ? TVTheme.orange : Color.white.opacity(0.05)), in: Capsule())
         }
         .buttonStyle(TVPanelButtonStyle())
         .focused($isFocused)
@@ -429,23 +433,27 @@ private struct TVFilterPill: View {
             HStack(spacing: 10) {
                 Text(pill.label)
                     .font(.system(size: 18, weight: .medium))
-                    .foregroundStyle(TVTheme.textPrimary)
+                    .foregroundStyle(isFocused ? TVButtonFocus.content : TVTheme.textPrimary)
                 Image(systemName: "xmark")
                     .font(.system(size: 15, weight: .bold))
-                    .foregroundStyle(TVTheme.textSecondary)
+                    .foregroundStyle(isFocused ? TVButtonFocus.content : TVTheme.textSecondary)
             }
             .padding(.horizontal, 18)
             .padding(.vertical, 8)
             .background(
-                (pill.accented ? TVTheme.orange.opacity(0.18) : Color.white.opacity(0.07)),
+                isFocused
+                    ? TVButtonFocus.fill
+                    : (pill.accented ? TVTheme.orange.opacity(0.18) : Color.white.opacity(0.07)),
                 in: Capsule()
             )
             .overlay {
                 Capsule().stroke(
-                    isFocused ? TVTheme.orange : Color.white.opacity(0.14),
-                    lineWidth: isFocused ? 2 : 1
+                    isFocused ? Color.clear : Color.white.opacity(0.14),
+                    lineWidth: 1
                 )
             }
+            .scaleEffect(isFocused ? TVButtonFocus.scale : 1.0)
+            .animation(.easeOut(duration: 0.15), value: isFocused)
         }
         .buttonStyle(TVPanelButtonStyle())
         .focused($isFocused)

@@ -89,7 +89,15 @@ struct TVBrowseFilterPanel: View {
             } label: {
                 Text("Reset")
                     .font(.system(size: 19, weight: .semibold))
-                    .foregroundStyle(focus == .reset ? TVTheme.textPrimary : TVTheme.orange)
+                    .foregroundStyle(focus == .reset ? TVButtonFocus.content : TVTheme.orange)
+                    // The fill bleeds past the text so focus reads as a
+                    // button without moving the header's layout.
+                    .background(
+                        Capsule()
+                            .fill(focus == .reset ? TVButtonFocus.fill : Color.clear)
+                            .padding(.horizontal, -16)
+                            .padding(.vertical, -8)
+                    )
             }
             .buttonStyle(TVPanelButtonStyle())
             .focused($focus, equals: .reset)
@@ -238,15 +246,15 @@ struct TVBrowseFilterPanel: View {
         Button(action: action) {
             Text(title)
                 .font(.system(size: 19, weight: .semibold))
-                .foregroundStyle(selected ? TVTheme.bg : (focused ? TVTheme.textPrimary : TVTheme.textSecondary))
+                .foregroundStyle(focused ? TVButtonFocus.content : (selected ? TVTheme.bg : TVTheme.textSecondary))
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 12)
-                .background(selected ? TVTheme.textPrimary : Color.white.opacity(0.05))
+                .background(focused ? TVButtonFocus.fill : (selected ? TVTheme.textPrimary : Color.white.opacity(0.05)))
                 .clipShape(.rect(cornerRadius: 10))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .stroke(focused && !selected ? TVTheme.orange : Color.clear, lineWidth: 2)
-                }
+                // Selected is already white, so focus also lifts.
+                .scaleEffect(focused ? TVButtonFocus.scale : 1.0)
+                .tvButtonFocusShadow(focused)
+                .animation(.easeOut(duration: 0.15), value: focused)
         }
         .buttonStyle(TVPanelButtonStyle())
         .focusEffectDisabled()
@@ -263,10 +271,10 @@ struct TVBrowseFilterPanel: View {
             HStack {
                 Text(title)
                     .font(.system(size: 21, weight: .regular))
-                    .foregroundStyle(focused ? TVTheme.textPrimary : TVTheme.textSecondary)
+                    .foregroundStyle(focused ? TVButtonFocus.content : TVTheme.textSecondary)
                 Spacer()
                 Capsule()
-                    .fill(isOn ? TVTheme.orange : Color.white.opacity(0.14))
+                    .fill(isOn ? TVTheme.orange : (focused ? Color.black.opacity(0.22) : Color.white.opacity(0.14)))
                     .frame(width: 62, height: 34)
                     .overlay(alignment: isOn ? .trailing : .leading) {
                         Circle()
@@ -277,7 +285,7 @@ struct TVBrowseFilterPanel: View {
             }
             .padding(.vertical, 8)
             .padding(.horizontal, 12)
-            .background(focused ? Color.white.opacity(0.05) : .clear)
+            .background(focused ? TVButtonFocus.fill : .clear)
             .clipShape(.rect(cornerRadius: 10))
         }
         .buttonStyle(TVPanelButtonStyle())

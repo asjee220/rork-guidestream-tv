@@ -14,6 +14,9 @@ struct ServicesBottomSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var auth = AuthViewModel.shared
     @State private var selected: Set<String>
+    @FocusState private var focusedAction: SheetAction?
+
+    private enum SheetAction: Hashable { case cancel, save }
 
     private let columns = [
         GridItem(.flexible(), spacing: 24),
@@ -46,26 +49,38 @@ struct ServicesBottomSheet: View {
                     .padding(.horizontal, 60)
 
                     HStack(spacing: 16) {
+                        let cancelFocused = focusedAction == .cancel
                         Button(action: dismissAndCancel) {
                             Text("Cancel")
                                 .scaledFont(size: 22, weight: .semibold)
-                                .foregroundStyle(.white)
+                                .foregroundStyle(cancelFocused ? TVButtonFocus.content : .white)
                                 .padding(.horizontal, 40)
                                 .padding(.vertical, 18)
-                                .background(Capsule().fill(Color.white.opacity(0.10)))
+                                .background(Capsule().fill(cancelFocused ? TVButtonFocus.fill : Color.white.opacity(0.10)))
+                                .scaleEffect(cancelFocused ? TVButtonFocus.scale : 1.0)
+                                .animation(.easeOut(duration: 0.15), value: cancelFocused)
                         }
-                        .buttonStyle(.plain)
+                        // Our own white fill is the focus cue, not the system slab.
+                        .buttonStyle(TVFlatButtonStyle())
+                        .focusEffectDisabled()
+                        .focused($focusedAction, equals: .cancel)
 
+                        let saveFocused = focusedAction == .save
                         Button(action: saveAndDismiss) {
                             Text("Save")
                                 .scaledFont(size: 22, weight: .bold)
-                                .foregroundStyle(.white)
+                                .foregroundStyle(saveFocused ? TVButtonFocus.content : .white)
                                 .padding(.horizontal, 40)
                                 .padding(.vertical, 18)
-                                .background(Capsule().fill(Color.orange))
-                                .shadow(color: Color.orange.opacity(0.5), radius: 14, y: 6)
+                                .background(Capsule().fill(saveFocused ? TVButtonFocus.fill : Color.orange))
+                                .shadow(color: saveFocused ? Color.clear : Color.orange.opacity(0.5), radius: 14, y: 6)
+                                .tvButtonFocusShadow(saveFocused)
+                                .scaleEffect(saveFocused ? TVButtonFocus.scale : 1.0)
+                                .animation(.easeOut(duration: 0.15), value: saveFocused)
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(TVFlatButtonStyle())
+                        .focusEffectDisabled()
+                        .focused($focusedAction, equals: .save)
                     }
                     .frame(maxWidth: .infinity)
                     .padding(.top, 16)

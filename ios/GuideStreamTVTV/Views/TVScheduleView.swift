@@ -169,19 +169,18 @@ struct TVScheduleView: View {
         enabled: Bool,
         action: @escaping () -> Void
     ) -> some View {
-        Button(action: action) {
+        let isFocused = focus == target
+        return Button(action: action) {
             Image(systemName: systemName)
                 .font(.system(size: 24, weight: .bold))
-                .foregroundStyle(enabled ? Color.white : Color.white.opacity(0.25))
+                .foregroundStyle(isFocused ? TVButtonFocus.content : (enabled ? Color.white : Color.white.opacity(0.25)))
                 .frame(width: 62, height: 62)
                 .background(
                     RoundedRectangle(cornerRadius: 14)
-                        .fill(Color.white.opacity(0.08))
+                        .fill(isFocused ? TVButtonFocus.fill : Color.white.opacity(0.08))
                 )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 14)
-                        .stroke(focus == target ? Color.white : Color.clear, lineWidth: 2)
-                )
+                .scaleEffect(isFocused ? TVButtonFocus.scale : 1.0)
+                .animation(.easeOut(duration: 0.15), value: isFocused)
         }
         .buttonStyle(TVFlatButtonStyle())
         .focusEffectDisabled()
@@ -421,12 +420,12 @@ struct TVScheduleChip: View {
                 Text("Schedule")
                     .font(.system(size: 24, weight: .semibold))
             }
-            .foregroundStyle(TVTheme.orange)
+            .foregroundStyle(isFocused ? TVButtonFocus.content : TVTheme.orange)
             .padding(.horizontal, 26)
             .padding(.vertical, 12)
-            .background(Capsule().fill(TVTheme.orange.opacity(isFocused ? 0.16 : 0)))
-            .overlay(Capsule().stroke(TVTheme.orange, lineWidth: 2))
-            .scaleEffect(isFocused ? 1.06 : 1.0)
+            .background(Capsule().fill(isFocused ? TVButtonFocus.fill : Color.clear))
+            .overlay(Capsule().stroke(isFocused ? Color.clear : TVTheme.orange, lineWidth: 2))
+            .scaleEffect(isFocused ? TVButtonFocus.scale : 1.0)
             .animation(.easeOut(duration: 0.15), value: isFocused)
         }
         .buttonStyle(TVFlatButtonStyle())
