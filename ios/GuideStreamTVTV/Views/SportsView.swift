@@ -541,6 +541,11 @@ struct SportsView: View {
 
     // MARK: - My games (hero cards)
 
+    /// Shared height for My games and Live now cards, so the two sections'
+    /// photo cards are the same size. A Live now card's own content is about
+    /// 466pt; it can still grow past this with larger text.
+    static let gameCardHeight: CGFloat = 470
+
     private var myGamesSection: some View {
         VStack(alignment: .leading, spacing: 24) {
             HStack(spacing: 12) {
@@ -551,22 +556,20 @@ struct SportsView: View {
                     .scaledFont(size: 30, weight: .semibold)
                     .foregroundStyle(.white)
             }
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 36) {
-                    ForEach(myGames) { game in
-                        let isFocused = focusedGameId == "hero-" + game.id
-                        Button {
-                            selectedGame = game
-                        } label: {
-                            heroCard(game, isFocused: isFocused)
-                        }
-                        .buttonStyle(TVFlatButtonStyle())
-                        .focusEffectDisabled()
-                        .focused($focusedGameId, equals: "hero-" + game.id)
+            // Full-width cards stacked like Live now, same size and focus
+            // outline, so the two sections read as one system.
+            VStack(spacing: 34) {
+                ForEach(myGames) { game in
+                    let isFocused = focusedGameId == "hero-" + game.id
+                    Button {
+                        selectedGame = game
+                    } label: {
+                        heroCard(game, isFocused: isFocused)
                     }
+                    .buttonStyle(TVFlatButtonStyle())
+                    .focusEffectDisabled()
+                    .focused($focusedGameId, equals: "hero-" + game.id)
                 }
-                .padding(.vertical, 24)
-                .padding(.horizontal, 16)
             }
             .focusSection()
         }
@@ -574,7 +577,6 @@ struct SportsView: View {
 
     private func heroCard(_ game: SportsGame, isFocused: Bool) -> some View {
         ZStack(alignment: .bottom) {
-            heroBackground(game)
             LinearGradient(
                 stops: [
                     .init(color: Color(hex: "04090F").opacity(0.05), location: 0),
@@ -638,14 +640,17 @@ struct SportsView: View {
                 .padding(.vertical, 14)
             }
         }
-        .frame(width: 540, height: 304)
-        .clipShape(RoundedRectangle(cornerRadius: 22))
+        .frame(maxWidth: .infinity, minHeight: Self.gameCardHeight)
+        // Background, not a ZStack child: a filled photo there sized the card
+        // to the photo. As a background it is proposed the card's size and
+        // clipped with it.
+        .background(heroBackground(game))
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        // Same outline as the Live now cards (tappableCard).
         .overlay(
-            RoundedRectangle(cornerRadius: 22)
-                .stroke(isFocused ? Color.white : Color.white.opacity(0.10), lineWidth: isFocused ? 3 : 1)
+            RoundedRectangle(cornerRadius: 16)
+                .stroke(isFocused ? Color.white : Color.white.opacity(0.07), lineWidth: isFocused ? 2 : 1)
         )
-        .scaleEffect(isFocused ? 1.04 : 1)
-        .shadow(color: .black.opacity(isFocused ? 0.6 : 0), radius: isFocused ? 22 : 0, y: isFocused ? 14 : 0)
         .animation(.easeOut(duration: 0.15), value: isFocused)
     }
 
@@ -668,7 +673,7 @@ struct SportsView: View {
                     split
                 }
             }
-            .frame(width: 540, height: 304)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             .clipped()
         } else {
             split
@@ -779,7 +784,7 @@ struct SportsView: View {
             broadcastsRow(TVSportsSimulcast.ranked(game.broadcasts))
         }
         .padding(46)
-        .frame(minHeight: 210)
+        .frame(maxWidth: .infinity, minHeight: Self.gameCardHeight)
         .background(TVSportsPhotoBackdrop(url: gameImages[game.id]))
         .overlay(
             RoundedRectangle(cornerRadius: 16)

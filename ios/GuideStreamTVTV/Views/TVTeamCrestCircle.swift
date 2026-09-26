@@ -133,8 +133,14 @@ struct TVSportsPhotoBackdrop: View {
                                 .resizable()
                                 .aspectRatio(contentMode: .fill)
                                 .overlay(
+                                    // Same scrim as the My games cards, so a
+                                    // photo is equally bright in both sections.
                                     LinearGradient(
-                                        colors: [Color(hex: "04090F").opacity(0.65), Color(hex: "04090F").opacity(0.88)],
+                                        stops: [
+                                            .init(color: Color(hex: "04090F").opacity(0.05), location: 0),
+                                            .init(color: Color(hex: "04090F").opacity(0.30), location: 0.45),
+                                            .init(color: Color(hex: "04090F").opacity(0.90), location: 1)
+                                        ],
                                         startPoint: .top, endPoint: .bottom
                                     )
                                 )
