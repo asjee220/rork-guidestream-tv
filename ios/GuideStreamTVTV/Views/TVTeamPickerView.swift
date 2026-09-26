@@ -60,18 +60,26 @@ struct TVTeamPickerView: View {
         ZStack {
             TVTheme.backgroundGradient.ignoresSafeArea()
 
-            VStack(alignment: .leading, spacing: 32) {
-                header
-                followingRow
-                sportPills
-                if catalog.teams.isEmpty {
-                    loadingState
-                } else {
-                    teamGrid
+            // One vertical scroll for the whole screen, as TVWatchListView
+            // does. The grid used to own a nested vertical ScrollView, and
+            // focus could not leave it upward: from the teams there was no way
+            // to reach the league pills or Done. Every row above the grid is
+            // its own focus section so a move up lands on it from any column.
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 32) {
+                    header
+                    followingRow
+                    sportPills
+                    if catalog.teams.isEmpty {
+                        loadingState
+                    } else {
+                        teamGrid
+                    }
                 }
+                .padding(.horizontal, 80)
+                .padding(.top, 60)
+                .padding(.bottom, 60)
             }
-            .padding(.horizontal, 80)
-            .padding(.top, 60)
         }
         .task {
             await catalog.load()
@@ -106,6 +114,7 @@ struct TVTeamPickerView: View {
                 Task { await commit() }
             }
         }
+        .focusSection()
     }
 
     private var doneTitle: String {
@@ -117,7 +126,10 @@ struct TVTeamPickerView: View {
     // MARK: - Sport pills
 
     private var sportPills: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
+        // Plain row, not a horizontal ScrollView: eight leagues fit, and a
+        // nested scroll view is one more container the focus engine has to
+        // find its way into.
+        HStack(spacing: 0) {
             HStack(spacing: 18) {
                 ForEach(sports, id: \.self) { sport in
                     let isOn = selectedSport == sport
@@ -134,7 +146,9 @@ struct TVTeamPickerView: View {
                             // the title screen's season pills.
                             .background(isOn ? Color.white.opacity(0.92) : Color.white.opacity(0.10), in: Capsule())
                             .overlay(Capsule().fill(Color.white.opacity(focused && !isOn ? 0.16 : 0)))
-                            .overlay(Capsule().stroke(Color.white.opacity(focused ? 0.9 : 0), lineWidth: 2))
+                            // A white ring vanishes on the selected (white)
+                            // pill, so focus there is shown in orange.
+                            .overlay(Capsule().stroke(isOn ? TVTheme.orange : Color.white.opacity(0.9), lineWidth: 3).opacity(focused ? 1 : 0))
                             .scaleEffect(focused ? 1.06 : 1.0)
                             .animation(.easeOut(duration: 0.15), value: focused)
                     }
@@ -144,6 +158,7 @@ struct TVTeamPickerView: View {
                 }
             }
             .padding(.vertical, 8)
+            Spacer(minLength: 0)
         }
         .focusSection()
     }
@@ -151,15 +166,12 @@ struct TVTeamPickerView: View {
     // MARK: - Grid
 
     private var teamGrid: some View {
-        ScrollView(.vertical, showsIndicators: false) {
-            LazyVGrid(columns: columns, alignment: .leading, spacing: 32) {
-                ForEach(visibleTeams) { team in
-                    teamTile(team)
-                }
+        LazyVGrid(columns: columns, alignment: .leading, spacing: 32) {
+            ForEach(visibleTeams) { team in
+                teamTile(team)
             }
-            .padding(.vertical, 24)
-            .padding(.bottom, 60)
         }
+        .padding(.vertical, 24)
         .focusSection()
     }
 
@@ -230,7 +242,7 @@ struct TVTeamPickerView: View {
                 .font(.system(size: 24))
                 .foregroundStyle(TVTheme.textSecondary)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .frame(maxWidth: .infinity, minHeight: 400)
     }
 
     // MARK: - Commit
