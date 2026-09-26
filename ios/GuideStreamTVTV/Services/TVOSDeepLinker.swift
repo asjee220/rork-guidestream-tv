@@ -285,11 +285,16 @@ enum TVOSDeepLinker {
         // best-effort and MUST be verified on a real Apple TV before
         // trusting them in a demo; tvOS app schemes change without notice.
         // Broadcasters with no known public tvOS scheme (CHSN, CNBC, TNT,
-        // TBS, ABC, CBS, local network affiliates) fall through to the
+        // TBS, CBS, local network affiliates) fall through to the
         // all-nil target so the launch fails cleanly rather than
         // mis-opening another app.
-        if key.contains("espn") {
-            return TVTarget(playURL: nil, appHomeURL: URL(string: "espn://"), searchURL: nil, confidence: PlaybackSupport.confidence(for: platform))
+        // ESPN / ESPN2 / ESPNU / ABC — the ESPN app registers `sportscenter://`
+        // (the scheme the iPhone app already uses). `espn://` is not
+        // registered, so it was refused silently and "Watch on ESPN" did
+        // nothing. ABC sports stream in the ESPN app too, and had no route at
+        // all. `espn://` stays as the fallback tier.
+        if key.contains("espn") || key == "abc" {
+            return TVTarget(playURL: nil, appHomeURL: URL(string: "sportscenter://"), searchURL: URL(string: "espn://"), confidence: PlaybackSupport.confidence(for: platform))
         }
         if key.contains("fox sports") || key.contains("foxsports") {
             return TVTarget(playURL: nil, appHomeURL: URL(string: "foxsports://"), searchURL: nil, confidence: PlaybackSupport.confidence(for: platform))
