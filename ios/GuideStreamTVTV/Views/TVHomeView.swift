@@ -1528,10 +1528,15 @@ struct TVHomeView: View {
         self.sports = sp
         self.isLoading = false
 
-        // One provider pass for the titles the hero and Everyone's Watching
-        // both draw from, before either starts, so neither waits on the other
-        // and no title is looked up twice.
-        await hydrateProviderNames(for: Array((t + ne + ended).prefix(18)) + Array(t.prefix(25)))
+        // Only the hero pool gates the rails, as on the phone (930acc7): the
+        // 18 hero candidates are resolved here, and Everyone's Watching and the
+        // parity rails resolve the rest in their own builds, behind the hero.
+        // Titles already known (snapshot, or an earlier pass) cost nothing.
+        // This used to pre-resolve Everyone's 25 too — ~6 waves of 8 before
+        // any rail could build on a cold launch.
+        var heroSeen = Set<Int>()
+        let heroPool = (t + ne + ended).filter { heroSeen.insert($0.id).inserted }
+        await hydrateProviderNames(for: Array(heroPool.prefix(18)))
 
         // Build hero and new rails concurrently after base data lands.
         async let heroTask: Void = buildHeroItems()

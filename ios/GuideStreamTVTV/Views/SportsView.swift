@@ -281,8 +281,12 @@ struct SportsView: View {
             #endif
         }
         .task {
-            await catalog.load()
+            // The catalogue only recolours the crest circles, so it loads
+            // alongside the scoreboards instead of in front of them — same
+            // as the phone.
+            async let catalogLoad: Void = TVSportsTeamCatalogService.shared.load()
             await load()
+            _ = await catalogLoad
             await favorites.load()
             // A viewer with nothing followed is offered the picker once, on
             // their first Sports visit. Whatever they do with it, the flag is

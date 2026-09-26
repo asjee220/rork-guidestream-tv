@@ -326,8 +326,12 @@ struct SportsView: View {
                     teamPickerMode = .onboarding
                 }
             }
-            await SportsTeamCatalogService.shared.load()
+            // The catalogue only recolours the crest circles (fill_color), so
+            // it loads alongside the scoreboards instead of in front of them;
+            // the circles pick it up when it lands (fillHex reads `teams`).
+            async let catalogLoad: Void = SportsTeamCatalogService.shared.load()
             await load()
+            _ = await catalogLoad
         }
         // GUI-46: `.task(id:)` runs both on first appearance AND on every
         // change of the value, which closes the race the previous

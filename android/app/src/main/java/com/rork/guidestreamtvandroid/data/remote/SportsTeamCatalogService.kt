@@ -1,14 +1,20 @@
 package com.rork.guidestreamtvandroid.data.remote
 
+import android.content.Context
 import android.util.Log
 import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.postgrest.query.Order
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.json.Json
+import java.io.File
 
 /**
  * Read-only accessor for public.sports_teams — the full roster for every
@@ -77,6 +83,16 @@ class SportsTeamCatalogService private constructor() {
      */
     suspend fun load(force: Boolean = false) {
         if (!force && _teams.value.isNotEmpty()) return
+        // Warm start from disk, as iOS/tvOS do from UserDefaults: the picker
+        // and the crest-circle fills are ready without a round trip, and the
+        // Sports tab no longer waits ~2 pages of network to recolour.
+        if (!force) {
+            val cached = readDiskCache()
+            if (cached.isNotEmpty()) {
+                publish(cached)
+                return
+            }
+        }
         if (_isLoading.value) return
         _isLoading.value = true
         try {
@@ -101,8 +117,8 @@ class SportsTeamCatalogService private constructor() {
                 from += PAGE_SIZE
             }
             if (rows.isNotEmpty()) {
-                byUid = rows.associateBy { it.teamUid }
-                _teams.value = rows
+                publish(rows)
+                writeDiskCache(rows)
             }
         } catch (e: CancellationException) {
             throw e
@@ -114,9 +130,45 @@ class SportsTeamCatalogService private constructor() {
         }
     }
 
+    private fun publish(rows: List<SportsTeamRow>) {
+        byUid = rows.associateBy { it.teamUid }
+        _teams.value = rows
+    }
+
+    private suspend fun readDiskCache(): List<SportsTeamRow> = withContext(Dispatchers.IO) {
+        val f = cacheFile ?: return@withContext emptyList()
+        try {
+            if (!f.exists()) emptyList() else cacheJson.decodeFromString(ListSerializer(SportsTeamRow.serializer()), f.readText())
+        } catch (e: Exception) {
+            Log.w(TAG, "disk cache unreadable: ${e.message}")
+            emptyList()
+        }
+    }
+
+    private suspend fun writeDiskCache(rows: List<SportsTeamRow>) = withContext(Dispatchers.IO) {
+        val f = cacheFile ?: return@withContext
+        try {
+            val tmp = File(f.parentFile, f.name + ".tmp")
+            tmp.writeText(cacheJson.encodeToString(ListSerializer(SportsTeamRow.serializer()), rows))
+            if (!tmp.renameTo(f)) { f.writeText(tmp.readText()); tmp.delete() }
+        } catch (e: Exception) {
+            Log.w(TAG, "disk cache write failed: ${e.message}")
+        }
+    }
+
     companion object {
         private const val TAG = "SportsTeamCatalog"
         private const val PAGE_SIZE = 500
+
+        /** v2 matches iOS/tvOS: rows carry fill_color. Bump when the row shape changes. */
+        private const val CACHE_FILE = "sports_team_catalog_v2.json"
+        private val cacheJson = Json { ignoreUnknownKeys = true }
+        @Volatile private var cacheFile: File? = null
+
+        /** Called once from GuideStreamTVApp so the catalogue can persist to cacheDir. */
+        fun init(context: Context) {
+            cacheFile = File(context.applicationContext.cacheDir, CACHE_FILE)
+        }
 
         @Volatile private var instance: SportsTeamCatalogService? = null
         fun get(): SportsTeamCatalogService = instance ?: synchronized(this) {

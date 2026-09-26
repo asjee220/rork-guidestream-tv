@@ -45,6 +45,7 @@ class GuideStreamTVApp : Application() {
         safe("DeviceSessionService") { DeviceSessionService.init(this) }
         safe("StreamsViewModel") { StreamsViewModel.init(this) }
         safe("HomeSnapshotStore") { HomeSnapshotStore.init(this) }
+        safe("SportsTeamCatalogService") { com.rork.guidestreamtvandroid.data.remote.SportsTeamCatalogService.init(this) }
         safe("SocialViewModel") { SocialViewModel.init(this) }
         safe("ReleaseReminderService") { ReleaseReminderService.init(this) }
         safe("TeamFavoritesService") { TeamFavoritesService.init(this) }

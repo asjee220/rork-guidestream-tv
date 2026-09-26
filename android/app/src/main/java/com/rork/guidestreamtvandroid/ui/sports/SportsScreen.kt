@@ -150,8 +150,11 @@ fun SportsScreen(
 
     LaunchedEffect(Unit) {
         WatchIntentLogger.get().log(WatchIntentLogger.IntentEventType.SPORTS_TAB_OPENED)
+        // Crest fills only — load alongside everything else, not in front of
+        // it. First, so the disk-cached fills are on screen before the
+        // favorites round trip returns.
+        launch { catalog.load() }
         favorites.load()
-        catalog.load()
         // First open of the Sports tab: offer the team picker once. Skipped
         // when the user already has favorites (e.g. from another install of
         // the same account) so it never interrupts an established user.
