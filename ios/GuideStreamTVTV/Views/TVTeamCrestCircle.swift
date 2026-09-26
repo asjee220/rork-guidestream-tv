@@ -118,25 +118,32 @@ struct TVSportsPhotoBackdrop: View {
     let url: String?
     var cornerRadius: CGFloat = 16
 
+    // The card's size comes from the rounded rectangle alone. The photo is an
+    // overlay, which is proposed exactly that size, fills it, and is clipped
+    // with it — a scaledToFill image as the background's own content reported
+    // the photo's size instead and spilled over the neighbouring cards.
     var body: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: cornerRadius).fill(Color(hex: "161B27"))
-            if let s = url, let u = URL(string: s) {
-                AsyncImage(url: u) { phase in
-                    if case .success(let image) = phase {
-                        image.resizable().scaledToFill()
-                            .overlay(
-                                LinearGradient(
-                                    colors: [Color(hex: "04090F").opacity(0.65), Color(hex: "04090F").opacity(0.88)],
-                                    startPoint: .top, endPoint: .bottom
+        RoundedRectangle(cornerRadius: cornerRadius)
+            .fill(Color(hex: "161B27"))
+            .overlay {
+                if let s = url, let u = URL(string: s) {
+                    AsyncImage(url: u) { phase in
+                        if case .success(let image) = phase {
+                            image
+                                .resizable()
+                                .aspectRatio(contentMode: .fill)
+                                .overlay(
+                                    LinearGradient(
+                                        colors: [Color(hex: "04090F").opacity(0.65), Color(hex: "04090F").opacity(0.88)],
+                                        startPoint: .top, endPoint: .bottom
+                                    )
                                 )
-                            )
-                    } else {
-                        Color.clear
+                        } else {
+                            Color.clear
+                        }
                     }
                 }
-                .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
             }
-        }
+            .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
     }
 }
