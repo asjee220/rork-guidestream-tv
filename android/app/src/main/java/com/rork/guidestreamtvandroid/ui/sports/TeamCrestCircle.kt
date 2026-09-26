@@ -107,3 +107,55 @@ internal fun TeamCrestCircle(
         }
     }
 }
+
+// MARK: - Shared Sports card parts (2026-09-25)
+
+/** The one Watch button on every Sports card — hero, Live now and See all. */
+@Composable
+internal fun SportsWatchPill() {
+    Box(
+        modifier = Modifier
+            .clip(CircleShape)
+            .background(com.rork.guidestreamtvandroid.ui.theme.BrandOrange)
+            .padding(horizontal = 14.dp, vertical = 7.dp),
+    ) {
+        Text("Watch ▶", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White)
+    }
+}
+
+/**
+ * Photo layer for a Sports card: `sports_games.image_url` (the ESPN game
+ * photo, or the stadium photo the server falls back to) under a dark scrim so
+ * the scores stay readable. Draws nothing without a URL or on a failed load,
+ * leaving the card's own fill. Place first inside a Box, sized to the card.
+ */
+@Composable
+internal fun SportsPhotoBackdrop(url: String?, modifier: Modifier = Modifier) {
+    val u = url?.takeIf { it.isNotBlank() } ?: return
+    SubcomposeAsyncImage(
+        model = u,
+        contentDescription = null,
+        modifier = modifier,
+        contentScale = ContentScale.Crop,
+        success = { state ->
+            Box(Modifier.fillMaxSize()) {
+                Image(
+                    painter = state.painter,
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop,
+                )
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .background(
+                            androidx.compose.ui.graphics.Brush.verticalGradient(
+                                0f to Color(0xFF04090F).copy(alpha = 0.65f),
+                                1f to Color(0xFF04090F).copy(alpha = 0.88f),
+                            ),
+                        ),
+                )
+            }
+        },
+    )
+}

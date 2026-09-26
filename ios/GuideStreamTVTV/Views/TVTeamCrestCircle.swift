@@ -95,3 +95,48 @@ struct TVTeamCrestCircle: View {
         return (0.299 * r + 0.587 * g + 0.114 * b) > 160
     }
 }
+
+// MARK: - Shared Sports card parts (2026-09-25)
+
+/// The one Watch button on every Apple TV Sports card — hero, Live now and
+/// See all. Twin of the phone's SportsWatchPill at TV scale.
+struct TVSportsWatchPill: View {
+    var body: some View {
+        Text("Watch ▶")
+            .scaledFont(size: 26, weight: .bold)
+            .foregroundStyle(.white)
+            .padding(.horizontal, 24)
+            .padding(.vertical, 12)
+            .background(Capsule().fill(Color(hex: "F5821F")))
+    }
+}
+
+/// Card background from `sports_games.image_url` — the ESPN game photo, or
+/// the stadium photo the server falls back to — under a dark scrim. No URL,
+/// or a failed load, keeps the plain card fill.
+struct TVSportsPhotoBackdrop: View {
+    let url: String?
+    var cornerRadius: CGFloat = 16
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: cornerRadius).fill(Color(hex: "161B27"))
+            if let s = url, let u = URL(string: s) {
+                AsyncImage(url: u) { phase in
+                    if case .success(let image) = phase {
+                        image.resizable().scaledToFill()
+                            .overlay(
+                                LinearGradient(
+                                    colors: [Color(hex: "04090F").opacity(0.65), Color(hex: "04090F").opacity(0.88)],
+                                    startPoint: .top, endPoint: .bottom
+                                )
+                            )
+                    } else {
+                        Color.clear
+                    }
+                }
+                .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
+            }
+        }
+    }
+}

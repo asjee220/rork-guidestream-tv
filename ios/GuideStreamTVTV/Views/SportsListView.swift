@@ -99,7 +99,7 @@ enum SportsSection {
 
     var title: String {
         switch self {
-        case .live: return "Live Now"
+        case .live: return "Live now"
         case .upcoming: return "Upcoming"
         case .finalGames: return "Final"
         }
@@ -110,6 +110,9 @@ struct SportsListView: View {
     let games: [SportsGame]
     let section: SportsSection
     let sportFilter: String
+    /// Game photos keyed by game id (sports_games.image_url) — the live rows
+    /// draw them behind the scores. Empty for sections that do not use them.
+    var images: [String: String] = [:]
 
     @State private var selectedGame: SportsGame?
     /// Focus is a thin white outline here too — `.plain` lays tvOS's white
@@ -191,18 +194,11 @@ struct SportsListView: View {
                         .foregroundStyle(Color(hex: "E50914"))
                     Text("\(game.sport) · \(game.scheduleLabel)")
                         .scaledFont(size: 24, weight: .semibold)
-                        .foregroundStyle(Color.white.opacity(0.6))
+                        .foregroundStyle(Color.white.opacity(0.85))
                         .lineLimit(1)
                 }
                 Spacer()
-                Text("Watch ▶")
-                    .scaledFont(size: 26, weight: .bold)
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 24)
-                    .padding(.vertical, 12)
-                    .background(
-                        RoundedRectangle(cornerRadius: 30).fill(Color(hex: "F5821F"))
-                    )
+                TVSportsWatchPill()
             }
 
             HStack {
@@ -218,7 +214,7 @@ struct SportsListView: View {
             broadcastsRow(TVSportsSimulcast.ranked(game.broadcasts))
         }
         .padding(40)
-        .background(RoundedRectangle(cornerRadius: 16).fill(Color(hex: "161B27")))
+        .background(TVSportsPhotoBackdrop(url: images[game.id]))
         .overlay(
             RoundedRectangle(cornerRadius: 16).stroke(Color.white.opacity(0.07), lineWidth: 1)
         )
@@ -227,7 +223,7 @@ struct SportsListView: View {
     private func liveTeam(team: GameTeam, leading: Bool) -> some View {
         let scoreColor: Color = team.isWinner ? .white : Color.white.opacity(0.55)
         return VStack(spacing: 8) {
-            TeamLogoBadge(team: team, size: 150, cornerRadius: 28, inset: 18, abbreviationFontSize: 30)
+            TVTeamCrestCircle(team: team, size: 130)
             Text(team.shortName)
                 .scaledFont(size: 26, weight: .semibold)
                 .foregroundStyle(Color.white.opacity(0.7))

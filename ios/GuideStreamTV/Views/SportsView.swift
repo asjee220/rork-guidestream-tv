@@ -286,7 +286,7 @@ struct SportsView: View {
             .navigationDestination(for: SportsRoute.self) { route in
                 switch route {
                 case .allLive:
-                    SportsListView(games: liveGames, section: .live, sportFilter: selectedSport)
+                    SportsListView(games: liveGames, section: .live, sportFilter: selectedSport, images: gameImages)
                 case .allUpcoming:
                     SportsListView(games: upcomingGames, section: .upcoming, sportFilter: selectedSport)
                 case .allFinal:
@@ -561,12 +561,7 @@ struct SportsView: View {
                         .foregroundStyle(Color.white.opacity(0.85))
                     Spacer()
                     if game.state == .live {
-                        Text("Watch")
-                            .scaledFont(size: 12, weight: .semibold)
-                            .foregroundStyle(Color(hex: "1A0E02"))
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 5)
-                            .background(Capsule().fill(Color(hex: "F5821F")))
+                        SportsWatchPill()
                     }
                 }
                 .padding(.horizontal, 14)
@@ -720,20 +715,13 @@ struct SportsView: View {
                         .foregroundStyle(Color(hex: "E50914"))
                     Text("\(game.sport) · \(game.scheduleLabel)")
                         .scaledFont(size: 9, weight: .semibold)
-                        .foregroundStyle(Color.white.opacity(0.5))
+                        .foregroundStyle(Color.white.opacity(0.8))
                         .lineLimit(1)
                 }
                 Spacer()
                 // The "Watch ▶" affordance now shares the same handler as the
                 // whole card — opens the SportsWatchSheet for this game.
-                Text("Watch ▶")
-                    .scaledFont(size: 11, weight: .bold)
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
-                    .background(
-                        RoundedRectangle(cornerRadius: 20).fill(Color(hex: "F5821F"))
-                    )
+                SportsWatchPill()
             }
 
             HStack {
@@ -749,9 +737,7 @@ struct SportsView: View {
             broadcastsRow(SportsSimulcast.ranked(game.broadcasts))
         }
         .padding(12)
-        .background(
-            RoundedRectangle(cornerRadius: 16).fill(Color(hex: "161B27"))
-        )
+        .background(SportsPhotoBackdrop(url: gameImages[game.id]))
         .overlay(
             RoundedRectangle(cornerRadius: 16)
                 .stroke(Color.white.opacity(0.07), lineWidth: 1)

@@ -39,7 +39,7 @@ import com.rork.guidestreamtvandroid.ui.theme.TextTertiary
 
 /** Which see-all section is showing — drives the title. */
 enum class SportsSection(val title: String) {
-    LIVE("Live Now"),
+    LIVE("Live now"),
     UPCOMING("Upcoming"),
     FINAL("Final"),
 }
@@ -57,6 +57,8 @@ fun SportsListView(
     onBack: () -> Unit,
     onOpenGame: (SportsGame) -> Unit,
     modifier: Modifier = Modifier,
+    /** Game photos keyed by game id, drawn behind the live rows. */
+    images: Map<String, String> = emptyMap(),
 ) {
     Column(
         modifier = modifier
@@ -112,7 +114,7 @@ fun SportsListView(
             ) {
                 items(games, key = { it.id }) { game ->
                     when (section) {
-                        SportsSection.LIVE -> LiveGameRow(game) { onOpenGame(game) }
+                        SportsSection.LIVE -> LiveGameRow(game, imageUrl = images[game.id]) { onOpenGame(game) }
                         SportsSection.UPCOMING -> UpcomingGameRow(game) { onOpenGame(game) }
                         SportsSection.FINAL -> FinalGameRow(game) { onOpenGame(game) }
                     }

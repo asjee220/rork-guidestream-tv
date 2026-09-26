@@ -86,7 +86,7 @@ enum SportsSection {
 
     var title: String {
         switch self {
-        case .live: return "Live Now"
+        case .live: return "Live now"
         case .upcoming: return "Upcoming"
         case .finalGames: return "Final"
         }
@@ -97,6 +97,9 @@ struct SportsListView: View {
     let games: [SportsGame]
     let section: SportsSection
     let sportFilter: String
+    /// Game photos keyed by game id (sports_games.image_url) — the live rows
+    /// draw them behind the scores. Empty for sections that do not use them.
+    var images: [String: String] = [:]
 
     @State private var selectedGame: SportsGame?
 
@@ -162,18 +165,11 @@ struct SportsListView: View {
                         .foregroundStyle(Color(hex: "E50914"))
                     Text("\(game.sport) · \(game.scheduleLabel)")
                         .scaledFont(size: 9, weight: .semibold)
-                        .foregroundStyle(Color.white.opacity(0.5))
+                        .foregroundStyle(Color.white.opacity(0.8))
                         .lineLimit(1)
                 }
                 Spacer()
-                Text("Watch ▶")
-                    .scaledFont(size: 11, weight: .bold)
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 7)
-                    .background(
-                        RoundedRectangle(cornerRadius: 20).fill(Color(hex: "F5821F"))
-                    )
+                SportsWatchPill()
             }
 
             HStack {
@@ -189,7 +185,7 @@ struct SportsListView: View {
             broadcastsRow(SportsSimulcast.ranked(game.broadcasts))
         }
         .padding(12)
-        .background(RoundedRectangle(cornerRadius: 16).fill(Color(hex: "161B27")))
+        .background(SportsPhotoBackdrop(url: images[game.id]))
         .overlay(
             RoundedRectangle(cornerRadius: 16).stroke(Color.white.opacity(0.07), lineWidth: 1)
         )
@@ -198,7 +194,7 @@ struct SportsListView: View {
     private func liveTeam(team: GameTeam, leading: Bool) -> some View {
         let scoreColor: Color = team.isWinner ? .white : Color.white.opacity(0.55)
         return VStack(spacing: 4) {
-            TeamLogoBadge(team: team, size: 50, cornerRadius: 10, inset: 6, abbreviationFontSize: 9)
+            TeamCrestCircle(team: team, size: 50)
             Text(team.shortName)
                 .scaledFont(size: 10, weight: .semibold)
                 .foregroundStyle(Color.white.opacity(0.6))
@@ -237,7 +233,7 @@ struct SportsListView: View {
             broadcastsRow(SportsSimulcast.ranked(game.broadcasts))
         }
         .padding(12)
-        .background(RoundedRectangle(cornerRadius: 16).fill(Color(hex: "161B27")))
+        .background(SportsPhotoBackdrop(url: images[game.id]))
         .overlay(
             RoundedRectangle(cornerRadius: 16).stroke(Color.white.opacity(0.07), lineWidth: 1)
         )

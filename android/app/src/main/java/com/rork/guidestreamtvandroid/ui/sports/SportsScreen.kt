@@ -198,8 +198,12 @@ fun SportsScreen(
             ours.filter { it.state == "pre" && isStartToday(it.startTime) } +
             ours.filter { it.state == "post" && isStartToday(it.startTime) }).take(4)
     }
-    LaunchedEffect(myGames.map { it.id }) {
-        val missing = myGames.map { it.id }.filter { it !in gameImages }
+    // Photos for My games and every live game (Live now + See all).
+    val photoIds = remember(myGames, games) {
+        (myGames.map { it.id } + games.filter { it.state == "live" }.map { it.id }).distinct()
+    }
+    LaunchedEffect(photoIds) {
+        val missing = photoIds.filter { it !in gameImages }
         if (missing.isNotEmpty()) gameImages = gameImages + SportsService.get().fetchImages(missing)
     }
 
@@ -306,7 +310,7 @@ fun SportsScreen(
                 if (live.isNotEmpty()) {
                     item { SectionHeader("Live now", live.size) { seeAll = SportsSection.LIVE } }
                     items(live.take(4), key = { "live-${it.id}" }) { game ->
-                        LiveGameRow(game) { openCard(game, watchGameSetter = { watchGame = it }) }
+                        LiveGameRow(game, imageUrl = gameImages[game.id]) { openCard(game, watchGameSetter = { watchGame = it }) }
                     }
                 }
                 // GUI-99: "Tonight" used to be decided by the first upcoming
@@ -408,6 +412,7 @@ fun SportsScreen(
                 sportFilter = activeSport,
                 onBack = { seeAll = null },
                 onOpenGame = { game -> openCard(game) { watchGame = it } },
+                images = gameImages,
             )
         }
     }
@@ -625,9 +630,7 @@ private fun HeroGameCard(
                 )
                 Spacer(Modifier.weight(1f))
                 if (game.state == "live") {
-                    Box(Modifier.clip(CircleShape).background(BrandOrange).padding(horizontal = 12.dp, vertical = 5.dp)) {
-                        Text("Watch", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                    }
+                    SportsWatchPill()
                 }
             }
             Spacer(Modifier.weight(1f))
@@ -801,8 +804,13 @@ private fun FallbackBadge(
 // MARK: - Game rows (shared with SportsListView)
 
 @Composable
-fun LiveGameRow(game: SportsGame, onClick: () -> Unit) {
-    Column(
+fun LiveGameRow(
+    game: SportsGame,
+    /** sports_games.image_url — game photo or stadium fallback; null keeps the plain card. */
+    imageUrl: String? = null,
+    onClick: () -> Unit,
+) {
+    Box(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
@@ -811,29 +819,29 @@ fun LiveGameRow(game: SportsGame, onClick: () -> Unit) {
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
-            ) { onClick() }
-            .padding(12.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) { onClick() },
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.size(6.dp).clip(CircleShape).background(LiveRed))
-            Spacer(Modifier.width(5.dp))
-            Text("LIVE", fontSize = 9.sp, fontWeight = FontWeight.Black, color = LiveRed)
-            Spacer(Modifier.width(6.dp))
-            Text("${game.sport} · ${game.statusDetail}", fontSize = 9.sp, fontWeight = FontWeight.SemiBold, color = Color.White.copy(alpha = 0.5f), maxLines = 1)
-            Spacer(Modifier.weight(1f))
-            Box(
-                modifier = Modifier.clip(CircleShape).background(BrandOrange).padding(horizontal = 14.dp, vertical = 7.dp),
-            ) {
-                Text("Watch ▶", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White)
+        SportsPhotoBackdrop(imageUrl, Modifier.matchParentSize())
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(6.dp).clip(CircleShape).background(LiveRed))
+                Spacer(Modifier.width(5.dp))
+                Text("LIVE", fontSize = 9.sp, fontWeight = FontWeight.Black, color = LiveRed)
+                Spacer(Modifier.width(6.dp))
+                Text("${game.sport} · ${game.statusDetail}", fontSize = 9.sp, fontWeight = FontWeight.SemiBold, color = Color.White.copy(alpha = 0.8f), maxLines = 1)
+                Spacer(Modifier.weight(1f))
+                SportsWatchPill()
             }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                LiveTeamBlock(game.away, Modifier.weight(1f), Alignment.Start)
+                Text("VS", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White.copy(alpha = 0.2f))
+                LiveTeamBlock(game.home, Modifier.weight(1f), Alignment.End)
+            }
+            BroadcastsRow(rankedBroadcasts(game.broadcasts, AuthViewModel.get()))
         }
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            LiveTeamBlock(game.away, Modifier.weight(1f), Alignment.Start)
-            Text("VS", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White.copy(alpha = 0.2f))
-            LiveTeamBlock(game.home, Modifier.weight(1f), Alignment.End)
-        }
-        BroadcastsRow(rankedBroadcasts(game.broadcasts, AuthViewModel.get()))
     }
 }
 
