@@ -366,7 +366,15 @@ final class SportsService {
         stamp.locale = Locale(identifier: "en_US_POSIX")
         stamp.timeZone = TimeZone(identifier: "UTC")
         stamp.dateFormat = "yyyyMMdd"
-        let range = "\(stamp.string(from: from.addingTimeInterval(-86_400)))-\(stamp.string(from: to.addingTimeInterval(86_400)))"
+        // GUI-115: ESPN now answers any `dates=A-B` range with HTTP 400, so the
+        // whole week came back empty. Ask for one day at a time instead —
+        // single-day `dates` still works — padded a day either side for UTC.
+        var days: [String] = []
+        var cursor = from.addingTimeInterval(-86_400)
+        while cursor < to.addingTimeInterval(86_400) {
+            days.append(stamp.string(from: cursor))
+            cursor = cursor.addingTimeInterval(86_400)
+        }
 
         let targets: [Endpoint] = {
             guard let sports, !sports.isEmpty else { return endpoints }
@@ -376,13 +384,19 @@ final class SportsService {
 
         return await withTaskGroup(of: [SportsGame].self) { group in
             for ep in targets {
-                group.addTask { [weak self] in
-                    guard let self else { return [] }
-                    return await self.fetch(endpoint: ep, dates: range)
+                for day in days {
+                    group.addTask { [weak self] in
+                        guard let self else { return [] }
+                        return await self.fetch(endpoint: ep, dates: day)
+                    }
                 }
             }
+            // Adjacent days overlap (a late ET game is in both), so de-dupe.
             var all: [SportsGame] = []
-            for await games in group { all.append(contentsOf: games) }
+            var seen = Set<String>()
+            for await games in group {
+                for game in games where seen.insert(game.id).inserted { all.append(game) }
+            }
             return all.sorted { $0.startDate < $1.startDate }
         }
     }

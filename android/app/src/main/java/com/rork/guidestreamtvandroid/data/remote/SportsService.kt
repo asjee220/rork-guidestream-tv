@@ -318,13 +318,22 @@ class SportsService {
             val stamp = SimpleDateFormat("yyyyMMdd", Locale.US).apply {
                 timeZone = TimeZone.getTimeZone("UTC")
             }
-            val range = "${stamp.format(Date(from - DAY_MILLIS))}-${stamp.format(Date(to + DAY_MILLIS))}"
+            // GUI-115: ESPN now answers any `dates=A-B` range with HTTP 400, so
+            // the whole week came back empty. Ask for one day at a time —
+            // single-day `dates` still works — padded a day either side.
+            val days = generateSequence(from - DAY_MILLIS) { it + DAY_MILLIS }
+                .takeWhile { it < to + DAY_MILLIS }
+                .map { stamp.format(Date(it)) }
+                .distinct()
+                .toList()
             val targets = if (sports.isNullOrEmpty()) endpoints else endpoints.filter { it.sport in sports }
             if (targets.isEmpty()) return@withContext emptyList()
             coroutineScope {
-                targets.map { ep -> async { fetch(ep, range) } }
+                targets.flatMap { ep -> days.map { day -> async { fetch(ep, day) } } }
                     .awaitAll()
                     .flatten()
+                    // Adjacent days overlap (a late ET game is in both).
+                    .distinctBy { it.id }
                     .sortedBy { it.startDate ?: Long.MAX_VALUE }
             }
         }
