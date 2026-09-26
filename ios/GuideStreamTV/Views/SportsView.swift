@@ -548,17 +548,10 @@ struct SportsView: View {
     }
 
     private func heroCard(_ game: SportsGame) -> some View {
-        ZStack(alignment: .bottom) {
-            heroBackground(game)
-            LinearGradient(
-                stops: [
-                    .init(color: Color(hex: "04090F").opacity(0.05), location: 0),
-                    .init(color: Color(hex: "04090F").opacity(0.30), location: 0.45),
-                    .init(color: Color(hex: "04090F").opacity(0.88), location: 1)
-                ],
-                startPoint: .top, endPoint: .bottom
-            )
-            VStack(spacing: 0) {
+        // GUI-114: the card used to be a fixed 196pt, so larger text sizes
+        // pushed the Watch pill off the top and the chip row off the bottom
+        // under the clip. The content now sets the height; 196 is the floor.
+        VStack(spacing: 0) {
                 HStack {
                     Text(game.sport)
                         .scaledFont(size: 12, weight: .medium)
@@ -596,9 +589,21 @@ struct SportsView: View {
                     .padding(.horizontal, 14)
                     .padding(.top, 10)
                     .padding(.bottom, 10)
+        }
+        .frame(maxWidth: .infinity, minHeight: 196)
+        .background {
+            ZStack {
+                heroBackground(game)
+                LinearGradient(
+                    stops: [
+                        .init(color: Color(hex: "04090F").opacity(0.05), location: 0),
+                        .init(color: Color(hex: "04090F").opacity(0.30), location: 0.45),
+                        .init(color: Color(hex: "04090F").opacity(0.88), location: 1)
+                    ],
+                    startPoint: .top, endPoint: .bottom
+                )
             }
         }
-        .frame(height: 196)
         .clipShape(RoundedRectangle(cornerRadius: 18))
         .overlay(RoundedRectangle(cornerRadius: 18).stroke(Color.white.opacity(0.10), lineWidth: 1))
     }
@@ -664,7 +669,7 @@ struct SportsView: View {
                 Text("On")
                     .scaledFont(size: 10, weight: .semibold)
                     .foregroundStyle(Color.white.opacity(0.6))
-                ForEach(broadcasts.prefix(3), id: \.self) { name in
+                OneLineChips(names: broadcasts, limit: 3) { name in
                     Text(name)
                         .scaledFont(size: 10, weight: .semibold)
                         .foregroundStyle(.white)
@@ -897,7 +902,7 @@ struct SportsView: View {
                 Text("ON:")
                     .scaledFont(size: 9, weight: .bold)
                     .foregroundStyle(Color.white.opacity(0.35))
-                ForEach(broadcasts.prefix(4), id: \.self) { name in
+                OneLineChips(names: broadcasts, limit: 4) { name in
                     Text(name)
                         .scaledFont(size: 9, weight: .black)
                         .foregroundStyle(.white)
@@ -907,7 +912,7 @@ struct SportsView: View {
                             RoundedRectangle(cornerRadius: 5).fill(broadcastColor(name))
                         )
                 }
-                Spacer()
+                Spacer(minLength: 0)
             }
         }
     }
@@ -985,6 +990,33 @@ struct SportsView: View {
                 .foregroundStyle(Color(hex: "1A6FE8"))
             }
             .buttonStyle(.plain)
+        }
+    }
+}
+
+// MARK: - One-line chip row (GUI-114)
+
+/// Service chips never wrap. Each chip is held to one line at its natural
+/// width, and the row shows as many whole chips as fit — first two, then
+/// one — rather than breaking a chip like "CLEGuardians.TV" onto two lines.
+/// Chips arrive ranked, so the ones dropped are the least relevant.
+struct OneLineChips<Chip: View>: View {
+    let names: [String]
+    let limit: Int
+    @ViewBuilder let chip: (String) -> Chip
+
+    var body: some View {
+        let top = Array(names.prefix(limit))
+        ViewThatFits(in: .horizontal) {
+            ForEach(Array(stride(from: top.count, through: 1, by: -1)), id: \.self) { n in
+                HStack(spacing: 6) {
+                    ForEach(top.prefix(n), id: \.self) { name in
+                        chip(name)
+                            .lineLimit(1)
+                            .fixedSize()
+                    }
+                }
+            }
         }
     }
 }

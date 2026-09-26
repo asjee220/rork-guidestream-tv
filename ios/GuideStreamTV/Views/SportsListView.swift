@@ -294,7 +294,7 @@ struct SportsListView: View {
                 Text("ON:")
                     .scaledFont(size: 9, weight: .bold)
                     .foregroundStyle(Color.white.opacity(0.35))
-                ForEach(broadcasts.prefix(4), id: \.self) { name in
+                OneLineChips(names: broadcasts, limit: 4) { name in
                     Text(name)
                         .scaledFont(size: 9, weight: .black)
                         .foregroundStyle(.white)
@@ -304,7 +304,7 @@ struct SportsListView: View {
                             RoundedRectangle(cornerRadius: 5).fill(broadcastColor(name))
                         )
                 }
-                Spacer()
+                Spacer(minLength: 0)
             }
         }
     }
