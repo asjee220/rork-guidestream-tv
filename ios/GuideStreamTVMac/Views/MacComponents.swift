@@ -231,7 +231,7 @@ struct MacPosterCard: View {
                 }
                 .overlay(
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .stroke(Color.white, lineWidth: hovering ? 2 : 0)
+                        .strokeBorder(Color.white, lineWidth: hovering ? 2 : 0)
                 )
                 .padding(.bottom, dateBand == nil ? 0 : 28)
 
@@ -347,11 +347,14 @@ struct MacHeroCarousel: View {
                             .frame(width: cardWidth, height: MacLayout.heroHeight)
                     }
                 }
+                .padding(.vertical, 10)
+                .padding(.horizontal, 2)
                 .scrollTargetLayout()
             }
             .scrollTargetBehavior(.viewAligned)
         }
-        .frame(height: MacLayout.heroHeight)
+        .frame(height: MacLayout.heroHeight + 20)
+        .padding(.vertical, -10)
     }
 }
 
@@ -371,8 +374,8 @@ private struct MacHeroCard: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(hovering ? Color.white : tint.opacity(0.35), lineWidth: hovering ? 2 : 1))
-            .shadow(color: tint.opacity(0.2), radius: 24, y: 12)
+                .strokeBorder(hovering ? Color.white : tint.opacity(0.35), lineWidth: hovering ? 2 : 1))
+            .shadow(color: tint.opacity(0.2), radius: 8, y: 4)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -564,18 +567,29 @@ struct MacTodaysPickCard: View {
                 .padding(.top, 14)
                 .padding(.bottom, 10)
 
-                ZStack {
-                    if let backdropUrl {
-                        TVRemoteImage(urlString: backdropUrl, contentMode: .fill)
-                    } else {
-                        TVRemoteImage(urlString: posterUrl, contentMode: .fill).blur(radius: 20).opacity(0.55)
-                        TVRemoteImage(urlString: posterUrl, contentMode: .fit)
+                // A 16:9 backdrop cropped to a desktop-wide 260pt strip loses
+                // most of the frame, so the whole frame sits centred at 16:9
+                // over a blurred fill of itself. Sizes are explicit so the
+                // fill image cannot grow the stack past the strip.
+                GeometryReader { geo in
+                    let h = MacLayout.todaysPickBackdropHeight
+                    let art = backdropUrl ?? posterUrl
+                    let artWidth = min(geo.size.width, h * 16 / 9)
+                    ZStack {
+                        TVRemoteImage(urlString: art, contentMode: .fill)
+                            .frame(width: geo.size.width, height: h)
+                            .clipped()
+                            .blur(radius: 30)
+                            .opacity(0.5)
+                        TVRemoteImage(urlString: art, contentMode: backdropUrl == nil ? .fit : .fill)
+                            .frame(width: artWidth, height: h)
+                            .clipped()
+                        LinearGradient(colors: [.clear, .black.opacity(0.55)], startPoint: .center, endPoint: .bottom)
                     }
-                    LinearGradient(colors: [.clear, .black.opacity(0.65)], startPoint: .center, endPoint: .bottom)
+                    .frame(width: geo.size.width, height: h)
+                    .clipped()
                 }
-                .frame(maxWidth: .infinity)
                 .frame(height: MacLayout.todaysPickBackdropHeight)
-                .clipped()
 
                 VStack(alignment: .leading, spacing: 10) {
                     Text(pick.title)
