@@ -218,6 +218,9 @@ struct MacProfileView: View {
     @State private var auth = AuthViewModel.shared
     @State private var selected: Set<String> = []
     @State private var filter = ""
+    @State private var confirmDelete = false
+    @State private var isDeleting = false
+    @State private var deleteError: String?
 
     var body: some View {
         ScrollView {
@@ -237,6 +240,22 @@ struct MacProfileView: View {
                     Button(auth.isAuthenticated ? "Sign out" : "Sign in") {
                         Task { await auth.signOut() }
                     }
+                    if auth.isAuthenticated {
+                        Button(role: .destructive) { confirmDelete = true } label: {
+                            if isDeleting { ProgressView().controlSize(.small) } else { Text("Delete Account") }
+                        }
+                        .disabled(isDeleting)
+                    }
+                }
+                Color.clear.frame(height: 0)
+                    .confirmationDialog("Delete your GuideStream account?", isPresented: $confirmDelete, titleVisibility: .visible) {
+                        Button("Delete Account", role: .destructive) { Task { await deleteAccount() } }
+                        Button("Cancel", role: .cancel) {}
+                    } message: {
+                        Text("This permanently removes your account, watchlist, followed creators, teams and all associated data. It can't be undone.")
+                    }
+                if let deleteError {
+                    Text(deleteError).font(.system(size: 12, weight: .semibold)).foregroundStyle(Color.red.opacity(0.9))
                 }
 
                 VStack(alignment: .leading, spacing: 14) {
@@ -362,6 +381,39 @@ struct MacProfileView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+    }
+}
+
+
+extension MacProfileView {
+    /// Same call as the iPhone's ProfileDestinations.deleteAccount: the
+    /// `delete_account` edge function (verify_jwt) purges the caller's rows
+    /// and deletes the auth user, then we sign out locally.
+    func deleteAccount() async {
+        guard let token = (try? await TVSupabaseManager.shared.client.auth.session)?.accessToken,
+              let url = URL(string: "\(TVSupabaseConfig.url)/functions/v1/delete_account") else {
+            deleteError = "Couldn't delete your account. Check your connection and try again."
+            return
+        }
+        isDeleting = true
+        deleteError = nil
+        defer { isDeleting = false }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(TVSupabaseConfig.anonKey, forHTTPHeaderField: "apikey")
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.httpBody = Data("{}".utf8)
+        do {
+            let (_, response) = try await URLSession.shared.data(for: request)
+            guard (response as? HTTPURLResponse)?.statusCode == 200 else {
+                deleteError = "Couldn't delete your account. Check your connection and try again."
+                return
+            }
+            await auth.signOut()
+        } catch {
+            deleteError = "Couldn't delete your account. Check your connection and try again."
+        }
     }
 }
 

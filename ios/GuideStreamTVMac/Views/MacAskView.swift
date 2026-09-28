@@ -168,6 +168,12 @@ struct MacAskSheet: View {
                 .keyboardShortcut(.cancelAction)
             }
             .padding(16)
+            Text("Responses are AI-generated and may be inaccurate. Double-check availability before you watch.")
+                .font(.system(size: 11.5))
+                .foregroundStyle(MacColor.text3)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 16)
+                .padding(.bottom, 10)
             Divider().overlay(MacColor.hairline)
 
             ScrollViewReader { proxy in
