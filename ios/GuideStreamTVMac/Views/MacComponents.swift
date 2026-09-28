@@ -343,8 +343,7 @@ struct MacHeroCarousel: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(spacing: 14) {
                     ForEach(entries) { entry in
-                        MacHeroCard(entry: entry) { onSelect(entry) }
-                            .frame(width: cardWidth, height: MacLayout.heroHeight)
+                        MacHeroCard(entry: entry, size: CGSize(width: cardWidth, height: MacLayout.heroHeight)) { onSelect(entry) }
                     }
                 }
                 .padding(.vertical, 10)
@@ -354,12 +353,14 @@ struct MacHeroCarousel: View {
             .scrollTargetBehavior(.viewAligned)
         }
         .frame(height: MacLayout.heroHeight + 20)
-        .padding(.vertical, -10)
     }
 }
 
 private struct MacHeroCard: View {
     let entry: MacHeroEntry
+    /// Exact card size. A fill-mode backdrop reports the image's own aspect,
+    /// so without a hard frame the card grew past the row and was clipped.
+    let size: CGSize
     let action: () -> Void
     @State private var hovering = false
 
@@ -367,11 +368,15 @@ private struct MacHeroCard: View {
         Button(action: action) {
             ZStack(alignment: .bottomLeading) {
                 backdrop
+                    .frame(width: size.width, height: size.height)
+                    .clipped()
                 LinearGradient(colors: [.black.opacity(0.10), .black.opacity(0.45), .black.opacity(0.85)],
                                startPoint: .top, endPoint: .bottom)
-                content.padding(18)
+                content
+                    .padding(18)
+                    .frame(width: size.width, height: size.height, alignment: .topLeading)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .frame(width: size.width, height: size.height)
             .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .strokeBorder(hovering ? Color.white : tint.opacity(0.35), lineWidth: hovering ? 2 : 1))
