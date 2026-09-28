@@ -108,7 +108,7 @@ final class TVStreamsViewModel {
         }
     }
 
-    func add(titleId: String, title: String?, posterUrl: String?, platform: String?) async {
+    func add(titleId: String, title: String?, posterUrl: String?, platform: String?, isTV: Bool? = nil) async {
         let trimmed = titleId.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
 
@@ -121,7 +121,7 @@ final class TVStreamsViewModel {
                 posterUrl: posterUrl,
                 platform: platform,
                 addedAt: Date(),
-                isTv: nil
+                isTv: isTV
             )
             self.userStreams.insert(optimistic, at: 0)
             saveLocalCache(self.userStreams)
@@ -144,7 +144,8 @@ final class TVStreamsViewModel {
             titleId: trimmed,
             title: title,
             posterUrl: posterUrl,
-            platform: platform
+            platform: platform,
+            isTV: isTV
         )
         if didInsert {
             await fetchUserStreams()
@@ -189,7 +190,8 @@ final class TVStreamsViewModel {
         titleId: String,
         title: String?,
         posterUrl: String?,
-        platform: String?
+        platform: String?,
+        isTV: Bool? = nil
     ) async -> Bool {
         let safeTitle = title ?? titleId
         var payload: [String: AnyJSON] = [
@@ -201,6 +203,8 @@ final class TVStreamsViewModel {
         if let title { payload["title"] = .string(title) }
         if let posterUrl { payload["poster_url"] = .string(posterUrl) }
         if let platform { payload["platform"] = .string(platform) }
+        // Mac: the phones write is_tv so bare TMDB ids resolve to the right type.
+        if let isTV { payload["is_tv"] = .bool(isTV) }
 
         for attempt in 0..<5 {
             do {

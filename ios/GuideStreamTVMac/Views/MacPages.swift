@@ -73,6 +73,7 @@ struct MacWatchlistView: View {
     @State private var streams = TVStreamsViewModel.shared
     @State private var filter: Filter = .all
     @Environment(\.openTitle) private var openTitle
+    @Environment(\.openCreator) private var openCreator
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -110,9 +111,16 @@ struct MacWatchlistView: View {
         .task { await streams.fetchUserStreams() }
     }
 
+    /// "tv" / "movie" for TMDB rows in either id form, nil for creators.
+    static func media(_ row: TVUserStream) -> String? {
+        if let m = TVTitleID.mediaType(from: row.titleId) { return m }
+        guard Int(row.titleId.trimmingCharacters(in: .whitespaces)) != nil else { return nil }
+        return row.isTv == false ? "movie" : "tv"
+    }
+
     private var rows: [TVUserStream] {
         streams.userStreams.filter { row in
-            let media = TVTitleID.mediaType(from: row.titleId)
+            let media = Self.media(row)
             switch filter {
             case .all: return true
             case .shows: return media == "tv"
@@ -124,16 +132,17 @@ struct MacWatchlistView: View {
 
     private func kindLabel(_ row: TVUserStream) -> String {
         if let kind = TVCreatorKind.from(titleId: row.titleId) { return kind.displayLabel }
-        return TVTitleID.mediaType(from: row.titleId) == "movie" ? "Movie" : "Series"
+        return Self.media(row) == "movie" ? "Movie" : "Series"
     }
 
     private func open(_ row: TVUserStream) {
         if let id = TVTitleID.tmdbId(from: row.titleId) {
-            openTitle(MacTitleRef(titleId: row.titleId, tmdbId: id,
-                                  isTV: TVTitleID.mediaType(from: row.titleId) != "movie",
+            let isTV = Self.media(row) != "movie"
+            openTitle(MacTitleRef(titleId: "tmdb:\(isTV ? "tv" : "movie"):\(id)", tmdbId: id,
+                                  isTV: isTV,
                                   title: row.title ?? "", posterUrl: streams.displayPosterUrl(for: row)))
-        } else if let url = MacCreatorLinks.url(for: row.titleId) {
-            MacLinkOpener.open(url)
+        } else if TVCreatorKind.from(titleId: row.titleId) != nil {
+            openCreator(row.titleId)
         }
     }
 }
@@ -144,6 +153,7 @@ struct MacSportsView: View {
     @State private var games: [TVSportsGame] = []
     @State private var league = "All"
     @State private var loading = true
+    @Environment(\.openGame) private var openGame
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -171,7 +181,9 @@ struct MacSportsView: View {
             } else {
                 ScrollView {
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 340), spacing: 12)], alignment: .leading, spacing: 12) {
-                        ForEach(filtered) { MacGameCard(game: $0) }
+                        ForEach(filtered) { g in
+                            Button { openGame(g) } label: { MacGameCard(game: g) }.buttonStyle(.plain)
+                        }
                     }
                 }
             }
@@ -191,9 +203,12 @@ struct MacSportsView: View {
 
     private var filtered: [TVSportsGame] {
         let list = league == "All" ? games : games.filter { $0.sport == league }
+        // Live first, then upcoming soonest-first, then finals newest-first.
+        func rank(_ g: TVSportsGame) -> Int { g.state == .live ? 0 : (g.state == .pre ? 1 : 2) }
         return list.sorted { a, b in
-            if a.state.isLive != b.state.isLive { return a.state.isLive }
-            return (a.startDate ?? .distantFuture) < (b.startDate ?? .distantFuture)
+            if rank(a) != rank(b) { return rank(a) < rank(b) }
+            let da = a.startDate ?? .distantPast, db = b.startDate ?? .distantPast
+            return a.state == .post ? da > db : da < db
         }
     }
 }
@@ -328,25 +343,6 @@ struct MacProfileView: View {
     private var catalog: [StreamingService] {
         let all = StreamingCatalog.all.filter { filter.isEmpty || $0.name.localizedCaseInsensitiveContains(filter) }
         return all.filter { auth.selectedServices.contains($0.id) } + all.filter { !auth.selectedServices.contains($0.id) }
-    }
-}
-
-// MARK: - Ask
-
-struct MacAskSheet: View {
-    @Environment(\.dismiss) private var dismiss
-    var body: some View {
-        VStack(spacing: 14) {
-            Image(systemName: "sparkles").font(.system(size: 34)).foregroundStyle(MacColor.orange)
-            Text("Ask GuideStream").font(.system(size: 20, weight: .bold))
-            Text("AskStream comes to Mac in the next build. On iPhone, tap the orange Ask button to try it now.")
-                .font(.system(size: 13)).foregroundStyle(MacColor.text2)
-                .multilineTextAlignment(.center)
-                .frame(width: 340)
-            Button("Close") { dismiss() }.keyboardShortcut(.cancelAction)
-        }
-        .padding(32)
-        .background(MacColor.navy)
     }
 }
 

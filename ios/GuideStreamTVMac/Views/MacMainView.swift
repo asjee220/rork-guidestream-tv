@@ -10,7 +10,7 @@
 import SwiftUI
 
 enum MacPage: String, CaseIterable, Identifiable {
-    case home, search, watchlist, sports, profile
+    case home, search, watchlist, reels, sports, schedule, profile
     var id: String { rawValue }
 
     var title: String {
@@ -19,6 +19,8 @@ enum MacPage: String, CaseIterable, Identifiable {
         case .search: return "Search"
         case .watchlist: return "Watchlist"
         case .sports: return "Sports"
+        case .reels: return "Reels"
+        case .schedule: return "Schedule"
         case .profile: return "Profile"
         }
     }
@@ -29,11 +31,13 @@ enum MacPage: String, CaseIterable, Identifiable {
         case .search: return "magnifyingglass"
         case .watchlist: return "bookmark"
         case .sports: return "sportscourt"
+        case .reels: return "play.rectangle"
+        case .schedule: return "calendar"
         case .profile: return "person.crop.circle"
         }
     }
 
-    var selectedIcon: String { self == .search ? icon : icon + ".fill" }
+    var selectedIcon: String { self == .search || self == .schedule ? icon : icon + ".fill" }
 }
 
 struct MacMainView: View {
@@ -41,6 +45,8 @@ struct MacMainView: View {
     @State private var page: MacPage = .home
     @State private var openRef: MacTitleRef?
     @State private var showAsk = false
+    @State private var openGameItem: TVSportsGame?
+    @State private var openCreatorRef: MacCreatorRef?
     @State private var auth = AuthViewModel.shared
 
     var body: some View {
@@ -56,8 +62,12 @@ struct MacMainView: View {
         }
         .animation(.easeInOut(duration: 0.22), value: collapsed)
         .environment(\.openTitle) { openRef = $0 }
+        .environment(\.openGame) { openGameItem = $0 }
+        .environment(\.openCreator) { openCreatorRef = MacCreatorRef(titleId: $0) }
         .sheet(item: $openRef) { ref in MacTitleSheet(ref: ref) }
-        .sheet(isPresented: $showAsk) { MacAskSheet() }
+        .sheet(item: $openGameItem) { game in MacGameSheet(game: game) }
+        .sheet(item: $openCreatorRef) { ref in MacCreatorSheet(ref: ref) }
+        .sheet(isPresented: $showAsk) { MacAskSheet(onOpenTitle: { openRef = $0 }) }
         .onReceive(NotificationCenter.default.publisher(for: MacCommand.name)) { note in
             guard let value = note.object as? String else { return }
             if value == "sidebar" { collapsed.toggle() }
@@ -85,7 +95,7 @@ struct MacMainView: View {
             .padding(.top, 34) // clears the traffic lights
             .padding(.bottom, 12)
 
-            ForEach([MacPage.home, .search, .watchlist, .sports]) { p in navRow(p) }
+            ForEach([MacPage.home, .search, .watchlist, .reels, .sports, .schedule]) { p in navRow(p) }
 
             Spacer()
 
@@ -217,7 +227,9 @@ struct MacMainView: View {
         case .home: MacHomeView(onSearch: { page = .search })
         case .search: MacSearchView()
         case .watchlist: MacWatchlistView()
+        case .reels: MacReelsView()
         case .sports: MacSportsView()
+        case .schedule: MacScheduleView()
         case .profile: MacProfileView()
         }
     }

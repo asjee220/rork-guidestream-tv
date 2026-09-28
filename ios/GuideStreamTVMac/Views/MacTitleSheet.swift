@@ -105,7 +105,11 @@ struct MacTitleSheet: View {
         .task { await load() }
     }
 
-    private var isSaved: Bool { streams.contains(titleId: ref.titleId) }
+    /// Watchlist rows key TMDB titles by the bare id, as the phones write
+    /// them (338 of 344 rows on 28 Sep 2026); older tvOS rows used the
+    /// canonical "tmdb:tv:" form, so both count as saved.
+    private var watchlistId: String { ref.tmdbId.map(String.init) ?? ref.titleId }
+    private var isSaved: Bool { streams.contains(titleId: watchlistId) || streams.contains(titleId: ref.titleId) }
 
     private var metaLine: String {
         var parts = [ref.isTV ? "Series" : "Movie"]
@@ -167,10 +171,11 @@ struct MacTitleSheet: View {
 
     private func toggleWatchlist() async {
         if isSaved {
-            await streams.remove(titleId: ref.titleId)
+            if streams.contains(titleId: watchlistId) { await streams.remove(titleId: watchlistId) }
+            if streams.contains(titleId: ref.titleId) { await streams.remove(titleId: ref.titleId) }
         } else {
-            await streams.add(titleId: ref.titleId, title: ref.title, posterUrl: ref.posterUrl,
-                              platform: resolved?.primarySource?.name)
+            await streams.add(titleId: watchlistId, title: ref.title, posterUrl: ref.posterUrl,
+                              platform: resolved?.primarySource?.name, isTV: ref.tmdbId == nil ? nil : ref.isTV)
         }
     }
 

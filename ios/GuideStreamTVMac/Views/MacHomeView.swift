@@ -17,6 +17,8 @@ struct MacHomeView: View {
     @State private var streams = TVStreamsViewModel.shared
     @State private var seeAll: MacSeeAllPayload?
     @Environment(\.openTitle) private var openTitle
+    @Environment(\.openGame) private var openGame
+    @Environment(\.openCreator) private var openCreatorSheet
 
     var body: some View {
         ScrollView {
@@ -226,10 +228,7 @@ struct MacHomeView: View {
         case .media(let r, _):
             openTitle(MacTitleRef(result: r))
         case .game(let g):
-            WatchIntentLogger.shared.log(eventType: .cardTapped,
-                                         titleId: WatchIntentLogger.titleSlug("\(g.away.abbreviation)-\(g.home.abbreviation)-\(g.sport)"),
-                                         platformId: (g.broadcasts.first ?? "").lowercased(),
-                                         metadata: ["section": "hero_carousel", "kind": "sport"])
+            openGame(g)
         case .liveCreator(let titleId, _, _, _, _, _):
             openCreator(titleId: titleId)
         case .upload(let u):
@@ -243,14 +242,9 @@ struct MacHomeView: View {
                               posterUrl: r.posterUrl ?? TVTMDBImage.url(r.posterPath, size: .poster500)))
     }
 
-    /// Creators open on their own platform in the browser for now.
     private func openCreator(titleId: String) {
-        if let url = MacCreatorLinks.url(for: titleId) {
-            WatchIntentLogger.shared.log(eventType: .deeplinkFired, titleId: titleId,
-                                         platformId: TVCreatorKind.from(titleId: titleId)?.rawValue,
-                                         metadata: ["section": "home"])
-            MacLinkOpener.open(url)
-        }
+        guard TVCreatorKind.from(titleId: titleId) != nil else { return }
+        openCreatorSheet(titleId)
     }
 
     private func episodeLabel(_ ep: TVNewEpisodeRow) -> String? {

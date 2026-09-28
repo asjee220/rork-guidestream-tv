@@ -567,24 +567,19 @@ struct MacTodaysPickCard: View {
                 .padding(.top, 14)
                 .padding(.bottom, 10)
 
-                // A 16:9 backdrop cropped to a desktop-wide 260pt strip loses
-                // most of the frame, so the whole frame sits centred at 16:9
-                // over a blurred fill of itself. Sizes are explicit so the
-                // fill image cannot grow the stack past the strip.
+                // Full-width backdrop, cropped from the bottom up: the top of
+                // the frame (faces, titles) stays, the bottom is trimmed to the
+                // 260pt strip. Explicit sizes keep the fill image from growing
+                // the card.
                 GeometryReader { geo in
                     let h = MacLayout.todaysPickBackdropHeight
-                    let art = backdropUrl ?? posterUrl
-                    let artWidth = min(geo.size.width, h * 16 / 9)
-                    ZStack {
-                        TVRemoteImage(urlString: art, contentMode: .fill)
-                            .frame(width: geo.size.width, height: h)
-                            .clipped()
-                            .blur(radius: 30)
-                            .opacity(0.5)
-                        TVRemoteImage(urlString: art, contentMode: backdropUrl == nil ? .fit : .fill)
-                            .frame(width: artWidth, height: h)
+                    ZStack(alignment: .top) {
+                        TVRemoteImage(urlString: backdropUrl ?? posterUrl, contentMode: .fill)
+                            .frame(width: geo.size.width, height: max(h, geo.size.width * 9 / 16))
+                            .frame(width: geo.size.width, height: h, alignment: .top)
                             .clipped()
                         LinearGradient(colors: [.clear, .black.opacity(0.55)], startPoint: .center, endPoint: .bottom)
+                            .frame(width: geo.size.width, height: h)
                     }
                     .frame(width: geo.size.width, height: h)
                     .clipped()
