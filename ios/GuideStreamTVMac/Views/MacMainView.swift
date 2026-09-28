@@ -200,9 +200,7 @@ struct MacMainView: View {
         return Button { page = .profile } label: {
             HStack(spacing: -6) {
                 ForEach(services.prefix(3)) { s in
-                    Circle().fill(s.color).frame(width: 22, height: 22)
-                        .overlay(Text(String(s.name.prefix(1))).font(.system(size: 10, weight: .bold))
-                            .foregroundStyle(s.color == .white ? .black : .white))
+                    TVServiceBrandMark(providerName: s.name, size: 24, catalogId: s.id)
                         .overlay(Circle().stroke(MacColor.navy, lineWidth: 2))
                 }
                 Text(services.isEmpty ? "Add services" : "\(services.count)")

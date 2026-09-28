@@ -297,37 +297,49 @@ struct MacProfileView: View {
                     }
                 }
 
-                VStack(alignment: .leading, spacing: 12) {
+                VStack(alignment: .leading, spacing: 14) {
                     HStack {
-                        Text("Your services").font(.system(size: 15, weight: .semibold))
-                        Spacer()
-                        TextField("Filter", text: $filter).textFieldStyle(.roundedBorder).frame(width: 180)
-                        Button("Save") { auth.setSelectedServices(selected) }
-                            .keyboardShortcut("s")
-                            .disabled(selected == auth.selectedServices)
-                    }
-                    Text("Home ranks and labels titles by the services you pick. Changes sync to your other devices.")
-                        .font(.system(size: 12)).foregroundStyle(MacColor.text2)
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 190), spacing: 8)], alignment: .leading, spacing: 8) {
-                        ForEach(catalog) { s in
-                            let on = selected.contains(s.id)
-                            Button {
-                                if on { selected.remove(s.id) } else { selected.insert(s.id) }
-                            } label: {
-                                HStack(spacing: 10) {
-                                    Circle().fill(s.color).frame(width: 10, height: 10)
-                                    Text(s.name).font(.system(size: 13, weight: .medium)).lineLimit(1)
-                                    Spacer()
-                                    Image(systemName: on ? "checkmark.circle.fill" : "circle")
-                                        .foregroundStyle(on ? MacColor.orange : MacColor.text3)
-                                }
-                                .padding(10)
-                                .background(on ? MacColor.orange.opacity(0.12) : MacColor.surface, in: RoundedRectangle(cornerRadius: 10))
-                                .overlay(RoundedRectangle(cornerRadius: 10).stroke(on ? MacColor.orange.opacity(0.5) : MacColor.hairline, lineWidth: 1))
-                                .contentShape(Rectangle())
-                            }
-                            .buttonStyle(.plain)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("Which services do you have?").font(.system(size: 17, weight: .semibold))
+                            Text("\(selected.count) selected · edit to personalise what shows up on your feed")
+                                .font(.system(size: 12)).foregroundStyle(MacColor.text2)
                         }
+                        Spacer()
+                        HStack(spacing: 6) {
+                            Image(systemName: "magnifyingglass").foregroundStyle(MacColor.text3)
+                            TextField("Search all services", text: $filter).textFieldStyle(.plain)
+                        }
+                        .padding(.horizontal, 12).padding(.vertical, 7)
+                        .background(Color.white.opacity(0.05), in: Capsule())
+                        .overlay(Capsule().stroke(MacColor.hairline, lineWidth: 1))
+                        .frame(width: 240)
+                        Button { auth.setSelectedServices(selected) } label: {
+                            Label("Save", systemImage: "checkmark")
+                                .font(.system(size: 13, weight: .bold)).foregroundStyle(.white)
+                                .padding(.horizontal, 16).padding(.vertical, 8)
+                                .background(selected == auth.selectedServices ? Color.white.opacity(0.12) : MacColor.orange, in: Capsule())
+                        }
+                        .buttonStyle(.plain)
+                        .keyboardShortcut("s")
+                        .disabled(selected == auth.selectedServices)
+                    }
+
+                    if !popular.isEmpty {
+                        Text("Most popular").font(.system(size: 13, weight: .semibold)).foregroundStyle(MacColor.text2)
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 104, maximum: 124), spacing: 16)],
+                                  alignment: .leading, spacing: 18) {
+                            ForEach(popular) { s in serviceTile(s) }
+                        }
+                    }
+                    if !allServices.isEmpty {
+                        Text("All services · A–Z").font(.system(size: 13, weight: .semibold)).foregroundStyle(MacColor.text2)
+                            .padding(.top, 6)
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 230), spacing: 8)], alignment: .leading, spacing: 8) {
+                            ForEach(allServices) { s in serviceRow(s) }
+                        }
+                    }
+                    if popular.isEmpty && allServices.isEmpty {
+                        Text("No services match").font(.system(size: 13)).foregroundStyle(MacColor.text2)
                     }
                 }
 
@@ -339,10 +351,75 @@ struct MacProfileView: View {
         .onAppear { selected = auth.selectedServices }
     }
 
-    /// Selected services first, then the rest of the phone's catalogue.
-    private var catalog: [StreamingService] {
-        let all = StreamingCatalog.all.filter { filter.isEmpty || $0.name.localizedCaseInsensitiveContains(filter) }
-        return all.filter { auth.selectedServices.contains($0.id) } + all.filter { !auth.selectedServices.contains($0.id) }
+    /// The phone's "Most popular" tiles: the first 18 of its catalogue.
+    private var popular: [StreamingService] {
+        Array(StreamingCatalog.all.prefix(18)).filter { filter.isEmpty || $0.name.localizedCaseInsensitiveContains(filter) }
+    }
+
+    /// Everything else, A–Z, as small rows (the phone lists the full catalogue here).
+    private var allServices: [StreamingService] {
+        StreamingCatalog.all.dropFirst(18)
+            .filter { filter.isEmpty || $0.name.localizedCaseInsensitiveContains(filter) }
+            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
+    private func toggle(_ id: String) {
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
+            if selected.contains(id) { selected.remove(id) } else { selected.insert(id) }
+        }
+    }
+
+    /// Large tile, as the phone's ServiceTile: brand square, white ring and
+    /// orange check when selected, dimmed when not.
+    private func serviceTile(_ s: StreamingService) -> some View {
+        let on = selected.contains(s.id)
+        return Button { toggle(s.id) } label: {
+            VStack(spacing: 8) {
+                TVServiceBrandMark(providerName: s.name, size: 96, catalogId: s.id, cornerRadius: 16)
+                    .opacity(on ? 1 : 0.52)
+                    .overlay {
+                        if on { RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(.white, lineWidth: 3.5) }
+                    }
+                    .overlay(alignment: .topTrailing) {
+                        if on {
+                            ZStack {
+                                Circle().fill(MacColor.orange).frame(width: 22, height: 22)
+                                    .overlay(Circle().stroke(MacColor.navy, lineWidth: 2))
+                                Image(systemName: "checkmark").font(.system(size: 11, weight: .black)).foregroundStyle(.white)
+                            }
+                            .offset(x: 7, y: -7)
+                            .transition(.scale.combined(with: .opacity))
+                        }
+                    }
+                Text(s.name).font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(on ? .white : Color.white.opacity(0.4))
+                    .lineLimit(2).multilineTextAlignment(.center)
+            }
+            .frame(maxWidth: .infinity)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// Small row, as the phone's A–Z list: mini brand icon, name, switch.
+    private func serviceRow(_ s: StreamingService) -> some View {
+        let on = selected.contains(s.id)
+        return Button { toggle(s.id) } label: {
+            HStack(spacing: 10) {
+                TVServiceBrandMark(providerName: s.name, size: 30, catalogId: s.id, cornerRadius: 8)
+                Text(s.name).font(.system(size: 13, weight: .medium)).lineLimit(1)
+                Spacer()
+                ZStack {
+                    Capsule().fill(on ? MacColor.orange : Color.white.opacity(0.15)).frame(width: 36, height: 21)
+                    Circle().fill(.white).frame(width: 17, height: 17).offset(x: on ? 7.5 : -7.5)
+                }
+            }
+            .padding(.horizontal, 10).padding(.vertical, 8)
+            .background(Color.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 10))
+            .overlay(RoundedRectangle(cornerRadius: 10).stroke(MacColor.hairline, lineWidth: 1))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 }
 
