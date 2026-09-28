@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		MC50D61ED0BAE05FA2F8E9MC /* Supabase in Frameworks */ = {isa = PBXBuildFile; productRef = MC1C9FF110ABBCE8BF456AMC /* Supabase */; };
 		99D424DC303FA1E90014C218 /* YouTubeiOSPlayerHelper in Frameworks */ = {isa = PBXBuildFile; productRef = YY20A1B2C3D4E5F6A7B8C9D0YY /* YouTubeiOSPlayerHelper */; };
 		AB50D61ED0BAE05FA2F8EA /* Supabase in Frameworks */ = {isa = PBXBuildFile; productRef = AB1C9FF110ABBCE8BF456A /* Supabase */; };
 		GS30A1B2C3D4E5F6A7B8C9D0GS /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = GS20A1B2C3D4E5F6A7B8C9D0GS /* GoogleSignIn */; };
@@ -62,6 +63,7 @@
 		PR1VACY0001FILEREF0000A /* GuideStreamTV/PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = GuideStreamTV/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		XX80E2B28F6EB68EEE2794XX /* GuideStreamTVTV.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = GuideStreamTVTV.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		XX878FD47A39EC99354D39XX /* GuideStreamWidget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = GuideStreamWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		MC80E2B28F6EB68EEE2794MC /* GuideStreamTVMac.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = GuideStreamTVMac.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -96,6 +98,7 @@
 		XX0A484E14E2DE04089045XX /* GuideStreamTVTV */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = GuideStreamTVTV; sourceTree = "<group>"; };
 		XXAA11BB22CC33DD44EE55XX /* Shared */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = Shared; sourceTree = "<group>"; };
 		XXFE3FBA6264EA26BA6BC1XX /* GuideStreamWidget */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (XX3A109F19F7FEB1EFA9C8XX /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = GuideStreamWidget; sourceTree = "<group>"; };
+		MC0A484E14E2DE04089045MC /* GuideStreamTVMac */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = GuideStreamTVMac; sourceTree = "<group>"; };
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -141,6 +144,14 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		MC75B8358D2242CEB782C5MC /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				MC50D61ED0BAE05FA2F8E9MC /* Supabase in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -154,6 +165,7 @@
 				XX0A484E14E2DE04089045XX /* GuideStreamTVTV */,
 				XXAA11BB22CC33DD44EE55XX /* Shared */,
 				XXFE3FBA6264EA26BA6BC1XX /* GuideStreamWidget */,
+				MC0A484E14E2DE04089045MC /* GuideStreamTVMac */,
 				PR1VACY0001FILEREF0000A /* GuideStreamTV/PrivacyInfo.xcprivacy */,
 			);
 			sourceTree = "<group>";
@@ -166,6 +178,7 @@
 				105FC5932E9EAD3200EA8BCF /* GuideStreamTVUITests.xctest */,
 				XX80E2B28F6EB68EEE2794XX /* GuideStreamTVTV.app */,
 				XX878FD47A39EC99354D39XX /* GuideStreamWidget.appex */,
+				MC80E2B28F6EB68EEE2794MC /* GuideStreamTVMac.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -294,6 +307,30 @@
 			productReference = XX80E2B28F6EB68EEE2794XX /* GuideStreamTVTV.app */;
 			productType = "com.apple.product-type.application";
 		};
+		MC71A30A2228E328830383MC /* GuideStreamTVMac */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = MC1EF169B1432F9B75F2B3MC /* Build configuration list for PBXNativeTarget "GuideStreamTVMac" */;
+			buildPhases = (
+				MCE0FD6AFA7551401BFCEBMC /* Sources */,
+				MC75B8358D2242CEB782C5MC /* Frameworks */,
+				MC8DEE49FEB104205DDA8DMC /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				MC0A484E14E2DE04089045MC /* GuideStreamTVMac */,
+				XXAA11BB22CC33DD44EE55XX /* Shared */,
+			);
+			name = GuideStreamTVMac;
+			packageProductDependencies = (
+				MC1C9FF110ABBCE8BF456AMC /* Supabase */,
+			);
+			productName = GuideStreamTVMac;
+			productReference = MC80E2B28F6EB68EEE2794MC /* GuideStreamTVMac.app */;
+			productType = "com.apple.product-type.application";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -304,6 +341,9 @@
 				LastSwiftUpdateCheck = 2600;
 				LastUpgradeCheck = 2600;
 				TargetAttributes = {
+					MC71A30A2228E328830383MC = {
+						CreatedOnToolsVersion = 26.0;
+					};
 					105FC5792E9EAD3100EA8BCF = {
 						CreatedOnToolsVersion = 26.0;
 						SystemCapabilities = {
@@ -363,6 +403,7 @@
 				105FC5922E9EAD3200EA8BCF /* GuideStreamTVUITests */,
 				XX71A30A2228E328830383XX /* GuideStreamTVTV */,
 				XX6E895901CF0DAEECE76CXX /* GuideStreamWidget */,
+				MC71A30A2228E328830383MC /* GuideStreamTVMac */,
 			);
 		};
 /* End PBXProject section */
@@ -403,6 +444,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		MC8DEE49FEB104205DDA8DMC /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -435,6 +483,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		XXE0FD6AFA7551401BFCEBXX /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		MCE0FD6AFA7551401BFCEBMC /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -889,6 +944,81 @@
 			};
 			name = Debug;
 		};
+		MCE53B9EFEA0ABF5248527MC /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = GuideStreamTVMac/GuideStreamTVMac.debug.entitlements;
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
+				CODE_SIGN_STYLE = Manual;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = KDH93W2EVA;
+				ENABLE_APP_SANDBOX = YES;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "GuideStream TV";
+				INFOPLIST_KEY_CFBundleURLTypes = "{\n    CFBundleTypeRole = Editor;\n    CFBundleURLName = \"com.guidestream.tv\";\n    CFBundleURLSchemes =     (\n        guidestream\n    );\n}";
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.entertainment";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "© 2026 Jack8ight LLC";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				MARKETING_VERSION = 1.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "app.rork.guidestream-tv";
+				PRODUCT_NAME = GuideStreamTVMac;
+				SDKROOT = macosx;
+				SUPPORTED_PLATFORMS = macosx;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		MCCC5E98EEE3393F05FCD4MC /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = GuideStreamTVMac/GuideStreamTVMac.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = KDH93W2EVA;
+				ENABLE_APP_SANDBOX = YES;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "GuideStream TV";
+				INFOPLIST_KEY_CFBundleURLTypes = "{\n    CFBundleTypeRole = Editor;\n    CFBundleURLName = \"com.guidestream.tv\";\n    CFBundleURLSchemes =     (\n        guidestream\n    );\n}";
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.entertainment";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "© 2026 Jack8ight LLC";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				MARKETING_VERSION = 1.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "app.rork.guidestream-tv";
+				PRODUCT_NAME = GuideStreamTVMac;
+				SDKROOT = macosx;
+				SUPPORTED_PLATFORMS = macosx;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -942,6 +1072,15 @@
 			buildConfigurations = (
 				XX1B97DDB9C95A1CDAA3BBXX /* Debug */,
 				XXBB1E26D56845F1900B28XX /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		MC1EF169B1432F9B75F2B3MC /* Build configuration list for PBXNativeTarget "GuideStreamTVMac" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				MCE53B9EFEA0ABF5248527MC /* Debug */,
+				MCCC5E98EEE3393F05FCD4MC /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
@@ -1026,6 +1165,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = ZZ10A1B2C3D4E5F6A7B8C9D0ZZ /* XCRemoteSwiftPackageReference "swift-package-manager-google-mobile-ads" */;
 			productName = GoogleMobileAds;
+		};
+		MC1C9FF110ABBCE8BF456AMC /* Supabase */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = XX20EB7F6EA71E9F2E096CXX /* XCRemoteSwiftPackageReference "supabase-swift" */;
+			productName = Supabase;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

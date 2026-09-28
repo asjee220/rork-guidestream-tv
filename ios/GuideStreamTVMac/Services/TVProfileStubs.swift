@@ -1,0 +1,413 @@
+//
+//  TVProfileStubs.swift
+//  GuideStreamTVTV
+//
+//  Bridges between the rich iOS profile/devices/account services and the
+//  lean tvOS surface. tvOS views were ported from iOS and reference these
+//  types directly — rather than rewriting every view, we provide compatible
+//  stubs / typealiases that keep the API surface intact so the code
+//  compiles and runs cleanly on Apple TV. Network calls fall back to the
+//  shared TVSupabaseManager client where applicable.
+//
+
+import SwiftUI
+import Foundation
+import Supabase
+
+// MARK: - Singleton typealiases
+
+typealias DeviceIdentity = TVDeviceIdentity
+typealias SupabaseManager = TVSupabaseManager
+
+// MARK: - Device session row (Decodable mirror)
+
+/// Mirror of the iOS `DeviceSessionRow` schema so the tvOS Devices screen
+/// can decode rows from the shared `device_sessions` Supabase table.
+nonisolated struct DeviceSessionRow: Decodable, Sendable, Identifiable, Hashable {
+    let device_id: String
+    let device_model: String?
+    let os_version: String?
+    let app_version: String?
+    let build_number: String?
+    let last_seen_at: String?
+    let first_seen_at: String?
+    let is_authenticated: Bool?
+    let is_guest: Bool?
+    let session_count: Int?
+
+    var id: String { device_id }
+}
+
+// MARK: - WatchProfile
+
+struct WatchProfile: Identifiable, Codable, Hashable, Sendable {
+    let id: UUID
+    var name: String
+    /// Hex (e.g. "#F5821F") — stored as string so the struct stays Codable.
+    var colorHex: String
+    var isKid: Bool
+    var emoji: String
+
+    init(id: UUID = UUID(), name: String, colorHex: String, isKid: Bool, emoji: String) {
+        self.id = id
+        self.name = name
+        self.colorHex = colorHex
+        self.isKid = isKid
+        self.emoji = emoji
+    }
+
+    var color: Color { Color(hex: colorHex) }
+}
+
+// MARK: - AppProfileManager
+
+@MainActor
+@Observable
+final class AppProfileManager {
+    static let shared = AppProfileManager()
+
+    private(set) var profiles: [WatchProfile]
+    private(set) var activeProfileId: UUID?
+
+    private let profilesKey = "gs.tv.profiles.list"
+    private let activeKey = "gs.tv.profiles.active"
+
+    private init() {
+        let defaults = UserDefaults.standard
+        if let data = defaults.data(forKey: profilesKey),
+           let decoded = try? JSONDecoder().decode([WatchProfile].self, from: data),
+           !decoded.isEmpty {
+            self.profiles = decoded
+        } else {
+            self.profiles = [
+                WatchProfile(name: "Main", colorHex: "#F5821F", isKid: false, emoji: "🎬")
+            ]
+        }
+        if let active = defaults.string(forKey: activeKey),
+           let uuid = UUID(uuidString: active),
+           profiles.contains(where: { $0.id == uuid }) {
+            self.activeProfileId = uuid
+        } else {
+            self.activeProfileId = profiles.first?.id
+        }
+        persist()
+    }
+
+    var activeProfile: WatchProfile? {
+        guard let id = activeProfileId else { return profiles.first }
+        return profiles.first(where: { $0.id == id }) ?? profiles.first
+    }
+
+    static let palette: [String] = [
+        "#F5821F", "#1A6FE8", "#22C55E", "#E11D48",
+        "#8B5CF6", "#06B6D4", "#F59E0B", "#EC4899"
+    ]
+
+    static let emojis: [String] = [
+        "🎬", "🍿", "🎮", "👑", "🚀", "🌙", "⭐️", "🔥", "🦊", "🐼"
+    ]
+
+    func setActive(_ id: UUID) {
+        guard profiles.contains(where: { $0.id == id }) else { return }
+        activeProfileId = id
+        persist()
+    }
+
+    func addProfile(name: String, colorHex: String, isKid: Bool, emoji: String) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        let profile = WatchProfile(name: trimmed, colorHex: colorHex, isKid: isKid, emoji: emoji)
+        profiles.append(profile)
+        persist()
+    }
+
+    func update(_ profile: WatchProfile) {
+        guard let idx = profiles.firstIndex(where: { $0.id == profile.id }) else { return }
+        profiles[idx] = profile
+        persist()
+    }
+
+    func remove(_ id: UUID) {
+        guard profiles.count > 1 else { return }
+        profiles.removeAll { $0.id == id }
+        if activeProfileId == id {
+            activeProfileId = profiles.first?.id
+        }
+        persist()
+    }
+
+    private func persist() {
+        let defaults = UserDefaults.standard
+        if let data = try? JSONEncoder().encode(profiles) {
+            defaults.set(data, forKey: profilesKey)
+        }
+        if let id = activeProfileId {
+            defaults.set(id.uuidString, forKey: activeKey)
+        }
+    }
+}
+
+// MARK: - DeviceSessionService
+
+/// Apple TV's own `device_sessions` writer.
+///
+/// This used to be a no-op, and that is why Apple TV was invisible to every
+/// install, OS-mix, release, activation and retention figure the Watch Graph
+/// reports: those all read `device_sessions`, and tvOS never wrote a row.
+/// The events it logged still landed in `watch_intent_events`, so tvOS
+/// activity sat inside the event totals with no device in the denominator.
+///
+/// The payload mirrors the iOS service, minus the columns tvOS has no notion
+/// of (SMS, timezone, install attribution). `device_model` comes from uname,
+/// so a real Apple TV reports `AppleTV14,1` and the dashboard's
+/// `wg_platform_family` sorts it into tvOS. Failures are recorded and
+/// swallowed: analytics must never take the UI down.
+@MainActor
+final class DeviceSessionService {
+    static let shared = DeviceSessionService()
+
+    private(set) var lastError: String?
+    private(set) var lastSuccessAt: Date?
+    private(set) var lastAttemptAt: Date?
+    private(set) var totalUpserts: Int = 0
+    private(set) var totalSuccesses: Int = 0
+    private(set) var lastReason: String?
+
+    private let sessionCountKey = "gs.tv.sessionCount"
+
+    /// Hardware identifier, computed once. `AppleTV14,1` on device; the
+    /// simulator returns the host arch (`arm64`), which the dashboard
+    /// already excludes as a simulator.
+    private let deviceModel: String
+
+    private init() {
+        // macOS: uname reports the CPU arch ("arm64"), which the Watch Graph
+        // reads as an iOS simulator. hw.model gives "Mac15,3" etc., which
+        // wg_platform_family maps to macOS.
+        var size = 0
+        sysctlbyname("hw.model", nil, &size, nil, 0)
+        var model = [CChar](repeating: 0, count: max(size, 1))
+        sysctlbyname("hw.model", &model, &size, nil, 0)
+        let identifier = String(cString: model)
+        self.deviceModel = identifier.isEmpty ? "Mac" : identifier
+    }
+
+    var sessionCount: Int {
+        UserDefaults.standard.integer(forKey: sessionCountKey)
+    }
+
+    func incrementSessionAndUpsert() {
+        let next = sessionCount + 1
+        UserDefaults.standard.set(next, forKey: sessionCountKey)
+        upsert(reason: "session_started")
+    }
+
+    func upsert(reason: String) {
+        Task { _ = await upsertNowReturningError(reason: reason) }
+    }
+
+    @discardableResult
+    func upsertNowReturningError(reason: String = "diagnostic") async -> String? {
+        lastReason = reason
+        lastAttemptAt = Date()
+        totalUpserts += 1
+        let payload = makePayload()
+        do {
+            try await SupabaseManager.shared.client
+                .from("device_sessions")
+                .upsert(payload, onConflict: "device_id")
+                .execute()
+            totalSuccesses += 1
+            lastSuccessAt = Date()
+            lastError = nil
+            return nil
+        } catch {
+            let message = error.localizedDescription
+            lastError = "\(reason): \(message)"
+            return message
+        }
+    }
+
+    private func makePayload() -> [String: AnyJSON] {
+        let auth = AuthViewModel.shared
+        let userId = auth.currentUser?.id.uuidString
+        let isAuth = userId != nil
+
+        var payload: [String: AnyJSON] = [
+            "device_id": .string(TVDeviceIdentity.shared.deviceId),
+            "is_guest": .bool(auth.isGuest && !isAuth),
+            "is_authenticated": .bool(isAuth),
+            "services": .array(Array(auth.selectedServices).map { .string($0) }),
+            "service_count": .integer(auth.selectedServices.count),
+            "onboarding_complete": .bool(auth.hasCompletedOnboarding),
+            "session_count": .integer(sessionCount),
+            "last_seen_at": .string(ISO8601DateFormatter().string(from: Date())),
+            "os_version": .string(MacSystem.osVersion),
+            "device_model": .string(deviceModel)
+        ]
+        if let userId { payload["user_id"] = .string(userId) }
+        if let email = auth.currentUser?.email, !email.isEmpty {
+            payload["email"] = .string(email)
+        }
+        let info = Bundle.main.infoDictionary
+        if let version = info?["CFBundleShortVersionString"] as? String {
+            payload["app_version"] = .string(version)
+        }
+        if let build = info?["CFBundleVersion"] as? String {
+            payload["build_number"] = .string(build)
+        }
+        return payload
+    }
+}
+
+// MARK: - ProfileStatsService
+
+@MainActor
+@Observable
+final class ProfileStatsService {
+    static let shared = ProfileStatsService()
+
+    var showsCount: Int = UserDefaults.standard.integer(forKey: "gs.tv.stats.showsCount")
+    var hoursWatched: Double = UserDefaults.standard.double(forKey: "gs.tv.stats.hoursWatched")
+    var devicesCount: Int = max(1, UserDefaults.standard.integer(forKey: "gs.tv.stats.devicesCount"))
+    var isRefreshing: Bool = false
+    var lastError: String?
+
+    private init() {}
+
+    var servicesCount: Int {
+        AuthViewModel.shared.selectedServices.count
+    }
+
+    /// Refreshes stats from Supabase — mirrors the iOS ProfileStatsService.
+    /// Calls the existing get_profile_stats RPC for shows/hours, and counts
+    /// device_sessions rows for devices. Persists to UserDefaults so the UI
+    /// never flashes to zero on cold launch. On failure, cached values are
+    /// left untouched and lastError is set. Never crashes or blocks the UI.
+    func refresh() async {
+        isRefreshing = true
+        defer { isRefreshing = false }
+
+        async let engagementTask: Void = refreshEngagement()
+        async let devicesTask: Void = refreshDevices()
+        _ = await (engagementTask, devicesTask)
+    }
+
+    // MARK: - Private
+
+    private func refreshEngagement() async {
+        let auth = AuthViewModel.shared
+
+        // Skip silently for guests / signed-out viewers.
+        guard auth.isAuthenticated, let uid = auth.currentUser?.id.uuidString else {
+            return
+        }
+
+        let params: [String: String] = ["p_user_id": uid]
+
+        do {
+            let rows: [TVProfileStatsRow] = try await SupabaseManager.shared.client
+                .rpc("get_profile_stats", params: params)
+                .execute()
+                .value
+
+            guard let stats = rows.first else {
+                lastError = "get_profile_stats returned no rows"
+                return
+            }
+
+            self.showsCount = stats.shows_count
+            self.hoursWatched = stats.hours_watched
+
+            UserDefaults.standard.set(showsCount, forKey: "gs.tv.stats.showsCount")
+            UserDefaults.standard.set(hoursWatched, forKey: "gs.tv.stats.hoursWatched")
+            lastError = nil
+        } catch {
+            lastError = error.localizedDescription
+        }
+    }
+
+    private func refreshDevices() async {
+        guard let uid = AuthViewModel.shared.currentUser?.id.uuidString else {
+            return
+        }
+        do {
+            let rows: [TVDeviceCountRow] = try await SupabaseManager.shared.client
+                .from("device_sessions")
+                .select("device_id")
+                .eq("user_id", value: uid)
+                .execute()
+                .value
+            let count = max(1, rows.count)
+            self.devicesCount = count
+            UserDefaults.standard.set(count, forKey: "gs.tv.stats.devicesCount")
+        } catch {
+            lastError = error.localizedDescription
+        }
+    }
+}
+
+// MARK: - Decoding helpers
+
+nonisolated private struct TVProfileStatsRow: Decodable, Sendable {
+    let shows_count: Int
+    let hours_watched: Double
+}
+
+nonisolated private struct TVDeviceCountRow: Decodable, Sendable {
+    let device_id: String
+}
+
+// MARK: - SupabaseSchemaProbe (no-op stub)
+
+/// tvOS stub: shared views on iOS show a setup banner when Supabase tables
+/// are missing. The Apple TV install doesn't actively manage the schema, so
+/// every probe simply reports `.unknown` and the banner stays hidden.
+@MainActor
+@Observable
+final class SupabaseSchemaProbe {
+    static let shared = SupabaseSchemaProbe()
+
+    enum CheckState: Equatable {
+        case unknown
+        case checking
+        case ok
+        case tableMissing
+        case rlsBlocked
+        case columnMissing(String)
+        case notNullViolation(String)
+        case error(String)
+
+        var isFailure: Bool {
+            switch self {
+            case .ok, .unknown, .checking: return false
+            default: return true
+            }
+        }
+    }
+
+    struct TableCheck: Identifiable, Equatable {
+        var id: String { name }
+        let name: String
+        let purpose: String
+        let writeProbe: Bool
+        var read: CheckState = .unknown
+        var write: CheckState = .unknown
+    }
+
+    private(set) var checks: [TableCheck] = []
+    private(set) var isProbing: Bool = false
+    private(set) var lastProbedAt: Date?
+
+    var hasIssues: Bool { false }
+    var passingCount: Int { 0 }
+    var totalCount: Int { 0 }
+
+    private init() {}
+
+    /// No-op for tvOS — the Apple TV install doesn't drive schema probes.
+    func probeAll() async {
+        lastProbedAt = Date()
+    }
+}
+
