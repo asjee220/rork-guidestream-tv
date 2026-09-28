@@ -10,14 +10,14 @@
 import Foundation
 import SwiftUI
 
-nonisolated struct MacEveryonesItem: Identifiable, Sendable {
+nonisolated struct MacEveryonesItem: Identifiable, Sendable, Codable {
     let result: TVTMDBResult
     let rank: Int
     let providerName: String?
     var id: Int { result.id }
 }
 
-nonisolated struct MacComingItem: Identifiable, Sendable {
+nonisolated struct MacComingItem: Identifiable, Sendable, Codable {
     let result: TVTMDBResult
     let badge: String
     let meta: String
@@ -126,6 +126,7 @@ final class MacHomeModel {
     func loadAll(force: Bool = false) async {
         if !force, let lastLoad, Date().timeIntervalSince(lastLoad) < 300 { return }
         lastLoad = Date()
+        restoreSnapshot()
         async let trendingTask = (try? TVTMDBService.shared.getTrending()) ?? []
         async let onAirTask = (try? TVTMDBService.shared.getOnTheAir()) ?? []
         async let sportsTask = TVSportsService.shared.fetchAll()
@@ -149,6 +150,71 @@ final class MacHomeModel {
         async let parityTask: Void = buildParityRails()
         async let continueTask: Void = buildContinueWatching()
         _ = await (heroTask, everyoneTask, comingTask, popularTask, creatorsTask, recommendedTask, pickTask, parityTask, continueTask)
+        persistSnapshot()
+    }
+
+    // MARK: - Snapshot (same pattern as iOS HomeSnapshotStore / tvOS TVHomeSnapshotStore)
+
+    /// Paints the last full load before any request goes out, so a warm open
+    /// shows Home instantly; the network load then replaces it in place.
+    /// Live sports, live creators and creator uploads are left out — they are
+    /// time-sensitive.
+    private func restoreSnapshot() {
+        guard trending.isEmpty, heroItems.isEmpty,
+              let snap = TVHomeSnapshotStore.load(MacHomeSnapshot.self),
+              !snap.trending.isEmpty else { return }
+        trending = snap.trending
+        onAir = snap.onAir
+        ended = snap.ended
+        providerNames = snap.providerNames
+        heroItems = snap.heroItems
+        recommendedTitles = snap.recommendedTitles
+        todaysPick = snap.todaysPick
+        todaysPickBackdropUrl = snap.todaysPickBackdropUrl
+        everyonesWatching = snap.everyonesWatching
+        comingToStreaming = snap.comingToStreaming
+        popularOnService = snap.popularOnService
+        recommendedCreators = snap.recommendedCreators
+        followedNewEpisodes = snap.followedNewEpisodes
+        newThisWeek = snap.newThisWeek
+        leavingSoon = snap.leavingSoon
+        continueWatching = snap.continueWatching.map { c in
+            MacContinueItem(row: c.row, posterUrl: c.posterUrl,
+                            service: c.serviceId.flatMap { id in StreamingCatalog.all.first { $0.id == id } })
+        }
+        if !snap.aroundTheWorld.isEmpty {
+            aroundTheWorld = snap.aroundTheWorld
+            aroundCountry = CountryCatalog.countryOfDay
+            aroundProviderName = snap.aroundProviderName
+        }
+        composeHeroEntries()
+        isLoading = false
+    }
+
+    private func persistSnapshot() {
+        guard !trending.isEmpty, !heroItems.isEmpty else { return }
+        var snap = MacHomeSnapshot()
+        snap.trending = trending
+        snap.onAir = onAir
+        snap.ended = ended
+        snap.providerNames = providerNames
+        snap.heroItems = heroItems
+        snap.recommendedTitles = recommendedTitles
+        snap.todaysPick = todaysPick
+        snap.todaysPickBackdropUrl = todaysPickBackdropUrl
+        snap.everyonesWatching = everyonesWatching
+        snap.comingToStreaming = comingToStreaming
+        snap.popularOnService = popularOnService
+        snap.recommendedCreators = recommendedCreators
+        snap.followedNewEpisodes = followedNewEpisodes
+        snap.newThisWeek = newThisWeek
+        snap.leavingSoon = leavingSoon
+        snap.continueWatching = continueWatching.map {
+            MacHomeSnapshot.ContinueRow(row: $0.row, posterUrl: $0.posterUrl, serviceId: $0.service?.id)
+        }
+        snap.aroundTheWorld = aroundTheWorld
+        snap.aroundProviderName = aroundProviderName
+        TVHomeSnapshotStore.save(snap)
     }
 
     // MARK: - Builders (ported from TVHomeView)
@@ -385,4 +451,31 @@ final class MacHomeModel {
             )
         }
     }
+}
+
+/// What Home last rendered, written to Caches via TVHomeSnapshotStore.
+nonisolated private struct MacHomeSnapshot: Codable, Sendable {
+    struct ContinueRow: Codable, Sendable {
+        let row: TVContinueWatchingRow
+        let posterUrl: String?
+        let serviceId: String?
+    }
+    var trending: [TVTMDBResult] = []
+    var onAir: [TVTMDBResult] = []
+    var ended: [TVTMDBResult] = []
+    var providerNames: [Int: String] = [:]
+    var heroItems: [TVTMDBResult] = []
+    var recommendedTitles: [TVRecommendedTitle] = []
+    var todaysPick: TVStreamingRelease?
+    var todaysPickBackdropUrl: String?
+    var everyonesWatching: [MacEveryonesItem] = []
+    var comingToStreaming: [MacComingItem] = []
+    var popularOnService: [String: [TVTMDBResult]] = [:]
+    var recommendedCreators: [TVRecommendedCreator] = []
+    var followedNewEpisodes: [TVNewEpisodeRow] = []
+    var newThisWeek: [TVStreamingRelease] = []
+    var leavingSoon: [TVExpiringRow] = []
+    var continueWatching: [ContinueRow] = []
+    var aroundTheWorld: [TVTMDBResult] = []
+    var aroundProviderName: String?
 }

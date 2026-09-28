@@ -12,7 +12,7 @@ import Foundation
 
 // MARK: - Model
 
-nonisolated struct TVReelItem: Identifiable, Hashable, Sendable {
+nonisolated struct TVReelItem: Identifiable, Hashable, Sendable, Codable {
     /// canonicalTitleId for content, "sponsored-<advertiser>-<slot>" for ads.
     let id: String
     let tmdbId: Int
@@ -44,6 +44,10 @@ nonisolated struct TVReelItem: Identifiable, Hashable, Sendable {
 @MainActor
 @Observable
 final class TVReelsViewModel {
+    /// One feed per app session (Mac): the Reels tab reuses it instead of
+    /// rebuilding on every visit, and MacMainView prewarms it after launch.
+    static let shared = TVReelsViewModel()
+
     private(set) var reels: [TVReelItem] = []
     private(set) var isLoading: Bool = false
     private(set) var isLoadingMore: Bool = false
@@ -115,25 +119,40 @@ final class TVReelsViewModel {
 
     func load() async {
         guard reels.isEmpty, !isLoading else { return }
-        isLoading = true
-        defer { isLoading = false }
 
-        await TVAffiliateService.shared.fetchIfNeeded()
-
-        // For You leads, same as the phone: what the viewer already saves,
-        // then popular, then what is on the air.
-        let mine = await forYouResults()
-        let trending = (try? await TVTMDBService.shared.getTrending()) ?? []
-        let firstBatch = interleave(mine, trending)
-
-        var built = await buildReels(from: firstBatch)
-        if built.count < 8 {
-            let onAir = (try? await TVTMDBService.shared.getOnTheAir()) ?? []
-            built += await buildReels(from: onAir)
+        // Warm open: last feed from disk, painted before any request.
+        if let cached = MacReelsSnapshot.load(), !cached.isEmpty {
+            reels = cached
+            seenIds = Set(cached.map(\.canonicalTitleId))
+            await TVSocialService.shared.loadState(for: cached.map(\.canonicalTitleId))
+            return
         }
-        reels = weaveSponsored(into: built)
+
+        isLoading = true
+        // For You leads, same as the phone: popular on the viewer's services,
+        // interleaved with trending. Sources fetched concurrently (no ads on
+        // Mac, so no affiliate fetch in front of them).
+        async let mineTask = forYouResults()
+        async let trendingTask = (try? TVTMDBService.shared.getTrending()) ?? []
+        let firstBatch = interleave(await mineTask, await trendingTask)
+
+        // First paint: resolve only enough trailers to start playing, then
+        // build the rest behind the first reel.
+        let head = Array(firstBatch.prefix(Self.firstPaintCount))
+        let tail = Array(firstBatch.dropFirst(Self.firstPaintCount))
+        reels = await buildReels(from: head, width: Self.firstPaintCount)
+        isLoading = false
+
+        reels += await buildReels(from: tail, width: 4)
+        if reels.count < 8 {
+            let onAir = (try? await TVTMDBService.shared.getOnTheAir()) ?? []
+            reels += await buildReels(from: onAir, width: 4)
+        }
+        MacReelsSnapshot.save(reels)
         await TVSocialService.shared.loadState(for: reels.map(\.canonicalTitleId))
     }
+
+    private static let firstPaintCount = 6
 
     /// Called as the viewer nears the end of the feed.
     func loadMoreIfNeeded(currentIndex: Int) async {
@@ -167,14 +186,17 @@ final class TVReelsViewModel {
     /// The viewer's own watchlist, plus popular movies on the services they
     /// actually subscribe to — the phone's For You shape.
     private func forYouResults() async -> [TVTMDBResult] {
-        var out = (try? await TVTMDBService.shared.getPopularTV()) ?? []
-        let owned = AuthViewModel.shared.selectedServices
-        if !owned.isEmpty {
-            for providerId in owned.compactMap({ Self.tmdbProviderId[$0] }).prefix(2) {
-                out += await TVTMDBService.shared.getPopularMoviesOnService(tmdbProviderId: providerId)
+        let providers = Array(AuthViewModel.shared.selectedServices.compactMap { Self.tmdbProviderId[$0] }.prefix(2))
+        async let popular = (try? TVTMDBService.shared.getPopularTV()) ?? []
+        let movies = await withTaskGroup(of: (Int, [TVTMDBResult]).self) { group in
+            for (i, id) in providers.enumerated() {
+                group.addTask { (i, await TVTMDBService.shared.getPopularMoviesOnService(tmdbProviderId: id)) }
             }
+            var out: [(Int, [TVTMDBResult])] = []
+            for await r in group { out.append(r) }
+            return out.sorted { $0.0 < $1.0 }.flatMap(\.1)
         }
-        return out
+        return await popular + movies
     }
 
     private func comingSoonResults() async -> [TVTMDBResult] {
@@ -210,7 +232,7 @@ final class TVReelsViewModel {
 
     /// Resolves verified keys for a batch and drops anything with no playable
     /// trailer — a reel with nothing to play is not a reel.
-    private func buildReels(from results: [TVTMDBResult]) async -> [TVReelItem] {
+    private func buildReels(from results: [TVTMDBResult], width: Int = 4) async -> [TVReelItem] {
         var fresh: [TVTMDBResult] = []
         for r in results {
             let id = r.canonicalTitleId
@@ -221,9 +243,10 @@ final class TVReelsViewModel {
         guard !fresh.isEmpty else { return [] }
 
         var keysById: [String: [String]] = [:]
-        // Two at a time, same reason the hero resolves in chunks.
-        for chunk in stride(from: 0, to: fresh.count, by: 2).map({
-            Array(fresh[$0..<min($0 + 2, fresh.count)])
+        // tvOS resolves two at a time to spare the Apple TV's CPU; a Mac has
+        // headroom, so the chunk is wider.
+        for chunk in stride(from: 0, to: fresh.count, by: width).map({
+            Array(fresh[$0..<min($0 + width, fresh.count)])
         }) {
             await withTaskGroup(of: (String, [String]).self) { group in
                 for r in chunk {
@@ -279,4 +302,29 @@ final class TVReelsViewModel {
         "appletv": 350, "paramount": 2303, "peacock": 386, "starz": 43,
         "showtime": 37, "crunchyroll": 283, "youtube": 192
     ]
+}
+
+/// Last built Reels feed, in Caches. Six hours, so trailers stay fresh-ish
+/// while a relaunch still opens on a playable reel immediately.
+nonisolated enum MacReelsSnapshot {
+    private struct Envelope: Codable { let savedAt: Date; let reels: [TVReelItem] }
+    private static let maxAge: TimeInterval = 6 * 60 * 60
+    private static var url: URL? {
+        FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first?
+            .appendingPathComponent("mac-reels-snapshot-v1.json")
+    }
+    static func load() -> [TVReelItem]? {
+        guard let url, let data = try? Data(contentsOf: url),
+              let env = try? JSONDecoder().decode(Envelope.self, from: data),
+              Date().timeIntervalSince(env.savedAt) < maxAge else { return nil }
+        return env.reels
+    }
+    static func save(_ reels: [TVReelItem]) {
+        guard let url, !reels.isEmpty else { return }
+        let env = Envelope(savedAt: Date(), reels: reels)
+        Task.detached(priority: .utility) {
+            guard let data = try? JSONEncoder().encode(env) else { return }
+            try? data.write(to: url, options: .atomic)
+        }
+    }
 }

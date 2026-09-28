@@ -68,6 +68,12 @@ struct MacMainView: View {
         .sheet(item: $openGameItem) { game in MacGameSheet(game: game) }
         .sheet(item: $openCreatorRef) { ref in MacCreatorSheet(ref: ref) }
         .sheet(isPresented: $showAsk) { MacAskSheet(onOpenTitle: { openRef = $0 }) }
+        .task {
+            // Prewarm Reels behind Home, like the phone's trailer prefetch,
+            // so the tab opens on a playable reel.
+            try? await Task.sleep(for: .seconds(3))
+            await TVReelsViewModel.shared.load()
+        }
         .onReceive(NotificationCenter.default.publisher(for: MacCommand.name)) { note in
             guard let value = note.object as? String else { return }
             if value == "sidebar" { collapsed.toggle() }

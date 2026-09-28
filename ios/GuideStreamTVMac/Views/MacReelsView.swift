@@ -11,7 +11,7 @@
 import SwiftUI
 
 struct MacReelsView: View {
-    @State private var model = TVReelsViewModel()
+    @State private var model = TVReelsViewModel.shared
     @State private var social = TVSocialService.shared
     @State private var streams = TVStreamsViewModel.shared
     @State private var index = 0
@@ -61,7 +61,9 @@ struct MacReelsView: View {
                                 if keyIndex + 1 < reel.trailerKeys.count { keyIndex += 1 } else { step(1) }
                             }
                         )
-                        .id(reel.id)
+                        // No .id: one WKWebView for the whole feed; stepping
+                        // swaps the video with loadVideoById instead of
+                        // reloading YouTube's IFrame API every reel.
                     }
                 }
                 .aspectRatio(16 / 9, contentMode: .fit)
