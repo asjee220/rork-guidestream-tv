@@ -8,64 +8,6 @@
 
 import SwiftUI
 
-// MARK: - Search
-
-struct MacSearchView: View {
-    @State private var query = ""
-    @State private var results: [TVTMDBResult] = []
-    @State private var searching = false
-    @FocusState private var focused: Bool
-    @Environment(\.openTitle) private var openTitle
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            HStack(spacing: 10) {
-                Image(systemName: "magnifyingglass").foregroundStyle(Color.white.opacity(0.4))
-                TextField("Search shows, movies and creators", text: $query)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 15))
-                    .focused($focused)
-                if searching { ProgressView().controlSize(.small) }
-            }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 12)
-            .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 14))
-            .overlay(RoundedRectangle(cornerRadius: 14).stroke(MacColor.hairline, lineWidth: 1))
-
-            if results.isEmpty {
-                Text(query.isEmpty ? "Type a title to see where it's streaming." : (searching ? "" : "No matches for \u{201C}\(query)\u{201D}."))
-                    .font(.system(size: 13))
-                    .foregroundStyle(MacColor.text2)
-                Spacer()
-            } else {
-                ScrollView {
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: MacLayout.posterWidth), spacing: 14)],
-                              alignment: .leading, spacing: 18) {
-                        ForEach(results) { r in
-                            MacPosterCard(title: r.displayName,
-                                          subtitle: [r.isTV ? "Series" : "Movie", r.year.map(String.init)].compactMap { $0 }.joined(separator: " · "),
-                                          posterUrl: r.posterUrl) { openTitle(MacTitleRef(result: r)) }
-                        }
-                    }
-                }
-            }
-        }
-        .padding(MacLayout.contentPadding)
-        .onAppear { focused = true }
-        .task(id: query) {
-            let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard q.count >= 2 else { results = []; return }
-            try? await Task.sleep(for: .milliseconds(300))
-            guard !Task.isCancelled else { return }
-            searching = true
-            defer { searching = false }
-            results = ((try? await TVTMDBService.shared.searchContent(query: q)) ?? [])
-                .filter { $0.posterPath != nil }
-            WatchIntentLogger.shared.log(eventType: .searchQuery, metadata: ["query": q, "results": results.count, "surface": "mac"])
-        }
-    }
-}
-
 // MARK: - Watchlist
 
 struct MacWatchlistView: View {
