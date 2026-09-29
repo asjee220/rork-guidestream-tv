@@ -73,6 +73,14 @@ class StreamsViewModel private constructor(context: Context) {
     private val _newEpisodes = MutableStateFlow<List<NewEpisodeRow>>(emptyList())
     val newEpisodes: StateFlow<List<NewEpisodeRow>> = _newEpisodes.asStateFlow()
 
+    /**
+     * One row per saved title — its newest episode — from the
+     * `new_episodes_latest` view. Backs the Home rail only; See all and
+     * creator pages keep reading every row from [newEpisodes].
+     */
+    private val _latestNewEpisodes = MutableStateFlow<List<NewEpisodeRow>>(emptyList())
+    val latestNewEpisodes: StateFlow<List<NewEpisodeRow>> = _latestNewEpisodes.asStateFlow()
+
     private val _latestContentAt = MutableStateFlow<Map<String, Long>>(emptyMap())
     val latestContentAt: StateFlow<Map<String, Long>> = _latestContentAt.asStateFlow()
 
@@ -378,6 +386,7 @@ class StreamsViewModel private constructor(context: Context) {
             val titleIds = mine.map { it.titleId }
             if (titleIds.isEmpty()) {
                 _newEpisodes.value = emptyList()
+                _latestNewEpisodes.value = emptyList()
                 return
             }
             val tmdbIds = titleIds.filter { TitleId.tmdbId(it) != null }
@@ -422,6 +431,29 @@ class StreamsViewModel private constructor(context: Context) {
                 allRows.addAll(nonTmdbRows)
             }
             _newEpisodes.value = allRows
+                .filter { isNewForViewer(it) }
+                .sortedByDescending { it.releasedAt }
+                .take(20)
+
+            // Home rail: newest episode per title, same ids, window and caps.
+            val latestRows = mutableListOf<NewEpisodeRow>()
+            for (ids in listOf(tmdbIds, nonTmdbIds)) {
+                if (ids.isEmpty()) continue
+                latestRows.addAll(
+                    SupabaseManager.client.postgrest
+                        .from("new_episodes_latest")
+                        .select {
+                            filter {
+                                isIn("title_id", ids)
+                                gte("released_at", backlogCutoff)
+                            }
+                            order("released_at", Order.DESCENDING)
+                            limit(20)
+                        }
+                        .decodeList<NewEpisodeRow>()
+                )
+            }
+            _latestNewEpisodes.value = latestRows
                 .filter { isNewForViewer(it) }
                 .sortedByDescending { it.releasedAt }
                 .take(20)
@@ -645,6 +677,7 @@ class StreamsViewModel private constructor(context: Context) {
     fun clearLocalCache() {
         _userStreams.value = emptyList()
         _newEpisodes.value = emptyList()
+        _latestNewEpisodes.value = emptyList()
         _watchedIds.value = emptySet()
         _latestContentAt.value = emptyMap()
         _latestContentKind.value = emptyMap()

@@ -212,7 +212,8 @@ fun HomeScreen(
     val latestContentAt by streamsVm.latestContentAt.collectAsStateWithLifecycle()
     val latestContentKind by streamsVm.latestContentKind.collectAsStateWithLifecycle()
     val seenContentAt by streamsVm.seenContentAt.collectAsStateWithLifecycle()
-    val newEpisodes by streamsVm.newEpisodes.collectAsStateWithLifecycle()
+    // Home rail reads newest-per-title (new_episodes_latest); See all reads every row.
+    val newEpisodes by streamsVm.latestNewEpisodes.collectAsStateWithLifecycle()
     val selectedServices by authVm.selectedServices.collectAsStateWithLifecycle()
 
     LaunchedEffect(Unit) { homeVm.loadAll() }

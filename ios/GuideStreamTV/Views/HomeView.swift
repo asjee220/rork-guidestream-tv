@@ -698,10 +698,10 @@ struct HomeView: View {
                         // empty because liveNewEpisodes also backs off to onAir/trending,
                         // and all three are empty for the first moments of a cold launch —
                         // an empty SectionGlassCard reads as a broken rail.
-                        if !liveNewEpisodes.isEmpty {
+                        if !railNewEpisodes.isEmpty {
                             NewEpisodesSection(
                                 sectionTitle: (streams.userStreams.isEmpty && !trending.isEmpty) ? "Trending This Week" : "New Episodes",
-                                episodes: liveNewEpisodes,
+                                episodes: railNewEpisodes,
                                 onSeeAll: {
                                     WatchIntentLogger.shared.log(
                                         eventType: .cardTapped,
@@ -2984,15 +2984,21 @@ struct HomeView: View {
 
     /// Prefer live Supabase rows; otherwise fall back to TMDB on-air, then trending. Never returns mock data,
     /// and never returns titles that don't have a verified streaming provider.
-    var liveNewEpisodes: [Episode] {
-        if streams.newEpisodes.isEmpty {
+    var liveNewEpisodes: [Episode] { liveEpisodes(from: streams.newEpisodes) }
+
+    /// Home rail: newest episode per title (`new_episodes_latest`).
+    /// See all keeps `liveNewEpisodes`, every row.
+    var railNewEpisodes: [Episode] { liveEpisodes(from: streams.latestNewEpisodes) }
+
+    private func liveEpisodes(from rows: [NewEpisodeRow]) -> [Episode] {
+        if rows.isEmpty {
             let onAirEpisodes = tmdbAsEpisodes(onAir)
             if !onAirEpisodes.isEmpty { return onAirEpisodes }
             let trendingEpisodes = tmdbAsEpisodes(trending)
             if !trendingEpisodes.isEmpty { return trendingEpisodes }
             return []
         }
-        return streams.newEpisodes.compactMap { row -> Episode? in
+        return rows.compactMap { row -> Episode? in
             let kind = SourceKind.from(titleId: row.titleId)
             let raw = (row.platform ?? "").trimmingCharacters(in: .whitespaces)
             let platformName = raw.uppercased()

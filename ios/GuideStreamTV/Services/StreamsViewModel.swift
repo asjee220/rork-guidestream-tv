@@ -24,6 +24,10 @@ final class StreamsViewModel {
 
     var userStreams: [UserStream] = []
     var newEpisodes: [NewEpisodeRow] = []
+    /// One row per saved title — its newest episode — from the
+    /// `new_episodes_latest` view. Backs the Home rail only; See all and
+    /// creator pages keep reading every row from `newEpisodes`.
+    var latestNewEpisodes: [NewEpisodeRow] = []
     /// Maps title_id → most-recent content timestamp from `title_recency`.
     /// Populated by `fetchLatestContentDates()` so sorters can rank by recency.
     var latestContentAt: [String: Date] = [:]
@@ -162,6 +166,7 @@ final class StreamsViewModel {
             let titleIds = mine.map { $0.titleId }
             guard !titleIds.isEmpty else {
                 newEpisodes = []
+                latestNewEpisodes = []
                 return
             }
 
@@ -215,6 +220,24 @@ final class StreamsViewModel {
                 return da > db
             }
             self.newEpisodes = Array(sorted.prefix(20))
+
+            // Home rail: newest episode per title, same ids, window and caps.
+            var latestRows: [NewEpisodeRow] = []
+            for ids in [tmdbIds, nonTmdbIds] where !ids.isEmpty {
+                let batch: [NewEpisodeRow] = try await SupabaseManager.shared.client
+                    .from("new_episodes_latest")
+                    .select()
+                    .in("title_id", values: ids)
+                    .gte("released_at", value: backlogCutoff)
+                    .order("released_at", ascending: false)
+                    .limit(20)
+                    .execute()
+                    .value
+                latestRows.append(contentsOf: batch)
+            }
+            self.latestNewEpisodes = Array(latestRows.sorted {
+                ($0.releasedAt ?? Date.distantPast) > ($1.releasedAt ?? Date.distantPast)
+            }.prefix(20))
         } catch {
             self.lastError = error.localizedDescription
             print("[Streams] fetchNewEpisodes failed: \(error.localizedDescription)")
@@ -621,6 +644,7 @@ final class StreamsViewModel {
     func clearLocalCache() {
         self.userStreams = []
         self.newEpisodes = []
+        self.latestNewEpisodes = []
         self.seenContentAt = [:]
         self.latestContentAt = [:]
         self.latestContentKind = [:]

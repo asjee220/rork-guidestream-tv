@@ -82,7 +82,8 @@ enum TVHomeRailsService {
 
     private static var client: SupabaseClient { SupabaseManager.shared.client }
 
-    /// New episodes and uploads for the given saved title ids, newest first.
+    /// Newest episode per saved title (`new_episodes_latest`), newest first.
+    /// Home rail only.
     /// TMDB ids and creator ids are queried separately with their own cap,
     /// exactly as the phone does, so a busy creator cannot crowd out shows.
     static func fetchNewEpisodes(forTitleIds titleIds: [String]) async -> [TVNewEpisodeRow]? {
@@ -94,7 +95,7 @@ enum TVHomeRailsService {
             var rows: [TVNewEpisodeRow] = []
             for ids in [tmdbIds, otherIds] where !ids.isEmpty {
                 let batch: [TVNewEpisodeRow] = try await client
-                    .from("new_episodes")
+                    .from("new_episodes_latest")
                     .select("id,title_id,title,title_name,episode_title,season,episode,season_number,episode_number,platform,poster_url,thumbnail_url,synopsis,released_at")
                     .in("title_id", values: ids)
                     .gte("released_at", value: cutoff)
