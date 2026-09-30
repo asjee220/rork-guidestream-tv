@@ -797,7 +797,9 @@ struct TVTitleSheet: View {
                             .foregroundStyle(TVTheme.textTertiary)
                     }
                 }
-                .frame(width: 420, alignment: .leading)
+                .frame(width: 380, alignment: .leading)
+                .padding(.horizontal, 20)
+                .padding(.bottom, 20)
             }
         }
         .buttonStyle(.card)
