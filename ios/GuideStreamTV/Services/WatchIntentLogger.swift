@@ -9,6 +9,9 @@ import Supabase
 enum IntentEventType: String {
     case cardTapped = "card_tapped"
     case deeplinkFired = "deeplink_fired"
+    // "Did it open?" card on return from a deep link (DeepLinkReturnCheck).
+    case deeplinkConfirmed = "deeplink_confirmed"
+    case deeplinkFailed = "deeplink_failed"
     case notificationOpened = "notification_opened"
     case searchQuery = "search_query"
     case trailerWatched = "trailer_watched"

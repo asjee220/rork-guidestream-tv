@@ -403,6 +403,20 @@ fun ShowDetailScreen(
                             }
                         },
                     )
+                    // A — report a wrong service, a missing one, or a dead link.
+                    if (!isResolvingSources) {
+                        com.rork.guidestreamtvandroid.ui.components.ReportProblemLink(
+                            context = com.rork.guidestreamtvandroid.data.remote.ReportContext(
+                                entryPoint = "detail_link",
+                                titleName = detail?.name?.takeIf { it.isNotBlank() } ?: titleName,
+                                providerName = selectedSource?.name,
+                                titleId = titleId,
+                                tmdbId = TitleId.tmdbId(titleId),
+                                isTV = effectiveIsTV,
+                            ),
+                            modifier = Modifier.padding(horizontal = 20.dp),
+                        )
+                    }
                 }
 
                 // Action buttons — two rows: secondary tiles stretch across the
@@ -517,6 +531,12 @@ fun ShowDetailScreen(
                                     // title on the service's own site, in a Custom
                                     // Tab wearing GuideStream's chrome, rather than
                                     // dropping the viewer into Chrome.
+                                    com.rork.guidestreamtvandroid.data.remote.DeepLinkReturnCheck.arm(
+                                        title = detail?.name?.takeIf { it.isNotBlank() } ?: titleName,
+                                        platform = selectedSource?.name,
+                                        tmdbId = TitleId.tmdbId(titleId),
+                                        titleId = titleId,
+                                    )
                                     openWatchLink(
                                         context = context,
                                         target = target,

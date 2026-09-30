@@ -74,6 +74,7 @@ enum StreamingDeepLinker {
                 "source": "pre_resolved"
             ]
         )
+        DeepLinkReturnCheck.shared.arm(title: title, platform: platform, tmdbId: tmdbId, titleSlug: titleSlug)
 
         Task { @MainActor in
             if let tmdbId { await StreamsViewModel.shared.markWatchlistSeenIfSaved(titleId: String(tmdbId)) }
@@ -92,7 +93,8 @@ enum StreamingDeepLinker {
         title: String,
         tmdbId: Int? = nil,
         isTV: Bool = false,
-        titleSlug: String? = nil
+        titleSlug: String? = nil,
+        gameId: String? = nil
     ) {
         let fallback = resolve(platform: platform, title: title)
 
@@ -107,6 +109,7 @@ enum StreamingDeepLinker {
                 "source": tmdbId == nil ? "search_fallback" : "watchmode_lookup"
             ]
         )
+        DeepLinkReturnCheck.shared.arm(title: title, platform: platform, tmdbId: tmdbId, titleSlug: titleSlug, gameId: gameId)
 
         Task { @MainActor in
             if let tmdbId { await StreamsViewModel.shared.markWatchlistSeenIfSaved(titleId: String(tmdbId)) }

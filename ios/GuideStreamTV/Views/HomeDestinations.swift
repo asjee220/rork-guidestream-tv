@@ -1255,6 +1255,16 @@ struct EpisodeDetailSheet: View {
                         }
                     }
                 }
+
+                // A — report a wrong service or a link that doesn't open.
+                ReportProblemLink(context: ReportContext(
+                    entryPoint: "detail_link",
+                    titleName: title,
+                    providerName: resolvedSource?.name ?? resolvedProviderName,
+                    titleId: tmdbId.map(String.init),
+                    tmdbId: tmdbId,
+                    isTV: isTV
+                ))
             }
             .anchorPreference(key: CoachMarkAnchorKey.self, value: .bounds) {
                 ["sheet_where_to_watch": $0]

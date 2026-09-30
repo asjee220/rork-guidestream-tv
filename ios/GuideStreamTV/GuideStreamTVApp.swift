@@ -62,9 +62,15 @@ struct GuideStreamTVApp: App {
                         Task { await SportsLiveActivityController.shared.reconcile() }
                         // GUI-90: in-app review gate. Fires only on a return
                         // to the app after a qualifying action, never mid-task.
-                        reviewPrompt.appDidBecomeActive()
+                        // "Did it open?" check on return from a deep link. When
+                        // it shows, the review gate waits for the next return
+                        // so the user never gets two prompts at once.
+                        if !DeepLinkReturnCheck.shared.appDidBecomeActive() {
+                            reviewPrompt.appDidBecomeActive()
+                        }
                     case .background:
                         DeviceSessionService.shared.noteBackgrounded()
+                        DeepLinkReturnCheck.shared.noteBackgrounded()
                     default:
                         break
                     }

@@ -282,6 +282,10 @@ fun SportsWatchSheet(
                                 platformId = activeBroadcast?.lowercase(),
                                 metadata = mapOf("sport" to game.sport, "platform_name" to (activeBroadcast ?: "")),
                             )
+                            com.rork.guidestreamtvandroid.data.remote.DeepLinkReturnCheck.arm(
+                                title = gameTitle, platform = activeBroadcast,
+                                tmdbId = null, titleId = saveId, gameId = game.id,
+                            )
                             // GUI-77: land in the broadcaster's app when it is
                             // installed. This used to be an unconditional
                             // Google search URL, so it always opened a browser.
@@ -351,6 +355,20 @@ fun SportsWatchSheet(
                     )
                 }
             }
+
+            // D — report a wrong channel or start time for this game.
+            com.rork.guidestreamtvandroid.ui.components.ReportProblemLink(
+                context = com.rork.guidestreamtvandroid.data.remote.ReportContext(
+                    kind = com.rork.guidestreamtvandroid.data.remote.ContentReportKind.SPORTS,
+                    entryPoint = "sports_link",
+                    titleName = gameTitle,
+                    providerName = activeBroadcast,
+                    titleId = saveId,
+                    gameId = game.id,
+                ),
+                prompt = "Wrong channel or time?",
+                modifier = Modifier.padding(horizontal = 20.dp).padding(top = 4.dp),
+            )
 
             // Secondary pills: full schedule, game details
             Row(

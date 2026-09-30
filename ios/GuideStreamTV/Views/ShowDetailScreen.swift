@@ -1478,6 +1478,18 @@ struct ShowDetailScreen: View {
                 }
             }
 
+            // A — report a wrong service, a missing one, or a dead link.
+            if !(services.isEmpty && vm.isLoading) {
+                ReportProblemLink(context: ReportContext(
+                    entryPoint: "detail_link",
+                    titleName: displayTitle,
+                    providerName: activeService?.name,
+                    titleId: titleId,
+                    tmdbId: resolvedTmdbId,
+                    isTV: isTV
+                ))
+                .padding(.horizontal, 20)
+            }
         }
         .padding(.top, 24)
     }

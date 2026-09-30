@@ -644,6 +644,20 @@ fun EpisodeDetailSheet(
                         grouped = true,
                         pending = isResolvingSources,
                     )
+                    // A — report a wrong service or a link that doesn't open.
+                    if (!isResolvingSources) {
+                        com.rork.guidestreamtvandroid.ui.components.ReportProblemLink(
+                            context = com.rork.guidestreamtvandroid.data.remote.ReportContext(
+                                entryPoint = "detail_link",
+                                titleName = displayTitle,
+                                providerName = selectedSource?.name,
+                                titleId = route.titleId,
+                                tmdbId = tmdbId,
+                                isTV = isTV,
+                            ),
+                            modifier = Modifier.padding(horizontal = 20.dp),
+                        )
+                    }
                 }
 
                 // ── Latest episode ───────────────────────────────────
@@ -712,6 +726,10 @@ fun EpisodeDetailSheet(
                                         titleId = route.titleId,
                                         platformId = srcName?.lowercase(),
                                         metadata = mapOf("source" to "episode_detail_sheet"),
+                                    )
+                                    com.rork.guidestreamtvandroid.data.remote.DeepLinkReturnCheck.arm(
+                                        title = displayTitle, platform = srcName,
+                                        tmdbId = tmdbId, titleId = route.titleId,
                                     )
                                     streamsVm.markWatchlistSeenIfSaved(route.titleId)
                                     onDismiss()

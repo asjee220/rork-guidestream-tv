@@ -122,6 +122,8 @@ class MainActivity : ComponentActivity() {
                     onLaunchIntent = { handleNotificationIntent(it) },
                     initialIntent = intent,
                 )
+                // Report a problem sheets and the "Did it open?" card.
+                com.rork.guidestreamtvandroid.ui.components.ReportHost()
             }
         }
 
@@ -195,11 +197,20 @@ class MainActivity : ComponentActivity() {
         private var notificationPermissionRequestedThisProcess = false
     }
 
+    override fun onStop() {
+        super.onStop()
+        com.rork.guidestreamtvandroid.data.remote.DeepLinkReturnCheck.noteBackgrounded()
+    }
+
     override fun onResume() {
         super.onResume()
         // GUI-90: in-app review gate. Only ever fires on a return to the app
         // after a qualifying action — never mid-task.
-        ReviewPromptManager.maybePresent(this)
+        // "Did it open?" check on return from a deep link. When it shows,
+        // the review gate waits for the next return.
+        if (!com.rork.guidestreamtvandroid.data.remote.DeepLinkReturnCheck.appDidBecomeActive(this)) {
+            ReviewPromptManager.maybePresent(this)
+        }
         // Refresh FCM registration whenever the app foregrounds — mirrors
         // iOS refreshRegistrationIfAuthorized on scenePhase == .active. The
         // apns_token conflict target makes repeated calls idempotent. Never

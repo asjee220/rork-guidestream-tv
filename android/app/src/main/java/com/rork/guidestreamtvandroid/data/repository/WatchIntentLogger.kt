@@ -28,6 +28,9 @@ class WatchIntentLogger private constructor(context: Context) {
     enum class IntentEventType(val value: String) {
         CARD_TAPPED("card_tapped"),
         DEEPLINK_FIRED("deeplink_fired"),
+        // "Did it open?" card on return from a deep link (DeepLinkReturnCheck).
+        DEEPLINK_CONFIRMED("deeplink_confirmed"),
+        DEEPLINK_FAILED("deeplink_failed"),
         NOTIFICATION_OPENED("notification_opened"),
         SEARCH_QUERY("search_query"),
         TRAILER_WATCHED("trailer_watched"),

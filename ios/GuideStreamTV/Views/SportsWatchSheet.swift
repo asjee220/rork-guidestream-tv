@@ -208,6 +208,22 @@ struct SportsWatchSheet: View {
                     .padding(.horizontal, 20)
                     .padding(.top, 22)
 
+                // D — report a wrong channel or start time for this game.
+                ReportProblemLink(
+                    context: ReportContext(
+                        kind: .sports,
+                        entryPoint: "sports_link",
+                        titleName: "\(game.away.displayName) vs \(game.home.displayName)",
+                        providerName: activeBroadcast,
+                        titleId: gameSaveId,
+                        gameId: game.id
+                    ),
+                    prompt: "Wrong channel or time?"
+                )
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 20)
+                .padding(.top, 4)
+
                 secondaryPillRow
                     .padding(.horizontal, 20)
                     .padding(.top, 16)
@@ -768,7 +784,8 @@ struct SportsWatchSheet: View {
             StreamingDeepLinker.open(
                 platform: platform,
                 title: "\(game.away.displayName) vs \(game.home.displayName)",
-                titleSlug: slug
+                titleSlug: slug,
+                gameId: game.id
             )
             dismiss()
         } label: {
