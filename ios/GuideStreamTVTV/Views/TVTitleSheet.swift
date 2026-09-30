@@ -770,9 +770,11 @@ struct TVTitleSheet: View {
                 .frame(width: 420, height: 236)
                 .clipShape(.rect(cornerRadius: 14))
                 .overlay {
+                    // strokeBorder keeps the line inside the still; a centred
+                    // stroke put half of it outside, where the card platter clips it.
                     RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .stroke(isTarget ? detail.accent : Color.white.opacity(0.08),
-                                lineWidth: isTarget ? 3 : 1)
+                        .strokeBorder(isTarget ? detail.accent : Color.white.opacity(0.08),
+                                      lineWidth: isTarget ? 3 : 1)
                 }
 
                 VStack(alignment: .leading, spacing: 6) {
