@@ -126,6 +126,8 @@ struct MacGameSheet: View {
     let game: TVSportsGame
     @Environment(\.dismiss) private var dismiss
     @State private var favorites = TVTeamFavoritesService.shared
+    /// D — "Wrong channel or time?"
+    @State private var reportContext: ReportContext?
 
     var body: some View {
         VStack(spacing: 22) {
@@ -165,10 +167,24 @@ struct MacGameSheet: View {
                     }
                 }
             }
+            // D — report a wrong channel or start time for this game.
+            MacReportProblemLink(prompt: "Wrong channel or time?") {
+                reportContext = ReportContext(
+                    kind: .sports,
+                    entryPoint: "sports_link",
+                    titleName: "\(game.away.displayName) vs \(game.home.displayName)",
+                    providerName: sortedBroadcasts.first,
+                    titleId: WatchIntentLogger.titleSlug("\(game.away.abbreviation)-\(game.home.abbreviation)-\(game.sport)"),
+                    gameId: game.id
+                )
+            }
         }
         .padding(24)
         .frame(width: 560)
         .background(MacColor.navy)
+        .sheet(item: $reportContext) { ctx in
+            MacReportProblemSheet(context: ctx, onClose: { reportContext = nil })
+        }
         .onAppear {
             WatchIntentLogger.shared.log(eventType: .cardTapped,
                                          titleId: WatchIntentLogger.titleSlug("\(game.away.abbreviation)-\(game.home.abbreviation)-\(game.sport)"),

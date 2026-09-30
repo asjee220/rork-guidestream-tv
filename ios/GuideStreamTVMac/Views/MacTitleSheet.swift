@@ -45,6 +45,9 @@ struct MacTitleSheet: View {
     @State private var genreText: String?
     @State private var cadenceBadge: String?
     @State private var playingVideo: TVTitleVideo?
+    /// Report a problem (A) and the "Did it open?" return check (C).
+    @State private var reportContext: ReportContext?
+    @State private var returnPrompt: DeepLinkReturnCheck.Pending?
 
     init(ref: MacTitleRef) {
         self.ref = ref
@@ -85,8 +88,38 @@ struct MacTitleSheet: View {
             .buttonStyle(.plain)
             .keyboardShortcut(.cancelAction)
             .padding(16)
+
+            if let prompt = returnPrompt {
+                MacReturnCheckBanner(
+                    pending: prompt,
+                    onYes: {
+                        DeepLinkReturnCheck.shared.record(prompt, opened: true)
+                        returnPrompt = nil
+                    },
+                    onNo: {
+                        DeepLinkReturnCheck.shared.record(prompt, opened: false)
+                        returnPrompt = nil
+                        reportContext = prompt.reportContext
+                    },
+                    onDismiss: { returnPrompt = nil }
+                )
+                .padding(.top, 60)
+                .frame(maxWidth: .infinity, alignment: .top)
+                .transition(.move(edge: .top).combined(with: .opacity))
+            }
         }
         .frame(width: 1100, height: 800)
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in
+            DeepLinkReturnCheck.shared.noteLeft()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            if let prompt = DeepLinkReturnCheck.shared.consumeOnReturn() {
+                withAnimation(.easeOut(duration: 0.2)) { returnPrompt = prompt }
+            }
+        }
+        .sheet(item: $reportContext) { ctx in
+            MacReportProblemSheet(context: ctx, onClose: { reportContext = nil })
+        }
         .task(id: current.id) { await loadAll() }
         .sheet(item: $playingVideo) { video in
             VStack(spacing: 0) {
@@ -350,6 +383,7 @@ struct MacTitleSheet: View {
         WatchIntentLogger.shared.log(eventType: .deeplinkFired, titleId: current.titleId,
                                      platformId: Platform.from(providerName: s.name)?.catalogId ?? s.name,
                                      metadata: meta)
+        DeepLinkReturnCheck.shared.arm(title: current.title, platform: s.name, tmdbId: tmdbId, titleId: current.titleId)
         MacLinkOpener.open(url)
     }
 
@@ -533,6 +567,19 @@ struct MacTitleSheet: View {
                 }
                 if isTV, !seasonSummaries.isEmpty { detailRow("Seasons", String(seasonSummaries.count)) }
                 if let s = synopsisText { detailRow("Synopsis", s) }
+            }
+            .padding(.horizontal, 44)
+
+            // A — report a wrong service or a link that doesn't open.
+            MacReportProblemLink {
+                reportContext = ReportContext(
+                    entryPoint: "detail_link",
+                    titleName: current.title,
+                    providerName: activeSource?.name ?? resolved?.providerNameFallback,
+                    titleId: current.titleId,
+                    tmdbId: tmdbId,
+                    isTV: isTV
+                )
             }
             .padding(.horizontal, 44)
         }

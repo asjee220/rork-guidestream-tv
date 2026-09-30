@@ -34,6 +34,8 @@ struct SportsWatchSheet: View {
     /// The Where-to-Watch chip the viewer picked. Nil until they pick one, so
     /// the CTA defaults to the first subscribed service (same as iPhone).
     @State private var selectedBroadcast: String?
+    /// D — "Wrong channel or time?"
+    @State private var reportContext: ReportContext?
 
     private var awayColor: Color { game.away.primaryHex.map { Color(hex: $0) } ?? Color(white: 0.18) }
     private var homeColor: Color { game.home.primaryHex.map { Color(hex: $0) } ?? Color(white: 0.18) }
@@ -596,7 +598,22 @@ struct SportsWatchSheet: View {
         HStack(alignment: .top, spacing: 24) {
             watchButton
             watchlistButton
+            // D — report a wrong channel or start time for this game.
+            TVReportProblemButton(label: "Wrong channel or time?") {
+                reportContext = ReportContext(
+                    kind: .sports,
+                    entryPoint: "sports_link",
+                    titleName: "\(game.away.displayName) vs \(game.home.displayName)",
+                    providerName: primaryBroadcast,
+                    titleId: WatchIntentLogger.titleSlug("\(game.away.abbreviation)-\(game.home.abbreviation)-\(game.sport)"),
+                    gameId: game.id
+                )
+            }
+            .padding(.top, 14)
             Spacer(minLength: 0)
+        }
+        .fullScreenCover(item: $reportContext) { ctx in
+            TVReportProblemScreen(context: ctx, onClose: { reportContext = nil })
         }
     }
 

@@ -64,6 +64,9 @@ struct TVTitleSheet: View {
     /// subscribed services, or several rent/buy offers. One tap on the watch
     /// button still means "watch it" when there is only one answer.
     @State private var showWatchOptions = false
+    /// Report a problem (A) and the "Did it open?" return check (C).
+    @State private var reportContext: ReportContext?
+    @State private var returnPrompt: DeepLinkReturnCheck.Pending?
 
     /// Set while a launch is in flight, cleared when this app comes back to
     /// the front. tvOS asks nothing before handing off to another app, and
@@ -421,8 +424,34 @@ struct TVTitleSheet: View {
         // that worked is only ever seen for a blink; one that did not leaves
         // the failure text until the viewer moves on.
         .onChange(of: scenePhase) { _, phase in
+            if phase == .background { DeepLinkReturnCheck.shared.noteLeft() }
             guard phase == .active else { return }
             launchingService = nil
+            // C — "Did it open?", sampled at most once per 12 h.
+            if let prompt = DeepLinkReturnCheck.shared.consumeOnReturn() {
+                returnPrompt = prompt
+            }
+        }
+        .fullScreenCover(item: $returnPrompt) { prompt in
+            TVReturnCheckScreen(
+                pending: prompt,
+                onYes: {
+                    DeepLinkReturnCheck.shared.record(prompt, opened: true)
+                    returnPrompt = nil
+                },
+                onNo: {
+                    DeepLinkReturnCheck.shared.record(prompt, opened: false)
+                    returnPrompt = nil
+                    Task { @MainActor in
+                        try? await Task.sleep(for: .seconds(0.6))
+                        reportContext = prompt.reportContext
+                    }
+                },
+                onDismiss: { returnPrompt = nil }
+            )
+        }
+        .fullScreenCover(item: $reportContext) { ctx in
+            TVReportProblemScreen(context: ctx, onClose: { reportContext = nil })
         }
         .task {
             selectedServiceName = nil
@@ -879,6 +908,19 @@ struct TVTitleSheet: View {
                 if let synopsis = synopsisText {
                     detailRow("Synopsis", synopsis)
                 }
+            }
+            .padding(.horizontal, 80)
+
+            // A — report a wrong service or a link that doesn't open.
+            TVReportProblemButton(label: "Wrong service or link? Report it") {
+                reportContext = ReportContext(
+                    entryPoint: "detail_link",
+                    titleName: detail.title,
+                    providerName: selectedServiceName ?? watchOptions.first?.name ?? detail.platform,
+                    titleId: detail.titleId,
+                    tmdbId: tmdbId,
+                    isTV: isTVValue
+                )
             }
             .padding(.horizontal, 80)
         }
@@ -1428,6 +1470,7 @@ struct TVTitleSheet: View {
     /// the chip launch path.
     private func open(source: TVWatchmodeResolver.TVResolvedSource) {
         beginLaunch(serviceName: source.name)
+        DeepLinkReturnCheck.shared.arm(title: detail.title, platform: source.name, tmdbId: tmdbId, titleId: detail.titleId)
         if let deepLink = guardedDeepLink(for: source) {
             TVOSDeepLinker.open(
                 platform: source.name,
@@ -1449,6 +1492,7 @@ struct TVTitleSheet: View {
     /// returned no row for.
     private func openByName(_ serviceName: String) {
         beginLaunch(serviceName: serviceName)
+        DeepLinkReturnCheck.shared.arm(title: detail.title, platform: serviceName, tmdbId: tmdbId, titleId: detail.titleId)
         TVOSDeepLinker.open(
             platform: serviceName,
             title: detail.title,
