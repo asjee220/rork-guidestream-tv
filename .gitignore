@@ -6,3 +6,10 @@ node_modules
 # Cloudflare Functions
 functions/node_modules
 !functions/package.json
+
+# Local leftovers (moved-aside lock files, scratch output, Finder metadata)
+.DS_Store
+_stale_locks/
+_to_delete/
+Claude outputs/
+/movie-*.mp4
