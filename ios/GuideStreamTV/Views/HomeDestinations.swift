@@ -507,6 +507,10 @@ struct EpisodeDetailSheet: View {
     /// When set, drives the platform label, color, and the "Watch on" deeplink so
     /// shows show their real streaming service instead of the placeholder "HBO Max".
     @State private var resolvedSource: WatchmodeSource?
+    /// Set when the user taps a Where to Watch chip, so the initial
+    /// episode-source lookup finishing late cannot snap the Watch button
+    /// back to the primary service.
+    @State private var userPickedSource: Bool = false
     /// TMDB-resolved provider name — middle-tier fallback when Watchmode
     /// returns no usable source. Drives the platform label and badge.
     @State private var resolvedProviderName: String? = nil
@@ -907,6 +911,7 @@ struct EpisodeDetailSheet: View {
         }
         .task(id: tmdbId ?? -1) {
             adDismissed = false
+            userPickedSource = false
             episodeSourceUnavailable = false
             isResolvingEpisodeSources = false
             episodeOverview = nil
@@ -985,6 +990,11 @@ struct EpisodeDetailSheet: View {
                 let rokuPath: String? = Self.episodeRokuPath(from: epSources, resolvedSource: best)
                 let tvosPath: String? = Self.episodeTvosPath(from: epSources, resolvedSource: best)
                 await MainActor.run {
+                    // A chip tap while this was in flight owns the button now.
+                    guard !self.userPickedSource else {
+                        self.isResolvingEpisodeSources = false
+                        return
+                    }
                     if let best { self.resolvedSource = best }
                     self.episodeDeepLinkURL = url
                     self.episodeRokuURL = rokuPath
@@ -1167,6 +1177,7 @@ struct EpisodeDetailSheet: View {
     private func onWhereToWatchTap(_ source: WatchmodeSource) {
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
         resolvedSource = source
+        userPickedSource = true
         Task { await resolveEpisodeSources(for: source) }
     }
 

@@ -928,7 +928,8 @@ struct ShowDetailScreen: View {
     private func preResolvedURL(forService serviceName: String) -> URL? {
         let key = serviceName.lowercased()
         let services = vm.services
-        let match = services.first { svc in
+        // Exact name first: "Hulu on Disney+" must not fuzzy-match "Hulu".
+        let match = services.first(where: { $0.name == serviceName }) ?? services.first { svc in
             let n = svc.name.lowercased()
             if key.contains("netflix") { return n.contains("netflix") }
             if key.contains("hbo") || key.contains("max") { return n.contains("max") || n.contains("hbo") }

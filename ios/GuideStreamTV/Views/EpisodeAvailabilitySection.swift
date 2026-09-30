@@ -148,6 +148,9 @@ func gsBrandKey(for name: String) -> String {
     if s.contains("netflix") { return "netflix" }
     if s.contains("appletv") { return "appletv" }
     if s.contains("hbo") || s.contains("max") { return "max" }
+    // "Hulu on Disney+" plays inside the Disney+ app (disneyplus.com links),
+    // so the host app is the brand — check it before the "hulu" match.
+    if s.contains("ondisney") { return "disney" }
     if s.contains("hulu") { return "hulu" }
     if s.contains("disney") { return "disney" }
     if s.contains("paramount") { return "paramount" }
