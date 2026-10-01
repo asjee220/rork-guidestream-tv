@@ -147,8 +147,9 @@ struct MacReturnCheckBanner: View {
                 Text("Helps us keep links accurate").font(.system(size: 11)).foregroundStyle(MacColor.text2)
             }
             Spacer()
-            Button("Yes, it worked", action: onYes)
-            Button("No, report it", action: onNo).tint(MacColor.orange).buttonStyle(.borderedProminent)
+            // Secondary left, primary right.
+            Button("No, report it", action: onNo)
+            Button("Yes, it worked", action: onYes).tint(MacColor.orange).buttonStyle(.borderedProminent)
             Button(action: onDismiss) { Image(systemName: "xmark").font(.system(size: 10, weight: .bold)) }
                 .buttonStyle(.plain).help("Dismiss")
         }

@@ -159,6 +159,7 @@ private fun DeepLinkReturnCard(
                 Icon(Icons.Filled.Close, contentDescription = "Dismiss", tint = TextSecondary)
             }
         }
+        // Secondary left, primary right.
         Row(Modifier.padding(end = 8.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Box(
                 modifier = Modifier
@@ -167,18 +168,18 @@ private fun DeepLinkReturnCard(
                     .clip(RoundedCornerShape(12.dp))
                     .background(Color.White.copy(alpha = 0.08f))
                     .border(1.dp, Color.White.copy(alpha = 0.12f), RoundedCornerShape(12.dp))
-                    .clickable(role = Role.Button, onClick = onYes),
+                    .clickable(role = Role.Button, onClick = onNo),
                 contentAlignment = Alignment.Center,
-            ) { Text("Yes, it worked", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = Color.White) }
+            ) { Text("No, report it", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = Color.White) }
             Box(
                 modifier = Modifier
                     .weight(1f)
                     .height(48.dp)
                     .clip(RoundedCornerShape(12.dp))
                     .background(BrandOrange)
-                    .clickable(role = Role.Button, onClick = onNo),
+                    .clickable(role = Role.Button, onClick = onYes),
                 contentAlignment = Alignment.Center,
-            ) { Text("No, report it", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Color.Black) }
+            ) { Text("Yes, it worked", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Color.Black) }
         }
     }
 }

@@ -261,9 +261,10 @@ struct DeepLinkReturnCard: View {
                     }
                     .accessibilityLabel(Text("Dismiss"))
                 }
+                // Secondary left, primary right.
                 HStack(spacing: 10) {
-                    Button(action: onYes) {
-                        Text("Yes, it worked")
+                    Button(action: onNo) {
+                        Text("No, report it")
                             .scaledFont(size: 15, weight: .semibold)
                             .foregroundStyle(.white)
                             .frame(maxWidth: .infinity, minHeight: 48)
@@ -271,8 +272,8 @@ struct DeepLinkReturnCard: View {
                             .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.white.opacity(0.12)))
                     }
                     .buttonStyle(.plain)
-                    Button(action: onNo) {
-                        Text("No, report it")
+                    Button(action: onYes) {
+                        Text("Yes, it worked")
                             .scaledFont(size: 15, weight: .bold)
                             .foregroundStyle(.black)
                             .frame(maxWidth: .infinity, minHeight: 48)

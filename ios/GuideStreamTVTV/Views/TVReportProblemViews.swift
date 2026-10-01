@@ -170,8 +170,9 @@ struct TVReturnCheckScreen: View {
                     .multilineTextAlignment(.center).frame(maxWidth: 1200)
                 Text("Helps us keep links accurate").font(.system(size: 26)).foregroundStyle(TVTheme.textSecondary)
                 HStack(spacing: 24) {
-                    TVReportPill(title: "Yes, it worked", action: onYes)
-                    TVReportPill(title: "No, report it", primary: true, action: onNo)
+                    // Secondary left, primary right.
+                    TVReportPill(title: "No, report it", action: onNo)
+                    TVReportPill(title: "Yes, it worked", primary: true, action: onYes)
                 }
                 .focusSection()
             }
