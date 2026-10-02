@@ -140,13 +140,13 @@ final class DeepLinkReturnCheck {
 
     private var pending: Pending?
     private var leftApp = false
-    private let lastShownKey = "gs.deeplinkReturnCheck.lastShown"
 
     func arm(title: String, platform: String, tmdbId: Int?, titleId: String?, gameId: String? = nil) {
         let p = platform.trimmingCharacters(in: .whitespaces)
         guard !p.isEmpty, !title.isEmpty else { return }
         pending = Pending(title: title, platform: p, tmdbId: tmdbId, titleId: titleId, gameId: gameId, armedAt: Date())
         leftApp = false
+        ReturnCheckPolicy.refreshFlags()
     }
 
     func noteLeft() {
@@ -163,16 +163,24 @@ final class DeepLinkReturnCheck {
         }
         pending = nil
         leftApp = false
-        guard elapsed >= 4, elapsed <= 20 * 60 else { return nil }
-        let defaults = UserDefaults.standard
-        guard Date().timeIntervalSince1970 - defaults.double(forKey: lastShownKey) >= 12 * 60 * 60 else { return nil }
-        defaults.set(Date().timeIntervalSince1970, forKey: lastShownKey)
-        return p
+        switch ReturnCheckPolicy.decide(platform: p.platform, tmdbId: p.tmdbId, elapsed: elapsed) {
+        case .quickReturn:
+            log(p, .deeplinkQuickReturn)
+            return nil
+        case .skip:
+            return nil
+        case .ask:
+            return p
+        }
     }
 
     func record(_ p: Pending, opened: Bool) {
+        log(p, opened ? .deeplinkConfirmed : .deeplinkFailed)
+    }
+
+    private func log(_ p: Pending, _ type: IntentEventType) {
         WatchIntentLogger.shared.log(
-            eventType: opened ? .deeplinkConfirmed : .deeplinkFailed,
+            eventType: type,
             titleId: p.titleId ?? p.tmdbId.map(String.init) ?? WatchIntentLogger.titleSlug(p.title),
             platformId: p.platform,
             metadata: [
@@ -182,5 +190,74 @@ final class DeepLinkReturnCheck {
                 "seconds_away": Int(Date().timeIntervalSince(p.armedAt))
             ]
         )
+    }
+}
+
+/// Who gets asked "Did it open?" (set 1 Oct 2026, replaces "any return 12h
+/// after the last card"):
+///  * the first 2 returns from each service ask,
+///  * after that about 1 return in 10 asks,
+///  * never more than once a day,
+///  * a service or title under suspicion — recent health alert, open link
+///    report, fresh correction (`get_return_check_flags`) — always asks, at
+///    most every 4 hours,
+///  * a return under 3 seconds never asks; it is logged as
+///    deeplink_quick_return, which the "didn't open" health alert ignores.
+@MainActor
+enum ReturnCheckPolicy {
+    enum Decision { case ask, quickReturn, skip }
+
+    private static let introPerService = 2
+    private static let sampleRate = 0.1
+    private static let minInterval: TimeInterval = 24 * 60 * 60
+    private static let suspectInterval: TimeInterval = 4 * 60 * 60
+    private static let quickReturn: TimeInterval = 3
+    private static let maxAway: TimeInterval = 20 * 60
+    private static let lastShownKey = "gs.deeplinkReturnCheck.lastShown"
+    private static let countsKey = "gs.deeplinkReturnCheck.shownByService"
+
+    private static var flagProviders: Set<String> = []
+    private static var flagTitles: Set<String> = []
+    private static var flagsFetchedAt: Date?
+
+    /// Called on arm, so the list is fresh by the time the viewer returns.
+    /// At most one fetch every 30 minutes; a failed fetch retries next arm.
+    static func refreshFlags() {
+        if let t = flagsFetchedAt, Date().timeIntervalSince(t) < 30 * 60 { return }
+        flagsFetchedAt = Date()
+        Task {
+            struct Flags: Decodable { let providers: [String]; let titles: [String] }
+            do {
+                let f: Flags = try await SupabaseManager.shared.client
+                    .rpc("get_return_check_flags")
+                    .execute()
+                    .value
+                flagProviders = Set(f.providers)
+                flagTitles = Set(f.titles)
+            } catch {
+                flagsFetchedAt = nil
+            }
+        }
+    }
+
+    static func decide(platform: String, tmdbId: Int?, elapsed: TimeInterval) -> Decision {
+        if elapsed < quickReturn { return .quickReturn }
+        guard elapsed <= maxAway else { return .skip }
+        let key = platform.lowercased()
+        let defaults = UserDefaults.standard
+        let now = Date().timeIntervalSince1970
+        let sinceLast = now - defaults.double(forKey: lastShownKey)
+        let suspect = flagProviders.contains(key)
+            || (tmdbId.map { flagTitles.contains("\($0)|\(key)") } ?? false)
+        var counts = defaults.dictionary(forKey: countsKey) as? [String: Int] ?? [:]
+        let shown = counts[key] ?? 0
+        let ask = suspect
+            ? sinceLast >= suspectInterval
+            : sinceLast >= minInterval && (shown < introPerService || Double.random(in: 0..<1) < sampleRate)
+        guard ask else { return .skip }
+        defaults.set(now, forKey: lastShownKey)
+        counts[key] = shown + 1
+        defaults.set(counts, forKey: countsKey)
+        return .ask
     }
 }

@@ -15,9 +15,18 @@ import io.ktor.client.statement.HttpResponse
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.contentType
+import io.github.jan.supabase.postgrest.postgrest
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 
 /*
@@ -147,10 +156,6 @@ object DeepLinkReturnCheck {
             )
     }
 
-    private const val PREFS = "gs_prefs"
-    private const val KEY_LAST_SHOWN = "gs.deeplinkReturnCheck.lastShown"
-    private const val MIN_INTERVAL_MS = 12 * 60 * 60 * 1000L
-    private const val MIN_AWAY_MS = 4_000L
     private const val MAX_AWAY_MS = 20 * 60 * 1000L
 
     @Volatile private var pending: Pending? = null
@@ -161,6 +166,7 @@ object DeepLinkReturnCheck {
         if (p.isEmpty() || title.isBlank()) return
         pending = Pending(title, p, tmdbId, titleId, gameId, System.currentTimeMillis())
         leftApp = false
+        ReturnCheckPolicy.refreshFlags()
     }
 
     fun noteBackgrounded() {
@@ -177,19 +183,30 @@ object DeepLinkReturnCheck {
         }
         pending = null
         leftApp = false
-        if (elapsed < MIN_AWAY_MS || elapsed > MAX_AWAY_MS) return false
-        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        val now = System.currentTimeMillis()
-        if (now - prefs.getLong(KEY_LAST_SHOWN, 0L) < MIN_INTERVAL_MS) return false
-        prefs.edit().putLong(KEY_LAST_SHOWN, now).apply()
-        ReportCenter.showReturnCheck(p)
-        return true
+        return when (ReturnCheckPolicy.decide(context, p.platform, p.tmdbId, elapsed)) {
+            ReturnCheckPolicy.Decision.QUICK_RETURN -> {
+                log(p, WatchIntentLogger.IntentEventType.DEEPLINK_QUICK_RETURN)
+                false
+            }
+            ReturnCheckPolicy.Decision.SKIP -> false
+            ReturnCheckPolicy.Decision.ASK -> {
+                ReportCenter.showReturnCheck(p)
+                true
+            }
+        }
     }
 
     fun record(p: Pending, opened: Boolean) {
-        WatchIntentLogger.get().log(
+        log(
+            p,
             if (opened) WatchIntentLogger.IntentEventType.DEEPLINK_CONFIRMED
             else WatchIntentLogger.IntentEventType.DEEPLINK_FAILED,
+        )
+    }
+
+    private fun log(p: Pending, type: WatchIntentLogger.IntentEventType) {
+        WatchIntentLogger.get().log(
+            type,
             titleId = p.titleId ?: p.tmdbId?.toString() ?: WatchIntentLogger.get().titleSlug(p.title),
             platformId = p.platform,
             metadata = mapOf(
@@ -199,5 +216,74 @@ object DeepLinkReturnCheck {
                 "seconds_away" to ((System.currentTimeMillis() - p.armedAt) / 1000),
             ),
         )
+    }
+}
+
+/**
+ * Who gets asked "Did it open?" (1 Oct 2026, parity with iOS ReturnCheckPolicy):
+ *  - the first 2 returns from each service ask,
+ *  - after that about 1 return in 10 asks,
+ *  - never more than once a day,
+ *  - a service or title under suspicion (get_return_check_flags: recent health
+ *    alert, open link report, fresh correction) always asks, at most every 4h,
+ *  - a return under 3s never asks; it is logged as deeplink_quick_return,
+ *    which the "didn't open" health alert ignores.
+ */
+object ReturnCheckPolicy {
+    enum class Decision { ASK, QUICK_RETURN, SKIP }
+
+    private const val PREFS = "gs_prefs"
+    private const val KEY_LAST_SHOWN = "gs.deeplinkReturnCheck.lastShown"
+    private const val KEY_COUNT_PREFIX = "gs.deeplinkReturnCheck.shown."
+    private const val INTRO_PER_SERVICE = 2
+    private const val SAMPLE_RATE = 0.1
+    private const val MIN_INTERVAL_MS = 24 * 60 * 60 * 1000L
+    private const val SUSPECT_INTERVAL_MS = 4 * 60 * 60 * 1000L
+    private const val QUICK_RETURN_MS = 3_000L
+    private const val MAX_AWAY_MS = 20 * 60 * 1000L
+    private const val FLAGS_TTL_MS = 30 * 60 * 1000L
+
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    @Volatile private var flagProviders: Set<String> = emptySet()
+    @Volatile private var flagTitles: Set<String> = emptySet()
+    @Volatile private var flagsFetchedAt = 0L
+
+    /** Called on arm so the list is fresh by the return; one fetch per 30 min. */
+    fun refreshFlags() {
+        val now = System.currentTimeMillis()
+        if (now - flagsFetchedAt < FLAGS_TTL_MS) return
+        flagsFetchedAt = now
+        scope.launch {
+            try {
+                val body = SupabaseManager.client.postgrest.rpc("get_return_check_flags").data
+                val obj = Json.parseToJsonElement(body).jsonObject
+                flagProviders = obj["providers"]?.jsonArray?.map { it.jsonPrimitive.content }?.toSet() ?: emptySet()
+                flagTitles = obj["titles"]?.jsonArray?.map { it.jsonPrimitive.content }?.toSet() ?: emptySet()
+            } catch (e: Throwable) {
+                flagsFetchedAt = 0L
+            }
+        }
+    }
+
+    fun decide(context: Context, platform: String, tmdbId: Int?, elapsedMs: Long): Decision {
+        if (elapsedMs < QUICK_RETURN_MS) return Decision.QUICK_RETURN
+        if (elapsedMs > MAX_AWAY_MS) return Decision.SKIP
+        val key = platform.lowercase()
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val now = System.currentTimeMillis()
+        val sinceLast = now - prefs.getLong(KEY_LAST_SHOWN, 0L)
+        val suspect = key in flagProviders || (tmdbId != null && "$tmdbId|$key" in flagTitles)
+        val shown = prefs.getInt(KEY_COUNT_PREFIX + key, 0)
+        val ask = if (suspect) {
+            sinceLast >= SUSPECT_INTERVAL_MS
+        } else {
+            sinceLast >= MIN_INTERVAL_MS && (shown < INTRO_PER_SERVICE || Math.random() < SAMPLE_RATE)
+        }
+        if (!ask) return Decision.SKIP
+        prefs.edit()
+            .putLong(KEY_LAST_SHOWN, now)
+            .putInt(KEY_COUNT_PREFIX + key, shown + 1)
+            .apply()
+        return Decision.ASK
     }
 }

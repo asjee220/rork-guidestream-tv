@@ -12,6 +12,8 @@ enum IntentEventType: String {
     // "Did it open?" card on return from a deep link (DeepLinkReturnCheck).
     case deeplinkConfirmed = "deeplink_confirmed"
     case deeplinkFailed = "deeplink_failed"
+    // Back within 3s of leaving — likely never opened; not asked, not in the health alert.
+    case deeplinkQuickReturn = "deeplink_quick_return"
     case notificationOpened = "notification_opened"
     case searchQuery = "search_query"
     case trailerWatched = "trailer_watched"

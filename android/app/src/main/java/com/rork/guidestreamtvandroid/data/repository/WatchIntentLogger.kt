@@ -31,6 +31,8 @@ class WatchIntentLogger private constructor(context: Context) {
         // "Did it open?" card on return from a deep link (DeepLinkReturnCheck).
         DEEPLINK_CONFIRMED("deeplink_confirmed"),
         DEEPLINK_FAILED("deeplink_failed"),
+        // Back within 3s of leaving — likely never opened; not asked, not in the health alert.
+        DEEPLINK_QUICK_RETURN("deeplink_quick_return"),
         NOTIFICATION_OPENED("notification_opened"),
         SEARCH_QUERY("search_query"),
         TRAILER_WATCHED("trailer_watched"),
